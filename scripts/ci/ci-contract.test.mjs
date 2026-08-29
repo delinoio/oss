@@ -175,14 +175,25 @@ test("implemented DevHud conformance commands are wired to their owning jobs", (
 });
 
 test("OCI validation is multi-architecture, non-root, migration-bearing, and local-only", () => {
-  const source = JSON.stringify(workflow.jobs["devhud-oci"]);
+  const job = workflow.jobs["devhud-oci"];
+  const source = JSON.stringify(job);
   for (const expected of [
     "linux/amd64,linux/arm64", "type=oci", "65532", "io.delino.devhud.migrations",
     "io.delino.devhud.administrator-assets", "spdx-json", "packages | length > 0",
     "go test -tags=integration ./servers/devhud-api/internal/postgres", "--load", "--platform linux/amd64", "docker:$image",
     "--user 65532:65532", "devhud-api migrate", "migrate", "--once",
   ]) assert.ok(source.includes(expected), expected);
-  const buildAndInspect = namedStep(workflow.jobs["devhud-oci"], "Build and inspect amd64/arm64 OCI layout").run;
+  assert.equal(job.services, undefined);
+  const startPostgreSQL = namedStep(job, "Start PostgreSQL");
+  assert.equal(startPostgreSQL.if, "${{ steps.gate.outputs.run == 'true' }}");
+  for (const expected of [
+    "docker run --detach", "postgres:15-bookworm", "--publish 5432:5432", "pg_isready",
+    "docker inspect", "State.Health.Status", "docker logs devhud-postgres",
+  ]) assert.ok(startPostgreSQL.run.includes(expected), expected);
+  const stopPostgreSQL = namedStep(job, "Stop PostgreSQL");
+  assert.equal(stopPostgreSQL.if, "${{ always() && steps.gate.outputs.run == 'true' }}");
+  assert.match(stopPostgreSQL.run, /docker rm --force devhud-postgres/u);
+  const buildAndInspect = namedStep(job, "Build and inspect amd64/arm64 OCI layout").run;
   assert.match(
     buildAndInspect,
     /if \[ "\$OCI_TARGET" = api \]; then\s+docker run "\$\{docker_args\[@\]\}" "\$image" migrate\s+else\s+DEVHUD_DATABASE_URL="\$DEVHUD_TEST_DATABASE_URL" go run \.\/servers\/devhud-api\/cmd\/devhud-api migrate/u,
@@ -209,6 +220,20 @@ test("Debian desktop validation installs, launches, unregisters, and removes the
   const uninstall = lifecycle.indexOf('sudo dpkg -r "$package"');
   const removed = lifecycle.indexOf('test ! -e "$user_manifest"');
   assert.ok(register >= 0 && register < registered && registered < uninstall && uninstall < removed);
+});
+
+test("Windows desktop validation removes Native Messaging and executable payloads", () => {
+  const lifecycle = namedStep(workflow.jobs["devhud-desktop"], "Verify Windows Native Messaging install and uninstall lifecycle").run;
+  const manifestDeclared = lifecycle.indexOf("$manifestPath = $registration.'(default)'");
+  const manifestPresent = lifecycle.indexOf("if (-not (Test-Path -LiteralPath $manifestPath))", manifestDeclared);
+  const uninstall = lifecycle.indexOf('if ($env:DEVHUD_BUNDLE -eq "msi")', manifestPresent);
+  const registryRemoved = lifecycle.indexOf('if (Test-Path "HKCU:\\Software\\Google\\Chrome\\NativeMessagingHosts\\io.delino.devhud.native_messaging")', uninstall);
+  const manifestRemoved = lifecycle.indexOf("if (Test-Path -LiteralPath $manifestPath)", registryRemoved);
+  const executableRemoved = lifecycle.indexOf("if (Test-Path -LiteralPath $env:DEVHUD_SMOKE_ARTIFACT)", manifestRemoved);
+  assert.ok(
+    manifestDeclared >= 0 && manifestDeclared < manifestPresent && manifestPresent < uninstall &&
+    uninstall < registryRemoved && registryRemoved < manifestRemoved && manifestRemoved < executableRemoved,
+  );
 });
 
 test("macOS and AppImage desktop validation exercises packaged Native Messaging lifecycles", () => {

@@ -1574,7 +1574,8 @@ jobs:
           DEVHUD_BUNDLE: ${{ matrix.bundle }}
         run: |
           $registration = Get-ItemProperty "HKCU:\Software\Google\Chrome\NativeMessagingHosts\io.delino.devhud.native_messaging" -ErrorAction Stop
-          if (-not (Test-Path -LiteralPath $registration.'(default)')) { throw "Native Messaging manifest missing" }
+          $manifestPath = $registration.'(default)'
+          if (-not (Test-Path -LiteralPath $manifestPath)) { throw "Native Messaging manifest missing" }
           if ($env:DEVHUD_BUNDLE -eq "msi") {
             $product = Get-CimInstance Win32_Product | Where-Object Name -eq "DevHUD" | Select-Object -First 1
             if (-not $product) { throw "installed MSI product missing" }
@@ -1584,6 +1585,8 @@ jobs:
           }
           if ($process.ExitCode -notin @(0, 3010)) { throw "uninstall failed: $($process.ExitCode)" }
           if (Test-Path "HKCU:\Software\Google\Chrome\NativeMessagingHosts\io.delino.devhud.native_messaging") { throw "Native Messaging registration survived uninstall" }
+          if (Test-Path -LiteralPath $manifestPath) { throw "Native Messaging manifest survived uninstall" }
+          if (Test-Path -LiteralPath $env:DEVHUD_SMOKE_ARTIFACT) { throw "DevHUD executable survived uninstall" }
 
   devhud-mobile-contracts:
     name: DevHUD mobile contracts
@@ -2186,20 +2189,6 @@ jobs:
       fail-fast: false
       matrix:
         target: [api, sweeper]
-    services:
-      postgres:
-        image: postgres:15-bookworm
-        env:
-          POSTGRES_DB: devhud_api_test
-          POSTGRES_PASSWORD: devhud
-          POSTGRES_USER: devhud
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U devhud -d devhud_api_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -2261,6 +2250,35 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends skopeo
 
+      - name: Start PostgreSQL
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          set -euo pipefail
+          docker run --detach \
+            --name devhud-postgres \
+            --env POSTGRES_DB=devhud_api_test \
+            --env POSTGRES_PASSWORD=devhud \
+            --env POSTGRES_USER=devhud \
+            --publish 5432:5432 \
+            --health-cmd "pg_isready -U devhud -d devhud_api_test" \
+            --health-interval 5s \
+            --health-timeout 5s \
+            --health-retries 10 \
+            postgres:15-bookworm >/dev/null
+          for attempt in {1..60}; do
+            status=$(docker inspect --format '{{.State.Health.Status}}' devhud-postgres)
+            if [ "$status" = healthy ]; then
+              exit 0
+            fi
+            if [ "$status" = unhealthy ]; then
+              break
+            fi
+            sleep 1
+          done
+          docker logs devhud-postgres
+          echo "DevHud OCI PostgreSQL did not become healthy" >&2
+          exit 1
+
       - name: Build and inspect amd64/arm64 OCI layout
         if: ${{ steps.gate.outputs.run == 'true' }}
         env:
@@ -2303,6 +2321,10 @@ jobs:
         env:
           DEVHUD_TEST_DATABASE_URL: postgres://devhud:devhud@127.0.0.1:5432/devhud_api_test?sslmode=disable
         run: go test -tags=integration ./servers/devhud-api/internal/postgres
+
+      - name: Stop PostgreSQL
+        if: ${{ always() && steps.gate.outputs.run == 'true' }}
+        run: docker rm --force devhud-postgres >/dev/null 2>&1 || true
 
   devhud-supply-chain:
     name: DevHud installers, SBOM, provenance, and signature fixtures
