@@ -1147,6 +1147,11 @@ jobs:
           filters: |
             security:
               - .github/workflows/CI.yml
+              - .nvmrc
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - turbo.json
               - apps/devhud/**
               - apps/devhud-admin/**
               - apps/devhud-chrome-extension/**
@@ -2301,6 +2306,8 @@ jobs:
               - packages/**
               - servers/**
               - apps/public-docs/**
+              - AGENTS.md
+              - docs/README.md
               - docs/project-devhud.md
               - docs/apps-devhud-updater-contract.md
               - docs/servers-devhud-api-contract.md

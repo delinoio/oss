@@ -67,6 +67,14 @@ test("DevHud jobs self-gate and the path contract covers every implemented bound
   assert.ok(JSON.stringify(step(workflow.jobs["devhud-api"], "filter")).includes("scripts/ci/check-go-format.mjs"));
   assert.ok(JSON.stringify(step(workflow.jobs["devhud-admin"], "filter")).includes(".nvmrc"));
   assert.ok(JSON.stringify(step(workflow.jobs["devhud-protocol"], "filter")).includes("turbo.json"));
+  const securityFilter = JSON.stringify(step(workflow.jobs["devhud-security"], "filter"));
+  for (const path of [".nvmrc", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "turbo.json"]) {
+    assert.ok(securityFilter.includes(path), `devhud-security: ${path}`);
+  }
+  const releaseFilter = JSON.stringify(step(workflow.jobs["devhud-release-contracts"], "filter"));
+  for (const path of ["AGENTS.md", "docs/README.md"]) {
+    assert.ok(releaseFilter.includes(path), `devhud-release-contracts: ${path}`);
+  }
 });
 
 test("Node jobs use the committed Turbo binary with frozen installs and affected no-ops", () => {
