@@ -151,9 +151,7 @@ const localHttp = (value) => {
     if (!isIPv4Host(parsed.hostname)) return true;
     // WHATWG canonicalizes numeric IPv4 aliases that Go's net.ParseIP rejects.
     // Compare the raw spelling so wrapper preflight matches the service parser.
-    const rawHostname = rawAuthorityHostname(authorityMatch[1])
-      .toLowerCase()
-      .replace(/\.$/u, "");
+    const rawHostname = rawAuthorityHostname(authorityMatch[1]).toLowerCase();
     return rawHostname === parsed.hostname;
   } catch {
     return false;

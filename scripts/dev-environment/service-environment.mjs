@@ -63,10 +63,7 @@ function forwardAfterMarker(child) {
     const after = stdoutBeforeAcceptance.slice(location + acceptedMarker.length).replace(/^\r?\n/u, "");
     stdoutBeforeAcceptance = "";
     if (after) process.stdout.write(after);
-    if (stderrBeforeAcceptance) {
-      process.stderr.write(stderrBeforeAcceptance);
-      stderrBeforeAcceptance = "";
-    }
+    stderrBeforeAcceptance = "";
   });
   child.stderr.on("data", (chunk) => {
     if (accepted) process.stderr.write(chunk);

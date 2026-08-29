@@ -10,6 +10,7 @@ const output = rejected
     })}\n`
   : `${acceptedMarker}\n`;
 const stream = rejected ? "stderr" : "stdout";
+if (!rejected) process.stderr.write("INFISICAL_WARNING_CANARY_MUST_NOT_LEAK\n");
 if (process.platform === "win32") {
   process[stream].write(output);
 } else {

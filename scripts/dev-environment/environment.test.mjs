@@ -432,6 +432,7 @@ test("preflight rejects numeric IPv4 spellings rejected by the Go service parser
     "http://2130706433:3001/oidc",
     "http://0177.0.0.1:3001/oidc",
     "http://0x7f000001:3001/oidc",
+    "http://127.0.0.1.:3001/oidc",
   ]) {
     for (const [contract, environment] of [
       [adminContract, { DEVHUD_LOGTO_ISSUER: issuer }],
@@ -645,6 +646,7 @@ test("team provider classification waits for accepted and rejected pipe output",
   const accepted = await runNode(apiScript, ["validate"], environment);
   assert.equal(accepted.code, 0, accepted.stderr);
   assert.equal(accepted.stderr.includes("environment.unavailable"), false);
+  assert.equal(accepted.stderr.includes("INFISICAL_WARNING_CANARY_MUST_NOT_LEAK"), false);
 
   const rejected = await runNode(apiScript, ["validate"], {
     ...environment,
