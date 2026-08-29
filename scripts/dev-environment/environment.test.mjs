@@ -32,6 +32,7 @@ import {
   closeResult,
   commandInvocation,
   dockerClientEnvironment,
+  safeBaseEnvironment,
   terminateTree,
 } from "./process.mjs";
 import { readServiceEnv } from "./service-environment.mjs";
@@ -210,6 +211,35 @@ test("child completion waits for close instead of exit", async () => {
   assert.deepEqual(await completion, { code: 0, signal: null });
 });
 
+test("base child environments preserve platform and Rust tool context without secrets", () => {
+  assert.deepEqual(
+    safeBaseEnvironment({
+      PATH: "/custom/cargo/bin:/usr/bin",
+      CARGO_HOME: "/custom/cargo",
+      RUSTUP_HOME: "/custom/rustup",
+      __CF_USER_TEXT_ENCODING: "0x1F5:0:0",
+      HOMEDRIVE: "C:",
+      HOMEPATH: "\\Users\\developer",
+      LOGONSERVER: "\\\\LOCALHOST",
+      USERDOMAIN: "LOCAL",
+      USERNAME: "developer",
+      DEVHUD_DATABASE_URL: "must-not-pass",
+      DOCKER_HOST: "must-not-pass",
+    }),
+    {
+      PATH: "/custom/cargo/bin:/usr/bin",
+      CARGO_HOME: "/custom/cargo",
+      RUSTUP_HOME: "/custom/rustup",
+      __CF_USER_TEXT_ENCODING: "0x1F5:0:0",
+      HOMEDRIVE: "C:",
+      HOMEPATH: "\\Users\\developer",
+      LOGONSERVER: "\\\\LOCALHOST",
+      USERDOMAIN: "LOCAL",
+      USERNAME: "developer",
+    },
+  );
+});
+
 test("temporary Infisical config paths must stay outside the checkout", () => {
   assert.throws(
     () => resolveInfisicalConfigPaths({ DEVHUD_ENVIRONMENT_TESTING: "1" }),
@@ -354,12 +384,17 @@ test("OSS API and administrator overrides must resolve to the same issuer", asyn
   );
 });
 
-test("team startup initializes only once and uses exact Infisical paths and flags without disclosure", async (t) => {
+test("team setup initializes only through env:login and startup uses exact Infisical paths and flags without disclosure", async (t) => {
   const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-team-test-"));
   t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
   const environment = fakeEnvironment(temporaryDirectory);
   const { configFile, projectConfigDirectory } =
     resolveInfisicalConfigPaths(environment);
+
+  for (let index = 0; index < 2; index += 1) {
+    const result = await runNode(cli, ["login"], environment);
+    assert.equal(result.code, 0, result.stderr);
+  }
 
   for (let index = 0; index < 2; index += 1) {
     const result = await runNode(cli, ["start", "team"], environment);
@@ -400,6 +435,37 @@ test("team startup initializes only once and uses exact Infisical paths and flag
   assert.ok(firstMigration !== -1 && firstMigration < firstTurbo);
 });
 
+test("team startup rejects missing project binding or authentication without interactive mutation", async (t) => {
+  for (const scenario of ["project", "authentication"]) {
+    const temporaryDirectory = await mkdtemp(
+      resolve(tmpdir(), `devhud-team-readiness-${scenario}-`),
+    );
+    t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+    const environment = fakeEnvironment(temporaryDirectory);
+    const { configFile, projectConfigDirectory } =
+      resolveInfisicalConfigPaths(environment);
+    if (scenario === "authentication") {
+      await mkdir(projectConfigDirectory, { recursive: true });
+      await writeFile(configFile, "{}\n", "utf8");
+    }
+
+    const result = await runNode(cli, ["start", "team"], environment);
+    assert.equal(result.code, 1);
+    assert.match(
+      result.stderr,
+      scenario === "project"
+        ? /\[project\.uninitialized\].*pnpm env:login/u
+        : /\[authentication\.required\].*pnpm env:login/u,
+    );
+    const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
+    assert.equal(recorded.some((event) => ["login", "init"].includes(event.action)), false);
+    assert.equal(recorded.some((event) => ["go", "pnpm", "docker"].includes(event.tool)), false);
+    if (scenario === "project") {
+      await assert.rejects(readFile(configFile, "utf8"), /ENOENT/u);
+    }
+  }
+});
+
 test("team authentication or path failure is fail-closed and does not invoke OSS", async (t) => {
   const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-team-failure-"));
   const environment = {
@@ -430,6 +496,9 @@ test("team startup and doctor reject mismatched API and administrator issuers", 
     DEVHUD_TEST_ADMIN_LOGTO_ISSUER: adminIssuer,
   };
   t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+
+  const loginResult = await runNode(cli, ["login"], environment);
+  assert.equal(loginResult.code, 0, loginResult.stderr);
 
   for (const args of [["start", "team"], ["doctor"]]) {
     const result = await runNode(cli, args, environment);
@@ -586,6 +655,41 @@ test("partial OSS startup is reaped and down remains volume-preserving", async (
   assert.ok(recorded.some((event) => event.action === "down"));
 });
 
+test("interrupted OSS steady state still runs lifecycle-tracked cleanup", async (t) => {
+  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-oss-interrupt-"));
+  const environment = {
+    ...fakeEnvironment(temporaryDirectory),
+    DEVHUD_TEST_BLOCK_PNPM: "1",
+  };
+  t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+
+  const result = await interruptCliDuring(
+    ["start", "oss"],
+    environment,
+    (event) => event.tool === "pnpm" && event.action === "turbo-blocked",
+  );
+  assert.equal(result.signal, "SIGTERM");
+  const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
+  assert.ok(recorded.some((event) => event.tool === "docker" && event.action === "down"));
+});
+
+test("a signal during failed-start cleanup terminates the Docker process tree", async (t) => {
+  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-cleanup-interrupt-"));
+  const environment = {
+    ...fakeEnvironment(temporaryDirectory),
+    DEVHUD_TEST_DOCKER_UP_FAILURE: "1",
+    DEVHUD_TEST_BLOCK_DOCKER_DOWN: "1",
+  };
+  t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+
+  const result = await interruptCliDuring(
+    ["start", "oss"],
+    environment,
+    (event) => event.tool === "docker" && event.action === "down-blocked",
+  );
+  assert.equal(result.signal, "SIGTERM");
+});
+
 for (const port of [5432, 3001, 3002, 46305, 46306, 46307]) {
   test(`fixed port ${port} fails instead of remapping`, async (t) => {
     const server = createServer();
@@ -698,13 +802,33 @@ test("generated identity material is stable, private, and never logged", async (
     () => resolveLocalStatePaths({ DEVHUD_ENVIRONMENT_TESTING: "1" }),
     /absolute temporary state directory/u,
   );
-  await createLocalIdentityKey(environment);
+  const created = await Promise.all(
+    Array.from({ length: 8 }, () => createLocalIdentityKey(environment)),
+  );
   const first = await readFile(localState.identityKeyFile, "utf8");
-  await createLocalIdentityKey(environment);
+  assert.deepEqual([...new Set(created)], [first.trim()]);
+  assert.equal(Buffer.from(first.trim(), "base64").byteLength, 32);
+  assert.deepEqual(await readdir(localState.stateDirectory), ["identity-hmac-key"]);
+  assert.equal(await createLocalIdentityKey(environment), first.trim());
   assert.equal(await readFile(localState.identityKeyFile, "utf8"), first);
   if (process.platform !== "win32") {
     assert.equal((await stat(localState.identityKeyFile)).mode & 0o777, 0o600);
   }
+});
+
+test("incomplete generated identity material fails closed", async (t) => {
+  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-identity-invalid-"));
+  const environment = fakeEnvironment(temporaryDirectory);
+  const localState = resolveLocalStatePaths(environment);
+  t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+  await mkdir(localState.stateDirectory, { recursive: true });
+  await writeFile(localState.identityKeyFile, "", "utf8");
+
+  await assert.rejects(
+    createLocalIdentityKey(environment),
+    /\[state\.identity-invalid\].*incomplete or invalid/u,
+  );
+  assert.deepEqual(await readdir(localState.stateDirectory), ["identity-hmac-key"]);
 });
 
 test("environment source of truth, catalog, domain contracts, READMEs, and AGENTS stay synchronized", async () => {

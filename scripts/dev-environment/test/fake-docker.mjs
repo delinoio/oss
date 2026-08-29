@@ -38,6 +38,16 @@ if (action === "version" && process.env.DEVHUD_TEST_BLOCK_DOCKER_VERSION === "1"
   }
   await new Promise(() => setInterval(() => {}, 1_000));
 }
+if (action === "down" && process.env.DEVHUD_TEST_BLOCK_DOCKER_DOWN === "1") {
+  if (eventLog) {
+    await appendFile(
+      eventLog,
+      `${JSON.stringify({ tool: "docker", action: "down-blocked" })}\n`,
+      "utf8",
+    );
+  }
+  await new Promise(() => setInterval(() => {}, 1_000));
+}
 if (action === "version") process.stdout.write("Docker Compose version v2.40.0\n");
 if (action === "context-inspect") {
   process.stdout.write(

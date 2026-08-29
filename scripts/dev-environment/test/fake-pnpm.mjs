@@ -22,4 +22,12 @@ if (forbidden.some((name) => process.env[name])) {
     `${JSON.stringify({ tool: "pnpm", action: "turbo", args: process.argv.slice(2), mode: process.env.DEVHUD_LOCAL_MODE })}\n`,
     "utf8",
   );
+  if (process.env.DEVHUD_TEST_BLOCK_PNPM === "1") {
+    await appendFile(
+      eventLog,
+      `${JSON.stringify({ tool: "pnpm", action: "turbo-blocked" })}\n`,
+      "utf8",
+    );
+    await new Promise(() => setInterval(() => {}, 1_000));
+  }
 }

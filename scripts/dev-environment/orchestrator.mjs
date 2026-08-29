@@ -1,7 +1,15 @@
 import { Buffer } from "node:buffer";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
-import { access, chmod, mkdir, open, readFile } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  link,
+  mkdir,
+  open,
+  readFile,
+  unlink,
+} from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { resolve } from "node:path";
@@ -112,6 +120,16 @@ export class Lifecycle {
 
   async run(command, args, options = {}) {
     return this.#execute(command, args, options, false);
+  }
+
+  async runCleanup(command, args, options = {}) {
+    const interruptedSignal = this.signal;
+    this.signal = null;
+    try {
+      return await this.#execute(command, args, options, false);
+    } finally {
+      this.signal ??= interruptedSignal;
+    }
   }
 
   async collect(command, args, options = {}) {
@@ -306,6 +324,17 @@ async function authenticated(lifecycle) {
   );
   // stdout contains a credential by design and must always be discarded.
   return result.code === 0;
+}
+
+async function requireTeamEnvironment(lifecycle) {
+  await exactInfisicalVersion(lifecycle);
+  const { configFile } = resolveInfisicalConfigPaths();
+  if (!(await exists(configFile))) {
+    throw new Error("[project.uninitialized] local Infisical project configuration is missing; run pnpm env:login");
+  }
+  if (!(await authenticated(lifecycle))) {
+    throw new Error("[authentication.required] Infisical authentication is required; run pnpm env:login");
+  }
 }
 
 async function runInteractiveInfisical(args, cwd = repositoryRoot, lifecycle) {
@@ -503,22 +532,52 @@ async function assertLocalDockerDaemon(lifecycle, docker) {
   }
 }
 
+function validateLocalIdentityKey(identityKey) {
+  const normalized = identityKey.trim();
+  const decoded = Buffer.from(normalized, "base64");
+  if (
+    decoded.byteLength !== 32 ||
+    decoded.toString("base64") !== normalized
+  ) {
+    throw new Error(
+      "[state.identity-invalid] generated checkout identity is incomplete or invalid; stop OSS development processes and remove only the ignored identity key before retrying",
+    );
+  }
+  return normalized;
+}
+
 export async function createLocalIdentityKey(source = process.env) {
   const { identityKeyFile, stateDirectory } = resolveLocalStatePaths(source);
   await mkdir(stateDirectory, { recursive: true, mode: 0o700 });
+  const temporaryKeyFile = resolve(
+    stateDirectory,
+    `.identity-hmac-key-${process.pid}-${randomBytes(8).toString("hex")}.tmp`,
+  );
   let handle;
   try {
-    handle = await open(identityKeyFile, "wx", 0o600);
+    handle = await open(temporaryKeyFile, "wx", 0o600);
     await handle.writeFile(`${randomBytes(32).toString("base64")}\n`, { encoding: "utf8" });
-  } catch (error) {
-    if (error.code !== "EEXIST") throw error;
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    try {
+      await link(temporaryKeyFile, identityKeyFile);
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+    }
   } finally {
     await handle?.close();
+    try {
+      await unlink(temporaryKeyFile);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
   }
   if (process.platform !== "win32") {
     await chmod(stateDirectory, 0o700);
     await chmod(identityKeyFile, 0o600);
   }
+  return validateLocalIdentityKey(await readFile(identityKeyFile, "utf8"));
 }
 
 export function composeProjectName(identityKey) {
@@ -530,28 +589,26 @@ export function composeProjectName(identityKey) {
 }
 
 async function localComposeProjectName() {
-  const { identityKeyFile } = resolveLocalStatePaths();
-  await createLocalIdentityKey();
-  return composeProjectName(await readFile(identityKeyFile, "utf8"));
+  return composeProjectName(await createLocalIdentityKey());
 }
 
-export async function down({ quiet = false, projectName } = {}) {
+export async function down({ quiet = false, projectName, lifecycle } = {}) {
   const resolvedProjectName = projectName ?? (await localComposeProjectName());
   const docker = dockerInvocation();
   let result;
   try {
-    result = await inherited(
-      docker.command,
-      [
-        ...docker.prefix,
-        ...composeArgs(resolvedProjectName, "down", "--remove-orphans"),
-      ],
-      {
-        cwd: repositoryRoot,
-        env: dockerChildEnvironment(),
-        stdio: quiet ? "ignore" : "inherit",
-      },
-    );
+    const args = [
+      ...docker.prefix,
+      ...composeArgs(resolvedProjectName, "down", "--remove-orphans"),
+    ];
+    const options = {
+      cwd: repositoryRoot,
+      env: dockerChildEnvironment(),
+      stdio: quiet ? "ignore" : "inherit",
+    };
+    result = lifecycle
+      ? await lifecycle.runCleanup(docker.command, args, options)
+      : await inherited(docker.command, args, options);
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
     throw new Error("[tool.missing] Docker with Compose support is required for OSS cleanup");
@@ -582,7 +639,7 @@ async function startTurbo(lifecycle, mode) {
 
 async function startTeam(lifecycle) {
   await assertAppPorts();
-  await login(lifecycle);
+  await requireTeamEnvironment(lifecycle);
   await validateTeamServices(lifecycle);
   await runService(lifecycle, "team", "api", "migrate");
   return startTurbo(lifecycle, "team");
@@ -623,7 +680,7 @@ async function startOss(lifecycle) {
     return await startTurbo(lifecycle, "oss");
   } finally {
     if (dependenciesStarted || lifecycle.signal) {
-      await down({ quiet: Boolean(lifecycle.signal), projectName });
+      await down({ quiet: Boolean(lifecycle.signal), projectName, lifecycle });
     }
   }
 }
@@ -648,14 +705,7 @@ export async function doctor() {
   const lifecycle = new Lifecycle();
   lifecycle.install();
   try {
-    await exactInfisicalVersion(lifecycle);
-    const { configFile } = resolveInfisicalConfigPaths();
-    if (!(await exists(configFile))) {
-      throw new Error("[project.uninitialized] local Infisical project configuration is missing; run pnpm env:login");
-    }
-    if (!(await authenticated(lifecycle))) {
-      throw new Error("[authentication.required] Infisical authentication is required; run pnpm env:login");
-    }
+    await requireTeamEnvironment(lifecycle);
     await validateTeamServices(lifecycle);
   } finally {
     lifecycle.remove();
