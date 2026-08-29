@@ -1027,6 +1027,45 @@ test("incomplete generated identity material fails closed", async (t) => {
   assert.deepEqual(await readdir(localState.stateDirectory), ["identity-hmac-key"]);
 });
 
+test("root documentation development commands bypass the DevHud team environment", async () => {
+  const rootPackage = JSON.parse(
+    await readFile(resolve(repositoryRoot, "package.json"), "utf8"),
+  );
+  const commands = [
+    {
+      name: "dev:public-docs",
+      value: "pnpm --filter public-docs dev",
+      contracts: [
+        "docs/project-public-docs.md",
+        "docs/apps-public-docs-foundation.md",
+      ],
+    },
+    {
+      name: "dev:nodeup-docs",
+      value: "pnpm --filter nodeup-docs dev",
+      contracts: [
+        "docs/project-nodeup.md",
+        "docs/apps-nodeup-docs-foundation.md",
+      ],
+    },
+    {
+      name: "dev:binpm-docs",
+      value: "pnpm --filter binpm-docs dev",
+      contracts: [
+        "docs/project-binpm.md",
+        "docs/apps-binpm-docs-foundation.md",
+      ],
+    },
+  ];
+  for (const command of commands) {
+    assert.equal(rootPackage.scripts[command.name], command.value, command.name);
+    for (const contract of command.contracts) {
+      const contents = await readFile(resolve(repositoryRoot, contract), "utf8");
+      assert.ok(contents.includes(`pnpm ${command.name}`), contract);
+    }
+  }
+});
+
 test("environment source of truth, catalog, domain contracts, READMEs, and AGENTS stay synchronized", async () => {
   const requiredConsumers = [
     "docs/README.md",

@@ -54,6 +54,7 @@
 - Log output must be safe for public CI surfaces.
 
 ## Build and Test
+- Development: package-local `pnpm dev` or repository-root `pnpm dev:binpm-docs`.
 - Local validation: `pnpm --filter binpm-docs test`, which builds the Rspress output, copies the public installer entrypoints into `doc_build`, and runs `scripts/validate-clean-urls.mjs` to verify stable route IDs have build output artifacts, generated internal HTML links use clean public URLs rather than `.html` hrefs, and the public installer entrypoints match the canonical in-repo installer scripts.
 - Production build: `pnpm --filter binpm-docs build`
 - CI alignment: `node-binpm-docs-test`

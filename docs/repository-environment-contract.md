@@ -30,6 +30,7 @@ The `apps/mpapp/.env.example` `EXPO_PUBLIC_*` values are public application conf
 - `pnpm env:login` checks for the exact supported Infisical CLI, authenticates interactively only when the current user session is missing, and runs local project initialization only when `.infisical.json` is absent.
 - `pnpm env:doctor` performs a non-mutating team tool/authentication/project/path/allowlist check. It emits name/category-only recovery guidance.
 - `pnpm dev` selects `team`, fails non-interactively when authentication or local project binding is missing, validates both service environments before migrations, runs the API migration, and starts the DevHud frontend, administrator, and API through `turbo run dev` on fixed ports `46305`, `46306`, and `46307`.
+- `pnpm dev:public-docs`, `pnpm dev:nodeup-docs`, and `pnpm dev:binpm-docs` are the repository-root documentation development entry points. Each delegates directly to the named workspace package and its fixed-port development wrapper without requiring the DevHud team environment.
 - `pnpm dev:oss` selects `oss`, never invokes Infisical, validates fixed ports, starts repository-owned dependencies, waits for health, runs the API migration, and starts the same three applications through the same Turbo boundary.
 - `pnpm dev:oss:down` stops the current checkout's repository-owned dependencies and removes orphan containers without deleting its persistent PostgreSQL volume. Use an explicit Docker volume operation only when intentionally discarding local data.
 
