@@ -2091,7 +2091,7 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
           pnpm --filter @delinoio/devhud-api-client build
-          pnpm --filter devhud-admin test
+          pnpm --filter devhud-admin --fail-if-no-match test
           git status --short --untracked-files=all -- servers/devhud-api/internal/adminassets/dist
           git diff --exit-code -- servers/devhud-api/internal/adminassets/dist
           test -z "$(git ls-files --others --exclude-standard -- servers/devhud-api/internal/adminassets/dist)"

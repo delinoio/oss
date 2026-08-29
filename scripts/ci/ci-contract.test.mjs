@@ -174,7 +174,7 @@ test("implemented DevHud conformance commands are wired to their owning jobs", (
     ["devhud-api", ["ci:format", "ci:vet", "ci:build", "ci:unit", "ci:migrations", "ci:integration", "ci:api", "ci:sweeper"]],
     ["devhud-rust-conformance", ["test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:native:updater"]],
     ["devhud-frontend", ["typecheck", "lint", "test:unit", "test:components", "test:accessibility", "build:frontend"]],
-    ["devhud-admin", ["devhud-admin test", "adminassets/dist"]],
+    ["devhud-admin", ["devhud-admin --fail-if-no-match test", "adminassets/dist"]],
     ["devhud-extension", ["test:unit", "test:components", "test:accessibility", "test:package", "devhud-chrome-web-store.zip", "devhud-chrome-github-validation.zip"]],
     ["devhud-security", ["test:security", "test:adapters", "diagnostics-policy.test.mjs", "native-bridge.test.mjs", "mobile-policy.test.mjs"]],
     ["devhud-desktop", ["verify:pins", "smoke:platform", "xvfb-run", "io.delino.devhud.native_messaging"]],
