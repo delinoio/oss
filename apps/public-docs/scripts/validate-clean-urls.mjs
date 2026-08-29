@@ -39,6 +39,7 @@ const htmlRoutePaths = new Set(
 );
 const urlAttributePattern = /\b(?:href|src|srcset|poster|action|formaction|data)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu;
 const cssUrlPattern = /\burl\s*\(\s*(?:"([^"]*)"|'([^']*)'|([^\s)]+))\s*\)/giu;
+const cssImportPattern = /@import\s+(?:"([^"]*)"|'([^']*)')/giu;
 const validatorOrigin = "https://public-docs.invalid";
 
 async function pathExists(filePath) {
@@ -115,6 +116,10 @@ function visibleText(contents) {
     .replace(/\s+/gu, " ");
 }
 
+function htmlComments(contents) {
+  return [...contents.matchAll(/<!--([\s\S]*?)-->/gu)].map(([, comment]) => comment).join(" ");
+}
+
 function findHtmlRouteLinks(contents, htmlFile) {
   const pagePath = `/${path.relative(outputDir, htmlFile).split(path.sep).join("/")}`;
   const pageUrl = new URL(pagePath, validatorOrigin);
@@ -178,7 +183,7 @@ function hrefPathTargets(contents, htmlFile) {
   return targets;
 }
 
-const credentialQueryKey = /^(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key|password|secret)$/iu;
+const credentialQueryKey = /^(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key|password|secret|code|oauth_code)$/iu;
 
 function containsCredentialBearingQuery(url) {
   return containsCredentialBearingParameters(url.searchParams);
@@ -212,6 +217,7 @@ function resourceTargets(contents) {
     }
   }
   for (const match of contents.matchAll(cssUrlPattern)) targets.push(attributeValue(match).trim());
+  for (const match of contents.matchAll(cssImportPattern)) targets.push(attributeValue(match).trim());
   return targets;
 }
 
@@ -282,6 +288,8 @@ const forbiddenPathContent = [
 const forbiddenLinkFixtures = [
   '<a href="https://alice:secret@example.com/support">support</a>',
   '<a href="https://example.com/?token&equals;abc123">support</a>',
+  '<a href="https://example.com/callback?code&equals;abc123">callback</a>',
+  '<a href="https://example.com/callback?oauth_code&equals;abc123">callback</a>',
 ];
 const invalidRouteAttributeFixtures = [
   '<a href = "/devhud/install.html">install</a>',
@@ -316,6 +324,7 @@ const forbiddenResourceFixtures = [
 const forbiddenCssResourceFixtures = [
   '<div style="background-image:url(../../servers/devhud/private.png)"></div>',
   '<style>.private { background: url("file:///etc/devhud/private.png") }</style>',
+  '<style>@import "../../servers/devhud/private.css";</style>',
 ];
 const credentialBearingResourceFixtures = [
   '<img src="https://alice:secret@example.com/image.png">',
@@ -404,6 +413,7 @@ for (const { routeId, outputFile } of routeOutputFiles) {
 for (const htmlFile of htmlFiles) {
   const contents = await readFile(htmlFile, "utf8");
   const renderedText = visibleText(contents);
+  const commentText = htmlComments(contents);
 
   for (const htmlRoute of findHtmlRouteLinks(contents, htmlFile)) {
     failures.push(`${path.relative(outputDir, htmlFile)} links to ${htmlRoute}`);
@@ -425,7 +435,7 @@ for (const htmlFile of htmlFiles) {
   }
   for (const pattern of forbiddenPathContent) {
     const hrefTargets = hrefPathTargets(contents, htmlFile);
-    if (pattern.test(renderedText) || hrefTargets.some((target) => pattern.test(target))) {
+    if (pattern.test(commentText) || pattern.test(renderedText) || hrefTargets.some((target) => pattern.test(target))) {
       failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
     }
   }
@@ -468,6 +478,11 @@ for (const fixture of forbiddenPathFixtures) {
   if (!forbiddenPathContent.some((pattern) => pattern.test(fixture))) {
     failures.push("forbidden filesystem path fixture was not detected");
   }
+}
+
+const forbiddenCommentFixture = "<!-- repository path: servers/devhud/config -->";
+if (!forbiddenPathContent.some((pattern) => pattern.test(forbiddenCommentFixture))) {
+  failures.push("forbidden HTML comment path fixture was not detected");
 }
 
 for (const fixture of encodedForbiddenPathFixtures) {

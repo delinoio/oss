@@ -289,6 +289,14 @@ test("documentation deployment is bound to the exact candidate before publicatio
   }
 });
 
+test("historical documentation recovery uses authorized injection or preserves pre-injector candidates", () => {
+  const publicDocs = job("public_docs");
+  assert.match(publicDocs, /DEVHUD_RELEASE_AUTHORIZATION_REVISION: \$\{\{ needs\.identity\.outputs\.authorization_revision \}\}/u);
+  assert.match(publicDocs, /retained documentation candidate predates store-link injection/u);
+  assert.match(publicDocs, /git fetch --no-tags origin "\$DEVHUD_RELEASE_AUTHORIZATION_REVISION"/u);
+  assert.match(publicDocs, /git show "\$DEVHUD_RELEASE_AUTHORIZATION_REVISION:apps\/public-docs\/scripts\/inject-devhud-store-links\.mjs"/u);
+});
+
 test("infrastructure verification sends a conforming unary Connect request", () => {
   const infrastructure = job("prepare_infrastructure");
   const bootstrap = infrastructure.split("\n").find((line) => line.includes("bootstrap=$(curl"));

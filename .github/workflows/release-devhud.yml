@@ -885,6 +885,7 @@ jobs:
       DEVHUD_PUBLIC_DOCS_URL: ${{ vars.DEVHUD_PUBLIC_DOCS_URL }}
       DEVHUD_PUBLIC_DOCS_ACCOUNT_ID: ${{ vars.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID }}
       DEVHUD_DOCS_RELEASE_IDENTITY: "devhud@v${{ needs.identity.outputs.version }}@${{ needs.identity.outputs.revision }}"
+      DEVHUD_RELEASE_AUTHORIZATION_REVISION: ${{ needs.identity.outputs.authorization_revision }}
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
@@ -903,7 +904,16 @@ jobs:
           name: "devhud-public-docs-candidate-${{ github.run_attempt }}"
           path: apps/public-docs/doc_build
       - name: Inject and verify official DevHud store links
-        run: node apps/public-docs/scripts/inject-devhud-store-links.mjs
+        run: |
+          set -euo pipefail
+          if ! grep -R -q -- '__DEVHUD_\(APP_STORE_APP_ID\|GOOGLE_PLAY_PACKAGE_NAME\|CHROME_EXTENSION_ID\)__' apps/public-docs/doc_build; then
+            echo "retained documentation candidate predates store-link injection; preserving it for recovery"
+            exit 0
+          fi
+          git fetch --no-tags origin "$DEVHUD_RELEASE_AUTHORIZATION_REVISION"
+          injector="$RUNNER_TEMP/inject-devhud-store-links.mjs"
+          git show "$DEVHUD_RELEASE_AUTHORIZATION_REVISION:apps/public-docs/scripts/inject-devhud-store-links.mjs" > "$injector"
+          node "$injector"
       - run: pnpm dlx wrangler@4.33.1 pages deploy apps/public-docs/doc_build --project-name "$DEVHUD_PUBLIC_DOCS_PROJECT_NAME" --branch main
       - name: Verify the exact deployed DevHud candidate
         run: |
