@@ -16,3 +16,7 @@ Administrator sign-in therefore requires contributor-owned Logto setup or the
 authorized team path. Run `pnpm --filter devhud-admin test` for type, component,
 production-output, and fixed-port checks. Internal environment ownership is
 defined in `docs/repository-environment-contract.md`.
+
+Public guidance is available at the stable `/devhud/admin`,
+`/devhud/security`, and `/devhud/support` routes of the configured public
+documentation site.

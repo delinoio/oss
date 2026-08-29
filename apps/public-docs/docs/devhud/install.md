@@ -1,0 +1,136 @@
+# Install and Verify DevHud
+
+DevHud is distributed as a coordinated release. A release is public only when its desktop packages, mobile stores, Chrome extension, API, updater, and documentation have passed their independent checks.
+
+## Desktop
+
+Supported systems are macOS 13 or later, Windows 10 22H2 or later, and Ubuntu 22.04 LTS using X11. Releases provide x64 and Arm64 artifacts where listed: macOS disk images, Windows MSI or NSIS installers, and Ubuntu AppImage or Debian packages. Native Wayland is not supported.
+
+Download from [Delino OSS GitHub Releases](https://github.com/delinoio/oss/releases). Verify the published SHA-256 checksums and signed release evidence before opening the installer. Updates retain the package type you installed.
+
+The release evidence uses Sigstore bundles. With `cosign` installed, download the selected artifact and the `devhud-v<VERSION>-release-evidence.tar.gz` archive from the same release. The checksum manifest and Sigstore evidence are stored inside that archive rather than published as separate release assets. Extract it into a new, empty directory and inspect the archive contents before extraction; do not extract it over an existing directory or trust files outside the expected relative paths:
+
+```sh
+set -euo pipefail
+mkdir release-evidence
+if ! archive_paths=$(tar -tzf devhud-v<VERSION>-release-evidence.tar.gz); then
+  echo "unable to read release evidence archive" >&2
+  exit 1
+fi
+if printf '%s\n' "$archive_paths" | awk '
+  /^\// || /(^|\/)\.\.(\/|$)/ { unsafe = 1 }
+  END { exit unsafe ? 0 : 1 }
+'; then
+  echo "unsafe release evidence archive path" >&2
+  exit 1
+fi
+if ! archive_members=$(tar -tvzf devhud-v<VERSION>-release-evidence.tar.gz); then
+  echo "unable to inspect release evidence archive members" >&2
+  exit 1
+fi
+if printf '%s\n' "$archive_members" | awk '
+  substr($1, 1, 1) != "-" && substr($1, 1, 1) != "d" { unsafe = 1 }
+  END { exit unsafe ? 0 : 1 }
+'; then
+  echo "unsafe release evidence archive entry type" >&2
+  exit 1
+fi
+tar -xzf devhud-v<VERSION>-release-evidence.tar.gz \
+  --directory release-evidence \
+  --no-same-owner \
+  --no-same-permissions
+```
+
+Then authenticate the extracted checksum manifest with:
+
+```sh
+cosign verify-blob \
+  --bundle release-evidence/sigstore/SHA256SUMS.sigstore.json \
+  --certificate-identity "https://github.com/delinoio/oss/.github/workflows/package-devhud-private.yml@refs/heads/main" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  release-evidence/SHA256SUMS
+```
+
+The expected signer is the `delinoio/oss` `package-devhud-private.yml` GitHub Actions workflow running from `refs/heads/main`; do not substitute an identity from another repository, workflow, ref, or issuer. After that succeeds, verify every archive-owned evidence file against the authenticated manifest from inside its directory. The separately published installers are not archive members, so exclude their root-level entries while requiring every packaged evidence entry:
+
+```sh
+(cd release-evidence && awk '$2 ~ /^(sbom|provenance|updater\/signatures|validation)\// { print }' SHA256SUMS > archive-evidence.SHA256SUMS && test -s archive-evidence.SHA256SUMS && sha256sum --check archive-evidence.SHA256SUMS)
+```
+
+Do not use `--ignore-missing`: a missing SBOM, provenance record, validation record, or updater signature must fail verification. Then verify the downloaded artifact against its matching `SHA256SUMS` entry. Verify the artifact's matching Sigstore bundle from `release-evidence/sigstore/` with the same identity and issuer before opening it.
+
+Before opening the package, bind the verification to the requested release: confirm that the release page is tagged `devhud@v<VERSION>`, resolve that tag to its commit, and require the extracted artifact provenance to identify that exact source revision. Also confirm that the artifact's embedded release metadata identifies `<VERSION>` and that its provenance subject and checksum entry identify the artifact you downloaded. If the tag, source revision, embedded version, artifact name, or digest does not match, discard the package and evidence archive rather than opening it.
+
+### Windows verification
+
+In PowerShell, use the Windows-provided `tar.exe` and `Get-FileHash` commands to inspect and verify the release evidence before opening an MSI or NSIS installer. Install the Windows build of `cosign` separately, then run:
+
+```powershell
+$ErrorActionPreference = "Stop"
+$archive = "devhud-v<VERSION>-release-evidence.tar.gz"
+$dir = Join-Path (Get-Location) "release-evidence"
+if (Test-Path -LiteralPath $dir) { throw "Release evidence directory already exists; choose a new empty directory" }
+New-Item -ItemType Directory -Path $dir | Out-Null
+$members = @(tar.exe -tzf $archive)
+if ($LASTEXITCODE -ne 0 -or $members.Count -eq 0) { throw "Unable to read release evidence archive" }
+foreach ($member in $members) {
+  if ([IO.Path]::IsPathRooted($member) -or $member -match "(^|[/\\])\.\.([/\\]|$)") { throw "Unsafe archive path: $member" }
+}
+$verboseMembers = @(tar.exe -tvzf $archive)
+if ($LASTEXITCODE -ne 0 -or $verboseMembers.Count -eq 0) { throw "Unable to inspect release evidence archive members" }
+foreach ($member in $verboseMembers) {
+  $entryType = $member.Substring(0, 1)
+  if ($entryType -ne "-" -and $entryType -ne "d") { throw "Unsafe archive entry type: $member" }
+}
+tar.exe -xzf $archive -C $dir
+if ($LASTEXITCODE -ne 0) { throw "Unable to extract release evidence archive" }
+
+cosign verify-blob `
+  --bundle "$dir\sigstore\SHA256SUMS.sigstore.json" `
+  --certificate-identity "https://github.com/delinoio/oss/.github/workflows/package-devhud-private.yml@refs/heads/main" `
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" `
+  "$dir\SHA256SUMS"
+if ($LASTEXITCODE -ne 0) { throw "Sigstore verification failed" }
+
+Get-Content "$dir\SHA256SUMS" | ForEach-Object {
+  if ($_ -match "^([0-9a-fA-F]{64})\s+\*?(.+)$") {
+    $expected = $Matches[1].ToLowerInvariant()
+    $file = Join-Path $dir $Matches[2]
+    if (-not (Test-Path -LiteralPath $file)) { throw "Missing evidence file: $($Matches[2])" }
+    $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvariant()
+    if ($actual -ne $expected) { throw "Checksum mismatch: $($Matches[2])" }
+  }
+}
+$packageKind = "msi" # Set to "nsis" when verifying the NSIS installer.
+$artifact = switch ($packageKind) {
+  "msi" { "devhud-windows-<ARCH>-windows-msi.msi" }
+  "nsis" { "devhud-windows-<ARCH>-windows-nsis.exe" }
+  default { throw "Package kind must be msi or nsis" }
+}
+$artifactHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifact).Hash.ToLowerInvariant()
+$manifestLine = Get-Content "$dir\SHA256SUMS" | Where-Object {
+  $_ -match "^\s*[0-9a-fA-F]{64}\s+\*?" + [regex]::Escape($artifact) + "\s*$"
+} | Select-Object -First 1
+if (-not $manifestLine) { throw "Downloaded artifact is not in the authenticated checksum manifest" }
+$manifestHash = ([regex]::Match($manifestLine, "^\s*([0-9a-fA-F]{64})")).Groups[1].Value.ToLowerInvariant()
+if ($artifactHash -ne $manifestHash) { throw "Downloaded artifact checksum mismatch" }
+```
+
+Use the same signer and issuer to verify the matching artifact bundle under `release-evidence\sigstore`. Confirm the release tag, source revision, embedded version, artifact name, and digest all match the requested release; discard any mismatch.
+
+## Mobile stores
+
+Install iOS 16 or later from the [Apple App Store](https://apps.apple.com/app/id__DEVHUD_APP_STORE_APP_ID__), or Android 10/API 29 or later from [Google Play](https://play.google.com/store/apps/details?id=__DEVHUD_GOOGLE_PLAY_PACKAGE_NAME__). Mobile updates are store-managed. Both packages include the optional one-Deck home-screen widget.
+
+## Chrome extension
+
+Install DevHud from the [Chrome Web Store](https://chromewebstore.google.com/detail/devhud/__DEVHUD_CHROME_EXTENSION_ID__). The extension is a permission-scoped context picker: it does not continuously observe pages, and it does not collect cookies, storage, console output, or network traffic. The picker is unavailable in incognito tabs; this is expected, and DevHud falls back to capture without browser context plus manual repository selection. After an explicit picker gesture, it scans up to 10,000 candidate elements across the active page. The picker times out after 30 seconds; if it disappears, restart the picker gesture. If the page exceeds that bound, or the selected subtree exceeds 10,000 total nodes, it degrades to capture without browser context and requires manual repository selection. Otherwise, it retains and persists only the selected, sanitized context. A Chrome-assisted RealQA draft includes that browser context by default when submitted, so the redacted URL, page title, user agent, viewport and bounds, accessibility values, and sanitized markup may be published in the GitHub issue. Review the draft and use its browser-context removal control before submitting if you do not want to share those details. Pair it from DevHud Settings after installing the desktop app.
+
+## Verification checklist
+
+- Confirm the download source and platform match the release notes.
+- Confirm the checksum and platform signature where your operating system provides one.
+- Open DevHud and complete first-run setup before pairing Chrome or enabling a widget.
+- If a release is under store review, wait for the coordinated release rather than treating one package as generally available.
+
+See [Releases](releases), [Security](security), and [Support](support).
