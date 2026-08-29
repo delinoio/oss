@@ -76,6 +76,12 @@ if ($LASTEXITCODE -ne 0 -or $members.Count -eq 0) { throw "Unable to read releas
 foreach ($member in $members) {
   if ([IO.Path]::IsPathRooted($member) -or $member -match "(^|[/\\])\.\.([/\\]|$)") { throw "Unsafe archive path: $member" }
 }
+$verboseMembers = @(tar.exe -tvzf $archive)
+if ($LASTEXITCODE -ne 0 -or $verboseMembers.Count -eq 0) { throw "Unable to inspect release evidence archive members" }
+foreach ($member in $verboseMembers) {
+  $entryType = $member.Substring(0, 1)
+  if ($entryType -ne "-" -and $entryType -ne "d") { throw "Unsafe archive entry type: $member" }
+}
 tar.exe -xzf $archive -C $dir
 if ($LASTEXITCODE -ne 0) { throw "Unable to extract release evidence archive" }
 
