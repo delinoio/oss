@@ -55,6 +55,7 @@ export function safeBaseEnvironment(source = process.env) {
     "NO_COLOR",
     "FORCE_COLOR",
     "DISPLAY",
+    "XAUTHORITY",
     "WAYLAND_DISPLAY",
     "XDG_RUNTIME_DIR",
     "CI",

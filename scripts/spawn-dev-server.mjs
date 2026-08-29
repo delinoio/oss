@@ -4,6 +4,8 @@ import { readFileSync, readdirSync } from "node:fs";
 const terminationSignals = ["SIGINT", "SIGTERM"];
 const posixProcessGroupExitTimeoutMs = 10_000;
 
+class PosixProcessGroupExitTimeout extends Error {}
+
 export function terminateWindowsProcessTree(child, signal) {
   const taskkill = spawn(
     "taskkill.exe",
@@ -101,7 +103,11 @@ function waitForPosixProcessGroupExit(processGroupId) {
         return;
       }
       if (Date.now() >= deadline) {
-        reject(new Error(`timed out awaiting POSIX process group ${-processGroupId}`));
+        reject(
+          new PosixProcessGroupExitTimeout(
+            `timed out awaiting POSIX process group ${-processGroupId}`,
+          ),
+        );
         return;
       }
       setTimeout(checkProcessGroup, 25);
@@ -111,22 +117,37 @@ function waitForPosixProcessGroupExit(processGroupId) {
   });
 }
 
-export function terminatePosixProcessGroup(child, signal) {
-  const processGroupId = -child.pid;
+function signalPosixProcessGroup(child, processGroupId, signal) {
   try {
     process.kill(processGroupId, signal);
   } catch (error) {
     if (error.code === "ESRCH") {
-      return Promise.resolve();
+      return false;
     }
     if (child.exitCode === null && child.signalCode === null) {
       child.kill(signal);
     }
-    return Promise.reject(
-      new Error(`failed to terminate POSIX process group ${child.pid}: ${error.message}`),
+    throw new Error(
+      `failed to terminate POSIX process group ${child.pid}: ${error.message}`,
     );
   }
-  return waitForPosixProcessGroupExit(processGroupId);
+  return true;
+}
+
+export async function terminatePosixProcessGroup(child, signal) {
+  const processGroupId = -child.pid;
+  if (!signalPosixProcessGroup(child, processGroupId, signal)) return;
+  try {
+    await waitForPosixProcessGroupExit(processGroupId);
+    return;
+  } catch (error) {
+    if (!(error instanceof PosixProcessGroupExitTimeout) || signal === "SIGKILL") {
+      throw error;
+    }
+  }
+
+  if (!signalPosixProcessGroup(child, processGroupId, "SIGKILL")) return;
+  await waitForPosixProcessGroupExit(processGroupId);
 }
 
 export async function spawnDevServer(

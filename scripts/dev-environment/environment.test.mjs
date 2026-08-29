@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { EventEmitter } from "node:events";
+import { EventEmitter, once } from "node:events";
 import { createServer } from "node:net";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -223,6 +223,8 @@ test("base child environments preserve platform and Rust tool context without se
       LOGONSERVER: "\\\\LOCALHOST",
       USERDOMAIN: "LOCAL",
       USERNAME: "developer",
+      DISPLAY: ":99",
+      XAUTHORITY: "/run/user/1000/gdm/Xauthority",
       DEVHUD_DATABASE_URL: "must-not-pass",
       DOCKER_HOST: "must-not-pass",
     }),
@@ -236,6 +238,8 @@ test("base child environments preserve platform and Rust tool context without se
       LOGONSERVER: "\\\\LOCALHOST",
       USERDOMAIN: "LOCAL",
       USERNAME: "developer",
+      DISPLAY: ":99",
+      XAUTHORITY: "/run/user/1000/gdm/Xauthority",
     },
   );
 });
@@ -732,6 +736,35 @@ for (const stage of ["dependency startup", "migration", "steady state"]) {
     await assert.rejects(running, /interrupted by SIGTERM/u);
   });
 }
+
+test(
+  "stalled POSIX lifecycle termination escalates and reaps the process group",
+  { skip: process.platform === "win32", timeout: 20_000 },
+  async (t) => {
+    const lifecycle = new Lifecycle();
+    const running = lifecycle.run(
+      process.execPath,
+      [
+        "-e",
+        'process.on("SIGTERM", () => {}); process.send("ready"); setInterval(() => {}, 1000)',
+      ],
+      { stdio: ["ignore", "ignore", "ignore", "ipc"] },
+    );
+    const child = lifecycle.child;
+    t.after(() => {
+      try {
+        process.kill(-child.pid, "SIGKILL");
+      } catch (error) {
+        if (error.code !== "ESRCH") throw error;
+      }
+    });
+
+    await once(child, "message");
+    lifecycle.interrupt("SIGTERM");
+    await assert.rejects(running, /interrupted by SIGTERM/u);
+    assert.throws(() => process.kill(-child.pid, 0), { code: "ESRCH" });
+  },
+);
 
 test("cleanup tracks its child after an earlier lifecycle interruption", async () => {
   const lifecycle = new Lifecycle();
