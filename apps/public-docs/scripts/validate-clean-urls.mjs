@@ -156,6 +156,29 @@ function containsCredentialBearingLink(contents, htmlFile) {
   return false;
 }
 
+function normalizedUrlPath(target, htmlFile) {
+  const pagePath = `/${path.relative(outputDir, htmlFile).split(path.sep).join("/")}`;
+  try {
+    const resolvedUrl = new URL(decodeHTML(target), new URL(pagePath, validatorOrigin));
+    if (resolvedUrl.origin !== validatorOrigin) return null;
+    if (htmlRoutePaths.has(resolvedUrl.pathname) || /^(?:\/assets|\/static)\//u.test(resolvedUrl.pathname)) return null;
+    return decodeURIComponent(resolvedUrl.pathname);
+  } catch {
+    return null;
+  }
+}
+
+function hrefPathTargets(contents, htmlFile) {
+  const targets = [];
+  for (const match of contents.matchAll(hrefPattern)) {
+    const target = decodeHTML(attributeValue(match));
+    const normalizedPath = normalizedUrlPath(target, htmlFile);
+    if (normalizedPath || !/^(?:\/assets|\/static)\//u.test(target)) targets.push(target);
+    if (normalizedPath) targets.push(normalizedPath);
+  }
+  return targets;
+}
+
 const credentialQueryKey = /^(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key|password|secret)$/iu;
 
 function containsCredentialBearingQuery(url) {
@@ -206,8 +229,11 @@ function isApprovedPublicAsset(target, htmlFile) {
 function containsForbiddenResourcePath(contents, htmlFile) {
   const resourceTargetsToCheck = resourceTargets(contents)
     .filter((target) => !isApprovedPublicAsset(target, htmlFile));
-  return forbiddenPathContent.some((pattern) =>
-    resourceTargetsToCheck.some((target) => pattern.test(decodeHTML(target))));
+  return forbiddenPathContent.some((pattern) => resourceTargetsToCheck.some((target) => {
+    const decodedTarget = decodeHTML(target);
+    const normalizedPath = normalizedUrlPath(target, htmlFile);
+    return pattern.test(decodedTarget) || (normalizedPath !== null && pattern.test(normalizedPath));
+  }));
 }
 
 function containsCredentialBearingResource(contents, htmlFile) {
@@ -270,6 +296,9 @@ const forbiddenPathFixtures = [
   '<a href="file://localhost/etc/private.conf">private file</a>',
   '<a href="../../servers/devhud/config">private repository path</a>',
   "repository path: servers/devhud/config",
+];
+const encodedForbiddenPathFixtures = [
+  '<img src="%2E%2E/%2E%2E/servers/devhud/private.png">',
 ];
 const forbiddenResourceFixtures = [
   '<img src="file:///etc/devhud/private.png">',
@@ -381,10 +410,8 @@ for (const htmlFile of htmlFiles) {
     failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
   }
   for (const pattern of forbiddenPathContent) {
-    const linkTargets = [...contents.matchAll(anchorHrefPattern)]
-      .map((match) => decodeHTML(attributeValue(match)))
-      .join(" ");
-    if (pattern.test(renderedText) || pattern.test(linkTargets)) {
+    const hrefTargets = hrefPathTargets(contents, htmlFile);
+    if (pattern.test(renderedText) || hrefTargets.some((target) => pattern.test(target))) {
       failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
     }
   }
@@ -426,6 +453,18 @@ for (const fixture of externalRouteFixtures) {
 for (const fixture of forbiddenPathFixtures) {
   if (!forbiddenPathContent.some((pattern) => pattern.test(fixture))) {
     failures.push("forbidden filesystem path fixture was not detected");
+  }
+}
+
+for (const fixture of encodedForbiddenPathFixtures) {
+  if (!containsForbiddenResourcePath(fixture, path.join(outputDir, "fixture.html"))) {
+    failures.push("encoded forbidden resource path fixture was not detected");
+  }
+}
+
+for (const fixture of ['<link rel="stylesheet" href="file:///etc/private.css">']) {
+  if (!forbiddenPathContent.some((pattern) => hrefPathTargets(fixture, path.join(outputDir, "fixture.html")).some((target) => pattern.test(target)))) {
+    failures.push("forbidden non-anchor href path fixture was not detected");
   }
 }
 

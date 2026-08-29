@@ -71,7 +71,8 @@ In PowerShell, use the Windows-provided `tar.exe` and `Get-FileHash` commands to
 $ErrorActionPreference = "Stop"
 $archive = "devhud-v<VERSION>-release-evidence.tar.gz"
 $dir = Join-Path (Get-Location) "release-evidence"
-New-Item -ItemType Directory -Path $dir -Force | Out-Null
+if (Test-Path -LiteralPath $dir) { throw "Release evidence directory already exists; choose a new empty directory" }
+New-Item -ItemType Directory -Path $dir | Out-Null
 $members = @(tar.exe -tzf $archive)
 if ($LASTEXITCODE -ne 0 -or $members.Count -eq 0) { throw "Unable to read release evidence archive" }
 foreach ($member in $members) {
@@ -96,7 +97,12 @@ Get-Content "$dir\SHA256SUMS" | ForEach-Object {
     if ($actual -ne $expected) { throw "Checksum mismatch: $($Matches[2])" }
   }
 }
-$artifact = "devhud-windows-<ARCH>-<PACKAGE>.msi"
+$packageKind = "msi" # Set to "nsis" when verifying the NSIS installer.
+$artifact = switch ($packageKind) {
+  "msi" { "devhud-windows-<ARCH>-windows-msi.msi" }
+  "nsis" { "devhud-windows-<ARCH>-windows-nsis.exe" }
+  default { throw "Package kind must be msi or nsis" }
+}
 $artifactHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifact).Hash.ToLowerInvariant()
 if (-not (Select-String -Path "$dir\SHA256SUMS" -Pattern $artifactHash -SimpleMatch)) { throw "Downloaded artifact is not in the authenticated checksum manifest" }
 ```
