@@ -165,9 +165,6 @@ dist
 # Serverless directories
 .serverless/
 
-# Vercel project metadata
-**/.vercel/
-
 # FuseBox cache
 .fusebox/
 
