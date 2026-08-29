@@ -7,7 +7,9 @@
       ],
       "cache": false,
       "env": [
-        "DEVHUD_LOCAL_MODE"
+        "CARGO_HOME",
+        "DEVHUD_LOCAL_MODE",
+        "RUSTUP_HOME"
       ],
       "persistent": true
     },

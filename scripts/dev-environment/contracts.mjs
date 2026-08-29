@@ -109,6 +109,19 @@ export function resolveLocalStatePaths(source = process.env) {
   };
 }
 
+const isIPv4Octet = (value) => {
+  if (!/^\d{1,3}$/u.test(value)) return false;
+  const number = Number(value);
+  return number >= 0 && number <= 255;
+};
+
+const isLoopbackHost = (hostname) => {
+  const normalized = hostname.toLowerCase().replace(/\.$/u, "");
+  if (normalized === "localhost" || normalized === "[::1]") return true;
+  const octets = normalized.split(".");
+  return octets.length === 4 && octets[0] === "127" && octets.every(isIPv4Octet);
+};
+
 const localHttp = (value) => {
   if (!/^https?:\/\/[^/\\?#]+(?:[/?#]|$)/u.test(value)) return false;
   try {
@@ -123,8 +136,7 @@ const localHttp = (value) => {
     }
     return (
       parsed.protocol === "https:" ||
-      (parsed.protocol === "http:" &&
-        ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname))
+      (parsed.protocol === "http:" && isLoopbackHost(parsed.hostname))
     );
   } catch {
     return false;

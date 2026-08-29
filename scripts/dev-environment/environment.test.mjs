@@ -354,6 +354,43 @@ test("API and administrator allowlists reject malformed configuration", () => {
   }
 });
 
+test("preflight accepts the same loopback issuer hosts as the services", () => {
+  const valid = validApiEnvironment();
+  for (const issuer of [
+    "http://localhost.:3001/oidc",
+    "http://127.0.0.2:3001/oidc",
+    "http://[::1]:3001/oidc",
+  ]) {
+    assert.deepEqual(
+      validateInjectedEnvironment(adminContract, { DEVHUD_LOGTO_ISSUER: issuer }),
+      { DEVHUD_LOGTO_ISSUER: issuer },
+    );
+    assert.deepEqual(
+      validateInjectedEnvironment(apiContract, {
+        ...valid,
+        DEVHUD_LOGTO_ISSUER: issuer,
+      }).DEVHUD_LOGTO_ISSUER,
+      issuer,
+    );
+  }
+
+  for (const contract of [adminContract, apiContract]) {
+    const environment =
+      contract === adminContract
+        ? { DEVHUD_LOGTO_ISSUER: "http://127.0.0.2.example.com/oidc" }
+        : {
+            ...valid,
+            DEVHUD_LOGTO_ISSUER: "http://127.0.0.2.example.com/oidc",
+          };
+    assert.throws(
+      () => validateInjectedEnvironment(contract, environment),
+      (error) =>
+        error instanceof EnvironmentError &&
+        error.code === "environment.invalid-values",
+    );
+  }
+});
+
 test("OSS API and administrator overrides must resolve to the same issuer", async (t) => {
   const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-issuer-test-"));
   t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
@@ -811,7 +848,11 @@ test("repository policy is immutable, orchestration-only, and free of first-part
   assert.doesNotMatch(compose, /^name:/mu);
 
   const turbo = JSON.parse(await readFile(resolve(repositoryRoot, "turbo.json"), "utf8"));
-  assert.deepEqual(turbo.tasks.dev.env, ["DEVHUD_LOCAL_MODE"]);
+  assert.deepEqual(turbo.tasks.dev.env, [
+    "CARGO_HOME",
+    "DEVHUD_LOCAL_MODE",
+    "RUSTUP_HOME",
+  ]);
   assert.ok(turbo.tasks.build.inputs.includes(".env"));
   assert.ok(turbo.tasks["build:api"].inputs.includes(".env"));
   for (const name of ["globalEnv", "globalPassThroughEnv", "passThroughEnv"]) {

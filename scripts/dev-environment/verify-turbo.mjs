@@ -30,6 +30,7 @@ const result = await collect(
 
 assert.equal(result.code, 0, "turbo dry run must succeed");
 const resolved = JSON.parse(result.stdout);
+const expectedTaskEnvironment = ["CARGO_HOME", "DEVHUD_LOCAL_MODE", "RUSTUP_HOME"];
 assert.deepEqual(resolved.globalCacheInputs.environmentVariables.specified.env, []);
 assert.equal(
   resolved.globalCacheInputs.environmentVariables.specified.passThroughEnv,
@@ -42,9 +43,9 @@ assert.deepEqual(
   ["@delinoio/devhud-api", "devhud", "devhud-admin"],
 );
 for (const task of devTasks) {
-  assert.deepEqual(task.resolvedTaskDefinition.env, ["DEVHUD_LOCAL_MODE"]);
+  assert.deepEqual(task.resolvedTaskDefinition.env, expectedTaskEnvironment);
   assert.equal(task.resolvedTaskDefinition.passThroughEnv, null);
-  assert.deepEqual(task.environmentVariables.specified.env, ["DEVHUD_LOCAL_MODE"]);
+  assert.deepEqual(task.environmentVariables.specified.env, expectedTaskEnvironment);
   assert.equal(task.environmentVariables.specified.passThroughEnv, null);
 }
 
@@ -67,4 +68,6 @@ for (const forbidden of [
   assert.equal(environmentConfiguration.includes(forbidden), false, forbidden);
 }
 
-process.stdout.write("Resolved Turbo environment contains only DEVHUD_LOCAL_MODE on dev tasks.\n");
+process.stdout.write(
+  "Resolved Turbo environment contains only the mode selector and Rust tool locations on dev tasks.\n",
+);
