@@ -1438,8 +1438,10 @@ jobs:
             fi
             chmod +x "${appimages[0]}"
             "${appimages[0]}" --appimage-extract >/dev/null
-            sudo chown root:root squashfs-root/usr/share/DevHUD/chrome-sandbox
-            sudo chmod 4755 squashfs-root/usr/share/DevHUD/chrome-sandbox
+            sandbox=$(find squashfs-root -type f -name chrome-sandbox -print -quit)
+            test -n "$sandbox"
+            sudo chown root:root "$sandbox"
+            sudo chmod 4755 "$sandbox"
             artifact="${{ github.workspace }}/squashfs-root/usr/bin/devhud"
             host=$(find squashfs-root -type f -name devhud-native-messaging-host -print -quit)
             host=$(realpath "$host")
@@ -1524,22 +1526,18 @@ jobs:
             package="$2"
             user_manifest="$3"
             host="$4"
-            runtime="/run/user/$(id -u)"
+            runtime=$(mktemp -d "$RUNNER_TEMP/devhud-runtime.XXXXXX")
+            export XDG_RUNTIME_DIR="$runtime"
             session_socket="${DBUS_SESSION_BUS_ADDRESS#unix:path=}"
             session_socket="${session_socket%%,*}"
             unset GNOME_KEYRING_CONTROL
             control_directory="$RUNNER_TEMP/devhud-keyring"
             mkdir -p "$control_directory"
             chmod 700 "$control_directory"
-            sudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" "$runtime"
-            if [ -e "$runtime/bus" ] || [ -L "$runtime/bus" ]; then
-              echo "DevHUD Debian lifecycle requires an unused per-user D-Bus socket path" >&2
-              exit 1
-            fi
-            sudo ln -s "$session_socket" "$runtime/bus"
+            ln -s "$session_socket" "$runtime/bus"
             keyring_pid=
             cleanup_lifecycle() {
-              sudo rm -f "$runtime/bus"
+              rm -f "$runtime/bus"
               if [ -n "$keyring_pid" ]; then
                 kill "$keyring_pid" 2>/dev/null || true
                 wait "$keyring_pid" 2>/dev/null || true

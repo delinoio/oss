@@ -196,10 +196,11 @@ test("Debian desktop validation installs, launches, unregisters, and removes the
   const source = JSON.stringify(workflow.jobs["devhud-desktop"]);
   for (const expected of [
     "finalize-devhud-deb.sh", "sudo dpkg -i", "/usr/bin/devhud", "gnome-keyring-daemon",
-    "/run/user/$(id -u)", "DBUS_SESSION_BUS_ADDRESS#unix:path=", "sudo dpkg -r", "test ! -e /usr/bin/devhud",
+    "devhud-runtime.XXXXXX", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS#unix:path=", "sudo dpkg -r", "test ! -e /usr/bin/devhud",
     "test ! -e /etc/opt/chrome/native-messaging-hosts/io.delino.devhud.native_messaging.json",
   ]) assert.ok(source.includes(expected), expected);
   const lifecycle = namedStep(workflow.jobs["devhud-desktop"], "Verify Ubuntu Debian Native Messaging install and uninstall lifecycle").run;
+  assert.doesNotMatch(lifecycle, /\/run\/user/u);
   const register = lifecycle.indexOf('"$host" register "$host" "$user_manifest"');
   const registered = lifecycle.indexOf('test -e "$user_manifest"', register);
   const uninstall = lifecycle.indexOf('sudo dpkg -r "$package"');
@@ -220,6 +221,8 @@ test("macOS and AppImage desktop validation exercises packaged Native Messaging 
   assert.ok(macRegister >= 0 && macRegister < macRegistered && macRegistered < macUnregister && macUnregister < macRemoved);
 
   const appImage = namedStep(workflow.jobs["devhud-desktop"], "Verify Ubuntu AppImage Native Messaging register and unregister lifecycle").run;
+  const appImagePreparation = namedStep(workflow.jobs["devhud-desktop"], "Prepare Ubuntu installed layout").run;
+  assert.ok(appImagePreparation.includes("find squashfs-root -type f -name chrome-sandbox"));
   for (const expected of [
     "DEVHUD_SMOKE_NATIVE_HOST", "devhud-native-home", ".config/google-chrome/NativeMessagingHosts",
     "dbus-run-session", "gnome-keyring-daemon", "jq -e",
