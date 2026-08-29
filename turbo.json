@@ -9,7 +9,9 @@
       "env": [
         "CARGO_HOME",
         "DEVHUD_LOCAL_MODE",
-        "RUSTUP_HOME"
+        "DISPLAY",
+        "RUSTUP_HOME",
+        "XAUTHORITY"
       ],
       "persistent": true
     },

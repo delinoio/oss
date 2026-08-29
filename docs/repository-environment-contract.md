@@ -13,7 +13,7 @@ enum DevHudLocalMode {
 }
 ```
 
-Only `DEVHUD_LOCAL_MODE` and the optional non-secret `CARGO_HOME` and `RUSTUP_HOME` tool locations cross the root Turbo boundary, through the exact task `env` allowlist. Secret names and values must not appear in Turbo `globalEnv`, `globalPassThroughEnv`, task `env`, broad passthrough configuration, summaries, cache metadata, or root process arguments.
+Only `DEVHUD_LOCAL_MODE`, the optional non-secret `CARGO_HOME` and `RUSTUP_HOME` tool locations, and the platform-conditional Linux X11/XWayland `DISPLAY` selector and `XAUTHORITY` authority-file location cross the root Turbo boundary, through the exact task `env` allowlist. Secret names and values must not appear in Turbo `globalEnv`, `globalPassThroughEnv`, task `env`, broad passthrough configuration, summaries, cache metadata, or root process arguments.
 
 ## Configuration classes
 

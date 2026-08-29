@@ -851,7 +851,9 @@ test("repository policy is immutable, orchestration-only, and free of first-part
   assert.deepEqual(turbo.tasks.dev.env, [
     "CARGO_HOME",
     "DEVHUD_LOCAL_MODE",
+    "DISPLAY",
     "RUSTUP_HOME",
+    "XAUTHORITY",
   ]);
   assert.ok(turbo.tasks.build.inputs.includes(".env"));
   assert.ok(turbo.tasks["build:api"].inputs.includes(".env"));

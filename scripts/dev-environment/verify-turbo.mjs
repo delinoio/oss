@@ -30,7 +30,13 @@ const result = await collect(
 
 assert.equal(result.code, 0, "turbo dry run must succeed");
 const resolved = JSON.parse(result.stdout);
-const expectedTaskEnvironment = ["CARGO_HOME", "DEVHUD_LOCAL_MODE", "RUSTUP_HOME"];
+const expectedTaskEnvironment = [
+  "CARGO_HOME",
+  "DEVHUD_LOCAL_MODE",
+  "DISPLAY",
+  "RUSTUP_HOME",
+  "XAUTHORITY",
+];
 assert.deepEqual(resolved.globalCacheInputs.environmentVariables.specified.env, []);
 assert.equal(
   resolved.globalCacheInputs.environmentVariables.specified.passThroughEnv,
@@ -69,5 +75,5 @@ for (const forbidden of [
 }
 
 process.stdout.write(
-  "Resolved Turbo environment contains only the mode selector and Rust tool locations on dev tasks.\n",
+  "Resolved Turbo environment contains only the mode selector, Rust tool locations, and X11 session context on dev tasks.\n",
 );
