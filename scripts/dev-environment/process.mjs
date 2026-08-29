@@ -4,8 +4,8 @@ import {
   terminateWindowsProcessTree,
 } from "../spawn-dev-server.mjs";
 
-export const commandName = (name) =>
-  process.platform === "win32" && !name.endsWith(".exe") ? `${name}.cmd` : name;
+export const commandName = (name, platform = process.platform) =>
+  platform === "win32" && name === "pnpm" ? "pnpm.cmd" : name;
 
 export function safeBaseEnvironment(source = process.env) {
   const names = [

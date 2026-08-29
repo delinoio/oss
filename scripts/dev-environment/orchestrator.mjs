@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
-import { access, chmod, mkdir, open } from "node:fs/promises";
+import { access, chmod, mkdir, open, readFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import {
   composeFile,
@@ -21,9 +21,9 @@ import {
 } from "./process.mjs";
 
 const appPorts = Object.freeze([
-  [46305, "DevHud frontend"],
-  [46306, "DevHud administrator"],
-  [46307, "DevHud API"],
+  [46305, "DevHud frontend", "127.0.0.1"],
+  [46306, "DevHud administrator", "localhost"],
+  [46307, "DevHud API", "127.0.0.1"],
 ]);
 const dependencyPorts = Object.freeze([
   [5432, "PostgreSQL", "postgres", 5432],
@@ -134,8 +134,8 @@ export function portIsAvailable(port, host = "127.0.0.1") {
   });
 }
 
-export async function assertFixedPort(port, owner) {
-  if (!(await portIsAvailable(port))) {
+export async function assertFixedPort(port, owner, host = "127.0.0.1") {
+  if (!(await portIsAvailable(port, host))) {
     throw new Error(
       `[port.conflict] ${owner} requires fixed port ${port}; stop the process using that port and retry`,
     );
@@ -158,21 +158,24 @@ function infisicalInvocation() {
   return toolInvocation("infisical", "DEVHUD_TEST_INFISICAL");
 }
 
-function composeArgs(...args) {
-  return ["compose", "--file", composeFile, ...args];
+function composeArgs(projectName, ...args) {
+  return ["compose", "--project-name", projectName, "--file", composeFile, ...args];
 }
 
 async function assertAppPorts() {
-  for (const [port, owner] of appPorts) {
-    await assertFixedPort(port, owner);
+  for (const [port, owner, host] of appPorts) {
+    await assertFixedPort(port, owner, host);
   }
 }
 
-async function dependencyOwnedByCompose(service, containerPort, hostPort) {
+async function dependencyOwnedByCompose(projectName, service, containerPort, hostPort) {
   const docker = dockerInvocation();
   const result = await collect(
     docker.command,
-    [...docker.prefix, ...composeArgs("port", service, String(containerPort))],
+    [
+      ...docker.prefix,
+      ...composeArgs(projectName, "port", service, String(containerPort)),
+    ],
     { cwd: repositoryRoot, env: rootChildEnvironment("oss") },
   );
   if (result.code !== 0) return false;
@@ -182,11 +185,11 @@ async function dependencyOwnedByCompose(service, containerPort, hostPort) {
     .some((line) => line === `127.0.0.1:${hostPort}`);
 }
 
-async function assertDependencyPorts() {
+async function assertDependencyPorts(projectName) {
   for (const [port, owner, service, containerPort] of dependencyPorts) {
     if (
       !(await portIsAvailable(port)) &&
-      !(await dependencyOwnedByCompose(service, containerPort, port))
+      !(await dependencyOwnedByCompose(projectName, service, containerPort, port))
     ) {
       throw new Error(
         `[port.conflict] ${owner} requires fixed port ${port}; stop the conflicting process and retry`,
@@ -307,13 +310,30 @@ export async function createLocalIdentityKey() {
   }
 }
 
-export async function down({ quiet = false } = {}) {
+export function composeProjectName(identityKey) {
+  const digest = createHash("sha256")
+    .update(identityKey.trim(), "utf8")
+    .digest("hex")
+    .slice(0, 24);
+  return `delino-devhud-development-${digest}`;
+}
+
+async function localComposeProjectName() {
+  await createLocalIdentityKey();
+  return composeProjectName(await readFile(identityKeyFile, "utf8"));
+}
+
+export async function down({ quiet = false, projectName } = {}) {
+  const resolvedProjectName = projectName ?? (await localComposeProjectName());
   const docker = dockerInvocation();
   let result;
   try {
     result = await inherited(
       docker.command,
-      [...docker.prefix, ...composeArgs("down", "--remove-orphans")],
+      [
+        ...docker.prefix,
+        ...composeArgs(resolvedProjectName, "down", "--remove-orphans"),
+      ],
       {
         cwd: repositoryRoot,
         env: rootChildEnvironment("oss"),
@@ -360,16 +380,28 @@ async function startTeam(lifecycle) {
 async function startOss(lifecycle) {
   await checkDocker();
   await assertAppPorts();
-  await assertDependencyPorts();
+  const projectName = await localComposeProjectName();
+  await assertDependencyPorts(projectName);
   await runService(lifecycle, "oss", "api", "validate");
   await runService(lifecycle, "oss", "admin", "validate");
-  await createLocalIdentityKey();
   let dependenciesStarted = false;
   try {
     const docker = dockerInvocation();
     const up = await lifecycle.run(
       docker.command,
-      [...docker.prefix, ...composeArgs("up", "--detach", "--wait", "--wait-timeout", "120", "postgres", "logto")],
+      [
+        ...docker.prefix,
+        ...composeArgs(
+          projectName,
+          "up",
+          "--detach",
+          "--wait",
+          "--wait-timeout",
+          "120",
+          "postgres",
+          "logto",
+        ),
+      ],
       { cwd: repositoryRoot, env: rootChildEnvironment("oss") },
     );
     dependenciesStarted = true;
@@ -379,7 +411,9 @@ async function startOss(lifecycle) {
     await runService(lifecycle, "oss", "api", "migrate");
     return await startTurbo(lifecycle, "oss");
   } finally {
-    if (dependenciesStarted || lifecycle.signal) await down({ quiet: Boolean(lifecycle.signal) });
+    if (dependenciesStarted || lifecycle.signal) {
+      await down({ quiet: Boolean(lifecycle.signal), projectName });
+    }
   }
 }
 

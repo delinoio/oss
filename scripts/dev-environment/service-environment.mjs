@@ -100,7 +100,7 @@ async function awaitProvider(child) {
   try {
     const result = await new Promise((resolveResult, reject) => {
       child.once("error", reject);
-      child.once("exit", (code, signal) => resolveResult({ code, signal }));
+      child.once("close", (code, signal) => resolveResult({ code, signal }));
     });
     if (terminationPromise) await terminationPromise;
     return forwardedSignal ? { code: null, signal: forwardedSignal } : result;

@@ -20,14 +20,17 @@ import {
 } from "./contracts.mjs";
 import {
   assertFixedPort,
+  composeProjectName,
   createLocalIdentityKey,
   Lifecycle,
 } from "./orchestrator.mjs";
+import { commandName } from "./process.mjs";
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const fakeDirectory = resolve(testDirectory, "test");
 const cli = resolve(testDirectory, "cli.mjs");
 const apiScript = resolve(repositoryRoot, "servers/devhud-api/scripts/local.mjs");
+const lateProvider = resolve(fakeDirectory, "fake-late-provider.mjs");
 const canaries = [
   "AUTH_TOKEN_MUST_NOT_LEAK",
   "INFISICAL_FAILURE_CANARY_MUST_NOT_LEAK",
@@ -105,6 +108,23 @@ test("mode is a bounded enum-style selector", () => {
   assert.equal(requireMode("team"), "team");
   assert.equal(requireMode("oss"), "oss");
   assert.throws(() => requireMode("production"), /mode must be exactly/u);
+});
+
+test("Windows command resolution preserves native executables", () => {
+  assert.equal(commandName("pnpm", "win32"), "pnpm.cmd");
+  assert.equal(commandName("go", "win32"), "go");
+  assert.equal(commandName("C:\\Go\\bin\\go.exe", "win32"), "C:\\Go\\bin\\go.exe");
+  assert.equal(commandName("pnpm", "linux"), "pnpm");
+});
+
+test("Compose project names are stable, checkout-scoped, and do not disclose the key", () => {
+  const firstKey = Buffer.alloc(32, 1).toString("base64");
+  const secondKey = Buffer.alloc(32, 2).toString("base64");
+  const firstName = composeProjectName(`${firstKey}\n`);
+  assert.equal(firstName, composeProjectName(firstKey));
+  assert.notEqual(firstName, composeProjectName(secondKey));
+  assert.match(firstName, /^delino-devhud-development-[0-9a-f]{24}$/u);
+  assert.equal(firstName.includes(firstKey), false);
 });
 
 test("API and administrator allowlists reject missing, unknown, changed baseline, and partial groups", () => {
@@ -224,6 +244,47 @@ test("service wrapper reports name/category-only contract failures and suppresse
   }
 });
 
+test("team provider classification waits for accepted and rejected pipe output", async (t) => {
+  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-provider-pipes-"));
+  t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+  const environment = {
+    ...fakeEnvironment(temporaryDirectory),
+    DEVHUD_LOCAL_MODE: "team",
+    DEVHUD_TEST_INFISICAL: lateProvider,
+  };
+
+  const accepted = await runNode(apiScript, ["validate"], environment);
+  assert.equal(accepted.code, 0, accepted.stderr);
+  assert.equal(accepted.stderr.includes("environment.unavailable"), false);
+
+  const rejected = await runNode(apiScript, ["validate"], {
+    ...environment,
+    DEVHUD_TEST_LATE_PROVIDER_RESULT: "rejected",
+  });
+  assert.equal(rejected.code, 1);
+  assert.match(rejected.stderr, /\[environment\.missing\].*DEVHUD_DATABASE_URL/u);
+  assert.equal(rejected.stderr.includes("environment.unavailable"), false);
+});
+
+test("administrator preflight probes the configured localhost binding", async (t) => {
+  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-admin-port-"));
+  const server = createServer();
+  await new Promise((resolveListen, reject) => {
+    server.once("error", reject);
+    server.listen(46306, "localhost", resolveListen);
+  });
+  t.after(async () => {
+    await new Promise((resolveClose) => server.close(resolveClose));
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  });
+
+  const environment = fakeEnvironment(temporaryDirectory);
+  const result = await runNode(cli, ["start", "team"], environment);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /DevHud administrator requires fixed port 46306/u);
+  assert.deepEqual(await events(environment.DEVHUD_TEST_EVENT_LOG), []);
+});
+
 test("OSS startup never invokes Infisical, orders health before migration and Turbo, and preserves volumes", async (t) => {
   const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-oss-test-"));
   await rm(stateDirectory, { recursive: true, force: true });
@@ -247,6 +308,16 @@ test("OSS startup never invokes Infisical, orders health before migration and Tu
   if (process.platform !== "win32") assert.equal(key.mode & 0o777, 0o600);
   const output = `${result.stdout}\n${result.stderr}`;
   const identity = (await readFile(identityKeyFile, "utf8")).trim();
+  const composeEvents = recorded.filter(
+    (event) => event.tool === "docker" && ["port", "up", "down"].includes(event.action),
+  );
+  const projectNames = composeEvents.map((event) => {
+    const location = event.args.indexOf("--project-name");
+    assert.notEqual(location, -1, JSON.stringify(event));
+    return event.args[location + 1];
+  });
+  assert.deepEqual([...new Set(projectNames)], [composeProjectName(identity)]);
+  assert.equal(JSON.stringify(recorded).includes(identity), false);
   assert.equal(output.includes(identity), false);
 });
 
@@ -298,6 +369,7 @@ test("repository policy is immutable, orchestration-only, and free of first-part
   assert.match(compose, /postgres:15-bookworm@sha256:5d1d70e254e3c5d7d76847a9deebb18478cd518df37abf6b278d4bdb1fe5d96c/u);
   assert.match(compose, /svhd\/logto:1\.41\.0@sha256:7f79547e3d1fe569a3ecae757968a7cfc579687aa8164eec35113c0adc983c5b/u);
   assert.doesNotMatch(compose, /image:\s+[^\n]+:(?:latest|15-bookworm)\s*$/mu);
+  assert.doesNotMatch(compose, /^name:/mu);
 
   const turbo = JSON.parse(await readFile(resolve(repositoryRoot, "turbo.json"), "utf8"));
   assert.deepEqual(turbo.tasks.dev.env, ["DEVHUD_LOCAL_MODE"]);
