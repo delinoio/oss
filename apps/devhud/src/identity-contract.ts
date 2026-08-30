@@ -10,6 +10,19 @@ export function normalizeLogtoIssuer(value: unknown): string | null {
   }
 }
 
+export function logtoEndpointFromIssuer(value: unknown): string | null {
+  const normalizedIssuer = normalizeLogtoIssuer(value);
+  if (normalizedIssuer === null) return null;
+
+  const endpoint = new URL(normalizedIssuer);
+  const issuerPath = endpoint.pathname.replace(/\/+$/u, "");
+  if (issuerPath.endsWith("/oidc")) {
+    endpoint.pathname = issuerPath.slice(0, -"/oidc".length) || "/";
+    return endpoint.toString();
+  }
+  return normalizedIssuer;
+}
+
 export function isValidLogtoAudience(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }

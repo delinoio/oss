@@ -13,6 +13,7 @@ import {
   apiContract,
   comparisonMarker,
   composeFile,
+  devhudFrontendContract,
   EnvironmentError,
   repositoryRoot,
   requireMode,
@@ -106,6 +107,7 @@ function fakeEnvironment(temporaryDirectory) {
     DEVHUD_ENVIRONMENT_TESTING: "1",
     DEVHUD_TEST_AUTH_STATE: resolve(temporaryDirectory, "auth-state"),
     DEVHUD_TEST_ADMIN: resolve(fakeDirectory, "fake-admin.mjs"),
+    DEVHUD_TEST_FRONTEND: resolve(fakeDirectory, "fake-frontend.mjs"),
     DEVHUD_TEST_DOCKER: resolve(fakeDirectory, "fake-docker.mjs"),
     DEVHUD_TEST_DOCKER_ENDPOINT: "unix:///tmp/devhud-review-docker.sock",
     DEVHUD_TEST_EVENT_LOG: resolve(temporaryDirectory, "events.jsonl"),
@@ -393,7 +395,7 @@ test("Compose project names are stable, checkout-scoped, and do not disclose the
   assert.equal(firstName.includes(firstKey), false);
 });
 
-test("API and administrator allowlists reject malformed configuration", () => {
+test("API, administrator, and frontend allowlists reject malformed configuration", () => {
   const valid = validApiEnvironment();
   assert.deepEqual(validateInjectedEnvironment(apiContract, valid), valid);
 
@@ -417,6 +419,14 @@ test("API and administrator allowlists reject malformed configuration", () => {
       }),
     /unknown names/u,
   );
+  assert.throws(
+    () =>
+      validateInjectedEnvironment(devhudFrontendContract, {
+        DEVHUD_LOGTO_ISSUER: "http://localhost:3001/oidc",
+        DEVHUD_DATABASE_URL: "must-not-cross-service-boundary",
+      }),
+    /unknown names/u,
+  );
 
   for (const malformed of [
     "https:/issuer.example",
@@ -426,6 +436,7 @@ test("API and administrator allowlists reject malformed configuration", () => {
   ]) {
     for (const [contract, environment] of [
       [adminContract, { DEVHUD_LOGTO_ISSUER: malformed }],
+      [devhudFrontendContract, { DEVHUD_LOGTO_ISSUER: malformed }],
       [apiContract, { ...valid, DEVHUD_LOGTO_ISSUER: malformed }],
     ]) {
       assert.throws(
@@ -486,6 +497,7 @@ test("preflight rejects URL escapes rejected by the Go service parser", () => {
   ]) {
     for (const [contract, environment] of [
       [adminContract, { DEVHUD_LOGTO_ISSUER: issuer }],
+      [devhudFrontendContract, { DEVHUD_LOGTO_ISSUER: issuer }],
       [apiContract, { ...valid, DEVHUD_LOGTO_ISSUER: issuer }],
     ]) {
       assert.throws(
@@ -525,6 +537,12 @@ test("preflight rejects URL escapes rejected by the Go service parser", () => {
     }),
     { DEVHUD_LOGTO_ISSUER: escapedIssuer },
   );
+  assert.deepEqual(
+    validateInjectedEnvironment(devhudFrontendContract, {
+      DEVHUD_LOGTO_ISSUER: escapedIssuer,
+    }),
+    { DEVHUD_LOGTO_ISSUER: escapedIssuer },
+  );
   assert.equal(
     validateInjectedEnvironment(apiContract, {
       ...valid,
@@ -557,6 +575,7 @@ test("preflight rejects raw URL spaces and control characters rejected by the Go
     const issuer = `https://issuer.exa${controlCharacter}mple.com/oidc`;
     for (const [contract, environment] of [
       [adminContract, { DEVHUD_LOGTO_ISSUER: issuer }],
+      [devhudFrontendContract, { DEVHUD_LOGTO_ISSUER: issuer }],
       [apiContract, { ...valid, DEVHUD_LOGTO_ISSUER: issuer }],
     ]) {
       assert.throws(
@@ -622,6 +641,10 @@ test("preflight accepts the same loopback issuer hosts as the services", () => {
       { DEVHUD_LOGTO_ISSUER: issuer },
     );
     assert.deepEqual(
+      validateInjectedEnvironment(devhudFrontendContract, { DEVHUD_LOGTO_ISSUER: issuer }),
+      { DEVHUD_LOGTO_ISSUER: issuer },
+    );
+    assert.deepEqual(
       validateInjectedEnvironment(apiContract, {
         ...valid,
         DEVHUD_LOGTO_ISSUER: issuer,
@@ -630,14 +653,14 @@ test("preflight accepts the same loopback issuer hosts as the services", () => {
     );
   }
 
-  for (const contract of [adminContract, apiContract]) {
+  for (const contract of [adminContract, devhudFrontendContract, apiContract]) {
     const environment =
-      contract === adminContract
-        ? { DEVHUD_LOGTO_ISSUER: "http://127.0.0.2.example.com/oidc" }
-        : {
+      contract === apiContract
+        ? {
             ...valid,
             DEVHUD_LOGTO_ISSUER: "http://127.0.0.2.example.com/oidc",
-          };
+          }
+        : { DEVHUD_LOGTO_ISSUER: "http://127.0.0.2.example.com/oidc" };
     assert.throws(
       () => validateInjectedEnvironment(contract, environment),
       (error) =>
@@ -658,6 +681,7 @@ test("preflight rejects numeric IPv4 spellings rejected by the Go service parser
   ]) {
     for (const [contract, environment] of [
       [adminContract, { DEVHUD_LOGTO_ISSUER: issuer }],
+      [devhudFrontendContract, { DEVHUD_LOGTO_ISSUER: issuer }],
       [apiContract, { ...valid, DEVHUD_LOGTO_ISSUER: issuer }],
     ]) {
       assert.throws(
@@ -671,7 +695,7 @@ test("preflight rejects numeric IPv4 spellings rejected by the Go service parser
   }
 });
 
-test("OSS API and administrator overrides must resolve to the same issuer", async (t) => {
+test("OSS API, administrator, and frontend overrides must resolve to the same issuer", async (t) => {
   const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-issuer-test-"));
   t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
   const environmentFile = resolve(temporaryDirectory, ".env");
@@ -680,14 +704,23 @@ test("OSS API and administrator overrides must resolve to the same issuer", asyn
 
   const apiOverrides = await readServiceEnv(environmentFile, apiContract.ossOverrideNames);
   const adminOverrides = await readServiceEnv(environmentFile, adminContract.ossOverrideNames);
+  const frontendOverrides = await readServiceEnv(
+    environmentFile,
+    devhudFrontendContract.ossOverrideNames,
+  );
   assert.deepEqual(apiOverrides, { DEVHUD_LOGTO_ISSUER: issuer });
   assert.deepEqual(adminOverrides, apiOverrides);
+  assert.deepEqual(frontendOverrides, apiOverrides);
   assert.equal(
     validateInjectedEnvironment(apiContract, { ...validApiEnvironment(), ...apiOverrides })
       .DEVHUD_LOGTO_ISSUER,
     issuer,
   );
   assert.deepEqual(validateInjectedEnvironment(adminContract, adminOverrides), adminOverrides);
+  assert.deepEqual(
+    validateInjectedEnvironment(devhudFrontendContract, frontendOverrides),
+    frontendOverrides,
+  );
   assert.equal(resolveOssLogtoIssuer(issuer, issuer), issuer);
   assert.equal(
     resolveOssLogtoIssuer(undefined, undefined),
@@ -776,6 +809,7 @@ test("team startup binds migration and Turbo services to the preflight issuer", 
   assert.ok(order.indexOf("go:migrate") < order.indexOf("pnpm:turbo"), order.join(", "));
   assert.ok(order.indexOf("pnpm:turbo") < order.indexOf("go:serve"), order.join(", "));
   assert.ok(order.indexOf("go:serve") < order.indexOf("admin:serve"), order.join(", "));
+  assert.ok(order.indexOf("admin:serve") < order.indexOf("frontend:serve"), order.join(", "));
   const { teamConfigurationPinFile } = resolveLocalStatePaths(environment);
   await assert.rejects(stat(teamConfigurationPinFile), { code: "ENOENT" });
   for (const canary of canaries) {
@@ -1417,6 +1451,9 @@ test("repository policy is immutable, orchestration-only, and free of first-part
     compose,
     /logto-database-init:[\s\S]*condition: service_healthy[\s\S]*logto-init:[\s\S]*logto-database-init:[\s\S]*condition: service_completed_successfully/u,
   );
+  assert.match(compose, /command: \["cli", "db", "seed", "--", "--swe"\]/u);
+  assert.match(compose, /command: \["start"\]/u);
+  assert.doesNotMatch(compose, /command: \["npm",/u);
   assert.match(postgresInit, /WHERE NOT EXISTS[\s\S]*\\gexec/u);
 
   const turbo = JSON.parse(await readFile(resolve(repositoryRoot, "turbo.json"), "utf8"));
@@ -1446,6 +1483,10 @@ test("repository policy is immutable, orchestration-only, and free of first-part
       "utf8",
     ),
     /--no-env/u,
+  );
+  assert.match(
+    await readFile(resolve(repositoryRoot, "apps/devhud/scripts/development.mjs"), "utf8"),
+    /devhudFrontendContract/u,
   );
   const issuerPattern = /^DEVHUD_LOGTO_ISSUER=(.+)$/mu;
   const adminExample = await readFile(

@@ -86,42 +86,74 @@ fn emit_shortcut_status<R: Runtime>(app: &AppHandle<R>, state: &crate::bridge::N
 }
 
 #[cfg(desktop)]
+fn dispatch_shortcut_event<R: Runtime>(
+    app: &AppHandle<R>,
+    event: crate::shortcuts::NativeKeyEvent,
+) {
+    let Some(state) = app.try_state::<crate::bridge::NativeBridgeState>() else {
+        return;
+    };
+    let Some(action) = state.process_shortcut_event(event) else {
+        return;
+    };
+    if action.requires_visible_window() {
+        restore_main_window(app);
+    }
+    let Ok(action) = serde_json::to_value(action) else {
+        return;
+    };
+    let _ = app.emit(
+        "devhud:native-event:v1",
+        serde_json::json!({ "version": 1, "kind": "shortcut-triggered", "action": action }),
+    );
+}
+
+#[cfg(target_os = "macos")]
+fn listen_for_shortcuts<R: Runtime>(app: &AppHandle<R>) -> crate::shortcuts::ShortcutFailure {
+    let callback_app = app.clone();
+    crate::macos_shortcut_listener::listen(move |event| {
+        dispatch_shortcut_event(&callback_app, event);
+    })
+}
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn listen_for_shortcuts<R: Runtime>(app: &AppHandle<R>) -> crate::shortcuts::ShortcutFailure {
+    let callback_app = app.clone();
+    let _ = rdev::listen(move |event| {
+        let Some(event) = crate::shortcuts::normalize_global_event(&event.event_type) else {
+            return;
+        };
+        dispatch_shortcut_event(&callback_app, event);
+    });
+    crate::shortcuts::ShortcutFailure::RegistrationFailed
+}
+
+#[cfg(all(
+    desktop,
+    not(any(target_os = "macos", target_os = "windows", target_os = "linux"))
+))]
+fn listen_for_shortcuts<R: Runtime>(_app: &AppHandle<R>) -> crate::shortcuts::ShortcutFailure {
+    crate::shortcuts::ShortcutFailure::RegistrationFailed
+}
+
+#[cfg(desktop)]
+fn next_shortcut_listener_retry_delay(current: std::time::Duration) -> std::time::Duration {
+    current
+        .saturating_mul(2)
+        .min(std::time::Duration::from_secs(5))
+}
+
+#[cfg(desktop)]
 fn install_global_shortcut_listener<R: Runtime>(app: &AppHandle<R>) {
     let app = app.clone();
     std::thread::spawn(move || {
         let mut retry_delay = std::time::Duration::from_millis(250);
         loop {
-            let callback_app = app.clone();
-            let result = rdev::listen(move |event| {
-                let Some(event) = crate::shortcuts::normalize_global_event(&event.event_type)
-                else {
-                    return;
-                };
-                let Some(state) = callback_app.try_state::<crate::bridge::NativeBridgeState>()
-                else {
-                    return;
-                };
-                let Some(action) = state.process_shortcut_event(event) else {
-                    return;
-                };
-                if action.requires_visible_window() {
-                    restore_main_window(&callback_app);
-                }
-                let Ok(action) = serde_json::to_value(action) else {
-                    return;
-                };
-                let _ = callback_app.emit(
-                    "devhud:native-event:v1",
-                    serde_json::json!({ "version": 1, "kind": "shortcut-triggered", "action": action }),
-                );
-            });
-            let Err(_) = result else {
-                return;
-            };
+            let failure = listen_for_shortcuts(&app);
             let Some(state) = app.try_state::<crate::bridge::NativeBridgeState>() else {
                 return;
             };
-            state.mark_shortcut_listener_failed();
+            state.mark_shortcut_listener_failed(failure);
             emit_shortcut_status(&app, &state);
             tracing::warn!(event = "shortcut_listener_failed");
             let retry_generation = state.shortcut_listener_retry_generation();
@@ -129,9 +161,7 @@ fn install_global_shortcut_listener<R: Runtime>(app: &AppHandle<R>) {
             state.clear_shortcut_pressed_keys();
             state.clear_shortcut_listener_failure();
             emit_shortcut_status(&app, &state);
-            retry_delay = retry_delay
-                .saturating_mul(2)
-                .min(std::time::Duration::from_secs(5));
+            retry_delay = next_shortcut_listener_retry_delay(retry_delay);
         }
     });
 }
@@ -214,7 +244,7 @@ pub fn request<R: Runtime>(app: &AppHandle<R>, value: &Value) -> Result<Value, S
 
 #[cfg(test)]
 mod tests {
-    use super::stable_plugin_error_code;
+    use super::{next_shortcut_listener_retry_delay, stable_plugin_error_code};
 
     #[test]
     fn preserves_only_stable_native_bridge_error_codes() {
@@ -233,5 +263,14 @@ mod tests {
             "platform-failure"
         );
         assert_eq!(stable_plugin_error_code(None), "platform-failure");
+    }
+
+    #[test]
+    fn shortcut_listener_retry_backoff_is_capped() {
+        let mut delay = std::time::Duration::from_millis(250);
+        for expected in [500, 1_000, 2_000, 4_000, 5_000, 5_000] {
+            delay = next_shortcut_listener_retry_delay(delay);
+            assert_eq!(delay, std::time::Duration::from_millis(expected));
+        }
     }
 }

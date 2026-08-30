@@ -8,8 +8,10 @@ import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 
 import { hasExactCspDirectiveSources } from "./frontend-output-policy.mjs";
+import { createDevHudDevelopmentCsp } from "./development-csp.mjs";
 import {
   validateCiTargetMatrix,
+  validateDependencyPresence,
   validateResolvedDependencySources,
 } from "./verify-pins-policy.mjs";
 
@@ -39,6 +41,7 @@ const runtimeRevisionConsumers = [
   ["API diagnostics validation", readFileSync(join(repoRoot, "servers/devhud-api/internal/rpc/diagnostics.go"), "utf8")],
 ];
 const rsbuildConfig = readFileSync(join(appRoot, "rsbuild.config.ts"), "utf8");
+const developmentCsp = createDevHudDevelopmentCsp("https://identity.example/oidc");
 const updaterRoot = JSON.parse(readFileSync(join(appRoot, "updater-trust-root.json"), "utf8"));
 const updaterRust = readFileSync(join(appRoot, "src-tauri/src/updater.rs"), "utf8");
 const nativeMessagingLifecycle = readFileSync(join(appRoot, "src-tauri/windows/native-messaging-lifecycle.wxs"), "utf8");
@@ -232,12 +235,24 @@ assert(
   "production style CSP changed",
 );
 assert(
-  rsbuildConfig.includes('"style-src \'self\' \'unsafe-inline\'"'),
+  hasExactCspDirectiveSources(developmentCsp, "style-src", ["'self'", "'unsafe-inline'"]),
   "development CSP does not permit injected styles",
 );
 assert(
-  rsbuildConfig.includes('"connect-src ws://127.0.0.1:46305"'),
-  "development CSP does not permit the fixed HMR endpoint",
+  hasExactCspDirectiveSources(developmentCsp, "connect-src", [
+    "'self'",
+    "http://127.0.0.1:46307",
+    "https://devhud.api.delino.io",
+    "https://api.github.com",
+    "https://identity.example",
+    "ws://127.0.0.1:46305",
+  ]),
+  "development connection CSP changed",
+);
+assert(
+  rsbuildConfig.includes("createDevHudDevelopmentCsp") &&
+    rsbuildConfig.includes("process.env.DEVHUD_LOGTO_ISSUER"),
+  "development CSP is not bound to the validated issuer",
 );
 assert(rsbuildConfig.includes('host: "127.0.0.1"'), "development host is not loopback-only");
 assert(rsbuildConfig.includes("port: 46305"), "fixed development port changed");
@@ -434,6 +449,47 @@ for (const { id, os, arch, rustTarget, runner } of platforms.targets) {
   assert(typeof runner === "string" && runner.length > 0, `missing native runner for ${id}`);
 }
 validateCiTargetMatrix(yaml.load(ciWorkflow), platforms.targets);
+
+for (const { os, rustTarget } of platforms.targets) {
+  const targetMetadataResult = spawnSync(
+    "cargo",
+    [
+      "metadata",
+      "--format-version",
+      "1",
+      "--locked",
+      "--all-features",
+      "--filter-platform",
+      rustTarget,
+      "--manifest-path",
+      join(appRoot, "src-tauri/Cargo.toml"),
+    ],
+    {
+      cwd: repoRoot,
+      encoding: "utf8",
+      maxBuffer: 32 * 1024 * 1024,
+      shell: process.platform === "win32",
+    },
+  );
+  assert(
+    targetMetadataResult.status === 0,
+    targetMetadataResult.error?.message ||
+      targetMetadataResult.stderr ||
+      `Cargo dependency resolution failed for ${rustTarget}`,
+  );
+  const targetMetadata = JSON.parse(targetMetadataResult.stdout);
+  const targetDevhud = targetMetadata.packages.find(
+    (pkg) => resolve(pkg.manifest_path) === devhudManifestPath,
+  );
+  assert(targetDevhud, `DevHUD is absent from Cargo metadata for ${rustTarget}`);
+  validateDependencyPresence(
+    targetMetadata,
+    targetDevhud.id,
+    "rdev",
+    os !== "darwin",
+    rustTarget,
+  );
+}
 
 for (const [name, version] of Object.entries({
   "@rsbuild/core": "2.1.10",

@@ -43,6 +43,7 @@ if (forbidden.some((name) => process.env[name])) {
     for (const script of [
       resolve(process.cwd(), "servers/devhud-api/scripts/local.mjs"),
       resolve(process.cwd(), "apps/devhud-admin/scripts/development.mjs"),
+      resolve(process.cwd(), "apps/devhud/scripts/development.mjs"),
     ]) {
       const child = spawn(process.execPath, [script, "serve"], {
         cwd: process.cwd(),

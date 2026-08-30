@@ -5,6 +5,8 @@ mod bridge;
 mod capture;
 #[cfg(desktop)]
 mod local_agents;
+#[cfg(any(target_os = "macos", test))]
+mod macos_shortcut_listener;
 mod native_messaging;
 mod native_plugin;
 mod platform;

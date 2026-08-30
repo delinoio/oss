@@ -5,6 +5,7 @@ import yaml from "js-yaml";
 
 import {
   validateCiTargetMatrix,
+  validateDependencyPresence,
   validateResolvedDependencySources,
 } from "./verify-pins-policy.mjs";
 
@@ -67,6 +68,26 @@ test("accepts canonical sources and the approved local Native Messaging host", (
       allowedSources,
       allowedLocalPackageIds,
     ),
+  );
+});
+
+test("enforces target-specific rdev presence", () => {
+  const withoutRdev = cargoMetadata();
+  assert.doesNotThrow(() =>
+    validateDependencyPresence(withoutRdev, DEVHUD_ID, "rdev", false, "x86_64-apple-darwin"),
+  );
+
+  const withRdev = cargoMetadata();
+  const rdevId = `${CRATES_IO_SOURCE}#rdev@0.5.3`;
+  withRdev.packages.push({ id: rdevId, name: "rdev", version: "0.5.3", source: CRATES_IO_SOURCE });
+  withRdev.resolve.nodes[0].dependencies.push(rdevId);
+  withRdev.resolve.nodes.push({ id: rdevId, dependencies: [], features: [] });
+  assert.doesNotThrow(() =>
+    validateDependencyPresence(withRdev, DEVHUD_ID, "rdev", true, "x86_64-unknown-linux-gnu"),
+  );
+  assert.throws(
+    () => validateDependencyPresence(withRdev, DEVHUD_ID, "rdev", false, "aarch64-apple-darwin"),
+    /rdev must be absent from aarch64-apple-darwin/u,
   );
 });
 

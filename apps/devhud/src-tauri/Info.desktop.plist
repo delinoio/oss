@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>NSInputMonitoringUsageDescription</key>
+  <string>DevHUD monitors keyboard input only to detect the global shortcuts you configure.</string>
   <key>NSScreenCaptureUsageDescription</key>
   <string>DevHUD captures a screen, window, or selected region only when you invoke a RealQA capture action.</string>
 </dict>
