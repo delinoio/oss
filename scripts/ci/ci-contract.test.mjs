@@ -310,10 +310,12 @@ test("package-local CI commands and deterministic cache boundaries are explicit"
   }
   assert.deepEqual(adminTurbo.tasks.build.inputs, ["$TURBO_EXTENDS$", "index.html"]);
   assert.deepEqual(extensionTurbo.extends, ["//"]);
-  assert.deepEqual(extensionTurbo.tasks["build:frontend"].inputs, [
-    "$TURBO_DEFAULT$",
-    "$TURBO_ROOT$/apps/devhud/src-tauri/icons/icon.png",
-  ]);
+  for (const task of ["build", "build:frontend"]) {
+    assert.deepEqual(extensionTurbo.tasks[task].inputs, [
+      "$TURBO_DEFAULT$",
+      "$TURBO_ROOT$/apps/devhud/src-tauri/icons/icon.png",
+    ], task);
+  }
   const nativeTurbo = JSON.parse(readFileSync(`${root}/apps/devhud/turbo.json`, "utf8"));
   for (const task of ["test:unit", "test:components", "test:security", "test:adapters"]) assert.deepEqual(nativeTurbo.tasks[task].dependsOn, ["^build"], task);
   for (const task of ["build", "mobile:generate", "build:ios", "build:android", "smoke:platform"]) assert.equal(nativeTurbo.tasks[task].cache, false, task);
