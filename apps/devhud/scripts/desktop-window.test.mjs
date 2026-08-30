@@ -5,9 +5,15 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const scriptsDirectory = dirname(fileURLToPath(import.meta.url));
-const desktopHost = readFileSync(join(scriptsDirectory, "../src-tauri/src/main.rs"), "utf8");
-const mobileHost = readFileSync(join(scriptsDirectory, "../src-tauri/src/lib.rs"), "utf8");
-const nativePlugin = readFileSync(join(scriptsDirectory, "../src-tauri/src/native_plugin.rs"), "utf8");
+
+function readNormalizedSource(path) {
+  // Windows Git checkouts use CRLF, while these structural assertions use LF delimiters.
+  return readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+}
+
+const desktopHost = readNormalizedSource(join(scriptsDirectory, "../src-tauri/src/main.rs"));
+const mobileHost = readNormalizedSource(join(scriptsDirectory, "../src-tauri/src/lib.rs"));
+const nativePlugin = readNormalizedSource(join(scriptsDirectory, "../src-tauri/src/native_plugin.rs"));
 const tauriConfig = JSON.parse(readFileSync(join(scriptsDirectory, "../src-tauri/tauri.conf.json"), "utf8"));
 
 function segment(source, start, end) {
