@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ProjectId, StaticCapability, type GetBootstrapResponse } from "@delinoio/devhud-api-client";
 import { LogtoClientError, LogtoRequestError } from "@logto/client";
 import { BootstrapContractError, isTerminalAccessTokenError, SecureLogtoStorage, sessionProfileId, validateBootstrap } from "./identity-client";
+import { logtoEndpointFromIssuer } from "./identity-contract";
 import { LifecycleState, RuntimePlatform, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1 } from "./native-bridge";
 
 function memoryBridge(): NativeBridgeV1 & { readonly values: Map<string, string>; readonly requests: NativeBridgeRequestV1[] } {
@@ -54,6 +55,14 @@ describe("identity client boundary", () => {
     expect(() => validateBootstrap({ ...bootstrap, logtoAudience: "  " } as GetBootstrapResponse, RuntimePlatform.Desktop)).toThrow(BootstrapContractError);
     expect(() => validateBootstrap({ ...bootstrap, logtoRedirects: { ...bootstrap.logtoRedirects!, native: "https://attacker.example" } } as GetBootstrapResponse, RuntimePlatform.Desktop)).toThrow(BootstrapContractError);
     expect(() => validateBootstrap({ ...bootstrap, publicAssetBaseUrl: "http://images.example" } as GetBootstrapResponse, RuntimePlatform.Desktop)).toThrow(BootstrapContractError);
+  });
+
+  it("derives the Logto SDK endpoint from a terminal OIDC issuer segment", () => {
+    expect(logtoEndpointFromIssuer("https://identity.example/oidc")).toBe("https://identity.example/");
+    expect(logtoEndpointFromIssuer("https://identity.example/tenant/oidc/")).toBe("https://identity.example/tenant");
+    expect(logtoEndpointFromIssuer("https://identity.example/tenant")).toBe("https://identity.example/tenant");
+    expect(logtoEndpointFromIssuer("http://127.0.0.1:3001/oidc")).toBe("http://127.0.0.1:3001/");
+    expect(logtoEndpointFromIssuer("http://identity.example/oidc")).toBeNull();
   });
 
   it("rejects Bootstrap discovery for another project", () => {

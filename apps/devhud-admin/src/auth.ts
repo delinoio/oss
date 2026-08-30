@@ -1,5 +1,6 @@
 import LogtoClient from "@logto/browser";
 import type { GetBootstrapResponse } from "@delinoio/devhud-api-client";
+import { logtoEndpointFromIssuer } from "./identity-contract";
 
 const NONCE_KEY = "devhud.admin.oidc_nonce";
 
@@ -22,7 +23,7 @@ export class AdminAuth {
     readonly redirectUri: string,
   ) {
     this.client = new LogtoClient({
-      endpoint: issuer,
+      endpoint: logtoEndpointFromIssuer(issuer),
       appId: clientId,
       resources: [audience],
       scopes: ["email", "roles"],

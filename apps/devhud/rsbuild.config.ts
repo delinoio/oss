@@ -1,19 +1,10 @@
 import { defineConfig, loadEnv } from "@rsbuild/core";
 import { pluginReact } from "@rsbuild/plugin-react";
+import { createDevHudDevelopmentCsp } from "./scripts/development-csp.mjs";
 
-export const DEVHUD_DEVELOPMENT_CSP = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data:",
-  "font-src 'self'",
-  "connect-src ws://127.0.0.1:46305",
-  "object-src 'none'",
-  "base-uri 'none'",
-  "form-action 'none'",
-  "frame-src 'none'",
-  "worker-src 'none'",
-].join("; ");
+export const DEVHUD_DEVELOPMENT_CSP = createDevHudDevelopmentCsp(
+  process.env.DEVHUD_LOGTO_ISSUER ?? "http://localhost:3001/oidc",
+);
 
 const { rawPublicVars } = loadEnv({ prefixes: ["TAURI_"] });
 const mobileFrontend = new Set(["android", "ios"]).has(rawPublicVars.TAURI_ENV_PLATFORM ?? "");
