@@ -121,7 +121,6 @@ export async function prepareVerifiedAppImageSharun(
     url: `http://127.0.0.1:${address.port}/sharun`,
   };
 }
-
 export function repositoryAppleSigningEnvironment(
   command,
   platform = process.platform,

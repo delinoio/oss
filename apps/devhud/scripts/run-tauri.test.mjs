@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readlinkSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
@@ -9,6 +19,10 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
+import {
+  finalizeAppImageLayout,
+  finalizeLinuxAppImage,
+} from "./finalize-appimage.mjs";
 import {
   desktopTauriArguments,
   desktopTauriConfigPath,
@@ -35,6 +49,32 @@ const targetOverrides = [
   ["separated long target option", ["build", "--", "--target", "aarch64-apple-darwin"]],
   ["equals-delimited long target option", ["build", "--", "--target=aarch64-apple-darwin"]],
 ];
+const appImageCefResources = [
+  "chrome_100_percent.pak",
+  "chrome_200_percent.pak",
+  "icudtl.dat",
+  "libEGL.so",
+  "libGLESv2.so",
+  "libcef.so",
+  "libvk_swiftshader.so",
+  "libvulkan.so.1",
+  "resources.pak",
+  "v8_context_snapshot.bin",
+  "vk_swiftshader_icd.json",
+];
+
+function createAppImageFixture(appDirectory) {
+  const binDirectory = join(appDirectory, "bin");
+  const sharedBinDirectory = join(appDirectory, "shared/bin");
+  mkdirSync(join(binDirectory, "locales"), { recursive: true });
+  mkdirSync(sharedBinDirectory, { recursive: true });
+  writeFileSync(join(appDirectory, "sharun"), "sharun");
+  writeFileSync(join(sharedBinDirectory, "devhud"), "devhud");
+  linkSync(join(appDirectory, "sharun"), join(binDirectory, "devhud"));
+  for (const resource of appImageCefResources) {
+    writeFileSync(join(binDirectory, resource), resource);
+  }
+}
 
 test("forwards the desktop CEF feature to the pinned Tauri command", () => {
   assert.deepEqual(desktopTauriArguments("dev", []), [
@@ -290,6 +330,73 @@ test("rejects an unsupported Linux AppImage launcher architecture", async () => 
   await assert.rejects(
     prepareVerifiedAppImageSharun("ia32", () => assert.fail("asset must not be fetched")),
     /unsupported Linux AppImage architecture ia32/u,
+  );
+});
+
+test("finalizes the AppImage with a kernel-executed CEF layout", (t) => {
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), "devhud-appimage-layout-"));
+  t.after(() => rmSync(temporaryDirectory, { force: true, recursive: true }));
+  const appDirectory = join(temporaryDirectory, "DevHUD.AppDir");
+  createAppImageFixture(appDirectory);
+
+  finalizeAppImageLayout(appDirectory);
+
+  assert.equal(readlinkSync(join(appDirectory, "bin/devhud")), "../shared/bin/devhud");
+  for (const resource of [...appImageCefResources, "locales"]) {
+    assert.equal(
+      readlinkSync(join(appDirectory, "shared/bin", resource)),
+      `../../bin/${resource}`,
+    );
+  }
+});
+
+test("atomically repacks the finalized AppImage", (t) => {
+  const targetDirectory = mkdtempSync(join(tmpdir(), "devhud-appimage-target-"));
+  t.after(() => rmSync(targetDirectory, { force: true, recursive: true }));
+  const bundleDirectory = join(targetDirectory, "release/bundle/appimage");
+  const appDirectory = join(bundleDirectory, "DevHUD.AppDir");
+  const appImage = join(bundleDirectory, "DevHUD_0.1.0_amd64.AppImage");
+  const appImageTool = join(targetDirectory, "appimagetool");
+  createAppImageFixture(appDirectory);
+  writeFileSync(appImage, "original");
+  writeFileSync(appImageTool, "tool");
+  chmodSync(appImage, 0o755);
+  chmodSync(appImageTool, 0o755);
+  const calls = [];
+
+  const result = finalizeLinuxAppImage({
+    targetDirectory,
+    architecture: "x64",
+    appImageTool,
+    run(command, arguments_) {
+      calls.push([command, arguments_]);
+      if (command === appImage) {
+        return { status: 0, signal: null, stdout: "zsync|update-information\n" };
+      }
+      const output = arguments_[arguments_.indexOf("--output") + 1];
+      const name = arguments_[arguments_.indexOf("--name") + 1];
+      const replacement = join(output, name);
+      writeFileSync(replacement, "replacement");
+      chmodSync(replacement, 0o755);
+      return { status: 0, signal: null };
+    },
+  });
+
+  assert.equal(result, appImage);
+  assert.equal(readFileSync(appImage, "utf8"), "replacement");
+  assert.deepEqual(calls[1][1].slice(0, 8), [
+    "--output",
+    calls[1][1][1],
+    "--name",
+    "DevHUD_0.1.0_amd64.AppImage",
+    "--appimage-arch",
+    "x86_64",
+    "--update-info",
+    "zsync|update-information",
+  ]);
+  assert.equal(
+    readdirSync(bundleDirectory).some((name) => name.startsWith(".devhud-finalize-")),
+    false,
   );
 });
 

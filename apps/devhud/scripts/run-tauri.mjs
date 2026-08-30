@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 
 import { exitLikeChild, spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
+import { finalizeLinuxAppImage } from "./finalize-appimage.mjs";
 import {
   desktopTauriArguments,
   desktopTauriEnvironment,
   prepareVerifiedAppImageSharun,
   repositoryAppleSigningEnvironment,
 } from "./run-tauri-arguments.mjs";
-import { stageNativeMessagingHost } from "./stage-native-messaging-host.mjs";
+import {
+  stageNativeMessagingHost,
+  workspaceCargoTargetDirectory,
+} from "./stage-native-messaging-host.mjs";
 
 const [command, ...rawArgs] = process.argv.slice(2);
 const forwardedArgs = rawArgs[0] === "--" ? rawArgs.slice(1) : rawArgs;
@@ -50,7 +54,8 @@ try {
     verifiedAppImageSharun = await prepareVerifiedAppImageSharun();
     environment = { ...environment, SHARUN_LINK: verifiedAppImageSharun.url };
   }
-  stageNativeMessagingHost({ release: command === "build" });
+  const targetDirectory = workspaceCargoTargetDirectory();
+  stageNativeMessagingHost({ release: command === "build", targetDirectory });
   result = await spawnDevServer(
     "cargo",
     [
@@ -74,6 +79,13 @@ try {
       terminateProcessTree: true,
     },
   );
+  if (
+    result.code === 0
+    && result.signal === null
+    && environment.DEVHUD_PACKAGE_KIND === "linux-appimage"
+  ) {
+    finalizeLinuxAppImage({ targetDirectory });
+  }
 } catch (error) {
   console.error(`devhud: failed to start the pinned Tauri CLI: ${error.message}`);
   process.exitCode = 1;
