@@ -1,0 +1,7 @@
+.git
+.dev-environment
+.infisical.json
+**/dist
+**/.env
+**/.env.*
+**/node_modules
