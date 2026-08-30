@@ -72,6 +72,7 @@
         "build:api"
       ],
       "inputs": [
+        "$TURBO_DEFAULT$",
         ".env",
         "src/**",
         "**/*.proto",

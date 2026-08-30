@@ -301,6 +301,7 @@ test("package-local CI commands and deterministic cache boundaries are explicit"
     for (const name of names) assert.equal(typeof packages[path].scripts[name], "string", `${path}#${name}`);
   }
   for (const output of ["dist/**", "build/**", "artifacts/**", "doc_build/**"]) assert.ok(turbo.tasks["build:frontend"].outputs.includes(output), output);
+  assert.ok(turbo.tasks.build.inputs.includes("$TURBO_DEFAULT$"), "build must hash package-default tracked inputs");
   for (const output of ["protos/gen/**", "packages/devhud-api-client/src/gen/**"]) assert.ok(turbo.tasks["//#proto:generate"].outputs.includes(output), output);
   assert.equal(packages["package.json"].scripts["proto:generate:cached"], "turbo run //#proto:generate");
   assert.match(packages["package.json"].scripts["proto:fresh"], /^turbo run \/\/#proto:generate --force &&/u);
