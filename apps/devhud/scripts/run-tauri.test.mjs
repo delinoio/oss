@@ -200,7 +200,7 @@ test("derives the compiled package kind from one explicit Linux bundle", () => {
   );
   assert.deepEqual(
     desktopTauriEnvironment("build", ["--bundles=appimage"], "linux", {}),
-    { DEVHUD_PACKAGE_KIND: "linux-appimage" },
+    { DEVHUD_PACKAGE_KIND: "linux-appimage", STRACE_MODE: "0" },
   );
 });
 

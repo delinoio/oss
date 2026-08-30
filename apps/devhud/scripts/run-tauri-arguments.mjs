@@ -135,5 +135,10 @@ export function desktopTauriEnvironment(
       `DEVHUD_PACKAGE_KIND ${environment.DEVHUD_PACKAGE_KIND} does not match the selected ${bundle} bundle`,
     );
   }
-  return { ...environment, DEVHUD_PACKAGE_KIND: packageKind };
+  return {
+    ...environment,
+    DEVHUD_PACKAGE_KIND: packageKind,
+    // quick-sharun's CEF launch probe can leave GUI descendants holding the bundler pipes open.
+    ...(bundle === "appimage" ? { STRACE_MODE: "0" } : {}),
+  };
 }
