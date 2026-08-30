@@ -1,0 +1,7 @@
+interface:
+  display_name: "Run Dev"
+  short_description: "Start DevHud in Delino or OSS mode"
+  default_prompt: "Use $run-dev to start the full local DevHud development stack."
+
+policy:
+  allow_implicit_invocation: false

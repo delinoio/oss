@@ -72,7 +72,12 @@ jobs:
               - .github/workflows/CI.yml
               - go.mod
               - go.sum
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - apps/devhud-admin/**
               - cmds/**
+              - packages/devhud-api-client/**
               - protos/**
               - servers/**
 
@@ -103,6 +108,26 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
+
+      - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Generate and verify embedded administrator assets
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm --filter devhud-admin build:embedded
 
       - name: Check go fmt
         if: ${{ steps.gate.outputs.run == 'true' }}
@@ -146,7 +171,12 @@ jobs:
               - .github/workflows/CI.yml
               - go.mod
               - go.sum
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - apps/devhud-admin/**
               - cmds/**
+              - packages/devhud-api-client/**
               - protos/**
               - servers/**
 
@@ -177,6 +207,26 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
+
+      - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Generate and verify embedded administrator assets
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm --filter devhud-admin build:embedded
 
       - name: Run go test
         if: ${{ steps.gate.outputs.run == 'true' }}
@@ -2087,14 +2137,9 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm install --frozen-lockfile
 
-      - name: Build client, test administrator SPA, and verify embedded assets
+      - name: Test administrator SPA and verify generated embedded assets
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: |
-          pnpm --filter @delinoio/devhud-api-client build
-          pnpm --filter devhud-admin --fail-if-no-match test
-          git status --short --untracked-files=all -- servers/devhud-api/internal/adminassets/dist
-          git diff --exit-code -- servers/devhud-api/internal/adminassets/dist
-          test -z "$(git ls-files --others --exclude-standard -- servers/devhud-api/internal/adminassets/dist)"
+        run: pnpm --filter devhud-admin --fail-if-no-match test
 
   devhud-api:
     name: DevHud API Integration
@@ -2115,7 +2160,11 @@ jobs:
               - .github/workflows/CI.yml
               - go.mod
               - go.sum
+              - package.json
+              - pnpm-lock.yaml
               - pnpm-workspace.yaml
+              - apps/devhud-admin/**
+              - packages/devhud-api-client/**
               - protos/**
               - servers/**
               - scripts/ci/check-go-format.mjs
@@ -2152,6 +2201,20 @@ jobs:
         uses: pnpm/action-setup@v5
         with:
           version: 10.26.2
+
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Generate and verify embedded administrator assets
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm --filter devhud-admin build:embedded
 
       - name: Check API formatting, vet, builds, and unit tests
         if: ${{ steps.gate.outputs.run == 'true' }}

@@ -24,7 +24,10 @@ those applications. If the issuer is overridden, use the exact same value in
 production, deployment, release, or signing secrets there.
 
 Run `pnpm --filter @delinoio/devhud-api migrate:local` only inside a selected
-root development mode. The package-local CI commands are `ci:format`, `ci:vet`,
+root development mode. The local API wrapper generates and validates the
+ignored administrator bundle before migration or serving. Before direct Go
+commands, run `pnpm --filter devhud-admin build:embedded`. The package-local CI
+commands are `ci:format`, `ci:vet`,
 `ci:build`, `ci:unit`, `ci:migrations`, `ci:integration`, `ci:api`, and
 `ci:sweeper`; migration and integration commands require the documented test
 PostgreSQL connection. They validate only local fixtures and do not deploy.

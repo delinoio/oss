@@ -8,6 +8,8 @@ For diagnostics, ask the user to preview the exact redacted payload first. Guest
 
 CI results, generated SBOMs/provenance, dry package layouts, and release fixtures are validation evidence only. They do not prove that an artifact was signed, uploaded, deployed, approved by a store, exposed by the updater, or made public. Never cite a green CI run as public availability; confirm the exact coordinated release state through the operations contract.
 
+A clean-checkout API or sweeper compile that reports missing embedded administrator assets is a build-prerequisite failure, not a runtime service incident. Re-run the repository-owned `pnpm --filter devhud-admin build:embedded` generator/verifier or the Docker build boundary; never recover by committing or copying a `dist` tree from another checkout.
+
 ## Upload, deletion, and audit cases
 
 Use `AdminService.QuarantineUpload` or `AdminService.DeleteUpload` only with a validated non-blank reason and expected-state compare-and-set. Quarantine/removal is metadata-first and must not expose image bytes or locators. Preserve operation leases and tombstones; a conflict or uncertain removal remains visible for retry.

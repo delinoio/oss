@@ -47,6 +47,9 @@ test("repository contract catalog and validation commands use canonical paths", 
   assert.match(agents, /Use `repository-<topic>-contract\.md` for repository-level contract docs/u);
   assert.match(operations, /scripts\/release\/validate-devhud-public-assets\.mjs/u);
   assert.match(operations, /scripts\/release\/validate-devhud-ios-signing\.mjs/u);
+  assert.match(operations, /generate and validate the ignored administrator bundle/u);
+  assert.match(workflowContract, /Docker build independently generates that same contracted structure/u);
+  assert.match(support, /never recover by committing or copying a `dist` tree/u);
 });
 
 test("CEF review is scheduled, read-only, bounded, and non-publishing", () => {

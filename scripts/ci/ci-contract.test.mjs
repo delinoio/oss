@@ -174,7 +174,7 @@ test("implemented DevHud conformance commands are wired to their owning jobs", (
     ["devhud-api", ["ci:format", "ci:vet", "ci:build", "ci:unit", "ci:migrations", "ci:integration", "ci:api", "ci:sweeper"]],
     ["devhud-rust-conformance", ["test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:native:updater"]],
     ["devhud-frontend", ["typecheck", "lint", "test:unit", "test:components", "test:accessibility", "build:frontend"]],
-    ["devhud-admin", ["devhud-admin --fail-if-no-match test", "adminassets/dist"]],
+    ["devhud-admin", ["devhud-admin --fail-if-no-match test"]],
     ["devhud-extension", ["test:unit", "test:components", "test:accessibility", "test:package", "devhud-chrome-web-store.zip", "devhud-chrome-github-validation.zip"]],
     ["devhud-security", ["test:security", "test:adapters", "diagnostics-policy.test.mjs", "native-bridge.test.mjs", "mobile-policy.test.mjs"]],
     ["devhud-desktop", ["verify:pins", "smoke:platform", "xvfb-run", "io.delino.devhud.native_messaging"]],
@@ -309,7 +309,9 @@ test("package-local CI commands and deterministic cache boundaries are explicit"
   for (const task of ["build:embedded", "verify:embedded"]) {
     assert.match(adminScripts[task], /^pnpm --filter @delinoio\/devhud-api-client build && pnpm build &&/u, task);
   }
-  assert.deepEqual(adminTurbo.tasks.build.inputs, ["$TURBO_EXTENDS$", "index.html"]);
+  for (const task of ["build", "build:frontend", "build:embedded", "verify:embedded"]) {
+    assert.equal(adminTurbo.tasks[task].cache, false, task);
+  }
   assert.deepEqual(extensionTurbo.extends, ["//"]);
   for (const task of ["build", "build:frontend"]) {
     assert.deepEqual(extensionTurbo.tasks[task].inputs, [
