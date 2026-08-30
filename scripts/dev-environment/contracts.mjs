@@ -299,6 +299,15 @@ export const adminContract = Object.freeze({
   optionalValidators: Object.freeze({}),
 });
 
+export const devhudFrontendContract = Object.freeze({
+  service: "DevHud frontend",
+  path: "/devhud/admin",
+  ossOverrideNames: Object.freeze(["DEVHUD_LOGTO_ISSUER"]),
+  required: Object.freeze({ DEVHUD_LOGTO_ISSUER: url }),
+  optionalGroups: Object.freeze([]),
+  optionalValidators: Object.freeze({}),
+});
+
 export function validateInjectedEnvironment(contract, environment, baselineEnvironment = {}) {
   const baseline = new Map(Object.entries(baselineEnvironment));
   const requiredNames = Object.keys(contract.required);
