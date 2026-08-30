@@ -40,7 +40,9 @@ Use redacted structured client and server diagnostics. Never log tokens, setting
 
 ## Build and Test
 
-Validate role denial, empty/oversized/sensitive mutation-reason rejection, concurrent admin mutations, independent administrative-block/account-deletion presentation, quota and attributed upload-group views, quarantine/delete origin replacement before CDN purge/revalidation, audit integrity, settings non-disclosure, English/Korean layouts, accessibility, and fixed port `46306` conflict failure that reaches the bind attempt.
+`apps/devhud-admin` is the sole Rsbuild producer of the ignored `servers/devhud-api/internal/adminassets/dist` tree. `pnpm --filter devhud-admin build:embedded` first builds the generated API client, then produces and validates exactly one nonempty HTML entry, one content-hashed CSS asset, one content-hashed JavaScript asset and its license file, all rooted at `/admin/`, with no source maps or unexpected output. The bundle is never committed; every local, CI, or packaging path that compiles the API or sweeper must run this command first, while the Docker build generates it inside its own context boundary.
+
+Validate role denial, empty/oversized/sensitive mutation-reason rejection, concurrent admin mutations, independent administrative-block/account-deletion presentation, quota and attributed upload-group views, quarantine/delete origin replacement before CDN purge/revalidation, audit integrity, settings non-disclosure, English/Korean layouts, accessibility, generated production structure, and fixed port `46306` conflict failure that reaches the bind attempt.
 
 ## Dependencies and Integrations
 

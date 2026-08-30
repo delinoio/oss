@@ -24,6 +24,8 @@ those applications. If the issuer is overridden, use the exact same value in
 production, deployment, release, or signing secrets there.
 
 Run `pnpm --filter @delinoio/devhud-api migrate:local` only inside a selected
-root development mode. Run Go tests with `go test ./servers/devhud-api/...`.
-The full internal ownership and validation contract is
-`docs/repository-environment-contract.md`.
+root development mode. The local API wrapper generates and validates the
+ignored administrator bundle before migration or serving. Before direct Go
+commands, run `pnpm --filter devhud-admin build:embedded`; then run Go tests
+with `go test ./servers/devhud-api/...`. The full internal ownership and
+validation contract is `docs/repository-environment-contract.md`.

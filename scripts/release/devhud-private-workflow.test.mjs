@@ -4,9 +4,44 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const workflow = readFileSync(fileURLToPath(new URL("../../.github/workflows/package-devhud-private.yml", import.meta.url)), "utf8");
+const apiDockerfile = readFileSync(fileURLToPath(new URL("../../servers/devhud-api/Dockerfile", import.meta.url)), "utf8");
 
 test("private workflow fails immediately when Windows platform smoke fails", () => {
   assert.ok(workflow.includes('pnpm --filter devhud smoke:platform -- --artifact "$installDir\\devhud.exe"\n          if ($LASTEXITCODE -ne 0) { throw "platform smoke failed with exit code $LASTEXITCODE" }'));
+});
+
+test("private OCI packaging generates verified administrator assets before Go validation", () => {
+  const oci = workflow.slice(
+    workflow.indexOf("\n  oci:"),
+    workflow.indexOf("\n  assemble:"),
+  );
+  const install = "pnpm install --frozen-lockfile --ignore-scripts";
+  const assets = "pnpm --filter devhud-admin build:embedded";
+  const goTest = "go test ./servers/devhud-api/...";
+  const dockerBuild = "docker buildx build";
+  for (const command of [install, assets, goTest, dockerBuild]) {
+    assert.ok(oci.includes(command), `missing OCI prerequisite: ${command}`);
+  }
+  assert.ok(oci.indexOf(install) < oci.indexOf(assets));
+  assert.ok(oci.indexOf(assets) < oci.indexOf(goTest));
+  assert.ok(oci.indexOf(goTest) < oci.indexOf(dockerBuild));
+});
+
+test("API Docker builds own one verified bundle for both binaries", () => {
+  assert.match(apiDockerfile, /FROM node:24-bookworm-slim AS administrator-assets/u);
+  assert.match(apiDockerfile, /pnpm --filter devhud-admin build:embedded/u);
+  assert.match(
+    apiDockerfile,
+    /COPY --from=administrator-assets \/src\/servers\/devhud-api\/internal\/adminassets\/dist \.\/servers\/devhud-api\/internal\/adminassets\/dist/u,
+  );
+  assert.equal(
+    apiDockerfile.split("COPY --from=administrator-assets").length - 1,
+    1,
+  );
+  assert.ok(
+    apiDockerfile.indexOf("COPY --from=administrator-assets") <
+      apiDockerfile.indexOf("go build -trimpath"),
+  );
 });
 
 test("private workflow validates AppImage sandbox metadata before preparing its smoke layout", () => {
