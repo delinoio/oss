@@ -15,6 +15,15 @@ Start the repository's complete local DevHud stack. Do not use this skill for do
 
 Run every command from the repository root. Do not change modes automatically after a failure.
 
+## Prepare workspace dependencies
+
+After the user selects a mode and before running its commands, check the repository-root workspace dependencies:
+
+- If the root `node_modules` directory is absent, run `pnpm install` once and wait for it to succeed.
+- If `node_modules` is present, do not install dependencies routinely. If a mode command later fails with an error that clearly identifies a missing workspace module or workspace binary, run `pnpm install` once if it has not already run during this invocation, then retry only the failed command once.
+- Stop immediately if installation fails, if the retry fails, or if dependency installation already ran during this invocation. Do not repeat installation, restart the full sequence, or change modes.
+- Treat `pnpm install` as permission to prepare only the repository's pnpm workspace dependencies. It does not authorize installing or upgrading pnpm itself, Infisical, Docker, Go, Rust, or any other external tool.
+
 ## Delino mode
 
 Run these commands sequentially, waiting for each command to exit successfully before starting the next:
@@ -25,13 +34,13 @@ pnpm env:doctor
 pnpm dev
 ```
 
-Stop immediately when any command fails. `pnpm env:login` owns interactive authentication and local Infisical project initialization; `pnpm env:doctor` owns the non-mutating readiness check; and `pnpm dev` owns service validation, migration, and startup.
+Except for the single missing-workspace-dependency recovery above, stop immediately when any command fails. `pnpm env:login` owns interactive authentication and local Infisical project initialization; `pnpm env:doctor` owns the non-mutating readiness check; and `pnpm dev` owns service validation, migration, and startup.
 
 Never invoke raw Infisical synchronization, export provider values, write them to `.env` files, or place them in the root or Turbo environment. The existing service-owned wrappers inject and validate the current allowlisted values. Do not fall back to OSS mode.
 
 ## OSS mode
 
-Run only:
+After workspace dependency preparation, run:
 
 ```bash
 pnpm dev:oss
@@ -45,4 +54,4 @@ Do not invoke Infisical, `pnpm env:login`, or `pnpm env:doctor` in OSS mode. The
 - Once startup is healthy, report that the frontend, administrator, and API use fixed ports `46305`, `46306`, and `46307` respectively.
 - When the user asks to stop, interrupt the active command and wait for its normal cleanup to finish.
 - Surface the command's sanitized failure category. Do not expose credentials or raw provider output.
-- Do not install or upgrade tools, kill port owners, edit environment files, remove Docker volumes, or perform other remediation unless the user explicitly requests it.
+- Outside the permitted repository-root `pnpm install`, do not install or upgrade tools, kill port owners, edit environment files, remove Docker volumes, or perform other remediation unless the user explicitly requests it.
