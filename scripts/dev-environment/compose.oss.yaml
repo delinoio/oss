@@ -35,7 +35,7 @@ services:
 
   logto-init:
     image: svhd/logto:1.41.0@sha256:7f79547e3d1fe569a3ecae757968a7cfc579687aa8164eec35113c0adc983c5b
-    command: ["npm", "run", "cli", "db", "seed", "--", "--swe"]
+    command: ["cli", "db", "seed", "--", "--swe"]
     environment:
       DB_URL: postgres://devhud:devhud@postgres:5432/logto
     depends_on:
@@ -45,7 +45,7 @@ services:
 
   logto:
     image: svhd/logto:1.41.0@sha256:7f79547e3d1fe569a3ecae757968a7cfc579687aa8164eec35113c0adc983c5b
-    command: ["npm", "start"]
+    command: ["start"]
     environment:
       ADMIN_ENDPOINT: http://localhost:3002
       DB_URL: postgres://devhud:devhud@postgres:5432/logto
