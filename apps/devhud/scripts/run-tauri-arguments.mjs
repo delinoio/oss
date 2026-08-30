@@ -48,6 +48,19 @@ const packageKindsByPlatform = {
   },
 };
 
+const sharunArchitectures = {
+  arm64: "aarch64",
+  x64: "x86_64",
+};
+
+function appImageSharunLink(architecture) {
+  const assetArchitecture = sharunArchitectures[architecture];
+  if (!assetArchitecture) {
+    throw new Error(`unsupported Linux AppImage architecture ${architecture}`);
+  }
+  return `https://github.com/pkgforge-dev/Anylinux-sharun/releases/download/3.0.0/sharun-${assetArchitecture}`;
+}
+
 export function repositoryAppleSigningEnvironment(
   command,
   platform = process.platform,
@@ -120,6 +133,7 @@ export function desktopTauriEnvironment(
   forwardedArguments,
   platform = process.platform,
   environment = process.env,
+  architecture = process.arch,
 ) {
   const packageConfiguration = packageKindsByPlatform[platform];
   if (command !== "build" || !packageConfiguration) return environment;
@@ -138,7 +152,13 @@ export function desktopTauriEnvironment(
   return {
     ...environment,
     DEVHUD_PACKAGE_KIND: packageKind,
-    // quick-sharun's CEF launch probe can leave GUI descendants holding the bundler pipes open.
-    ...(bundle === "appimage" ? { STRACE_MODE: "0" } : {}),
+    ...(bundle === "appimage"
+      ? {
+          // Scope: CEF AppImages. Remove these overrides when pinned Tauri uses a
+          // sharun release with complete GLib auxv support and a non-hanging probe.
+          SHARUN_LINK: appImageSharunLink(architecture),
+          STRACE_MODE: "0",
+        }
+      : {}),
   };
 }

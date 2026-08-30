@@ -199,8 +199,27 @@ test("derives the compiled package kind from one explicit Linux bundle", () => {
     { EXISTING: "value", DEVHUD_PACKAGE_KIND: "linux-deb" },
   );
   assert.deepEqual(
-    desktopTauriEnvironment("build", ["--bundles=appimage"], "linux", {}),
-    { DEVHUD_PACKAGE_KIND: "linux-appimage", STRACE_MODE: "0" },
+    desktopTauriEnvironment("build", ["--bundles=appimage"], "linux", {}, "x64"),
+    {
+      DEVHUD_PACKAGE_KIND: "linux-appimage",
+      SHARUN_LINK: "https://github.com/pkgforge-dev/Anylinux-sharun/releases/download/3.0.0/sharun-x86_64",
+      STRACE_MODE: "0",
+    },
+  );
+  assert.deepEqual(
+    desktopTauriEnvironment("build", ["--bundles", "appimage"], "linux", {}, "arm64"),
+    {
+      DEVHUD_PACKAGE_KIND: "linux-appimage",
+      SHARUN_LINK: "https://github.com/pkgforge-dev/Anylinux-sharun/releases/download/3.0.0/sharun-aarch64",
+      STRACE_MODE: "0",
+    },
+  );
+});
+
+test("rejects an unsupported Linux AppImage launcher architecture", () => {
+  assert.throws(
+    () => desktopTauriEnvironment("build", ["--bundles=appimage"], "linux", {}, "ia32"),
+    /unsupported Linux AppImage architecture ia32/u,
   );
 });
 
