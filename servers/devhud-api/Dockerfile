@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM node:24-bookworm-slim AS administrator-assets
+FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS administrator-assets
 WORKDIR /src
 RUN corepack enable && corepack prepare pnpm@10.26.2 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./

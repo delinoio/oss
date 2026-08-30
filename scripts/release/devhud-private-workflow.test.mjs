@@ -28,7 +28,7 @@ test("private OCI packaging generates verified administrator assets before Go va
 });
 
 test("API Docker builds own one verified bundle for both binaries", () => {
-  assert.match(apiDockerfile, /FROM node:24-bookworm-slim AS administrator-assets/u);
+  assert.match(apiDockerfile, /FROM --platform=\$BUILDPLATFORM node:24-bookworm-slim AS administrator-assets/u);
   assert.match(apiDockerfile, /pnpm --filter devhud-admin build:embedded/u);
   assert.match(
     apiDockerfile,

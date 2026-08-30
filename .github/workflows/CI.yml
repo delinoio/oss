@@ -2287,9 +2287,13 @@ jobs:
         with:
           filters: |
             oci:
+              - .dockerignore
               - .github/workflows/CI.yml
               - go.mod
               - go.sum
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
               - protos/**
               - servers/**
               - apps/devhud-admin/**

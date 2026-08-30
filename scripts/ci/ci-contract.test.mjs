@@ -69,6 +69,10 @@ test("DevHud jobs self-gate and the path contract covers every implemented bound
   for (const path of ["pnpm-workspace.yaml", "scripts/ci/check-go-format.mjs"]) {
     assert.ok(apiFilter.includes(path), `devhud-api: ${path}`);
   }
+  const ociFilter = JSON.stringify(step(workflow.jobs["devhud-oci"], "filter"));
+  for (const path of [".dockerignore", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"]) {
+    assert.ok(ociFilter.includes(path), `devhud-oci: ${path}`);
+  }
   assert.ok(JSON.stringify(step(workflow.jobs["devhud-admin"], "filter")).includes(".nvmrc"));
   assert.ok(JSON.stringify(step(workflow.jobs["devhud-protocol"], "filter")).includes("turbo.json"));
   for (const id of ["devhud-frontend", "devhud-extension", "devhud-rust-conformance"]) {
