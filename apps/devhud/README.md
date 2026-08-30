@@ -2,6 +2,8 @@
 
 This workspace contains one bilingual React/Rsbuild shell and target-isolated Rust/Tauri hosts. Desktop uses pinned CEF. iOS 16+ uses WKWebView, and Android 10/API 29+ uses Android System WebView; mobile artifacts never select CEF. `cef-pins.json` and `platforms.json` define the desktop contract, while `mobile-platforms.json` defines mobile identity, versions, architectures, and resolved dependency closures.
 
+`cef-pins.json` also binds each architecture-specific AppImage sharun launcher to its SHA-256 digest. The desktop wrapper verifies the selected asset before making its bytes available to AppImage packaging.
+
 From the repository root:
 
 ```sh

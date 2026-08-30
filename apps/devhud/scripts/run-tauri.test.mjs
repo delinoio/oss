@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +13,7 @@ import {
   desktopTauriArguments,
   desktopTauriConfigPath,
   desktopTauriEnvironment,
+  prepareVerifiedAppImageSharun,
   privateReleaseTauriConfigPath,
   repositoryAppleSigningEnvironment,
   repositoryAppleSigningIdentityKey,
@@ -199,26 +201,94 @@ test("derives the compiled package kind from one explicit Linux bundle", () => {
     { EXISTING: "value", DEVHUD_PACKAGE_KIND: "linux-deb" },
   );
   assert.deepEqual(
-    desktopTauriEnvironment("build", ["--bundles=appimage"], "linux", {}, "x64"),
+    desktopTauriEnvironment("build", ["--bundles=appimage"], "linux", {}),
     {
       DEVHUD_PACKAGE_KIND: "linux-appimage",
-      SHARUN_LINK: "https://github.com/pkgforge-dev/Anylinux-sharun/releases/download/3.0.0/sharun-x86_64",
       STRACE_MODE: "0",
     },
   );
   assert.deepEqual(
-    desktopTauriEnvironment("build", ["--bundles", "appimage"], "linux", {}, "arm64"),
+    desktopTauriEnvironment("build", ["--bundles", "appimage"], "linux", {}),
     {
       DEVHUD_PACKAGE_KIND: "linux-appimage",
-      SHARUN_LINK: "https://github.com/pkgforge-dev/Anylinux-sharun/releases/download/3.0.0/sharun-aarch64",
       STRACE_MODE: "0",
     },
   );
 });
 
-test("rejects an unsupported Linux AppImage launcher architecture", () => {
-  assert.throws(
-    () => desktopTauriEnvironment("build", ["--bundles=appimage"], "linux", {}, "ia32"),
+function fixtureSharunPin(bytes) {
+  return {
+    repository: "https://example.com/sharun",
+    version: "fixture",
+    assets: {
+      arm64: {
+        name: "sharun-aarch64",
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+      },
+      x64: {
+        name: "sharun-x86_64",
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+      },
+    },
+  };
+}
+
+for (const [architecture, assetName] of [
+  ["arm64", "sharun-aarch64"],
+  ["x64", "sharun-x86_64"],
+]) {
+  test(`serves only a digest-verified ${architecture} Linux AppImage launcher`, async () => {
+    const bytes = Buffer.from(`verified ${architecture} sharun fixture`);
+    const pin = fixtureSharunPin(bytes);
+    const prepared = await prepareVerifiedAppImageSharun(
+      architecture,
+      async (url) => {
+        assert.equal(
+          url,
+          `https://example.com/sharun/releases/download/fixture/${assetName}`,
+        );
+        return new Response(bytes);
+      },
+      pin,
+    );
+    try {
+      assert.match(prepared.url, /^http:\/\/127\.0\.0\.1:\d+\/sharun$/u);
+      const response = await fetch(prepared.url);
+      assert.equal(response.status, 200);
+      assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
+    } finally {
+      await prepared.close();
+    }
+  });
+}
+
+test("rejects a Linux AppImage launcher whose digest does not match", async () => {
+  const expected = Buffer.from("expected sharun fixture");
+  const replacement = Buffer.from("replacement sharun fixture");
+  await assert.rejects(
+    prepareVerifiedAppImageSharun(
+      "x64",
+      async () => new Response(replacement),
+      fixtureSharunPin(expected),
+    ),
+    /AppImage launcher checksum mismatch/u,
+  );
+});
+
+test("rejects an unsuccessful Linux AppImage launcher download", async () => {
+  await assert.rejects(
+    prepareVerifiedAppImageSharun(
+      "x64",
+      async () => new Response(null, { status: 503 }),
+      fixtureSharunPin(Buffer.from("expected sharun fixture")),
+    ),
+    /AppImage launcher download failed with HTTP 503/u,
+  );
+});
+
+test("rejects an unsupported Linux AppImage launcher architecture", async () => {
+  await assert.rejects(
+    prepareVerifiedAppImageSharun("ia32", () => assert.fail("asset must not be fetched")),
     /unsupported Linux AppImage architecture ia32/u,
   );
 });

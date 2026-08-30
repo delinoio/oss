@@ -4,6 +4,7 @@ import { exitLikeChild, spawnDevServer } from "../../../scripts/spawn-dev-server
 import {
   desktopTauriArguments,
   desktopTauriEnvironment,
+  prepareVerifiedAppImageSharun,
   repositoryAppleSigningEnvironment,
 } from "./run-tauri-arguments.mjs";
 import { stageNativeMessagingHost } from "./stage-native-messaging-host.mjs";
@@ -34,17 +35,23 @@ if (
   process.exit(1);
 }
 
+let result;
+let verifiedAppImageSharun;
 try {
   const args = desktopTauriArguments(command, forwardedArgs, process.env);
   const repositoryEnvironment = repositoryAppleSigningEnvironment(command);
-  const environment = desktopTauriEnvironment(
+  let environment = desktopTauriEnvironment(
     command,
     forwardedArgs,
     process.platform,
     repositoryEnvironment,
   );
+  if (environment.DEVHUD_PACKAGE_KIND === "linux-appimage") {
+    verifiedAppImageSharun = await prepareVerifiedAppImageSharun();
+    environment = { ...environment, SHARUN_LINK: verifiedAppImageSharun.url };
+  }
   stageNativeMessagingHost({ release: command === "build" });
-  const result = await spawnDevServer(
+  result = await spawnDevServer(
     "cargo",
     [
       "run",
@@ -67,8 +74,20 @@ try {
       terminateProcessTree: true,
     },
   );
-  exitLikeChild(result);
 } catch (error) {
   console.error(`devhud: failed to start the pinned Tauri CLI: ${error.message}`);
-  process.exit(1);
+  process.exitCode = 1;
+} finally {
+  if (verifiedAppImageSharun) {
+    try {
+      await verifiedAppImageSharun.close();
+    } catch (error) {
+      console.error(
+        `devhud: failed to close the verified AppImage launcher server: ${error.message}`,
+      );
+      process.exitCode = 1;
+    }
+  }
 }
+
+if (result && process.exitCode !== 1) exitLikeChild(result);

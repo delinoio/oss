@@ -65,6 +65,20 @@ const CANONICAL_DOWNLOAD_CEF = {
   checksum: "c169adf067a787e1f1c58ed62906a557de85388bee4b54fb878b722ff606b113",
   revision: "0c577ce44dbd36952ac3721b577c6e423ceff44f",
 };
+const CANONICAL_APPIMAGE_SHARUN = {
+  repository: "https://github.com/pkgforge-dev/Anylinux-sharun",
+  version: "3.0.0",
+  assets: {
+    arm64: {
+      name: "sharun-aarch64",
+      sha256: "414bf636f8a76d5144357e4e64f351f7518f5da727f1c9626c16c48150d8dcdc",
+    },
+    x64: {
+      name: "sharun-x86_64",
+      sha256: "2f1a73799dceb7f1b682118bf714308ba38a18e10ebdbdb09078dac9337508d8",
+    },
+  },
+};
 const CANONICAL_CEF_ARCHIVES = {
   "aarch64-apple-darwin": {
     name: "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_macosarm64_minimal.tar.bz2",
@@ -332,6 +346,10 @@ assert(
   downloadBlock.includes(`checksum = "${CANONICAL_DOWNLOAD_CEF.checksum}"`),
   "download-cef lockfile checksum changed",
 );
+assert(
+  JSON.stringify(pins.appImage?.sharun) === JSON.stringify(CANONICAL_APPIMAGE_SHARUN),
+  "AppImage sharun launcher pins changed",
+);
 
 const cargoMetadataResult = spawnSync(
   "cargo",
@@ -430,4 +448,6 @@ for (const [name, version] of Object.entries({
 }
 assert(pnpmLock.includes("apps/devhud:"), "DevHUD is absent from pnpm-lock.yaml");
 
-console.log(`devhud: verified Tauri ${TAURI_REVISION} and six CEF platform pins`);
+console.log(
+  `devhud: verified Tauri ${TAURI_REVISION}, six CEF platform pins, and two AppImage launcher pins`,
+);
