@@ -1,6 +1,6 @@
 import { ProjectId, StaticCapability, type GetBootstrapResponse } from "@delinoio/devhud-api-client";
 import LogtoClient, { createRequester, isLogtoRequestError, LogtoClientError, type ClientAdapter, type Storage as LogtoStorage } from "@logto/client";
-import { isValidLogtoAudience, normalizeLogtoIssuer, normalizeNetworkOrigin, normalizePublicAssetUrl } from "./identity-contract.ts";
+import { isValidLogtoAudience, logtoEndpointFromIssuer, normalizeLogtoIssuer, normalizeNetworkOrigin, normalizePublicAssetUrl } from "./identity-contract.ts";
 import { nativeBridge, RuntimePlatform, SecureSettingKind, type NativeBridgeV1, type RuntimePlatform as RuntimePlatformType } from "./native-bridge";
 
 export const NativeAuthCallback = "devhud://auth/callback" as const;
@@ -140,7 +140,9 @@ export async function createIdentitySession(bootstrap: ValidatedBootstrap, apiOr
     generateCodeVerifier: () => randomBase64Url(64),
     generateCodeChallenge: async (verifier) => base64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)))),
   };
-  const client = new LogtoClient({ endpoint: bootstrap.issuer, appId: bootstrap.clientId, resources: [bootstrap.audience] }, adapter);
+  const endpoint = logtoEndpointFromIssuer(bootstrap.issuer);
+  if (endpoint === null) throw new BootstrapContractError("Logto issuer is invalid");
+  const client = new LogtoClient({ endpoint, appId: bootstrap.clientId, resources: [bootstrap.audience] }, adapter);
   let currentAccessToken: Promise<string> | null = null;
   return {
     client,

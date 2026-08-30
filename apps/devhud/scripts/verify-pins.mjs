@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 
 import { hasExactCspDirectiveSources } from "./frontend-output-policy.mjs";
+import { createDevHudDevelopmentCsp } from "./development-csp.mjs";
 import {
   validateCiTargetMatrix,
   validateDependencyPresence,
@@ -40,6 +41,7 @@ const runtimeRevisionConsumers = [
   ["API diagnostics validation", readFileSync(join(repoRoot, "servers/devhud-api/internal/rpc/diagnostics.go"), "utf8")],
 ];
 const rsbuildConfig = readFileSync(join(appRoot, "rsbuild.config.ts"), "utf8");
+const developmentCsp = createDevHudDevelopmentCsp("https://identity.example/oidc");
 const updaterRoot = JSON.parse(readFileSync(join(appRoot, "updater-trust-root.json"), "utf8"));
 const updaterRust = readFileSync(join(appRoot, "src-tauri/src/updater.rs"), "utf8");
 const nativeMessagingLifecycle = readFileSync(join(appRoot, "src-tauri/windows/native-messaging-lifecycle.wxs"), "utf8");
@@ -196,12 +198,24 @@ assert(
   "production style CSP changed",
 );
 assert(
-  rsbuildConfig.includes('"style-src \'self\' \'unsafe-inline\'"'),
+  hasExactCspDirectiveSources(developmentCsp, "style-src", ["'self'", "'unsafe-inline'"]),
   "development CSP does not permit injected styles",
 );
 assert(
-  rsbuildConfig.includes('"connect-src ws://127.0.0.1:46305"'),
-  "development CSP does not permit the fixed HMR endpoint",
+  hasExactCspDirectiveSources(developmentCsp, "connect-src", [
+    "'self'",
+    "http://127.0.0.1:46307",
+    "https://devhud.api.delino.io",
+    "https://api.github.com",
+    "https://identity.example",
+    "ws://127.0.0.1:46305",
+  ]),
+  "development connection CSP changed",
+);
+assert(
+  rsbuildConfig.includes("createDevHudDevelopmentCsp") &&
+    rsbuildConfig.includes("process.env.DEVHUD_LOGTO_ISSUER"),
+  "development CSP is not bound to the validated issuer",
 );
 assert(rsbuildConfig.includes('host: "127.0.0.1"'), "development host is not loopback-only");
 assert(rsbuildConfig.includes("port: 46305"), "fixed development port changed");
