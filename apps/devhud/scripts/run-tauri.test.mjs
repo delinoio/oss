@@ -341,11 +341,14 @@ test("finalizes the AppImage with a kernel-executed CEF layout", (t) => {
 
   finalizeAppImageLayout(appDirectory);
 
-  assert.equal(readlinkSync(join(appDirectory, "bin/devhud")), "../shared/bin/devhud");
+  assert.equal(
+    readlinkSync(join(appDirectory, "bin/devhud")),
+    join("..", "shared", "bin", "devhud"),
+  );
   for (const resource of [...appImageCefResources, "locales"]) {
     assert.equal(
       readlinkSync(join(appDirectory, "shared/bin", resource)),
-      `../../bin/${resource}`,
+      join("..", "..", "bin", resource),
     );
   }
 });
