@@ -275,8 +275,9 @@ test("macOS and AppImage desktop validation exercises packaged Native Messaging 
   const appImage = namedStep(workflow.jobs["devhud-desktop"], "Verify Ubuntu AppImage Native Messaging register and unregister lifecycle").run;
   const appImagePreparation = namedStep(workflow.jobs["devhud-desktop"], "Prepare Ubuntu installed layout").run;
   for (const expected of [
-    "appdir=$(realpath squashfs-root)", 'sandbox="$appdir/bin/chrome-sandbox"',
-    'artifact="$appdir/bin/devhud"', 'host="$appdir/bin/devhud-native-messaging-host"',
+    "appdir=$(realpath squashfs-root)", 'sandbox=$(realpath "$appdir/usr/share/DevHUD/chrome-sandbox")',
+    'artifact=$(realpath "$appdir/usr/bin/devhud")',
+    'host=$(find "$appdir" -type f -name devhud-native-messaging-host -print -quit)', 'test -n "$host"',
   ]) assert.ok(appImagePreparation.includes(expected), `AppImage preparation: ${expected}`);
   for (const expected of [
     "DEVHUD_SMOKE_NATIVE_HOST", "devhud-native-home", ".config/google-chrome/NativeMessagingHosts",
