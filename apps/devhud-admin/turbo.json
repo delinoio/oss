@@ -2,6 +2,9 @@
   "$schema": "https://turbo.build/schema.json",
   "extends": ["//"],
   "tasks": {
-    "build": { "cache": false }
+    "build": { "cache": false },
+    "build:frontend": { "cache": false },
+    "build:embedded": { "cache": false },
+    "verify:embedded": { "cache": false }
   }
 }

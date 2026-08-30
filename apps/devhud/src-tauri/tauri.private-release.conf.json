@@ -10,7 +10,8 @@
     "windows": {
       "signCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File windows/sign.ps1 %1",
       "wix": {
-        "fragmentPaths": ["./windows/native-messaging-lifecycle.wxs"]
+        "fragmentPaths": ["./windows/native-messaging-lifecycle.wxs"],
+        "componentRefs": ["DevHudNativeMessagingLifecycle"]
       },
       "nsis": {
         "installerHooks": "./windows/hooks.nsh"

@@ -64,27 +64,46 @@ impl ResourceLayout {
 
         #[cfg(target_os = "linux")]
         let (root, required) = {
-            let root = if binary_dir.ends_with("share/DevHUD") {
-                binary_dir.to_path_buf()
+            let appimage_sandbox = binary_dir.join("../shared/bin/chrome-sandbox");
+            let sharun_root = if binary_dir.ends_with("shared/bin") {
+                binary_dir
+                    .parent()
+                    .and_then(Path::parent)
+                    .map(|appdir| appdir.join("bin"))
+                    .filter(|root| root.join("libcef.so").is_file())
             } else {
-                let package_prefix = binary_dir.parent().ok_or_else(|| {
-                    "the Linux executable is not inside a package bin directory".to_string()
-                })?;
-                package_prefix.join("share/DevHUD")
+                None
+            };
+            let (root, sandbox) = if let Some(root) = sharun_root {
+                (root, PathBuf::from("../shared/bin/chrome-sandbox"))
+            } else {
+                let root = if binary_dir.ends_with("share/DevHUD")
+                    || binary_dir.join("libcef.so").is_file()
+                {
+                    binary_dir.to_path_buf()
+                } else {
+                    let package_prefix = binary_dir.parent().ok_or_else(|| {
+                        "the Linux executable is not inside a package bin directory".to_string()
+                    })?;
+                    package_prefix.join("share/DevHUD")
+                };
+                let sandbox = if appimage_sandbox.is_file() {
+                    PathBuf::from("../shared/bin/chrome-sandbox")
+                } else {
+                    PathBuf::from("chrome-sandbox")
+                };
+                (root, sandbox)
             };
             (
                 root,
-                [
-                    "libcef.so",
-                    "icudtl.dat",
-                    "resources.pak",
-                    "v8_context_snapshot.bin",
-                    "locales/en-US.pak",
-                    "chrome-sandbox",
-                ]
-                .into_iter()
-                .map(PathBuf::from)
-                .collect(),
+                vec![
+                    PathBuf::from("libcef.so"),
+                    PathBuf::from("icudtl.dat"),
+                    PathBuf::from("resources.pak"),
+                    PathBuf::from("v8_context_snapshot.bin"),
+                    PathBuf::from("locales/en-US.pak"),
+                    sandbox,
+                ],
             )
         };
 
@@ -141,6 +160,55 @@ mod tests {
         assert_eq!(
             layout.root,
             Path::new("/tmp/devhud-smoke-root/usr/share/DevHUD")
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_accepts_appimage_split_resource_layout() {
+        let root = tempfile::tempdir().expect("temporary AppDir");
+        let binary_dir = root.path().join("bin");
+        let sandbox_dir = root.path().join("shared/bin");
+        std::fs::create_dir(&binary_dir).expect("AppDir bin");
+        std::fs::create_dir_all(&sandbox_dir).expect("AppDir shared bin");
+        std::fs::write(binary_dir.join("libcef.so"), []).expect("CEF library");
+        std::fs::write(sandbox_dir.join("chrome-sandbox"), []).expect("CEF sandbox");
+
+        let layout =
+            ResourceLayout::for_executable(&binary_dir.join("devhud")).expect("resource layout");
+
+        assert_eq!(layout.root, binary_dir);
+        assert!(
+            layout
+                .required_relative_paths()
+                .any(|path| path == Path::new("../shared/bin/chrome-sandbox"))
+        );
+        assert!(
+            layout
+                .missing()
+                .iter()
+                .all(|path| !path.ends_with("chrome-sandbox"))
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_accepts_appimage_sharun_layout() {
+        let appdir = tempfile::tempdir().expect("temporary AppDir");
+        let binary_dir = appdir.path().join("shared/bin");
+        let resource_dir = appdir.path().join("bin");
+        std::fs::create_dir_all(&binary_dir).expect("sharun binary directory");
+        std::fs::create_dir(&resource_dir).expect("sharun resource directory");
+        std::fs::write(resource_dir.join("libcef.so"), []).expect("CEF library");
+
+        let layout =
+            ResourceLayout::for_executable(&binary_dir.join("devhud")).expect("resource layout");
+
+        assert_eq!(layout.root, resource_dir);
+        assert!(
+            layout
+                .required_relative_paths()
+                .any(|path| path == Path::new("../shared/bin/chrome-sandbox"))
         );
     }
 }

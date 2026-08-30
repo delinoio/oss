@@ -6,6 +6,8 @@ Support uses the authenticated administrator surface only: `AdminService` metada
 
 For diagnostics, ask the user to preview the exact redacted payload first. Guests may export but cannot submit; blocked and deletion-pending accounts cannot submit. Crash evidence is limited to the typed error code, build/platform/architecture, applicable CEF/Tauri revisions, bounded summary/stack, correlation IDs, quota state, and service availability.
 
+CI results, generated SBOMs/provenance, dry package layouts, and release fixtures are validation evidence only. They do not prove that an artifact was signed, uploaded, deployed, approved by a store, exposed by the updater, or made public. Never cite a green CI run as public availability; confirm the exact coordinated release state through the operations contract.
+
 A clean-checkout API or sweeper compile that reports missing embedded administrator assets is a build-prerequisite failure, not a runtime service incident. Re-run the repository-owned `pnpm --filter devhud-admin build:embedded` generator/verifier or the Docker build boundary; never recover by committing or copying a `dist` tree from another checkout.
 
 ## Upload, deletion, and audit cases

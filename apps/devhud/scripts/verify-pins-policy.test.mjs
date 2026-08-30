@@ -114,8 +114,8 @@ for (const source of [null, "git+https://example.com/dioxus-debug-cell#abcdef"])
 }
 
 const targets = [
-  { id: "macos-x64", runner: "macos-15-intel" },
-  { id: "macos-arm64", runner: "macos-15" },
+  { id: "macos-x64", os: "darwin", runner: "macos-15-intel" },
+  { id: "macos-arm64", os: "darwin", runner: "macos-15" },
 ];
 
 function workflowWithMatrix(matrix) {
@@ -133,8 +133,14 @@ test("accepts runner labels paired with their target IDs", () => {
   const workflow = workflowWithMatrix(`
           - id: macos-x64
             runner: macos-15-intel
+            os: macos
+            bundle: dmg
+            package: macos-app
           - id: macos-arm64
             runner: macos-15
+            os: macos
+            bundle: dmg
+            package: macos-app
 `);
 
   assert.doesNotThrow(() => validateCiTargetMatrix(workflow, targets));
@@ -144,8 +150,14 @@ test("rejects a runner label that appears only in another matrix object", () => 
   const workflow = workflowWithMatrix(`
           - id: macos-x64
             runner: macos-15
+            os: macos
+            bundle: dmg
+            package: macos-app
           - id: macos-arm64
             runner: macos-15-intel
+            os: macos
+            bundle: dmg
+            package: macos-app
 `);
 
   assert.throws(
@@ -158,8 +170,14 @@ test("requires exactly one matrix object per target ID", () => {
   const workflow = workflowWithMatrix(`
           - id: macos-x64
             runner: macos-15-intel
+            os: macos
+            bundle: dmg
+            package: macos-app
           - id: macos-x64
             runner: macos-15
+            os: macos
+            bundle: dmg
+            package: macos-app
 `);
 
   assert.throws(

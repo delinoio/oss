@@ -4,6 +4,42 @@
   "tasks": {
     "build": {
       "cache": false
+    },
+    "test:unit": {
+      "dependsOn": ["^build"]
+    },
+    "test:components": {
+      "dependsOn": ["^build"]
+    },
+    "test:security": {
+      "dependsOn": ["^build"]
+    },
+    "test:adapters": {
+      "dependsOn": ["^build"]
+    },
+    "test:native:capture": {
+      "cache": false
+    },
+    "test:native:shortcuts": {
+      "cache": false
+    },
+    "test:native:ipc": {
+      "cache": false
+    },
+    "test:native:updater": {
+      "cache": false
+    },
+    "mobile:generate": {
+      "cache": false
+    },
+    "build:ios": {
+      "cache": false
+    },
+    "build:android": {
+      "cache": false
+    },
+    "smoke:platform": {
+      "cache": false
     }
   }
 }

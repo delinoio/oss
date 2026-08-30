@@ -14,7 +14,10 @@ package-local `.env.example` to `.env`, use the exact same issuer in
 
 OSS mode does not create a shared administrator, user, or application.
 Administrator sign-in therefore requires contributor-owned Logto setup or the
-authorized team path. Run `pnpm --filter devhud-admin build:embedded` to build
+authorized team path. Run `pnpm --filter devhud-admin typecheck`, `lint`,
+`test:unit`, `test:components`, `test:accessibility`, and `build:frontend` for
+the split CI contracts. Run `pnpm --filter devhud-admin build:embedded` or
+`verify:embedded` to build
 the generated API client, produce the ignored administrator bundle for Go
 embedding, and validate its production structure. Run
 `pnpm --filter devhud-admin test` for type, component, production-output, and

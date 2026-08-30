@@ -145,5 +145,6 @@
 ### Testing and Validation
 
 - If Rust code changes in this domain, run `cargo test` from repository root.
+- DevHud native-host IPC and registration fixtures must remain callable from the package-local DevHud CI commands. Native binaries, installers, signing, release, and deployment tasks are non-cacheable and CI must not publish or install outside disposable layouts.
 - Keep logs sufficient for debugging install, dispatch, and runtime resolution flow.
 - Keep CLI logs colorized by default for human operators, with explicit opt-out controls.

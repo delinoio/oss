@@ -2,6 +2,7 @@
 
 import { spawn } from "node:child_process";
 import {
+  existsSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -77,11 +78,19 @@ function requiredResources(executable) {
       ],
     };
   }
+  const sharunResourceDir =
+    process.platform === "linux" && binaryDir.endsWith(join("shared", "bin"))
+      ? resolve(binaryDir, "../../bin")
+      : undefined;
   const resourceDir =
     process.platform === "linux"
       ? binaryDir.endsWith(join("share", "DevHUD"))
         ? binaryDir
-        : resolve(binaryDir, "../share/DevHUD")
+        : sharunResourceDir && existsSync(join(sharunResourceDir, "libcef.so"))
+          ? sharunResourceDir
+        : existsSync(join(binaryDir, "libcef.so"))
+          ? binaryDir
+          : resolve(binaryDir, "../share/DevHUD")
       : binaryDir;
   const names =
     process.platform === "win32"
@@ -103,9 +112,14 @@ function requiredResources(executable) {
           "locales/en-US.pak",
           "chrome-sandbox",
         ];
-  return {
-    paths: names.map((name) => join(resourceDir, name)),
-  };
+  const paths = names.map((name) => join(resourceDir, name));
+  if (process.platform === "linux") {
+    const sharunSandbox = sharunResourceDir
+      ? join(binaryDir, "chrome-sandbox")
+      : resolve(binaryDir, "../shared/bin/chrome-sandbox");
+    if (existsSync(sharunSandbox)) paths[paths.length - 1] = sharunSandbox;
+  }
+  return { paths };
 }
 
 function validateMinimumHost() {

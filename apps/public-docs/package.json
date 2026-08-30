@@ -7,8 +7,10 @@
     "prepare:app": "echo \"public-docs prepared\"",
     "dev": "node ../../scripts/run-rspress-port.mjs public-docs dev 46302 -",
     "build": "rspress build",
+    "build:frontend": "pnpm build",
     "preview": "rspress preview",
-    "test": "rspress build && node scripts/validate-clean-urls.mjs"
+    "test:routes": "pnpm build:frontend && node scripts/validate-clean-urls.mjs",
+    "test": "pnpm test:routes"
   },
   "devDependencies": {
     "@rspress/core": "^2.0.14",

@@ -1,6 +1,19 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
+    "//#proto:generate": {
+      "inputs": [
+        "buf.gen.yaml",
+        "buf.yaml",
+        "protos/devhud/v1/**",
+        "package.json",
+        "pnpm-lock.yaml"
+      ],
+      "outputs": [
+        "protos/gen/**",
+        "packages/devhud-api-client/src/gen/**"
+      ]
+    },
     "dev": {
       "dependsOn": [
         "build:api"
@@ -16,7 +29,7 @@
       ],
       "persistent": true
     },
-    "build:api":{
+    "build:api": {
       "dependsOn": [
         "^build:api"
       ],
@@ -42,12 +55,24 @@
         ".next/**"
       ]
     },
+    "build:frontend": {
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [
+        "dist/**",
+        "build/**",
+        "artifacts/**",
+        "doc_build/**"
+      ]
+    },
     "build":{
       "dependsOn": [
         "^build",
         "build:api"
       ],
       "inputs": [
+        "$TURBO_DEFAULT$",
         ".env",
         "src/**",
         "**/*.proto",
@@ -67,10 +92,23 @@
       ],
       "outputs": [
         "dist/**",
-        ".next/**"
+        ".next/**",
+        "build/**",
+        "artifacts/**",
+        "doc_build/**"
       ]
     },
     "test": {},
+    "typecheck": {
+      "dependsOn": [
+        "^build"
+      ]
+    },
+    "test:unit": {},
+    "test:components": {},
+    "test:accessibility": {},
+    "test:security": {},
+    "test:adapters": {},
     "lint": {
       "dependsOn": [
         "^lint"

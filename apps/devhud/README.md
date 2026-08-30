@@ -2,17 +2,33 @@
 
 This workspace contains one bilingual React/Rsbuild shell and target-isolated Rust/Tauri hosts. Desktop uses pinned CEF. iOS 16+ uses WKWebView, and Android 10/API 29+ uses Android System WebView; mobile artifacts never select CEF. `cef-pins.json` and `platforms.json` define the desktop contract, while `mobile-platforms.json` defines mobile identity, versions, architectures, and resolved dependency closures.
 
+`cef-pins.json` also binds each architecture-specific AppImage sharun launcher to its SHA-256 digest. The desktop wrapper verifies the selected asset before making its bytes available to AppImage packaging.
+
 From the repository root:
 
 ```sh
 pnpm --filter devhud dev
 pnpm --filter devhud build
 pnpm --filter devhud test
+pnpm --filter devhud typecheck
+pnpm --filter devhud lint
+pnpm --filter devhud test:unit
+pnpm --filter devhud test:components
+pnpm --filter devhud test:accessibility
+pnpm --filter devhud test:security
+pnpm --filter devhud test:adapters
+pnpm --filter devhud test:native:capture
+pnpm --filter devhud test:native:shortcuts
+pnpm --filter devhud test:native:ipc
+pnpm --filter devhud test:native:updater
+pnpm --filter devhud build:frontend
 pnpm --filter devhud verify:pins
 pnpm --filter devhud mobile:generate
 pnpm --filter devhud verify:mobile
 pnpm --filter devhud smoke:platform
 ```
+
+The split commands are the CI contracts for frontend, credential/redaction and direct-provider fixtures, and native capture/shortcut/IPC/updater conformance. They do not sign, publish, deploy, or contact release services.
 
 Mobile generation uses the repository-pinned Tauri CLI, reapplies byte-checked host manifests and native Kotlin/Swift sources, injects and embeds the `io.delino.devhud.widget` WidgetKit extension, and regenerates Xcode after the Swift overlay. The Android plugin manifest merges the production `DevHudWidgetProvider` and one-Deck configuration activity into every Android artifact. Run generation on macOS for Apple projects or with Android SDK 36 and NDK 29 installed for Android projects. Package-local builds are `build:ios`, `build:ios:sim:arm64`, `build:ios:sim:x64`, `build:android`, and `build:android:emulator:x64`; each build includes its platform widget. Production mobile targets are iOS arm64 plus Android arm64/armv7; arm64 and x64 iOS simulators and the Android x64 emulator are covered separately. The x64 iOS command starts the pinned Tauri build in project-open mode to keep its CLI-owned options server alive, then builds the generated workspace explicitly against the x64 simulator SDK instead of Tauri's device-oriented archive path. Android builds preserve each target's requested APK/AAB outputs under the repository `target/devhud-mobile/android/<tauri-target>/` directory so aggregate builds cannot overwrite an earlier architecture.
 

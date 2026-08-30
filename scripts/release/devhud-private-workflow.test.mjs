@@ -28,7 +28,7 @@ test("private OCI packaging generates verified administrator assets before Go va
 });
 
 test("API Docker builds own one verified bundle for both binaries", () => {
-  assert.match(apiDockerfile, /FROM node:24-bookworm-slim AS administrator-assets/u);
+  assert.match(apiDockerfile, /FROM --platform=\$BUILDPLATFORM node:24-bookworm-slim AS administrator-assets/u);
   assert.match(apiDockerfile, /pnpm --filter devhud-admin build:embedded/u);
   assert.match(
     apiDockerfile,
@@ -46,7 +46,7 @@ test("API Docker builds own one verified bundle for both binaries", () => {
 
 test("private workflow validates AppImage sandbox metadata before preparing its smoke layout", () => {
   const ubuntu = workflow.slice(workflow.indexOf("- name: Normalize and validate Ubuntu artifact and lifecycle"), workflow.indexOf("\n      - uses: actions/upload-artifact@v7", workflow.indexOf("- name: Normalize and validate Ubuntu artifact and lifecycle")));
-  const metadataInspection = 'sandbox_metadata=$(unsquashfs -lln -o "$offset" "$source" usr/share/DevHUD/chrome-sandbox';
+  const metadataInspection = 'sandbox_metadata=$(unsquashfs -lln -o "$offset" "$source" shared/bin/chrome-sandbox';
   const extraction = '"$source" --appimage-extract';
   const repair = 'sudo chown root:root "$sandbox"';
   assert.ok(workflow.includes("squashfs-tools"));
@@ -55,10 +55,11 @@ test("private workflow validates AppImage sandbox metadata before preparing its 
     metadataInspection,
     'if [ "$sandbox_metadata" != "-rwsr-xr-x 0/0" ]',
     "appdir=$(realpath squashfs-root)",
-    'sandbox=$(realpath "$appdir/usr/share/DevHUD/chrome-sandbox")',
+    'sandbox=$(realpath "$appdir/shared/bin/chrome-sandbox")',
     repair,
     'sudo chmod 4755 "$sandbox"',
-    'executable=$(realpath "$appdir/usr/bin/devhud")',
+    'executable=$(realpath "$appdir/bin/devhud")',
+    'host=$(realpath "$appdir/bin/devhud-native-messaging-host")',
     'smoke:platform -- --artifact "$executable"',
   ]) assert.ok(workflow.includes(command), `missing AppImage validation command: ${command}`);
   assert.ok(ubuntu.indexOf(metadataInspection) < ubuntu.indexOf(extraction));

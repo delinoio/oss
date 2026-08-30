@@ -10,6 +10,7 @@ const support = readFileSync(`${root}/docs/apps-devhud-support-contract.md`, "ut
 const workflow = readFileSync(`${root}/.github/workflows/devhud-cef-security-review.yml`, "utf8");
 const release = readFileSync(`${root}/.github/workflows/release-devhud.yml`, "utf8");
 const privateWorkflow = readFileSync(`${root}/.github/workflows/package-devhud-private.yml`, "utf8");
+const ciWorkflow = readFileSync(`${root}/.github/workflows/CI.yml`, "utf8");
 const fixture = JSON.parse(readFileSync(`${root}/scripts/release/fixtures/devhud-cef-security-review.json`, "utf8"));
 const pins = JSON.parse(readFileSync(`${root}/apps/devhud/cef-pins.json`, "utf8"));
 const runtimeRevisionConsumers = [
@@ -100,4 +101,27 @@ test("operations contract preserves high-risk CEF, rollback, retention, and reda
   assert.match(support, /track per-device secure-store cleanup separately as best-effort reconciliation/iu);
   assert.match(operations, /Report server-side purge completion once the applicable database, R2, and tombstone boundaries are confirmed/iu);
   assert.match(operations, /track per-device secure-store cleanup separately as best-effort reconciliation/iu);
+});
+
+test("CI validates release fixtures without publication authority", () => {
+  assert.match(ciWorkflow, /permissions:\n  contents: read\n  pull-requests: read/u);
+  assert.doesNotMatch(ciWorkflow, /\$\{\{\s*secrets\./u);
+  for (const job of [
+    "ci-contracts", "devhud-frontend", "devhud-extension", "devhud-rust-conformance",
+    "devhud-security", "devhud-desktop", "devhud-mobile-contracts", "devhud-ios-simulator",
+    "devhud-android-emulator", "devhud-protocol", "devhud-admin", "devhud-api", "devhud-oci",
+    "devhud-supply-chain", "devhud-release-contracts", "ci-result",
+  ]) assert.match(ciWorkflow, new RegExp(`\\n  ${job}:`, "u"), job);
+  for (const forbidden of [
+    /\bgit push\b/iu,
+    /\bgh release (?:create|edit|upload|delete)/iu,
+    /\bdocker push\b/iu,
+    /\bcosign sign\b/iu,
+    /wrangler\s+pages\s+deploy/iu,
+    /devhud-store-release\.mjs\s+(?:submit|publish|withdraw)/iu,
+    /devhud-release-controller\.mjs\s+(?:prepare|promote|rollback)/iu,
+  ]) assert.doesNotMatch(ciWorkflow, forbidden);
+  assert.match(workflowContract, /CI never builds a signed private candidate and never publishes/iu);
+  assert.match(operations, /CI never builds a signed private candidate and never publishes/iu);
+  assert.match(support, /validation evidence only/iu);
 });

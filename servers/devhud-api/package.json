@@ -5,6 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/local.mjs serve",
-    "migrate:local": "node scripts/local.mjs migrate"
+    "migrate:local": "node scripts/local.mjs migrate",
+    "ci:format": "node ../../scripts/ci/check-go-format.mjs servers/devhud-api",
+    "ci:vet": "go vet ./...",
+    "ci:build": "go build ./cmd/devhud-api ./cmd/devhud-api-sweeper",
+    "ci:unit": "go test ./...",
+    "ci:migrations": "go test ./internal/postgres -run 'TestMigrate|TestNewPool|TestNewSweeperPool'",
+    "ci:integration": "go test -tags=integration ./internal/postgres",
+    "ci:api": "go test ./internal/auth ./internal/rpc ./internal/server ./internal/upload ./internal/updates",
+    "ci:sweeper": "go test ./cmd/devhud-api-sweeper ./internal/sweeper"
   }
 }

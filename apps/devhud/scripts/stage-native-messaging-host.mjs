@@ -68,6 +68,12 @@ export function cargoTargetDirectory(metadataOutput) {
   return metadata.target_directory;
 }
 
+export function workspaceCargoTargetDirectory() {
+  return cargoTargetDirectory(
+    run("cargo", ["metadata", "--format-version=1", "--no-deps", "--locked"], { capture: true }),
+  );
+}
+
 export function nativeMessagingHostArtifactTarget({ executable, targetDirectory, hostTriple, profile }) {
   const executableName = basename(executable);
   const executableSuffix = executableName === `${nativeHostTarget}.exe`
@@ -90,9 +96,8 @@ export function nativeMessagingHostArtifactTarget({ executable, targetDirectory,
   return { triple, executableSuffix };
 }
 
-export function stageNativeMessagingHost({ release }) {
+export function stageNativeMessagingHost({ release, targetDirectory = workspaceCargoTargetDirectory() }) {
   const hostTriple = rustHostTriple(run("rustc", ["-vV"], { capture: true }));
-  const targetDirectory = cargoTargetDirectory(run("cargo", ["metadata", "--format-version=1", "--no-deps", "--locked"], { capture: true }));
   const cargoArgs = [
     "build",
     "--locked",

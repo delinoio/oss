@@ -26,6 +26,11 @@ production, deployment, release, or signing secrets there.
 Run `pnpm --filter @delinoio/devhud-api migrate:local` only inside a selected
 root development mode. The local API wrapper generates and validates the
 ignored administrator bundle before migration or serving. Before direct Go
-commands, run `pnpm --filter devhud-admin build:embedded`; then run Go tests
-with `go test ./servers/devhud-api/...`. The full internal ownership and
-validation contract is `docs/repository-environment-contract.md`.
+commands, run `pnpm --filter devhud-admin build:embedded`. The package-local CI
+commands are `ci:format`, `ci:vet`,
+`ci:build`, `ci:unit`, `ci:migrations`, `ci:integration`, `ci:api`, and
+`ci:sweeper`; migration and integration commands require the documented test
+PostgreSQL connection. They validate only local fixtures and do not deploy.
+Run Go tests directly with `go test ./servers/devhud-api/...`.
+The full internal ownership and validation contract is
+`docs/repository-environment-contract.md`.

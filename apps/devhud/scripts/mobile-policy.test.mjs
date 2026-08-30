@@ -453,7 +453,9 @@ test("mobile policy requires production and simulator iOS builds", () => {
   assert.throws(() => assertMobileCi(workflow.replace("xcrun simctl list > /dev/null", "true")), /initialize simulator devices/u);
   assert.throws(() => assertMobileCi(workflow.replace(" --no-sign", "")), /without signing/u);
   assert.throws(() => assertMobileCi(workflow.replace("            artifacts: --apk --aab", "            artifacts: --apk")), /build --apk --aab/u);
-  assert.throws(() => assertMobileCi(workflow.replace('--android-artifact "${aab_artifacts[0]}"', '--android-artifact "missing.aab"')), /inspect the generated App Bundle/u);
+  assert.throws(() => assertMobileCi(workflow.replaceAll('--android-artifact "${aab_artifacts[0]}"', '--android-artifact "missing.aab"')), /inspect the generated App Bundle/u);
+  assert.throws(() => assertMobileCi(workflow.replace("android build --target aarch64 --target armv7 --aab", "android build --target aarch64 --aab")), /combined production build command/u);
+  assert.throws(() => assertMobileCi(workflow.replace("--android-abi arm64-v8a --android-abi armeabi-v7a", "--android-abi arm64-v8a")), /both production ABIs/u);
 });
 
 test("mobile policy rejects CEF leakage", () => {

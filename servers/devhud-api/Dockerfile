@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM node:24-bookworm-slim AS administrator-assets
+FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS administrator-assets
 WORKDIR /src
 RUN corepack enable && corepack prepare pnpm@10.26.2 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -11,7 +11,7 @@ COPY packages/devhud-api-client ./packages/devhud-api-client
 RUN mkdir -p servers/devhud-api/internal/adminassets && \
     pnpm --filter devhud-admin build:embedded
 
-FROM golang:1.25.7-bookworm AS build
+FROM --platform=$BUILDPLATFORM golang:1.25.7-bookworm AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
