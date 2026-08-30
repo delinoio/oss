@@ -2,6 +2,9 @@
   "bundle": {
     "externalBin": ["binaries/devhud-native-messaging-host"],
     "windows": {
+      "wix": {
+        "fragmentPaths": ["./windows/native-messaging-lifecycle.wxs"]
+      },
       "nsis": {
         "installerHooks": "./windows/hooks.nsh"
       }

@@ -152,6 +152,11 @@ assert(
   "desktop Native Messaging removal hook changed",
 );
 assert(
+  JSON.stringify(desktopTauriConfig.bundle?.windows?.wix?.fragmentPaths) ===
+    JSON.stringify(["./windows/native-messaging-lifecycle.wxs"]),
+  "desktop MSI must own the Native Messaging install and uninstall lifecycle",
+);
+assert(
   JSON.stringify(privateReleaseTauriConfig.bundle?.externalBin) ===
     JSON.stringify(["binaries/devhud-native-messaging-host"]),
   "private release must package the pinned Native Messaging sidecar",

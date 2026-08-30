@@ -1441,13 +1441,12 @@ jobs:
             chmod +x "${appimages[0]}"
             "${appimages[0]}" --appimage-extract >/dev/null
             appdir=$(realpath squashfs-root)
-            sandbox=$(realpath "$appdir/usr/share/DevHUD/chrome-sandbox")
+            sandbox=$(realpath "$appdir/shared/bin/chrome-sandbox")
             test -f "$sandbox"
             sudo chown root:root "$sandbox"
             sudo chmod 4755 "$sandbox"
-            artifact=$(realpath "$appdir/usr/bin/devhud")
-            host=$(find "$appdir" -type f -name devhud-native-messaging-host -print -quit)
-            test -n "$host"
+            artifact="$appdir/bin/devhud"
+            host="$appdir/bin/devhud-native-messaging-host"
             {
               echo "DEVHUD_SMOKE_APPIMAGE=${{ github.workspace }}/${appimages[0]}"
               echo "DEVHUD_SMOKE_APPDIR=$appdir"
