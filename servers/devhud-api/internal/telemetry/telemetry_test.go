@@ -1,6 +1,9 @@
 package telemetry
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestTraceExportConfiguredForGenericAndSignalSpecificEndpoints(t *testing.T) {
 	for name, endpoints := range map[string]struct {
@@ -20,5 +23,18 @@ func TestTraceExportConfiguredForGenericAndSignalSpecificEndpoints(t *testing.T)
 				t.Fatalf("traceExportConfigured() = %v, want %v", got, endpoints.want)
 			}
 		})
+	}
+}
+
+func TestNewUsesSDKSemanticConventionSchema(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
+
+	providers, err := New(context.Background(), "devhud-api", "test")
+	if err != nil {
+		t.Fatalf("create telemetry providers: %v", err)
+	}
+	if err := providers.Shutdown(context.Background()); err != nil {
+		t.Fatalf("shut down telemetry providers: %v", err)
 	}
 }
