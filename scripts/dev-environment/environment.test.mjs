@@ -1417,6 +1417,9 @@ test("repository policy is immutable, orchestration-only, and free of first-part
     compose,
     /logto-database-init:[\s\S]*condition: service_healthy[\s\S]*logto-init:[\s\S]*logto-database-init:[\s\S]*condition: service_completed_successfully/u,
   );
+  assert.match(compose, /command: \["cli", "db", "seed", "--", "--swe"\]/u);
+  assert.match(compose, /command: \["start"\]/u);
+  assert.doesNotMatch(compose, /command: \["npm",/u);
   assert.match(postgresInit, /WHERE NOT EXISTS[\s\S]*\\gexec/u);
 
   const turbo = JSON.parse(await readFile(resolve(repositoryRoot, "turbo.json"), "utf8"));
