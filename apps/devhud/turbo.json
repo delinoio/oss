@@ -17,6 +17,18 @@
     "test:adapters": {
       "dependsOn": ["^build"]
     },
+    "test:native:capture": {
+      "cache": false
+    },
+    "test:native:shortcuts": {
+      "cache": false
+    },
+    "test:native:ipc": {
+      "cache": false
+    },
+    "test:native:updater": {
+      "cache": false
+    },
     "mobile:generate": {
       "cache": false
     },

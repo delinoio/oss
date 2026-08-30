@@ -319,7 +319,10 @@ test("package-local CI commands and deterministic cache boundaries are explicit"
   }
   const nativeTurbo = JSON.parse(readFileSync(`${root}/apps/devhud/turbo.json`, "utf8"));
   for (const task of ["test:unit", "test:components", "test:security", "test:adapters"]) assert.deepEqual(nativeTurbo.tasks[task].dependsOn, ["^build"], task);
-  for (const task of ["build", "mobile:generate", "build:ios", "build:android", "smoke:platform"]) assert.equal(nativeTurbo.tasks[task].cache, false, task);
+  for (const task of [
+    "build", "test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:native:updater",
+    "mobile:generate", "build:ios", "build:android", "smoke:platform",
+  ]) assert.equal(nativeTurbo.tasks[task].cache, false, task);
 
   const devhudScripts = packages["apps/devhud/package.json"].scripts;
   const devhudTestFiles = readdirSync(`${root}/apps/devhud/src`).filter((path) => /\.test\.tsx?$/u.test(path));
