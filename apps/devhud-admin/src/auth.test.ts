@@ -23,6 +23,7 @@ vi.mock("@logto/browser", () => ({
 }));
 
 import { AdminAuth, authStorage } from "./auth";
+import { logtoEndpointFromIssuer } from "./identity-contract";
 import type { GetBootstrapResponse } from "@delinoio/devhud-api-client";
 
 describe("AdminAuth", () => {
@@ -39,7 +40,7 @@ describe("AdminAuth", () => {
 
   it("selects the bootstrap admin public client and exact redirect", () => {
     const auth = AdminAuth.fromBootstrap({
-      logtoIssuer: "https://identity.example",
+      logtoIssuer: "https://identity.example/oidc",
       logtoAudience: "https://api.example",
       logtoClients: { admin: "admin-public-client" },
       logtoRedirects: { admin: "http://localhost:46306/auth/callback" },
@@ -49,10 +50,15 @@ describe("AdminAuth", () => {
     expect(methods.constructorConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         appId: "admin-public-client",
-        endpoint: "https://identity.example",
+        endpoint: "https://identity.example/",
         resources: ["https://api.example"],
       }),
     );
+  });
+
+  it("removes only a terminal OIDC issuer segment from the SDK endpoint", () => {
+    expect(logtoEndpointFromIssuer("https://identity.example/tenant/oidc/")).toBe("https://identity.example/tenant");
+    expect(logtoEndpointFromIssuer("https://identity.example/tenant")).toBe("https://identity.example/tenant");
   });
 
   it("uses the exact bootstrap redirect and adds nonce to Logto PKCE/state sign-in", async () => {
