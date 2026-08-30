@@ -90,11 +90,17 @@ test("desktop capture smoke contracts cover each supported native adapter", () =
   assert.match(captureSource, /link\(name = "user32"/u);
   assert.match(captureSource, /link\(name = "X11"/u);
   assert.equal(tauriConfig.bundle.macOS.infoPlist, "Info.desktop.plist");
+  assert.match(
+    macInfoPlist,
+    /<key>NSInputMonitoringUsageDescription<\/key>\s*<string>[^<]+<\/string>/u,
+  );
   assert.match(macInfoPlist, /NSScreenCaptureUsageDescription/u);
   assert.deepEqual(macTauriConfig.bundle.resources, {
     "infoplist/ko.lproj/InfoPlist.strings": "ko.lproj/InfoPlist.strings",
   });
-  assert.match(koreanInfoPlist.trim(), /^NSScreenCaptureUsageDescription = ".+";$/u);
+  assert.match(koreanInfoPlist, /^NSInputMonitoringUsageDescription = ".+";$/mu);
+  assert.match(koreanInfoPlist, /^NSScreenCaptureUsageDescription = ".+";$/mu);
+  assert.match(koreanInfoPlist, /키보드 입력/u);
   assert.match(koreanInfoPlist, /화면/u);
 });
 

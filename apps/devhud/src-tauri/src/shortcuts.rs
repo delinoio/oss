@@ -188,7 +188,7 @@ pub struct NativeKeyEvent {
     pub pressed: bool,
 }
 
-#[cfg(desktop)]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 pub fn normalize_global_event(event: &rdev::EventType) -> Option<NativeKeyEvent> {
     use rdev::{EventType, Key};
     let (key, pressed) = match event {
@@ -588,10 +588,7 @@ pub struct PlatformShortcutBackend {
 impl PlatformShortcutBackend {
     pub fn current() -> Self {
         #[cfg(target_os = "macos")]
-        let (platform, permission) = (
-            ShortcutPlatform::Macos,
-            macos_accessibility_permission(false),
-        );
+        let (platform, permission) = (ShortcutPlatform::Macos, macos_shortcut_permission(false));
         #[cfg(target_os = "windows")]
         let (platform, permission) = (ShortcutPlatform::Windows, ShortcutPermission::Available);
         #[cfg(target_os = "linux")]
@@ -615,6 +612,16 @@ impl PlatformShortcutBackend {
             fail_next: false,
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn available_for_tests(platform: ShortcutPlatform) -> Self {
+        Self {
+            permission: ShortcutPermission::Available,
+            platform,
+            installed: default_bindings(),
+            fail_next: false,
+        }
+    }
 }
 impl NativeShortcutBackend for PlatformShortcutBackend {
     fn install(&mut self, bindings: &ShortcutBindings) -> Result<(), ShortcutFailure> {
@@ -633,7 +640,7 @@ impl NativeShortcutBackend for PlatformShortcutBackend {
     fn refresh_permission(&mut self) -> ShortcutPermission {
         #[cfg(target_os = "macos")]
         {
-            self.permission = macos_accessibility_permission(false);
+            self.permission = macos_shortcut_permission(false);
         }
         self.permission
     }
@@ -641,7 +648,7 @@ impl NativeShortcutBackend for PlatformShortcutBackend {
     fn request_permission(&mut self) -> ShortcutPermission {
         #[cfg(target_os = "macos")]
         {
-            self.permission = macos_accessibility_permission(true);
+            self.permission = macos_shortcut_permission(true);
         }
         self.permission
     }
@@ -652,14 +659,21 @@ impl NativeShortcutBackend for PlatformShortcutBackend {
 }
 
 #[cfg(target_os = "macos")]
-fn macos_accessibility_permission(prompt: bool) -> ShortcutPermission {
+pub(crate) fn macos_shortcut_permission(prompt: bool) -> ShortcutPermission {
     use std::ffi::c_void;
 
     #[link(name = "ApplicationServices", kind = "framework")]
-    #[link(name = "CoreFoundation", kind = "framework")]
     unsafe extern "C" {
         fn AXIsProcessTrusted() -> bool;
         fn AXIsProcessTrustedWithOptions(options: *const c_void) -> bool;
+    }
+    #[link(name = "CoreGraphics", kind = "framework")]
+    unsafe extern "C" {
+        fn CGPreflightListenEventAccess() -> bool;
+        fn CGRequestListenEventAccess() -> bool;
+    }
+    #[link(name = "CoreFoundation", kind = "framework")]
+    unsafe extern "C" {
         fn CFDictionaryCreate(
             allocator: *const c_void,
             keys: *const *const c_void,
@@ -673,7 +687,7 @@ fn macos_accessibility_permission(prompt: bool) -> ShortcutPermission {
         static kCFBooleanTrue: *const c_void;
     }
 
-    let trusted = unsafe {
+    let accessibility_trusted = unsafe {
         if !prompt {
             AXIsProcessTrusted()
         } else {
@@ -694,7 +708,14 @@ fn macos_accessibility_permission(prompt: bool) -> ShortcutPermission {
             trusted
         }
     };
-    if trusted {
+    let input_monitoring_trusted = unsafe {
+        if prompt {
+            CGRequestListenEventAccess()
+        } else {
+            CGPreflightListenEventAccess()
+        }
+    };
+    if accessibility_trusted && input_monitoring_trusted {
         ShortcutPermission::Available
     } else {
         ShortcutPermission::NotDetermined
@@ -1328,7 +1349,7 @@ mod tests {
         }
     }
 
-    #[cfg(desktop)]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     #[test]
     fn global_listener_accepts_only_the_contracted_physical_keys() {
         assert_eq!(

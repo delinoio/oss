@@ -1,1 +1,2 @@
+NSInputMonitoringUsageDescription = "DevHUD는 사용자가 설정한 전역 단축키를 감지하기 위해서만 키보드 입력을 모니터링합니다.";
 NSScreenCaptureUsageDescription = "DevHUD는 사용자가 RealQA 캡처 동작을 실행할 때만 화면, 창 또는 선택한 영역을 캡처합니다.";

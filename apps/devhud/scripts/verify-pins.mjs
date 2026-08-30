@@ -10,6 +10,7 @@ import yaml from "js-yaml";
 import { hasExactCspDirectiveSources } from "./frontend-output-policy.mjs";
 import {
   validateCiTargetMatrix,
+  validateDependencyPresence,
   validateResolvedDependencySources,
 } from "./verify-pins-policy.mjs";
 
@@ -393,6 +394,47 @@ for (const { id, os, arch, rustTarget, runner } of platforms.targets) {
   assert(typeof runner === "string" && runner.length > 0, `missing native runner for ${id}`);
 }
 validateCiTargetMatrix(yaml.load(ciWorkflow), platforms.targets);
+
+for (const { os, rustTarget } of platforms.targets) {
+  const targetMetadataResult = spawnSync(
+    "cargo",
+    [
+      "metadata",
+      "--format-version",
+      "1",
+      "--locked",
+      "--all-features",
+      "--filter-platform",
+      rustTarget,
+      "--manifest-path",
+      join(appRoot, "src-tauri/Cargo.toml"),
+    ],
+    {
+      cwd: repoRoot,
+      encoding: "utf8",
+      maxBuffer: 32 * 1024 * 1024,
+      shell: process.platform === "win32",
+    },
+  );
+  assert(
+    targetMetadataResult.status === 0,
+    targetMetadataResult.error?.message ||
+      targetMetadataResult.stderr ||
+      `Cargo dependency resolution failed for ${rustTarget}`,
+  );
+  const targetMetadata = JSON.parse(targetMetadataResult.stdout);
+  const targetDevhud = targetMetadata.packages.find(
+    (pkg) => resolve(pkg.manifest_path) === devhudManifestPath,
+  );
+  assert(targetDevhud, `DevHUD is absent from Cargo metadata for ${rustTarget}`);
+  validateDependencyPresence(
+    targetMetadata,
+    targetDevhud.id,
+    "rdev",
+    os !== "darwin",
+    rustTarget,
+  );
+}
 
 for (const [name, version] of Object.entries({
   "@rsbuild/core": "2.1.10",
