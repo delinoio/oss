@@ -218,6 +218,18 @@ test("OCI validation is multi-architecture, non-root, migration-bearing, and loc
     "docker run --detach", "postgres:15-bookworm", "--publish 5432:5432", "pg_isready",
     "docker inspect", "State.Health.Status", "docker logs devhud-postgres",
   ]) assert.ok(startPostgreSQL.run.includes(expected), expected);
+  const sweeperAssetCondition = "${{ steps.gate.outputs.run == 'true' && matrix.target == 'sweeper' }}";
+  const setupPNPM = namedStep(job, "Setup pnpm");
+  const setupNode = namedStep(job, "Setup Node.js");
+  const generateAssets = namedStep(job, "Generate and verify embedded administrator assets");
+  for (const step of [setupPNPM, setupNode, generateAssets]) assert.equal(step.if, sweeperAssetCondition);
+  assert.equal(setupPNPM.with.version, "10.26.2");
+  assert.equal(setupNode.with["node-version-file"], ".nvmrc");
+  assert.match(generateAssets.run, /pnpm install --frozen-lockfile --ignore-scripts/u);
+  assert.match(generateAssets.run, /pnpm --filter devhud-admin build:embedded/u);
+  const generateAssetsIndex = job.steps.indexOf(generateAssets);
+  const buildAndInspectIndex = job.steps.findIndex(({ name }) => name === "Build and inspect amd64/arm64 OCI layout");
+  assert.ok(generateAssetsIndex >= 0 && generateAssetsIndex < buildAndInspectIndex);
   const stopPostgreSQL = namedStep(job, "Stop PostgreSQL");
   assert.equal(stopPostgreSQL.if, "${{ always() && steps.gate.outputs.run == 'true' }}");
   assert.match(stopPostgreSQL.run, /docker rm --force devhud-postgres/u);
