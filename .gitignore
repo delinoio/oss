@@ -133,8 +133,6 @@ next-env.d.ts
 # Nuxt.js build / generate output
 .nuxt
 dist
-!servers/devhud-api/internal/adminassets/dist/
-!servers/devhud-api/internal/adminassets/dist/**
 .output
 
 # Gatsby files

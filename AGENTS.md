@@ -2,6 +2,7 @@
 
 - Use the `@docs/` directory as the source of truth for project contracts and implementation documents.
 - All repository-wide rules must be defined in the appropriate AGENTS.md.
+- Every repository-owned directory named `dist` is ignored generated output and must never be tracked. Generate required `dist` content explicitly before compilation, testing, or packaging, and remove generated `dist` directories from the final worktree.
 - List files in `docs/` before starting each task, and keep `docs/` up-to-date.
 - After completing each task, update the relevant `AGENTS.md` and `docs/` files in the same change when policies, structure, or contracts changed.
 - For documentation authoring and editing tasks, do not arbitrarily omit, delete, or simplify requested or source-backed content; if content, scope, or intent is ambiguous, ask the user before deciding what to remove, merge, or reinterpret; if the documentation change affects repository or domain policy boundaries, update or create the relevant `AGENTS.md` file in the same change when needed.
@@ -135,6 +136,8 @@ enum ProjectId {
 - DevHud settings schema v7 removes shortcuts, repository prompts, and R2 endpoint authority from synchronized snapshots while retaining bounded non-secret agent descriptors; `ReplaceSettings` accepts v7 only. Client v1-v6 reads and the server backfill migrate the complete validated legacy shape deterministically, validate and canonicalize the resulting v7 body, bind its exact SHA-256 digest, and increment a transformed stored revision once. Unsafe legacy R2 authority disables the R2 selection. The serialized aggregate of device-local shortcut bindings, agent identities, and prompts is capped at 1 MiB on read and before mutation, and interactive persistence failures are surfaced while guest memory fallback remains usable; signed-out sessions persist device-local edits through that guest snapshot and are shortcut-hydration-ready. Local agents are desktop-only, default-off, exact-version pinned, and never installed by DevHud. Their paths, observed versions/health, consent, prompts, and managed full-clone cache remain local. Every agent invocation is read-only, network-tool-disabled, and credential-free: a private clone PAT is dropped after workspace preparation, and only after strict Direct marker readiness does DevHud resolve a fresh PAT for one exact native argv-based `gh api` write. All modes use immutable bounded envelopes, isolated clones, strict output validation, atomically purge-gated cancellation/15-minute timeout, redacted diagnostics, and no automatic fallback.
 - Invalid Logto credentials return `Unauthenticated`; transient Logto/JWKS verification failures return correlated `Unavailable` errors and are safely logged without credentials.
 - The `apps/devhud/src-tauri` desktop/mobile host foundation and real `crates/devhud-native-messaging-host` skeleton are Cargo workspace members; the API registers Bootstrap, Settings, Upload, Account, Admin, and Diagnostics and embeds `apps/devhud-admin` at `/admin`, while the remaining planned paths remain documentation-only. Desktop Tauri, CLI, CEF runtime, sandbox dependencies, and six desktop platform archives remain immutable through `apps/devhud/cef-pins.json` and `pnpm --filter devhud verify:pins`; mobile target definitions are immutable through `apps/devhud/mobile-platforms.json` and `pnpm --filter devhud verify:mobile`. Never introduce CEF, desktop hooks, browser-extension integrations, or unapproved networking into a mobile dependency or artifact closure. Do not introduce `feat/cef`, a branch, fork, or arbitrary patch into the protected DevHud dependency graph, or a remote frontend dependency. The sole allowed patch redirects the official crates.io `tauri`, `tauri-plugin`, and `tauri-utils` packages to the same immutable authoritative Tauri revision so desktop-only official plugins share the CEF runtime's public types; the verifier rejects every other patch. The Native Messaging host remains desktop-only; its real crate skeleton is included in the workspace. `CreateUpload` must atomically reserve the signed-URL issuance quota before issuing a URL; `FinalizeUpload` must validate that reservation without charging it again and atomically recheck or reserve all other applicable upload quotas during finalization. Direct R2 staging uploads use the exact DevHud origins, `PUT`/`OPTIONS`, and checksum headers documented in `docs/servers-devhud-api-contract.md`. The implemented idempotent `devhud-api-sweeper` owns post-recovery account purge, upload-removal reconciliation, and retention pruning with multi-instance coordination; each iteration drains repeated transaction-bounded retention batches until request, audit, and crash-report tables all return a partial batch or its deadline ends. Staging expiry is added with UploadService. It ships as a separate signed/provenanced OCI image. Account restoration clears deletion state only and never clears an administrative block.
+- Architecture-specific AppImage launcher bytes are immutable desktop packaging inputs in `apps/devhud/cef-pins.json`; AppImage packaging must verify the launcher's committed SHA-256 digest before the bundler can consume it.
+- `apps/devhud-admin` is the sole Rsbuild producer of the ignored embedded administrator `dist`. Run `pnpm --filter devhud-admin build:embedded` before any API or sweeper Go compilation; the command builds the generated client, produces the `/admin/`-rooted hashed bundle without source maps, and validates its exact production structure. Docker must generate that bundle inside its build boundary and compile both binaries from the same generated tree.
 - Android App Bundle validation must use the checksum-pinned artifact inspector declared in `apps/devhud/mobile-platforms.json` and verify the final merged base manifest's exact Deck widget receiver before widget evidence is recorded.
 - DevHud private packaging has no automatic trigger: it is manually dispatchable and reusable only by an explicit caller, and is signed-only except for the secret-free `plan-only` dry run. Its stable release identity is exactly `devhud@v<MAJOR.MINOR.PATCH>`, with `packaging/devhud/release-metadata.json` synchronized to every source version. Preserve updater Ed25519 signatures, platform/store signatures, and Sigstore bundles as separate trust domains; unsigned or incomplete output is never public-ready. The workflow may retain a short-lived private artifact only and must never push a tag/image, create a release, submit a store build, or deploy.
 
@@ -340,8 +343,8 @@ enum RustiaComponent {
 Repository-wide quality CI is defined in `.github/workflows/CI.yml`.
 
 Coverage expectations:
-- `go-quality`: runs `go fmt ./...` (fails if formatting changes are applied) and `go vet ./...` on Ubuntu.
-- `go-test`: runs `go test ./...` on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
+- `go-quality`: generates and validates the ignored administrator bundle, then runs `go fmt ./...` (failing if formatting changes are applied) and `go vet ./...` on Ubuntu.
+- `go-test`: generates and validates the ignored administrator bundle, then runs `go test ./...` on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
 - `rust-fmt`: runs `cargo fmt --all --check`.
 - `rust-clippy`: runs `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
 - `rust-test`: runs `cargo test --workspace --all-targets`.
@@ -350,7 +353,16 @@ Coverage expectations:
 - `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter binpm-docs test`.
 - `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter nodeup-docs test`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.
+- `ci-contracts`: validates workflow syntax and the repository CI contract with the checked-in Go `actionlint` tool and Node fixtures.
+- `devhud-frontend`, `devhud-extension`, and `devhud-admin`: run package-local type, lint, unit, component, accessibility, and deterministic frontend/package builds.
 - `devhud-protocol`: runs schema formatting, lint, compatibility, and generated-freshness checks; Go binding tests; and TypeScript client lint, tests, and build on Ubuntu.
+- `devhud-api`: runs package-local Go format, vet, unit, PostgreSQL migration, integration, API, and sweeper conformance.
+- `devhud-rust-conformance`: runs package-local capture, shortcut, IPC, updater, and native-host protocol tests in addition to the repository Rust baseline.
+- `devhud-security`: runs credential, redaction, logout, deletion, restore, direct GitHub/R2, and agent adapter fixtures.
+- `devhud-desktop`: validates the exact CEF pin and feasible macOS, Windows, and Ubuntu x64/arm64 native packages, installer/native-host lifecycle, and Linux X11 smoke.
+- `devhud-mobile-contracts`, `devhud-ios-simulator`, and `devhud-android-emulator`: validate iOS/Android app and widget generation and production/simulator/emulator builds.
+- `devhud-oci`: builds both API and sweeper OCI layouts for amd64/arm64 and validates non-root execution, embedded migrations, and SPDX SBOMs without pushing.
+- `devhud-supply-chain`: validates installer, Native Messaging host, extension ZIP, updater/key-rotation signature, SBOM, and provenance fixtures.
 - `devhud-release-contracts`: runs deterministic static/dry Node tests for the reusable private candidate, exact public release identity, configuration failure, signing/preflight failure, review retry, channel ordering, rollback, and redaction contracts without exercising publication.
 - `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
 - The DevHud release-contract job also validates the internal operations runbook, repository workflow contract, and read-only CEF review workflow through `scripts/release/devhud-operations.test.mjs`.
@@ -358,9 +370,12 @@ Coverage expectations:
 Change-scoped execution rules:
 - CI jobs perform self-gating; there is no repository-wide `detect-changes` job.
 - Go and Rust jobs use in-job path-based change detection via `dorny/paths-filter`.
-- Existing Node workspace test/lint jobs use in-job Turbo affected detection via `pnpm dlx turbo@2.9.14 query affected --packages <workspace>`.
+- Node workspace jobs install with the frozen lockfile and use the committed Turbo binary via `pnpm exec turbo run <task> --affected --filter <workspace> --dry=json`; an empty task set is a successful self-gated no-op.
+- DevHud path filters include `servers/**`, `protos/**`, `packages/**`, every DevHud app, `crates/devhud-native-messaging-host/**`, `packaging/devhud/**`, public docs, and the DevHud package/release/review workflows.
+- Protocol generation and package-local frontend outputs are deterministic and cacheable; the ignored administrator bundle, native package, mobile, smoke, signing, release, and deployment tasks remain non-cacheable.
 - Changes to `.github/workflows/CI.yml` force all `go`, `node`, and `rust` domain jobs to run.
 - `workflow_dispatch` runs all domain jobs regardless of changed paths.
+- CI is read-only: it does not consume release secrets, push tags or images, create releases, upload stores, deploy services/docs, or mutate updater/controller state.
 - When build or test commands change in project contracts, update this section and `.github/workflows/CI.yml` in the same commit.
 
 Release automation baseline:

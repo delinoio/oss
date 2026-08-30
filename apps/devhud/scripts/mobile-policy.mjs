@@ -318,6 +318,10 @@ export function assertMobileCi(workflow) {
     assert(androidJob.includes(`- target: ${target}\n            artifacts: ${artifacts}`), `Android CI target ${target} must build ${artifacts}`);
   }
   assert(androidJob.includes("android build --target ${{ matrix.target }} ${{ matrix.artifacts }} --ci"), "Android CI must build each matrix artifact set");
+  assert(androidJob.includes("- target: aarch64-armv7\n            artifacts: --aab\n            production: true\n            combined: true"), "Android CI must include the combined production target row");
+  assert(androidJob.includes("android build --target aarch64 --target armv7 --aab"), "Android CI must exercise the combined production build command");
+  assert(androidJob.includes("target/devhud-mobile/android/armv7/*.aab"), "Android CI must inspect the preserved combined App Bundle");
+  assert(androidJob.includes("--android-abi arm64-v8a --android-abi armeabi-v7a"), "Android CI must verify both production ABIs in the combined App Bundle");
   assert(androidJob.includes("if: ${{ steps.gate.outputs.run == 'true' && matrix.production }}") && androidJob.includes("Download checksum-pinned bundletool"), "Android production CI must install the pinned App Bundle inspector");
   assert(androidJob.includes('--android-artifact "${aab_artifacts[0]}"') && androidJob.includes('--bundletool-jar "${{ steps.bundletool.outputs.jar }}"'), "Android production CI must inspect the generated App Bundle manifest");
 }

@@ -16,6 +16,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  ci-contracts:
+    name: CI contracts and workflow syntax
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install clean locked workspace
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Validate workflow syntax
+        run: pnpm ci:workflows
+
+      - name: Validate CI contracts and affected behavior
+        run: pnpm ci:contracts
+
   go-quality:
     name: Go Quality
     runs-on: ubuntu-latest
@@ -35,7 +72,12 @@ jobs:
               - .github/workflows/CI.yml
               - go.mod
               - go.sum
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - apps/devhud-admin/**
               - cmds/**
+              - packages/devhud-api-client/**
               - protos/**
               - servers/**
 
@@ -66,6 +108,26 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
+
+      - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Generate and verify embedded administrator assets
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm --filter devhud-admin build:embedded
 
       - name: Check go fmt
         if: ${{ steps.gate.outputs.run == 'true' }}
@@ -109,7 +171,12 @@ jobs:
               - .github/workflows/CI.yml
               - go.mod
               - go.sum
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - apps/devhud-admin/**
               - cmds/**
+              - packages/devhud-api-client/**
               - protos/**
               - servers/**
 
@@ -140,6 +207,26 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
+
+      - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Generate and verify embedded administrator assets
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm --filter devhud-admin build:embedded
 
       - name: Run go test
         if: ${{ steps.gate.outputs.run == 'true' }}
@@ -462,6 +549,8 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
           WORKSPACE: mpapp
         run: |
           set -euo pipefail
@@ -470,9 +559,14 @@ jobs:
           if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
             run=true
           else
-            affected_json="$(pnpm dlx turbo@2.9.14 query affected --packages "${WORKSPACE}")"
+            if [ "${EVENT_NAME}" = "push" ]; then
+              export TURBO_SCM_BASE="${PUSH_BASE}"
+              export TURBO_SCM_HEAD="${PUSH_HEAD}"
+            fi
+            pnpm install --frozen-lockfile --ignore-scripts
+            affected_json="$(pnpm exec turbo run test --affected --filter "${WORKSPACE}" --dry=json)"
             printf '%s\n' "${affected_json}"
-            run="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
+            run="$(printf '%s' "${affected_json}" | jq -r '.tasks | any(.package == env.WORKSPACE)')"
           fi
 
           echo "run=${run}" >> "${GITHUB_OUTPUT}"
@@ -488,7 +582,22 @@ jobs:
 
       - name: Run mpapp tests
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: pnpm --filter mpapp test
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
+        run: |
+          args=(run test --filter mpapp)
+          if [ "$FORCE_RUN" != true ]; then
+            args+=(--affected)
+            if [ "$EVENT_NAME" = push ]; then
+              export TURBO_SCM_BASE="$PUSH_BASE"
+              export TURBO_SCM_HEAD="$PUSH_HEAD"
+            fi
+          fi
+          pnpm exec turbo "${args[@]}"
 
   node-mpapp-lint:
     name: Node mpapp lint
@@ -526,6 +635,8 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
           WORKSPACE: mpapp
         run: |
           set -euo pipefail
@@ -534,9 +645,14 @@ jobs:
           if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
             run=true
           else
-            affected_json="$(pnpm dlx turbo@2.9.14 query affected --packages "${WORKSPACE}")"
+            if [ "${EVENT_NAME}" = "push" ]; then
+              export TURBO_SCM_BASE="${PUSH_BASE}"
+              export TURBO_SCM_HEAD="${PUSH_HEAD}"
+            fi
+            pnpm install --frozen-lockfile --ignore-scripts
+            affected_json="$(pnpm exec turbo run lint --affected --filter "${WORKSPACE}" --dry=json)"
             printf '%s\n' "${affected_json}"
-            run="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
+            run="$(printf '%s' "${affected_json}" | jq -r '.tasks | any(.package == env.WORKSPACE)')"
           fi
 
           echo "run=${run}" >> "${GITHUB_OUTPUT}"
@@ -552,7 +668,22 @@ jobs:
 
       - name: Run mpapp lint
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: pnpm --filter mpapp lint
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
+        run: |
+          args=(run lint --filter mpapp)
+          if [ "$FORCE_RUN" != true ]; then
+            args+=(--affected)
+            if [ "$EVENT_NAME" = push ]; then
+              export TURBO_SCM_BASE="$PUSH_BASE"
+              export TURBO_SCM_HEAD="$PUSH_HEAD"
+            fi
+          fi
+          pnpm exec turbo "${args[@]}"
 
 
   node-binpm-docs-test:
@@ -591,6 +722,8 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
           WORKSPACE: binpm-docs
         run: |
           set -euo pipefail
@@ -599,9 +732,14 @@ jobs:
           if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
             run=true
           else
-            affected_json="$(pnpm dlx turbo@2.9.14 query affected --packages "${WORKSPACE}")"
+            if [ "${EVENT_NAME}" = "push" ]; then
+              export TURBO_SCM_BASE="${PUSH_BASE}"
+              export TURBO_SCM_HEAD="${PUSH_HEAD}"
+            fi
+            pnpm install --frozen-lockfile --ignore-scripts
+            affected_json="$(pnpm exec turbo run test --affected --filter "${WORKSPACE}" --dry=json)"
             printf '%s\n' "${affected_json}"
-            run="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
+            run="$(printf '%s' "${affected_json}" | jq -r '.tasks | any(.package == env.WORKSPACE)')"
           fi
 
           echo "run=${run}" >> "${GITHUB_OUTPUT}"
@@ -617,7 +755,22 @@ jobs:
 
       - name: Run binpm-docs tests
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: pnpm --filter binpm-docs test
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
+        run: |
+          args=(run test --filter binpm-docs)
+          if [ "$FORCE_RUN" != true ]; then
+            args+=(--affected)
+            if [ "$EVENT_NAME" = push ]; then
+              export TURBO_SCM_BASE="$PUSH_BASE"
+              export TURBO_SCM_HEAD="$PUSH_HEAD"
+            fi
+          fi
+          pnpm exec turbo "${args[@]}"
 
   node-nodeup-docs-test:
     name: Node nodeup-docs test
@@ -655,6 +808,8 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
           WORKSPACE: nodeup-docs
         run: |
           set -euo pipefail
@@ -663,9 +818,14 @@ jobs:
           if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
             run=true
           else
-            affected_json="$(pnpm dlx turbo@2.9.14 query affected --packages "${WORKSPACE}")"
+            if [ "${EVENT_NAME}" = "push" ]; then
+              export TURBO_SCM_BASE="${PUSH_BASE}"
+              export TURBO_SCM_HEAD="${PUSH_HEAD}"
+            fi
+            pnpm install --frozen-lockfile --ignore-scripts
+            affected_json="$(pnpm exec turbo run test --affected --filter "${WORKSPACE}" --dry=json)"
             printf '%s\n' "${affected_json}"
-            run="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
+            run="$(printf '%s' "${affected_json}" | jq -r '.tasks | any(.package == env.WORKSPACE)')"
           fi
 
           echo "run=${run}" >> "${GITHUB_OUTPUT}"
@@ -681,7 +841,22 @@ jobs:
 
       - name: Run nodeup-docs tests
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: pnpm --filter nodeup-docs test
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
+        run: |
+          args=(run test --filter nodeup-docs)
+          if [ "$FORCE_RUN" != true ]; then
+            args+=(--affected)
+            if [ "$EVENT_NAME" = push ]; then
+              export TURBO_SCM_BASE="$PUSH_BASE"
+              export TURBO_SCM_HEAD="$PUSH_HEAD"
+            fi
+          fi
+          pnpm exec turbo "${args[@]}"
 
   node-public-docs-test:
     name: Node public-docs test
@@ -700,6 +875,14 @@ jobs:
           filters: |
             ci_workflow:
               - .github/workflows/CI.yml
+            public_docs:
+              - apps/public-docs/**
+              - packaging/devhud/**
+              - docs/project-devhud.md
+              - docs/apps-devhud-operations-contract.md
+              - docs/apps-devhud-support-contract.md
+              - .github/workflows/package-devhud-private.yml
+              - .github/workflows/release-devhud.yml
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v5
@@ -719,17 +902,25 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          PUBLIC_DOCS_CHANGED: ${{ steps.filter.outputs.public_docs }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
           WORKSPACE: public-docs
         run: |
           set -euo pipefail
 
           run=false
-          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ] || [ "${PUBLIC_DOCS_CHANGED}" = "true" ]; then
             run=true
           else
-            affected_json="$(pnpm dlx turbo@2.9.14 query affected --packages "${WORKSPACE}")"
+            if [ "${EVENT_NAME}" = "push" ]; then
+              export TURBO_SCM_BASE="${PUSH_BASE}"
+              export TURBO_SCM_HEAD="${PUSH_HEAD}"
+            fi
+            pnpm install --frozen-lockfile --ignore-scripts
+            affected_json="$(pnpm exec turbo run test --affected --filter "${WORKSPACE}" --dry=json)"
             printf '%s\n' "${affected_json}"
-            run="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
+            run="$(printf '%s' "${affected_json}" | jq -r '.tasks | any(.package == env.WORKSPACE)')"
           fi
 
           echo "run=${run}" >> "${GITHUB_OUTPUT}"
@@ -745,7 +936,323 @@ jobs:
 
       - name: Run public-docs tests
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: pnpm --filter public-docs test
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' || steps.filter.outputs.public_docs == 'true' }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
+        run: |
+          args=(run test --filter public-docs)
+          if [ "$FORCE_RUN" != true ]; then
+            args+=(--affected)
+            if [ "$EVENT_NAME" = push ]; then
+              export TURBO_SCM_BASE="$PUSH_BASE"
+              export TURBO_SCM_HEAD="$PUSH_HEAD"
+            fi
+          fi
+          pnpm exec turbo "${args[@]}"
+
+  devhud-frontend:
+    name: DevHud frontend contracts
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            ci_workflow:
+              - .github/workflows/CI.yml
+            node_runtime:
+              - .nvmrc
+            devhud_frontend:
+              - .nvmrc
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - turbo.json
+              - apps/devhud/**
+              - packages/**
+              - protos/**
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          CHANGED: ${{ steps.filter.outputs.devhud_frontend }}
+          CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          run=false
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$CI_WORKFLOW_CHANGED" = true ] || [ "$CHANGED" = true ]; then run=true; fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - name: Skip (DevHud frontend unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: 'echo "Skipping DevHud frontend contracts: paths unaffected"'
+
+      - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install clean locked workspace
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Run affected frontend contracts
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' || steps.filter.outputs.node_runtime == 'true' }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
+        run: |
+          args=(run typecheck lint test:unit test:components test:accessibility build:frontend --filter devhud)
+          if [ "$FORCE_RUN" != true ]; then
+            args+=(--affected)
+            if [ "$EVENT_NAME" = push ]; then
+              export TURBO_SCM_BASE="$PUSH_BASE"
+              export TURBO_SCM_HEAD="$PUSH_HEAD"
+            fi
+          fi
+          pnpm exec turbo "${args[@]}"
+
+  devhud-extension:
+    name: DevHud Chrome extension
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            extension:
+              - .github/workflows/CI.yml
+              - .nvmrc
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - turbo.json
+              - apps/devhud-chrome-extension/**
+              - apps/devhud/src-tauri/icons/**
+              - crates/devhud-native-messaging-host/**
+              - packaging/devhud/**
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          CHANGED: ${{ steps.filter.outputs.extension }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          run=false
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$CHANGED" = true ]; then run=true; fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - name: Skip (extension unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: 'echo "Skipping DevHud extension checks: paths unaffected"'
+
+      - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install clean locked workspace
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Typecheck, test accessibility, and build deterministic ZIPs
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          pnpm --filter devhud-chrome-extension lint
+          pnpm --filter devhud-chrome-extension test:unit
+          pnpm --filter devhud-chrome-extension test:components
+          pnpm --filter devhud-chrome-extension test:accessibility
+          pnpm --filter devhud-chrome-extension test:package
+          pnpm --filter devhud-chrome-extension build:test
+          cmp apps/devhud-chrome-extension/artifacts/devhud-chrome-web-store.zip apps/devhud-chrome-extension/artifacts/devhud-chrome-github-validation.zip
+
+  devhud-rust-conformance:
+    name: DevHud Rust capture, shortcut, and IPC conformance
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            rust_conformance:
+              - .github/workflows/CI.yml
+              - .nvmrc
+              - Cargo.toml
+              - Cargo.lock
+              - rust-toolchain
+              - apps/devhud/**
+              - crates/devhud-native-messaging-host/**
+              - packages/**
+              - protos/**
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          CHANGED: ${{ steps.filter.outputs.rust_conformance }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          run=false
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$CHANGED" = true ]; then run=true; fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - name: Skip (Rust conformance unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: 'echo "Skipping DevHud Rust conformance: paths unaffected"'
+
+      - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install Linux native prerequisites
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libx11-dev libxtst-dev ninja-build
+
+      - name: Install clean locked workspace and build frontend
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm --filter devhud build:frontend
+
+      - name: Run capture, shortcut, IPC, and updater suites
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          pnpm --filter devhud test:native:capture
+          pnpm --filter devhud test:native:shortcuts
+          pnpm --filter devhud test:native:ipc
+          pnpm --filter devhud test:native:updater
+
+  devhud-security:
+    name: DevHud security and direct-adapter fixtures
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            security:
+              - .github/workflows/CI.yml
+              - .nvmrc
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - turbo.json
+              - apps/devhud/**
+              - apps/devhud-admin/**
+              - apps/devhud-chrome-extension/**
+              - packages/**
+              - protos/**
+              - servers/**
+              - crates/devhud-native-messaging-host/**
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          CHANGED: ${{ steps.filter.outputs.security }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          run=false
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$CHANGED" = true ]; then run=true; fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - name: Skip (security fixtures unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: 'echo "Skipping DevHud security fixtures: paths unaffected"'
+
+      - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install clean locked workspace
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Run credential, lifecycle, redaction, GitHub, R2, and agent fixtures
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          pnpm exec turbo run test:security test:adapters --filter devhud
+          node --test apps/devhud/scripts/diagnostics-policy.test.mjs apps/devhud/scripts/native-bridge.test.mjs apps/devhud/scripts/mobile-policy.test.mjs
 
   devhud-desktop:
     name: ${{ matrix.id }} host and smoke
@@ -758,33 +1265,53 @@ jobs:
           - id: macos-x64
             runner: macos-15-intel
             os: macos
-            bundle: app
+            bundle: dmg
             package: macos-app
           - id: macos-arm64
             runner: macos-15
             os: macos
-            bundle: app
+            bundle: dmg
             package: macos-app
-          - id: windows-x64
+          - id: windows-x64-nsis
             runner: windows-2022
             os: windows
             bundle: nsis
             package: windows-nsis
-          - id: windows-arm64
+          - id: windows-x64-msi
+            runner: windows-2022
+            os: windows
+            bundle: msi
+            package: windows-msi
+          - id: windows-arm64-nsis
             runner: windows-11-arm
             os: windows
             bundle: nsis
             package: windows-nsis
-          - id: ubuntu-x64
+          - id: windows-arm64-msi
+            runner: windows-11-arm
+            os: windows
+            bundle: msi
+            package: windows-msi
+          - id: ubuntu-x64-deb
             runner: ubuntu-22.04
             os: linux
             bundle: deb
             package: linux-deb
-          - id: ubuntu-arm64
+          - id: ubuntu-x64-appimage
+            runner: ubuntu-22.04
+            os: linux
+            bundle: appimage
+            package: linux-appimage
+          - id: ubuntu-arm64-deb
             runner: ubuntu-22.04-arm
             os: linux
             bundle: deb
             package: linux-deb
+          - id: ubuntu-arm64-appimage
+            runner: ubuntu-22.04-arm
+            os: linux
+            bundle: appimage
+            package: linux-appimage
 
     env:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
@@ -807,6 +1334,10 @@ jobs:
               - apps/devhud/**
               - apps/devhud-chrome-extension/**
               - crates/devhud-native-messaging-host/**
+              - packages/**
+              - protos/**
+              - packaging/devhud/**
+              - scripts/release/**
               - scripts/run-rsbuild-dev.mjs
               - scripts/spawn-dev-server.mjs
               - .nvmrc
@@ -859,7 +1390,7 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'linux' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake dbus-x11 desktop-file-utils libayatana-appindicator3-dev libfuse2 libgbm-dev libgtk-3-dev libx11-dev libxkbcommon-x11-0 libxtst-dev ninja-build patchelf xauth xdg-utils xvfb
+          sudo apt-get install -y clang cmake dbus-x11 desktop-file-utils gnome-keyring libayatana-appindicator3-dev libfuse2 libgbm-dev libgtk-3-dev libx11-dev libxkbcommon-x11-0 libxtst-dev ninja-build patchelf xauth xdg-utils xvfb
 
       - name: Install dependencies
         if: ${{ steps.gate.outputs.run == 'true' }}
@@ -884,38 +1415,112 @@ jobs:
       - name: Prepare Windows installed layout
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'windows' }}
         shell: pwsh
+        env:
+          DEVHUD_BUNDLE: ${{ matrix.bundle }}
         run: |
-          $installer = Get-Item target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          if ($env:DEVHUD_BUNDLE -eq "msi") {
+            $installer = Get-Item target/release/bundle/msi/*.msi | Select-Object -First 1
+          } else {
+            $installer = Get-Item target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          }
           $installDir = Join-Path $env:RUNNER_TEMP "devhud-smoke"
-          $process = Start-Process -FilePath $installer.FullName -ArgumentList "/S", "/D=$installDir" -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw "DevHUD installer exited $($process.ExitCode)" }
+          if ($env:DEVHUD_BUNDLE -eq "msi") {
+            $process = Start-Process msiexec.exe -ArgumentList "/i", $installer.FullName, "/qn", "INSTALLDIR=$installDir" -Wait -PassThru
+          } else {
+            $process = Start-Process -FilePath $installer.FullName -ArgumentList "/S", "/D=$installDir" -Wait -PassThru
+          }
+          if ($process.ExitCode -notin @(0, 3010)) { throw "DevHUD installer exited $($process.ExitCode)" }
           "DEVHUD_SMOKE_ARTIFACT=$installDir\devhud.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "DEVHUD_SMOKE_INSTALLER=$($installer.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Prepare macOS installed layout
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'macos' }}
+        run: |
+          set -euo pipefail
+          dmg=$(find target/release/bundle/dmg -name '*.dmg' -type f -print -quit)
+          test -n "$dmg"
+          mount="$RUNNER_TEMP/devhud-dmg"
+          installed="$RUNNER_TEMP/devhud-installed/DevHUD.app"
+          mkdir -p "$mount" "$(dirname "$installed")"
+          hdiutil attach "$dmg" -nobrowse -mountpoint "$mount"
+          ditto "$mount/DevHUD.app" "$installed"
+          hdiutil detach "$mount"
+          host=$(find "$installed" -type f -name devhud-native-messaging-host -print -quit)
+          test -x "$host"
+          {
+            echo "DEVHUD_SMOKE_ARTIFACT=$installed/Contents/MacOS/devhud"
+            echo "DEVHUD_SMOKE_NATIVE_HOST=$host"
+          } >> "$GITHUB_ENV"
 
       - name: Prepare Ubuntu installed layout
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'linux' }}
+        env:
+          DEVHUD_BUNDLE: ${{ matrix.bundle }}
         run: |
+          set -euo pipefail
           set -o pipefail
           shopt -s nullglob
-          deb_packages=(target/release/bundle/deb/*.deb)
-          if [ "${#deb_packages[@]}" -ne 1 ]; then
-            echo "Expected exactly one DevHUD Debian package, found ${#deb_packages[@]}" >&2
-            exit 1
+          if [ "$DEVHUD_BUNDLE" = deb ]; then
+            deb_packages=(target/release/bundle/deb/*.deb)
+            if [ "${#deb_packages[@]}" -ne 1 ]; then
+              echo "Expected exactly one DevHUD Debian package, found ${#deb_packages[@]}" >&2
+              exit 1
+            fi
+            finalized="$RUNNER_TEMP/devhud-final.deb"
+            SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD) bash scripts/release/finalize-devhud-deb.sh "${deb_packages[0]}" "$finalized"
+            sandbox_metadata="$(dpkg-deb --fsys-tarfile "$finalized" | tar --numeric-owner -tvf - | awk '$6 == "usr/share/DevHUD/chrome-sandbox" || $6 == "./usr/share/DevHUD/chrome-sandbox" { print $1, $2 }')"
+            if [ "${sandbox_metadata}" != "-rwsr-xr-x 0/0" ]; then
+              echo "DevHUD Debian chrome-sandbox must record UID/GID 0/0 and mode 4755; found: ${sandbox_metadata:-missing}" >&2
+              exit 1
+            fi
+            package=$(dpkg-deb -f "$finalized" Package)
+            sudo dpkg -i "$finalized"
+            artifact=/usr/bin/devhud
+            host=$(find /usr -type f -name devhud-native-messaging-host -print -quit)
+            {
+              echo "DEVHUD_SMOKE_DEBIAN_PACKAGE=$package"
+              echo "DEVHUD_SMOKE_NATIVE_HOST=$host"
+              echo "DEVHUD_SMOKE_USER_MANIFEST=$HOME/.config/google-chrome/NativeMessagingHosts/io.delino.devhud.native_messaging.json"
+            } >> "$GITHUB_ENV"
+          else
+            appimages=(target/release/bundle/appimage/*.AppImage)
+            if [ "${#appimages[@]}" -ne 1 ]; then
+              echo "Expected exactly one DevHUD AppImage, found ${#appimages[@]}" >&2
+              exit 1
+            fi
+            chmod +x "${appimages[0]}"
+            "${appimages[0]}" --appimage-extract >/dev/null
+            appdir=$(realpath squashfs-root)
+            sandbox=$(realpath "$appdir/shared/bin/chrome-sandbox")
+            test -f "$sandbox"
+            sudo chown root:root "$sandbox"
+            sudo chmod 4755 "$sandbox"
+            artifact="$appdir/bin/devhud"
+            host="$appdir/bin/devhud-native-messaging-host"
+            {
+              echo "DEVHUD_SMOKE_APPIMAGE=${{ github.workspace }}/${appimages[0]}"
+              echo "DEVHUD_SMOKE_APPDIR=$appdir"
+              echo "DEVHUD_SMOKE_NATIVE_HOST=$host"
+            } >> "$GITHUB_ENV"
           fi
-
-          sandbox_metadata="$(dpkg-deb --fsys-tarfile "${deb_packages[0]}" | tar --numeric-owner -tvf - | awk '$6 == "usr/share/DevHUD/chrome-sandbox" || $6 == "./usr/share/DevHUD/chrome-sandbox" { print $1, $2 }')"
-          if [ "${sandbox_metadata}" != "-rwsr-xr-x 0/0" ]; then
-            echo "DevHUD Debian chrome-sandbox must record UID/GID 0/0 and mode 4755; found: ${sandbox_metadata:-missing}" >&2
-            exit 1
-          fi
-
-          mkdir -p target/devhud-smoke-root
-          dpkg-deb -x "${deb_packages[0]}" target/devhud-smoke-root
-          sudo chown root:root target/devhud-smoke-root/usr/share/DevHUD/chrome-sandbox
-          sudo chmod 4755 target/devhud-smoke-root/usr/share/DevHUD/chrome-sandbox
+          test -x "$artifact" && test -x "$host"
+          echo "DEVHUD_SMOKE_ARTIFACT=$artifact" >> "$GITHUB_ENV"
 
       - name: Run macOS platform smoke
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'macos' }}
-        run: pnpm --filter devhud smoke:platform
+        run: pnpm --filter devhud smoke:platform -- --artifact "$DEVHUD_SMOKE_ARTIFACT"
+
+      - name: Verify macOS Native Messaging register and unregister lifecycle
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'macos' }}
+        run: |
+          set -euo pipefail
+          native_home="$RUNNER_TEMP/devhud-native-home"
+          user_manifest="$native_home/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.delino.devhud.native_messaging.json"
+          "$DEVHUD_SMOKE_NATIVE_HOST" register "$DEVHUD_SMOKE_NATIVE_HOST" "$user_manifest"
+          test -e "$user_manifest"
+          jq -e --arg expected "$DEVHUD_SMOKE_NATIVE_HOST" '.path == $expected' "$user_manifest" >/dev/null
+          "$DEVHUD_SMOKE_NATIVE_HOST" unregister "$user_manifest"
+          test ! -e "$user_manifest"
 
       - name: Run Windows platform smoke
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'windows' }}
@@ -927,7 +1532,113 @@ jobs:
         env:
           XDG_SESSION_TYPE: x11
           WAYLAND_DISPLAY: ""
-        run: dbus-run-session -- xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact "${{ github.workspace }}/target/devhud-smoke-root/usr/bin/devhud"
+        run: APPIMAGE="$DEVHUD_SMOKE_APPIMAGE" APPDIR="$DEVHUD_SMOKE_APPDIR" dbus-run-session -- xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact "$DEVHUD_SMOKE_ARTIFACT"
+
+      - name: Verify Ubuntu AppImage Native Messaging register and unregister lifecycle
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'linux' && matrix.bundle == 'appimage' }}
+        run: |
+          set -euo pipefail
+          native_home="$RUNNER_TEMP/devhud-native-home"
+          user_manifest="$native_home/.config/google-chrome/NativeMessagingHosts/io.delino.devhud.native_messaging.json"
+          # The nested shell expands positional parameters and session variables.
+          # shellcheck disable=SC2016
+          dbus-run-session -- bash -euo pipefail -c '
+            export HOME="$1"
+            host="$2"
+            user_manifest="$3"
+            unset GNOME_KEYRING_CONTROL
+            control_directory="$HOME/.cache/keyring"
+            mkdir -p "$control_directory"
+            chmod 700 "$control_directory"
+            gnome-keyring-daemon --foreground --components=secrets --control-directory="$control_directory" >/dev/null &
+            keyring_pid=$!
+            stop_keyring() {
+              kill "$keyring_pid" 2>/dev/null || true
+              wait "$keyring_pid" 2>/dev/null || true
+            }
+            trap stop_keyring EXIT
+            gdbus wait --session --timeout=5 org.freedesktop.secrets >/dev/null
+            "$host" register "$host"
+            test -e "$user_manifest"
+            jq -e --arg expected "$host" ".path == \$expected" "$user_manifest" >/dev/null
+            "$host" unregister
+            test ! -e "$user_manifest"
+          ' native-messaging-lifecycle "$native_home" "$DEVHUD_SMOKE_NATIVE_HOST" "$user_manifest"
+
+      - name: Verify Ubuntu Debian Native Messaging install and uninstall lifecycle
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'linux' && matrix.bundle == 'deb' }}
+        run: |
+          set -euo pipefail
+          test -x "$DEVHUD_SMOKE_NATIVE_HOST"
+          test -e /etc/opt/chrome/native-messaging-hosts/io.delino.devhud.native_messaging.json
+          # The nested shell expands positional parameters and session variables.
+          # shellcheck disable=SC2016
+          dbus-run-session -- bash -euo pipefail -c '
+            export HOME="$1"
+            package="$2"
+            user_manifest="$3"
+            host="$4"
+            runtime="/run/user/$(id -u)"
+            export XDG_RUNTIME_DIR="$runtime"
+            session_socket="${DBUS_SESSION_BUS_ADDRESS#unix:path=}"
+            session_socket="${session_socket%%,*}"
+            unset GNOME_KEYRING_CONTROL
+            control_directory="$RUNNER_TEMP/devhud-keyring"
+            mkdir -p "$control_directory"
+            chmod 700 "$control_directory"
+            sudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" "$runtime"
+            created_bus=false
+            if [ -S "$runtime/bus" ]; then
+              export DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus"
+            elif [ -e "$runtime/bus" ] || [ -L "$runtime/bus" ]; then
+              echo "DevHUD Debian lifecycle found an invalid per-user D-Bus socket path" >&2
+              exit 1
+            else
+              sudo ln -s "$session_socket" "$runtime/bus"
+              created_bus=true
+            fi
+            keyring_pid=
+            cleanup_lifecycle() {
+              if [ "$created_bus" = true ]; then
+                sudo rm -f "$runtime/bus"
+              fi
+              if [ -n "$keyring_pid" ]; then
+                kill "$keyring_pid" 2>/dev/null || true
+                wait "$keyring_pid" 2>/dev/null || true
+              fi
+            }
+            trap cleanup_lifecycle EXIT
+            gnome-keyring-daemon --foreground --components=secrets --control-directory="$control_directory" >/dev/null &
+            keyring_pid=$!
+            gdbus wait --session --timeout=5 org.freedesktop.secrets >/dev/null
+            "$host" register "$host" "$user_manifest"
+            test -e "$user_manifest"
+            sudo dpkg -r "$package"
+            test ! -e "$user_manifest"
+          ' native-messaging-lifecycle "$HOME" "$DEVHUD_SMOKE_DEBIAN_PACKAGE" "$DEVHUD_SMOKE_USER_MANIFEST" "$DEVHUD_SMOKE_NATIVE_HOST"
+          test ! -e /usr/bin/devhud
+          test ! -e /etc/opt/chrome/native-messaging-hosts/io.delino.devhud.native_messaging.json
+
+      - name: Verify Windows Native Messaging install and uninstall lifecycle
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'windows' }}
+        shell: pwsh
+        env:
+          DEVHUD_BUNDLE: ${{ matrix.bundle }}
+        run: |
+          $registration = Get-ItemProperty "HKCU:\Software\Google\Chrome\NativeMessagingHosts\io.delino.devhud.native_messaging" -ErrorAction Stop
+          $manifestPath = $registration.'(default)'
+          if (-not (Test-Path -LiteralPath $manifestPath)) { throw "Native Messaging manifest missing" }
+          if ($env:DEVHUD_BUNDLE -eq "msi") {
+            $product = Get-CimInstance Win32_Product | Where-Object Name -eq "DevHUD" | Select-Object -First 1
+            if (-not $product) { throw "installed MSI product missing" }
+            $process = Start-Process msiexec.exe -ArgumentList "/x", $product.IdentifyingNumber, "/qn" -Wait -PassThru
+          } else {
+            $process = Start-Process (Join-Path (Split-Path $env:DEVHUD_SMOKE_ARTIFACT) "uninstall.exe") -ArgumentList "/S" -Wait -PassThru
+          }
+          if ($process.ExitCode -notin @(0, 3010)) { throw "uninstall failed: $($process.ExitCode)" }
+          if (Test-Path "HKCU:\Software\Google\Chrome\NativeMessagingHosts\io.delino.devhud.native_messaging") { throw "Native Messaging registration survived uninstall" }
+          if (Test-Path -LiteralPath $manifestPath) { throw "Native Messaging manifest survived uninstall" }
+          if (Test-Path -LiteralPath $env:DEVHUD_SMOKE_ARTIFACT) { throw "DevHUD executable survived uninstall" }
 
   devhud-mobile-contracts:
     name: DevHUD mobile contracts
@@ -947,6 +1658,8 @@ jobs:
             devhud:
               - .github/workflows/CI.yml
               - apps/devhud/**
+              - packages/**
+              - protos/**
               - scripts/run-rsbuild-dev.mjs
               - scripts/spawn-dev-server.mjs
               - .nvmrc
@@ -1031,6 +1744,8 @@ jobs:
             devhud:
               - .github/workflows/CI.yml
               - apps/devhud/**
+              - packages/**
+              - protos/**
               - scripts/run-rsbuild-dev.mjs
               - scripts/spawn-dev-server.mjs
               - .nvmrc
@@ -1112,14 +1827,21 @@ jobs:
             artifacts: --apk --aab
             abi: arm64-v8a
             production: true
+            combined: false
           - target: armv7
             artifacts: --apk --aab
             abi: armeabi-v7a
             production: true
+            combined: false
           - target: x86_64
             artifacts: --apk
             abi: x86_64
             production: false
+            combined: false
+          - target: aarch64-armv7
+            artifacts: --aab
+            production: true
+            combined: true
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -1135,6 +1857,8 @@ jobs:
             devhud:
               - .github/workflows/CI.yml
               - apps/devhud/**
+              - packages/**
+              - protos/**
               - scripts/run-rsbuild-dev.mjs
               - scripts/spawn-dev-server.mjs
               - .nvmrc
@@ -1215,17 +1939,22 @@ jobs:
         run: pnpm --filter devhud mobile:generate -- --platform android
 
       - name: Build Android artifacts
-        if: ${{ steps.gate.outputs.run == 'true' }}
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.combined == false }}
         working-directory: apps/devhud
         run: node scripts/run-mobile.mjs android build --target ${{ matrix.target }} ${{ matrix.artifacts }} --ci
 
+      - name: Build combined production Android App Bundle
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.combined }}
+        working-directory: apps/devhud
+        run: node scripts/run-mobile.mjs android build --target aarch64 --target armv7 --aab
+
       - name: Verify Android APK contracts
-        if: ${{ steps.gate.outputs.run == 'true' }}
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.combined == false }}
         working-directory: apps/devhud
         run: node scripts/verify-mobile.mjs --android-artifact src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk --android-abi ${{ matrix.abi }}
 
       - name: Verify Android App Bundle contracts
-        if: ${{ steps.gate.outputs.run == 'true' && matrix.production }}
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.production && matrix.combined == false }}
         shell: bash
         working-directory: apps/devhud
         run: |
@@ -1237,6 +1966,20 @@ jobs:
             exit 1
           fi
           node scripts/verify-mobile.mjs --android-artifact "${aab_artifacts[0]}" --android-abi ${{ matrix.abi }} --bundletool-jar "${{ steps.bundletool.outputs.jar }}"
+
+      - name: Verify combined production Android App Bundle contracts
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.combined }}
+        shell: bash
+        working-directory: apps/devhud
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          aab_artifacts=(../../target/devhud-mobile/android/armv7/*.aab)
+          if [ "${#aab_artifacts[@]}" -ne 1 ]; then
+            echo "Expected exactly one preserved combined Android App Bundle, found ${#aab_artifacts[@]}" >&2
+            exit 1
+          fi
+          node scripts/verify-mobile.mjs --android-artifact "${aab_artifacts[0]}" --android-abi arm64-v8a --android-abi armeabi-v7a --bundletool-jar "${{ steps.bundletool.outputs.jar }}"
 
   devhud-protocol:
     name: DevHud Protocol and Client
@@ -1263,8 +2006,9 @@ jobs:
               - package.json
               - pnpm-workspace.yaml
               - pnpm-lock.yaml
+              - turbo.json
               - protos/**
-              - packages/devhud-api-client/**
+              - packages/**
               - scripts/check-proto-breaking.sh
 
       - name: Determine whether to run
@@ -1345,13 +2089,14 @@ jobs:
           filters: |
             devhud_admin:
               - .github/workflows/CI.yml
+              - .nvmrc
               - package.json
               - pnpm-lock.yaml
               - pnpm-workspace.yaml
               - scripts/run-rsbuild-dev.mjs
               - scripts/spawn-dev-server.mjs
               - apps/devhud-admin/**
-              - packages/devhud-api-client/**
+              - packages/**
               - protos/**
               - servers/devhud-api/internal/adminassets/**
 
@@ -1392,32 +2137,13 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm install --frozen-lockfile
 
-      - name: Build client, test administrator SPA, and verify embedded assets
+      - name: Test administrator SPA and verify generated embedded assets
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: |
-          pnpm --filter @delinoio/devhud-api-client build
-          pnpm --filter devhud-admin test
-          git status --short --untracked-files=all -- servers/devhud-api/internal/adminassets/dist
-          git diff --exit-code -- servers/devhud-api/internal/adminassets/dist
-          test -z "$(git ls-files --others --exclude-standard -- servers/devhud-api/internal/adminassets/dist)"
+        run: pnpm --filter devhud-admin --fail-if-no-match test
 
   devhud-api:
     name: DevHud API Integration
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:15-bookworm
-        env:
-          POSTGRES_DB: devhud_api_test
-          POSTGRES_PASSWORD: devhud
-          POSTGRES_USER: devhud
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U devhud -d devhud_api_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -1434,8 +2160,14 @@ jobs:
               - .github/workflows/CI.yml
               - go.mod
               - go.sum
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - apps/devhud-admin/**
+              - packages/devhud-api-client/**
               - protos/**
-              - servers/devhud-api/**
+              - servers/**
+              - scripts/ci/check-go-format.mjs
 
       - name: Determine whether to run
         id: gate
@@ -1464,17 +2196,302 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
-      - name: Build API and sweeper
+      - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Generate and verify embedded administrator assets
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
-          go build ./servers/devhud-api/cmd/devhud-api
-          go build ./servers/devhud-api/cmd/devhud-api-sweeper
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm --filter devhud-admin build:embedded
 
-      - name: Run PostgreSQL integration tests
+      - name: Check API formatting, vet, builds, and unit tests
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:format
+          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:vet
+          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:build
+          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:unit
+          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:migrations
+          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:api
+          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:sweeper
+
+      - name: Start PostgreSQL
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          set -euo pipefail
+          docker run --detach \
+            --name devhud-postgres \
+            --env POSTGRES_DB=devhud_api_test \
+            --env POSTGRES_PASSWORD=devhud \
+            --env POSTGRES_USER=devhud \
+            --publish 5432:5432 \
+            --health-cmd "pg_isready -U devhud -d devhud_api_test" \
+            --health-interval 5s \
+            --health-timeout 5s \
+            --health-retries 10 \
+            postgres:15-bookworm >/dev/null
+          for _ in {1..60}; do
+            status=$(docker inspect --format '{{.State.Health.Status}}' devhud-postgres)
+            if [ "$status" = healthy ]; then
+              exit 0
+            fi
+            if [ "$status" = unhealthy ]; then
+              break
+            fi
+            sleep 1
+          done
+          docker logs devhud-postgres
+          echo "DevHud API PostgreSQL did not become healthy" >&2
+          exit 1
+
+      - name: Run PostgreSQL migration and integration tests
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        env:
+          DEVHUD_TEST_DATABASE_URL: postgres://devhud:devhud@127.0.0.1:5432/devhud_api_test?sslmode=disable
+        run: pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:integration
+
+      - name: Stop PostgreSQL
+        if: ${{ always() && steps.gate.outputs.run == 'true' }}
+        run: docker rm --force devhud-postgres >/dev/null 2>&1 || true
+
+  devhud-oci:
+    name: DevHud ${{ matrix.target }} non-root OCI
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [api, sweeper]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            oci:
+              - .dockerignore
+              - .github/workflows/CI.yml
+              - go.mod
+              - go.sum
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - protos/**
+              - servers/**
+              - apps/devhud-admin/**
+              - packages/**
+              - packaging/devhud/**
+              - scripts/release/**
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          CHANGED: ${{ steps.filter.outputs.oci }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          run=false
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$CHANGED" = true ]; then run=true; fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - name: Skip (OCI inputs unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: 'echo "Skipping DevHud ${{ matrix.target }} OCI checks: paths unaffected"'
+
+      - name: Setup Docker Buildx
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: docker/setup-buildx-action@v4
+
+      - name: Setup Go
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.target == 'sweeper' }}
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.target == 'sweeper' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Generate and verify embedded administrator assets
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.target == 'sweeper' }}
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm --filter devhud-admin build:embedded
+
+      - name: Download Syft
+        id: syft
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: anchore/sbom-action/download-syft@v0.21.0
+
+      - name: Install OCI inspection tools
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
+
+      - name: Start PostgreSQL
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          set -euo pipefail
+          docker run --detach \
+            --name devhud-postgres \
+            --env POSTGRES_DB=devhud_api_test \
+            --env POSTGRES_PASSWORD=devhud \
+            --env POSTGRES_USER=devhud \
+            --publish 5432:5432 \
+            --health-cmd "pg_isready -U devhud -d devhud_api_test" \
+            --health-interval 5s \
+            --health-timeout 5s \
+            --health-retries 10 \
+            postgres:15-bookworm >/dev/null
+          for _ in {1..60}; do
+            status=$(docker inspect --format '{{.State.Health.Status}}' devhud-postgres)
+            if [ "$status" = healthy ]; then
+              exit 0
+            fi
+            if [ "$status" = unhealthy ]; then
+              break
+            fi
+            sleep 1
+          done
+          docker logs devhud-postgres
+          echo "DevHud OCI PostgreSQL did not become healthy" >&2
+          exit 1
+
+      - name: Build and inspect amd64/arm64 OCI layout
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        env:
+          DEVHUD_TEST_DATABASE_URL: postgres://devhud:devhud@127.0.0.1:5432/devhud_api_test?sslmode=disable
+          OCI_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          artifact="$RUNNER_TEMP/devhud-$OCI_TARGET.oci.tar"
+          image="devhud-$OCI_TARGET:ci"
+          version=$(node -p "require('./packaging/devhud/release-metadata.json').version")
+          docker buildx build --platform linux/amd64,linux/arm64 --target "$OCI_TARGET" --build-arg VERSION="$version" --build-arg REVISION="$GITHUB_SHA" --output "type=oci,dest=$artifact" -f servers/devhud-api/Dockerfile .
+          tar -tf "$artifact" | grep -Fx index.json
+          for arch in amd64 arm64; do
+            skopeo inspect --override-arch "$arch" --config "oci-archive:$artifact" | jq -e '.config.User == "65532" and .config.Labels["io.delino.devhud.migrations"] == "embedded" and .config.Labels["io.delino.devhud.administrator-assets"] == "embedded"'
+          done
+          docker buildx build --platform linux/amd64 --target "$OCI_TARGET" --build-arg VERSION="$version" --build-arg REVISION="$GITHUB_SHA" --load --tag "$image" -f servers/devhud-api/Dockerfile .
+          container_database_url="postgres://devhud:devhud@host.docker.internal:5432/devhud_api_test?sslmode=disable"
+          docker_args=(--rm --user 65532:65532 --add-host host.docker.internal:host-gateway -e "DEVHUD_DATABASE_URL=$container_database_url")
+          if [ "$OCI_TARGET" = api ]; then
+            docker run "${docker_args[@]}" "$image" migrate
+          else
+            DEVHUD_DATABASE_URL="$DEVHUD_TEST_DATABASE_URL" go run ./servers/devhud-api/cmd/devhud-api migrate
+            docker run "${docker_args[@]}" \
+              -e DEVHUD_ENVIRONMENT=development \
+              -e DEVHUD_R2_ENDPOINT=http://127.0.0.1:9000 \
+              -e DEVHUD_R2_ACCESS_KEY_ID=ci-access-key \
+              -e DEVHUD_R2_SECRET_ACCESS_KEY=01234567890123456789012345678901 \
+              -e DEVHUD_R2_STAGING_BUCKET=devhud-staging \
+              -e DEVHUD_R2_PUBLIC_BUCKET=devhud-public \
+              -e DEVHUD_PUBLIC_ASSET_BASE_URL=http://127.0.0.1:9000 \
+              -e DEVHUD_CLOUDFLARE_API_TOKEN=ci-token \
+              -e DEVHUD_CLOUDFLARE_ZONE_ID=ci-zone \
+              "$image" --once
+          fi
+          "${{ steps.syft.outputs.cmd }}" scan "docker:$image" --output "spdx-json=$RUNNER_TEMP/devhud-$OCI_TARGET.spdx.json"
+          jq -e '.spdxVersion == "SPDX-2.3" and (.packages | length > 0)' "$RUNNER_TEMP/devhud-$OCI_TARGET.spdx.json"
+
+      - name: Verify embedded migrations against PostgreSQL
         if: ${{ steps.gate.outputs.run == 'true' }}
         env:
           DEVHUD_TEST_DATABASE_URL: postgres://devhud:devhud@127.0.0.1:5432/devhud_api_test?sslmode=disable
         run: go test -tags=integration ./servers/devhud-api/internal/postgres
+
+      - name: Stop PostgreSQL
+        if: ${{ always() && steps.gate.outputs.run == 'true' }}
+        run: docker rm --force devhud-postgres >/dev/null 2>&1 || true
+
+  devhud-supply-chain:
+    name: DevHud installers, SBOM, provenance, and signature fixtures
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            supply_chain:
+              - .github/workflows/CI.yml
+              - .nvmrc
+              - .github/workflows/package-devhud-private.yml
+              - .github/workflows/release-devhud.yml
+              - .github/workflows/devhud-cef-security-review.yml
+              - apps/devhud/**
+              - apps/devhud-chrome-extension/**
+              - crates/devhud-native-messaging-host/**
+              - packaging/devhud/**
+              - scripts/release/**
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          CHANGED: ${{ steps.filter.outputs.supply_chain }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          run=false
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$CHANGED" = true ]; then run=true; fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - name: Skip (supply-chain inputs unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: 'echo "Skipping DevHud supply-chain fixtures: paths unaffected"'
+
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      - name: Validate installer, SPDX, provenance, updater, and key-rotation fixtures
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          node --test scripts/release/finalize-devhud-deb.test.mjs
+          node --test scripts/release/generate-devhud-supply-chain.test.mjs
+          node --test scripts/release/generate-devhud-updater.test.mjs
+          node --test scripts/release/generate-checksums.test.mjs
+          node --test scripts/release/validate-devhud-private-build.test.mjs
+          node --test scripts/release/devhud-private-workflow.test.mjs
 
 
   devhud-release-contracts:
@@ -1495,10 +2512,22 @@ jobs:
           filters: |
             release:
               - .github/workflows/CI.yml
+              - .nvmrc
               - .github/workflows/package-devhud-private.yml
               - .github/workflows/release-devhud.yml
+              - .github/workflows/devhud-cef-security-review.yml
               - packaging/devhud/**
               - scripts/release/**
+              - apps/devhud/**
+              - apps/devhud-admin/**
+              - apps/devhud-chrome-extension/**
+              - crates/devhud-native-messaging-host/**
+              - protos/**
+              - packages/**
+              - servers/**
+              - apps/public-docs/**
+              - AGENTS.md
+              - docs/README.md
               - docs/project-devhud.md
               - docs/apps-devhud-updater-contract.md
               - docs/servers-devhud-api-contract.md
@@ -1506,9 +2535,7 @@ jobs:
               - docs/apps-devhud-operations-contract.md
               - docs/apps-devhud-support-contract.md
               - docs/repository-workflow-contract.md
-              - .github/workflows/devhud-cef-security-review.yml
               - scripts/release/devhud-operations.test.mjs
-              - packages/devhud-api-client/**
               - servers/devhud-api/internal/rpc/diagnostics.go
 
       - name: Determine whether to run
@@ -1542,6 +2569,7 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     needs:
+      - ci-contracts
       - go-quality
       - go-test
       - repository-environment
@@ -1553,6 +2581,10 @@ jobs:
       - node-binpm-docs-test
       - node-nodeup-docs-test
       - node-public-docs-test
+      - devhud-frontend
+      - devhud-extension
+      - devhud-rust-conformance
+      - devhud-security
       - devhud-desktop
       - devhud-mobile-contracts
       - devhud-ios-simulator
@@ -1560,6 +2592,8 @@ jobs:
       - devhud-protocol
       - devhud-admin
       - devhud-api
+      - devhud-oci
+      - devhud-supply-chain
       - devhud-release-contracts
     steps:
       - run: exit 1

@@ -780,13 +780,24 @@ test("team setup initializes only through env:login and startup uses exact Infis
     }
     for (const canary of canaries) assert.equal(serialized.includes(canary), false, canary);
   }
-  const turbo = recorded.filter((event) => event.tool === "pnpm");
+  const turbo = recorded.filter(
+    (event) => event.tool === "pnpm" && event.action === "turbo",
+  );
   assert.deepEqual(turbo.map((event) => event.mode), ["team", "team"]);
+  const firstAdminAssets = recorded.findIndex(
+    (event) => event.tool === "pnpm" && event.action === "admin-assets",
+  );
   const firstMigration = recorded.findIndex(
     (event) => event.tool === "go" && event.action === "migrate",
   );
-  const firstTurbo = recorded.findIndex((event) => event.tool === "pnpm");
-  assert.ok(firstMigration !== -1 && firstMigration < firstTurbo);
+  const firstTurbo = recorded.findIndex(
+    (event) => event.tool === "pnpm" && event.action === "turbo",
+  );
+  assert.ok(
+    firstAdminAssets !== -1 &&
+      firstAdminAssets < firstMigration &&
+      firstMigration < firstTurbo,
+  );
 });
 
 test("team startup binds migration and Turbo services to the preflight issuer", async (t) => {

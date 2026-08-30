@@ -15,6 +15,10 @@ import {
   readServiceEnv,
   runService,
 } from "../../../scripts/dev-environment/service-environment.mjs";
+import {
+  commandInvocation,
+  safeBaseEnvironment,
+} from "../../../scripts/dev-environment/process.mjs";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const serviceDirectory = resolve(dirname(scriptPath), "..");
@@ -56,6 +60,39 @@ async function ossEnvironment(action) {
 
 async function execute(action, environment) {
   if (action === "validate") return { code: 0, signal: null };
+  const fakePnpm =
+    process.env.DEVHUD_ENVIRONMENT_TESTING === "1"
+      ? process.env.DEVHUD_TEST_PNPM
+      : null;
+  const pnpm = fakePnpm
+    ? { command: process.execPath, prefix: [fakePnpm] }
+    : commandInvocation("pnpm");
+  const testingEnvironment =
+    process.env.DEVHUD_ENVIRONMENT_TESTING === "1"
+      ? Object.fromEntries(
+          Object.entries(process.env).filter(
+            ([name]) =>
+              name === "DEVHUD_ENVIRONMENT_TESTING" ||
+              name.startsWith("DEVHUD_TEST_"),
+          ),
+        )
+      : {};
+  const assets = await executeArgv(
+    pnpm.command,
+    [
+      ...pnpm.prefix,
+      "--filter",
+      "devhud-admin",
+      "build:embedded",
+    ],
+    {
+      ...safeBaseEnvironment(environment),
+      ...testingEnvironment,
+      DEVHUD_LOCAL_MODE: environment.DEVHUD_LOCAL_MODE,
+    },
+    repositoryRoot,
+  );
+  if (assets.code !== 0 || assets.signal) return assets;
   const fakeGo =
     process.env.DEVHUD_ENVIRONMENT_TESTING === "1" ? process.env.DEVHUD_TEST_GO : null;
   return executeArgv(

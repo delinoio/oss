@@ -6,8 +6,16 @@
   "scripts": {
     "dev": "node scripts/development.mjs serve",
     "build": "rsbuild build",
-    "lint": "tsc --noEmit",
-    "test": "pnpm lint && vitest run && pnpm build && node scripts/verify-build.mjs && pnpm test:port",
+    "build:frontend": "pnpm build",
+    "build:embedded": "pnpm --filter @delinoio/devhud-api-client build && pnpm build && pnpm verify:build",
+    "verify:embedded": "pnpm --filter @delinoio/devhud-api-client build && pnpm build && pnpm verify:build",
+    "typecheck": "pnpm --filter @delinoio/devhud-api-client build && tsc --noEmit",
+    "lint": "pnpm typecheck",
+    "test:unit": "vitest run src/api.test.ts src/auth.test.ts src/csp.test.ts",
+    "test:components": "vitest run src/App.test.tsx src/Dialog.test.tsx",
+    "test:accessibility": "vitest run src/App.test.tsx src/Dialog.test.tsx",
+    "test": "pnpm lint && pnpm test:unit && pnpm test:components && pnpm test:accessibility && pnpm verify:embedded && pnpm test:port",
+    "verify:build": "node scripts/verify-build.mjs",
     "test:port": "node scripts/port-collision.mjs"
   },
   "dependencies": {

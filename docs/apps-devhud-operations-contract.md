@@ -6,6 +6,14 @@ This is the internal maintainer runbook for the implemented DevHud workflow. The
 
 The private candidate is never public-ready until the complete signed inventory passes validation. There is no automatic downgrade, partial GA, service-level objective, remote-alert service, or kill switch. A failed check stops the channel and requires an explicit maintainer decision.
 
+## CI validation and non-publication boundary
+
+`.github/workflows/CI.yml` validates every implemented DevHud path with self-gated, read-only jobs. It exercises schema and generated freshness; Go, Rust, frontend, native-host, desktop, mobile/widget, extension, security, adapter, updater, installer, supply-chain, OCI, public-route, and release fixtures. The desktop matrix covers macOS, Windows, and Ubuntu x64/arm64 where GitHub-hosted runners and cross-build tooling make the package feasible; Linux includes X11 smoke. The mobile matrices cover the production iOS/Android architectures and their simulator/emulator paths. Exact CEF pins are checked before native work.
+
+CI never builds a signed private candidate and never publishes. It receives no release secrets, uploads no store or release payload, pushes no OCI layout, deploys no service or documentation, changes no updater state, and creates no tag or GitHub Release. SPDX SBOMs and provenance are generated only as local validation evidence. Release workflow behavior is evaluated by deterministic fixtures. Run `pnpm ci:workflows`, `pnpm ci:contracts`, and `pnpm ci:release-fixtures` locally; package-local commands are listed in the applicable README files.
+
+The immutable desktop pin gate includes the x64 and arm64 sharun 3.0.0 AppImage launcher assets and their exact SHA-256 digests. Every AppImage build downloads the selected asset, verifies it in memory, and supplies only the verified bytes to the bundler through a loopback-only endpoint; no remote launcher URL reaches the packaging subprocess.
+
 ## Release preparation and approval
 
 1. Confirm `packaging/devhud/release-metadata.json`, package manifests, Tauri configuration, Cargo packages, and the Native Messaging host all contain the same stable version. The release identity is `devhud@v<MAJOR.MINOR.PATCH>`.
@@ -30,11 +38,12 @@ Keep platform signatures, updater Ed25519 signatures, and keyless Sigstore bundl
 Validate the exact primary artifacts before retaining a candidate:
 
 - Desktop exact files: `devhud-macos-x64.dmg`, `devhud-macos-x64-macos-app.tar.gz`, `devhud-macos-arm64.dmg`, `devhud-macos-arm64-macos-app.tar.gz`, `devhud-windows-x64-windows-msi.msi`, `devhud-windows-x64-windows-nsis.exe`, `devhud-windows-arm64-windows-msi.msi`, `devhud-windows-arm64-windows-nsis.exe`, `devhud-ubuntu-x64-linux-appimage.AppImage`, `devhud-ubuntu-x64-linux-deb.deb`, `devhud-ubuntu-arm64-linux-appimage.AppImage`, and `devhud-ubuntu-arm64-linux-deb.deb`; confirm pinned CEF helpers/sandbox, package-kind markers, lifecycle behavior, and Native Messaging registration/removal.
+- AppImage launcher: confirm that `verify:pins` accepts exactly the two committed sharun assets and that packaging rejects replacement bytes before Cargo starts.
 - Store: `devhud-ios-arm64-app-store.ipa` and `devhud-android-arm64-armv7-google-play.aab`; confirm iOS identities/profiles/entitlements and Android ABI, signer fingerprint, and final merged non-exported `DevHudWidgetProvider` receiver.
 - Extension: `devhud-chrome-web-store.zip` and byte-equivalent `devhud-chrome-github-validation.zip`; confirm the fixed configured extension ID and exact concrete-origin mapping.
 - Native Messaging identity: `io.delino.devhud.native_messaging`; confirm the host manifest, installer registration, user-scoped IPC, and configured extension ID remain consistent.
 - Widget identities: iOS bundle `io.delino.devhud.widget` and App Group `group.io.delino.devhud`; confirm widget state, receiver evidence, and backup exclusion remain aligned with the mobile contracts.
-- OCI: `devhud-api-linux-amd64-arm64.oci.tar` and `devhud-api-sweeper-linux-amd64-arm64.oci.tar`; confirm both architectures, non-root users, embedded migrations, identical administrator assets, and readiness tests. The private workflow never pushes these layouts.
+- OCI: `devhud-api-linux-amd64-arm64.oci.tar` and `devhud-api-sweeper-linux-amd64-arm64.oci.tar`; from a clean checkout, generate and validate the ignored administrator bundle before host-side Go checks, require Docker to regenerate it inside the build boundary, and confirm both architectures, non-root users, embedded migrations, identical administrator assets, and readiness tests. The private workflow never pushes these layouts.
 - Supply chain: every artifact has a component-bearing SPDX SBOM, run-attempt-bound SLSA provenance, deterministic `SHA256SUMS`, validation evidence, and the corresponding keyless Sigstore bundle. Updater input contains exactly ten signed stable platform/package manifests and detached signatures.
 
 Use `scripts/release/validate-devhud-private-build.mjs`, `scripts/release/validate-devhud-public-assets.mjs`, `scripts/release/validate-devhud-ios-signing.mjs`, `apps/devhud/scripts/validate-updater-release.mjs`, and the release test suite. Never replace a missing SBOM, provenance statement, signature, or validation record with a placeholder.

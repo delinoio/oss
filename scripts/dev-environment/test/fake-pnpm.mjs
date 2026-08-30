@@ -14,6 +14,8 @@ async function exists(path) {
 }
 
 const eventLog = process.env.DEVHUD_TEST_EVENT_LOG;
+const args = process.argv.slice(2);
+const action = args.includes("build:embedded") ? "admin-assets" : "turbo";
 const forbidden = [
   "DEVHUD_DATABASE_URL",
   "DEVHUD_LOGTO_ISSUER",
@@ -33,10 +35,11 @@ if (forbidden.some((name) => process.env[name])) {
 } else if (eventLog) {
   await appendFile(
     eventLog,
-    `${JSON.stringify({ tool: "pnpm", action: "turbo", args: process.argv.slice(2), mode: process.env.DEVHUD_LOCAL_MODE })}\n`,
+    `${JSON.stringify({ tool: "pnpm", action, args, mode: process.env.DEVHUD_LOCAL_MODE })}\n`,
     "utf8",
   );
   if (
+    action === "turbo" &&
     process.env.DEVHUD_LOCAL_MODE === "team" &&
     process.env.DEVHUD_TEST_RUN_TURBO_SERVICES === "1"
   ) {
@@ -61,7 +64,7 @@ if (forbidden.some((name) => process.env[name])) {
       }
     }
   }
-  if (process.env.DEVHUD_TEST_BLOCK_PNPM === "1") {
+  if (action === "turbo" && process.env.DEVHUD_TEST_BLOCK_PNPM === "1") {
     await appendFile(
       eventLog,
       `${JSON.stringify({ tool: "pnpm", action: "turbo-blocked" })}\n`,

@@ -1,4 +1,7 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 
 const desktopTauriFeatures = ["--features", "desktop-cef"];
@@ -9,6 +12,9 @@ export const desktopTauriConfigPath = fileURLToPath(
 );
 export const privateReleaseTauriConfigPath = fileURLToPath(
   new URL("../src-tauri/tauri.private-release.conf.json", import.meta.url),
+);
+const cefPins = JSON.parse(
+  readFileSync(fileURLToPath(new URL("../cef-pins.json", import.meta.url)), "utf8"),
 );
 
 function requestedPackageBundle(forwardedArguments, platformName, packageKinds) {
@@ -48,6 +54,73 @@ const packageKindsByPlatform = {
   },
 };
 
+function appImageSharunAsset(architecture, sharunPin = cefPins.appImage.sharun) {
+  const asset = sharunPin.assets[architecture];
+  if (!asset) {
+    throw new Error(`unsupported Linux AppImage architecture ${architecture}`);
+  }
+  return {
+    sha256: asset.sha256,
+    url: `${sharunPin.repository}/releases/download/${sharunPin.version}/${asset.name}`,
+  };
+}
+
+function listen(server) {
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+}
+
+function close(server) {
+  return new Promise((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+}
+
+export async function prepareVerifiedAppImageSharun(
+  architecture = process.arch,
+  fetchAsset = globalThis.fetch,
+  sharunPin = cefPins.appImage.sharun,
+) {
+  const asset = appImageSharunAsset(architecture, sharunPin);
+  const response = await fetchAsset(asset.url);
+  if (!response.ok) {
+    throw new Error(`AppImage launcher download failed with HTTP ${response.status}`);
+  }
+  const bytes = Buffer.from(await response.arrayBuffer());
+  const observedSha256 = createHash("sha256").update(bytes).digest("hex");
+  if (observedSha256 !== asset.sha256) {
+    throw new Error(
+      `AppImage launcher checksum mismatch: expected ${asset.sha256}, observed ${observedSha256}`,
+    );
+  }
+
+  const server = createServer((request, response_) => {
+    if (!["GET", "HEAD"].includes(request.method) || request.url !== "/sharun") {
+      response_.writeHead(404).end();
+      return;
+    }
+    response_.writeHead(200, {
+      "Content-Length": bytes.byteLength,
+      "Content-Type": "application/octet-stream",
+    });
+    response_.end(request.method === "HEAD" ? undefined : bytes);
+  });
+  await listen(server);
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    await close(server);
+    throw new Error("AppImage launcher loopback server did not expose a TCP address");
+  }
+  return {
+    close: () => close(server),
+    url: `http://127.0.0.1:${address.port}/sharun`,
+  };
+}
 export function repositoryAppleSigningEnvironment(
   command,
   platform = process.platform,
@@ -135,5 +208,15 @@ export function desktopTauriEnvironment(
       `DEVHUD_PACKAGE_KIND ${environment.DEVHUD_PACKAGE_KIND} does not match the selected ${bundle} bundle`,
     );
   }
-  return { ...environment, DEVHUD_PACKAGE_KIND: packageKind };
+  return {
+    ...environment,
+    DEVHUD_PACKAGE_KIND: packageKind,
+    ...(bundle === "appimage"
+      ? {
+          // Scope: CEF AppImages. Remove these overrides when pinned Tauri uses a
+          // sharun release with complete GLib auxv support and a non-hanging probe.
+          STRACE_MODE: "0",
+        }
+      : {}),
+  };
 }
