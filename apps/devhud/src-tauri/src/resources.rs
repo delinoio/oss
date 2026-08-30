@@ -64,6 +64,7 @@ impl ResourceLayout {
 
         #[cfg(target_os = "linux")]
         let (root, required) = {
+            let appimage_sandbox = binary_dir.join("../shared/bin/chrome-sandbox");
             let sharun_root = if binary_dir.ends_with("shared/bin") {
                 binary_dir
                     .parent()
@@ -86,7 +87,12 @@ impl ResourceLayout {
                     })?;
                     package_prefix.join("share/DevHUD")
                 };
-                (root, PathBuf::from("chrome-sandbox"))
+                let sandbox = if appimage_sandbox.is_file() {
+                    PathBuf::from("../shared/bin/chrome-sandbox")
+                } else {
+                    PathBuf::from("chrome-sandbox")
+                };
+                (root, sandbox)
             };
             (
                 root,
@@ -159,16 +165,30 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn linux_accepts_appimage_resource_directory() {
+    fn linux_accepts_appimage_split_resource_layout() {
         let root = tempfile::tempdir().expect("temporary AppDir");
         let binary_dir = root.path().join("bin");
+        let sandbox_dir = root.path().join("shared/bin");
         std::fs::create_dir(&binary_dir).expect("AppDir bin");
+        std::fs::create_dir_all(&sandbox_dir).expect("AppDir shared bin");
         std::fs::write(binary_dir.join("libcef.so"), []).expect("CEF library");
+        std::fs::write(sandbox_dir.join("chrome-sandbox"), []).expect("CEF sandbox");
 
         let layout =
             ResourceLayout::for_executable(&binary_dir.join("devhud")).expect("resource layout");
 
         assert_eq!(layout.root, binary_dir);
+        assert!(
+            layout
+                .required_relative_paths()
+                .any(|path| path == Path::new("../shared/bin/chrome-sandbox"))
+        );
+        assert!(
+            layout
+                .missing()
+                .iter()
+                .all(|path| !path.ends_with("chrome-sandbox"))
+        );
     }
 
     #[cfg(target_os = "linux")]
