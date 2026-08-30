@@ -3,7 +3,8 @@
     "externalBin": ["binaries/devhud-native-messaging-host"],
     "windows": {
       "wix": {
-        "fragmentPaths": ["./windows/native-messaging-lifecycle.wxs"]
+        "fragmentPaths": ["./windows/native-messaging-lifecycle.wxs"],
+        "componentRefs": ["DevHudNativeMessagingLifecycle"]
       },
       "nsis": {
         "installerHooks": "./windows/hooks.nsh"

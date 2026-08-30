@@ -157,6 +157,11 @@ assert(
   "desktop MSI must own the Native Messaging install and uninstall lifecycle",
 );
 assert(
+  JSON.stringify(desktopTauriConfig.bundle?.windows?.wix?.componentRefs) ===
+    JSON.stringify(["DevHudNativeMessagingLifecycle"]),
+  "desktop MSI must link the Native Messaging lifecycle fragment",
+);
+assert(
   JSON.stringify(privateReleaseTauriConfig.bundle?.externalBin) ===
     JSON.stringify(["binaries/devhud-native-messaging-host"]),
   "private release must package the pinned Native Messaging sidecar",
@@ -176,6 +181,17 @@ assert(
   JSON.stringify(privateReleaseTauriConfig.bundle?.windows?.wix?.fragmentPaths) ===
     JSON.stringify(["./windows/native-messaging-lifecycle.wxs"]),
   "private MSI must own the Native Messaging install and uninstall lifecycle",
+);
+assert(
+  JSON.stringify(privateReleaseTauriConfig.bundle?.windows?.wix?.componentRefs) ===
+    JSON.stringify(["DevHudNativeMessagingLifecycle"]),
+  "private MSI must link the Native Messaging lifecycle fragment",
+);
+assert(
+  nativeMessagingLifecycle.includes('Id="DevHudNativeMessagingLifecycle"') &&
+    nativeMessagingLifecycle.includes('Action="createAndRemoveOnUninstall"') &&
+    nativeMessagingLifecycle.includes('Id="DevHudRemoveNativeMessagingManifest"'),
+  "MSI Native Messaging lifecycle ownership changed",
 );
 assert(
   nativeMessagingLifecycle.includes('Id="DevHudRollbackNativeMessagingRegistration"') &&
