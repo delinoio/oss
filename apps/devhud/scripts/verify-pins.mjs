@@ -189,6 +189,8 @@ assert(
 );
 assert(
   nativeMessagingLifecycle.includes('Id="DevHudNativeMessagingLifecycle"') &&
+    nativeMessagingLifecycle.includes('<DirectoryRef Id="TARGETDIR">') &&
+    nativeMessagingLifecycle.includes('<Directory Id="LocalAppDataFolder">') &&
     nativeMessagingLifecycle.includes('Action="createAndRemoveOnUninstall"') &&
     nativeMessagingLifecycle.includes('Id="DevHudRemoveNativeMessagingManifest"'),
   "MSI Native Messaging lifecycle ownership changed",

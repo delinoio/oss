@@ -1,27 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
   <Fragment>
-    <DirectoryRef Id="LocalAppDataFolder">
-      <Directory Id="DevHudNativeMessagingDirectory" Name="io.delino.devhud">
-        <Component Id="DevHudNativeMessagingLifecycle" Guid="*">
-          <RegistryKey
-            Root="HKCU"
-            Key="Software\Google\Chrome\NativeMessagingHosts\io.delino.devhud.native_messaging"
-            Action="createAndRemoveOnUninstall"
-          >
-            <RegistryValue
-              Type="string"
-              Value="[DevHudNativeMessagingDirectory]io.delino.devhud.native_messaging.json"
-              KeyPath="yes"
+    <DirectoryRef Id="TARGETDIR">
+      <Directory Id="LocalAppDataFolder">
+        <Directory Id="DevHudNativeMessagingDirectory" Name="io.delino.devhud">
+          <Component Id="DevHudNativeMessagingLifecycle" Guid="*">
+            <RegistryKey
+              Root="HKCU"
+              Key="Software\Google\Chrome\NativeMessagingHosts\io.delino.devhud.native_messaging"
+              Action="createAndRemoveOnUninstall"
+            >
+              <RegistryValue
+                Type="string"
+                Value="[DevHudNativeMessagingDirectory]io.delino.devhud.native_messaging.json"
+                KeyPath="yes"
+              />
+            </RegistryKey>
+            <RemoveFile
+              Id="DevHudRemoveNativeMessagingManifest"
+              Name="io.delino.devhud.native_messaging.json"
+              On="uninstall"
             />
-          </RegistryKey>
-          <RemoveFile
-            Id="DevHudRemoveNativeMessagingManifest"
-            Name="io.delino.devhud.native_messaging.json"
-            On="uninstall"
-          />
-          <RemoveFolder Id="DevHudRemoveNativeMessagingDirectory" On="uninstall" />
-        </Component>
+            <RemoveFolder Id="DevHudRemoveNativeMessagingDirectory" On="uninstall" />
+          </Component>
+        </Directory>
       </Directory>
     </DirectoryRef>
     <CustomAction
