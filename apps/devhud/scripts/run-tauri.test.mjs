@@ -481,7 +481,9 @@ async function waitForStatus(statusPath) {
     try {
       return JSON.parse(readFileSync(statusPath, "utf8"));
     } catch (error) {
-      if (error.code !== "ENOENT") {
+      // The child writes its readiness file directly, so a poll can observe it
+      // after creation but before its JSON payload is complete.
+      if (error?.code !== "ENOENT" && !(error instanceof SyntaxError)) {
         throw error;
       }
     }

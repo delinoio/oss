@@ -1032,6 +1032,7 @@ fn main() {
             .title("DevHUD")
             .inner_size(960.0, 640.0)
             .min_inner_size(640.0, 480.0)
+            .maximized(true)
             .on_web_resource_request(move |_request, response| {
                 let csp = session_network_policy.session_csp(cfg!(debug_assertions));
                 if let Ok(value) = csp.parse() {
