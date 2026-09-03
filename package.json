@@ -32,7 +32,7 @@
     "overrides": {
       "@expo/cli>tar": "7.5.22",
       "@expo/cli>undici": "7.29.0",
-      "@expo/plist>@xmldom/xmldom": "0.8.13",
+      "@expo/plist>@xmldom/xmldom": "0.8.15",
       "@stoplight/spectral-core>minimatch": "3.1.5",
       "@xmldom/xmldom": "0.8.13",
       "axios": "1.16.0",
