@@ -51,7 +51,7 @@
   },
   "devDependencies": {
     "@bufbuild/protobuf": "2.14.0",
-    "@rsbuild/core": "2.1.10",
+    "@rsbuild/core": "2.2.2",
     "@rsbuild/plugin-react": "2.0.1",
     "@testing-library/react": "16.3.3",
     "@types/react": "19.2.14",
