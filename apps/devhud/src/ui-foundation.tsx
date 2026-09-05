@@ -126,7 +126,7 @@ export function Dialog({ open, title, initialFocusRef, returnFocusRef, restoreFo
   return <ModalSurface open={open} title={title} titleId={titleId} className="ui-dialog" initialFocusRef={initialFocusRef} returnFocusRef={returnFocusRef} restoreFocus={restoreFocus} onClose={onClose}>{children}</ModalSurface>;
 }
 
-export function Sheet({ open, title, backLabel, initialFocusRef, returnFocusRef, onClose, children }: { readonly open: boolean; readonly title: ReactNode; readonly backLabel: string; readonly initialFocusRef?: RefObject<HTMLElement | null>; readonly returnFocusRef?: RefObject<HTMLElement | null>; readonly onClose: () => void; readonly children: ReactNode }) {
+export function Sheet({ open, title, backLabel, initialFocusRef, returnFocusRef, restoreFocus = true, onClose, children }: { readonly open: boolean; readonly title: ReactNode; readonly backLabel: string; readonly initialFocusRef?: RefObject<HTMLElement | null>; readonly returnFocusRef?: RefObject<HTMLElement | null>; readonly restoreFocus?: boolean; readonly onClose: () => void; readonly children: ReactNode }) {
   const titleId = useId();
-  return <ModalSurface open={open} title={title} titleId={titleId} className="ui-sheet" initialFocusRef={initialFocusRef} returnFocusRef={returnFocusRef} restoreFocus onClose={onClose}><div className="sheet-content">{children}</div><Button variant="ghost" onClick={onClose}>{backLabel}</Button></ModalSurface>;
+  return <ModalSurface open={open} title={title} titleId={titleId} className="ui-sheet" initialFocusRef={initialFocusRef} returnFocusRef={returnFocusRef} restoreFocus={restoreFocus} onClose={onClose}><div className="sheet-content">{children}</div><Button variant="ghost" onClick={onClose}>{backLabel}</Button></ModalSurface>;
 }

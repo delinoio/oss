@@ -68,6 +68,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const [palette, setPalette] = useState(false);
   const [paletteRestoresFocus, setPaletteRestoresFocus] = useState(true);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [moreRestoresFocus, setMoreRestoresFocus] = useState(true);
   const [query, setQuery] = useState("");
   const [externalMessage, setExternalMessage] = useState<ExternalMessage | null>(null);
   const [systemLanguage, setSystemLanguage] = useState(() => resolveLanguage(LanguagePreference.System, navigator.languages));
@@ -89,7 +90,6 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const apiOriginInput = useRef<HTMLInputElement>(null);
   const captureSequence = useRef(0);
   const paletteTrigger = useRef<HTMLButtonElement>(null);
-  const mobilePaletteTrigger = useRef<HTMLButtonElement>(null);
   const moreTrigger = useRef<HTMLButtonElement>(null);
   const externalAttempt = useRef(0);
   const identitySession = useRef<IdentitySession | null>(null);
@@ -127,6 +127,11 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     setPalette(false);
   };
   const openPalette = () => { setPaletteRestoresFocus(true); setPalette(true); };
+  const closeMore = (restoreTriggerFocus = true) => {
+    setMoreRestoresFocus(restoreTriggerFocus);
+    setMoreOpen(false);
+  };
+  const openMore = () => { setMoreRestoresFocus(true); setMoreOpen(true); };
 
   useEffect(() => {
     document.title = "DevHUD";
@@ -156,10 +161,12 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
         const context = shortcutContext.current;
         if (context.mobile || context.onboarding) return;
         if (event.action === ShortcutActionId.CommandPalette) {
+          closeMore(false);
           openPalette();
           return;
         }
         if (event.action.startsWith("realqa.capture.")) {
+          closeMore(false);
           setPalette(false);
           setSurface(SurfaceId.Realqa);
           captureSequence.current += 1;
@@ -167,7 +174,10 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
           return;
         }
         const action = actionRegistry.find((candidate) => candidate.id === event.action);
-        if (action && action.required.every((required) => context.capabilities.available.has(required)) && action.surface) setSurface(action.surface);
+        if (action && action.required.every((required) => context.capabilities.available.has(required)) && action.surface) {
+          closeMore(false);
+          setSurface(action.surface);
+        }
       }
     };
     void bridge.listen(receive).then(async (value) => {
@@ -268,7 +278,9 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     return () => media.removeEventListener("change", updateTheme);
   }, [preferences.language, preferences.theme, language]);
   useEffect(() => { if (surface === SurfaceId.Account) apiOriginInput.current?.focus(); }, [surface]);
-  useEffect(() => { if (shellLayout !== ShellLayout.Mobile) setMoreOpen(false); }, [shellLayout]);
+  useEffect(() => {
+    if (shellLayout !== ShellLayout.Mobile) closeMore(false);
+  }, [shellLayout]);
 
   const actions = useMemo(() => availableActions(runtimeCapabilities).filter((action) => copy[action.title].toLowerCase().includes(query.toLowerCase())), [copy, query, runtime]);
   const unavailableCaptureActions = actionRegistry.filter((action) => action.required.includes(PlatformCapability.Capture) && !runtimeCapabilities.available.has(PlatformCapability.Capture));
@@ -378,13 +390,13 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     })}</nav>
     {mobile ? <Button className="palette-trigger" ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} aria-label={copy.openPalette}>{shellLayout === ShellLayout.Sidebar ? copy.openPalette : null}</Button> : <ShortcutPaletteTrigger copy={copy} isMac={isMac} triggerRef={paletteTrigger} onOpen={openPalette} compact={shellLayout === ShellLayout.Rail} />}
   </aside>;
-  const topBar = shellLayout === ShellLayout.Mobile && <header className="mobile-app-bar"><strong>{copy.appName}</strong><span>{copy[labels[surface]]}</span><Button ref={mobilePaletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} aria-label={copy.openPalette} /></header>;
+  const topBar = shellLayout === ShellLayout.Mobile && <header className="mobile-app-bar"><strong>{copy.appName}</strong><span>{copy[labels[surface]]}</span><Button ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} aria-label={copy.openPalette} /></header>;
   const bottomBar = shellLayout === ShellLayout.Mobile && <nav className="mobile-bottom-navigation" aria-label={copy.mobileNavigation}>
     {mobilePrimarySurfaces.map((item) => {
       const Icon = surfaceIcons[item];
       return <button type="button" key={item} aria-current={surface === item ? "page" : undefined} onClick={() => navigate(item)}><Icon /><span>{copy[labels[item]]}</span></button>;
     })}
-    <button key={MobileNavigationId.More} ref={moreTrigger} type="button" aria-current={moreCurrent ? "page" : undefined} aria-haspopup="dialog" aria-expanded={moreOpen} onClick={() => setMoreOpen(true)}><MoreIcon /><span>{copy.more}</span></button>
+    <button key={MobileNavigationId.More} ref={moreTrigger} type="button" aria-current={moreCurrent ? "page" : undefined} aria-haspopup="dialog" aria-expanded={moreOpen} onClick={openMore}><MoreIcon /><span>{copy.more}</span></button>
   </nav>;
 
   return boundary(<>
@@ -402,12 +414,12 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       {surface === SurfaceId.Account && <><AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} /><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.githubCreateFinePat}</button><button onClick={() => void external(ExternalLinkTarget.ClassicPat)}>{copy.githubCreateClassicPat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
       {surface === SurfaceId.Diagnostics && <><PageHeader eyebrow={copy.diagnostics} title={copy.diagnosticsTitle} summary={copy.diagnosticsSummary} />{runtime && <><dl className="runtime-diagnostics"><dt>{copy.diagnosticPlatform}</dt><dd>{runtime.operatingSystem}</dd><dt>{copy.diagnosticArchitecture}</dt><dd>{runtime.architecture}</dd><dt>{copy.diagnosticBridge}</dt><dd>v{runtime.bridgeVersion}</dd></dl><DiagnosticsPanel copy={copy} runtime={runtime} bridge={bridge} storage={storage} online={online} /></>}</>}
     </AppShell>
-    <Dialog open={palette} title={copy.commandPalette} initialFocusRef={search} returnFocusRef={shellLayout === ShellLayout.Mobile ? mobilePaletteTrigger : paletteTrigger} restoreFocus={paletteRestoresFocus} onClose={() => closePalette()}>
+    <Dialog open={palette} title={copy.commandPalette} initialFocusRef={search} returnFocusRef={paletteTrigger} restoreFocus={paletteRestoresFocus} onClose={() => closePalette()}>
       <Field label={copy.searchCommands} inputId="command-search"><input id="command-search" ref={search} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchCommands} /></Field>
       <div className="commands">{actions.length === 0 ? <p role="status">{copy.noCommands}</p> : actions.map((action) => <Button variant="ghost" key={action.id} onClick={() => execute(action.id)}>{copy[action.title]}</Button>)}</div>
       <Button onClick={() => closePalette()}>{copy.close}</Button>
     </Dialog>
-    <Sheet open={moreOpen} title={copy.more} backLabel={copy.back} returnFocusRef={moreTrigger} onClose={() => setMoreOpen(false)}>
+    <Sheet open={moreOpen} title={copy.more} backLabel={copy.back} returnFocusRef={moreTrigger} restoreFocus={moreRestoresFocus} onClose={() => closeMore()}>
       <DataRow icon={<RealqaIcon />} title={copy.realqa} description={mobile ? copy.realqaMobileSummary : copy.realqaSummary} trailing={mobile ? <StatusBadge tone="neutral">{copy.desktopOnly}</StatusBadge> : <ArrowRightIcon />} ariaCurrent={surface === SurfaceId.Realqa ? "page" : undefined} onClick={() => navigate(SurfaceId.Realqa)} />
       <DataRow icon={<DiagnosticsIcon />} title={copy.diagnostics} description={copy.diagnosticsSummary} trailing={<ArrowRightIcon />} ariaCurrent={surface === SurfaceId.Diagnostics ? "page" : undefined} onClick={() => navigate(SurfaceId.Diagnostics)} />
     </Sheet>

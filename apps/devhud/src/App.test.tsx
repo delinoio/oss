@@ -878,6 +878,58 @@ describe("responsive application shell", () => {
     expect(screen.queryByRole("button", { name: messages.en.diagnostics })).toBeNull();
   });
 
+  it("closes More before shortcut-driven palette and capture actions", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 700 });
+    const runtime: RuntimeSnapshot = { ...desktopRuntime, capabilities: { ...desktopRuntime.capabilities, capture: true } };
+    let receive: ((event: NativeBridgeEventV1) => void) | undefined;
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "windows", shadowRemovalSupported: false, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    const bridge: NativeBridgeV1 = {
+      request,
+      async listen(listener) { receive = listener; return () => {}; },
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    await waitFor(() => expect(receive).toBeTypeOf("function"));
+
+    const more = screen.getByRole("button", { name: messages.en.more });
+    fireEvent.click(more);
+    expect(screen.getByRole("dialog", { name: messages.en.more })).toBeTruthy();
+    await act(async () => receive?.({ version: 1, kind: "shortcut-triggered", action: "shell.command-palette" }));
+    expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull();
+    const palette = screen.getByRole("dialog", { name: messages.en.commandPalette });
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: messages.en.searchCommands })));
+
+    fireEvent.click(within(palette).getByRole("button", { name: messages.en.close }));
+    fireEvent.click(more);
+    expect(screen.getByRole("dialog", { name: messages.en.more })).toBeTruthy();
+    await act(async () => receive?.({ version: 1, kind: "shortcut-triggered", action: "realqa.capture.selection" }));
+    expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull();
+    expect(await screen.findByRole("dialog", { name: messages.en.captureSelection })).toBeTruthy();
+  });
+
+  it("restores palette focus to the mounted trigger after crossing the mobile breakpoint", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 700 });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={unavailableBridge()} initialRuntime={desktopRuntime} />);
+
+    const mobileTrigger = screen.getByRole("button", { name: messages.en.openPalette });
+    fireEvent.click(mobileTrigger);
+    const palette = screen.getByRole("dialog", { name: messages.en.commandPalette });
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: messages.en.searchCommands })));
+
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 701 });
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => expect(document.querySelector<HTMLElement>("[data-shell-layout]")?.dataset.shellLayout).toBe("rail"));
+    const railTrigger = screen.getByRole("button", { name: messages.en.openPalette });
+    expect(railTrigger).not.toBe(mobileTrigger);
+    fireEvent.keyDown(palette, { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).toBe(railTrigger));
+  });
+
   it("manages More focus, retains selection, and groups mobile RealQA with Diagnostics", async () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 390 });
     vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));

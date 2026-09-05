@@ -217,6 +217,18 @@ test("the UI foundation encodes the semantic, sizing, and responsive contracts",
   assert.match(styles, /@media \(max-width:700px\)/u);
 });
 
+test("reduced motion preserves visibility transforms", () => {
+  const reducedMotion = styles.match(/@media \(prefers-reduced-motion: reduce\)\s*\{([^\n]*)\}/u)?.[1];
+  assert.ok(reducedMotion);
+  assert.match(reducedMotion, /transition:none!important/u);
+  assert.match(reducedMotion, /animation:none!important/u);
+  assert.doesNotMatch(reducedMotion, /transform:none/u);
+});
+
+test("narrow layouts keep capture previews above the safe-area-aware navigation", () => {
+  assert.match(styles, /\.floating-capture-preview\{[^}]*bottom:1rem[^}]*\}[\s\S]*@media \(max-width:700px\)\{\.floating-capture-preview\{bottom:calc\(64px \+ 1rem \+ env\(safe-area-inset-bottom\)\)\}\}/u);
+});
+
 test("the shell exposes a localized skip target and named rail tooltips", () => {
   assert.match(foundation, /className="skip-link" href="#devhud-main-content"/u);
   assert.match(foundation, /id="devhud-main-content" className="content" tabIndex=\{-1\}/u);
