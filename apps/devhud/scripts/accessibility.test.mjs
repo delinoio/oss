@@ -8,6 +8,8 @@ const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const styles = readFileSync(join(appRoot, "src/styles.css"), "utf8");
 const app = readFileSync(join(appRoot, "src/App.tsx"), "utf8");
 const identityUi = readFileSync(join(appRoot, "src/identity-ui.tsx"), "utf8");
+const foundation = readFileSync(join(appRoot, "src/ui-foundation.tsx"), "utf8");
+const icons = readFileSync(join(appRoot, "src/ui-icons.tsx"), "utf8");
 const main = readFileSync(join(appRoot, "src/main.tsx"), "utf8");
 const nativeHost = readFileSync(join(appRoot, "src-tauri/src/main.rs"), "utf8");
 const themeBlocks = [
@@ -125,7 +127,7 @@ test("resolved themes apply their native control color scheme", () => {
 
 test("the palette trigger retains contrast while hovered", () => {
   assert.match(app, /className="palette-trigger"/u);
-  assert.match(styles, /aside > \.palette-trigger:hover\s*\{\s*color:#fff; background:var\(--button-accent\);/u);
+  assert.match(styles, /\.shell-nav-item:hover,\.shell-navigation \.palette-trigger:hover\s*\{[^}]*border-color:var\(--line\);[^}]*background:var\(--surface-muted\)/u);
 });
 
 test("external status remains localized and noopener does not report a false failure", () => {
@@ -139,18 +141,19 @@ test("external status remains localized and noopener does not report a false fai
 
 test("first run renders the localized local-choice controls and focuses the API origin", () => {
   assert.match(app, /onboarding/u);
-  assert.match(identityUi, /value=\{apiOrigin\} autoFocus/u);
+  assert.match(identityUi, /value=\{apiOrigin\} autoFocus onApply/u);
   assert.match(identityUi, /copy\.signIn/u);
   assert.match(identityUi, /copy\.continueLocally/u);
   assert.match(identityUi, /copy\.customApiWarning/u);
-  assert.match(styles, /\.app-shell\.onboarding\s*\{\s*grid-template-columns:minmax\(0,1fr\)/u);
+  assert.match(app, /if \(onboarding\) return boundary\(<main className="standalone-shell"/u);
+  assert.match(identityUi, /<Card className="onboarding-card">/u);
 });
 
 test("Account focuses its API origin input when the surface opens or is reselected from the palette", () => {
   assert.match(app, /const apiOriginInput = useRef<HTMLInputElement>\(null\);/u);
   assert.match(app, /surface === SurfaceId\.Account\) apiOriginInput\.current\?\.focus\(\)/u);
   assert.match(app, /inputRef=\{apiOriginInput\}/u);
-  assert.match(identityUi, /<input ref=\{inputRef\} autoFocus=\{autoFocus\}/u);
+  assert.match(identityUi, /<input id=\{inputId\} ref=\{inputRef\} autoFocus=\{autoFocus\}/u);
   assert.match(app, /closePalette\(action\?\.surface !== SurfaceId\.Account\);/u);
   assert.match(app, /action\?\.surface === SurfaceId\.Account\) requestAnimationFrame\(\(\) => apiOriginInput\.current\?\.focus\(\)\)/u);
 });
@@ -189,9 +192,51 @@ test("Linux external links use bounded GIO dispatch rather than browser lifetime
   assert.doesNotMatch(nativeHost, /Command::new\("xdg-open"\)/u);
 });
 
-test("command palette overlay stacks above the mobile sidebar", () => {
-  assert.match(styles, /\.overlay\s*\{[^}]*z-index:2/u);
-  assert.match(styles, /aside\s*\{[^}]*z-index:1/u);
+test("internal overlays stack above every responsive navigation surface", () => {
+  assert.match(styles, /\.ui-overlay\s*\{[^}]*z-index:30/u);
+  assert.match(styles, /\.shell-navigation\s*\{[^}]*z-index:10/u);
+  assert.match(styles, /\.mobile-app-bar\s*\{[^}]*z-index:10/u);
+  assert.match(styles, /\.mobile-bottom-navigation\s*\{[^}]*z-index:10/u);
+});
+
+test("the UI foundation encodes the semantic, sizing, and responsive contracts", () => {
+  for (const block of themeBlocks) {
+    for (const token of ["--bg", "--surface", "--surface-muted", "--text", "--muted", "--accent", "--success", "--warning", "--error", "--info", "--line", "--focus"]) {
+      assert.match(block, new RegExp(`${token}:`, "u"));
+    }
+  }
+  assert.match(themeBlocks[0], /--space-1:8px/u);
+  assert.match(themeBlocks[0], /--radius-control:12px/u);
+  assert.match(themeBlocks[0], /--radius-panel:16px/u);
+  assert.match(themeBlocks[0], /--target-min:44px/u);
+  assert.match(styles, /button\s*\{[^}]*min-width:var\(--target-min\);[^}]*min-height:var\(--target-min\)/u);
+  assert.match(styles, /grid-template-columns:232px minmax\(0,1fr\)/u);
+  assert.match(styles, /grid-template-columns:72px minmax\(0,1fr\)/u);
+  assert.match(styles, /\.content\s*\{[^}]*min-width:0;[^}]*max-width:1280px/u);
+  assert.match(styles, /@media \(min-width:701px\) and \(max-width:1023px\)/u);
+  assert.match(styles, /@media \(max-width:700px\)/u);
+});
+
+test("the shell exposes a localized skip target and named rail tooltips", () => {
+  assert.match(foundation, /className="skip-link" href="#devhud-main-content"/u);
+  assert.match(foundation, /id="devhud-main-content" className="content" tabIndex=\{-1\}/u);
+  assert.match(app, /aria-describedby=\{shellLayout === ShellLayout\.Rail \? tooltipId : undefined\}/u);
+  assert.match(app, /className="nav-tooltip" role="tooltip"/u);
+  assert.match(styles, /button:focus-visible \.nav-tooltip\s*\{[^}]*opacity:1;[^}]*visibility:visible/u);
+});
+
+test("modal primitives own focus trapping, Escape, and opener restoration", () => {
+  assert.match(foundation, /event\.key === "Escape"[\s\S]*onClose\(\)/u);
+  assert.match(foundation, /event\.shiftKey && document\.activeElement === first[\s\S]*last\.focus\(\)/u);
+  assert.match(foundation, /document\.activeElement === last[\s\S]*first\.focus\(\)/u);
+  assert.match(foundation, /returnFocusRef\?\.current \?\? capturedOpener\.current/u);
+  assert.match(foundation, /role="dialog" aria-modal="true"/u);
+});
+
+test("foundation icons are repository-owned decorative SVGs", () => {
+  assert.match(icons, /return <svg/u);
+  assert.match(icons, /aria-hidden="true" focusable="false"/u);
+  assert.doesNotMatch(icons, /from "(?!react")/u);
 });
 
 test("updater confirmations stack above the persistent capture preview", () => {

@@ -7,7 +7,8 @@ export const messages = {
   en: {
     appName: "DevHUD",
     home: "Home", realqa: "RealQA", deck: "Deck", settings: "Settings",
-    account: "Account", diagnostics: "Diagnostics", commandPalette: "Command palette",
+    account: "Account", diagnostics: "Diagnostics", more: "More", back: "Back", commandPalette: "Command palette",
+    skipToContent: "Skip to content", availableTools: "Available tools",
     searchCommands: "Search commands", noCommands: "No available commands.",
     openPalette: "Open command palette", rightCommandK: "Right ⌘ K", rightControlK: "Right Ctrl K", close: "Close", quit: "Quit DevHUD",
     showWindow: "Show DevHUD", theme: "Theme", language: "Language",
@@ -61,7 +62,8 @@ export const messages = {
   ko: {
     appName: "DevHUD",
     home: "홈", realqa: "RealQA", deck: "Deck", settings: "설정",
-    account: "계정", diagnostics: "진단", commandPalette: "명령 팔레트",
+    account: "계정", diagnostics: "진단", more: "더보기", back: "뒤로", commandPalette: "명령 팔레트",
+    skipToContent: "콘텐츠로 건너뛰기", availableTools: "사용 가능한 도구",
     searchCommands: "명령 검색", noCommands: "사용 가능한 명령이 없습니다.",
     openPalette: "명령 팔레트 열기", rightCommandK: "오른쪽 ⌘ K", rightControlK: "오른쪽 Ctrl K", close: "닫기", quit: "DevHUD 종료",
     showWindow: "DevHUD 표시", theme: "테마", language: "언어",

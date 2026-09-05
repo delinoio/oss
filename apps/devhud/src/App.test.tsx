@@ -38,6 +38,7 @@ function bridgeWith(request: (request: NativeBridgeRequestV1) => Promise<NativeB
 
 beforeEach(() => {
   delete window.__TAURI_INTERNALS__;
+  Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1024 });
   localStorage.clear();
   localStorage.setItem("devhud.shell.onboarding.v1", "complete");
   Object.defineProperty(window, "matchMedia", {
@@ -817,5 +818,120 @@ describe("native App state", () => {
     expect(screen.getByRole("complementary", { name: messages.en.floatingPreview })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: messages.en.floatingPreviewOpen }));
     expect(await screen.findByRole("heading", { name: messages.en.editorTitle })).toBeTruthy();
+  });
+});
+
+describe("responsive application shell", () => {
+  const unavailableBridge = () => bridgeWith(async (request) => {
+    throw new Error(`unexpected operation ${request.operation}`);
+  });
+
+  it("renders the six-surface desktop sidebar and only the four approved Home tools", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1440 });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={unavailableBridge()} initialRuntime={desktopRuntime} />);
+
+    const shell = document.querySelector<HTMLElement>("[data-shell-layout]");
+    expect(shell?.dataset.shellLayout).toBe("sidebar");
+    const navigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
+    expect(within(navigation).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
+      messages.en.home, messages.en.realqa, messages.en.deck, messages.en.settings, messages.en.account, messages.en.diagnostics,
+    ]);
+    expect(within(navigation).getByRole("button", { name: messages.en.home }).getAttribute("aria-current")).toBe("page");
+    const tools = document.querySelector(".tool-grid");
+    expect(tools).toBeTruthy();
+    expect(within(tools as HTMLElement).getAllByRole("button")).toHaveLength(4);
+    expect((tools as HTMLElement).textContent).toContain(messages.en.realqaTitle);
+    expect((tools as HTMLElement).textContent).toContain(messages.en.deckTitle);
+    expect((tools as HTMLElement).textContent).toContain(messages.en.settingsTitle);
+    expect((tools as HTMLElement).textContent).toContain(messages.en.diagnosticsTitle);
+    expect((tools as HTMLElement).textContent).not.toContain(messages.en.accountTitle);
+  });
+
+  it.each([1023, 701])("renders the named tooltip rail at %ipx", (width) => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={unavailableBridge()} initialRuntime={desktopRuntime} />);
+
+    expect(document.querySelector<HTMLElement>("[data-shell-layout]")?.dataset.shellLayout).toBe("rail");
+    const navigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
+    const destinations = within(navigation).getAllByRole("button");
+    expect(destinations).toHaveLength(6);
+    for (const destination of destinations) {
+      expect(destination.getAttribute("aria-label")).toBeTruthy();
+      expect(destination.getAttribute("aria-describedby")).toMatch(/^navigation-tooltip-/u);
+    }
+    expect(screen.getAllByRole("tooltip")).toHaveLength(7);
+  });
+
+  it.each([700, 390, 320])("renders exactly five mobile navigation items at %ipx", (width) => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={unavailableBridge()} initialRuntime={mobileRuntime} />);
+
+    expect(document.querySelector<HTMLElement>("[data-shell-layout]")?.dataset.shellLayout).toBe("mobile");
+    const navigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
+    expect(within(navigation).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      messages.en.home, messages.en.deck, messages.en.settings, messages.en.account, messages.en.more,
+    ]);
+    expect(screen.queryByRole("button", { name: messages.en.realqa })).toBeNull();
+    expect(screen.queryByRole("button", { name: messages.en.diagnostics })).toBeNull();
+  });
+
+  it("manages More focus, retains selection, and groups mobile RealQA with Diagnostics", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 390 });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={unavailableBridge()} initialRuntime={mobileRuntime} />);
+    const navigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
+    const home = within(navigation).getByRole("button", { name: messages.en.home });
+    const more = within(navigation).getByRole("button", { name: messages.en.more });
+    expect(home.getAttribute("aria-current")).toBe("page");
+
+    fireEvent.click(more);
+    const sheet = screen.getByRole("dialog", { name: messages.en.more });
+    expect(home.getAttribute("aria-current")).toBe("page");
+    const realqa = within(sheet).getByRole("button", { name: /RealQA/u });
+    expect(realqa.textContent).toContain(messages.en.desktopOnly);
+    await waitFor(() => expect(document.activeElement).toBe(realqa));
+    fireEvent.click(realqa);
+    expect(screen.getByRole("heading", { name: messages.en.realqaMobileTitle })).toBeTruthy();
+    expect(more.getAttribute("aria-current")).toBe("page");
+
+    fireEvent.click(more);
+    fireEvent.keyDown(screen.getByRole("dialog", { name: messages.en.more }), { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).toBe(more));
+    expect(screen.getByRole("heading", { name: messages.en.realqaMobileTitle })).toBeTruthy();
+
+    fireEvent.click(more);
+    fireEvent.click(within(screen.getByRole("dialog", { name: messages.en.more })).getByRole("button", { name: /Diagnostics/u }));
+    expect(screen.getByRole("heading", { name: messages.en.diagnosticsTitle })).toBeTruthy();
+    expect(more.getAttribute("aria-current")).toBe("page");
+  });
+
+  it("moves localized skip-link focus to the main content", () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={unavailableBridge()} initialRuntime={desktopRuntime} />);
+    fireEvent.click(screen.getByRole("link", { name: messages.en.skipToContent }));
+    expect(document.activeElement).toBe(screen.getByRole("main"));
+  });
+
+  it("changes shell layouts without remounting the desktop RealQA controller", async () => {
+    const runtime: RuntimeSnapshot = { ...desktopRuntime, capabilities: { ...desktopRuntime.capabilities, capture: true } };
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "windows", shadowRemovalSupported: false, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={bridgeWith(request)} initialRuntime={runtime} />);
+    await waitFor(() => expect(request.mock.calls.filter(([value]) => value.operation === "capture.status")).toHaveLength(1));
+
+    for (const width of [1023, 700, 1440]) {
+      Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width });
+      fireEvent(window, new Event("resize"));
+    }
+    await waitFor(() => expect(document.querySelector<HTMLElement>("[data-shell-layout]")?.dataset.shellLayout).toBe("sidebar"));
+    expect(request.mock.calls.filter(([value]) => value.operation === "capture.status")).toHaveLength(1);
+    expect(request.mock.calls.filter(([value]) => value.operation === "capture.list-drafts")).toHaveLength(1);
   });
 });
