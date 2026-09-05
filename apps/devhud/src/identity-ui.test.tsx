@@ -126,7 +126,7 @@ describe("identity UI", () => {
     const continueLocally = vi.fn();
     identity = identityWith({ status: "error", continueLocally });
 
-    render(<AccountIdentity copy={messages.en} apiOrigin="https://devhud.api.delino.io" inputRef={{ current: null }} onApiOrigin={vi.fn(async () => undefined)} />);
+    render(<AccountIdentity copy={messages.en} apiOrigin="https://devhud.api.delino.io" inputRef={{ current: null }} onApiOrigin={vi.fn(async () => undefined)} onDeleteConfirmationOpenChange={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.continueLocally }));
     expect(continueLocally).toHaveBeenCalledOnce();

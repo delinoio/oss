@@ -13,6 +13,7 @@ import { LifecycleState, NativeBridgeError, NativeBridgeErrorCode, NotificationP
 import { desktopNativeMessagingIntegration } from "./native-messaging-ui";
 import { saveGuestSettings } from "./service-boundary";
 import { defaultDevHudSettings } from "./settings-contract";
+import { ShortcutActionId } from "./shortcuts";
 
 const mobileRuntime: RuntimeSnapshot = {
   bridgeVersion: 1,
@@ -38,6 +39,7 @@ function bridgeWith(request: (request: NativeBridgeRequestV1) => Promise<NativeB
 
 beforeEach(() => {
   delete window.__TAURI_INTERNALS__;
+  Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1024 });
   localStorage.clear();
   localStorage.setItem("devhud.shell.onboarding.v1", "complete");
   Object.defineProperty(window, "matchMedia", {
@@ -649,7 +651,10 @@ describe("native App state", () => {
     expect(openAttempts).toBe(2);
   });
 
-  it("dispatches a registered desktop capture shortcut into the RealQA selection mode", async () => {
+  it.each([
+    [ShortcutActionId.CaptureSelection, "captureSelection"],
+    [ShortcutActionId.CaptureToolbar, "captureToolbar"],
+  ] as const)("dispatches the registered %s shortcut into its focused RealQA dialog", async (action, dialogLabel) => {
     const runtime: RuntimeSnapshot = { ...desktopRuntime, capabilities: { ...desktopRuntime.capabilities, capture: true } };
     let receive: ((event: NativeBridgeEventV1) => void) | undefined;
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
@@ -666,16 +671,18 @@ describe("native App state", () => {
     await waitFor(() => expect(receive).toBeTypeOf("function"));
     fireEvent.click(screen.getByRole("button", { name: messages.en.openPalette }));
     expect(screen.getByRole("dialog", { name: messages.en.commandPalette })).toBeTruthy();
-    await act(async () => receive?.({ version: 1, kind: "shortcut-triggered", action: "realqa.capture.selection" }));
+    await act(async () => receive?.({ version: 1, kind: "shortcut-triggered", action }));
 
-    expect(await screen.findByRole("dialog", { name: messages.en.captureSelection })).toBeTruthy();
+    expect(await screen.findByRole("dialog", { name: messages.en[dialogLabel] })).toBeTruthy();
     expect(screen.queryByRole("dialog", { name: messages.en.commandPalette })).toBeNull();
     expect(request).toHaveBeenCalledWith({ operation: "capture.status" });
+    await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.captureNow }));
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.home }));
     fireEvent.click(screen.getByRole("button", { name: messages.en.realqa }));
     await screen.findByRole("heading", { name: messages.en.realqaDrafts });
-    expect(screen.queryByRole("dialog", { name: messages.en.captureSelection })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: messages.en[dialogLabel] })).toBeNull();
   });
 
   it("suppresses global shortcuts while an updater approval is open", async () => {
@@ -817,5 +824,273 @@ describe("native App state", () => {
     expect(screen.getByRole("complementary", { name: messages.en.floatingPreview })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: messages.en.floatingPreviewOpen }));
     expect(await screen.findByRole("heading", { name: messages.en.editorTitle })).toBeTruthy();
+  });
+});
+
+describe("responsive application shell", () => {
+  const unavailableBridge = () => bridgeWith(async (request) => {
+    throw new Error(`unexpected operation ${request.operation}`);
+  });
+
+  it("renders the six-surface desktop sidebar and only the four approved Home tools", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1440 });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={unavailableBridge()} initialRuntime={desktopRuntime} />);
+
+    const shell = document.querySelector<HTMLElement>("[data-shell-layout]");
+    expect(shell?.dataset.shellLayout).toBe("sidebar");
+    const navigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
+    expect(within(navigation).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
+      messages.en.home, messages.en.realqa, messages.en.deck, messages.en.settings, messages.en.account, messages.en.diagnostics,
+    ]);
+    expect(within(navigation).getByRole("button", { name: messages.en.home }).getAttribute("aria-current")).toBe("page");
+    const tools = document.querySelector(".tool-grid");
+    expect(tools).toBeTruthy();
+    expect(within(tools as HTMLElement).getAllByRole("button")).toHaveLength(4);
+    expect((tools as HTMLElement).textContent).toContain(messages.en.realqaTitle);
+    expect((tools as HTMLElement).textContent).toContain(messages.en.deckTitle);
+    expect((tools as HTMLElement).textContent).toContain(messages.en.settingsTitle);
+    expect((tools as HTMLElement).textContent).toContain(messages.en.diagnosticsTitle);
+    expect((tools as HTMLElement).textContent).not.toContain(messages.en.accountTitle);
+  });
+
+  it("uses availability-neutral RealQA copy on a capture-capable narrow desktop", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 700 });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const runtime: RuntimeSnapshot = { ...desktopRuntime, capabilities: { ...desktopRuntime.capabilities, capture: true } };
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "windows", shadowRemovalSupported: false, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<App bridge={bridgeWith(request)} initialRuntime={runtime} />);
+
+    expect(within(document.querySelector(".tool-grid") as HTMLElement).getByText(messages.en.realqaSummary)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.more }));
+    expect(within(screen.getByRole("dialog", { name: messages.en.more })).getByText(messages.en.realqaSummary)).toBeTruthy();
+  });
+
+  it.each([1023, 701])("renders the named tooltip rail at %ipx", (width) => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={unavailableBridge()} initialRuntime={desktopRuntime} />);
+
+    expect(document.querySelector<HTMLElement>("[data-shell-layout]")?.dataset.shellLayout).toBe("rail");
+    expect(screen.getByRole("heading", { level: 1, name: messages.en.appName }).textContent).toBe("D");
+    const navigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
+    const destinations = within(navigation).getAllByRole("button");
+    expect(destinations).toHaveLength(6);
+    for (const destination of destinations) {
+      expect(destination.getAttribute("aria-label")).toBeTruthy();
+      expect(destination.getAttribute("aria-describedby")).toMatch(/^navigation-tooltip-/u);
+    }
+    expect(screen.getAllByRole("tooltip")).toHaveLength(7);
+  });
+
+  it.each([700, 390, 320])("renders exactly five mobile navigation items at %ipx", (width) => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={unavailableBridge()} initialRuntime={mobileRuntime} />);
+
+    expect(document.querySelector<HTMLElement>("[data-shell-layout]")?.dataset.shellLayout).toBe("mobile");
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole("heading", { level: 1, name: messages.en.appName })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: messages.en.welcome })).toBeTruthy();
+    const navigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
+    expect(within(navigation).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      messages.en.home, messages.en.deck, messages.en.settings, messages.en.account, messages.en.more,
+    ]);
+    expect(screen.queryByRole("button", { name: messages.en.realqa })).toBeNull();
+    expect(screen.queryByRole("button", { name: messages.en.diagnostics })).toBeNull();
+  });
+
+  it("closes More before shortcut-driven palette and capture actions", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 700 });
+    const runtime: RuntimeSnapshot = { ...desktopRuntime, capabilities: { ...desktopRuntime.capabilities, capture: true } };
+    let receive: ((event: NativeBridgeEventV1) => void) | undefined;
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "windows", shadowRemovalSupported: false, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    const bridge: NativeBridgeV1 = {
+      request,
+      async listen(listener) { receive = listener; return () => {}; },
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    await waitFor(() => expect(receive).toBeTypeOf("function"));
+
+    const more = screen.getByRole("button", { name: messages.en.more });
+    fireEvent.click(more);
+    expect(screen.getByRole("dialog", { name: messages.en.more })).toBeTruthy();
+    await act(async () => receive?.({ version: 1, kind: "shortcut-triggered", action: "shell.command-palette" }));
+    expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull();
+    const palette = screen.getByRole("dialog", { name: messages.en.commandPalette });
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: messages.en.searchCommands })));
+
+    fireEvent.click(within(palette).getByRole("button", { name: messages.en.close }));
+    fireEvent.click(more);
+    expect(screen.getByRole("dialog", { name: messages.en.more })).toBeTruthy();
+    await act(async () => receive?.({ version: 1, kind: "shortcut-triggered", action: "realqa.capture.selection" }));
+    expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull();
+    expect(await screen.findByRole("dialog", { name: messages.en.captureSelection })).toBeTruthy();
+  });
+
+  it("closes More without restoring its opener when an incoming Deck link is consumed", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 700 });
+    const deckId = "018f47a2-7b3c-7def-8abc-1234567890ab";
+    let pendingDeckId: string | null = null;
+    const listeners: Array<(event: NativeBridgeEventV1) => void> = [];
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      getAccessToken: async () => null,
+      isAuthenticated: async () => false,
+      signIn: async () => {},
+      handleCallback: async () => {},
+      clear: async () => {},
+    } as unknown as IdentitySession);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      projectId: "PROJECT_ID_DEVHUD",
+      protocolSchemaVersion: 2,
+      apiVersion: "0.1.0-dev",
+      logtoIssuer: "https://identity.example/oidc",
+      logtoAudience: "https://api.example/api",
+      publicAssetBaseUrl: "https://images.example/devhud",
+      logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
+      logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
+    }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      if (value.operation === "deck.peek-pending-link") return { kind: "deck-link", deckId: pendingDeckId };
+      if (value.operation === "deck.take-pending-link") {
+        const consumedDeckId = pendingDeckId;
+        pendingDeckId = null;
+        return { kind: "deck-link", deckId: consumedDeckId };
+      }
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    const bridge: NativeBridgeV1 = {
+      request,
+      async listen(listener) { listeners.push(listener); return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={desktopRuntime} />);
+    await waitFor(() => expect(listeners.length).toBeGreaterThan(0));
+    const navigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
+    const more = within(navigation).getByRole("button", { name: messages.en.more });
+    fireEvent.click(more);
+    const sheet = screen.getByRole("dialog", { name: messages.en.more });
+    await waitFor(() => expect(sheet.contains(document.activeElement)).toBe(true));
+
+    pendingDeckId = deckId;
+    await act(async () => {
+      for (const listener of listeners) listener({ version: 1, kind: "deck-link", deckId });
+    });
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "deck.take-pending-link" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull());
+    expect(within(navigation).getByRole("button", { name: messages.en.deck }).getAttribute("aria-current")).toBe("page");
+    await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    expect(document.activeElement).not.toBe(more);
+  });
+
+  it("restores palette focus to the mounted trigger after crossing the mobile breakpoint", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 700 });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={unavailableBridge()} initialRuntime={desktopRuntime} />);
+
+    const mobileTrigger = screen.getByRole("button", { name: messages.en.openPalette });
+    fireEvent.click(mobileTrigger);
+    const palette = screen.getByRole("dialog", { name: messages.en.commandPalette });
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: messages.en.searchCommands })));
+
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 701 });
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => expect(document.querySelector<HTMLElement>("[data-shell-layout]")?.dataset.shellLayout).toBe("rail"));
+    const railTrigger = screen.getByRole("button", { name: messages.en.openPalette });
+    expect(railTrigger).not.toBe(mobileTrigger);
+    fireEvent.keyDown(palette, { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).toBe(railTrigger));
+  });
+
+  it("moves More focus to the selected desktop destination after crossing the mobile breakpoint", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 700 });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={unavailableBridge()} initialRuntime={desktopRuntime} />);
+
+    const mobileNavigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
+    const more = within(mobileNavigation).getByRole("button", { name: messages.en.more });
+    fireEvent.click(more);
+    fireEvent.click(within(screen.getByRole("dialog", { name: messages.en.more })).getByRole("button", { name: /Diagnostics/u }));
+    await waitFor(() => expect(document.activeElement).toBe(more));
+
+    fireEvent.click(more);
+    const sheet = screen.getByRole("dialog", { name: messages.en.more });
+    await waitFor(() => expect(sheet.contains(document.activeElement)).toBe(true));
+
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 701 });
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull());
+
+    const desktopNavigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
+    const selectedDestination = within(desktopNavigation).getByRole("button", { name: messages.en.diagnostics });
+    await waitFor(() => expect(document.activeElement).toBe(selectedDestination));
+  });
+
+  it("manages More focus, retains selection, and groups mobile RealQA with Diagnostics", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 390 });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={unavailableBridge()} initialRuntime={mobileRuntime} />);
+    const navigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
+    const home = within(navigation).getByRole("button", { name: messages.en.home });
+    const more = within(navigation).getByRole("button", { name: messages.en.more });
+    expect(home.getAttribute("aria-current")).toBe("page");
+
+    fireEvent.click(more);
+    const sheet = screen.getByRole("dialog", { name: messages.en.more });
+    expect(home.getAttribute("aria-current")).toBe("page");
+    const realqa = within(sheet).getByRole("button", { name: /RealQA/u });
+    expect(realqa.textContent).toContain(messages.en.desktopOnly);
+    await waitFor(() => expect(document.activeElement).toBe(realqa));
+    fireEvent.click(realqa);
+    expect(screen.getByRole("heading", { name: messages.en.realqaMobileTitle })).toBeTruthy();
+    expect(more.getAttribute("aria-current")).toBe("page");
+
+    fireEvent.click(more);
+    fireEvent.keyDown(screen.getByRole("dialog", { name: messages.en.more }), { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).toBe(more));
+    expect(screen.getByRole("heading", { name: messages.en.realqaMobileTitle })).toBeTruthy();
+
+    fireEvent.click(more);
+    fireEvent.click(within(screen.getByRole("dialog", { name: messages.en.more })).getByRole("button", { name: /Diagnostics/u }));
+    expect(screen.getByRole("heading", { name: messages.en.diagnosticsTitle })).toBeTruthy();
+    expect(more.getAttribute("aria-current")).toBe("page");
+  });
+
+  it("moves localized skip-link focus to the main content", () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={unavailableBridge()} initialRuntime={desktopRuntime} />);
+    fireEvent.click(screen.getByRole("link", { name: messages.en.skipToContent }));
+    expect(document.activeElement).toBe(screen.getByRole("main"));
+  });
+
+  it("changes shell layouts without remounting the desktop RealQA controller", async () => {
+    const runtime: RuntimeSnapshot = { ...desktopRuntime, capabilities: { ...desktopRuntime.capabilities, capture: true } };
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "windows", shadowRemovalSupported: false, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={bridgeWith(request)} initialRuntime={runtime} />);
+    await waitFor(() => expect(request.mock.calls.filter(([value]) => value.operation === "capture.status")).toHaveLength(1));
+
+    for (const width of [1023, 700, 1440]) {
+      Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width });
+      fireEvent(window, new Event("resize"));
+    }
+    await waitFor(() => expect(document.querySelector<HTMLElement>("[data-shell-layout]")?.dataset.shellLayout).toBe("sidebar"));
+    expect(request.mock.calls.filter(([value]) => value.operation === "capture.status")).toHaveLength(1);
+    expect(request.mock.calls.filter(([value]) => value.operation === "capture.list-drafts")).toHaveLength(1);
   });
 });
