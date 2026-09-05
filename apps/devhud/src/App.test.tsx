@@ -930,6 +930,30 @@ describe("responsive application shell", () => {
     await waitFor(() => expect(document.activeElement).toBe(railTrigger));
   });
 
+  it("moves More focus to the selected desktop destination after crossing the mobile breakpoint", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 700 });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={unavailableBridge()} initialRuntime={desktopRuntime} />);
+
+    const mobileNavigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
+    const more = within(mobileNavigation).getByRole("button", { name: messages.en.more });
+    fireEvent.click(more);
+    fireEvent.click(within(screen.getByRole("dialog", { name: messages.en.more })).getByRole("button", { name: /Diagnostics/u }));
+    await waitFor(() => expect(document.activeElement).toBe(more));
+
+    fireEvent.click(more);
+    const sheet = screen.getByRole("dialog", { name: messages.en.more });
+    await waitFor(() => expect(sheet.contains(document.activeElement)).toBe(true));
+
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 701 });
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull());
+
+    const desktopNavigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
+    const selectedDestination = within(desktopNavigation).getByRole("button", { name: messages.en.diagnostics });
+    await waitFor(() => expect(document.activeElement).toBe(selectedDestination));
+  });
+
   it("manages More focus, retains selection, and groups mobile RealQA with Diagnostics", async () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 390 });
     vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));

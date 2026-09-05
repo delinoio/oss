@@ -91,6 +91,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const captureSequence = useRef(0);
   const paletteTrigger = useRef<HTMLButtonElement>(null);
   const moreTrigger = useRef<HTMLButtonElement>(null);
+  const selectedDesktopNavigationItem = useRef<HTMLButtonElement>(null);
   const externalAttempt = useRef(0);
   const identitySession = useRef<IdentitySession | null>(null);
   const updaterApprovalOpenRef = useRef(false);
@@ -279,8 +280,10 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   }, [preferences.language, preferences.theme, language]);
   useEffect(() => { if (surface === SurfaceId.Account) apiOriginInput.current?.focus(); }, [surface]);
   useEffect(() => {
-    if (shellLayout !== ShellLayout.Mobile) closeMore(false);
-  }, [shellLayout]);
+    if (shellLayout === ShellLayout.Mobile || !moreOpen) return;
+    closeMore(false);
+    requestAnimationFrame(() => selectedDesktopNavigationItem.current?.focus());
+  }, [shellLayout, moreOpen]);
 
   const actions = useMemo(() => availableActions(runtimeCapabilities).filter((action) => copy[action.title].toLowerCase().includes(query.toLowerCase())), [copy, query, runtime]);
   const unavailableCaptureActions = actionRegistry.filter((action) => action.required.includes(PlatformCapability.Capture) && !runtimeCapabilities.available.has(PlatformCapability.Capture));
@@ -383,7 +386,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     <nav aria-label={copy.mobileNavigation}>{surfaces.map((item) => {
       const Icon = surfaceIcons[item];
       const tooltipId = `navigation-tooltip-${item}`;
-      return <button className="shell-nav-item" aria-label={copy[labels[item]]} aria-describedby={shellLayout === ShellLayout.Rail ? tooltipId : undefined} aria-current={surface === item ? "page" : undefined} key={item} onClick={() => navigate(item)}>
+      return <button ref={surface === item ? selectedDesktopNavigationItem : undefined} className="shell-nav-item" aria-label={copy[labels[item]]} aria-describedby={shellLayout === ShellLayout.Rail ? tooltipId : undefined} aria-current={surface === item ? "page" : undefined} key={item} onClick={() => navigate(item)}>
         <Icon />
         {shellLayout === ShellLayout.Sidebar ? <span>{copy[labels[item]]}</span> : <span id={tooltipId} className="nav-tooltip" role="tooltip">{copy[labels[item]]}</span>}
       </button>;
