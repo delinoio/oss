@@ -212,6 +212,8 @@ test("the UI foundation encodes the semantic, sizing, and responsive contracts",
   assert.match(styles, /button\s*\{[^}]*min-width:var\(--target-min\);[^}]*min-height:var\(--target-min\)/u);
   assert.match(styles, /grid-template-columns:232px minmax\(0,1fr\)/u);
   assert.match(styles, /grid-template-columns:72px minmax\(0,1fr\)/u);
+  assert.match(styles, /\.shell-navigation-sidebar nav\s*\{[^}]*min-height:0;[^}]*overflow-y:auto/u);
+  assert.match(styles, /\.shell-navigation > \.palette-trigger\s*\{[^}]*margin-top:auto/u);
   assert.match(styles, /\.content\s*\{[^}]*min-width:0;[^}]*max-width:1280px/u);
   assert.match(styles, /--mobile-bottom-navigation-height:calc\(64px \+ env\(safe-area-inset-bottom\)\)/u);
   assert.match(styles, /padding:[^;}]*calc\(var\(--mobile-bottom-navigation-height\) \+ var\(--space-3\)\)/u);

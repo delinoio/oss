@@ -13,6 +13,7 @@ import { LifecycleState, NativeBridgeError, NativeBridgeErrorCode, NotificationP
 import { desktopNativeMessagingIntegration } from "./native-messaging-ui";
 import { saveGuestSettings } from "./service-boundary";
 import { defaultDevHudSettings } from "./settings-contract";
+import { ShortcutActionId } from "./shortcuts";
 
 const mobileRuntime: RuntimeSnapshot = {
   bridgeVersion: 1,
@@ -650,7 +651,10 @@ describe("native App state", () => {
     expect(openAttempts).toBe(2);
   });
 
-  it("dispatches a registered desktop capture shortcut into the RealQA selection mode", async () => {
+  it.each([
+    [ShortcutActionId.CaptureSelection, "captureSelection"],
+    [ShortcutActionId.CaptureToolbar, "captureToolbar"],
+  ] as const)("dispatches the registered %s shortcut into its focused RealQA dialog", async (action, dialogLabel) => {
     const runtime: RuntimeSnapshot = { ...desktopRuntime, capabilities: { ...desktopRuntime.capabilities, capture: true } };
     let receive: ((event: NativeBridgeEventV1) => void) | undefined;
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
@@ -667,16 +671,18 @@ describe("native App state", () => {
     await waitFor(() => expect(receive).toBeTypeOf("function"));
     fireEvent.click(screen.getByRole("button", { name: messages.en.openPalette }));
     expect(screen.getByRole("dialog", { name: messages.en.commandPalette })).toBeTruthy();
-    await act(async () => receive?.({ version: 1, kind: "shortcut-triggered", action: "realqa.capture.selection" }));
+    await act(async () => receive?.({ version: 1, kind: "shortcut-triggered", action }));
 
-    expect(await screen.findByRole("dialog", { name: messages.en.captureSelection })).toBeTruthy();
+    expect(await screen.findByRole("dialog", { name: messages.en[dialogLabel] })).toBeTruthy();
     expect(screen.queryByRole("dialog", { name: messages.en.commandPalette })).toBeNull();
     expect(request).toHaveBeenCalledWith({ operation: "capture.status" });
+    await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.captureNow }));
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.home }));
     fireEvent.click(screen.getByRole("button", { name: messages.en.realqa }));
     await screen.findByRole("heading", { name: messages.en.realqaDrafts });
-    expect(screen.queryByRole("dialog", { name: messages.en.captureSelection })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: messages.en[dialogLabel] })).toBeNull();
   });
 
   it("suppresses global shortcuts while an updater approval is open", async () => {
@@ -870,6 +876,7 @@ describe("responsive application shell", () => {
     render(<App bridge={unavailableBridge()} initialRuntime={desktopRuntime} />);
 
     expect(document.querySelector<HTMLElement>("[data-shell-layout]")?.dataset.shellLayout).toBe("rail");
+    expect(screen.getByRole("heading", { level: 1, name: messages.en.appName }).textContent).toBe("D");
     const navigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
     const destinations = within(navigation).getAllByRole("button");
     expect(destinations).toHaveLength(6);
@@ -928,6 +935,63 @@ describe("responsive application shell", () => {
     await act(async () => receive?.({ version: 1, kind: "shortcut-triggered", action: "realqa.capture.selection" }));
     expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull();
     expect(await screen.findByRole("dialog", { name: messages.en.captureSelection })).toBeTruthy();
+  });
+
+  it("closes More without restoring its opener when an incoming Deck link is consumed", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 700 });
+    const deckId = "018f47a2-7b3c-7def-8abc-1234567890ab";
+    let pendingDeckId: string | null = null;
+    const listeners: Array<(event: NativeBridgeEventV1) => void> = [];
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      getAccessToken: async () => null,
+      isAuthenticated: async () => false,
+      signIn: async () => {},
+      handleCallback: async () => {},
+      clear: async () => {},
+    } as unknown as IdentitySession);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      projectId: "PROJECT_ID_DEVHUD",
+      protocolSchemaVersion: 2,
+      apiVersion: "0.1.0-dev",
+      logtoIssuer: "https://identity.example/oidc",
+      logtoAudience: "https://api.example/api",
+      publicAssetBaseUrl: "https://images.example/devhud",
+      logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
+      logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
+    }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      if (value.operation === "deck.peek-pending-link") return { kind: "deck-link", deckId: pendingDeckId };
+      if (value.operation === "deck.take-pending-link") {
+        const consumedDeckId = pendingDeckId;
+        pendingDeckId = null;
+        return { kind: "deck-link", deckId: consumedDeckId };
+      }
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    const bridge: NativeBridgeV1 = {
+      request,
+      async listen(listener) { listeners.push(listener); return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={desktopRuntime} />);
+    await waitFor(() => expect(listeners.length).toBeGreaterThan(0));
+    const navigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
+    const more = within(navigation).getByRole("button", { name: messages.en.more });
+    fireEvent.click(more);
+    const sheet = screen.getByRole("dialog", { name: messages.en.more });
+    await waitFor(() => expect(sheet.contains(document.activeElement)).toBe(true));
+
+    pendingDeckId = deckId;
+    await act(async () => {
+      for (const listener of listeners) listener({ version: 1, kind: "deck-link", deckId });
+    });
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "deck.take-pending-link" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull());
+    expect(within(navigation).getByRole("button", { name: messages.en.deck }).getAttribute("aria-current")).toBe("page");
+    await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    expect(document.activeElement).not.toBe(more);
   });
 
   it("restores palette focus to the mounted trigger after crossing the mobile breakpoint", async () => {

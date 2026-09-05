@@ -173,10 +173,12 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
         }
         if (event.action.startsWith("realqa.capture.")) {
           closeMore(false);
-          setPalette(false);
+          const captureAction = event.action as CaptureActionId;
+          const opensCaptureDialog = captureAction === ShortcutActionId.CaptureSelection || captureAction === ShortcutActionId.CaptureToolbar;
+          closePalette(!opensCaptureDialog);
           setSurface(SurfaceId.Realqa);
           captureSequence.current += 1;
-          setRequestedCapture({ action: event.action as CaptureActionId, sequence: captureSequence.current });
+          setRequestedCapture({ action: captureAction, sequence: captureSequence.current });
           return;
         }
         const action = actionRegistry.find((candidate) => candidate.id === event.action);
@@ -216,6 +218,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       if (!active) return;
       setDeckLinkPending(false);
       if (pendingDeck.kind === "deck-link" && pendingDeck.deckId) {
+        closeMore(false);
         setDeckLink(pendingDeck.deckId);
         setSurface(SurfaceId.Deck);
       }
@@ -387,7 +390,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const moreCurrent = surface === SurfaceId.Realqa || surface === SurfaceId.Diagnostics;
   const navigate = (nextSurface: SurfaceId) => { setSurface(nextSurface); setMoreOpen(false); };
   const navigation = shellLayout !== ShellLayout.Mobile && <aside className={`shell-navigation shell-navigation-${shellLayout}`}>
-    <h1>{shellLayout === ShellLayout.Sidebar ? copy.appName : "D"}</h1>
+    <h1 aria-label={shellLayout === ShellLayout.Rail ? copy.appName : undefined}>{shellLayout === ShellLayout.Sidebar ? copy.appName : "D"}</h1>
     <nav aria-label={copy.mobileNavigation}>{surfaces.map((item) => {
       const Icon = surfaceIcons[item];
       const tooltipId = `navigation-tooltip-${item}`;
