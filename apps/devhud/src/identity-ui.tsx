@@ -74,15 +74,17 @@ interface AccountIdentityProps {
   readonly apiOrigin: string;
   readonly inputRef: Ref<HTMLInputElement>;
   readonly onApiOrigin: (value: string) => Promise<void>;
+  readonly onDeleteConfirmationOpenChange: (open: boolean) => void;
 }
 
-export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin }: AccountIdentityProps) {
+export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin, onDeleteConfirmationOpenChange }: AccountIdentityProps) {
   const identity = useIdentitySettings();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState(false);
   const deleteTrigger = useRef<HTMLButtonElement>(null);
   const deleteDialog = useRef<HTMLElement>(null);
   const cancelDelete = useRef<HTMLButtonElement>(null);
+  const deleteConfirmationOpen = confirmDelete && identity.status === "authenticated" && !identity.accountError && identity.account !== null;
   const invoke = (action: () => Promise<void>) => { setActionError(false); void action().catch(() => setActionError(true)); };
   const closeDeleteConfirmation = () => {
     setConfirmDelete(false);
@@ -95,6 +97,12 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin }: Acco
     addEventListener("keydown", closeOnEscape);
     return () => removeEventListener("keydown", closeOnEscape);
   }, [confirmDelete]);
+  useEffect(() => {
+    onDeleteConfirmationOpenChange(deleteConfirmationOpen);
+    return () => {
+      if (deleteConfirmationOpen) onDeleteConfirmationOpenChange(false);
+    };
+  }, [deleteConfirmationOpen, onDeleteConfirmationOpenChange]);
   return <>
     <p className="eyebrow">{copy.account}</p>
     <h2>{copy.accountTitle}</h2>
@@ -112,7 +120,7 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin }: Acco
     {identity.status === "blocked" && <section className="notice" role="status"><h3>{copy.blockedTitle}</h3><p>{copy.blockedSummary}</p><p>{copy.blockedLocalHint}</p><button onClick={() => invoke(identity.logout)}>{copy.logout}</button></section>}
     {identity.status === "deletion-pending" && <section className="notice" role="status"><h3>{copy.deletionPendingTitle}</h3><p>{copy.deletionPendingSummary}</p>{identity.account?.recoverableUntil && <p>{copy.recoverableUntil}: {new Date(Number(identity.account.recoverableUntil.seconds) * 1000).toLocaleString()}</p>}<div className="actions"><button onClick={() => invoke(identity.restoreAccount)}>{copy.restoreAccount}</button><button onClick={() => invoke(identity.logout)}>{copy.logout}</button></div></section>}
     {identity.status === "deletion-pending" && identity.deletionCleanupFailed && <section className="notice" role="alert"><p>{copy.accountActionFailed}</p><button onClick={() => void identity.retryDeletionCleanup()}>{copy.retry}</button></section>}
-    {confirmDelete && identity.status === "authenticated" && !identity.accountError && identity.account !== null && <section ref={deleteDialog} className="confirmation" role="alertdialog" aria-modal="true" aria-labelledby="delete-account-title" onKeyDown={(event) => trapDialogFocus(event, deleteDialog.current)}><h3 id="delete-account-title">{copy.deleteAccountConfirmTitle}</h3><p>{copy.deleteAccountConfirmSummary}</p><div className="actions"><button className="danger" onClick={() => { closeDeleteConfirmation(); invoke(identity.deleteAccount); }}>{copy.deleteAccount}</button><button ref={cancelDelete} onClick={closeDeleteConfirmation}>{copy.cancel}</button></div></section>}
+    {deleteConfirmationOpen && <section ref={deleteDialog} className="confirmation" role="alertdialog" aria-modal="true" aria-labelledby="delete-account-title" onKeyDown={(event) => trapDialogFocus(event, deleteDialog.current)}><h3 id="delete-account-title">{copy.deleteAccountConfirmTitle}</h3><p>{copy.deleteAccountConfirmSummary}</p><div className="actions"><button className="danger" onClick={() => { closeDeleteConfirmation(); invoke(identity.deleteAccount); }}>{copy.deleteAccount}</button><button ref={cancelDelete} onClick={closeDeleteConfirmation}>{copy.cancel}</button></div></section>}
     {actionError && <p role="alert">{copy.accountActionFailed}</p>}
   </>;
 }

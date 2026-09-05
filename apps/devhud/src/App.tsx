@@ -69,6 +69,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const [paletteRestoresFocus, setPaletteRestoresFocus] = useState(true);
   const [moreOpen, setMoreOpen] = useState(false);
   const [moreRestoresFocus, setMoreRestoresFocus] = useState(true);
+  const [accountDeleteConfirmationOpen, setAccountDeleteConfirmationOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [externalMessage, setExternalMessage] = useState<ExternalMessage | null>(null);
   const [systemLanguage, setSystemLanguage] = useState(() => resolveLanguage(LanguagePreference.System, navigator.languages));
@@ -132,7 +133,11 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     setMoreRestoresFocus(restoreTriggerFocus);
     setMoreOpen(false);
   };
-  const openMore = () => { setMoreRestoresFocus(true); setMoreOpen(true); };
+  const openMore = () => {
+    if (accountDeleteConfirmationOpen) return;
+    setMoreRestoresFocus(true);
+    setMoreOpen(true);
+  };
 
   useEffect(() => {
     document.title = "DevHUD";
@@ -393,13 +398,13 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     })}</nav>
     {mobile ? <Button className="palette-trigger" ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} aria-label={copy.openPalette}>{shellLayout === ShellLayout.Sidebar ? copy.openPalette : null}</Button> : <ShortcutPaletteTrigger copy={copy} isMac={isMac} triggerRef={paletteTrigger} onOpen={openPalette} compact={shellLayout === ShellLayout.Rail} />}
   </aside>;
-  const topBar = shellLayout === ShellLayout.Mobile && <header className="mobile-app-bar"><strong>{copy.appName}</strong><span>{copy[labels[surface]]}</span><Button ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} aria-label={copy.openPalette} /></header>;
+  const topBar = shellLayout === ShellLayout.Mobile && <header className="mobile-app-bar"><h1>{copy.appName}</h1><span>{copy[labels[surface]]}</span><Button ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} aria-label={copy.openPalette} /></header>;
   const bottomBar = shellLayout === ShellLayout.Mobile && <nav className="mobile-bottom-navigation" aria-label={copy.mobileNavigation}>
     {mobilePrimarySurfaces.map((item) => {
       const Icon = surfaceIcons[item];
       return <button type="button" key={item} aria-current={surface === item ? "page" : undefined} onClick={() => navigate(item)}><Icon /><span>{copy[labels[item]]}</span></button>;
     })}
-    <button key={MobileNavigationId.More} ref={moreTrigger} type="button" aria-current={moreCurrent ? "page" : undefined} aria-haspopup="dialog" aria-expanded={moreOpen} onClick={openMore}><MoreIcon /><span>{copy.more}</span></button>
+    <button key={MobileNavigationId.More} ref={moreTrigger} type="button" aria-current={moreCurrent ? "page" : undefined} aria-haspopup="dialog" aria-expanded={moreOpen} disabled={accountDeleteConfirmationOpen} onClick={openMore}><MoreIcon /><span>{copy.more}</span></button>
   </nav>;
 
   return boundary(<>
@@ -414,7 +419,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       {surface === SurfaceId.Realqa && !mobile && !runtimeCapabilities.available.has(PlatformCapability.Capture) && <><PageHeader eyebrow={copy.realqa} title={copy.realqaTitle} summary={copy.realqaSummary} /><div className="disabled-actions">{unavailableCaptureActions.map((action) => <button disabled key={action.id}>{copy[action.title]}</button>)}</div><p className="notice">{copy.unavailable}</p></>}
       {surface === SurfaceId.Deck && <DeckSurface copy={copy} bridge={bridge} language={language} selectedDeckId={deckLink} onDismissMissingLink={() => setDeckLink(null)} />}
       {surface === SurfaceId.Settings && <><PageHeader eyebrow={copy.settings} title={copy.settingsTitle} summary={copy.settingsSummary} /><SynchronizedSettingsBoundary copy={copy} bridge={bridge} onOpenExternal={openExternal} showNativeShortcuts={runtime?.platform === RuntimePlatform.Desktop} shortcutCapabilities={runtimeCapabilities} NativeMessagingSettings={nativeMessaging?.Settings} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{supportsNotifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}{runtime?.platform === RuntimePlatform.Desktop && <DesktopUpdaterPanel bridge={bridge} language={language} onApprovalOpenChange={handleUpdaterApprovalOpenChange} />}</>}
-      {surface === SurfaceId.Account && <><AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} /><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.githubCreateFinePat}</button><button onClick={() => void external(ExternalLinkTarget.ClassicPat)}>{copy.githubCreateClassicPat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
+      {surface === SurfaceId.Account && <><AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} onDeleteConfirmationOpenChange={setAccountDeleteConfirmationOpen} /><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.githubCreateFinePat}</button><button onClick={() => void external(ExternalLinkTarget.ClassicPat)}>{copy.githubCreateClassicPat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
       {surface === SurfaceId.Diagnostics && <><PageHeader eyebrow={copy.diagnostics} title={copy.diagnosticsTitle} summary={copy.diagnosticsSummary} />{runtime && <><dl className="runtime-diagnostics"><dt>{copy.diagnosticPlatform}</dt><dd>{runtime.operatingSystem}</dd><dt>{copy.diagnosticArchitecture}</dt><dd>{runtime.architecture}</dd><dt>{copy.diagnosticBridge}</dt><dd>v{runtime.bridgeVersion}</dd></dl><DiagnosticsPanel copy={copy} runtime={runtime} bridge={bridge} storage={storage} online={online} /></>}</>}
     </AppShell>
     <Dialog open={palette} title={copy.commandPalette} initialFocusRef={search} returnFocusRef={paletteTrigger} restoreFocus={paletteRestoresFocus} onClose={() => closePalette()}>

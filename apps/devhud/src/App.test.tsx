@@ -870,6 +870,9 @@ describe("responsive application shell", () => {
     render(<App bridge={unavailableBridge()} initialRuntime={mobileRuntime} />);
 
     expect(document.querySelector<HTMLElement>("[data-shell-layout]")?.dataset.shellLayout).toBe("mobile");
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole("heading", { level: 1, name: messages.en.appName })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: messages.en.welcome })).toBeTruthy();
     const navigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
     expect(within(navigation).getAllByRole("button").map((button) => button.textContent)).toEqual([
       messages.en.home, messages.en.deck, messages.en.settings, messages.en.account, messages.en.more,

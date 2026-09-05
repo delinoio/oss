@@ -184,6 +184,7 @@ function renderIdentityConflictProbe(bridge: NativeBridgeV1, replacement: DevHud
 beforeEach(() => {
   localStorage.clear();
   localStorage.setItem("devhud.shell.onboarding.v1", "complete");
+  Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1024 });
   Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
   Object.defineProperty(window, "matchMedia", { configurable: true, value: vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })) });
 });
@@ -195,6 +196,38 @@ afterEach(() => {
 });
 
 describe("generated Connect identity/settings fixture", () => {
+  it("keeps More unavailable while the mobile account deletion confirmation is open", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 390 });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: SettingsSchemaVersion, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+    const mobileRuntime: RuntimeSnapshot = { ...runtime, platform: RuntimePlatform.Ios, operatingSystem: "ios", architecture: "arm64", cefRevision: "" };
+
+    render(<App bridge={authenticatedBridge()} initialRuntime={mobileRuntime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    expect(await screen.findByText("Fixture User")).toBeTruthy();
+    const deleteTrigger = screen.getByRole("button", { name: messages.en.deleteAccount });
+    fireEvent.click(deleteTrigger);
+
+    const confirmation = screen.getByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle });
+    const cancel = within(confirmation).getByRole("button", { name: messages.en.cancel });
+    const more = screen.getByRole("button", { name: messages.en.more });
+    expect(cancel).toBe(document.activeElement);
+    expect((more as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(more);
+    expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull();
+    expect(screen.getByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle })).toBe(confirmation);
+    expect(cancel).toBe(document.activeElement);
+
+    fireEvent.click(cancel);
+    await waitFor(() => expect(deleteTrigger).toBe(document.activeElement));
+    expect((more as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("stores signed-out appearance edits in the guest snapshot", async () => {
     writeAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io", {
       settings: { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" } },
