@@ -1,12 +1,16 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRef, useState } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Button, Dialog, Sheet, ShellLayout, resolveShellLayout } from "./ui-foundation";
+import { AppShell, Button, Dialog, Sheet, ShellLayout, resolveShellLayout } from "./ui-foundation";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("DevHud UI foundation", () => {
   it.each([
@@ -19,6 +23,37 @@ describe("DevHud UI foundation", () => {
     [320, ShellLayout.Mobile],
   ])("resolves %ipx to the contracted layout", (width, layout) => {
     expect(resolveShellLayout(width)).toBe(layout);
+  });
+
+  it("tracks the rendered bottom-navigation height for fixed UI clearance", async () => {
+    let height = 88;
+    let resize: ResizeObserverCallback | undefined;
+    const disconnect = vi.fn();
+    class TestResizeObserver {
+      constructor(callback: ResizeObserverCallback) { resize = callback; }
+      observe() {}
+      unobserve() {}
+      disconnect() { disconnect(); }
+    }
+    vi.stubGlobal("ResizeObserver", TestResizeObserver);
+    const originalRect = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function measuredRect(this: HTMLElement) {
+      if (this.classList.contains("app-shell-bottom-bar")) {
+        return { x: 0, y: 0, width: 390, height, top: 0, right: 390, bottom: height, left: 0, toJSON: () => ({}) };
+      }
+      return originalRect.call(this);
+    });
+
+    const { unmount } = render(<AppShell layout={ShellLayout.Mobile} skipLabel="Skip" bottomBar={<nav aria-label="Primary">Navigation</nav>}>Content</AppShell>);
+    const shell = document.querySelector<HTMLElement>(".app-shell");
+    await waitFor(() => expect(shell?.style.getPropertyValue("--mobile-bottom-navigation-height")).toBe("88px"));
+
+    height = 124;
+    act(() => resize?.([], {} as ResizeObserver));
+    await waitFor(() => expect(shell?.style.getPropertyValue("--mobile-bottom-navigation-height")).toBe("124px"));
+
+    unmount();
+    expect(disconnect).toHaveBeenCalledOnce();
   });
 
   it("contains dialog focus, closes with Escape, and restores the opener", async () => {

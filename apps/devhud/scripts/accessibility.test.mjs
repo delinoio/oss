@@ -196,7 +196,7 @@ test("internal overlays stack above every responsive navigation surface", () => 
   assert.match(styles, /\.ui-overlay\s*\{[^}]*z-index:30/u);
   assert.match(styles, /\.shell-navigation\s*\{[^}]*z-index:10/u);
   assert.match(styles, /\.mobile-app-bar\s*\{[^}]*z-index:10/u);
-  assert.match(styles, /\.mobile-bottom-navigation\s*\{[^}]*z-index:10/u);
+  assert.match(styles, /\.app-shell-bottom-bar\s*\{[^}]*z-index:10/u);
 });
 
 test("the UI foundation encodes the semantic, sizing, and responsive contracts", () => {
@@ -213,6 +213,8 @@ test("the UI foundation encodes the semantic, sizing, and responsive contracts",
   assert.match(styles, /grid-template-columns:232px minmax\(0,1fr\)/u);
   assert.match(styles, /grid-template-columns:72px minmax\(0,1fr\)/u);
   assert.match(styles, /\.content\s*\{[^}]*min-width:0;[^}]*max-width:1280px/u);
+  assert.match(styles, /--mobile-bottom-navigation-height:calc\(64px \+ env\(safe-area-inset-bottom\)\)/u);
+  assert.match(styles, /padding:[^;}]*calc\(var\(--mobile-bottom-navigation-height\) \+ var\(--space-3\)\)/u);
   assert.match(styles, /@media \(min-width:701px\) and \(max-width:1023px\)/u);
   assert.match(styles, /@media \(max-width:700px\)/u);
 });
@@ -226,7 +228,7 @@ test("reduced motion preserves visibility transforms", () => {
 });
 
 test("narrow layouts keep capture previews above the safe-area-aware navigation", () => {
-  assert.match(styles, /\.floating-capture-preview\{[^}]*bottom:1rem[^}]*\}[\s\S]*@media \(max-width:700px\)\{\.floating-capture-preview\{bottom:calc\(64px \+ 1rem \+ env\(safe-area-inset-bottom\)\)\}\}/u);
+  assert.match(styles, /\.floating-capture-preview\{[^}]*bottom:1rem[^}]*\}[\s\S]*@media \(max-width:700px\)\{\.floating-capture-preview\{bottom:calc\(var\(--mobile-bottom-navigation-height, calc\(64px \+ env\(safe-area-inset-bottom\)\)\) \+ 1rem\)\}\}/u);
 });
 
 test("the shell exposes a localized skip target and named rail tooltips", () => {

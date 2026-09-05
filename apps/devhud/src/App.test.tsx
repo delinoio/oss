@@ -848,6 +848,22 @@ describe("responsive application shell", () => {
     expect((tools as HTMLElement).textContent).not.toContain(messages.en.accountTitle);
   });
 
+  it("uses availability-neutral RealQA copy on a capture-capable narrow desktop", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 700 });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const runtime: RuntimeSnapshot = { ...desktopRuntime, capabilities: { ...desktopRuntime.capabilities, capture: true } };
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "windows", shadowRemovalSupported: false, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<App bridge={bridgeWith(request)} initialRuntime={runtime} />);
+
+    expect(within(document.querySelector(".tool-grid") as HTMLElement).getByText(messages.en.realqaSummary)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.more }));
+    expect(within(screen.getByRole("dialog", { name: messages.en.more })).getByText(messages.en.realqaSummary)).toBeTruthy();
+  });
+
   it.each([1023, 701])("renders the named tooltip rail at %ipx", (width) => {
     Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width });
     vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));

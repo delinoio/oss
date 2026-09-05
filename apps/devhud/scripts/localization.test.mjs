@@ -24,6 +24,13 @@ test("keeps the responsive shell and accessibility copy complete in both languag
   }
 });
 
+test("describes RealQA without claiming that available capture is disconnected", () => {
+  assert.doesNotMatch(messages.en.realqaSummary, /not connected/iu);
+  assert.doesNotMatch(messages.ko.realqaSummary, /연결되지/iu);
+  assert.match(messages.en.realqaSummary, /Capture displays, windows, regions, and toolbars/iu);
+  assert.match(messages.ko.realqaSummary, /화면, 창, 영역, 도구 모음/iu);
+});
+
 test("resolves system preferences and safely falls back to defaults", () => {
   assert.equal(resolveLanguage(LanguagePreference.System, ["fr-FR"]), "en");
   assert.equal(resolveLanguage(LanguagePreference.System, ["ko-KR"]), "ko");

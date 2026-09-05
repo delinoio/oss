@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode, type Ref, type RefObject } from "react";
+import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type CSSProperties, type HTMLAttributes, type ReactNode, type Ref, type RefObject } from "react";
 import { ErrorIcon, InfoIcon, SuccessIcon, WarningIcon } from "./ui-icons";
 
 export const ShellLayout = { Sidebar: "sidebar", Rail: "rail", Mobile: "mobile" } as const;
@@ -20,18 +20,39 @@ export function useShellLayout(): ShellLayout {
   return layout;
 }
 
-export function AppShell({ layout, skipLabel, navigation, topBar, bottomBar, children, className, ...props }: HTMLAttributes<HTMLDivElement> & { readonly layout: ShellLayout; readonly skipLabel: string; readonly navigation?: ReactNode; readonly topBar?: ReactNode; readonly bottomBar?: ReactNode }) {
+export function AppShell({ layout, skipLabel, navigation, topBar, bottomBar, children, className, style, ...props }: HTMLAttributes<HTMLDivElement> & { readonly layout: ShellLayout; readonly skipLabel: string; readonly navigation?: ReactNode; readonly topBar?: ReactNode; readonly bottomBar?: ReactNode }) {
   const main = useRef<HTMLElement>(null);
+  const bottomBarContainer = useRef<HTMLDivElement>(null);
+  const [bottomBarHeight, setBottomBarHeight] = useState<number>();
+  const hasBottomBar = Boolean(bottomBar);
+  useEffect(() => {
+    if (!hasBottomBar || !bottomBarContainer.current) {
+      setBottomBarHeight(undefined);
+      return;
+    }
+    const element = bottomBarContainer.current;
+    const measure = () => {
+      const height = element.getBoundingClientRect().height;
+      const nextHeight = height > 0 ? height : undefined;
+      setBottomBarHeight((current) => current === nextHeight ? current : nextHeight);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [hasBottomBar]);
   const skip = (event: React.MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
     main.current?.focus();
   };
-  return <div className={`app-shell${className ? ` ${className}` : ""}`} data-shell-layout={layout} {...props}>
+  const shellStyle = bottomBarHeight === undefined ? style : { ...style, "--mobile-bottom-navigation-height": `${bottomBarHeight}px` } as CSSProperties;
+  return <div className={`app-shell${className ? ` ${className}` : ""}`} data-shell-layout={layout} style={shellStyle} {...props}>
     <a className="skip-link" href="#devhud-main-content" onClick={skip}>{skipLabel}</a>
     {navigation}
     {topBar}
     <main ref={main} id="devhud-main-content" className="content" tabIndex={-1} aria-live="polite">{children}</main>
-    {bottomBar}
+    {hasBottomBar && <div ref={bottomBarContainer} className="app-shell-bottom-bar">{bottomBar}</div>}
   </div>;
 }
 
