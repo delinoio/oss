@@ -297,12 +297,13 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const unavailableCaptureActions = actionRegistry.filter((action) => action.required.includes(PlatformCapability.Capture) && !runtimeCapabilities.available.has(PlatformCapability.Capture));
   const execute = (id: ActionId) => {
     const action = actions.find((item) => item.id === id);
+    const opensCaptureDialog = id === ActionId.CaptureSelection || id === ActionId.CaptureToolbar;
     if (action?.surface) setSurface(action.surface);
     if (id.startsWith("realqa.capture.")) {
       captureSequence.current += 1;
       setRequestedCapture({ action: id as CaptureActionId, sequence: captureSequence.current });
     }
-    closePalette(action?.surface !== SurfaceId.Account);
+    closePalette(action?.surface !== SurfaceId.Account && !opensCaptureDialog);
     if (action?.surface === SurfaceId.Account) requestAnimationFrame(() => apiOriginInput.current?.focus());
   };
   const openExternal = async (target: ExternalLinkTarget) => {

@@ -685,6 +685,28 @@ describe("native App state", () => {
     expect(screen.queryByRole("dialog", { name: messages.en[dialogLabel] })).toBeNull();
   });
 
+  it.each([
+    ["captureSelection"],
+    ["captureToolbar"],
+  ] as const)("transfers focus from the palette to the %s dialog", async (dialogLabel) => {
+    const runtime: RuntimeSnapshot = { ...desktopRuntime, capabilities: { ...desktopRuntime.capabilities, capture: true } };
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "windows", shadowRemovalSupported: false, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+
+    render(<App bridge={bridgeWith(request)} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.openPalette }));
+    const palette = screen.getByRole("dialog", { name: messages.en.commandPalette });
+    fireEvent.click(within(palette).getByRole("button", { name: messages.en[dialogLabel] }));
+
+    expect(await screen.findByRole("dialog", { name: messages.en[dialogLabel] })).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: messages.en.commandPalette })).toBeNull();
+    await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.captureNow }));
+  });
+
   it("suppresses global shortcuts while an updater approval is open", async () => {
     const updaterStatus: DesktopUpdaterStatus = {
       kind: "available",

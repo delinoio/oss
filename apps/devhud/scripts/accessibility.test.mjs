@@ -154,7 +154,7 @@ test("Account focuses its API origin input when the surface opens or is reselect
   assert.match(app, /surface === SurfaceId\.Account\) apiOriginInput\.current\?\.focus\(\)/u);
   assert.match(app, /inputRef=\{apiOriginInput\}/u);
   assert.match(identityUi, /<input id=\{inputId\} ref=\{inputRef\} autoFocus=\{autoFocus\}/u);
-  assert.match(app, /closePalette\(action\?\.surface !== SurfaceId\.Account\);/u);
+  assert.match(app, /closePalette\(action\?\.surface !== SurfaceId\.Account && !opensCaptureDialog\);/u);
   assert.match(app, /action\?\.surface === SurfaceId\.Account\) requestAnimationFrame\(\(\) => apiOriginInput\.current\?\.focus\(\)\)/u);
 });
 
@@ -212,7 +212,7 @@ test("the UI foundation encodes the semantic, sizing, and responsive contracts",
   assert.match(styles, /button\s*\{[^}]*min-width:var\(--target-min\);[^}]*min-height:var\(--target-min\)/u);
   assert.match(styles, /grid-template-columns:232px minmax\(0,1fr\)/u);
   assert.match(styles, /grid-template-columns:72px minmax\(0,1fr\)/u);
-  assert.match(styles, /\.shell-navigation-sidebar nav\s*\{[^}]*min-height:0;[^}]*overflow-y:auto/u);
+  assert.match(styles, /\.shell-navigation nav\s*\{[^}]*min-height:0;[^}]*overflow-y:auto/u);
   assert.match(styles, /\.shell-navigation > \.palette-trigger\s*\{[^}]*margin-top:auto/u);
   assert.match(styles, /\.content\s*\{[^}]*min-width:0;[^}]*max-width:1280px/u);
   assert.match(styles, /--mobile-bottom-navigation-height:calc\(64px \+ env\(safe-area-inset-bottom\)\)/u);
