@@ -146,6 +146,30 @@ describe("Deck surface", () => {
     await waitFor(() => expect((movedForm.querySelector(":scope > fieldset") as HTMLFieldSetElement).disabled).toBe(false));
   });
 
+  it.each(["Back", "Escape"])("keeps a mobile Deck save failure visible when %s is requested during saving", async (dismissal) => {
+    setViewport(390);
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn(() => pendingSave);
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Unsaved Deck" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+
+    if (dismissal === "Back") fireEvent.click(screen.getByRole("button", { name: messages.en.back }));
+    else fireEvent.keyDown(sheet, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: messages.en.deckConfiguration })).toBeTruthy();
+
+    finishSave(false);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorNetwork));
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Unsaved Deck");
+  });
+
   it("preserves an existing Deck draft when an unrelated first profile changes", () => {
     const firstProfile = { id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "First", kind: "fine-grained" as const };
     identity = identityWith({ settings: parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [firstProfile, profile] } }) });
@@ -359,6 +383,24 @@ describe("Deck surface", () => {
 
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(screen.getByRole("dialog", { name: messages.en.deckConfiguration })).toBeTruthy();
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Keep this edit");
+  });
+
+  it.each(["Back", "Escape"])("keeps the mobile Deck sheet open when %s is requested during widget confirmation", async (dismissal) => {
+    setViewport(390);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Keep this edit" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+
+    if (dismissal === "Back") fireEvent.click(screen.getByRole("button", { name: messages.en.back }));
+    else fireEvent.keyDown(sheet, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: messages.en.deckConfiguration })).toBeTruthy();
+    expect(screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeTruthy();
     expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Keep this edit");
   });
 

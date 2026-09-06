@@ -518,6 +518,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const [selected, setSelected] = useState<string | null>(selectedDeckId);
   const [creating, setCreating] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [widgetConfirmationOpen, setWidgetConfirmationOpen] = useState(false);
   const [deleteFailedDeckId, setDeleteFailedDeckId] = useState<string | null>(null);
   const editorGeneration = useRef(0);
   const mobile = shellLayout === ShellLayout.Mobile;
@@ -535,6 +536,10 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
       setSettingsOpen(false);
     }
   }, [identity.settings.decks, selectedDeckId]);
+  const handleWidgetConfirmationOpenChange = useCallback((open: boolean) => {
+    setWidgetConfirmationOpen(open);
+    onModalConfirmationOpenChange?.(open);
+  }, [onModalConfirmationOpenChange]);
   const deleteDeck = async (value: Deck) => {
     setDeleteFailedDeckId(null);
     try {
@@ -571,11 +576,12 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     if (committed && creatingAtSubmit && generation === editorGeneration.current) { setSelected(next.id); setCreating(false); }
     return committed;
   }} />;
-  const configuration = <DeckConfiguration copy={copy} deck={deck} refreshState={refreshState} readOnly={identity.readOnly} deleteFailed={deck !== null && deleteFailedDeckId === deck.id} onDelete={() => deck && void deleteDeck(deck)}>{editor}{deck && <WidgetAccess key={`widget-${deck.id}`} cache={refreshState.cache} cacheProfileRef={refreshState.cacheProfileRef} copy={copy} deck={deck} failure={refreshState.failure} onConfirmationOpenChange={onModalConfirmationOpenChange} />}</DeckConfiguration>;
+  const configuration = <DeckConfiguration copy={copy} deck={deck} refreshState={refreshState} readOnly={identity.readOnly} deleteFailed={deck !== null && deleteFailedDeckId === deck.id} onDelete={() => deck && void deleteDeck(deck)}>{editor}{deck && <WidgetAccess key={`widget-${deck.id}`} cache={refreshState.cache} cacheProfileRef={refreshState.cacheProfileRef} copy={copy} deck={deck} failure={refreshState.failure} onConfirmationOpenChange={handleWidgetConfirmationOpenChange} />}</DeckConfiguration>;
   const cachedResults = refreshState.cache?.results ?? [];
   const results = deck === null ? [] : deck.display.showDrafts ? cachedResults : cachedResults.filter((pullRequest) => !pullRequest.draft);
   const draftsFiltered = deck !== null && !deck.display.showDrafts && cachedResults.length > 0 && results.length === 0;
   const closeSettings = () => {
+    if (editorDraft.saving || widgetConfirmationOpen) return;
     editorDraft.reset();
     if (isCreating && selectedDeck !== null) { editorGeneration.current += 1; setCreating(false); }
     setSettingsOpen(false);
