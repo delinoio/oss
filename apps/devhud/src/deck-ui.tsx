@@ -516,7 +516,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const [creating, setCreating] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [deleteFailed, setDeleteFailed] = useState(false);
-  const settingsTrigger = useRef<HTMLButtonElement>(null);
+  const editorGeneration = useRef(0);
   const mobile = shellLayout === ShellLayout.Mobile;
   const missingLinkedDeck = selectedDeckId !== null && !identity.settings.decks.some((item) => item.id === selectedDeckId);
   const selectedDeck = missingLinkedDeck ? null : identity.settings.decks.find((item) => item.id === selected) ?? identity.settings.decks[0] ?? null;
@@ -526,6 +526,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const editorDraft = useDeckEditorDraft(deck, identity.settings.github.profiles);
   useEffect(() => {
     if (selectedDeckId && identity.settings.decks.some((item) => item.id === selectedDeckId)) {
+      editorGeneration.current += 1;
       setSelected(selectedDeckId);
       setCreating(false);
       setSettingsOpen(false);
@@ -544,23 +545,28 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   if (identity.settings.github.profiles.length === 0) return <>{polling.online ? <EmptyState copy={copy} /> : <OfflineState copy={copy} />}<p role="status">{copy.deckNoProfiles}</p></>;
   const creationDisabled = identity.readOnly || identity.settings.decks.length >= DeckLimit;
   const openCreate = () => {
+    editorGeneration.current += 1;
     onDismissMissingLink?.();
     setSelected(null);
     setCreating(true);
     if (mobile) setSettingsOpen(true);
   };
   const selectDeck = (deckId: string) => {
+    editorGeneration.current += 1;
     onDismissMissingLink?.();
     setSelected(deckId);
     setCreating(false);
     setSettingsOpen(false);
   };
   const editor = <DeckEditor key={editorDraft.sourceKey} copy={copy} value={deck ?? undefined} draft={editorDraft.draft} onDraftChange={editorDraft.update} profiles={identity.settings.github.profiles} disabled={isCreating ? creationDisabled : identity.readOnly} onSave={async (next) => {
+    // A save can outlive a selection change, so only its originating editor may navigate on completion.
+    const generation = editorGeneration.current;
+    const creatingAtSubmit = isCreating;
     await polling.validate(next);
-    const committed = isCreating
+    const committed = creatingAtSubmit
       ? await identity.replaceSettings((current) => ({ ...current, decks: [...current.decks, next] }))
       : await identity.replaceSettings((current) => ({ ...current, decks: current.decks.map((item) => item.id === deck?.id ? next : item) }));
-    if (committed && isCreating) { setSelected(next.id); setCreating(false); }
+    if (committed && creatingAtSubmit && generation === editorGeneration.current) { setSelected(next.id); setCreating(false); }
     return committed;
   }} />;
   const configuration = <DeckConfiguration copy={copy} deck={deck} refreshState={refreshState} readOnly={identity.readOnly} deleteFailed={deleteFailed} onDelete={() => deck && void deleteDeck(deck)}>{editor}{deck && <WidgetAccess key={`widget-${deck.id}`} cache={refreshState.cache} cacheProfileRef={refreshState.cacheProfileRef} copy={copy} deck={deck} failure={refreshState.failure} onConfirmationOpenChange={onModalConfirmationOpenChange} />}</DeckConfiguration>;
@@ -569,7 +575,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const draftsFiltered = deck !== null && !deck.display.showDrafts && cachedResults.length > 0 && results.length === 0;
   const closeSettings = () => {
     editorDraft.reset();
-    if (isCreating && selectedDeck !== null) setCreating(false);
+    if (isCreating && selectedDeck !== null) { editorGeneration.current += 1; setCreating(false); }
     setSettingsOpen(false);
   };
   return <section className="deck" aria-label={copy.deckTitle}>
@@ -577,7 +583,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
       {selectedDeck && <Field label={copy.deckSelected} inputId="deck-selected"><select id="deck-selected" value={isCreating ? "" : selectedDeck.id} onChange={(event) => event.target.value === "" ? openCreate() : selectDeck(event.target.value)}>{isCreating && <option value="">{copy.deckCreate}</option>}{identity.settings.decks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>}
       <Button variant="primary" disabled={creationDisabled} onClick={openCreate}>{copy.deckCreate}</Button>
       {deck && <Button disabled={refreshState.loading || !polling.canPoll} onClick={() => void polling.refresh(deck.id, true)}>{copy.deckRefresh}</Button>}
-      {mobile && deck && <Button ref={settingsTrigger} onClick={() => setSettingsOpen(true)}>{copy.deckSettings}</Button>}
+      {mobile && deck && <Button onClick={() => setSettingsOpen(true)}>{copy.deckSettings}</Button>}
     </div>} />
     <div className="deck-workspace-layout">
       <div className="deck-workspace" role="region" aria-label={copy.deckResults}>
@@ -587,7 +593,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
       </div>
       {!mobile && <aside className="deck-configuration-panel" aria-label={copy.deckConfiguration}>{configuration}</aside>}
     </div>
-    {mobile && <Sheet open={settingsOpen} title={isCreating ? copy.deckCreate : copy.deckConfiguration} backLabel={copy.back} returnFocusRef={settingsTrigger} onClose={closeSettings}>{configuration}</Sheet>}
+    {mobile && <Sheet open={settingsOpen} title={isCreating ? copy.deckCreate : copy.deckConfiguration} backLabel={copy.back} onClose={closeSettings}>{configuration}</Sheet>}
   </section>;
 }
 

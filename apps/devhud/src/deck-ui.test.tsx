@@ -162,14 +162,26 @@ describe("Deck surface", () => {
     const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
     render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
 
-    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    const create = screen.getByRole("button", { name: messages.en.deckCreate });
+    create.focus();
+    fireEvent.click(create);
     const sheet = await screen.findByRole("dialog", { name: messages.en.deckCreate });
     fireEvent.click(screen.getByRole("button", { name: messages.en.back }));
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckCreate })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(create));
     expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(deck.id);
     expect(screen.getByRole("button", { name: messages.en.deckSettings })).toBeTruthy();
     expect(sheet).not.toBe(document.activeElement);
+
+    const selection = screen.getByRole("combobox", { name: messages.en.deckSelected });
+    selection.focus();
+    fireEvent.change(selection, { target: { value: "" } });
+    const selectorSheet = await screen.findByRole("dialog", { name: messages.en.deckCreate });
+    fireEvent.keyDown(selectorSheet, { key: "Escape" });
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckCreate })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(selection));
   });
 
   it("clears validation state when another Deck is selected", async () => {
@@ -206,6 +218,27 @@ describe("Deck surface", () => {
     expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(other.name);
   });
 
+  it("does not let completed Deck creation override a newer selection", async () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn(() => pendingSave);
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }), replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Created Deck" } });
+    fireEvent.change(screen.getByLabelText(messages.en.deckQuery), { target: { value: "repo:octo/widgets is:pr" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saved }));
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: other.id } });
+    finishSave(true);
+
+    await waitFor(() => expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(other.id));
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(other.name);
+  });
+
   it("keeps configuration out of the mobile workspace until its sheet opens and discards dismissed edits", async () => {
     setViewport(390);
     const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
@@ -213,6 +246,7 @@ describe("Deck surface", () => {
 
     expect(screen.queryByLabelText(messages.en.deckName)).toBeNull();
     const opener = screen.getByRole("button", { name: messages.en.deckSettings });
+    opener.focus();
     fireEvent.click(opener);
     const sheet = await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
     const name = screen.getByLabelText(messages.en.deckName);

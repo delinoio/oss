@@ -97,4 +97,11 @@ describe("DevHud UI foundation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.queryByRole("dialog", { name: "More" })).toBeNull();
   });
+
+  it("skips fieldset-disabled controls when focusing a sheet", async () => {
+    render(<Sheet open title="Read-only" backLabel="Back" onClose={() => undefined}><fieldset disabled><input aria-label="Disabled input" /></fieldset></Sheet>);
+
+    expect(screen.getByLabelText("Disabled input").matches(":disabled")).toBe(true);
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Back" })));
+  });
 });

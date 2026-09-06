@@ -267,7 +267,8 @@ test("modal primitives own focus trapping, Escape, and opener restoration", () =
 test("Deck keeps configuration in the desktop panel and a named mobile sheet", () => {
   assert.match(deckUi, /!mobile && <aside className="deck-configuration-panel" aria-label=\{copy\.deckConfiguration\}/u);
   assert.match(deckUi, /mobile && <Sheet open=\{settingsOpen\} title=\{isCreating \? copy\.deckCreate : copy\.deckConfiguration\} backLabel=\{copy\.back\}/u);
-  assert.match(deckUi, /returnFocusRef=\{settingsTrigger\} onClose=\{closeSettings\}/u);
+  assert.match(deckUi, /backLabel=\{copy\.back\} onClose=\{closeSettings\}/u);
+  assert.doesNotMatch(deckUi, /returnFocusRef=\{settingsTrigger\}/u);
   assert.match(styles, /\.deck-workspace-layout\s*\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(20rem,24rem\)/u);
   assert.match(styles, /\.deck-workspace-layout\s*\{\s*grid-template-columns:minmax\(0,1fr\);\s*\}/u);
 });
