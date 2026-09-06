@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 
-import { AccountIdentity, ShortcutPaletteTrigger, SynchronizedSettingsBoundary, SynchronizedShortcutBoundary } from "./identity-ui";
+import { AccountIdentity, FirstRunIdentity, ShortcutPaletteTrigger, SynchronizedSettingsBoundary, SynchronizedShortcutBoundary } from "./identity-ui";
 import { messages } from "./localization";
 import { localAgentPromptRepositories } from "./local-agent-settings-ui";
 import { NativeMessagingSettings, SynchronizedNativeMessagingBoundary } from "./native-messaging-ui";
@@ -96,6 +96,29 @@ describe("identity UI", () => {
     render(<AccountIdentity {...accountProps({ mobile: true, onOpenExternal })} />);
     expect(screen.queryByRole("button", { name: messages.en.issue })).toBeNull();
     expect(screen.getByRole("button", { name: messages.en.githubCreateFinePat })).toBeTruthy();
+  });
+
+  it("disables first-run actions while confirming an API-origin change", async () => {
+    const signIn = vi.fn(async () => undefined);
+    const continueLocally = vi.fn();
+    identity = identityWith({ bootstrap: {} as never, signIn, continueLocally });
+    render(<FirstRunIdentity copy={messages.en} apiOrigin="https://devhud.api.delino.io" onApiOrigin={vi.fn(async () => undefined)} onComplete={vi.fn()} apiChangeError={null} />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    const signInButton = screen.getByRole("button", { name: messages.en.signIn }) as HTMLButtonElement;
+    const continueButton = screen.getByRole("button", { name: messages.en.continueLocally }) as HTMLButtonElement;
+    await waitFor(() => expect(signInButton.disabled).toBe(true));
+    expect(continueButton.disabled).toBe(true);
+    fireEvent.click(signInButton);
+    fireEvent.click(continueButton);
+    expect(signIn).not.toHaveBeenCalled();
+    expect(continueLocally).not.toHaveBeenCalled();
+
+    fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
+    await waitFor(() => expect(signInButton.disabled).toBe(false));
+    expect(continueButton.disabled).toBe(false);
   });
 
   it("keeps the custom-origin warning and API-change failures beside the editor", () => {

@@ -1242,6 +1242,61 @@ describe("responsive application shell", () => {
     expect(document.activeElement).not.toBe(more);
   });
 
+  it("queues an in-flight Deck link until an API-origin confirmation closes", async () => {
+    const deckId = "018f47a2-7b3c-7def-8abc-1234567890ab";
+    let pendingDeckId: string | null = null;
+    let resolveTake: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const listeners: Array<(event: NativeBridgeEventV1) => void> = [];
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      getAccessToken: async () => null,
+      isAuthenticated: async () => false,
+      signIn: async () => {},
+      handleCallback: async () => {},
+      clear: async () => {},
+    } as unknown as IdentitySession);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      projectId: "PROJECT_ID_DEVHUD",
+      protocolSchemaVersion: 2,
+      apiVersion: "0.1.0-dev",
+      logtoIssuer: "https://identity.example/oidc",
+      logtoAudience: "https://api.example/api",
+      publicAssetBaseUrl: "https://images.example/devhud",
+      logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
+      logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
+    }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
+    const request = vi.fn((value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "session.configure-origins") return Promise.resolve({ kind: "session-network-policy", changed: false });
+      if (value.operation === "deck.peek-pending-link") return Promise.resolve({ kind: "deck-link", deckId: pendingDeckId });
+      if (value.operation === "deck.take-pending-link") return new Promise((resolve) => { resolveTake = resolve; });
+      return Promise.reject(new Error(`unexpected operation ${value.operation}`));
+    });
+    const bridge: NativeBridgeV1 = {
+      request,
+      async listen(listener) { listeners.push(listener); return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={desktopRuntime} />);
+    await waitFor(() => expect(listeners.length).toBeGreaterThan(0));
+    pendingDeckId = deckId;
+    await act(async () => {
+      for (const listener of listeners) listener({ version: 1, kind: "deck-link", deckId });
+    });
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "deck.take-pending-link" }));
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    pendingDeckId = null;
+    await act(async () => resolveTake?.({ kind: "deck-link", deckId }));
+    expect(request.mock.calls.filter(([value]) => value.operation === "deck.take-pending-link")).toHaveLength(1);
+    expect(screen.getByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBe(confirmation);
+
+    fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
+    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.deck }).getAttribute("aria-current")).toBe("page"));
+    expect(request.mock.calls.filter(([value]) => value.operation === "deck.take-pending-link")).toHaveLength(1);
+  });
+
   it("restores palette focus to the mounted trigger after crossing the mobile breakpoint", async () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 700 });
     vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));

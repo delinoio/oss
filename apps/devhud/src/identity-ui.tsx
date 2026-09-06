@@ -77,16 +77,17 @@ interface IdentityProps {
 export function FirstRunIdentity({ copy, apiOrigin, onApiOrigin, onComplete, apiChangeError }: IdentityProps) {
   const identity = useIdentitySettings();
   const [actionError, setActionError] = useState(false);
+  const [apiChangeConfirmationOpen, setApiChangeConfirmationOpen] = useState(false);
   useEffect(() => {
     if (identity.status === "authenticated" || identity.status === "blocked" || identity.status === "deletion-pending") onComplete();
   }, [identity.status, onComplete]);
   return <Card className="onboarding-card">
     <PageHeader eyebrow={copy.account} title={copy.accountTitle} summary={copy.firstRunSummary} level={1} />
-    <ApiOriginEditor copy={copy} value={apiOrigin} autoFocus onApply={onApiOrigin} warningId="api-origin-security-warning" applyError={apiChangeError} />
+    <ApiOriginEditor copy={copy} value={apiOrigin} autoFocus onApply={onApiOrigin} warningId="api-origin-security-warning" applyError={apiChangeError} onConfirmationOpenChange={setApiChangeConfirmationOpen} />
     <Card className="account-security"><h2>{copy.security}</h2><p id="api-origin-security-warning" className="notice">{copy.customApiWarning}</p></Card>
     <div className="actions">
-      <Button variant="primary" onClick={() => { setActionError(false); void identity.signIn().catch(() => setActionError(true)); }} disabled={identity.status === "starting" || identity.bootstrap === null || identity.signInPending}>{copy.signIn}</Button>
-      <Button onClick={identity.continueLocally}>{copy.continueLocally}</Button>
+      <Button variant="primary" onClick={() => { setActionError(false); void identity.signIn().catch(() => setActionError(true)); }} disabled={apiChangeConfirmationOpen || identity.status === "starting" || identity.bootstrap === null || identity.signInPending}>{copy.signIn}</Button>
+      <Button onClick={identity.continueLocally} disabled={apiChangeConfirmationOpen}>{copy.continueLocally}</Button>
     </div>
     {identity.status === "starting" && <p role="status">{copy.fetchingBootstrap}</p>}
     {identity.status === "error" && <Card className="notice" role="alert"><p>{copy.bootstrapFailed}</p>{identity.identityResetAvailable && <p>{copy.resetSignInHint}</p>}<div className="actions"><Button onClick={identity.retryIdentity}>{copy.retry}</Button>{identity.identityResetAvailable && <Button onClick={() => void identity.resetIdentity().catch(() => {})}>{copy.resetSignIn}</Button>}</div></Card>}

@@ -136,6 +136,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const [authCallback, setAuthCallback] = useState<string | null>(null);
   const [deckLink, setDeckLink] = useState<string | null>(null);
   const [deckLinkPending, setDeckLinkPending] = useState(false);
+  const [consumedDeckLink, setConsumedDeckLink] = useState<string | null>(null);
   const [deckLinkPolicyOrigin, setDeckLinkPolicyOrigin] = useState<string | null>(null);
   const [updaterApprovalOpen, setUpdaterApprovalOpen] = useState(false);
   const [online, setOnline] = useState(() => navigator.onLine);
@@ -148,6 +149,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const selectedDesktopNavigationItem = useRef<HTMLButtonElement>(null);
   const externalAttempt = useRef(0);
   const identitySession = useRef<IdentitySession | null>(null);
+  const deckLinkTakeInFlight = useRef(false);
   const updaterApprovalOpenRef = useRef(false);
   const screenModalConfirmationOpenRef = useRef(false);
   const language = preferences.language === LanguagePreference.System ? systemLanguage : preferences.language;
@@ -277,21 +279,22 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     };
   }, [bridge, initialContentState, initialRuntime]);
   useEffect(() => {
-    if (onboarding || updaterApprovalOpen || screenModalConfirmationOpen || !deckLinkPending || deckLinkPolicyOrigin !== preferences.apiOrigin) return;
-    let active = true;
+    if (onboarding || updaterApprovalOpen || screenModalConfirmationOpen || !deckLinkPending || consumedDeckLink !== null || deckLinkPolicyOrigin !== preferences.apiOrigin || deckLinkTakeInFlight.current) return;
+    deckLinkTakeInFlight.current = true;
     void bridge.request({ operation: "deck.take-pending-link" }).then((pendingDeck) => {
-      if (!active) return;
       setDeckLinkPending(false);
-      if (pendingDeck.kind === "deck-link" && pendingDeck.deckId) {
-        closeMore(false);
-        setDeckLink(pendingDeck.deckId);
-        setSurface(SurfaceId.Deck);
-      }
+      if (pendingDeck.kind === "deck-link" && pendingDeck.deckId) setConsumedDeckLink(pendingDeck.deckId);
     }).catch(() => {
-      if (active) setDeckLinkPending(false);
-    });
-    return () => { active = false; };
-  }, [bridge, deckLinkPending, deckLinkPolicyOrigin, onboarding, preferences.apiOrigin, screenModalConfirmationOpen, updaterApprovalOpen]);
+      setDeckLinkPending(false);
+    }).finally(() => { deckLinkTakeInFlight.current = false; });
+  }, [bridge, consumedDeckLink, deckLinkPending, deckLinkPolicyOrigin, onboarding, preferences.apiOrigin, screenModalConfirmationOpen, updaterApprovalOpen]);
+  useEffect(() => {
+    if (onboarding || updaterApprovalOpen || screenModalConfirmationOpen || consumedDeckLink === null) return;
+    closeMore(false);
+    setDeckLink(consumedDeckLink);
+    setConsumedDeckLink(null);
+    setSurface(SurfaceId.Deck);
+  }, [consumedDeckLink, onboarding, screenModalConfirmationOpen, updaterApprovalOpen]);
   useEffect(() => {
     if (!runtime) return;
     const captureError = (event: ErrorEvent) => {
