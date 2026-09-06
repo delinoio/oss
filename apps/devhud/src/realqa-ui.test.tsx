@@ -85,6 +85,46 @@ afterEach(() => {
 });
 
 describe("RealQA capture and editor", () => {
+  it("orders the five existing capture actions before fixed encrypted-draft policy and drafts", async () => {
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    const flow = document.querySelector(".realqa-flow") as HTMLElement;
+    expect(Array.from(flow.children, (element) => element.className)).toEqual(expect.arrayContaining(["ui-card realqa-capture-card", "ui-card realqa-policy"]));
+    for (const label of [messages.en.captureDisplay, messages.en.captureWindow, messages.en.captureAll, messages.en.captureSelection, messages.en.captureToolbar]) {
+      expect(screen.getByRole("button", { name: label })).toBeTruthy();
+    }
+    expect(screen.getByText(messages.en.realqaPolicySummary)).toBeTruthy();
+    expect(screen.getByText(messages.en.realqaPolicyQuota)).toBeTruthy();
+    expect(flow.textContent).not.toMatch(/used|%/iu);
+    expect(document.querySelector(".realqa-flow .progress")).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain(messages.en.realqaNoDrafts);
+  });
+
+  it.each([
+    [NativeBridgeErrorCode.QuotaExhausted, "realqaQuotaTitle", "captureQuotaFull"],
+    [NativeBridgeErrorCode.PermissionDenied, "realqaPermissionTitle", "capturePermission"],
+    [NativeBridgeErrorCode.ProtectedContent, "realqaProtectedTitle", "captureProtected"],
+    [NativeBridgeErrorCode.TopologyChanged, "realqaTopologyTitle", "captureTopologyChanged"],
+  ] as const)("presents %s with localized text and an icon-backed state panel", async (code, titleKey, summaryKey) => {
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") throw new NativeBridgeError(code);
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain(messages.en[titleKey]);
+    expect(alert.textContent).toContain(messages.en[summaryKey]);
+    expect(alert.querySelector("svg")).toBeTruthy();
+  });
+
   it.each([["en", messages.en], ["ko", messages.ko]] as const)("exposes the accessible %s editor and ordered layer controls", async (_language, copy) => {
     const { bridge, request } = bridgeWith();
     render(<RealqaSurface bridge={bridge} copy={copy} />);
@@ -149,7 +189,7 @@ describe("RealQA capture and editor", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
 
-    expect(await screen.findByRole("alert")).toHaveProperty("textContent", messages.en.realqaOpenFailed);
+    expect((await screen.findByRole("alert")).textContent).toContain(messages.en.realqaOpenFailed);
     await waitFor(() => expect(screen.queryByRole("button", { name: messages.en.realqaOpenEditor })).toBeNull());
     expect(screen.queryByRole("heading", { name: messages.en.editorTitle })).toBeNull();
   });
@@ -293,7 +333,7 @@ describe("RealQA capture and editor", () => {
       expectedRevision: attachedDraft.revision,
     }));
     expect(screen.queryByRole("heading", { name: messages.en.browserContextAttached })).toBeNull();
-    expect(screen.getByText(messages.en.browserContextRemoved).getAttribute("role")).toBe("status");
+    expect(screen.getByText(messages.en.browserContextRemoved).closest("[role='status']")).toBeTruthy();
   });
 
   it("keeps attached context visible when revision-checked removal fails", async () => {
@@ -327,7 +367,7 @@ describe("RealQA capture and editor", () => {
     fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
     fireEvent.click(await screen.findByRole("button", { name: messages.en.browserContextRemove }));
 
-    expect(await screen.findByRole("alert")).toHaveProperty("textContent", messages.en.browserContextRemoveFailed);
+    expect((await screen.findByRole("alert")).textContent).toContain(messages.en.browserContextRemoveFailed);
     expect(screen.getByRole("heading", { name: messages.en.browserContextAttached })).toBeTruthy();
   });
 
@@ -343,8 +383,8 @@ describe("RealQA capture and editor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
 
-    expect(await screen.findByRole("status")).toHaveProperty("textContent", messages.en.captureSaved);
-    expect(screen.getByRole("alert")).toHaveProperty("textContent", messages.en.nativeMessagingFailed);
+    expect(await screen.findByText(messages.en.captureSaved)).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain(messages.en.nativeMessagingFailed);
     expect(screen.getByRole("complementary", { name: messages.en.floatingPreview })).toBeTruthy();
   });
 
@@ -603,7 +643,7 @@ describe("RealQA capture and editor", () => {
     await waitFor(() => expect(listRequests).toBe(2));
     const add = screen.getByRole("button", { name: messages.ko.editorAdd });
     fireEvent.click(add);
-    await waitFor(() => expect(screen.getByRole("status").textContent).toContain(messages.ko.editorSaved));
+    await waitFor(() => expect(screen.getByText(messages.ko.editorSaved)).toBeTruthy());
     expect(applyRequests[0].expectedRevision).toBe(3);
 
     await act(async () => {
@@ -1036,7 +1076,7 @@ describe("RealQA capture and editor", () => {
 
     await screen.findByRole("button", { name: messages.en.realqaDeleteDraft });
     fireEvent.click(screen.getByRole("button", { name: messages.en.realqaDeleteDraft }));
-    expect((await screen.findByRole("alert")).textContent).toBe(messages.en.realqaDeleteFailed);
+    expect((await screen.findByRole("alert")).textContent).toContain(messages.en.realqaDeleteFailed);
   });
 
   it.each(["readable", "unreadable"] as const)("retains successful %s deletion when refresh fails", async (draftKind) => {

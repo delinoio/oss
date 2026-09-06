@@ -9,6 +9,7 @@ const styles = readFileSync(join(appRoot, "src/styles.css"), "utf8");
 const app = readFileSync(join(appRoot, "src/App.tsx"), "utf8");
 const identityUi = readFileSync(join(appRoot, "src/identity-ui.tsx"), "utf8");
 const foundation = readFileSync(join(appRoot, "src/ui-foundation.tsx"), "utf8");
+const realqa = readFileSync(join(appRoot, "src/realqa-ui.tsx"), "utf8");
 const icons = readFileSync(join(appRoot, "src/ui-icons.tsx"), "utf8");
 const main = readFileSync(join(appRoot, "src/main.tsx"), "utf8");
 const nativeHost = readFileSync(join(appRoot, "src-tauri/src/main.rs"), "utf8");
@@ -80,6 +81,16 @@ test("RealQA panels use the defined themed surface color", () => {
 
 test("RealQA annotation text uses CSP-compatible static font styling", () => {
   assert.match(styles, /\.annotation-text\{font-family:"DevHud RealQA Noto Sans KR";font-kerning:none\}/u);
+});
+
+test("RealQA uses the shared state primitives and remains readable at narrow and zoomed layouts", () => {
+  assert.match(realqa, /import \{ Button, Card, Dialog, PageHeader, Sheet, StatePanel, StatusBadge/u);
+  for (const primitive of ["<PageHeader", "<Card", "<Button", "<StatusBadge", "<StatePanel", "<Dialog", "<Sheet"]) assert(realqa.includes(primitive), `RealQA must use ${primitive}`);
+  assert.match(realqa, /realqaPolicyQuota/u);
+  assert.doesNotMatch(realqa, /(?:used bytes|quota meter|quota percentage|<progress)/iu);
+  assert.match(styles, /\.ui-dialog,\.ui-sheet\s*\{[^}]*max-height:calc\(100vh/u);
+  assert.match(styles, /@media\(max-width:700px\)\{[^}]*\.capture-actions \.ui-button\{width:100%;min-width:0/u);
+  assert.match(styles, /\.draft-list\{[^}]*minmax\(15rem,1fr\)/u);
 });
 
 test("form-control boundaries meet non-text contrast in light and dark themes", () => {

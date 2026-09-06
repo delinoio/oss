@@ -1162,6 +1162,10 @@ describe("responsive application shell", () => {
     await waitFor(() => expect(document.activeElement).toBe(realqa));
     fireEvent.click(realqa);
     expect(screen.getByRole("heading", { name: messages.en.realqaMobileTitle })).toBeTruthy();
+    for (const label of [messages.en.captureDisplay, messages.en.captureWindow, messages.en.captureAll, messages.en.captureSelection, messages.en.captureToolbar, messages.en.realqaOpenEditor, messages.en.issueSubmit]) {
+      expect(screen.queryByRole("button", { name: label })).toBeNull();
+    }
+    expect(document.querySelector(".capture-editor, .issue-dialog, .capture-actions")).toBeNull();
     expect(more.getAttribute("aria-current")).toBe("page");
 
     fireEvent.click(more);
@@ -1173,6 +1177,22 @@ describe("responsive application shell", () => {
     fireEvent.click(within(screen.getByRole("dialog", { name: messages.en.more })).getByRole("button", { name: /Diagnostics/u }));
     expect(screen.getByRole("heading", { name: messages.en.diagnosticsTitle })).toBeTruthy();
     expect(more.getAttribute("aria-current")).toBe("page");
+  });
+
+  it.each([RuntimePlatform.Ios, RuntimePlatform.Android])("renders only the localized desktop-only RealQA notice on %s", async (platform) => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 390 });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={unavailableBridge()} initialRuntime={{ ...mobileRuntime, platform, operatingSystem: platform === RuntimePlatform.Ios ? "ios" : "android" }} />);
+
+    fireEvent.click(within(screen.getByRole("navigation", { name: messages.en.mobileNavigation })).getByRole("button", { name: messages.en.more }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: messages.en.more })).getByRole("button", { name: /RealQA/u }));
+
+    expect(screen.getByRole("heading", { name: messages.en.realqaMobileTitle })).toBeTruthy();
+    expect(screen.getByText(messages.en.unavailable)).toBeTruthy();
+    for (const label of [messages.en.captureDisplay, messages.en.captureWindow, messages.en.captureAll, messages.en.captureSelection, messages.en.captureToolbar, messages.en.realqaOpenEditor, messages.en.issueSubmit]) {
+      expect(screen.queryByRole("button", { name: label })).toBeNull();
+    }
+    expect(document.querySelector(".capture-editor, .issue-dialog, .capture-actions")).toBeNull();
   });
 
   it("moves localized skip-link focus to the main content", () => {
