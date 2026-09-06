@@ -1188,6 +1188,27 @@ describe("RealQA capture and editor", () => {
     expect(applyRequests[1].expectedRevision).toBe(5);
   });
 
+  it("preserves the draft opener after opening its own appended preview", async () => {
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return { kind: "capture-draft", draft: { ...draft, revision: 4 } };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    const opener = await screen.findByRole("button", { name: messages.en.realqaOpenEditor });
+    opener.focus();
+    fireEvent.click(opener);
+    await screen.findByRole("heading", { name: messages.en.editorTitle });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+    const preview = await screen.findByRole("complementary", { name: messages.en.floatingPreview });
+    fireEvent.click(within(preview).getByRole("button", { name: messages.en.floatingPreviewOpen }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.close }));
+
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
   it("previews the first image added by an appended capture", async () => {
     const appendedImage = {
       ...draft.images[0],

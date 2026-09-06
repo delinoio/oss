@@ -446,10 +446,12 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   };
   const openPreview = () => {
     if (!preview) return;
+    const replacesEditor = selected?.id !== preview.id;
     // This preview may already be selected while RealQA is off-surface. Record the
     // replacement before activation so the mounted Capture control becomes the return target.
-    previewActivationNeedsFocusFallback.current = true;
-    if (selected?.id !== preview.id) {
+    // Do not replace an open editor's original opener when dismissing its own preview.
+    previewActivationNeedsFocusFallback.current = !active || replacesEditor;
+    if (replacesEditor) {
       setSelected(preview);
     }
     dismissPreview();
