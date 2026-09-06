@@ -912,6 +912,32 @@ describe("responsive application shell", () => {
     expect(screen.getAllByRole("tooltip")).toHaveLength(7);
   });
 
+  it.each([
+    [messages.en.deck, messages.en.deck],
+    [messages.en.diagnostics, messages.en.more],
+  ])("transfers %s navigation focus through the mobile %s destination", async (desktopLabel, mobileLabel) => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 701 });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={unavailableBridge()} initialRuntime={desktopRuntime} />);
+
+    const desktopDestination = within(screen.getByRole("navigation", { name: messages.en.mobileNavigation })).getByRole("button", { name: desktopLabel });
+    fireEvent.click(desktopDestination);
+    desktopDestination.focus();
+    expect(document.activeElement).toBe(desktopDestination);
+
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 700 });
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => expect(document.querySelector<HTMLElement>("[data-shell-layout]")?.dataset.shellLayout).toBe("mobile"));
+    const mobileDestination = within(screen.getByRole("navigation", { name: messages.en.mobileNavigation })).getByRole("button", { name: mobileLabel });
+    await waitFor(() => expect(document.activeElement).toBe(mobileDestination));
+
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 701 });
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => expect(document.querySelector<HTMLElement>("[data-shell-layout]")?.dataset.shellLayout).toBe("rail"));
+    const restoredDesktopDestination = within(screen.getByRole("navigation", { name: messages.en.mobileNavigation })).getByRole("button", { name: desktopLabel });
+    await waitFor(() => expect(document.activeElement).toBe(restoredDesktopDestination));
+  });
+
   it("shows rail destination tooltips outside the scrolling navigation for pointer and keyboard users", async () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 701 });
     vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));

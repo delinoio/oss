@@ -23,6 +23,7 @@ const surfaceIcons: Record<SurfaceId, ComponentType<IconProps>> = { home: HomeIc
 const homeTools = [SurfaceId.Realqa, SurfaceId.Deck, SurfaceId.Settings, SurfaceId.Diagnostics] as const satisfies readonly SurfaceId[];
 const mobilePrimarySurfaces: readonly SurfaceId[] = [SurfaceId.Home, SurfaceId.Deck, SurfaceId.Settings, SurfaceId.Account];
 const MobileNavigationId = { More: "more" } as const;
+type NavigationDestination = SurfaceId | (typeof MobileNavigationId)[keyof typeof MobileNavigationId];
 const homeToolTitles: Record<(typeof homeTools)[number], keyof typeof messages.en> = { realqa: "realqaTitle", deck: "deckTitle", settings: "settingsTitle", diagnostics: "diagnosticsTitle" };
 const homeToolSummaries: Record<(typeof homeTools)[number], keyof typeof messages.en> = { realqa: "realqaSummary", deck: "deckSummary", settings: "settingsSummary", diagnostics: "diagnosticsSummary" };
 const notificationPermissionLabels: Record<NotificationPermission, keyof typeof messages.en> = {
@@ -33,7 +34,7 @@ const notificationPermissionLabels: Record<NotificationPermission, keyof typeof 
 const defaultContentState: ContentState = { kind: ContentStateKind.Ready };
 type ExternalMessage = "opened" | "failed" | "invalid-api-origin";
 
-function ShellNavigationItem({ active, compact, icon: Icon, label, selectedItemRef, tooltipId, onActivate }: { readonly active: boolean; readonly compact: boolean; readonly icon: ComponentType<IconProps>; readonly label: string; readonly selectedItemRef: RefObject<HTMLButtonElement | null>; readonly tooltipId: string; readonly onActivate: () => void }) {
+function ShellNavigationItem({ active, compact, destination, icon: Icon, label, selectedItemRef, tooltipId, onActivate, onNavigationBlur, onNavigationFocus }: { readonly active: boolean; readonly compact: boolean; readonly destination: SurfaceId; readonly icon: ComponentType<IconProps>; readonly label: string; readonly selectedItemRef: RefObject<HTMLButtonElement | null>; readonly tooltipId: string; readonly onActivate: () => void; readonly onNavigationBlur: (destination: NavigationDestination) => void; readonly onNavigationFocus: (destination: NavigationDestination) => void }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const tooltip = useRef<HTMLSpanElement>(null);
   const [focused, setFocused] = useState(false);
@@ -75,7 +76,7 @@ function ShellNavigationItem({ active, compact, icon: Icon, label, selectedItemR
   }, [positionTooltip, tooltipRequested]);
 
   return <>
-    <button ref={trigger} className="shell-nav-item" aria-label={label} aria-describedby={compact ? tooltipId : undefined} aria-current={active ? "page" : undefined} onClick={onActivate} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}>
+    <button ref={trigger} className="shell-nav-item" data-navigation-destination={destination} aria-label={label} aria-describedby={compact ? tooltipId : undefined} aria-current={active ? "page" : undefined} onClick={onActivate} onFocus={() => { setFocused(true); onNavigationFocus(destination); }} onBlur={() => { setFocused(false); onNavigationBlur(destination); }} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}>
       <Icon />
       {!compact && <span>{label}</span>}
     </button>
@@ -150,6 +151,8 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const language = preferences.language === LanguagePreference.System ? systemLanguage : preferences.language;
   const copy = messages[language];
   const shellLayout = useShellLayout();
+  const previousShellLayout = useRef(shellLayout);
+  const focusedNavigationDestination = useRef<NavigationDestination | null>(null);
   const runtimeCapabilities = runtime ? capabilitiesFor(runtime) : { available: new Set<PlatformCapability>() };
   const mobile = runtime?.platform === RuntimePlatform.Ios || runtime?.platform === RuntimePlatform.Android;
   const isMac = runtime?.platform === RuntimePlatform.Ios || /Mac/u.test(navigator.userAgent);
@@ -339,6 +342,18 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   }, [preferences.language, preferences.theme, language]);
   useEffect(() => { if (surface === SurfaceId.Account) apiOriginInput.current?.focus(); }, [surface]);
   useEffect(() => {
+    const previousLayout = previousShellLayout.current;
+    previousShellLayout.current = shellLayout;
+    if ((previousLayout === ShellLayout.Mobile) === (shellLayout === ShellLayout.Mobile)) return;
+    const previousDestination = focusedNavigationDestination.current;
+    if (!previousDestination) return;
+    const nextDestination = shellLayout === ShellLayout.Mobile
+      ? previousDestination === SurfaceId.Realqa || previousDestination === SurfaceId.Diagnostics ? MobileNavigationId.More : previousDestination
+      : previousDestination === MobileNavigationId.More ? surface : previousDestination;
+    const animation = requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-navigation-destination="${nextDestination}"]`)?.focus());
+    return () => cancelAnimationFrame(animation);
+  }, [shellLayout, surface]);
+  useEffect(() => {
     if (shellLayout === ShellLayout.Mobile || !moreOpen) return;
     closeMore(false);
     requestAnimationFrame(() => selectedDesktopNavigationItem.current?.focus());
@@ -441,18 +456,20 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
 
   const moreCurrent = surface === SurfaceId.Realqa || surface === SurfaceId.Diagnostics;
   const navigate = (nextSurface: SurfaceId) => { setSurface(nextSurface); setMoreOpen(false); };
+  const markNavigationFocused = (destination: NavigationDestination) => { focusedNavigationDestination.current = destination; };
+  const markNavigationBlurred = (destination: NavigationDestination) => { if (focusedNavigationDestination.current === destination) focusedNavigationDestination.current = null; };
   const navigation = shellLayout !== ShellLayout.Mobile && <aside className={`shell-navigation shell-navigation-${shellLayout}`}>
     <h1 aria-label={shellLayout === ShellLayout.Rail ? copy.appName : undefined}>{shellLayout === ShellLayout.Sidebar ? copy.appName : "D"}</h1>
-    <nav aria-label={copy.mobileNavigation}>{surfaces.map((item) => <ShellNavigationItem active={surface === item} compact={shellLayout === ShellLayout.Rail} icon={surfaceIcons[item]} key={item} label={copy[labels[item]]} selectedItemRef={selectedDesktopNavigationItem} tooltipId={`navigation-tooltip-${item}`} onActivate={() => navigate(item)} />)}</nav>
+    <nav aria-label={copy.mobileNavigation}>{surfaces.map((item) => <ShellNavigationItem active={surface === item} compact={shellLayout === ShellLayout.Rail} destination={item} icon={surfaceIcons[item]} key={item} label={copy[labels[item]]} selectedItemRef={selectedDesktopNavigationItem} tooltipId={`navigation-tooltip-${item}`} onActivate={() => navigate(item)} onNavigationBlur={markNavigationBlurred} onNavigationFocus={markNavigationFocused} />)}</nav>
     {mobile ? <Button className="palette-trigger" ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} aria-label={copy.openPalette}>{shellLayout === ShellLayout.Sidebar ? copy.openPalette : null}</Button> : <ShortcutPaletteTrigger copy={copy} isMac={isMac} triggerRef={paletteTrigger} onOpen={openPalette} compact={shellLayout === ShellLayout.Rail} />}
   </aside>;
   const topBar = shellLayout === ShellLayout.Mobile && <header className="mobile-app-bar"><h1>{copy.appName}</h1><span>{copy[labels[surface]]}</span><Button ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} aria-label={copy.openPalette} /></header>;
   const bottomBar = shellLayout === ShellLayout.Mobile && <nav className="mobile-bottom-navigation" aria-label={copy.mobileNavigation}>
     {mobilePrimarySurfaces.map((item) => {
       const Icon = surfaceIcons[item];
-      return <button type="button" key={item} aria-current={surface === item ? "page" : undefined} onClick={() => navigate(item)}><Icon /><span>{copy[labels[item]]}</span></button>;
+      return <button type="button" key={item} data-navigation-destination={item} aria-current={surface === item ? "page" : undefined} onClick={() => navigate(item)} onFocus={() => markNavigationFocused(item)} onBlur={() => markNavigationBlurred(item)}><Icon /><span>{copy[labels[item]]}</span></button>;
     })}
-    <button key={MobileNavigationId.More} ref={moreTrigger} type="button" aria-current={moreCurrent ? "page" : undefined} aria-haspopup="dialog" aria-expanded={moreOpen} disabled={screenModalConfirmationOpen} onClick={openMore}><MoreIcon /><span>{copy.more}</span></button>
+    <button key={MobileNavigationId.More} ref={moreTrigger} type="button" data-navigation-destination={MobileNavigationId.More} aria-current={moreCurrent ? "page" : undefined} aria-haspopup="dialog" aria-expanded={moreOpen} disabled={screenModalConfirmationOpen} onClick={openMore} onFocus={() => markNavigationFocused(MobileNavigationId.More)} onBlur={() => markNavigationBlurred(MobileNavigationId.More)}><MoreIcon /><span>{copy.more}</span></button>
   </nav>;
 
   return boundary(<>

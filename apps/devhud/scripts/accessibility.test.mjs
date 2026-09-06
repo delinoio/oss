@@ -210,6 +210,7 @@ test("the UI foundation encodes the semantic, sizing, and responsive contracts",
   assert.match(themeBlocks[0], /--radius-panel:16px/u);
   assert.match(themeBlocks[0], /--target-min:44px/u);
   assert.match(styles, /button\s*\{[^}]*min-width:var\(--target-min\);[^}]*min-height:var\(--target-min\)/u);
+  assert.match(styles, /\.ui-card-interactive > button\.data-row:focus-visible\s*\{[^}]*outline-offset:-4px/u);
   assert.match(styles, /grid-template-columns:232px minmax\(0,1fr\)/u);
   assert.match(styles, /grid-template-columns:72px minmax\(0,1fr\)/u);
   assert.match(styles, /\.shell-navigation nav\s*\{[^}]*min-height:0;[^}]*overflow-y:auto/u);
