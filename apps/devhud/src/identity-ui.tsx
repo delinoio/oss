@@ -285,6 +285,17 @@ function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvid
     focusHeading(SettingsSectionId.Appearance);
   }, [availableIds.join("\u0000"), mobileDetail, selected]);
   const invoke = (action: () => Promise<unknown>) => { setActionError(false); void action().catch(() => setActionError(true)); };
+  const invokeSnapshotAction = async (action: () => Promise<boolean>) => {
+    setActionError(false);
+    try {
+      const applied = await action();
+      if (applied) mappingDraft.reset();
+      return applied;
+    } catch {
+      setActionError(true);
+      return false;
+    }
+  };
   const replaceAppearance = (appearance: Partial<DevHudSettingsV1["appearance"]>) => invoke(() => identity.replaceSettings((current) => ({
     ...current,
     appearance: { ...current.appearance, ...appearance },
@@ -309,8 +320,8 @@ function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvid
       {identity.status === "blocked" && <StatusBadge tone="warning">{copy.blockedLocalHint}</StatusBadge>}
       {identity.status === "deletion-pending" && <StatusBadge tone="warning">{copy.deletionPendingSummary}</StatusBadge>}
       {identity.status === "authenticated" && (identity.offline ? <StatusBadge tone="warning">{copy.offlineSettingsReadOnly}</StatusBadge> : <StatusBadge tone="success">{copy.settingsRevision}: {identity.revision.toString()}</StatusBadge>)}
-      {identity.importDiff && <SnapshotChoice key="import" choiceId="import" copy={copy} entries={identity.importDiff} title={copy.importSettingsTitle} summary={copy.importSettingsSummary} primary={copy.uploadLocal} secondary={copy.replaceLocal} onOpenChange={onModalConfirmationOpenChange} onPrimary={() => invoke(async () => { if (await identity.uploadLocal()) mappingDraft.reset(); })} onSecondary={() => invoke(async () => { if (await identity.replaceLocal()) mappingDraft.reset(); })} />}
-      {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onOpenChange={onModalConfirmationOpenChange} onPrimary={() => invoke(async () => { if (await identity.reapplyConflictLocal()) mappingDraft.reset(); })} onSecondary={() => invoke(async () => { if (await identity.adoptConflictServer()) mappingDraft.reset(); })} />}
+      {identity.importDiff && <SnapshotChoice key="import" choiceId="import" copy={copy} entries={identity.importDiff} title={copy.importSettingsTitle} summary={copy.importSettingsSummary} primary={copy.uploadLocal} secondary={copy.replaceLocal} onOpenChange={onModalConfirmationOpenChange} onPrimary={() => invokeSnapshotAction(identity.uploadLocal)} onSecondary={() => invokeSnapshotAction(identity.replaceLocal)} />}
+      {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onOpenChange={onModalConfirmationOpenChange} onPrimary={() => invokeSnapshotAction(identity.reapplyConflictLocal)} onSecondary={() => invokeSnapshotAction(identity.adoptConflictServer)} />}
       {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <section className="notice" role="alert"><p>{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p><Button onClick={() => invoke(identity.retrySettings)}>{copy.retry}</Button></section>}
     </section>
     <div className={mobile ? "settings-mobile" : "settings-desktop"}>
@@ -473,7 +484,7 @@ function uuidV7(): string {
   return `${time.slice(0, 8)}-${time.slice(8)}-7${tail.slice(0, 3)}-${variant}${tail.slice(3, 6)}-${tail.slice(6, 18)}`;
 }
 
-function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, secondary, onOpenChange, onPrimary, onSecondary }: { readonly choiceId: string; readonly copy: Copy; readonly entries: readonly SettingsDiffEntry[]; readonly title: string; readonly summary: string; readonly primary: string; readonly secondary: string; readonly onOpenChange?: (open: boolean) => void; readonly onPrimary: () => void; readonly onSecondary: () => void }) {
+function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, secondary, onOpenChange, onPrimary, onSecondary }: { readonly choiceId: string; readonly copy: Copy; readonly entries: readonly SettingsDiffEntry[]; readonly title: string; readonly summary: string; readonly primary: string; readonly secondary: string; readonly onOpenChange?: (open: boolean) => void; readonly onPrimary: () => Promise<boolean>; readonly onSecondary: () => Promise<boolean> }) {
   const [open, setOpen] = useState(true);
   const dialog = useRef<HTMLElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -482,9 +493,8 @@ function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, seco
     setOpen(false);
     requestAnimationFrame(() => restoreFocus.current?.focus());
   };
-  const choose = (action: () => void) => {
-    action();
-    requestAnimationFrame(() => restoreFocus.current?.focus());
+  const choose = async (action: () => Promise<boolean>) => {
+    if (await action()) requestAnimationFrame(() => restoreFocus.current?.focus());
   };
   useEffect(() => {
     if (!open) return;
@@ -506,7 +516,7 @@ function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, seco
     <button ref={closeButton} type="button" onClick={close}>{copy.close}</button>
     <h4 id={titleId}>{title}</h4><p>{summary}</p>
     <table><caption>{copy.completeSnapshotDiff}</caption><thead><tr><th scope="col">{copy.settingPath}</th><th scope="col">{copy.localValue}</th><th scope="col">{copy.serverValue}</th></tr></thead><tbody>{entries.length === 0 ? <tr><td colSpan={3}>{copy.noDifferences}</td></tr> : entries.map((entry) => <tr key={`${entry.path}:${entry.kind}`}><th scope="row">{entry.path}</th><td><code>{printValue(entry.local)}</code></td><td><code>{printValue(entry.server)}</code></td></tr>)}</tbody></table>
-    <div className="actions"><button onClick={() => choose(onPrimary)}>{primary}</button><button onClick={() => choose(onSecondary)}>{secondary}</button></div>
+    <div className="actions"><button onClick={() => void choose(onPrimary)}>{primary}</button><button onClick={() => void choose(onSecondary)}>{secondary}</button></div>
   </section>;
 }
 
