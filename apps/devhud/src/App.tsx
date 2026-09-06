@@ -273,7 +273,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     };
   }, [bridge, initialContentState, initialRuntime]);
   useEffect(() => {
-    if (onboarding || updaterApprovalOpen || !deckLinkPending || deckLinkPolicyOrigin !== preferences.apiOrigin) return;
+    if (onboarding || updaterApprovalOpen || screenModalConfirmationOpen || !deckLinkPending || deckLinkPolicyOrigin !== preferences.apiOrigin) return;
     let active = true;
     void bridge.request({ operation: "deck.take-pending-link" }).then((pendingDeck) => {
       if (!active) return;
@@ -287,7 +287,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       if (active) setDeckLinkPending(false);
     });
     return () => { active = false; };
-  }, [bridge, deckLinkPending, deckLinkPolicyOrigin, onboarding, preferences.apiOrigin, updaterApprovalOpen]);
+  }, [bridge, deckLinkPending, deckLinkPolicyOrigin, onboarding, preferences.apiOrigin, screenModalConfirmationOpen, updaterApprovalOpen]);
   useEffect(() => {
     if (!runtime) return;
     const captureError = (event: ErrorEvent) => {
