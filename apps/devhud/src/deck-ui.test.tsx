@@ -583,6 +583,23 @@ describe("Deck surface", () => {
     await waitFor(() => expect(document.activeElement).toBe(settings));
   });
 
+  it("moves focus into the desktop editor when an open mobile Deck sheet leaves the layout", async () => {
+    setViewport(390);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    const name = screen.getByLabelText(messages.en.deckName);
+    name.focus();
+    setViewport(701);
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull());
+    const desktopName = screen.getByLabelText(messages.en.deckName);
+    await waitFor(() => expect(document.activeElement).toBe(desktopName));
+    expect(screen.getByRole("complementary", { name: messages.en.deckConfiguration })).toBeTruthy();
+  });
+
   it("clears the screen-modal flag when an open widget confirmation unmounts", async () => {
     const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
     const onModalConfirmationOpenChange = vi.fn();
@@ -593,6 +610,33 @@ describe("Deck surface", () => {
     await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(true));
     view.unmount();
     expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("clears the screen-modal flag when an open widget confirmation loses its GitHub profile", async () => {
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const onModalConfirmationOpenChange = vi.fn();
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} onModalConfirmationOpenChange={onModalConfirmationOpenChange} /></DeckPollingBoundary>);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [] }, decks: [] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} onModalConfirmationOpenChange={onModalConfirmationOpenChange} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
+    await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(false));
+  });
+
+  it("clears the screen-modal flag when a missing Deck deep link replaces an open widget confirmation", async () => {
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const onModalConfirmationOpenChange = vi.fn();
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} onModalConfirmationOpenChange={onModalConfirmationOpenChange} /></DeckPollingBoundary>);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId="018f47a2-7b3c-7def-8abc-1234567890ad" onModalConfirmationOpenChange={onModalConfirmationOpenChange} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
+    await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(false));
   });
 
   it("surfaces a widget enable failure inside the active privacy confirmation", async () => {

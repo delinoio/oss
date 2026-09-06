@@ -564,9 +564,11 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const widgetDisableButton = useRef<HTMLButtonElement>(null);
   const mobileSettingsButton = useRef<HTMLButtonElement>(null);
   const mobile = shellLayout === ShellLayout.Mobile;
+  const previousMobile = useRef(mobile);
   const linkedDeckAvailable = selectedDeckId !== null && identity.settings.decks.some((item) => item.id === selectedDeckId);
   const previousLinkedDeck = useRef({ id: selectedDeckId, available: linkedDeckAvailable });
   const missingLinkedDeck = selectedDeckId !== null && !linkedDeckAvailable;
+  const noGitHubProfiles = identity.settings.github.profiles.length === 0;
   const selectedDeck = missingLinkedDeck ? null : identity.settings.decks.find((item) => item.id === selected) ?? identity.settings.decks[0] ?? null;
   const isCreating = creating || selectedDeck === null;
   const deck = isCreating ? null : selectedDeck;
@@ -586,8 +588,8 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     setSettingsOpen(false);
   }, [linkedDeckAvailable, selectedDeckId]);
   useEffect(() => {
-    if (widgetConfirmationDeckId !== null && widgetConfirmationDeck === null) {
-      widgetConfirmationFocusPending.current = mobile && settingsOpen;
+    if (widgetConfirmationDeckId !== null && (widgetConfirmationDeck === null || missingLinkedDeck || noGitHubProfiles)) {
+      widgetConfirmationFocusPending.current = !missingLinkedDeck && !noGitHubProfiles && mobile && settingsOpen;
       setWidgetConfirmationDeckId(null);
       return;
     }
@@ -598,7 +600,17 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
       else settingsSheetBackButton.current?.focus();
     });
     return () => cancelAnimationFrame(animation);
-  }, [mobile, settingsOpen, widgetConfirmationDeck, widgetConfirmationDeckId]);
+  }, [missingLinkedDeck, mobile, noGitHubProfiles, settingsOpen, widgetConfirmationDeck, widgetConfirmationDeckId]);
+  useEffect(() => {
+    const wasMobile = previousMobile.current;
+    previousMobile.current = mobile;
+    if (!wasMobile || mobile || !settingsOpen || widgetConfirmationOpen) return;
+    // The Sheet unmounts on this layout move, so its opener cannot restore focus into the desktop editor.
+    const animation = requestAnimationFrame(() => {
+      if (deckNameInput.current !== null && !deckNameInput.current.disabled) deckNameInput.current.focus();
+    });
+    return () => cancelAnimationFrame(animation);
+  }, [mobile, settingsOpen, widgetConfirmationOpen]);
   useEffect(() => {
     // Creation replaces the keyed editor while its Sheet stays open, so restore focus after the replacement mounts.
     if (createdDeckToFocus.current !== deck?.id) return;
@@ -627,7 +639,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     } catch { setDeleteFailedDeckId(value.id); }
   };
   if (missingLinkedDeck) return <section className="deck" aria-labelledby="deck-title"><h2 id="deck-title">{copy.deckTitle}</h2><p role="alert">{copy.deckNotFound}</p><button type="button" onClick={onDismissMissingLink}>{copy.deckReturnToList}</button></section>;
-  if (identity.settings.github.profiles.length === 0) return <>{polling.online ? <EmptyState copy={copy} /> : <OfflineState copy={copy} />}<p role="status">{copy.deckNoProfiles}</p></>;
+  if (noGitHubProfiles) return <>{polling.online ? <EmptyState copy={copy} /> : <OfflineState copy={copy} />}<p role="status">{copy.deckNoProfiles}</p></>;
   const creationDisabled = identity.readOnly || identity.settings.decks.length >= DeckLimit;
   const createDisabled = creationDisabled || pendingCreation;
   const openCreate = () => {
