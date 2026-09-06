@@ -96,6 +96,8 @@ describe("RealQA capture and editor", () => {
 
     const flow = document.querySelector(".realqa-flow") as HTMLElement;
     expect(Array.from(flow.children, (element) => element.className)).toEqual(expect.arrayContaining(["ui-card realqa-capture-card", "ui-card realqa-policy"]));
+    const captureCard = document.querySelector(".realqa-capture-card") as HTMLElement;
+    expect(within(captureCard).getByRole("heading", { level: 3, name: messages.en.realqaCapture })).toBeTruthy();
     for (const label of [messages.en.captureDisplay, messages.en.captureWindow, messages.en.captureAll, messages.en.captureSelection, messages.en.captureToolbar]) {
       expect(screen.getByRole("button", { name: label })).toBeTruthy();
     }
@@ -108,6 +110,21 @@ describe("RealQA capture and editor", () => {
     expect(flow.textContent).not.toMatch(/used|%/iu);
     expect(document.querySelector(".realqa-flow .progress")).toBeNull();
     expect(screen.getByRole("status").textContent).toContain(messages.en.realqaNoDrafts);
+  });
+
+  it("returns palette focus to an open editor sheet", async () => {
+    const { bridge } = bridgeWith();
+    const view = render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    await openEditor();
+
+    view.rerender(<RealqaSurface bridge={bridge} copy={messages.en} paletteOpen />);
+    screen.getByRole("button", { name: messages.en.captureDisplay }).focus();
+    view.rerender(<RealqaSurface bridge={bridge} copy={messages.en} paletteOpen={false} />);
+
+    const image = screen.getByRole("button", { name: `${messages.en.editorImage} 1` });
+    await waitFor(() => expect(document.activeElement).toBe(image));
+    fireEvent.keyDown(image, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.close }));
   });
 
   it.each([

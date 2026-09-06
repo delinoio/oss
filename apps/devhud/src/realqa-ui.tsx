@@ -96,6 +96,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   const draftEditorOpener = useRef<HTMLElement | null>(null);
   const inSheetPreview = useRef<HTMLElement | null>(null);
   const editorPreviewFallback = useRef<HTMLButtonElement | null>(null);
+  const paletteWasOpen = useRef(false);
   const previewSequence = useRef(0);
   const resetGeneration = useRef(0);
   const draftsById = useRef(new Map<string, CaptureDraft>());
@@ -360,6 +361,25 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     return () => window.clearTimeout(timer);
   }, [dismissPreview, previewRequest?.sequence]);
   useEffect(() => {
+    if (paletteOpen) {
+      paletteWasOpen.current = true;
+      return;
+    }
+    if (!paletteWasOpen.current) return;
+    paletteWasOpen.current = false;
+    if (!selected || captureDialog) return;
+    let deferredRecovery = 0;
+    const recovery = requestAnimationFrame(() => {
+      // The palette restores its trigger in its own animation frame. Recover
+      // afterward so the still-open sheet retains keyboard focus.
+      deferredRecovery = requestAnimationFrame(() => editorPreviewFallback.current?.focus());
+    });
+    return () => {
+      cancelAnimationFrame(recovery);
+      cancelAnimationFrame(deferredRecovery);
+    };
+  }, [captureDialog, paletteOpen, selected]);
+  useEffect(() => {
     const key = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         if (busy || captureDialog) cancelCapture();
@@ -447,7 +467,7 @@ function CaptureActions() {
     [ShortcutActionId.CaptureAllDisplays, "captureAll"], [ShortcutActionId.CaptureSelection, "captureSelection"], [ShortcutActionId.CaptureToolbar, "captureToolbar"],
   ];
   return <Card className="realqa-capture-card" aria-labelledby="realqa-capture-title">
-    <div className="realqa-section-heading"><div><StatusBadge tone="info">{copy.realqaCapture}</StatusBadge><h3 id="realqa-capture-title">{copy.captureDisplay}</h3></div></div>
+    <div className="realqa-section-heading"><div><StatusBadge tone="info">{copy.realqaCapture}</StatusBadge><h3 id="realqa-capture-title">{copy.realqaCapture}</h3></div></div>
     <Button variant="primary" disabled={state.busy} onClick={() => void actions.capture(ShortcutActionId.CaptureDisplay)}>{copy.captureDisplay}</Button>
     <div className="capture-actions" aria-label={copy.captureMode}>{items.slice(1).map(([action, label]) => <Button key={action} disabled={state.busy} onClick={() => void actions.capture(action)}>{copy[label]}</Button>)}</div>
   </Card>;
