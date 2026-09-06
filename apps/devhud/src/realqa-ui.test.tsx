@@ -113,7 +113,7 @@ describe("RealQA capture and editor", () => {
     [NativeBridgeErrorCode.PermissionDenied, "realqaPermissionTitle", "capturePermission"],
     [NativeBridgeErrorCode.ProtectedContent, "realqaProtectedTitle", "captureProtected"],
     [NativeBridgeErrorCode.TopologyChanged, "realqaTopologyTitle", "captureTopologyChanged"],
-    [NativeBridgeErrorCode.StorageFailure, "realqaSaveTitle", "captureFailed"],
+    [NativeBridgeErrorCode.StorageFailure, "realqaSaveTitle", "realqaSaveFailed"],
   ] as const)("presents %s with localized text and an icon-backed state panel", async (code, titleKey, summaryKey) => {
     const { bridge } = bridgeWith(async (value) => {
       if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
@@ -139,7 +139,7 @@ describe("RealQA capture and editor", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain(messages.en.realqaSaveTitle);
-    expect(alert.textContent).toContain(messages.en.captureFailed);
+    expect(alert.textContent).toContain(messages.en.realqaSaveFailed);
   });
 
   it("keeps nested RealQA state-panel headings below their containing sections", async () => {

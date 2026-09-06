@@ -67,7 +67,7 @@ function errorCopy(copy: Copy, reason: unknown): RealqaFeedback | null {
     if (reason.code === NativeBridgeErrorCode.QuotaExhausted) return { kind: RealqaFeedbackKind.Quota, summary: copy.captureQuotaFull };
     if (reason.code === NativeBridgeErrorCode.ImageLimit) return { kind: RealqaFeedbackKind.Capture, summary: copy.captureImageLimit };
     if (reason.code === NativeBridgeErrorCode.PermissionDenied) return { kind: RealqaFeedbackKind.Permission, summary: copy.capturePermission };
-    if (reason.code === NativeBridgeErrorCode.StorageFailure) return { kind: RealqaFeedbackKind.Save, summary: copy.captureFailed };
+    if (reason.code === NativeBridgeErrorCode.StorageFailure) return { kind: RealqaFeedbackKind.Save, summary: copy.realqaSaveFailed };
     if (reason.code === NativeBridgeErrorCode.Cancelled) return null;
   }
   return { kind: RealqaFeedbackKind.Capture, summary: copy.captureFailed };
