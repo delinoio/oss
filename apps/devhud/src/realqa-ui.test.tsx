@@ -102,7 +102,9 @@ describe("RealQA capture and editor", () => {
     expect(screen.getByText(messages.en.realqaPolicySummary)).toBeTruthy();
     expect(screen.getByText(messages.en.realqaPolicyQuota)).toBeTruthy();
     expect(messages.en.realqaPolicyQuota).toMatch(/log out/iu);
+    expect(messages.en.realqaPolicyQuota).toMatch(/confirmed issue creation/iu);
     expect(messages.ko.realqaPolicyQuota).toContain("로그아웃");
+    expect(messages.ko.realqaPolicyQuota).toContain("확인된 이슈 생성");
     expect(flow.textContent).not.toMatch(/used|%/iu);
     expect(document.querySelector(".realqa-flow .progress")).toBeNull();
     expect(screen.getByRole("status").textContent).toContain(messages.en.realqaNoDrafts);

@@ -425,7 +425,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
         {!selected && <CaptureFeedback status={status} error={error} />}
         <DraftList />
       </div>
-      {selected && <CaptureEditor key={selected.id} draft={selected} previewImage={!captureDialog && !paletteOpen ? previewImage : null} previewRef={inSheetPreview} previewFocusFallbackRef={editorPreviewFallback} returnFocusRef={draftEditorOpener} restoreFocus={draftEditorOpener.current !== null} onPreviewOpen={openPreview} />}
+      {selected && <CaptureEditor key={selected.id} draft={selected} previewImage={!captureDialog && !paletteOpen ? previewImage : null} previewRef={inSheetPreview} previewFocusFallbackRef={editorPreviewFallback} returnFocusRef={draftEditorOpener} restoreFocus onPreviewOpen={openPreview} />}
       {captureDialog && <CaptureDialog key={captureDialog} action={captureDialog} status={captureStatus} options={options} onOptions={setOptions} onCapture={completeCapture} onClose={cancelCapture} />}
     </>}
     {preview && previewImage && !selected && !captureDialog && !paletteOpen && <aside className="floating-capture-preview" aria-label={copy.floatingPreview}>
