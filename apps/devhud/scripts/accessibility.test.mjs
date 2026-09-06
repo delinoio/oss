@@ -88,7 +88,7 @@ test("RealQA uses the shared state primitives and remains readable at narrow and
   for (const primitive of ["<PageHeader", "<Card", "<Button", "<StatusBadge", "<StatePanel", "<Dialog", "<Sheet"]) assert(realqa.includes(primitive), `RealQA must use ${primitive}`);
   assert.match(realqa, /realqaPolicyQuota/u);
   assert.doesNotMatch(realqa, /(?:used bytes|quota meter|quota percentage|<progress)/iu);
-  assert.match(styles, /\.ui-dialog,\.ui-sheet\s*\{[^}]*max-height:calc\(100vh/u);
+  assert.match(styles, /\.ui-dialog,\.ui-sheet\s*\{[^}]*max-height:calc\(100vh - var\(--ui-overlay-top\) - var\(--ui-overlay-bottom\)\)/u);
   assert.match(styles, /@media\(max-width:700px\)\{[^}]*\.capture-actions \.ui-button\{width:100%;min-width:0/u);
   assert.match(styles, /\.draft-list\{[^}]*minmax\(15rem,1fr\)/u);
 });

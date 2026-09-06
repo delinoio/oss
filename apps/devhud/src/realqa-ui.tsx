@@ -1,4 +1,4 @@
-import { createContext, use, useCallback, useEffect, useImperativeHandle, useRef, useState, type PointerEvent, type Ref } from "react";
+import { createContext, use, useCallback, useEffect, useImperativeHandle, useRef, useState, type PointerEvent, type Ref, type RefObject } from "react";
 import type { Copy } from "./localization";
 import { NativeBridgeError, NativeBridgeErrorCode, type CaptureDisplay, type CaptureDraft, type CaptureDraftImage, type CaptureEditorCommand, type CaptureEditorLayer, type CaptureOptions, type CapturePoint, type CaptureRect, type FlattenedCaptureImage, type NativeBridgeV1 } from "./native-bridge";
 import { ShortcutActionId } from "./shortcuts";
@@ -10,6 +10,7 @@ type EditorTool = "crop" | "arrow" | "rectangle" | "drawing" | "text" | "blur" |
 type CaptureRequest = { readonly action: CaptureActionId; readonly sequence: number };
 type FloatingPreviewRequest = { readonly draft: CaptureDraft; readonly imageId?: string; readonly sequence: number };
 enum RealqaFeedbackKind {
+  BrowserContext = "browser-context",
   Capture = "capture",
   Quota = "quota",
   Permission = "permission",
@@ -92,6 +93,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   const draftListRequest = useRef(0);
   const draftOpenRequest = useRef(0);
   const captureDialogOpener = useRef<HTMLElement | null>(null);
+  const draftEditorOpener = useRef<HTMLElement | null>(null);
   const previewSequence = useRef(0);
   const resetGeneration = useRef(0);
   const draftsById = useRef(new Map<string, CaptureDraft>());
@@ -155,6 +157,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   const openDraft = useCallback(async (draft: CaptureDraft) => {
     const generation = resetGeneration.current;
     const request = ++draftOpenRequest.current;
+    draftEditorOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setError(null);
     try {
       const response = await runDraftOperation(draft.id, async (_current, install) => {
@@ -278,7 +281,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       setSelected((current) => (current?.id ?? null) === originatingDraftId ? response.draft : current);
       setPreviewRequest({ draft: response.draft, imageId: previewImageId, sequence: ++previewSequence.current });
       setStatus(copy.captureSaved);
-      if (contextAttachmentFailed) setError({ kind: RealqaFeedbackKind.Capture, summary: copy.nativeMessagingFailed });
+      if (contextAttachmentFailed) setError({ kind: RealqaFeedbackKind.BrowserContext, summary: copy.browserContextAttachmentFailed });
       dismissCaptureDialog(false);
       try { await refresh(); } catch { /* The capture response is already authoritative. */ }
     } catch (reason) {
@@ -402,10 +405,10 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
         {!selected && <CaptureFeedback status={status} error={error} />}
         <DraftList />
       </div>
-      {selected && <CaptureEditor key={selected.id} draft={selected} />}
+      {selected && <CaptureEditor key={selected.id} draft={selected} previewImage={!captureDialog && !paletteOpen && preview?.id === selected.id ? previewImage : null} returnFocusRef={draftEditorOpener} onPreviewOpen={() => { setPreviewRequest(null); onActivate?.(); }} />}
       {captureDialog && <CaptureDialog key={captureDialog} action={captureDialog} status={captureStatus} options={options} onOptions={setOptions} onCapture={completeCapture} onClose={cancelCapture} />}
     </>}
-    {preview && previewImage && !captureDialog && !paletteOpen && <aside className="floating-capture-preview" aria-label={copy.floatingPreview}>
+    {preview && previewImage && !selected && !captureDialog && !paletteOpen && <aside className="floating-capture-preview" aria-label={copy.floatingPreview}>
       <img src={previewImage.previewUrl} alt="" />
       <button onClick={() => { setSelected(preview); setPreviewRequest(null); onActivate?.(); }}>{copy.floatingPreviewOpen}</button>
     </aside>}
@@ -438,6 +441,7 @@ function DraftPolicy() {
 function FeedbackPanel({ feedback, headingLevel = 3 }: { readonly feedback: RealqaFeedback; readonly headingLevel?: 2 | 3 | 4 }) {
   const { meta: { copy } } = useRealqa();
   const presentation: Record<RealqaFeedbackKind, { readonly title: string; readonly tone: StatusTone }> = {
+    [RealqaFeedbackKind.BrowserContext]: { title: copy.browserContextAttachmentTitle, tone: "warning" },
     [RealqaFeedbackKind.Capture]: { title: copy.realqaCaptureFailedTitle, tone: "danger" },
     [RealqaFeedbackKind.Quota]: { title: copy.realqaQuotaTitle, tone: "warning" },
     [RealqaFeedbackKind.Permission]: { title: copy.realqaPermissionTitle, tone: "warning" },
@@ -552,7 +556,7 @@ function RegionPicker({ displays, value, onChange, label }: { readonly displays:
   </svg>;
 }
 
-function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
+function CaptureEditor({ draft, previewImage, returnFocusRef, onPreviewOpen }: { readonly draft: CaptureDraft; readonly previewImage: CaptureDraftImage | null; readonly returnFocusRef: RefObject<HTMLElement | null>; readonly onPreviewOpen: () => void }) {
   const { state: { busy, status, error }, actions, meta: { bridge, copy } } = useRealqa();
   const [imageId, setImageId] = useState(draft.images[0]?.id ?? "");
   const [tool, setTool] = useState<EditorTool>("arrow");
@@ -685,7 +689,8 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
   const confirmCreated = async (expectedRevision: number) => {
     await actions.confirmIssueCreated(draft.id, expectedRevision);
   };
-  return <Sheet open title={copy.editorTitle} backLabel={copy.close} onClose={actions.close}><section className="capture-editor" aria-label={copy.editorTitle}>
+  return <Sheet open title={copy.editorTitle} backLabel={copy.close} returnFocusRef={returnFocusRef} onClose={actions.close}><section className="capture-editor" aria-label={copy.editorTitle}>
+    {previewImage && <aside className="sheet-capture-preview" aria-label={copy.floatingPreview}><img src={previewImage.previewUrl} alt="" /><button onClick={onPreviewOpen}>{copy.floatingPreviewOpen}</button></aside>}
     <CaptureFeedback status={status} error={error} />
     <p className="editor-close-hint">{copy.editorCloseHint}</p>
     {draft.browserContext && <section aria-labelledby="browser-context-title"><h3 id="browser-context-title">{copy.browserContextAttached}</h3><dl className="runtime-diagnostics"><dt>{copy.browserContextPageTitle}</dt><dd>{draft.browserContext.context.title || "—"}</dd><dt>{copy.browserContextRedactedUrl}</dt><dd>{draft.browserContext.context.url}</dd></dl><details><summary>{copy.browserContextDetails}</summary><dl className="runtime-diagnostics"><dt>{copy.browserContextViewport}</dt><dd>{draft.browserContext.context.viewport.width} × {draft.browserContext.context.viewport.height}</dd><dt>{copy.browserContextUserAgent}</dt><dd>{draft.browserContext.context.userAgent}</dd><dt>{copy.browserContextSelectedBounds}</dt><dd>{draft.browserContext.context.selectedBounds ? `x ${draft.browserContext.context.selectedBounds.x}, y ${draft.browserContext.context.selectedBounds.y}, width ${draft.browserContext.context.selectedBounds.width}, height ${draft.browserContext.context.selectedBounds.height}` : copy.browserContextNone}</dd><dt>{copy.browserContextAccessibility}</dt><dd>{Object.entries(draft.browserContext.context.accessibility).length ? <dl>{Object.entries(draft.browserContext.context.accessibility).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl> : copy.browserContextNone}</dd><dt>{copy.browserContextMarkup}</dt><dd><pre>{draft.browserContext.context.outerHtml || copy.browserContextNone}</pre></dd></dl></details><Button variant="danger" disabled={busy} onClick={removeBrowserContext}>{copy.browserContextRemove}</Button></section>}

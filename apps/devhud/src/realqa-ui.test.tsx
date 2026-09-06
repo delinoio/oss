@@ -226,6 +226,23 @@ describe("RealQA capture and editor", () => {
     expect(screen.getByRole("img", { name: messages.en.editorCanvas }).querySelector("img")?.getAttribute("src")).toBe(openedDraft.images[0].previewUrl);
   });
 
+  it("restores the draft opener recorded before a delayed draft load", async () => {
+    let resolveOpen: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const { bridge, request } = bridgeWith(undefined, async () => new Promise<NativeBridgeResponseV1>((resolve) => { resolveOpen = resolve; }));
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    const opener = await screen.findByRole("button", { name: messages.en.realqaOpenEditor });
+    opener.focus();
+    fireEvent.click(opener);
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "capture.open-draft", draftId: draft.id }));
+    screen.getByRole("button", { name: messages.en.captureDisplay }).focus();
+    await act(async () => { resolveOpen?.({ kind: "capture-draft", draft }); });
+    await screen.findByRole("dialog", { name: messages.en.editorTitle });
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.close }));
+    await waitFor(() => expect(opener).toBe(document.activeElement));
+  });
+
   it("keeps an expired draft out of the editor and reconciles the cached list", async () => {
     let listRequests = 0;
     const { bridge } = bridgeWith(async (value) => {
@@ -435,7 +452,9 @@ describe("RealQA capture and editor", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
 
     expect(await screen.findByText(messages.en.captureSaved)).toBeTruthy();
-    expect(screen.getByRole("alert").textContent).toContain(messages.en.nativeMessagingFailed);
+    expect(screen.getByRole("alert").textContent).toContain(messages.en.browserContextAttachmentTitle);
+    expect(screen.getByRole("alert").textContent).toContain(messages.en.browserContextAttachmentFailed);
+    expect(screen.getByRole("alert").textContent).not.toContain(messages.en.realqaCaptureFailedTitle);
     expect(screen.getByRole("complementary", { name: messages.en.floatingPreview })).toBeTruthy();
   });
 
@@ -945,6 +964,7 @@ describe("RealQA capture and editor", () => {
 
     const preview = await screen.findByRole("complementary", { name: messages.en.floatingPreview });
     expect(preview.querySelector("img")?.getAttribute("src")).toBe(appendedImage.previewUrl);
+    expect(screen.getByRole("dialog", { name: messages.en.editorTitle }).contains(preview)).toBe(true);
   });
 
   it("caps text annotations at the native Unicode character limit", async () => {
