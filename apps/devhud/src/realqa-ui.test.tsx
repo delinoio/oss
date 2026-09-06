@@ -100,6 +100,8 @@ describe("RealQA capture and editor", () => {
     }
     expect(screen.getByText(messages.en.realqaPolicySummary)).toBeTruthy();
     expect(screen.getByText(messages.en.realqaPolicyQuota)).toBeTruthy();
+    expect(messages.en.realqaPolicyQuota).toMatch(/log out/iu);
+    expect(messages.ko.realqaPolicyQuota).toContain("로그아웃");
     expect(flow.textContent).not.toMatch(/used|%/iu);
     expect(document.querySelector(".realqa-flow .progress")).toBeNull();
     expect(screen.getByRole("status").textContent).toContain(messages.en.realqaNoDrafts);
@@ -419,6 +421,53 @@ describe("RealQA capture and editor", () => {
     else fireEvent.keyDown(dialog, { key: "Escape" });
 
     await waitFor(() => expect(opener).toBe(document.activeElement));
+  });
+
+  it("restores the opener recorded before a delayed topology refresh", async () => {
+    let statusRequests = 0;
+    let resolveDialogStatus: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") {
+        statusRequests += 1;
+        if (statusRequests === 1) return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+        return new Promise((resolve) => { resolveDialogStatus = resolve; });
+      }
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    await waitFor(() => expect(statusRequests).toBe(1));
+
+    const opener = screen.getByRole("button", { name: messages.en.captureSelection });
+    opener.focus();
+    fireEvent.click(opener);
+    screen.getByRole("button", { name: messages.en.captureDisplay }).focus();
+    await act(async () => { resolveDialogStatus?.({ kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] }); });
+    await screen.findByRole("dialog", { name: messages.en.captureSelection });
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureCancel }));
+    await waitFor(() => expect(opener).toBe(document.activeElement));
+  });
+
+  it.each([
+    ["success", undefined, "status", "captureSaved"],
+    ["quota failure", NativeBridgeErrorCode.QuotaExhausted, "alert", "captureQuotaFull"],
+  ] as const)("keeps append capture %s feedback visible in the editor sheet", async (_case, failure, role, copyKey) => {
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") {
+        if (failure) throw new NativeBridgeError(failure);
+        return { kind: "capture-draft", draft: { ...draft, revision: 4, imageCount: 2, images: [...draft.images, { ...draft.images[0], id: "019b0000-0000-7000-8000-000000000021" }] } };
+      }
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    await openEditor();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+
+    const sheet = screen.getByRole("dialog", { name: messages.en.editorTitle });
+    expect((await within(sheet).findByRole(role)).textContent).toContain(messages.en[copyKey]);
   });
 
   it("uses fresh topology when opening a dialog and ignores an older pending status", async () => {
