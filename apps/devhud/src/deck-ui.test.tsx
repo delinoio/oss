@@ -555,6 +555,34 @@ describe("Deck surface", () => {
     expect(JSON.stringify(request.mock.calls)).not.toMatch(/github[_-]?pat|Bearer|token-value/iu);
   });
 
+  it("restores the mobile Deck settings action when a desktop widget confirmation is dismissed after resizing", async () => {
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    setViewport(390);
+    const settings = await screen.findByRole("button", { name: messages.en.deckSettings });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyCancel }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(settings));
+  });
+
+  it("restores the mobile Deck settings action when a desktop widget confirmation enables after resizing", async () => {
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    setViewport(390);
+    const settings = await screen.findByRole("button", { name: messages.en.deckSettings });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(settings));
+  });
+
   it("clears the screen-modal flag when an open widget confirmation unmounts", async () => {
     const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
     const onModalConfirmationOpenChange = vi.fn();

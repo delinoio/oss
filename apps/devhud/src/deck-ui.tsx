@@ -562,6 +562,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const widgetConfirmationFocusPending = useRef(false);
   const widgetEnableTrigger = useRef<HTMLButtonElement>(null);
   const widgetDisableButton = useRef<HTMLButtonElement>(null);
+  const mobileSettingsButton = useRef<HTMLButtonElement>(null);
   const mobile = shellLayout === ShellLayout.Mobile;
   const linkedDeckAvailable = selectedDeckId !== null && identity.settings.decks.some((item) => item.id === selectedDeckId);
   const previousLinkedDeck = useRef({ id: selectedDeckId, available: linkedDeckAvailable });
@@ -690,7 +691,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
       {selectedDeck && <Field label={copy.deckSelected} inputId="deck-selected"><select id="deck-selected" value={isCreating ? "" : selectedDeck.id} onChange={(event) => event.target.value === "" ? openCreate() : selectDeck(event.target.value)}>{isCreating && <option value="">{copy.deckCreate}</option>}{identity.settings.decks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>}
       <Button ref={createDeckButton} variant="primary" disabled={createDisabled} onClick={openCreate}>{copy.deckCreate}</Button>
       {deck && <Button disabled={refreshState.loading || !polling.canPoll} onClick={() => void polling.refresh(deck.id, true)}>{copy.deckRefresh}</Button>}
-      {mobile && deck && <Button onClick={openSettings}>{copy.deckSettings}</Button>}
+      {mobile && deck && <Button ref={mobileSettingsButton} onClick={openSettings}>{copy.deckSettings}</Button>}
     </div>} />
     <div className="deck-workspace-layout">
       <div className="deck-workspace">
@@ -701,7 +702,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
       {!mobile && <aside className="deck-configuration-panel" aria-label={copy.deckConfiguration} inert={widgetConfirmationOpen || undefined}>{configuration}</aside>}
     </div>
     {mobile && <Sheet open={settingsOpen} inert={widgetConfirmationOpen} title={isCreating ? copy.deckCreate : copy.deckConfiguration} backLabel={copy.back} returnFocusRef={sheetReturnFocus} backButtonRef={settingsSheetBackButton} onClose={closeSettings}>{configuration}</Sheet>}
-    {widgetConfirmationDeck && <WidgetPrivacyConfirmation cache={widgetConfirmationRefreshState.cache} cacheProfileRef={widgetConfirmationRefreshState.cacheProfileRef} copy={copy} deck={widgetConfirmationDeck} failure={widgetConfirmationRefreshState.failure} open={widgetConfirmationOpen} enableTriggerRef={widgetEnableTrigger} disableButtonRef={widgetDisableButton} onOpenChange={(open) => setWidgetConfirmationDeckId(open ? widgetConfirmationDeck.id : null)} />}
+    {widgetConfirmationDeck && <WidgetPrivacyConfirmation cache={widgetConfirmationRefreshState.cache} cacheProfileRef={widgetConfirmationRefreshState.cacheProfileRef} copy={copy} deck={widgetConfirmationDeck} failure={widgetConfirmationRefreshState.failure} open={widgetConfirmationOpen} enableTriggerRef={widgetEnableTrigger} disableButtonRef={widgetDisableButton} fallbackFocusRef={mobileSettingsButton} onOpenChange={(open) => setWidgetConfirmationDeckId(open ? widgetConfirmationDeck.id : null)} />}
   </section>;
 }
 
@@ -744,18 +745,21 @@ function WidgetAccess({ cache, cacheProfileRef, copy, deck, failure, enableTrigg
   </section>;
 }
 
-function WidgetPrivacyConfirmation({ cache, cacheProfileRef, copy, deck, failure, open, enableTriggerRef, disableButtonRef, onOpenChange }: { readonly cache: DeckCache | null; readonly cacheProfileRef: Deck["profileRef"] | null; readonly copy: Copy; readonly deck: Deck; readonly failure: DeckFailure | null; readonly open: boolean; readonly enableTriggerRef: RefObject<HTMLButtonElement | null>; readonly disableButtonRef: RefObject<HTMLButtonElement | null>; readonly onOpenChange: (open: boolean) => void }) {
+function WidgetPrivacyConfirmation({ cache, cacheProfileRef, copy, deck, failure, open, enableTriggerRef, disableButtonRef, fallbackFocusRef, onOpenChange }: { readonly cache: DeckCache | null; readonly cacheProfileRef: Deck["profileRef"] | null; readonly copy: Copy; readonly deck: Deck; readonly failure: DeckFailure | null; readonly open: boolean; readonly enableTriggerRef: RefObject<HTMLButtonElement | null>; readonly disableButtonRef: RefObject<HTMLButtonElement | null>; readonly fallbackFocusRef: RefObject<HTMLButtonElement | null>; readonly onOpenChange: (open: boolean) => void }) {
   const widgetAccess = useWidgetAccess();
   const [busy, setBusy] = useState(false);
   const [enableFailed, setEnableFailed] = useState(false);
   const dialog = useRef<HTMLElement>(null);
   const cancelButton = useRef<HTMLButtonElement>(null);
   const warningId = `widget-privacy-warning-${deck.id}`;
+  const restoreFocus = useCallback((preferredRef: RefObject<HTMLButtonElement | null>) => {
+    requestAnimationFrame(() => (preferredRef.current ?? fallbackFocusRef.current)?.focus());
+  }, [fallbackFocusRef]);
   const closeConfirmation = useCallback(() => {
     if (busy) return;
     onOpenChange(false);
-    requestAnimationFrame(() => enableTriggerRef.current?.focus());
-  }, [busy, enableTriggerRef, onOpenChange]);
+    restoreFocus(enableTriggerRef);
+  }, [busy, enableTriggerRef, onOpenChange, restoreFocus]);
   useEffect(() => {
     if (!open) return;
     (busy ? dialog.current : cancelButton.current)?.focus();
@@ -774,7 +778,7 @@ function WidgetPrivacyConfirmation({ cache, cacheProfileRef, copy, deck, failure
     try {
       await widgetAccess.enable(deck, cache !== null && cache.query === deck.query && cacheProfileRef === deck.profileRef ? widgetSnapshot(deck, cache, failure) : undefined);
       onOpenChange(false);
-      requestAnimationFrame(() => disableButtonRef.current?.focus());
+      restoreFocus(disableButtonRef);
     } catch { setEnableFailed(true); }
     finally { setBusy(false); }
   };
