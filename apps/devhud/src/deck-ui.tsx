@@ -788,7 +788,8 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
       desktopConfigurationHadFocus.current = false;
       if (!shouldFocusSettings) return;
       if (isCreating) {
-        sheetReturnFocus.current = null;
+        // The desktop editor has already unmounted, so use the persistent action that opened creation.
+        sheetReturnFocus.current = createDeckButton.current;
         settingsSheetGeneration.current += 1;
         setSettingsOpen(true);
         return;
