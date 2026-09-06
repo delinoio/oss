@@ -239,6 +239,10 @@ test("narrow Deck results place status badges below their content", () => {
   assert.match(styles, /@media \(max-width:1023px\)\s*\{\s*\.deck-results \.data-row\s*\{[^}]*grid-template-columns:auto minmax\(0,1fr\)[^}]*\}[^}]*\.deck-results \.data-row-trailing\s*\{[^}]*grid-column:2;[^}]*justify-content:start/u);
 });
 
+test("rail Deck headers stack and constrain their actions", () => {
+  assert.match(styles, /@media \(min-width:701px\) and \(max-width:1023px\)\s*\{[^}]*\.deck > \.page-header\s*\{\s*display:block;\s*\}[^}]*\.deck > \.page-header \.page-header-actions\s*\{[^}]*min-width:0;[^}]*width:100%;[^}]*\}[^}]*\.deck-workspace-controls\s*\{[^}]*justify-content:start;[^}]*min-width:0;[^}]*\}[^}]*\.deck-workspace-controls \.ui-field\s*\{[^}]*flex:1 1 11rem;[^}]*max-width:100%;/u);
+});
+
 test("the shell exposes a localized skip target and named rail tooltips", () => {
   assert.match(foundation, /className="skip-link" href="#devhud-main-content"/u);
   assert.match(foundation, /id="devhud-main-content" className="content" tabIndex=\{-1\}/u);
@@ -276,7 +280,7 @@ test("Deck keeps configuration in the desktop panel and a named mobile sheet", (
   assert.match(deckUi, /sheetReturnFocus\.current = createDeckButton\.current;[\s\S]*setSettingsOpen\(false\)/u);
   assert.doesNotMatch(deckUi, /returnFocusRef=\{settingsTrigger\}/u);
   assert.match(styles, /\.deck-workspace-layout\s*\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(20rem,24rem\)/u);
-  assert.match(styles, /@media \(min-width:701px\) and \(max-width:1023px\) \{ \.deck-workspace-layout \{ grid-template-columns:minmax\(0,1fr\) minmax\(0,min\(24rem,42%\)\); \} \}/u);
+  assert.match(styles, /@media \(min-width:701px\) and \(max-width:1023px\) \{[\s\S]*?\.deck-workspace-layout \{ grid-template-columns:minmax\(0,1fr\) minmax\(0,min\(24rem,42%\)\); \}/u);
   assert.match(styles, /\.deck-workspace-layout\s*\{\s*grid-template-columns:minmax\(0,1fr\);\s*\}/u);
 });
 
