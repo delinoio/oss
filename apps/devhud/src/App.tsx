@@ -493,7 +493,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
 
   return boundary(<>
     {runtime?.platform === RuntimePlatform.Desktop && <SynchronizedShortcutBoundary bridge={bridge} />}
-    <AppShell layout={shellLayout} skipLabel={copy.skipToContent} navigation={navigation} topBar={topBar} bottomBar={bottomBar} data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "desktop"} data-lifecycle={lifecycle}>
+    <AppShell layout={shellLayout} skipLabel={copy.skipToContent} skipLinkInert={screenModalConfirmationOpen} navigation={navigation} topBar={topBar} bottomBar={bottomBar} data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "desktop"} data-lifecycle={lifecycle}>
       {surface === SurfaceId.Home && <><PageHeader eyebrow={copy.availableTools} title={copy.welcome} summary={copy.homeSummary} /><div className="tool-grid">{homeTools.map((item) => {
         const Icon = surfaceIcons[item];
         return <Card key={item} interactive><DataRow icon={<Icon />} title={copy[homeToolTitles[item]]} description={copy[homeToolSummaries[item]]} trailing={<>{mobile && item === SurfaceId.Realqa && <StatusBadge tone="neutral">{copy.desktopOnly}</StatusBadge>}<ArrowRightIcon /></>} onClick={() => navigate(item)} /></Card>;

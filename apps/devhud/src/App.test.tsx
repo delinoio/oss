@@ -68,6 +68,8 @@ describe("native App state", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
 
     const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    const skipLink = screen.getByRole("link", { name: messages.en.skipToContent });
+    const main = screen.getByRole("main");
     const navigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
     const mobileDestinations = within(navigation).getAllByRole("button") as HTMLButtonElement[];
     const more = screen.getByRole("button", { name: messages.en.more }) as HTMLButtonElement;
@@ -76,6 +78,10 @@ describe("native App state", () => {
     expect(mobileDestinations).toHaveLength(5);
     expect(mobileDestinations.every((destination) => destination.disabled)).toBe(true);
     expect(paletteTrigger.disabled).toBe(true);
+    expect(skipLink.hasAttribute("inert")).toBe(true);
+    expect(skipLink.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(skipLink);
+    expect(document.activeElement).not.toBe(main);
     fireEvent.click(more);
     fireEvent.click(within(navigation).getByRole("button", { name: messages.en.home }));
     fireEvent.click(within(navigation).getByRole("button", { name: messages.en.deck }));
@@ -87,6 +93,10 @@ describe("native App state", () => {
 
     fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
     await waitFor(() => expect(more.disabled).toBe(false));
+    expect(skipLink.hasAttribute("inert")).toBe(false);
+    expect(skipLink.hasAttribute("aria-disabled")).toBe(false);
+    fireEvent.click(skipLink);
+    expect(document.activeElement).toBe(main);
     expect(mobileDestinations.every((destination) => !destination.disabled)).toBe(true);
     fireEvent.click(within(navigation).getByRole("button", { name: messages.en.home }));
     expect(await screen.findByRole("heading", { name: messages.en.welcome })).toBeTruthy();

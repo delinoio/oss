@@ -21,7 +21,7 @@ export function useShellLayout(): ShellLayout {
   return layout;
 }
 
-export function AppShell({ layout, skipLabel, navigation, topBar, bottomBar, children, className, style, ...props }: HTMLAttributes<HTMLDivElement> & { readonly layout: ShellLayout; readonly skipLabel: string; readonly navigation?: ReactNode; readonly topBar?: ReactNode; readonly bottomBar?: ReactNode }) {
+export function AppShell({ layout, skipLabel, skipLinkInert = false, navigation, topBar, bottomBar, children, className, style, ...props }: HTMLAttributes<HTMLDivElement> & { readonly layout: ShellLayout; readonly skipLabel: string; readonly skipLinkInert?: boolean; readonly navigation?: ReactNode; readonly topBar?: ReactNode; readonly bottomBar?: ReactNode }) {
   const shell = useRef<HTMLDivElement>(null);
   const main = useRef<HTMLElement>(null);
   const bottomBarContainer = useRef<HTMLDivElement>(null);
@@ -49,10 +49,11 @@ export function AppShell({ layout, skipLabel, navigation, topBar, bottomBar, chi
   }, [hasBottomBar]);
   const skip = (event: React.MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
+    if (skipLinkInert) return;
     main.current?.focus();
   };
   return <div ref={shell} className={`app-shell${className ? ` ${className}` : ""}`} data-shell-layout={layout} style={style} {...props}>
-    <a className="skip-link" href="#devhud-main-content" onClick={skip}>{skipLabel}</a>
+    <a className="skip-link" href="#devhud-main-content" aria-disabled={skipLinkInert || undefined} inert={skipLinkInert} tabIndex={skipLinkInert ? -1 : undefined} onClick={skip}>{skipLabel}</a>
     {navigation}
     {topBar}
     <main ref={main} id="devhud-main-content" className="content" tabIndex={-1} aria-live="polite">{children}</main>
