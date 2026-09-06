@@ -1,4 +1,4 @@
-import { createContext, use, useCallback, useEffect, useImperativeHandle, useRef, useState, type PointerEvent, type Ref, type RefObject } from "react";
+import { createContext, use, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type PointerEvent, type Ref, type RefObject } from "react";
 import type { Copy } from "./localization";
 import { NativeBridgeError, NativeBridgeErrorCode, type CaptureDisplay, type CaptureDraft, type CaptureDraftImage, type CaptureEditorCommand, type CaptureEditorLayer, type CaptureOptions, type CapturePoint, type CaptureRect, type FlattenedCaptureImage, type NativeBridgeV1 } from "./native-bridge";
 import { ShortcutActionId } from "./shortcuts";
@@ -95,6 +95,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   const captureDialogOpener = useRef<HTMLElement | null>(null);
   const draftEditorOpener = useRef<HTMLElement | null>(null);
   const captureFocusFallback = useRef<HTMLButtonElement | null>(null);
+  const previewActivationNeedsFocusFallback = useRef(false);
   const inSheetPreview = useRef<HTMLElement | null>(null);
   const editorPreviewFallback = useRef<HTMLButtonElement | null>(null);
   const paletteWasOpen = useRef(false);
@@ -104,6 +105,13 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   const draftOperationQueues = useRef(new Map<string, Promise<void>>());
   const preview = previewRequest?.draft ?? null;
   const previewImage = previewRequest?.draft.images.find((image) => image.id === previewRequest.imageId) ?? previewRequest?.draft.images[0] ?? null;
+
+  useLayoutEffect(() => {
+    if (!active || !previewActivationNeedsFocusFallback.current) return;
+    // An off-surface preview mounts CaptureActions only after onActivate changes the shell surface.
+    draftEditorOpener.current = captureFocusFallback.current;
+    previewActivationNeedsFocusFallback.current = false;
+  }, [active, preview]);
 
   const replaceDrafts = useCallback((next: readonly CaptureDraft[]) => {
     draftsById.current = new Map(next.map((draft) => [draft.id, draft]));
@@ -227,6 +235,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     captureStatusInFlight.current = false;
     captureDialogOpener.current = null;
     draftEditorOpener.current = null;
+    previewActivationNeedsFocusFallback.current = false;
     previewSequence.current += 1;
     draftsById.current.clear();
     draftOperationQueues.current.clear();
@@ -431,10 +440,10 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   };
   const openPreview = () => {
     if (!preview) return;
+    // This preview may already be selected while RealQA is off-surface. Record the
+    // replacement before activation so the mounted Capture control becomes the return target.
+    previewActivationNeedsFocusFallback.current = true;
     if (selected?.id !== preview.id) {
-      // Replacing another editor unmounts both that sheet and the preview action.
-      // Keep a mounted RealQA control as the replacement sheet's return target.
-      draftEditorOpener.current = captureFocusFallback.current;
       setSelected(preview);
     }
     dismissPreview();

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { StrictMode, createRef } from "react";
+import { StrictMode, createRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { messages, type Copy } from "./localization";
@@ -911,6 +911,36 @@ describe("RealQA capture and editor", () => {
 
     expect(await screen.findByRole("complementary", { name: messages.en.floatingPreview })).toBeTruthy();
     expect(screen.queryByRole("dialog", { name: messages.en.editorTitle })).toBeNull();
+  });
+
+  it.each(["click", "escape"] as const)("returns focus to Capture after activating an off-surface preview with %s", async (dismissal) => {
+    let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return new Promise((resolve) => { resolveCapture = resolve; });
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    function Harness() {
+      const [active, setActive] = useState(true);
+      return <><button onClick={() => setActive(false)}>leave RealQA</button><RealqaSurface bridge={bridge} copy={messages.en} active={active} onActivate={() => setActive(true)} /></>;
+    }
+    render(<Harness />);
+
+    const staleOpener = screen.getByRole("button", { name: messages.en.captureDisplay });
+    fireEvent.click(staleOpener);
+    await waitFor(() => expect(resolveCapture).toBeTypeOf("function"));
+    fireEvent.click(screen.getByRole("button", { name: "leave RealQA" }));
+    await act(async () => { resolveCapture?.({ kind: "capture-draft", draft }); });
+
+    const preview = await screen.findByRole("complementary", { name: messages.en.floatingPreview });
+    expect(staleOpener.isConnected).toBe(false);
+    fireEvent.click(within(preview).getByRole("button", { name: messages.en.floatingPreviewOpen }));
+    await screen.findByRole("dialog", { name: messages.en.editorTitle });
+    if (dismissal === "escape") fireEvent.keyDown(screen.getByRole("dialog", { name: messages.en.editorTitle }), { key: "Escape" });
+    else fireEvent.click(screen.getByRole("button", { name: messages.en.close }));
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.captureDisplay })));
   });
 
   it("hides the floating preview while a capture dialog is open", async () => {
