@@ -492,17 +492,21 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   </RealqaContext>;
 }
 
-function CaptureActions({ focusFallbackRef, hidden = false }: { readonly focusFallbackRef?: RefObject<HTMLButtonElement | null>; readonly hidden?: boolean }) {
+function CaptureActions({ focusFallbackRef, beforeCapture, hidden = false }: { readonly focusFallbackRef?: RefObject<HTMLButtonElement | null>; readonly beforeCapture?: () => void; readonly hidden?: boolean }) {
   const { state, actions, meta: { copy } } = useRealqa();
   const titleId = useId();
   const items: readonly [CaptureActionId, keyof Copy][] = [
     [ShortcutActionId.CaptureDisplay, "captureDisplay"], [ShortcutActionId.CaptureActiveWindow, "captureWindow"],
     [ShortcutActionId.CaptureAllDisplays, "captureAll"], [ShortcutActionId.CaptureSelection, "captureSelection"], [ShortcutActionId.CaptureToolbar, "captureToolbar"],
   ];
+  const capture = (action: CaptureActionId) => {
+    if (action !== ShortcutActionId.CaptureSelection && action !== ShortcutActionId.CaptureToolbar) beforeCapture?.();
+    void actions.capture(action);
+  };
   return <Card className="realqa-capture-card" aria-hidden={hidden || undefined} aria-labelledby={titleId}>
     <div className="realqa-section-heading"><div><StatusBadge tone="info">{copy.realqaCapture}</StatusBadge><h3 id={titleId}>{copy.realqaCapture}</h3></div></div>
-    <Button ref={focusFallbackRef} variant="primary" disabled={state.busy} onClick={() => void actions.capture(ShortcutActionId.CaptureDisplay)}>{copy.captureDisplay}</Button>
-    <div className="capture-actions" aria-label={copy.captureMode}>{items.slice(1).map(([action, label]) => <Button key={action} disabled={state.busy} onClick={() => void actions.capture(action)}>{copy[label]}</Button>)}</div>
+    <Button ref={focusFallbackRef} variant="primary" disabled={state.busy} onClick={() => capture(ShortcutActionId.CaptureDisplay)}>{copy.captureDisplay}</Button>
+    <div className="capture-actions" aria-label={copy.captureMode}>{items.slice(1).map(([action, label]) => <Button key={action} disabled={state.busy} onClick={() => capture(action)}>{copy[label]}</Button>)}</div>
   </Card>;
 }
 
@@ -790,7 +794,7 @@ function CaptureEditor({ draft, previewImage, previewRef, previewFocusFallbackRe
   return <Sheet open title={copy.editorTitle} backLabel={copy.close} initialFocusRef={previewFocusFallbackRef} returnFocusRef={returnFocusRef} restoreFocus={restoreFocus} onClose={actions.close}><section className="capture-editor" aria-label={copy.editorTitle}>
     {previewImage && <aside ref={previewRef} className="sheet-capture-preview" aria-label={copy.floatingPreview}><img src={previewImage.previewUrl} alt="" /><button onClick={onPreviewOpen}>{copy.floatingPreviewOpen}</button></aside>}
     <CaptureFeedback status={status} error={error} />
-    <CaptureActions />
+    <CaptureActions beforeCapture={() => previewFocusFallbackRef.current?.focus()} />
     <p className="editor-close-hint">{copy.editorCloseHint}</p>
     {draft.browserContext && <section aria-labelledby="browser-context-title"><h3 id="browser-context-title">{copy.browserContextAttached}</h3><dl className="runtime-diagnostics"><dt>{copy.browserContextPageTitle}</dt><dd>{draft.browserContext.context.title || "—"}</dd><dt>{copy.browserContextRedactedUrl}</dt><dd>{draft.browserContext.context.url}</dd></dl><details><summary>{copy.browserContextDetails}</summary><dl className="runtime-diagnostics"><dt>{copy.browserContextViewport}</dt><dd>{draft.browserContext.context.viewport.width} × {draft.browserContext.context.viewport.height}</dd><dt>{copy.browserContextUserAgent}</dt><dd>{draft.browserContext.context.userAgent}</dd><dt>{copy.browserContextSelectedBounds}</dt><dd>{draft.browserContext.context.selectedBounds ? `x ${draft.browserContext.context.selectedBounds.x}, y ${draft.browserContext.context.selectedBounds.y}, width ${draft.browserContext.context.selectedBounds.width}, height ${draft.browserContext.context.selectedBounds.height}` : copy.browserContextNone}</dd><dt>{copy.browserContextAccessibility}</dt><dd>{Object.entries(draft.browserContext.context.accessibility).length ? <dl>{Object.entries(draft.browserContext.context.accessibility).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl> : copy.browserContextNone}</dd><dt>{copy.browserContextMarkup}</dt><dd><pre>{draft.browserContext.context.outerHtml || copy.browserContextNone}</pre></dd></dl></details><Button ref={browserContextRemovalControl} variant="danger" disabled={busy} onClick={removeBrowserContext}>{copy.browserContextRemove}</Button></section>}
     <div className="editor-image-order" aria-label={copy.realqaImages}>{draft.images.map((image, index) => <div key={image.id}><button ref={index === 0 ? previewFocusFallbackRef : (element) => { if (element) imageSelectorControls.current.set(image.id, element); else imageSelectorControls.current.delete(image.id); }} aria-pressed={image.id === active.id} onClick={() => setImageId(image.id)}>{copy.editorImage} {index + 1}</button><button disabled={busy || index === 0} aria-label={copy.editorMoveEarlier} onClick={() => moveImage(index, -1)}>←</button><button disabled={busy || index === draft.images.length - 1} aria-label={copy.editorMoveLater} onClick={() => moveImage(index, 1)}>→</button><button ref={(element) => { if (element) imageRemovalControls.current.set(image.id, element); else imageRemovalControls.current.delete(image.id); }} disabled={busy || draft.images.length === 1} aria-label={copy.editorRemove} onClick={() => void mutate({ kind: "remove-image", imageId: image.id })}>×</button></div>)}</div>

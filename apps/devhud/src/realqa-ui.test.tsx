@@ -164,6 +164,29 @@ describe("RealQA capture and editor", () => {
     })));
   });
 
+  it("keeps focus inside the editor sheet while an append capture is pending", async () => {
+    const { bridge, request } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return new Promise<NativeBridgeResponseV1>(() => {});
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    await openEditor();
+
+    const editor = screen.getByRole("dialog", { name: messages.en.editorTitle });
+    const captureDisplay = within(editor).getByRole("button", { name: messages.en.captureDisplay });
+    const imageSelector = within(editor).getByRole("button", { name: `${messages.en.editorImage} 1` });
+    captureDisplay.focus();
+    fireEvent.click(captureDisplay);
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "capture.start" })));
+    expect((captureDisplay as HTMLButtonElement).disabled).toBe(true);
+    expect(document.activeElement).toBe(imageSelector);
+    fireEvent.keyDown(imageSelector, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(within(editor).getByRole("button", { name: messages.en.close }));
+  });
+
   it.each([
     [NativeBridgeErrorCode.QuotaExhausted, "realqaQuotaTitle", "captureQuotaFull"],
     [NativeBridgeErrorCode.PermissionDenied, "realqaPermissionTitle", "capturePermission"],
