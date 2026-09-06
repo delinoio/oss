@@ -657,11 +657,14 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   useEffect(() => {
     const wasMissingLinkedDeck = previousMissingLinkedDeck.current;
     previousMissingLinkedDeck.current = missingLinkedDeck;
-    if (!missingLinkedDeck || wasMissingLinkedDeck || !mobile || !settingsOpen) return;
-    settingsSheetGeneration.current += 1;
-    sheetReturnFocus.current = null;
+    const configurationHadFocus = mobile ? settingsOpen : desktopConfigurationHadFocus.current;
+    if (!missingLinkedDeck || wasMissingLinkedDeck || !configurationHadFocus) return;
     missingLinkedDeckFocusPending.current = true;
-    setSettingsOpen(false);
+    if (mobile) {
+      settingsSheetGeneration.current += 1;
+      sheetReturnFocus.current = null;
+      setSettingsOpen(false);
+    }
   }, [missingLinkedDeck, mobile, settingsOpen]);
   useEffect(() => {
     if (!missingLinkedDeck || !missingLinkedDeckFocusPending.current) return;
@@ -673,24 +676,27 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     const wasAvailable = previousLocalSelectedDeckAvailable.current;
     previousLocalSelectedDeckAvailable.current = localSelectedDeckAvailable;
     // Creation selects its new Deck before synchronized Settings publishes it locally.
-    if (isCreating || selectedDeckId !== null || localSelectedDeckAvailable || !wasAvailable || createdDeckToFocus.current === selected) return;
+    if (creating || selectedDeckId !== null || localSelectedDeckAvailable || !wasAvailable || createdDeckToFocus.current === selected) return;
     editorGeneration.current += 1;
     setSelected(null);
     // A confirmation owns the focus handoff when its Deck disappears.
     if (!mobile || !settingsOpen || widgetConfirmationDeckId !== null) return;
     settingsSheetGeneration.current += 1;
-    sheetReturnFocus.current = mobileSettingsButton.current;
+    sheetReturnFocus.current = selectedDeck === null ? createDeckButton.current : mobileSettingsButton.current;
     setSettingsOpen(false);
-  }, [isCreating, localSelectedDeckAvailable, mobile, selected, selectedDeckId, settingsOpen, widgetConfirmationDeckId]);
+  }, [creating, localSelectedDeckAvailable, mobile, selected, selectedDeck, selectedDeckId, settingsOpen, widgetConfirmationDeckId]);
   useEffect(() => {
     const wasMissingGitHubProfiles = previousNoGitHubProfiles.current;
     previousNoGitHubProfiles.current = noGitHubProfiles;
-    if (!noGitHubProfiles || wasMissingGitHubProfiles || !mobile || !settingsOpen) return;
-    settingsSheetGeneration.current += 1;
-    sheetReturnFocus.current = null;
+    const configurationHadFocus = mobile ? settingsOpen : desktopConfigurationHadFocus.current;
+    if (!noGitHubProfiles || wasMissingGitHubProfiles || widgetConfirmationOpen || !configurationHadFocus) return;
     noProfilesFocusPending.current = true;
-    setSettingsOpen(false);
-  }, [mobile, noGitHubProfiles, settingsOpen]);
+    if (mobile) {
+      settingsSheetGeneration.current += 1;
+      sheetReturnFocus.current = null;
+      setSettingsOpen(false);
+    }
+  }, [mobile, noGitHubProfiles, settingsOpen, widgetConfirmationOpen]);
   useEffect(() => {
     if (widgetConfirmationDeckId !== null && (widgetConfirmationDeck === null || missingLinkedDeck || noGitHubProfiles)) {
       if (noGitHubProfiles) noProfilesFocusPending.current = true;

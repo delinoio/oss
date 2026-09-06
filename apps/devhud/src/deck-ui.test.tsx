@@ -907,6 +907,44 @@ describe("Deck surface", () => {
     expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull();
   });
 
+  it("closes an open mobile Deck sheet and focuses Create when its final Deck disappears", async () => {
+    setViewport(390);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    screen.getByLabelText(messages.en.deckName).focus();
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(screen.getAllByRole("button", { name: messages.en.deckCreate })[0]));
+  });
+
+  it.each([1024, 800])("focuses Return to Deck list at %ipx when a missing Deck link replaces focused configuration", async (viewport) => {
+    setViewport(viewport);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    screen.getByLabelText(messages.en.deckName).focus();
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId="018f47a2-7b3c-7def-8abc-1234567890ad" /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.deckReturnToList })));
+  });
+
+  it.each([1024, 800])("focuses the no-profile heading at %ipx when the final profile replaces focused configuration", async (viewport) => {
+    setViewport(viewport);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    screen.getByLabelText(messages.en.deckName).focus();
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [] }, decks: [] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: messages.en.emptyTitle })));
+  });
+
   it("closes an open mobile Deck sheet when its locally selected Deck disappears", async () => {
     setViewport(390);
     const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
