@@ -33,6 +33,11 @@ function bridgeWith(request: (request: NativeBridgeRequestV1) => Promise<NativeB
   return { request, listen: vi.fn(async () => () => undefined) };
 }
 
+function setViewport(width: number): void {
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+  fireEvent(window, new Event("resize"));
+}
+
 function provider() {
   return {
     ...createGitHubProvider({ fetch: vi.fn() }),
@@ -40,10 +45,70 @@ function provider() {
   };
 }
 
-beforeEach(() => { localStorage.clear(); identity = identityWith(); });
+beforeEach(() => { setViewport(1024); localStorage.clear(); identity = identityWith(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("Deck surface", () => {
+  it("keeps selection, refresh, last success, and semantic pull-request rows in the desktop workspace", async () => {
+    const lastSuccessfulAt = "2026-08-17T00:00:00.000Z";
+    const reviewed = { ...pullRequest, draft: true, reviewDecision: "approved" as const, checkRollup: { state: "SUCCESS", contexts: [] }, labels: ["ready"] };
+    writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, totalCount: 1, results: [reviewed], lastSuccessfulAt, rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(deck.id);
+    expect(screen.getByRole("button", { name: messages.en.deckRefresh })).toBeTruthy();
+    expect(screen.getByRole("complementary", { name: messages.en.deckConfiguration })).toBeTruthy();
+    expect(await screen.findByText(messages.en.deckStale)).toBeTruthy();
+    expect(screen.getByText(messages.en.lastSuccessfulRefresh, { exact: false })).toBeTruthy();
+    expect(screen.getByText(`octo/widgets #${pullRequest.number} — ${pullRequest.title}`)).toBeTruthy();
+    expect(screen.getByText(`${messages.en.deckAuthor}: ${pullRequest.author}`)).toBeTruthy();
+    expect(screen.getByText(`${messages.en.deckLabels}: ready`)).toBeTruthy();
+    expect(screen.getByText(`${messages.en.deckUpdated}:`, { exact: false })).toBeTruthy();
+    expect(screen.getByText(`${messages.en.deckOpen} · ${messages.en.deckDraft}`)).toBeTruthy();
+    expect(screen.getAllByText(messages.en.deckApproved).length).toBeGreaterThan(1);
+    expect(screen.getByText(messages.en.deckChecksSuccess)).toBeTruthy();
+  });
+
+  it("distinguishes a fresh response and an empty successful response from loading or offline states", async () => {
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    const providerWithResult = {
+      ...provider(),
+      searchPullRequests: vi.fn(async () => ({ items: [{ nodeId: pullRequest.nodeId, number: pullRequest.number, title: pullRequest.title, url: pullRequest.url, draft: pullRequest.draft, repository: pullRequest.repository }], nextPage: null, notModified: false, totalCount: 1, incompleteResults: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })),
+      enrichPullRequests: vi.fn(async () => ({ items: [pullRequest], metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })),
+    };
+    const view = render(<DeckPollingBoundary bridge={bridge} active online provider={providerWithResult}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    expect(await screen.findByText(messages.en.deckFresh)).toBeTruthy();
+
+    const emptyProvider = {
+      ...provider(),
+      searchPullRequests: vi.fn(async () => ({ items: [], nextPage: null, notModified: false, totalCount: 0, incompleteResults: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })),
+      enrichPullRequests: vi.fn(async () => ({ items: [], metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })),
+    };
+    view.unmount();
+    render(<DeckPollingBoundary bridge={bridge} active online provider={emptyProvider}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    expect(await screen.findByRole("heading", { name: messages.en.deckEmptyResults })).toBeTruthy();
+  });
+
+  it("keeps configuration out of the mobile workspace until its sheet opens and discards dismissed edits", async () => {
+    setViewport(390);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect(screen.queryByLabelText(messages.en.deckName)).toBeNull();
+    const opener = screen.getByRole("button", { name: messages.en.deckSettings });
+    fireEvent.click(opener);
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    const name = screen.getByLabelText(messages.en.deckName);
+    await waitFor(() => expect(document.activeElement).toBe(name));
+    fireEvent.change(name, { target: { value: "Discard this edit" } });
+    fireEvent.keyDown(sheet, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+    fireEvent.click(opener);
+    expect((await screen.findByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(deck.name);
+  });
+
   it("requires explicit privacy consent before copying only the selected Deck into widget storage", async () => {
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => value.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
     const bridge = bridgeWith(request);
@@ -655,12 +720,12 @@ describe("Deck surface", () => {
     const bridge = bridgeWith(async () => { throw new Error("unexpected request"); });
     const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={deck.id} onDismissMissingLink={dismiss} /></DeckPollingBoundary>);
 
-    fireEvent.click(screen.getByRole("button", { name: other.name }));
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: other.id } });
     expect(dismiss).toHaveBeenCalledOnce();
 
     identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }) });
     view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={null} onDismissMissingLink={dismiss} /></DeckPollingBoundary>);
-    expect(screen.getByRole("button", { name: other.name }).className).toContain("active");
+    expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(other.id);
   });
 
   it("cancels native notifications when synchronized Decks disappear", async () => {

@@ -9,6 +9,7 @@ const styles = readFileSync(join(appRoot, "src/styles.css"), "utf8");
 const app = readFileSync(join(appRoot, "src/App.tsx"), "utf8");
 const identityUi = readFileSync(join(appRoot, "src/identity-ui.tsx"), "utf8");
 const foundation = readFileSync(join(appRoot, "src/ui-foundation.tsx"), "utf8");
+const deckUi = readFileSync(join(appRoot, "src/deck-ui.tsx"), "utf8");
 const icons = readFileSync(join(appRoot, "src/ui-icons.tsx"), "utf8");
 const main = readFileSync(join(appRoot, "src/main.tsx"), "utf8");
 const nativeHost = readFileSync(join(appRoot, "src-tauri/src/main.rs"), "utf8");
@@ -261,6 +262,14 @@ test("modal primitives own focus trapping, Escape, and opener restoration", () =
   assert.match(foundation, /document\.activeElement === last[\s\S]*first\.focus\(\)/u);
   assert.match(foundation, /returnFocusRef\?\.current \?\? capturedOpener\.current/u);
   assert.match(foundation, /role="dialog" aria-modal="true"/u);
+});
+
+test("Deck keeps configuration in the desktop panel and a named mobile sheet", () => {
+  assert.match(deckUi, /!mobile && <aside className="deck-configuration-panel" aria-label=\{copy\.deckConfiguration\}/u);
+  assert.match(deckUi, /mobile && <Sheet open=\{settingsOpen\} title=\{isCreating \? copy\.deckCreate : copy\.deckConfiguration\} backLabel=\{copy\.back\}/u);
+  assert.match(deckUi, /returnFocusRef=\{settingsTrigger\} onClose=\{\(\) => setSettingsOpen\(false\)\}/u);
+  assert.match(styles, /\.deck-workspace-layout\s*\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(20rem,24rem\)/u);
+  assert.match(styles, /\.deck-workspace-layout\s*\{\s*grid-template-columns:minmax\(0,1fr\);\s*\}/u);
 });
 
 test("foundation icons are repository-owned decorative SVGs", () => {
