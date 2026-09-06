@@ -626,6 +626,23 @@ describe("Deck surface", () => {
     expect(screen.getByRole("complementary", { name: messages.en.deckConfiguration })).toBeTruthy();
   });
 
+  it("leaves the mobile Deck settings sheet closed after it moves to desktop", async () => {
+    setViewport(390);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    setViewport(701);
+
+    const desktopName = screen.getByLabelText(messages.en.deckName);
+    await waitFor(() => expect(document.activeElement).toBe(desktopName));
+    setViewport(390);
+
+    await screen.findByRole("button", { name: messages.en.deckSettings });
+    expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull();
+  });
+
   it("moves focus to mobile Deck settings when the desktop configuration leaves the layout", async () => {
     const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
     render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
@@ -676,6 +693,25 @@ describe("Deck surface", () => {
     await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
     await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(false));
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: messages.en.emptyTitle })));
+  });
+
+  it("closes an open mobile Deck sheet when its final GitHub profile disappears", async () => {
+    setViewport(390);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [] }, decks: [] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: messages.en.emptyTitle })));
+    identity = identityWith();
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await screen.findByRole("button", { name: messages.en.deckSettings });
+    expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull();
   });
 
   it("defers a linked Deck selection until its widget confirmation closes", async () => {

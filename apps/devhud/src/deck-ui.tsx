@@ -595,6 +595,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const missingLinkedDeck = selectedDeckId !== null && !linkedDeckAvailable;
   const previousMissingLinkedDeck = useRef(missingLinkedDeck);
   const noGitHubProfiles = identity.settings.github.profiles.length === 0;
+  const previousNoGitHubProfiles = useRef(noGitHubProfiles);
   const selectedDeck = missingLinkedDeck ? null : identity.settings.decks.find((item) => item.id === selected) ?? identity.settings.decks[0] ?? null;
   const isCreating = creating || selectedDeck === null;
   const deck = isCreating ? null : selectedDeck;
@@ -641,6 +642,15 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     return () => cancelAnimationFrame(animation);
   }, [missingLinkedDeck]);
   useEffect(() => {
+    const wasMissingGitHubProfiles = previousNoGitHubProfiles.current;
+    previousNoGitHubProfiles.current = noGitHubProfiles;
+    if (!noGitHubProfiles || wasMissingGitHubProfiles || !mobile || !settingsOpen) return;
+    settingsSheetGeneration.current += 1;
+    sheetReturnFocus.current = null;
+    noProfilesFocusPending.current = true;
+    setSettingsOpen(false);
+  }, [mobile, noGitHubProfiles, settingsOpen]);
+  useEffect(() => {
     if (widgetConfirmationDeckId !== null && (widgetConfirmationDeck === null || missingLinkedDeck || noGitHubProfiles)) {
       if (noGitHubProfiles) noProfilesFocusPending.current = true;
       else widgetConfirmationFocusPending.current = !missingLinkedDeck && (!mobile || settingsOpen);
@@ -679,10 +689,12 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     }
     if (!wasMobile || mobile || !settingsOpen || widgetConfirmationOpen) return;
     // The Sheet unmounts on this layout move, so its opener cannot restore focus into the desktop editor.
-    const animation = requestAnimationFrame(() => {
+    settingsSheetGeneration.current += 1;
+    sheetReturnFocus.current = null;
+    setSettingsOpen(false);
+    requestAnimationFrame(() => {
       if (deckNameInput.current !== null && !deckNameInput.current.disabled) deckNameInput.current.focus();
     });
-    return () => cancelAnimationFrame(animation);
   }, [isCreating, mobile, settingsOpen, widgetConfirmationOpen]);
   useEffect(() => {
     // Creation replaces the keyed editor while its Sheet stays open, so restore focus after the replacement mounts.
