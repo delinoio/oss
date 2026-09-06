@@ -242,6 +242,7 @@ test("Deck configuration scrolls inside a viewport-bounded sticky panel", () => 
 test("constrained Deck results place status badges below their content", () => {
   assert.match(styles, /\.deck-workspace\s*\{[^}]*container-type:inline-size;/u);
   assert.match(styles, /@container \(max-width:40rem\)\s*\{\s*\.deck-results \.data-row\s*\{[^}]*grid-template-columns:auto minmax\(0,1fr\)[^}]*\}[^}]*\.deck-results \.data-row-trailing\s*\{[^}]*grid-column:2;[^}]*justify-content:start/u);
+  assert.match(styles, /\.deck-result-statuses \.status-badge\s*\{[^}]*max-width:100%;[^}]*white-space:normal;[^}]*overflow-wrap:anywhere;/u);
 });
 
 test("mobile Deck selection can shrink with enlarged text", () => {
@@ -250,7 +251,8 @@ test("mobile Deck selection can shrink with enlarged text", () => {
 
 test("rail and lower-sidebar Deck headers stack and constrain their actions", () => {
   assert.match(styles, /@media \(min-width:701px\) and \(max-width:1023px\)\s*\{[^}]*\.deck > \.page-header\s*\{\s*display:block;\s*\}[^}]*\.deck > \.page-header \.page-header-actions\s*\{[^}]*min-width:0;[^}]*width:100%;[^}]*\}[^}]*\.deck-workspace-controls\s*\{[^}]*justify-content:start;[^}]*min-width:0;[^}]*\}[^}]*\.deck-workspace-controls \.ui-field\s*\{[^}]*flex:1 1 11rem;[^}]*max-width:100%;/u);
-  assert.match(styles, /@media \(min-width:1024px\) and \(max-width:1279px\)\s*\{[^}]*\.deck > \.page-header\s*\{\s*display:block;\s*\}[^}]*\.deck > \.page-header \.page-header-actions\s*\{[^}]*min-width:0;[^}]*width:100%;[^}]*\}[^}]*\.deck-workspace-controls\s*\{[^}]*justify-content:start;[^}]*min-width:0;[^}]*\}[^}]*\.deck-workspace-controls \.ui-field\s*\{[^}]*flex:1 1 11rem;[^}]*max-width:100%;/u);
+  assert.match(styles, /\.deck\s*\{\s*container-type:inline-size;\s*\}/u);
+  assert.match(styles, /@container \(max-width:64rem\)\s*\{[^}]*\.deck > \.page-header\s*\{\s*display:block;\s*\}[^}]*\.deck > \.page-header \.page-header-actions\s*\{[^}]*min-width:0;[^}]*width:100%;[^}]*\}[^}]*\.deck-workspace-controls\s*\{[^}]*justify-content:start;[^}]*min-width:0;[^}]*\}[^}]*\.deck-workspace-controls \.ui-field\s*\{[^}]*flex:1 1 11rem;[^}]*max-width:100%;/u);
 });
 
 test("the shell exposes a localized skip target and named rail tooltips", () => {

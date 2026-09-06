@@ -1108,6 +1108,24 @@ describe("Deck surface", () => {
     expect((await screen.findByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(deck.name);
   });
 
+  it.each([1024, 800])("keeps focus in the surviving configuration editor at %ipx when its selected Deck disappears", async (viewport) => {
+    setViewport(viewport);
+    const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, otherDeck] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: otherDeck.id } });
+    const name = screen.getByLabelText(messages.en.deckName);
+    name.focus();
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(deck.id));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText(messages.en.deckName)));
+  });
+
   it("keeps mobile creation active when its prior selected Deck disappears", async () => {
     setViewport(390);
     const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };

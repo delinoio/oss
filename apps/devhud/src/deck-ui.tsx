@@ -738,10 +738,15 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     previousLocalSelectedDeckAvailable.current = localSelectedDeckAvailable;
     // Creation selects its new Deck before synchronized Settings publishes it locally.
     if (creating || selectedDeckId !== null || localSelectedDeckAvailable || !wasAvailable || createdDeckToFocus.current === selected) return;
+    const configurationHadFocus = mobile ? settingsOpen : desktopConfigurationHadFocus.current;
     editorGeneration.current += 1;
     setSelected(null);
     // A confirmation owns the focus handoff when its Deck disappears.
-    if (!mobile || !settingsOpen || widgetConfirmationDeckId !== null) return;
+    if (!mobile) {
+      if (configurationHadFocus) setDesktopFocusPending(true);
+      return;
+    }
+    if (!settingsOpen || widgetConfirmationDeckId !== null) return;
     settingsSheetGeneration.current += 1;
     sheetReturnFocus.current = selectedDeck === null ? createDeckButton.current : mobileSettingsButton.current;
     setSettingsOpen(false);
