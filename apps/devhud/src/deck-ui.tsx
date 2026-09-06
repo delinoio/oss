@@ -91,7 +91,8 @@ function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["gith
     if (value === null) setCreationDrafts((current) => new Map(current).set(creationSession, next));
     else setDeckDrafts((current) => new Map(current).set(sourceKey, next));
   }, [creationSession, draft, sourceKey, value]);
-  const reset = useCallback(() => {
+  const reset = useCallback(({ retainFailure = false }: { readonly retainFailure?: boolean } = {}) => {
+    if (retainFailure && saveFailures.has(saveKey)) return;
     if (value === null) setCreationDrafts((current) => {
       if (!current.has(creationSession)) return current;
       const next = new Map(current);
@@ -110,7 +111,7 @@ function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["gith
       next.delete(saveKey);
       return next;
     });
-  }, [creationSession, initial, saveKey, sourceKey, value]);
+  }, [creationSession, saveFailures, saveKey, sourceKey, value]);
   const beginSave = useCallback(() => {
     setPendingSaves((current) => new Set(current).add(saveKey));
     setSaveFailures((current) => {
@@ -662,7 +663,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     const wasAvailable = previousLocalSelectedDeckAvailable.current;
     previousLocalSelectedDeckAvailable.current = localSelectedDeckAvailable;
     // Creation selects its new Deck before synchronized Settings publishes it locally.
-    if (selectedDeckId !== null || localSelectedDeckAvailable || !wasAvailable || createdDeckToFocus.current === selected) return;
+    if (isCreating || selectedDeckId !== null || localSelectedDeckAvailable || !wasAvailable || createdDeckToFocus.current === selected) return;
     editorGeneration.current += 1;
     setSelected(null);
     // A confirmation owns the focus handoff when its Deck disappears.
@@ -670,7 +671,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     settingsSheetGeneration.current += 1;
     sheetReturnFocus.current = mobileSettingsButton.current;
     setSettingsOpen(false);
-  }, [localSelectedDeckAvailable, mobile, selected, selectedDeckId, settingsOpen, widgetConfirmationDeckId]);
+  }, [isCreating, localSelectedDeckAvailable, mobile, selected, selectedDeckId, settingsOpen, widgetConfirmationDeckId]);
   useEffect(() => {
     const wasMissingGitHubProfiles = previousNoGitHubProfiles.current;
     previousNoGitHubProfiles.current = noGitHubProfiles;
@@ -806,7 +807,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const draftsFiltered = deck !== null && !deck.display.showDrafts && cachedResults.length > 0 && results.length === 0;
   const closeSettings = () => {
     if (editorDraft.saving || widgetConfirmationOpen) return;
-    editorDraft.reset();
+    editorDraft.reset({ retainFailure: true });
     if (isCreating && selectedDeck !== null) { editorGeneration.current += 1; setCreating(false); }
     settingsSheetGeneration.current += 1;
     setSettingsOpen(false);
@@ -885,8 +886,8 @@ function WidgetPrivacyConfirmation({ cache, cacheProfileRef, copy, deck, failure
   const cancelButton = useRef<HTMLButtonElement>(null);
   const warningId = `widget-privacy-warning-${deck.id}`;
   const restoreFocus = useCallback((preferredRef: RefObject<HTMLButtonElement | null>) => {
-    requestAnimationFrame(() => (preferredRef.current ?? fallbackFocusRef.current)?.focus());
-  }, [fallbackFocusRef]);
+    requestAnimationFrame(() => (preferredRef.current ?? disableButtonRef.current ?? fallbackFocusRef.current)?.focus());
+  }, [disableButtonRef, fallbackFocusRef]);
   const closeConfirmation = useCallback(() => {
     if (busy) return;
     onOpenChange(false);
