@@ -465,9 +465,9 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
   return <DeckPollingContext value={value}><WidgetAccessContext value={widgetValue}>{scheduledDecks.map((deck) => <WidgetSnapshotSynchronization key={deck.id} deck={deck} enabled={enabledWidgetDeckIds.has(deck.id)} state={states[deck.id] ?? emptyDeckRefreshState} synchronize={synchronizeWidgetDeck} />)}{children}</WidgetAccessContext></DeckPollingContext>;
 }
 
-interface DeckSurfaceProps { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly language?: "en" | "ko"; readonly selectedDeckId?: string | null; readonly onDismissMissingLink?: () => void; }
+interface DeckSurfaceProps { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly language?: "en" | "ko"; readonly selectedDeckId?: string | null; readonly onDismissMissingLink?: () => void; readonly onModalConfirmationOpenChange?: (open: boolean) => void; }
 
-export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink }: DeckSurfaceProps) {
+export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink, onModalConfirmationOpenChange }: DeckSurfaceProps) {
   const identity = useIdentitySettings();
   const polling = useDeckPolling();
   const widgetAccess = useWidgetAccess();
@@ -500,13 +500,13 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink 
     <div className="deck-layout"><nav aria-label={copy.deck}><ul>{identity.settings.decks.map((item) => <li key={item.id}><button className={deck?.id === item.id ? "active" : ""} onClick={() => { onDismissMissingLink?.(); setSelected(item.id); setCreating(false); }}>{item.name}</button></li>)}</ul></nav>
       {deck === null ? <DeckEditor key="create" copy={copy} disabled={creationDisabled} onSave={async (next) => { await polling.validate(next); const committed = await identity.replaceSettings((current) => ({ ...current, decks: [...current.decks, next] })); if (committed) { setSelected(next.id); setCreating(false); } return committed; }} profiles={identity.settings.github.profiles} /> : <div><DeckEditor key={deck.id} copy={copy} value={deck} profiles={identity.settings.github.profiles} disabled={identity.readOnly} onSave={async (next) => { await polling.validate(next); return identity.replaceSettings((current) => ({ ...current, decks: current.decks.map((item) => item.id === deck.id ? next : item) })); }} />
         <div className="actions"><button type="button" disabled={refreshState.loading || !polling.canPoll} onClick={() => void polling.refresh(deck.id, true)}>{copy.deckRefresh}</button><button type="button" disabled={identity.readOnly} onClick={() => void deleteDeck(deck)}>{copy.deckDelete}</button></div>
-        <WidgetAccess key={deck.id} cache={refreshState.cache} cacheProfileRef={refreshState.cacheProfileRef} copy={copy} deck={deck} failure={refreshState.failure} />
+        <WidgetAccess key={deck.id} cache={refreshState.cache} cacheProfileRef={refreshState.cacheProfileRef} copy={copy} deck={deck} failure={refreshState.failure} onConfirmationOpenChange={onModalConfirmationOpenChange} />
         {refreshState.cache?.lastSuccessfulAt && <p>{copy.lastSuccessfulRefresh}: <time dateTime={refreshState.cache.lastSuccessfulAt}>{refreshState.cache.lastSuccessfulAt}</time></p>}{refreshState.cache?.rate?.resetAt && <p>{copy.deckRateReset}: <time dateTime={refreshState.cache.rate.resetAt}>{refreshState.cache.rate.resetAt}</time></p>}{!polling.canPoll && refreshState.cache && <p className="notice">{copy.deckStale}</p>}{refreshState.failure && <p role="alert">{failureCopy(copy, refreshState.failure)}</p>}
         {deleteFailed && <p role="alert">{copy.deckDeleteFailed}</p>}{!polling.online && refreshState.cache === null ? <OfflineState copy={copy} /> : refreshState.loading && refreshState.cache === null ? <LoadingState copy={copy} /> : <DeckResults copy={copy} groupBy={deck.display.groupBy} results={deck.display.showDrafts ? refreshState.cache?.results ?? [] : (refreshState.cache?.results ?? []).filter((pullRequest) => !pullRequest.draft)} />}
       </div>}</div></section>;
 }
 
-function WidgetAccess({ cache, cacheProfileRef, copy, deck, failure }: { readonly cache: DeckCache | null; readonly cacheProfileRef: Deck["profileRef"] | null; readonly copy: Copy; readonly deck: Deck; readonly failure: DeckFailure | null }) {
+function WidgetAccess({ cache, cacheProfileRef, copy, deck, failure, onConfirmationOpenChange }: { readonly cache: DeckCache | null; readonly cacheProfileRef: Deck["profileRef"] | null; readonly copy: Copy; readonly deck: Deck; readonly failure: DeckFailure | null; readonly onConfirmationOpenChange?: (open: boolean) => void }) {
   const identity = useIdentitySettings();
   const widgetAccess = useWidgetAccess();
   const [confirming, setConfirming] = useState(false);
@@ -530,6 +530,12 @@ function WidgetAccess({ cache, cacheProfileRef, copy, deck, failure }: { readonl
     addEventListener("keydown", closeOnEscape);
     return () => removeEventListener("keydown", closeOnEscape);
   }, [busy, closeConfirmation, confirming]);
+  useEffect(() => {
+    onConfirmationOpenChange?.(confirming);
+    return () => {
+      if (confirming) onConfirmationOpenChange?.(false);
+    };
+  }, [confirming, onConfirmationOpenChange]);
   const trapDialogFocus = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.key !== "Tab") return;
     const focusable = dialog.current?.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), select:not([disabled]), [href]");

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { messages, type Copy } from "./localization";
 import { appendDiagnosticEvent, captureDiagnosticEvent, readDiagnosticCorrelations, readDiagnosticEvents, recentDiagnosticCorrelationIds } from "./diagnostics";
 import { DiagnosticsPanel } from "./diagnostics-ui";
@@ -31,6 +32,48 @@ const notificationPermissionLabels: Record<NotificationPermission, keyof typeof 
 };
 const defaultContentState: ContentState = { kind: ContentStateKind.Ready };
 type ExternalMessage = "opened" | "failed" | "invalid-api-origin";
+
+function ShellNavigationItem({ active, compact, icon: Icon, label, selectedItemRef, tooltipId, onActivate }: { readonly active: boolean; readonly compact: boolean; readonly icon: ComponentType<IconProps>; readonly label: string; readonly selectedItemRef: RefObject<HTMLButtonElement | null>; readonly tooltipId: string; readonly onActivate: () => void }) {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [tooltipPosition, setTooltipPosition] = useState<CSSProperties | null>(null);
+  const tooltipRequested = compact && (focused || hovered);
+  const positionTooltip = useCallback(() => {
+    const bounds = trigger.current?.getBoundingClientRect();
+    if (!bounds) return;
+    setTooltipPosition({ insetBlockStart: bounds.top + bounds.height / 2, insetInlineStart: bounds.right + 12 });
+  }, []);
+
+  useEffect(() => {
+    if (!active) return;
+    selectedItemRef.current = trigger.current;
+    return () => {
+      if (selectedItemRef.current === trigger.current) selectedItemRef.current = null;
+    };
+  }, [active, selectedItemRef]);
+  useEffect(() => {
+    if (!tooltipRequested) return;
+    positionTooltip();
+    const animation = requestAnimationFrame(positionTooltip);
+    addEventListener("resize", positionTooltip);
+    addEventListener("scroll", positionTooltip, true);
+    return () => {
+      cancelAnimationFrame(animation);
+      removeEventListener("resize", positionTooltip);
+      removeEventListener("scroll", positionTooltip, true);
+    };
+  }, [positionTooltip, tooltipRequested]);
+
+  const tooltipVisible = tooltipRequested && tooltipPosition !== null;
+  return <>
+    <button ref={trigger} className="shell-nav-item" aria-label={label} aria-describedby={compact ? tooltipId : undefined} aria-current={active ? "page" : undefined} onClick={onActivate} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}>
+      <Icon />
+      {!compact && <span>{label}</span>}
+    </button>
+    {compact && createPortal(<span id={tooltipId} className="nav-tooltip rail-nav-tooltip" role="tooltip" data-visible={tooltipVisible ? "true" : undefined} style={tooltipPosition ?? undefined}>{label}</span>, document.body)}
+  </>;
+}
 
 export interface AppProps {
   readonly bridge?: NativeBridgeV1;
@@ -69,7 +112,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const [paletteRestoresFocus, setPaletteRestoresFocus] = useState(true);
   const [moreOpen, setMoreOpen] = useState(false);
   const [moreRestoresFocus, setMoreRestoresFocus] = useState(true);
-  const [accountDeleteConfirmationOpen, setAccountDeleteConfirmationOpen] = useState(false);
+  const [screenModalConfirmationOpen, setScreenModalConfirmationOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [externalMessage, setExternalMessage] = useState<ExternalMessage | null>(null);
   const [systemLanguage, setSystemLanguage] = useState(() => resolveLanguage(LanguagePreference.System, navigator.languages));
@@ -134,7 +177,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     setMoreOpen(false);
   };
   const openMore = () => {
-    if (accountDeleteConfirmationOpen) return;
+    if (screenModalConfirmationOpen) return;
     setMoreRestoresFocus(true);
     setMoreOpen(true);
   };
@@ -392,14 +435,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const navigate = (nextSurface: SurfaceId) => { setSurface(nextSurface); setMoreOpen(false); };
   const navigation = shellLayout !== ShellLayout.Mobile && <aside className={`shell-navigation shell-navigation-${shellLayout}`}>
     <h1 aria-label={shellLayout === ShellLayout.Rail ? copy.appName : undefined}>{shellLayout === ShellLayout.Sidebar ? copy.appName : "D"}</h1>
-    <nav aria-label={copy.mobileNavigation}>{surfaces.map((item) => {
-      const Icon = surfaceIcons[item];
-      const tooltipId = `navigation-tooltip-${item}`;
-      return <button ref={surface === item ? selectedDesktopNavigationItem : undefined} className="shell-nav-item" aria-label={copy[labels[item]]} aria-describedby={shellLayout === ShellLayout.Rail ? tooltipId : undefined} aria-current={surface === item ? "page" : undefined} key={item} onClick={() => navigate(item)}>
-        <Icon />
-        {shellLayout === ShellLayout.Sidebar ? <span>{copy[labels[item]]}</span> : <span id={tooltipId} className="nav-tooltip" role="tooltip">{copy[labels[item]]}</span>}
-      </button>;
-    })}</nav>
+    <nav aria-label={copy.mobileNavigation}>{surfaces.map((item) => <ShellNavigationItem active={surface === item} compact={shellLayout === ShellLayout.Rail} icon={surfaceIcons[item]} key={item} label={copy[labels[item]]} selectedItemRef={selectedDesktopNavigationItem} tooltipId={`navigation-tooltip-${item}`} onActivate={() => navigate(item)} />)}</nav>
     {mobile ? <Button className="palette-trigger" ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} aria-label={copy.openPalette}>{shellLayout === ShellLayout.Sidebar ? copy.openPalette : null}</Button> : <ShortcutPaletteTrigger copy={copy} isMac={isMac} triggerRef={paletteTrigger} onOpen={openPalette} compact={shellLayout === ShellLayout.Rail} />}
   </aside>;
   const topBar = shellLayout === ShellLayout.Mobile && <header className="mobile-app-bar"><h1>{copy.appName}</h1><span>{copy[labels[surface]]}</span><Button ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} aria-label={copy.openPalette} /></header>;
@@ -408,7 +444,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       const Icon = surfaceIcons[item];
       return <button type="button" key={item} aria-current={surface === item ? "page" : undefined} onClick={() => navigate(item)}><Icon /><span>{copy[labels[item]]}</span></button>;
     })}
-    <button key={MobileNavigationId.More} ref={moreTrigger} type="button" aria-current={moreCurrent ? "page" : undefined} aria-haspopup="dialog" aria-expanded={moreOpen} disabled={accountDeleteConfirmationOpen} onClick={openMore}><MoreIcon /><span>{copy.more}</span></button>
+    <button key={MobileNavigationId.More} ref={moreTrigger} type="button" aria-current={moreCurrent ? "page" : undefined} aria-haspopup="dialog" aria-expanded={moreOpen} disabled={screenModalConfirmationOpen} onClick={openMore}><MoreIcon /><span>{copy.more}</span></button>
   </nav>;
 
   return boundary(<>
@@ -421,9 +457,9 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       {surface === SurfaceId.Realqa && mobile && <><PageHeader eyebrow={copy.desktopOnly} title={copy.realqaMobileTitle} summary={copy.realqaMobileSummary} /><Card className="notice"><StatusBadge tone="neutral">{copy.desktopOnly}</StatusBadge><p>{copy.unavailable}</p></Card></>}
       {!mobile && runtimeCapabilities.available.has(PlatformCapability.Capture) && <RealqaSurface ref={realqaController} bridge={bridge} copy={copy} active={surface === SurfaceId.Realqa} paletteOpen={palette} onActivate={() => setSurface(SurfaceId.Realqa)} requestedAction={requestedCapture} onRequestedActionConsumed={consumeRequestedCapture} takeBrowserContext={nativeMessaging?.takeContext} />}
       {surface === SurfaceId.Realqa && !mobile && !runtimeCapabilities.available.has(PlatformCapability.Capture) && <><PageHeader eyebrow={copy.realqa} title={copy.realqaTitle} summary={copy.realqaSummary} /><div className="disabled-actions">{unavailableCaptureActions.map((action) => <button disabled key={action.id}>{copy[action.title]}</button>)}</div><p className="notice">{copy.unavailable}</p></>}
-      {surface === SurfaceId.Deck && <DeckSurface copy={copy} bridge={bridge} language={language} selectedDeckId={deckLink} onDismissMissingLink={() => setDeckLink(null)} />}
+      {surface === SurfaceId.Deck && <DeckSurface copy={copy} bridge={bridge} language={language} selectedDeckId={deckLink} onDismissMissingLink={() => setDeckLink(null)} onModalConfirmationOpenChange={setScreenModalConfirmationOpen} />}
       {surface === SurfaceId.Settings && <><PageHeader eyebrow={copy.settings} title={copy.settingsTitle} summary={copy.settingsSummary} /><SynchronizedSettingsBoundary copy={copy} bridge={bridge} onOpenExternal={openExternal} showNativeShortcuts={runtime?.platform === RuntimePlatform.Desktop} shortcutCapabilities={runtimeCapabilities} NativeMessagingSettings={nativeMessaging?.Settings} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{supportsNotifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}{runtime?.platform === RuntimePlatform.Desktop && <DesktopUpdaterPanel bridge={bridge} language={language} onApprovalOpenChange={handleUpdaterApprovalOpenChange} />}</>}
-      {surface === SurfaceId.Account && <><AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} onDeleteConfirmationOpenChange={setAccountDeleteConfirmationOpen} /><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.githubCreateFinePat}</button><button onClick={() => void external(ExternalLinkTarget.ClassicPat)}>{copy.githubCreateClassicPat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
+      {surface === SurfaceId.Account && <><AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} onDeleteConfirmationOpenChange={setScreenModalConfirmationOpen} /><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.githubCreateFinePat}</button><button onClick={() => void external(ExternalLinkTarget.ClassicPat)}>{copy.githubCreateClassicPat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
       {surface === SurfaceId.Diagnostics && <><PageHeader eyebrow={copy.diagnostics} title={copy.diagnosticsTitle} summary={copy.diagnosticsSummary} />{runtime && <><dl className="runtime-diagnostics"><dt>{copy.diagnosticPlatform}</dt><dd>{runtime.operatingSystem}</dd><dt>{copy.diagnosticArchitecture}</dt><dd>{runtime.architecture}</dd><dt>{copy.diagnosticBridge}</dt><dd>v{runtime.bridgeVersion}</dd></dl><DiagnosticsPanel copy={copy} runtime={runtime} bridge={bridge} storage={storage} online={online} /></>}</>}
     </AppShell>
     <Dialog open={palette} title={copy.commandPalette} initialFocusRef={search} returnFocusRef={paletteTrigger} restoreFocus={paletteRestoresFocus} onClose={() => closePalette()}>

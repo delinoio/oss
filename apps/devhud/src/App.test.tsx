@@ -905,8 +905,63 @@ describe("responsive application shell", () => {
     for (const destination of destinations) {
       expect(destination.getAttribute("aria-label")).toBeTruthy();
       expect(destination.getAttribute("aria-describedby")).toMatch(/^navigation-tooltip-/u);
+      const tooltip = document.getElementById(destination.getAttribute("aria-describedby") ?? "");
+      expect(tooltip).toBeTruthy();
+      expect(navigation.contains(tooltip)).toBe(false);
     }
     expect(screen.getAllByRole("tooltip")).toHaveLength(7);
+  });
+
+  it("shows rail destination tooltips outside the scrolling navigation for pointer and keyboard users", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 701 });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    render(<App bridge={unavailableBridge()} initialRuntime={desktopRuntime} />);
+
+    const navigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
+    const destination = within(navigation).getByRole("button", { name: messages.en.deck });
+    const tooltip = document.getElementById(destination.getAttribute("aria-describedby") ?? "");
+    expect(tooltip).toBeTruthy();
+    expect(navigation.contains(tooltip)).toBe(false);
+
+    fireEvent.pointerEnter(destination);
+    await waitFor(() => expect(tooltip?.dataset.visible).toBe("true"));
+    fireEvent.pointerLeave(destination);
+    await waitFor(() => expect(tooltip?.dataset.visible).toBeUndefined());
+    fireEvent.focus(destination);
+    await waitFor(() => expect(tooltip?.dataset.visible).toBe("true"));
+    fireEvent.blur(destination);
+    await waitFor(() => expect(tooltip?.dataset.visible).toBeUndefined());
+  });
+
+  it("keeps More unavailable while the mobile Deck widget confirmation is open", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 390 });
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const deck = { id: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Deck", profileRef: profile.id, query: "repo:octo/widgets is:pr", builder: null, display: { groupBy: "none" as const, showDrafts: true }, refreshMinutes: 5 as const, notifications: [] };
+    saveGuestSettings(localStorage, { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] }, decks: [deck] });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "widgets.status") return { kind: "widget-status", enabledDeckIds: [] };
+      if (value.operation === "secure.read") return { kind: "secure-value", value: null };
+      if (value.operation === "secure.reconcile-github-pats" || value.operation === "session.configure-origins") return value.operation === "session.configure-origins" ? { kind: "session-network-policy", changed: false } : { kind: "ok" };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<App bridge={bridgeWith(request)} initialRuntime={{ ...mobileRuntime, capabilities: { ...mobileRuntime.capabilities, widgets: true } }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deck }));
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    const confirmation = screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    const cancel = within(confirmation).getByRole("button", { name: messages.en.widgetPrivacyCancel });
+    const more = screen.getByRole("button", { name: messages.en.more });
+    await waitFor(() => expect((more as HTMLButtonElement).disabled).toBe(true));
+    expect(document.activeElement).toBe(cancel);
+
+    fireEvent.click(more);
+    expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull();
+    expect(screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBe(confirmation);
+    expect(document.activeElement).toBe(cancel);
+
+    fireEvent.click(cancel);
+    await waitFor(() => expect((more as HTMLButtonElement).disabled).toBe(false));
   });
 
   it.each([700, 390, 320])("renders exactly five mobile navigation items at %ipx", (width) => {
