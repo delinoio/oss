@@ -189,7 +189,11 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     setPaletteRestoresFocus(restoreTriggerFocus);
     setPalette(false);
   };
-  const openPalette = () => { setPaletteRestoresFocus(true); setPalette(true); };
+  const openPalette = () => {
+    if (screenModalConfirmationOpen) return;
+    setPaletteRestoresFocus(true);
+    setPalette(true);
+  };
   const closeMore = (restoreTriggerFocus = true) => {
     setMoreRestoresFocus(restoreTriggerFocus);
     setMoreOpen(false);
@@ -469,9 +473,9 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const navigation = shellLayout !== ShellLayout.Mobile && <aside className={`shell-navigation shell-navigation-${shellLayout}`}>
     <h1 aria-label={shellLayout === ShellLayout.Rail ? copy.appName : undefined}>{shellLayout === ShellLayout.Sidebar ? copy.appName : "D"}</h1>
     <nav aria-label={copy.mobileNavigation}>{surfaces.map((item) => <ShellNavigationItem active={surface === item} compact={shellLayout === ShellLayout.Rail} destination={item} icon={surfaceIcons[item]} key={item} label={copy[labels[item]]} selectedItemRef={selectedDesktopNavigationItem} tooltipId={`navigation-tooltip-${item}`} onActivate={() => navigate(item)} onNavigationBlur={markNavigationBlurred} onNavigationFocus={markNavigationFocused} />)}</nav>
-    {mobile ? <Button className="palette-trigger" ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} aria-label={copy.openPalette}>{shellLayout === ShellLayout.Sidebar ? copy.openPalette : null}</Button> : <ShortcutPaletteTrigger copy={copy} isMac={isMac} triggerRef={paletteTrigger} onOpen={openPalette} compact={shellLayout === ShellLayout.Rail} />}
+    {mobile ? <Button className="palette-trigger" ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} disabled={screenModalConfirmationOpen} aria-label={copy.openPalette}>{shellLayout === ShellLayout.Sidebar ? copy.openPalette : null}</Button> : <ShortcutPaletteTrigger copy={copy} isMac={isMac} triggerRef={paletteTrigger} onOpen={openPalette} disabled={screenModalConfirmationOpen} compact={shellLayout === ShellLayout.Rail} />}
   </aside>;
-  const topBar = shellLayout === ShellLayout.Mobile && <header className="mobile-app-bar"><h1>{copy.appName}</h1><span>{copy[labels[surface]]}</span><Button ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} aria-label={copy.openPalette} /></header>;
+  const topBar = shellLayout === ShellLayout.Mobile && <header className="mobile-app-bar"><h1>{copy.appName}</h1><span>{copy[labels[surface]]}</span><Button ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} disabled={screenModalConfirmationOpen} aria-label={copy.openPalette} /></header>;
   const bottomBar = shellLayout === ShellLayout.Mobile && <nav className="mobile-bottom-navigation" aria-label={copy.mobileNavigation}>
     {mobilePrimarySurfaces.map((item) => {
       const Icon = surfaceIcons[item];

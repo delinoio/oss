@@ -55,7 +55,7 @@ afterEach(() => {
 });
 
 describe("native App state", () => {
-  it("disables mobile More while the Account API-change confirmation is open", async () => {
+  it("disables mobile More and Search while the Account API-change confirmation is open", async () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 390 });
     vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
     const bridge = bridgeWith(async (request) => {
@@ -69,12 +69,19 @@ describe("native App state", () => {
 
     const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
     const more = screen.getByRole("button", { name: messages.en.more }) as HTMLButtonElement;
+    const paletteTrigger = screen.getByRole("button", { name: messages.en.openPalette }) as HTMLButtonElement;
     await waitFor(() => expect(more.disabled).toBe(true));
+    expect(paletteTrigger.disabled).toBe(true);
     fireEvent.click(more);
+    fireEvent.click(paletteTrigger);
     expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: messages.en.commandPalette })).toBeNull();
 
     fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
     await waitFor(() => expect(more.disabled).toBe(false));
+    expect(paletteTrigger.disabled).toBe(false);
+    fireEvent.click(paletteTrigger);
+    expect(await screen.findByRole("dialog", { name: messages.en.commandPalette })).toBeTruthy();
   });
 
   it("suppresses desktop shortcuts while the Account API-change confirmation is open", async () => {
@@ -94,6 +101,10 @@ describe("native App state", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
 
     const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    const paletteTrigger = screen.getByRole("button", { name: messages.en.openPalette }) as HTMLButtonElement;
+    expect(paletteTrigger.disabled).toBe(true);
+    fireEvent.click(paletteTrigger);
+    expect(screen.queryByRole("dialog", { name: messages.en.commandPalette })).toBeNull();
     await act(async () => {
       for (const listener of listeners) listener({ version: 1, kind: "shortcut-triggered", action: ShortcutActionId.CommandPalette });
     });
@@ -105,9 +116,8 @@ describe("native App state", () => {
     expect(screen.getByRole("heading", { name: messages.en.accountTitle })).toBeTruthy();
 
     fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
-    await act(async () => {
-      for (const listener of listeners) listener({ version: 1, kind: "shortcut-triggered", action: ShortcutActionId.CommandPalette });
-    });
+    expect(paletteTrigger.disabled).toBe(false);
+    fireEvent.click(paletteTrigger);
     expect(await screen.findByRole("dialog", { name: messages.en.commandPalette })).toBeTruthy();
   });
 

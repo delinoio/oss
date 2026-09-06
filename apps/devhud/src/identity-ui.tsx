@@ -311,12 +311,12 @@ const shortcutLabels: Record<ShortcutActionId, keyof Copy> = {
   [ShortcutActionId.CaptureToolbar]: "captureToolbar",
 };
 
-export function ShortcutPaletteTrigger({ copy, isMac, onOpen, triggerRef, compact = false }: { readonly copy: Copy; readonly isMac: boolean; readonly onOpen: () => void; readonly triggerRef: Ref<HTMLButtonElement>; readonly compact?: boolean }) {
+export function ShortcutPaletteTrigger({ copy, isMac, onOpen, triggerRef, disabled = false, compact = false }: { readonly copy: Copy; readonly isMac: boolean; readonly onOpen: () => void; readonly triggerRef: Ref<HTMLButtonElement>; readonly disabled?: boolean; readonly compact?: boolean }) {
   const { activeShortcutBindings } = useIdentitySettings();
   const binding = activeShortcutBindings[ShortcutActionId.CommandPalette];
   const modifiers = binding.modifiers.map((modifier) => modifier === ShortcutModifier.RightPrimary ? isMac ? copy.rightCommandK.replace(/ K$/u, "") : copy.rightControlK.replace(/ K$/u, "") : modifier === ShortcutModifier.Shift ? copy.shortcutShift : copy.shortcutAlt);
   const label = binding.enabled ? [...modifiers, copy[shortcutKeyLabels[binding.key]]].join(" + ") : copy.shortcutNone;
-  return <button ref={triggerRef} className="palette-trigger" onClick={onOpen} aria-label={copy.openPalette} aria-describedby={compact ? "palette-trigger-tooltip" : undefined}>{compact ? <><SearchIcon /><span id="palette-trigger-tooltip" className="nav-tooltip" role="tooltip">{copy.openPalette}</span></> : label}</button>;
+  return <button ref={triggerRef} className="palette-trigger" onClick={onOpen} disabled={disabled} aria-label={copy.openPalette} aria-describedby={compact ? "palette-trigger-tooltip" : undefined}>{compact ? <><SearchIcon /><span id="palette-trigger-tooltip" className="nav-tooltip" role="tooltip">{copy.openPalette}</span></> : label}</button>;
 }
 
 function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onActiveBindings, onPersist }: { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly disabled: boolean; readonly capabilities: RuntimeCapabilities; readonly bindings: DevHudSettingsV1["shortcuts"]["desktop"]; readonly onActiveBindings: (bindings: DevHudSettingsV1["shortcuts"]["desktop"]) => void; readonly onPersist: (bindings: DevHudSettingsV1["shortcuts"]["desktop"]) => Promise<boolean> }) {
