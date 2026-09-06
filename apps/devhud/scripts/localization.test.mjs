@@ -66,6 +66,20 @@ test("describes Korean diagnostics as redacted rather than deleted", () => {
   assert.match(messages.ko.diagnosticsSummary, /민감 정보가 삭제된/u);
 });
 
+test("localizes the staged Diagnostics privacy and disclosure flow", () => {
+  for (const language of ["en", "ko"]) {
+    assert.ok(messages[language].diagnosticsRuntime);
+    assert.ok(messages[language].diagnosticsPrivacy);
+    assert.ok(messages[language].diagnosticsExactPayload);
+    assert.ok(messages[language].diagnosticsExactExport);
+    assert.ok(messages[language].diagnosticsUnsupported);
+    assert.ok(messages[language].diagnosticsDeletionPending);
+  }
+  assert.match(messages.en.diagnosticsRetention, /7 days, 500 events, and 1 MiB/u);
+  assert.match(messages.en.diagnosticsRetention, /off by default/u);
+  assert.match(messages.ko.diagnosticsRetention, /7일, 500개 이벤트, 1 MiB/u);
+});
+
 test("localizes recoverable notification permission failures", () => {
   assert.match(messages.en.notificationPermissionFailed, /notification permission/u);
   assert.match(messages.ko.notificationPermissionFailed, /알림 권한/u);

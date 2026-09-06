@@ -5,6 +5,7 @@ import { diagnosticsConsentDigest, prepareDiagnosticsBundle, readDiagnosticEvent
 import { useIdentitySettings, type IdentityStatus } from "./service-boundary";
 import type { Copy } from "./localization";
 import type { NativeBridgeV1, RuntimeSnapshot } from "./native-bridge";
+import { Button, Card, DataRow, StatePanel, StatusBadge, type StatusTone } from "./ui-foundation";
 
 interface DiagnosticsPanelProps {
   readonly copy: Copy;
@@ -16,7 +17,7 @@ interface DiagnosticsPanelProps {
 
 type ExportState = "idle" | "saved" | "cancelled" | "initiated" | "failed";
 
-export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsPanelProps) {
+export function DiagnosticsPanel({ copy, runtime, bridge, storage, online }: DiagnosticsPanelProps) {
   const identity = useIdentitySettings();
   const submit = useMutation(DiagnosticsQuery.submitCrashReport);
   const [bundle, setBundle] = useState<PreparedDiagnosticsBundle | null>(null);
@@ -32,7 +33,8 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
   const exportAttempt = useRef(0);
   const exportPendingRef = useRef(false);
   const authenticated = identity.status === "authenticated";
-  const blocked = identity.status === "blocked" || identity.status === "deletion-pending";
+  const deletionPending = identity.status === "deletion-pending";
+  const blocked = identity.status === "blocked";
   const crashReportsSupported = identity.bootstrap?.capabilities.includes(StaticCapability.CRASH_REPORTS) === true;
   const submissionBlock = diagnosticsSubmissionBlock(identity.status, online, consentDigest !== null, crashReportsSupported);
   const crashReportQuota = submitError?.kind === "quotaExceeded" && submitError.detail.quota === QuotaKind.CRASH_REPORTS
@@ -127,32 +129,53 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
     }
   };
 
+  const exportCopy = exportState === "idle" ? null : copy[`diagnosticsExport${capitalize(exportState)}` as keyof Copy];
+  const exportTone: StatusTone = exportState === "saved" ? "success" : exportState === "failed" ? "danger" : "info";
+
   return <section className="diagnostics-panel">
-    <p>{copy.diagnosticsRetention}</p>
-    <button className="primary" onClick={preview}>{copy.diagnosticsPreview}</button>
-    {bundle === null ? previewRequested && <p role="status">{copy.diagnosticsNoEvents}</p> : <>
-      <p>{copy.diagnosticsExactPayload}</p>
-      <pre className="diagnostics-preview" data-testid="diagnostics-preview">{bundle.requestJson}</pre>
-      <p>{copy.diagnosticsExactExport}</p>
-      <pre className="diagnostics-preview" data-testid="diagnostics-export-preview">{bundle.exportJson}</pre>
-      <div className="actions"><button disabled={exportPending || identity.status === "deletion-pending"} onClick={() => void exportBundle()}>{copy.diagnosticsExport}</button></div>
-      {exportState !== "idle" && <p role="status">{copy[`diagnosticsExport${capitalize(exportState)}` as keyof Copy]}</p>}
-      {authenticated && !blocked && crashReportsSupported && <>
-        <label className="check"><input type="checkbox" checked={consentSelected} onChange={(event) => void chooseConsent(event.target.checked)} />{copy.diagnosticsConsent}</label>
-        <button className="primary" disabled={!online || consentDigest === null || submit.isPending} onClick={() => void submitBundle()}>{copy.diagnosticsSubmit}</button>
-      </>}
-      {!authenticated && !blocked && <p className="notice">{copy.diagnosticsGuestNoSubmit}</p>}
-      {blocked && <p className="notice" role="alert">{copy.diagnosticsBlocked}</p>}
-      {authenticated && !online && <p className="notice">{copy.diagnosticsOffline}</p>}
-      {submitState === "sent" && <p role="status">{copy.diagnosticsSent} {serverCorrelation}</p>}
-      {submitState === "failed" && <p role="alert">
-        {crashReportQuota
-          ? <>{copy.diagnosticsSubmitQuotaExceeded} {copy.diagnosticsSubmitQuotaLimit}: <code>{crashReportQuota.limit.toString()}</code></>
-          : submitError?.kind === "permissionDenied" || submitError?.kind === "unauthenticated"
-            ? copy.diagnosticsSubmitDenied
-            : copy.diagnosticsSubmitFailed}
-        {submitError && <> <code>{`diagnostics-connect-${submitError.code}`}</code>{submitError.correlationId && <> {copy.correlationId}: <code>{submitError.correlationId}</code></>}</>}
-      </p>}
+    <Card className="diagnostics-runtime" aria-label={copy.diagnosticsRuntime}>
+      <DataRow title={copy.diagnosticPlatform} description={runtime.operatingSystem} />
+      <DataRow title={copy.diagnosticArchitecture} description={runtime.architecture} />
+      <DataRow title={copy.diagnosticBridge} description={`v${runtime.bridgeVersion}`} />
+    </Card>
+    <Card className="diagnostics-privacy">
+      <StatusBadge tone="info">{copy.diagnosticsPrivacy}</StatusBadge>
+      <p>{copy.diagnosticsRetention}</p>
+    </Card>
+    <div className="diagnostics-preview-action"><Button variant="primary" onClick={preview}>{copy.diagnosticsPreview}</Button></div>
+    {bundle === null ? previewRequested && <StatePanel eyebrow={copy.empty} title={copy.diagnosticsNoEventsTitle} summary={copy.diagnosticsNoEvents} tone="neutral" /> : <>
+      <section className="diagnostics-disclosures" aria-label={copy.diagnosticsDisclosures}>
+        <details className="diagnostics-disclosure" open>
+          <summary>{copy.diagnosticsExactPayload}</summary>
+          <pre className="diagnostics-preview" data-testid="diagnostics-preview" tabIndex={0}>{bundle.requestJson}</pre>
+        </details>
+        <details className="diagnostics-disclosure">
+          <summary>{copy.diagnosticsExactExport}</summary>
+          <pre className="diagnostics-preview" data-testid="diagnostics-export-preview" tabIndex={0}>{bundle.exportJson}</pre>
+        </details>
+      </section>
+      {!deletionPending && <div className="diagnostics-actions"><Button disabled={exportPending} onClick={() => void exportBundle()}>{copy.diagnosticsExport}</Button></div>}
+      {exportCopy && <StatePanel eyebrow={copy.diagnostics} title={copy.diagnosticsExport} summary={exportCopy} tone={exportTone} />}
+      {deletionPending
+        ? <StatePanel eyebrow={copy.blocked} title={copy.diagnosticsDeletionPendingTitle} summary={copy.diagnosticsDeletionPending} role="alert" tone="danger" />
+        : blocked
+          ? <StatePanel eyebrow={copy.blocked} title={copy.diagnosticsBlockedTitle} summary={copy.diagnosticsBlocked} role="alert" tone="danger" />
+          : !authenticated
+            ? <StatePanel eyebrow={copy.diagnostics} title={copy.diagnosticsGuestTitle} summary={copy.diagnosticsGuestNoSubmit} tone="info" />
+            : !crashReportsSupported
+              ? <StatePanel eyebrow={copy.unavailable} title={copy.diagnosticsUnsupportedTitle} summary={copy.diagnosticsUnsupported} tone="warning" />
+              : !online
+                ? <StatePanel eyebrow={copy.offline} title={copy.diagnosticsOfflineTitle} summary={copy.diagnosticsOffline} tone="warning" />
+                : <div className="diagnostics-submission">
+                  <label className="check"><input type="checkbox" checked={consentSelected} onChange={(event) => void chooseConsent(event.target.checked)} />{copy.diagnosticsConsent}</label>
+                  <Button variant="primary" disabled={consentDigest === null || submit.isPending} onClick={() => void submitBundle()}>{copy.diagnosticsSubmit}</Button>
+                </div>}
+      {submitState === "sent" && <StatePanel eyebrow={copy.diagnosticsSent} title={copy.diagnosticsSubmit} summary={<>{copy.diagnosticsSent} <code>{serverCorrelation}</code></>} tone="success" />}
+      {submitState === "failed" && <StatePanel eyebrow={copy.error} title={copy.diagnosticsSubmit} role="alert" tone={crashReportQuota ? "warning" : "danger"} summary={crashReportQuota
+        ? <>{copy.diagnosticsSubmitQuotaExceeded} {copy.diagnosticsSubmitQuotaLimit}: <code>{crashReportQuota.limit.toString()}</code></>
+        : submitError?.kind === "permissionDenied" || submitError?.kind === "unauthenticated"
+          ? copy.diagnosticsSubmitDenied
+          : copy.diagnosticsSubmitFailed} details={submitError && <p className="correlation"><code>{`diagnostics-connect-${submitError.code}`}</code>{submitError.correlationId && <> {copy.correlationId}: <code>{submitError.correlationId}</code></>}</p>} />}
     </>}
   </section>;
 }

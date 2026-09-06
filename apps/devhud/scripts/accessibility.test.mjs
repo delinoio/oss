@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const styles = readFileSync(join(appRoot, "src/styles.css"), "utf8");
 const app = readFileSync(join(appRoot, "src/App.tsx"), "utf8");
+const diagnosticsUi = readFileSync(join(appRoot, "src/diagnostics-ui.tsx"), "utf8");
 const identityUi = readFileSync(join(appRoot, "src/identity-ui.tsx"), "utf8");
 const foundation = readFileSync(join(appRoot, "src/ui-foundation.tsx"), "utf8");
 const icons = readFileSync(join(appRoot, "src/ui-icons.tsx"), "utf8");
@@ -91,6 +92,17 @@ test("form-control boundaries meet non-text contrast in light and dark themes", 
       `${line} does not provide a sufficient boundary against ${surface}`,
     );
   }
+});
+
+test("Diagnostics disclosures preserve exact text selection and fit contracted responsive viewports", () => {
+  assert.match(diagnosticsUi, /<details className="diagnostics-disclosure" open>/u);
+  assert.match(diagnosticsUi, /<details className="diagnostics-disclosure">/u);
+  assert.match(diagnosticsUi, /<pre className="diagnostics-preview"[^>]*tabIndex=\{0\}>\{bundle\.requestJson\}<\/pre>/u);
+  assert.match(diagnosticsUi, /<pre className="diagnostics-preview"[^>]*tabIndex=\{0\}>\{bundle\.exportJson\}<\/pre>/u);
+  assert.match(styles, /\.diagnostics-preview \{[^}]*max-height:min\(420px,45vh\);[^}]*overflow:auto;[^}]*font-family:ui-monospace[^}]*white-space:pre;[^}]*overflow-wrap:normal;[^}]*user-select:text/u);
+  assert.match(styles, /\.diagnostics-preview:focus-visible \{[^}]*outline:3px solid var\(--focus\)/u);
+  assert.match(styles, /\.diagnostics-runtime \{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/u);
+  assert.match(styles, /@media \(max-width:700px\) \{[\s\S]*?\.diagnostics-runtime \{ grid-template-columns:minmax\(0,1fr\)/u);
 });
 
 test("command palette uses buttons and has a localized empty state", () => {
