@@ -57,6 +57,7 @@ describe("Deck surface", () => {
     render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
 
     expect(screen.getByRole("region", { name: messages.en.deckTitle })).toBeTruthy();
+    expect(screen.getAllByRole("region", { name: messages.en.deckResults })).toHaveLength(1);
     expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(deck.id);
     expect(screen.getByRole("button", { name: messages.en.deckRefresh })).toBeTruthy();
     expect(screen.getByRole("complementary", { name: messages.en.deckConfiguration })).toBeTruthy();
@@ -117,6 +118,32 @@ describe("Deck surface", () => {
     setViewport(1024);
     await screen.findByRole("complementary", { name: messages.en.deckConfiguration });
     expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Keep this edit");
+  });
+
+  it("keeps a pending Deck creation unavailable while its editor moves to mobile", async () => {
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn(() => pendingSave);
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Created Deck" } });
+    fireEvent.change(screen.getByLabelText(messages.en.deckQuery), { target: { value: "repo:octo/widgets is:pr" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+
+    setViewport(390);
+    fireEvent.click(screen.getAllByRole("button", { name: messages.en.deckCreate })[0]!);
+    await screen.findByRole("dialog", { name: messages.en.deckCreate });
+    const movedForm = screen.getByLabelText(messages.en.deckName).closest("form")!;
+    expect((movedForm.querySelector(":scope > fieldset") as HTMLFieldSetElement).disabled).toBe(true);
+    fireEvent.submit(movedForm);
+    expect(replaceSettings).toHaveBeenCalledOnce();
+
+    finishSave(false);
+    await waitFor(() => expect((movedForm.querySelector(":scope > fieldset") as HTMLFieldSetElement).disabled).toBe(false));
   });
 
   it("preserves an existing Deck draft when an unrelated first profile changes", () => {

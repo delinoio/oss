@@ -65,16 +65,19 @@ function createDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["g
 function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["github"]["profiles"]) {
   const sourceKey = JSON.stringify(value === null ? { value, initialProfileRef: profiles[0]?.id ?? "" } : { value });
   const initial = useMemo(() => createDeckEditorDraft(value, profiles), [sourceKey]);
-  const [state, setState] = useState<{ readonly sourceKey: string; readonly draft: DeckEditorDraft }>(() => ({ sourceKey, draft: initial }));
+  const [state, setState] = useState<{ readonly sourceKey: string; readonly draft: DeckEditorDraft; readonly saving: boolean }>(() => ({ sourceKey, draft: initial, saving: false }));
   const draft = state.sourceKey === sourceKey ? state.draft : initial;
+  const saving = state.sourceKey === sourceKey && state.saving;
   useEffect(() => {
-    setState((current) => current.sourceKey === sourceKey ? current : { sourceKey, draft: initial });
+    setState((current) => current.sourceKey === sourceKey ? current : { sourceKey, draft: initial, saving: false });
   }, [initial, sourceKey]);
   const update = useCallback((change: (current: DeckEditorDraft) => DeckEditorDraft) => {
-    setState((current) => ({ sourceKey, draft: change(current.sourceKey === sourceKey ? current.draft : initial) }));
+    setState((current) => ({ sourceKey, draft: change(current.sourceKey === sourceKey ? current.draft : initial), saving: current.sourceKey === sourceKey && current.saving }));
   }, [initial, sourceKey]);
-  const reset = useCallback(() => setState({ sourceKey, draft: initial }), [initial, sourceKey]);
-  return { sourceKey, draft, update, reset };
+  const reset = useCallback(() => setState((current) => ({ sourceKey, draft: initial, saving: current.sourceKey === sourceKey && current.saving })), [initial, sourceKey]);
+  const beginSave = useCallback(() => setState((current) => current.sourceKey === sourceKey ? { ...current, saving: true } : { sourceKey, draft: initial, saving: true }), [initial, sourceKey]);
+  const finishSave = useCallback(() => setState((current) => current.sourceKey === sourceKey ? { ...current, saving: false } : current), [sourceKey]);
+  return { sourceKey, draft, saving, update, reset, beginSave, finishSave };
 }
 
 class DeckPollingCancelledError extends Error {}
@@ -557,7 +560,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     setCreating(false);
     setSettingsOpen(false);
   };
-  const editor = <DeckEditor key={editorDraft.sourceKey} copy={copy} value={deck ?? undefined} draft={editorDraft.draft} onDraftChange={editorDraft.update} profiles={identity.settings.github.profiles} disabled={isCreating ? creationDisabled : identity.readOnly} onSave={async (next) => {
+  const editor = <DeckEditor key={editorDraft.sourceKey} copy={copy} value={deck ?? undefined} draft={editorDraft.draft} saving={editorDraft.saving} onDraftChange={editorDraft.update} onSaveStart={editorDraft.beginSave} onSaveFinish={editorDraft.finishSave} profiles={identity.settings.github.profiles} disabled={isCreating ? creationDisabled : identity.readOnly} onSave={async (next) => {
     // A save can outlive a selection change, so only its originating editor may navigate on completion.
     const generation = editorGeneration.current;
     const creatingAtSubmit = isCreating;
@@ -585,7 +588,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
       {mobile && deck && <Button onClick={() => setSettingsOpen(true)}>{copy.deckSettings}</Button>}
     </div>} />
     <div className="deck-workspace-layout">
-      <div className="deck-workspace" role="region" aria-label={copy.deckResults}>
+      <div className="deck-workspace">
         {deck ? <><DeckRefreshStatus copy={copy} state={refreshState} canPoll={polling.canPoll} online={polling.online} />
           {!polling.online && refreshState.cache === null ? <OfflineState copy={copy} /> : refreshState.loading && refreshState.cache === null ? <LoadingState copy={copy} /> : refreshState.failure !== null && refreshState.cache === null ? <StatePanel eyebrow={copy.error} title={failureCopy(copy, refreshState.failure)} summary={copy.deckNoCachedResults} role="alert" tone="danger" /> : <DeckResults copy={copy} groupBy={deck.display.groupBy} results={results} draftsFiltered={draftsFiltered} successfulEmpty={refreshState.cache !== null && refreshState.cache.lastSuccessfulAt !== null && refreshState.failure === null && cachedResults.length === 0} />}
         </> : <StatePanel eyebrow={copy.deck} title={copy.deckCreate} summary={copy.deckNoDecks} tone="info" actions={<Button variant="primary" disabled={creationDisabled} onClick={openCreate}>{copy.deckCreate}</Button>} />}
@@ -699,10 +702,10 @@ function widgetSnapshot(deck: Deck, cache: DeckCache, failure: DeckFailure | nul
   return base;
 }
 
-function DeckEditor({ copy, value, draft, onDraftChange, profiles, disabled = false, onSave }: { readonly copy: Copy; readonly value?: DevHudSettingsV1["decks"][number]; readonly draft: DeckEditorDraft; readonly onDraftChange: (change: (current: DeckEditorDraft) => DeckEditorDraft) => void; readonly profiles: DevHudSettingsV1["github"]["profiles"]; readonly disabled?: boolean; readonly onSave: (deck: DevHudSettingsV1["decks"][number]) => Promise<boolean> }) {
+function DeckEditor({ copy, value, draft, saving, onDraftChange, onSaveStart, onSaveFinish, profiles, disabled = false, onSave }: { readonly copy: Copy; readonly value?: DevHudSettingsV1["decks"][number]; readonly draft: DeckEditorDraft; readonly saving: boolean; readonly onDraftChange: (change: (current: DeckEditorDraft) => DeckEditorDraft) => void; readonly onSaveStart: () => void; readonly onSaveFinish: () => void; readonly profiles: DevHudSettingsV1["github"]["profiles"]; readonly disabled?: boolean; readonly onSave: (deck: DevHudSettingsV1["decks"][number]) => Promise<boolean> }) {
   const { name, profileRef, query, builder, refreshMinutes, groupBy, showDrafts, notifications } = draft;
-  const [invalid, setInvalid] = useState<"query" | "repository" | null>(null); const [saveFailure, setSaveFailure] = useState<DeckFailure | null>(null); const [saving, setSaving] = useState(false);
-  const submit = (event: FormEvent) => { event.preventDefault(); if (!validateDeckQuery(query) || !profileRef || !name.trim()) { setInvalid("query"); return; } if (!hasRepositoryQualifier(query) || deckRepositories(query) === null) { setInvalid("repository"); return; } setInvalid(null); setSaveFailure(null); setSaving(true); void onSave({ id: value?.id ?? createUuidV7(), name: name.trim(), profileRef, query, builder, display: { groupBy, showDrafts }, refreshMinutes, notifications }).then((committed) => { if (!committed) setSaveFailure("unknown"); }).catch((error) => setSaveFailure(classifyDeckFailure(error))).finally(() => setSaving(false)); };
+  const [invalid, setInvalid] = useState<"query" | "repository" | null>(null); const [saveFailure, setSaveFailure] = useState<DeckFailure | null>(null);
+  const submit = (event: FormEvent) => { event.preventDefault(); if (saving) return; if (!validateDeckQuery(query) || !profileRef || !name.trim()) { setInvalid("query"); return; } if (!hasRepositoryQualifier(query) || deckRepositories(query) === null) { setInvalid("repository"); return; } setInvalid(null); setSaveFailure(null); onSaveStart(); void onSave({ id: value?.id ?? createUuidV7(), name: name.trim(), profileRef, query, builder, display: { groupBy, showDrafts }, refreshMinutes, notifications }).then((committed) => { if (!committed) setSaveFailure("unknown"); }).catch((error) => setSaveFailure(classifyDeckFailure(error))).finally(onSaveFinish); };
   const setBuilderValue = (field: keyof DeckBuilder, next: string) => { const trimmed = next.trim(); const builderValue = trimmed === "" ? null : trimmed as DeckBuilder[typeof field]; const nextQuery = applyDeckBuilder(query, field, builderValue); onDraftChange((current) => ({ ...current, query: nextQuery, builder: parseDeckBuilder(nextQuery) })); };
   return <form onSubmit={submit} className="deck-editor"><fieldset disabled={disabled || saving}>
     <Field label={copy.deckName} inputId="deck-name"><input id="deck-name" required value={name} onChange={(event) => onDraftChange((current) => ({ ...current, name: event.target.value }))} /></Field>
