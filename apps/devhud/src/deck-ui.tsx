@@ -64,20 +64,33 @@ function createDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["g
 
 function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["github"]["profiles"]) {
   const sourceKey = JSON.stringify(value === null ? { value, initialProfileRef: profiles[0]?.id ?? "" } : { value });
+  const saveKey = value?.id ?? sourceKey;
   const initial = useMemo(() => createDeckEditorDraft(value, profiles), [sourceKey]);
-  const [state, setState] = useState<{ readonly sourceKey: string; readonly draft: DeckEditorDraft; readonly saving: boolean; readonly saveFailure: DeckFailure | null }>(() => ({ sourceKey, draft: initial, saving: false, saveFailure: null }));
+  const [state, setState] = useState<{ readonly sourceKey: string; readonly draft: DeckEditorDraft; readonly saveFailure: DeckFailure | null }>(() => ({ sourceKey, draft: initial, saveFailure: null }));
+  const [pendingSaves, setPendingSaves] = useState<ReadonlySet<string>>(() => new Set());
   const draft = state.sourceKey === sourceKey ? state.draft : initial;
-  const saving = state.sourceKey === sourceKey && state.saving;
+  const saving = pendingSaves.has(saveKey);
   const saveFailure = state.sourceKey === sourceKey ? state.saveFailure : null;
   useEffect(() => {
-    setState((current) => current.sourceKey === sourceKey ? current : { sourceKey, draft: initial, saving: false, saveFailure: null });
+    setState((current) => current.sourceKey === sourceKey ? current : { sourceKey, draft: initial, saveFailure: null });
   }, [initial, sourceKey]);
   const update = useCallback((change: (current: DeckEditorDraft) => DeckEditorDraft) => {
-    setState((current) => ({ sourceKey, draft: change(current.sourceKey === sourceKey ? current.draft : initial), saving: current.sourceKey === sourceKey && current.saving, saveFailure: current.sourceKey === sourceKey ? current.saveFailure : null }));
+    setState((current) => ({ sourceKey, draft: change(current.sourceKey === sourceKey ? current.draft : initial), saveFailure: current.sourceKey === sourceKey ? current.saveFailure : null }));
   }, [initial, sourceKey]);
-  const reset = useCallback(() => setState((current) => ({ sourceKey, draft: initial, saving: current.sourceKey === sourceKey && current.saving, saveFailure: null })), [initial, sourceKey]);
-  const beginSave = useCallback(() => setState((current) => current.sourceKey === sourceKey ? { ...current, saving: true, saveFailure: null } : { sourceKey, draft: initial, saving: true, saveFailure: null }), [initial, sourceKey]);
-  const finishSave = useCallback((failure: DeckFailure | null) => setState((current) => current.sourceKey === sourceKey ? { ...current, saving: false, saveFailure: failure } : current), [sourceKey]);
+  const reset = useCallback(() => setState((current) => ({ sourceKey, draft: initial, saveFailure: null })), [initial, sourceKey]);
+  const beginSave = useCallback(() => {
+    setPendingSaves((current) => new Set(current).add(saveKey));
+    setState((current) => current.sourceKey === sourceKey ? { ...current, saveFailure: null } : { sourceKey, draft: initial, saveFailure: null });
+  }, [initial, saveKey, sourceKey]);
+  const finishSave = useCallback((failure: DeckFailure | null) => {
+    setPendingSaves((current) => {
+      if (!current.has(saveKey)) return current;
+      const next = new Set(current);
+      next.delete(saveKey);
+      return next;
+    });
+    setState((current) => current.sourceKey === sourceKey ? { ...current, saveFailure: failure } : current);
+  }, [saveKey, sourceKey]);
   return { sourceKey, draft, saving, saveFailure, update, reset, beginSave, finishSave };
 }
 
