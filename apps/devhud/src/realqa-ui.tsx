@@ -301,6 +301,9 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       const { response, previewImageId, contextAttachmentFailed } = captureResult;
       if (response.kind !== "capture-draft") return;
       if (!originatingDraftId) installDraft(response.draft);
+      // The standalone editor can close while its non-authoritative draft refresh
+      // is pending. Its return target must be enabled before the sheet mounts.
+      if (!originatingDraftId) setBusy(false);
       setSelected((current) => (current?.id ?? null) === originatingDraftId ? response.draft : current);
       setPreviewRequest({ draft: response.draft, imageId: previewImageId, sequence: ++previewSequence.current });
       setStatus(CaptureFeedbackState.Saved);
@@ -331,7 +334,9 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
         const freshStatus = await refreshCaptureStatus();
         if (generation !== resetGeneration.current) return;
         if (!freshStatus) return;
-        if (!captureDialog) captureDialogOpener.current = opener;
+        if (!captureDialog) {
+          captureDialogOpener.current = opener?.isConnected ? opener : captureFocusFallback.current;
+        }
         setCaptureDialog(action);
       } catch (reason) {
         if (generation !== resetGeneration.current) return;
