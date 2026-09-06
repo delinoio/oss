@@ -390,6 +390,15 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     setSelected(null);
     if (selectedDraftId && captureOriginatingDraftId.current === selectedDraftId) cancelInFlightCapture();
   };
+  const openPreview = () => {
+    if (!preview) return;
+    if (selected?.id !== preview.id) {
+      draftEditorOpener.current = null;
+      setSelected(preview);
+    }
+    setPreviewRequest(null);
+    onActivate?.();
+  };
   const value: RealqaContextValue = {
     state: { drafts, unreadableDraftIds, selected, busy, status, error, preview },
     actions: { capture, open: openDraft, close: closeEditor, remove, removeUnreadable, confirmIssueCreated, runDraftOperation, refresh },
@@ -405,12 +414,12 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
         {!selected && <CaptureFeedback status={status} error={error} />}
         <DraftList />
       </div>
-      {selected && <CaptureEditor key={selected.id} draft={selected} previewImage={!captureDialog && !paletteOpen && preview?.id === selected.id ? previewImage : null} returnFocusRef={draftEditorOpener} onPreviewOpen={() => { setPreviewRequest(null); onActivate?.(); }} />}
+      {selected && <CaptureEditor key={selected.id} draft={selected} previewImage={!captureDialog && !paletteOpen ? previewImage : null} returnFocusRef={draftEditorOpener} restoreFocus={draftEditorOpener.current !== null} onPreviewOpen={openPreview} />}
       {captureDialog && <CaptureDialog key={captureDialog} action={captureDialog} status={captureStatus} options={options} onOptions={setOptions} onCapture={completeCapture} onClose={cancelCapture} />}
     </>}
     {preview && previewImage && !selected && !captureDialog && !paletteOpen && <aside className="floating-capture-preview" aria-label={copy.floatingPreview}>
       <img src={previewImage.previewUrl} alt="" />
-      <button onClick={() => { setSelected(preview); setPreviewRequest(null); onActivate?.(); }}>{copy.floatingPreviewOpen}</button>
+      <button onClick={openPreview}>{copy.floatingPreviewOpen}</button>
     </aside>}
   </RealqaContext>;
 }
@@ -556,7 +565,7 @@ function RegionPicker({ displays, value, onChange, label }: { readonly displays:
   </svg>;
 }
 
-function CaptureEditor({ draft, previewImage, returnFocusRef, onPreviewOpen }: { readonly draft: CaptureDraft; readonly previewImage: CaptureDraftImage | null; readonly returnFocusRef: RefObject<HTMLElement | null>; readonly onPreviewOpen: () => void }) {
+function CaptureEditor({ draft, previewImage, returnFocusRef, restoreFocus, onPreviewOpen }: { readonly draft: CaptureDraft; readonly previewImage: CaptureDraftImage | null; readonly returnFocusRef: RefObject<HTMLElement | null>; readonly restoreFocus: boolean; readonly onPreviewOpen: () => void }) {
   const { state: { busy, status, error }, actions, meta: { bridge, copy } } = useRealqa();
   const [imageId, setImageId] = useState(draft.images[0]?.id ?? "");
   const [tool, setTool] = useState<EditorTool>("arrow");
@@ -689,7 +698,7 @@ function CaptureEditor({ draft, previewImage, returnFocusRef, onPreviewOpen }: {
   const confirmCreated = async (expectedRevision: number) => {
     await actions.confirmIssueCreated(draft.id, expectedRevision);
   };
-  return <Sheet open title={copy.editorTitle} backLabel={copy.close} returnFocusRef={returnFocusRef} onClose={actions.close}><section className="capture-editor" aria-label={copy.editorTitle}>
+  return <Sheet open title={copy.editorTitle} backLabel={copy.close} returnFocusRef={returnFocusRef} restoreFocus={restoreFocus} onClose={actions.close}><section className="capture-editor" aria-label={copy.editorTitle}>
     {previewImage && <aside className="sheet-capture-preview" aria-label={copy.floatingPreview}><img src={previewImage.previewUrl} alt="" /><button onClick={onPreviewOpen}>{copy.floatingPreviewOpen}</button></aside>}
     <CaptureFeedback status={status} error={error} />
     <p className="editor-close-hint">{copy.editorCloseHint}</p>
@@ -777,7 +786,7 @@ function arrowHeadPoints(start: CapturePoint, end: CapturePoint, width: number):
 }
 
 function LayerList({ image, mutate, copy, disabled }: { readonly image: CaptureDraftImage; readonly mutate: (command: CaptureEditorCommand) => Promise<void>; readonly copy: Copy; readonly disabled: boolean }) {
-  return <section aria-labelledby="editor-layers-title"><h4 id="editor-layers-title">{copy.editorLayers}</h4>{image.layers.length === 0 ? <p>{copy.editorNoLayers}</p> : <ol className="layer-list">{image.layers.map((layer, index) => <li key={layer.id}><span>{copy[layer.tool === "arrow" ? "editorArrow" : layer.tool === "rectangle" ? "editorRectangle" : layer.tool === "drawing" ? "editorDrawing" : layer.tool === "text" ? "editorText" : layer.tool === "blur" ? "editorBlur" : "editorRedaction"]}</span><button disabled={disabled || index === 0} aria-label={copy.editorMoveEarlier} onClick={() => void mutate({ kind: "move-layer", imageId: image.id, layerId: layer.id, toIndex: index - 1 })}>↑</button><button disabled={disabled || index === image.layers.length - 1} aria-label={copy.editorMoveLater} onClick={() => void mutate({ kind: "move-layer", imageId: image.id, layerId: layer.id, toIndex: index + 1 })}>↓</button><button disabled={disabled} aria-label={copy.editorRemove} onClick={() => void mutate({ kind: "remove-layer", imageId: image.id, layerId: layer.id })}>×</button></li>)}</ol>}</section>;
+  return <section aria-labelledby="editor-layers-title"><h3 id="editor-layers-title">{copy.editorLayers}</h3>{image.layers.length === 0 ? <p>{copy.editorNoLayers}</p> : <ol className="layer-list">{image.layers.map((layer, index) => <li key={layer.id}><span>{copy[layer.tool === "arrow" ? "editorArrow" : layer.tool === "rectangle" ? "editorRectangle" : layer.tool === "drawing" ? "editorDrawing" : layer.tool === "text" ? "editorText" : layer.tool === "blur" ? "editorBlur" : "editorRedaction"]}</span><button disabled={disabled || index === 0} aria-label={copy.editorMoveEarlier} onClick={() => void mutate({ kind: "move-layer", imageId: image.id, layerId: layer.id, toIndex: index - 1 })}>↑</button><button disabled={disabled || index === image.layers.length - 1} aria-label={copy.editorMoveLater} onClick={() => void mutate({ kind: "move-layer", imageId: image.id, layerId: layer.id, toIndex: index + 1 })}>↓</button><button disabled={disabled} aria-label={copy.editorRemove} onClick={() => void mutate({ kind: "remove-layer", imageId: image.id, layerId: layer.id })}>×</button></li>)}</ol>}</section>;
 }
 
 function normalizeBounds(start: CapturePoint, end: CapturePoint): CaptureRect { return { x: Math.min(start.x, end.x), y: Math.min(start.y, end.y), width: Math.max(1, Math.abs(end.x - start.x)), height: Math.max(1, Math.abs(end.y - start.y)) }; }

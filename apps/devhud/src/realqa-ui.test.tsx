@@ -182,6 +182,7 @@ describe("RealQA capture and editor", () => {
 
     await openEditor(copy);
     expect(screen.getByRole("heading", { name: copy.editorTitle })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: copy.editorLayers }).tagName).toBe("H3");
     for (const name of [copy.editorCrop, copy.editorArrow, copy.editorRectangle, copy.editorDrawing, copy.editorText, copy.editorBlur, copy.editorRedaction]) {
       expect(screen.getByRole("button", { name })).toBeTruthy();
     }
@@ -660,6 +661,61 @@ describe("RealQA capture and editor", () => {
 
     await act(async () => { resolveCapture?.({ kind: "capture-draft", draft: { ...draft, revision: 4 } }); });
     expect(screen.getByRole("button", { name: `${messages.en.editorImage} 2` })).toBeTruthy();
+  });
+
+  it("shows a standalone capture preview in an unrelated editor sheet", async () => {
+    let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const { bridge, request } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [secondDraft], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return new Promise((resolve) => { resolveCapture = resolve; });
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "capture.start" })));
+    await openEditor();
+    await act(async () => { resolveCapture?.({ kind: "capture-draft", draft }); });
+
+    const preview = await screen.findByRole("complementary", { name: messages.en.floatingPreview });
+    expect(screen.getByRole("dialog", { name: messages.en.editorTitle }).contains(preview)).toBe(true);
+    expect(preview.querySelector("img")?.getAttribute("src")).toBe(draft.images[0].previewUrl);
+    fireEvent.click(within(preview).getByRole("button", { name: messages.en.floatingPreviewOpen }));
+    await waitFor(() => expect(screen.getByRole("img", { name: messages.en.editorCanvas }).querySelector("img")?.getAttribute("src")).toBe(draft.images[0].previewUrl));
+  });
+
+  it("clears a stale draft opener before opening a floating preview", async () => {
+    const capturedDraft: CaptureDraft = {
+      ...draft,
+      id: "019b0000-0000-7000-8000-000000000020",
+      revision: 4,
+      images: [{ ...draft.images[0], id: "019b0000-0000-7000-8000-000000000021", previewUrl: "realqa://asset/draft/image/captured/4" }],
+    };
+    let captured = false;
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: captured ? [capturedDraft, draft, secondDraft] : [draft, secondDraft], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") { captured = true; return { kind: "capture-draft", draft: capturedDraft }; }
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    const [firstOpener] = await screen.findAllByRole("button", { name: messages.en.realqaOpenEditor });
+    firstOpener.focus();
+    fireEvent.click(firstOpener);
+    await screen.findByRole("dialog", { name: messages.en.editorTitle });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.close }));
+    await waitFor(() => expect(firstOpener).toBe(document.activeElement));
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+    const preview = await screen.findByRole("complementary", { name: messages.en.floatingPreview });
+    fireEvent.click(within(preview).getByRole("button", { name: messages.en.floatingPreviewOpen }));
+    await screen.findByRole("dialog", { name: messages.en.editorTitle });
+    const close = screen.getByRole("button", { name: messages.en.close });
+    close.focus();
+    fireEvent.click(close);
+    await waitFor(() => expect(firstOpener).not.toBe(document.activeElement));
   });
 
   it("keeps a successful capture when the follow-up refresh fails", async () => {
