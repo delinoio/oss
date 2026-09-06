@@ -779,6 +779,26 @@ describe("native App state", () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: `${messages.en.editorImage} 1` })));
   });
 
+  it.each([
+    ["captureSelection"],
+    ["captureToolbar"],
+  ] as const)("returns focus to Capture after canceling a palette-started %s picker without an open editor", async (dialogLabel) => {
+    const runtime: RuntimeSnapshot = { ...desktopRuntime, capabilities: { ...desktopRuntime.capabilities, capture: true } };
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "windows", shadowRemovalSupported: false, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<App bridge={bridgeWith(request)} initialRuntime={runtime} />);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.openPalette }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: messages.en.commandPalette })).getByRole("button", { name: messages.en[dialogLabel] }));
+    await screen.findByRole("dialog", { name: messages.en[dialogLabel] });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureCancel }));
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.captureDisplay })));
+  });
+
   it("suppresses global shortcuts while an updater approval is open", async () => {
     const updaterStatus: DesktopUpdaterStatus = {
       kind: "available",

@@ -9,6 +9,10 @@ export type CaptureActionId = Exclude<ShortcutActionId, typeof ShortcutActionId.
 type EditorTool = "crop" | "arrow" | "rectangle" | "drawing" | "text" | "blur" | "redaction";
 type CaptureRequest = { readonly action: CaptureActionId; readonly sequence: number };
 type FloatingPreviewRequest = { readonly draft: CaptureDraft; readonly imageId?: string; readonly sequence: number };
+enum CaptureFeedbackState {
+  Saving = "saving",
+  Saved = "saved",
+}
 enum RealqaFeedbackKind {
   BrowserContext = "browser-context",
   Capture = "capture",
@@ -35,7 +39,7 @@ interface RealqaContextValue {
     readonly unreadableDraftIds: readonly string[];
     readonly selected: CaptureDraft | null;
     readonly busy: boolean;
-    readonly status: string;
+    readonly status: CaptureFeedbackState | null;
     readonly error: RealqaFeedback | null;
     readonly preview: CaptureDraft | null;
   };
@@ -78,7 +82,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   const [unreadableDraftIds, setUnreadableDraftIds] = useState<readonly string[]>([]);
   const [selected, setSelected] = useState<CaptureDraft | null>(null);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState<CaptureFeedbackState | null>(null);
   const [error, setError] = useState<RealqaFeedback | null>(null);
   const [previewRequest, setPreviewRequest] = useState<FloatingPreviewRequest | null>(null);
   const [captureDialog, setCaptureDialog] = useState<CaptureActionId | null>(null);
@@ -213,7 +217,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
 
   const dismissCaptureDialog = useCallback((clearStatus = true) => {
     setCaptureDialog(null);
-    if (clearStatus) setStatus("");
+    if (clearStatus) setStatus(null);
     const opener = captureDialogOpener.current;
     captureDialogOpener.current = null;
     if (opener) requestAnimationFrame(() => { if (opener.isConnected) opener.focus(); });
@@ -243,7 +247,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     setUnreadableDraftIds([]);
     setSelected(null);
     setBusy(false);
-    setStatus("");
+    setStatus(null);
     setError(null);
     setPreviewRequest(null);
     setCaptureDialog(null);
@@ -263,7 +267,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       draftEditorOpener.current = captureDialogOpener.current ?? standaloneOpener ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     }
     captureOriginatingDraftId.current = originatingDraftId;
-    setBusy(true); setError(null); setStatus(copy.captureSaving);
+    setBusy(true); setError(null); setStatus(CaptureFeedbackState.Saving);
     try {
       const requestCapture = async (appendToDraftId?: string) => {
         // A queued append can outlive the editor that requested it. Do not begin
@@ -299,13 +303,13 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       if (!originatingDraftId) installDraft(response.draft);
       setSelected((current) => (current?.id ?? null) === originatingDraftId ? response.draft : current);
       setPreviewRequest({ draft: response.draft, imageId: previewImageId, sequence: ++previewSequence.current });
-      setStatus(copy.captureSaved);
+      setStatus(CaptureFeedbackState.Saved);
       if (contextAttachmentFailed) setError({ kind: RealqaFeedbackKind.BrowserContext, summary: copy.browserContextAttachmentFailed });
       dismissCaptureDialog(false);
       try { await refresh(); } catch { /* The capture response is already authoritative. */ }
     } catch (reason) {
       if (generation !== resetGeneration.current) return;
-      setStatus("");
+      setStatus(null);
       setError(errorCopy(copy, reason));
       dismissCaptureDialog();
     } finally {
@@ -321,7 +325,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     if (action === ShortcutActionId.CaptureSelection || action === ShortcutActionId.CaptureToolbar) {
       const generation = resetGeneration.current;
       captureStatusInFlight.current = true;
-      const opener = selected ? editorPreviewFallback.current : (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+      const opener = selected ? editorPreviewFallback.current : standaloneOpener ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
       setError(null);
       try {
         const freshStatus = await refreshCaptureStatus();
@@ -343,7 +347,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   const cancelInFlightCapture = useCallback(() => {
     if (!captureInFlight.current) return;
     captureCancellationGeneration.current += 1;
-    setStatus("");
+    setStatus(null);
     void bridge.request({ operation: "capture.cancel" }).catch(() => {});
   }, [bridge]);
   const cancelCapture = useCallback(() => {
@@ -356,10 +360,9 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     if (!requestedAction || requestedAction.sequence === lastRequested.current) return;
     lastRequested.current = requestedAction.sequence;
     onRequestedActionConsumed?.(requestedAction.sequence);
-    const opensCaptureDialog = requestedAction.action === ShortcutActionId.CaptureSelection || requestedAction.action === ShortcutActionId.CaptureToolbar;
-    // The palette unmounts before this effect runs, so direct captures need a
-    // live RealQA control rather than the palette's detached action as return focus.
-    void capture(requestedAction.action, opensCaptureDialog ? null : captureFocusFallback.current);
+    // The palette unmounts before this effect runs, so requested captures need
+    // a live RealQA control rather than the palette's detached action as return focus.
+    void capture(requestedAction.action, captureFocusFallback.current);
   }, [capture, onRequestedActionConsumed, requestedAction]);
   const dismissPreview = useCallback(() => {
     // Preview teardown must not leave the sheet focus trap without an in-sheet target.
@@ -517,11 +520,12 @@ function FeedbackPanel({ feedback, headingLevel = 3 }: { readonly feedback: Real
   return <StatePanel eyebrow={copy.error} title={state.title} summary={feedback.summary} headingLevel={headingLevel} tone={state.tone} role="alert" />;
 }
 
-function CaptureFeedback({ status, error }: { readonly status: string; readonly error: RealqaFeedback | null }) {
+function CaptureFeedback({ status, error }: { readonly status: CaptureFeedbackState | null; readonly error: RealqaFeedback | null }) {
   const { meta: { copy } } = useRealqa();
-  const statusTone: StatusTone = status === copy.captureSaving ? "info" : "success";
+  const statusTone: StatusTone = status === CaptureFeedbackState.Saving ? "info" : "success";
+  const statusText = status === CaptureFeedbackState.Saving ? copy.captureSaving : copy.captureSaved;
   return <>
-    {status && <div className="realqa-status" role="status" aria-live="polite"><StatusBadge tone={statusTone}>{status}</StatusBadge></div>}
+    {status && <div className="realqa-status" role="status" aria-live="polite"><StatusBadge tone={statusTone}>{statusText}</StatusBadge></div>}
     {error && <FeedbackPanel feedback={error} />}
   </>;
 }

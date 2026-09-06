@@ -602,15 +602,20 @@ describe("RealQA capture and editor", () => {
       if (value.operation === "capture.start") return new Promise((resolve) => { resolveCapture = resolve; });
       throw new Error(`unexpected operation ${value.operation}`);
     });
-    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    const view = render(<RealqaSurface bridge={bridge} copy={messages.en} />);
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
     const saving = await screen.findByText(messages.en.captureSaving);
     expect(saving.closest(".status-badge")?.classList.contains("status-badge-info")).toBe(true);
     expect(saving.closest(".status-badge")?.classList.contains("status-badge-success")).toBe(false);
 
+    view.rerender(<RealqaSurface bridge={bridge} copy={messages.ko} />);
+    const localizedSaving = await screen.findByText(messages.ko.captureSaving);
+    expect(localizedSaving.closest(".status-badge")?.classList.contains("status-badge-info")).toBe(true);
+    expect(localizedSaving.closest(".status-badge")?.classList.contains("status-badge-success")).toBe(false);
+
     await act(async () => { resolveCapture?.({ kind: "capture-draft", draft }); });
-    const saved = await screen.findByText(messages.en.captureSaved);
+    const saved = await screen.findByText(messages.ko.captureSaved);
     expect(saved.closest(".status-badge")?.classList.contains("status-badge-success")).toBe(true);
   });
 
