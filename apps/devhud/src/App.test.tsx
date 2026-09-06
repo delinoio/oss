@@ -55,6 +55,28 @@ afterEach(() => {
 });
 
 describe("native App state", () => {
+  it("disables mobile More while the Account API-change confirmation is open", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 390 });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const bridge = bridgeWith(async (request) => {
+      if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      throw new Error(`unexpected operation ${request.operation}`);
+    });
+    render(<App bridge={bridge} initialRuntime={mobileRuntime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+
+    const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    const more = screen.getByRole("button", { name: messages.en.more }) as HTMLButtonElement;
+    await waitFor(() => expect(more.disabled).toBe(true));
+    fireEvent.click(more);
+    expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull();
+
+    fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
+    await waitFor(() => expect(more.disabled).toBe(false));
+  });
+
   it("publishes Native Messaging configuration before Settings is opened", async () => {
     const invoke = vi.fn(async () => undefined);
     window.__TAURI_INTERNALS__ = { invoke };

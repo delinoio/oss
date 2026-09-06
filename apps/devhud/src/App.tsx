@@ -124,6 +124,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const [screenModalConfirmationOpen, setScreenModalConfirmationOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [externalMessage, setExternalMessage] = useState<ExternalMessage | null>(null);
+  const [apiChangeError, setApiChangeError] = useState(false);
   const [systemLanguage, setSystemLanguage] = useState(() => resolveLanguage(LanguagePreference.System, navigator.languages));
   const [runtime, setRuntime] = useState<RuntimeSnapshot | undefined>(initialRuntime);
   const [runtimeState, setRuntimeState] = useState<ContentState>(() => initialRuntime ? initialContentState : { kind: ContentStateKind.Loading });
@@ -172,6 +173,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     if ("apiOrigin" in next) {
       externalAttempt.current += 1;
       setExternalMessage(null);
+      setApiChangeError(false);
     }
     const value = { ...preferences, ...next };
     synchronizeDocumentPreferences(document.documentElement, value, matchMedia("(prefers-color-scheme: dark)").matches, navigator.languages);
@@ -398,6 +400,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const finishOnboarding = () => {
     externalAttempt.current += 1;
     setExternalMessage(null);
+    setApiChangeError(false);
     completeOnboarding(storage);
     setOnboarding(false);
     setSurface(SurfaceId.Home);
@@ -411,8 +414,9 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const applyApiOrigin = async (nextOrigin: string) => {
     const normalized = normalizeApiOrigin(nextOrigin);
     if (normalized === null || normalized === normalizeApiOrigin(preferences.apiOrigin)) return;
+    setApiChangeError(false);
     try { await clearIdentityForApiChange(bridge, storage, preferences.apiOrigin, identitySession); }
-    catch { setExternalMessage("failed"); return; }
+    catch { setApiChangeError(true); return; }
     setAuthCallback(null);
     update({ apiOrigin: normalized });
     const policy = await bridge.request({ operation: "session.configure-origins", apiOrigin: normalized });
@@ -451,7 +455,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
 
   if (runtimeState.kind !== ContentStateKind.Ready) return <main className="standalone-shell" data-devhud-ready="true"><ContentStateView state={runtimeState} copy={copy} onRetry={() => location.reload()} /></main>;
 
-  if (onboarding) return boundary(<main className="standalone-shell" data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "loading"}><FirstRunIdentity copy={copy} apiOrigin={preferences.apiOrigin} onApiOrigin={applyApiOrigin} onComplete={finishOnboarding} />{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</main>);
+  if (onboarding) return boundary(<main className="standalone-shell" data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "loading"}><FirstRunIdentity copy={copy} apiOrigin={preferences.apiOrigin} onApiOrigin={applyApiOrigin} onComplete={finishOnboarding} apiChangeError={apiChangeError ? copy.externalFailed : null} /></main>);
 
   const moreCurrent = surface === SurfaceId.Realqa || surface === SurfaceId.Diagnostics;
   const navigate = (nextSurface: SurfaceId) => { setSurface(nextSurface); setMoreOpen(false); };
@@ -483,7 +487,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       {surface === SurfaceId.Realqa && !mobile && !runtimeCapabilities.available.has(PlatformCapability.Capture) && <><PageHeader eyebrow={copy.realqa} title={copy.realqaTitle} summary={copy.realqaSummary} /><div className="disabled-actions">{unavailableCaptureActions.map((action) => <button disabled key={action.id}>{copy[action.title]}</button>)}</div><p className="notice">{copy.unavailable}</p></>}
       {surface === SurfaceId.Deck && <DeckSurface copy={copy} bridge={bridge} language={language} selectedDeckId={deckLink} onDismissMissingLink={() => setDeckLink(null)} onModalConfirmationOpenChange={setScreenModalConfirmationOpen} />}
       {surface === SurfaceId.Settings && <><PageHeader eyebrow={copy.settings} title={copy.settingsTitle} summary={copy.settingsSummary} /><SynchronizedSettingsBoundary copy={copy} bridge={bridge} onOpenExternal={openExternal} onModalConfirmationOpenChange={setScreenModalConfirmationOpen} showNativeShortcuts={runtime?.platform === RuntimePlatform.Desktop} shortcutCapabilities={runtimeCapabilities} NativeMessagingSettings={nativeMessaging?.Settings} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{supportsNotifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}{runtime?.platform === RuntimePlatform.Desktop && <DesktopUpdaterPanel bridge={bridge} language={language} onApprovalOpenChange={handleUpdaterApprovalOpenChange} />}</>}
-      {surface === SurfaceId.Account && <AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} onDeleteConfirmationOpenChange={setScreenModalConfirmationOpen} mobile={mobile} onOpenExternal={(target) => void external(target)} externalMessage={externalMessage} externalMessageText={externalMessageText} externalMessageIsError={externalMessageIsError} />}
+      {surface === SurfaceId.Account && <AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} onModalConfirmationOpenChange={setScreenModalConfirmationOpen} mobile={mobile} onOpenExternal={(target) => void external(target)} externalMessage={externalMessage} externalMessageText={externalMessageText} externalMessageIsError={externalMessageIsError} apiChangeError={apiChangeError ? copy.externalFailed : null} />}
       {surface === SurfaceId.Diagnostics && <><PageHeader eyebrow={copy.diagnostics} title={copy.diagnosticsTitle} summary={copy.diagnosticsSummary} />{runtime && <><dl className="runtime-diagnostics"><dt>{copy.diagnosticPlatform}</dt><dd>{runtime.operatingSystem}</dd><dt>{copy.diagnosticArchitecture}</dt><dd>{runtime.architecture}</dd><dt>{copy.diagnosticBridge}</dt><dd>v{runtime.bridgeVersion}</dd></dl><DiagnosticsPanel copy={copy} runtime={runtime} bridge={bridge} storage={storage} online={online} /></>}</>}
     </AppShell>
     <Dialog open={palette} title={copy.commandPalette} initialFocusRef={search} returnFocusRef={paletteTrigger} restoreFocus={paletteRestoresFocus} onClose={() => closePalette()}>

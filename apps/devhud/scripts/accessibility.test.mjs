@@ -181,6 +181,10 @@ test("Account uses the shared semantic hierarchy and confirmations", () => {
   assert.match(identityUi, /initialFocusRef=\{cancelDelete\}/u);
   assert.match(identityUi, /returnFocusRef=\{deleteTrigger\}/u);
   assert.match(identityUi, /apiChangeConfirmTitle/u);
+  assert.match(identityUi, /warningId="api-origin-security-warning"/u);
+  assert.match(identityUi, /onConfirmationOpenChange=\{setApiChangeConfirmationOpen\}/u);
+  assert.match(identityUi, /headingLevel=\{4\}/u);
+  assert.match(foundation, /readonly headingLevel\?: 2 \| 3 \| 4 \| 5 \| 6/u);
   assert.doesNotMatch(app, /window\.confirm\(/u);
   assert.match(foundation, /role\?: "dialog" \| "alertdialog"/u);
 });

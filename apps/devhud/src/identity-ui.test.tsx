@@ -48,12 +48,13 @@ describe("identity UI", () => {
     apiOrigin: "https://devhud.api.delino.io",
     inputRef: { current: null },
     onApiOrigin: vi.fn(async () => undefined),
-    onDeleteConfirmationOpenChange: vi.fn(),
+    onModalConfirmationOpenChange: vi.fn(),
     mobile: false,
     onOpenExternal: vi.fn(),
     externalMessage: null,
     externalMessageText: "",
     externalMessageIsError: false,
+    apiChangeError: null,
     ...overrides,
   });
 
@@ -64,19 +65,24 @@ describe("identity UI", () => {
     const sections = Array.from(document.querySelectorAll<HTMLElement>(".account-section")).map((section) => section.getAttribute("aria-label"));
     expect(sections.slice(0, 4)).toEqual([messages.en.session, messages.en.apiOrigin, messages.en.security, messages.en.externalTools]);
     expect(screen.getByRole("textbox", { name: messages.en.apiOrigin })).toBeTruthy();
+    expect(Array.from(document.querySelectorAll(".account-section .state-panel h2"))).toHaveLength(0);
+    expect(Array.from(document.querySelectorAll(".account-section .state-panel h4")).length).toBe(status === "authenticated" ? 0 : 1);
     expect(Boolean(screen.queryByLabelText(messages.en.dangerZone))).toBe(status === "authenticated");
   });
 
   it("confirms origin changes and keeps external targets platform-scoped", async () => {
     const onApiOrigin = vi.fn(async () => undefined);
     const onOpenExternal = vi.fn();
-    render(<AccountIdentity {...accountProps({ onApiOrigin, onOpenExternal })} />);
+    const onModalConfirmationOpenChange = vi.fn();
+    render(<AccountIdentity {...accountProps({ onApiOrigin, onOpenExternal, onModalConfirmationOpenChange })} />);
     const origin = screen.getByRole("textbox", { name: messages.en.apiOrigin });
     fireEvent.change(origin, { target: { value: "https://custom.example" } });
     fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
     const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenCalledWith(true));
     expect(onApiOrigin).not.toHaveBeenCalled();
     fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
+    await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(false));
     expect(onApiOrigin).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
     fireEvent.click(within(await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).getByRole("button", { name: messages.en.applyApiOrigin }));
@@ -90,6 +96,14 @@ describe("identity UI", () => {
     render(<AccountIdentity {...accountProps({ mobile: true, onOpenExternal })} />);
     expect(screen.queryByRole("button", { name: messages.en.issue })).toBeNull();
     expect(screen.getByRole("button", { name: messages.en.githubCreateFinePat })).toBeTruthy();
+  });
+
+  it("keeps the custom-origin warning and API-change failures beside the editor", () => {
+    render(<AccountIdentity {...accountProps({ apiChangeError: messages.en.externalFailed })} />);
+    const input = screen.getByRole("textbox", { name: messages.en.apiOrigin });
+    expect(input.getAttribute("aria-describedby")).toContain("api-origin-security-warning");
+    expect(document.getElementById("api-origin-security-warning")?.textContent).toBe(messages.en.customApiWarning);
+    expect(screen.getByRole("alert").textContent).toBe(messages.en.externalFailed);
   });
 
   it("uses the shared alert dialog for Delete focus containment and restoration", async () => {
@@ -192,7 +206,7 @@ describe("identity UI", () => {
     const continueLocally = vi.fn();
     identity = identityWith({ status: "error", continueLocally });
 
-    render(<AccountIdentity copy={messages.en} apiOrigin="https://devhud.api.delino.io" inputRef={{ current: null }} onApiOrigin={vi.fn(async () => undefined)} onDeleteConfirmationOpenChange={vi.fn()} mobile={false} onOpenExternal={vi.fn()} externalMessage={null} externalMessageText="" externalMessageIsError={false} />);
+    render(<AccountIdentity copy={messages.en} apiOrigin="https://devhud.api.delino.io" inputRef={{ current: null }} onApiOrigin={vi.fn(async () => undefined)} onModalConfirmationOpenChange={vi.fn()} mobile={false} onOpenExternal={vi.fn()} externalMessage={null} externalMessageText="" externalMessageIsError={false} apiChangeError={null} />);
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.continueLocally }));
     expect(continueLocally).toHaveBeenCalledOnce();

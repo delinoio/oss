@@ -20,9 +20,12 @@ interface ApiEditorProps {
   readonly inputRef?: Ref<HTMLInputElement>;
   readonly autoFocus?: boolean;
   readonly onApply: (value: string) => Promise<void>;
+  readonly warningId?: string;
+  readonly applyError?: string | null;
+  readonly onConfirmationOpenChange?: (open: boolean) => void;
 }
 
-export function ApiOriginEditor({ copy, value, inputRef, autoFocus = false, onApply }: ApiEditorProps) {
+export function ApiOriginEditor({ copy, value, inputRef, autoFocus = false, onApply, warningId, applyError, onConfirmationOpenChange }: ApiEditorProps) {
   const [draft, setDraft] = useState(value);
   const [error, setError] = useState(false);
   const [pendingOrigin, setPendingOrigin] = useState<string | null>(null);
@@ -30,6 +33,11 @@ export function ApiOriginEditor({ copy, value, inputRef, autoFocus = false, onAp
   const applyTrigger = useRef<HTMLButtonElement>(null);
   const cancelChange = useRef<HTMLButtonElement>(null);
   useEffect(() => setDraft(value), [value]);
+  const confirmationOpen = pendingOrigin !== null;
+  useEffect(() => {
+    onConfirmationOpenChange?.(confirmationOpen);
+  }, [confirmationOpen, onConfirmationOpenChange]);
+  useEffect(() => () => onConfirmationOpenChange?.(false), [onConfirmationOpenChange]);
   const apply = async () => {
     const normalized = normalizeApiOrigin(draft);
     if (normalized === null) { setError(true); return; }
@@ -46,10 +54,11 @@ export function ApiOriginEditor({ copy, value, inputRef, autoFocus = false, onAp
   };
   return <div className="api-origin-editor">
     <Field label={copy.apiOrigin} inputId={inputId} hint={copy.apiOriginHint} error={error ? copy.invalidApiOrigin : undefined}>
-      <input id={inputId} ref={inputRef} autoFocus={autoFocus} value={draft} onChange={(event) => setDraft(event.target.value)} aria-describedby={`${inputId}-hint${error ? ` ${inputId}-error` : ""}`} />
+      <input id={inputId} ref={inputRef} autoFocus={autoFocus} value={draft} onChange={(event) => setDraft(event.target.value)} aria-describedby={`${inputId}-hint${error ? ` ${inputId}-error` : ""}${warningId ? ` ${warningId}` : ""}`} />
     </Field>
     <Button ref={applyTrigger} type="button" onClick={() => void apply()} disabled={normalizeApiOrigin(draft) === normalizeApiOrigin(value)}>{copy.applyApiOrigin}</Button>
-    <Dialog open={pendingOrigin !== null} title={copy.apiChangeConfirmTitle} initialFocusRef={cancelChange} returnFocusRef={applyTrigger} onClose={() => setPendingOrigin(null)}>
+    {applyError && <p className="external-message" role="alert">{applyError}</p>}
+    <Dialog open={confirmationOpen} title={copy.apiChangeConfirmTitle} initialFocusRef={cancelChange} returnFocusRef={applyTrigger} onClose={() => setPendingOrigin(null)}>
       <p>{copy.apiChangeConfirm}</p>
       <div className="actions"><Button ref={cancelChange} onClick={() => setPendingOrigin(null)}>{copy.cancel}</Button><Button variant="primary" onClick={confirm}>{copy.applyApiOrigin}</Button></div>
     </Dialog>
@@ -61,9 +70,10 @@ interface IdentityProps {
   readonly apiOrigin: string;
   readonly onApiOrigin: (value: string) => Promise<void>;
   readonly onComplete: () => void;
+  readonly apiChangeError: string | null;
 }
 
-export function FirstRunIdentity({ copy, apiOrigin, onApiOrigin, onComplete }: IdentityProps) {
+export function FirstRunIdentity({ copy, apiOrigin, onApiOrigin, onComplete, apiChangeError }: IdentityProps) {
   const identity = useIdentitySettings();
   const [actionError, setActionError] = useState(false);
   useEffect(() => {
@@ -71,8 +81,8 @@ export function FirstRunIdentity({ copy, apiOrigin, onApiOrigin, onComplete }: I
   }, [identity.status, onComplete]);
   return <Card className="onboarding-card">
     <PageHeader eyebrow={copy.account} title={copy.accountTitle} summary={copy.firstRunSummary} level={1} />
-    <ApiOriginEditor copy={copy} value={apiOrigin} autoFocus onApply={onApiOrigin} />
-    <Card className="account-security"><h2>{copy.security}</h2><p className="notice">{copy.customApiWarning}</p></Card>
+    <ApiOriginEditor copy={copy} value={apiOrigin} autoFocus onApply={onApiOrigin} warningId="api-origin-security-warning" applyError={apiChangeError} />
+    <Card className="account-security"><h2>{copy.security}</h2><p id="api-origin-security-warning" className="notice">{copy.customApiWarning}</p></Card>
     <div className="actions">
       <Button variant="primary" onClick={() => { setActionError(false); void identity.signIn().catch(() => setActionError(true)); }} disabled={identity.status === "starting" || identity.bootstrap === null || identity.signInPending}>{copy.signIn}</Button>
       <Button onClick={identity.continueLocally}>{copy.continueLocally}</Button>
@@ -88,43 +98,44 @@ interface AccountIdentityProps {
   readonly apiOrigin: string;
   readonly inputRef: Ref<HTMLInputElement>;
   readonly onApiOrigin: (value: string) => Promise<void>;
-  readonly onDeleteConfirmationOpenChange: (open: boolean) => void;
+  readonly onModalConfirmationOpenChange: (open: boolean) => void;
   readonly mobile: boolean;
   readonly onOpenExternal: (target: ExternalLinkTarget) => void;
   readonly externalMessage: "opened" | "failed" | "invalid-api-origin" | null;
   readonly externalMessageText: string;
   readonly externalMessageIsError: boolean;
+  readonly apiChangeError: string | null;
 }
 
-export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin, onDeleteConfirmationOpenChange, mobile, onOpenExternal, externalMessage, externalMessageText, externalMessageIsError }: AccountIdentityProps) {
+export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin, onModalConfirmationOpenChange, mobile, onOpenExternal, externalMessage, externalMessageText, externalMessageIsError, apiChangeError }: AccountIdentityProps) {
   const identity = useIdentitySettings();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [apiChangeConfirmationOpen, setApiChangeConfirmationOpen] = useState(false);
   const [actionError, setActionError] = useState(false);
   const deleteTrigger = useRef<HTMLButtonElement>(null);
   const cancelDelete = useRef<HTMLButtonElement>(null);
   const deleteConfirmationOpen = confirmDelete && identity.status === "authenticated" && !identity.accountError && identity.account !== null;
+  const modalConfirmationOpen = deleteConfirmationOpen || apiChangeConfirmationOpen;
   const invoke = (action: () => Promise<void>) => { setActionError(false); void action().catch(() => setActionError(true)); };
   useEffect(() => {
-    onDeleteConfirmationOpenChange(deleteConfirmationOpen);
-    return () => {
-      if (deleteConfirmationOpen) onDeleteConfirmationOpenChange(false);
-    };
-  }, [deleteConfirmationOpen, onDeleteConfirmationOpenChange]);
+    onModalConfirmationOpenChange(modalConfirmationOpen);
+  }, [modalConfirmationOpen, onModalConfirmationOpenChange]);
+  useEffect(() => () => onModalConfirmationOpenChange(false), [onModalConfirmationOpenChange]);
   return <>
     <PageHeader eyebrow={copy.account} title={copy.accountTitle} summary={copy.accountSummary} />
     <div className="account-sections">
       <Card className="account-section" aria-label={copy.session}><h3>{copy.session}</h3>
-        {identity.status === "starting" && <StatePanel eyebrow={copy.account} title={copy.fetchingBootstrap} summary={copy.accountSummary} progress />}
-        {(identity.status === "signed-out" || identity.status === "guest") && <StatePanel eyebrow={identity.status === "guest" ? copy.guest : copy.signedOut} title={identity.status === "guest" ? copy.guestSessionTitle : copy.signedOutSessionTitle} summary={identity.status === "guest" ? copy.guestSettingsLocal : copy.accountSummary} actions={<Button variant="primary" onClick={() => invoke(identity.signIn)} disabled={identity.bootstrap === null || identity.signInPending}>{copy.signIn}</Button>} />}
-        {identity.status === "authenticated" && identity.accountError && <StatePanel eyebrow={copy.account} tone="danger" role="alert" title={copy.accountLoadFailed} summary={copy.accountLoadFailed} details={<p className="correlation"><code>{`account-connect-${identity.accountError.code}`}</code>{identity.accountError.correlationId && <> {copy.correlationId}: <code>{identity.accountError.correlationId}</code></>}</p>} actions={<Button onClick={() => void identity.retryAccount()}>{copy.retry}</Button>} />}
-        {identity.status === "authenticated" && !identity.accountError && identity.account === null && <StatePanel eyebrow={copy.account} title={copy.loadingAccount} summary={copy.accountSummary} progress />}
+        {identity.status === "starting" && <StatePanel headingLevel={4} eyebrow={copy.account} title={copy.fetchingBootstrap} summary={copy.accountSummary} progress />}
+        {(identity.status === "signed-out" || identity.status === "guest") && <StatePanel headingLevel={4} eyebrow={identity.status === "guest" ? copy.guest : copy.signedOut} title={identity.status === "guest" ? copy.guestSessionTitle : copy.signedOutSessionTitle} summary={identity.status === "guest" ? copy.guestSettingsLocal : copy.accountSummary} actions={<Button variant="primary" onClick={() => invoke(identity.signIn)} disabled={identity.bootstrap === null || identity.signInPending}>{copy.signIn}</Button>} />}
+        {identity.status === "authenticated" && identity.accountError && <StatePanel headingLevel={4} eyebrow={copy.account} tone="danger" role="alert" title={copy.accountLoadFailed} summary={copy.accountLoadFailed} details={<p className="correlation"><code>{`account-connect-${identity.accountError.code}`}</code>{identity.accountError.correlationId && <> {copy.correlationId}: <code>{identity.accountError.correlationId}</code></>}</p>} actions={<Button onClick={() => void identity.retryAccount()}>{copy.retry}</Button>} />}
+        {identity.status === "authenticated" && !identity.accountError && identity.account === null && <StatePanel headingLevel={4} eyebrow={copy.account} title={copy.loadingAccount} summary={copy.accountSummary} progress />}
         {identity.status === "authenticated" && !identity.accountError && identity.account !== null && <><DataRow title={identity.account.displayName || identity.account.email || copy.signedIn} description={identity.account.displayName && identity.account.email ? identity.account.email : undefined} trailing={<StatusBadge tone="success">{copy.signedIn}</StatusBadge>} /><div className="actions"><Button onClick={() => invoke(identity.logout)}>{copy.logout}</Button></div></>}
-        {identity.status === "blocked" && <StatePanel eyebrow={copy.blocked} tone="warning" title={copy.blockedTitle} summary={copy.blockedSummary} details={<p>{copy.blockedLocalHint}</p>} actions={<Button onClick={() => invoke(identity.logout)}>{copy.logout}</Button>} />}
-        {identity.status === "deletion-pending" && <StatePanel eyebrow={copy.account} tone="warning" title={copy.deletionPendingTitle} summary={copy.deletionPendingSummary} details={identity.account?.recoverableUntil ? <p>{copy.recoverableUntil}: {new Date(Number(identity.account.recoverableUntil.seconds) * 1000).toLocaleString()}</p> : undefined} actions={<><Button variant="primary" onClick={() => invoke(identity.restoreAccount)}>{copy.restoreAccount}</Button><Button onClick={() => invoke(identity.logout)}>{copy.logout}</Button></>} />}
-        {actionError && <StatePanel eyebrow={copy.account} tone="danger" role="alert" title={copy.accountActionFailed} summary={copy.accountActionFailed} />}
+        {identity.status === "blocked" && <StatePanel headingLevel={4} eyebrow={copy.blocked} tone="warning" title={copy.blockedTitle} summary={copy.blockedSummary} details={<p>{copy.blockedLocalHint}</p>} actions={<Button onClick={() => invoke(identity.logout)}>{copy.logout}</Button>} />}
+        {identity.status === "deletion-pending" && <StatePanel headingLevel={4} eyebrow={copy.account} tone="warning" title={copy.deletionPendingTitle} summary={copy.deletionPendingSummary} details={identity.account?.recoverableUntil ? <p>{copy.recoverableUntil}: {new Date(Number(identity.account.recoverableUntil.seconds) * 1000).toLocaleString()}</p> : undefined} actions={<><Button variant="primary" onClick={() => invoke(identity.restoreAccount)}>{copy.restoreAccount}</Button><Button onClick={() => invoke(identity.logout)}>{copy.logout}</Button></>} />}
+        {actionError && <StatePanel headingLevel={4} eyebrow={copy.account} tone="danger" role="alert" title={copy.accountActionFailed} summary={copy.accountActionFailed} />}
       </Card>
-      <Card className="account-section" aria-label={copy.apiOrigin}><h3>{copy.apiOrigin}</h3><ApiOriginEditor copy={copy} value={apiOrigin} inputRef={inputRef} onApply={onApiOrigin} /></Card>
-      <Card className="account-section account-security" aria-label={copy.security}><h3>{copy.security}</h3><p className="notice">{copy.customApiWarning}</p>{identity.status === "error" && <StatePanel eyebrow={copy.security} tone="danger" role="alert" title={copy.bootstrapFailed} summary={copy.bootstrapFailed} details={identity.identityResetAvailable ? <p>{copy.resetSignInHint}</p> : undefined} actions={<><Button onClick={identity.retryIdentity}>{copy.retry}</Button><Button onClick={identity.continueLocally}>{copy.continueLocally}</Button>{identity.identityResetAvailable && <Button onClick={() => void identity.resetIdentity().catch(() => {})}>{copy.resetSignIn}</Button>}</>} />}{identity.status === "deletion-pending" && identity.deletionCleanupFailed && <StatePanel eyebrow={copy.security} tone="danger" role="alert" title={copy.accountActionFailed} summary={copy.accountActionFailed} actions={<Button onClick={() => void identity.retryDeletionCleanup()}>{copy.retry}</Button>} />}</Card>
+      <Card className="account-section" aria-label={copy.apiOrigin}><h3>{copy.apiOrigin}</h3><ApiOriginEditor copy={copy} value={apiOrigin} inputRef={inputRef} onApply={onApiOrigin} warningId="api-origin-security-warning" applyError={apiChangeError} onConfirmationOpenChange={setApiChangeConfirmationOpen} /></Card>
+      <Card className="account-section account-security" aria-label={copy.security}><h3>{copy.security}</h3><p id="api-origin-security-warning" className="notice">{copy.customApiWarning}</p>{identity.status === "error" && <StatePanel headingLevel={4} eyebrow={copy.security} tone="danger" role="alert" title={copy.bootstrapFailed} summary={copy.bootstrapFailed} details={identity.identityResetAvailable ? <p>{copy.resetSignInHint}</p> : undefined} actions={<><Button onClick={identity.retryIdentity}>{copy.retry}</Button><Button onClick={identity.continueLocally}>{copy.continueLocally}</Button>{identity.identityResetAvailable && <Button onClick={() => void identity.resetIdentity().catch(() => {})}>{copy.resetSignIn}</Button>}</>} />}{identity.status === "deletion-pending" && identity.deletionCleanupFailed && <StatePanel headingLevel={4} eyebrow={copy.security} tone="danger" role="alert" title={copy.accountActionFailed} summary={copy.accountActionFailed} actions={<Button onClick={() => void identity.retryDeletionCleanup()}>{copy.retry}</Button>} />}</Card>
       <Card className="account-section" aria-label={copy.externalTools}><h3>{copy.externalTools}</h3><div className="account-external-tools"><DataRow ariaLabel={copy.githubCreateFinePat} title={copy.githubCreateFinePat} description={copy.pat} onClick={() => onOpenExternal(ExternalLinkTarget.Pat)} /><DataRow ariaLabel={copy.githubCreateClassicPat} title={copy.githubCreateClassicPat} description={copy.pat} onClick={() => onOpenExternal(ExternalLinkTarget.ClassicPat)} />{!mobile && <DataRow ariaLabel={copy.issue} title={copy.issue} description={copy.projectIssueHint} onClick={() => onOpenExternal(ExternalLinkTarget.Issue)} />}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</Card>
       {identity.status === "authenticated" && !identity.accountError && identity.account !== null && <Card className="account-section account-danger" aria-label={copy.dangerZone}><h3>{copy.dangerZone}</h3><p>{copy.deleteAccountConfirmSummary}</p><Button ref={deleteTrigger} variant="danger" onClick={() => setConfirmDelete(true)}>{copy.deleteAccount}</Button></Card>}
     </div>
