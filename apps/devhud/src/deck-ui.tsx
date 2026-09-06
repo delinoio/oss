@@ -1,4 +1,4 @@
-import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PropsWithChildren } from "react";
+import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PropsWithChildren, type RefObject } from "react";
 import { applyDeckBuilder, classifyDeckFailure, clearDeckCache, DeckLimit, deckTransitionKeys, nextDeckRefresh, parseDeckBuilder, readDeckCache, validateDeckQuery, writeDeckCache, type DeckCache, type DeckFailure, type DeckPendingNotification } from "./deck.ts";
 import { createGitHubProvider, GitHubErrorCode, GitHubOperation, GitHubProviderError, readGitHubCredential, type GitHubCredential, type GitHubDeckPullRequest, type GitHubProvider } from "./github-provider.ts";
 import type { Copy } from "./localization.ts";
@@ -521,22 +521,36 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [widgetConfirmationOpen, setWidgetConfirmationOpen] = useState(false);
   const [deleteFailedDeckId, setDeleteFailedDeckId] = useState<string | null>(null);
+  const [pendingCreation, setPendingCreation] = useState(false);
   const editorGeneration = useRef(0);
+  const createdDeckToFocus = useRef<string | null>(null);
+  const createdDeckSaveButton = useRef<HTMLButtonElement>(null);
   const mobile = shellLayout === ShellLayout.Mobile;
-  const missingLinkedDeck = selectedDeckId !== null && !identity.settings.decks.some((item) => item.id === selectedDeckId);
+  const linkedDeckAvailable = selectedDeckId !== null && identity.settings.decks.some((item) => item.id === selectedDeckId);
+  const previousLinkedDeck = useRef({ id: selectedDeckId, available: linkedDeckAvailable });
+  const missingLinkedDeck = selectedDeckId !== null && !linkedDeckAvailable;
   const selectedDeck = missingLinkedDeck ? null : identity.settings.decks.find((item) => item.id === selected) ?? identity.settings.decks[0] ?? null;
   const isCreating = creating || selectedDeck === null;
   const deck = isCreating ? null : selectedDeck;
   const refreshState = deck === null ? emptyDeckRefreshState : polling.states[deck.id] ?? emptyDeckRefreshState;
   const editorDraft = useDeckEditorDraft(deck, identity.settings.github.profiles);
   useEffect(() => {
-    if (selectedDeckId && identity.settings.decks.some((item) => item.id === selectedDeckId)) {
-      editorGeneration.current += 1;
-      setSelected(selectedDeckId);
-      setCreating(false);
-      setSettingsOpen(false);
-    }
-  }, [identity.settings.decks, selectedDeckId]);
+    const previous = previousLinkedDeck.current;
+    previousLinkedDeck.current = { id: selectedDeckId, available: linkedDeckAvailable };
+    if (selectedDeckId === null || !linkedDeckAvailable || (previous.id === selectedDeckId && previous.available)) return;
+    editorGeneration.current += 1;
+    setSelected(selectedDeckId);
+    setCreating(false);
+    setSettingsOpen(false);
+  }, [linkedDeckAvailable, selectedDeckId]);
+  useEffect(() => {
+    // Creation replaces the keyed editor while its Sheet stays open, so restore focus after the replacement mounts.
+    if (createdDeckToFocus.current !== deck?.id) return;
+    if (!mobile || !settingsOpen) { createdDeckToFocus.current = null; return; }
+    createdDeckToFocus.current = null;
+    const animation = requestAnimationFrame(() => createdDeckSaveButton.current?.focus());
+    return () => cancelAnimationFrame(animation);
+  }, [deck?.id, mobile, settingsOpen]);
   const handleWidgetConfirmationOpenChange = useCallback((open: boolean) => {
     setWidgetConfirmationOpen(open);
     onModalConfirmationOpenChange?.(open);
@@ -553,9 +567,9 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   if (missingLinkedDeck) return <section className="deck" aria-labelledby="deck-title"><h2 id="deck-title">{copy.deckTitle}</h2><p role="alert">{copy.deckNotFound}</p><button type="button" onClick={onDismissMissingLink}>{copy.deckReturnToList}</button></section>;
   if (identity.settings.github.profiles.length === 0) return <>{polling.online ? <EmptyState copy={copy} /> : <OfflineState copy={copy} />}<p role="status">{copy.deckNoProfiles}</p></>;
   const creationDisabled = identity.readOnly || identity.settings.decks.length >= DeckLimit;
-  const createDisabled = creationDisabled || (isCreating && editorDraft.saving);
+  const createDisabled = creationDisabled || pendingCreation;
   const openCreate = () => {
-    if (isCreating && editorDraft.saving) return;
+    if (pendingCreation) return;
     editorGeneration.current += 1;
     onDismissMissingLink?.();
     setCreating(true);
@@ -568,16 +582,25 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     setCreating(false);
     setSettingsOpen(false);
   };
-  const editor = <DeckEditor key={deck?.id ?? "create"} copy={copy} value={deck ?? undefined} draft={editorDraft.draft} saving={editorDraft.saving} saveFailure={editorDraft.saveFailure} onDraftChange={editorDraft.update} onSaveStart={editorDraft.beginSave} onSaveFinish={editorDraft.finishSave} profiles={identity.settings.github.profiles} disabled={isCreating ? creationDisabled : identity.readOnly} onSave={async (next) => {
+  const editor = <DeckEditor key={deck?.id ?? "create"} copy={copy} value={deck ?? undefined} draft={editorDraft.draft} saving={editorDraft.saving} saveFailure={editorDraft.saveFailure} saveButtonRef={createdDeckSaveButton} onDraftChange={editorDraft.update} onSaveStart={editorDraft.beginSave} onSaveFinish={editorDraft.finishSave} profiles={identity.settings.github.profiles} disabled={isCreating ? creationDisabled : identity.readOnly} onSave={async (next) => {
     // A save can outlive a selection change, so only its originating editor may navigate on completion.
     const generation = editorGeneration.current;
     const creatingAtSubmit = isCreating;
-    await polling.validate(next);
-    const committed = creatingAtSubmit
-      ? await identity.replaceSettings((current) => ({ ...current, decks: [...current.decks, next] }))
-      : await identity.replaceSettings((current) => ({ ...current, decks: current.decks.map((item) => item.id === deck?.id ? next : item) }));
-    if (committed && creatingAtSubmit && generation === editorGeneration.current) { setSelected(next.id); setCreating(false); }
-    return committed;
+    if (creatingAtSubmit) setPendingCreation(true);
+    try {
+      await polling.validate(next);
+      const committed = creatingAtSubmit
+        ? await identity.replaceSettings((current) => ({ ...current, decks: [...current.decks, next] }))
+        : await identity.replaceSettings((current) => ({ ...current, decks: current.decks.map((item) => item.id === deck?.id ? next : item) }));
+      if (committed && creatingAtSubmit && generation === editorGeneration.current) {
+        if (mobile && settingsOpen) createdDeckToFocus.current = next.id;
+        setSelected(next.id);
+        setCreating(false);
+      }
+      return committed;
+    } finally {
+      if (creatingAtSubmit) setPendingCreation(false);
+    }
   }} />;
   const configuration = <DeckConfiguration copy={copy} deck={deck} refreshState={refreshState} readOnly={identity.readOnly} deleteFailed={deck !== null && deleteFailedDeckId === deck.id} onDelete={() => deck && void deleteDeck(deck)}>{editor}{deck && <WidgetAccess key={`widget-${deck.id}`} cache={refreshState.cache} cacheProfileRef={refreshState.cacheProfileRef} copy={copy} deck={deck} failure={refreshState.failure} onConfirmationOpenChange={handleWidgetConfirmationOpenChange} />}</DeckConfiguration>;
   const cachedResults = refreshState.cache?.results ?? [];
@@ -711,7 +734,7 @@ function widgetSnapshot(deck: Deck, cache: DeckCache, failure: DeckFailure | nul
   return base;
 }
 
-function DeckEditor({ copy, value, draft, saving, saveFailure, onDraftChange, onSaveStart, onSaveFinish, profiles, disabled = false, onSave }: { readonly copy: Copy; readonly value?: DevHudSettingsV1["decks"][number]; readonly draft: DeckEditorDraft; readonly saving: boolean; readonly saveFailure: DeckFailure | null; readonly onDraftChange: (change: (current: DeckEditorDraft) => DeckEditorDraft) => void; readonly onSaveStart: () => void; readonly onSaveFinish: (failure: DeckFailure | null) => void; readonly profiles: DevHudSettingsV1["github"]["profiles"]; readonly disabled?: boolean; readonly onSave: (deck: DevHudSettingsV1["decks"][number]) => Promise<boolean> }) {
+function DeckEditor({ copy, value, draft, saving, saveFailure, saveButtonRef, onDraftChange, onSaveStart, onSaveFinish, profiles, disabled = false, onSave }: { readonly copy: Copy; readonly value?: DevHudSettingsV1["decks"][number]; readonly draft: DeckEditorDraft; readonly saving: boolean; readonly saveFailure: DeckFailure | null; readonly saveButtonRef?: RefObject<HTMLButtonElement | null>; readonly onDraftChange: (change: (current: DeckEditorDraft) => DeckEditorDraft) => void; readonly onSaveStart: () => void; readonly onSaveFinish: (failure: DeckFailure | null) => void; readonly profiles: DevHudSettingsV1["github"]["profiles"]; readonly disabled?: boolean; readonly onSave: (deck: DevHudSettingsV1["decks"][number]) => Promise<boolean> }) {
   const { name, profileRef, query, builder, refreshMinutes, groupBy, showDrafts, notifications } = draft;
   const [invalid, setInvalid] = useState<"query" | "repository" | null>(null);
   const submit = (event: FormEvent) => { event.preventDefault(); if (saving) return; if (!validateDeckQuery(query) || !profileRef || !name.trim()) { setInvalid("query"); return; } if (!hasRepositoryQualifier(query) || deckRepositories(query) === null) { setInvalid("repository"); return; } setInvalid(null); onSaveStart(); const next = { id: value?.id ?? createUuidV7(), name: name.trim(), profileRef, query, builder, display: { groupBy, showDrafts }, refreshMinutes, notifications }; void (async () => { try { onSaveFinish(await onSave(next) ? null : "unknown"); } catch (error) { onSaveFinish(classifyDeckFailure(error)); } })(); };
@@ -731,7 +754,7 @@ function DeckEditor({ copy, value, draft, saving, saveFailure, onDraftChange, on
     <Field label={copy.deckGroupBy} inputId="deck-group-by"><select id="deck-group-by" value={groupBy} onChange={(event) => onDraftChange((current) => ({ ...current, groupBy: event.target.value as Deck["display"]["groupBy"] }))}><option value="none">{copy.deckGroupNone}</option><option value="repository">{copy.deckGroupRepository}</option><option value="author">{copy.deckGroupAuthor}</option></select></Field>
     <label className="check deck-check" htmlFor="deck-show-drafts"><input id="deck-show-drafts" type="checkbox" checked={showDrafts} onChange={(event) => onDraftChange((current) => ({ ...current, showDrafts: event.target.checked }))} /><span>{copy.deckShowDrafts}</span></label>
     <label className="check deck-check" htmlFor="deck-notifications"><input id="deck-notifications" type="checkbox" checked={notifications.length > 0} onChange={(event) => onDraftChange((current) => ({ ...current, notifications: event.target.checked ? ["review", "checks", "merged", "closed"] : [] }))} /><span>{copy.deckNotifications}</span></label>
-    <Button variant="primary" type="submit">{copy.saved}</Button>{invalid && <p role="alert">{invalid === "repository" ? copy.deckRequireRepository : copy.deckRequirePullRequests}</p>}{saveFailure && <p role="alert">{failureCopy(copy, saveFailure)}</p>}
+    <Button ref={saveButtonRef} variant="primary" type="submit">{copy.saved}</Button>{invalid && <p role="alert">{invalid === "repository" ? copy.deckRequireRepository : copy.deckRequirePullRequests}</p>}{saveFailure && <p role="alert">{failureCopy(copy, saveFailure)}</p>}
   </fieldset></form>;
 }
 
