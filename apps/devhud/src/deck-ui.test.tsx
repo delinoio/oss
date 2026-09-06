@@ -120,7 +120,7 @@ describe("Deck surface", () => {
     expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Keep this edit");
   });
 
-  it("keeps a pending Deck creation unavailable while its editor moves to mobile", async () => {
+  it("keeps Create unavailable while a Deck creation is pending", async () => {
     let finishSave: (committed: boolean) => void = () => {};
     const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
     const replaceSettings = vi.fn(() => pendingSave);
@@ -133,17 +133,59 @@ describe("Deck surface", () => {
     fireEvent.change(screen.getByLabelText(messages.en.deckQuery), { target: { value: "repo:octo/widgets is:pr" } });
     fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
     await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    expect(screen.getAllByRole("button", { name: messages.en.deckCreate }).every((button) => button.hasAttribute("disabled"))).toBe(true);
 
     setViewport(390);
-    fireEvent.click(screen.getAllByRole("button", { name: messages.en.deckCreate })[0]!);
-    await screen.findByRole("dialog", { name: messages.en.deckCreate });
-    const movedForm = screen.getByLabelText(messages.en.deckName).closest("form")!;
-    expect((movedForm.querySelector(":scope > fieldset") as HTMLFieldSetElement).disabled).toBe(true);
-    fireEvent.submit(movedForm);
-    expect(replaceSettings).toHaveBeenCalledOnce();
+    expect(screen.getAllByRole("button", { name: messages.en.deckCreate }).every((button) => button.hasAttribute("disabled"))).toBe(true);
 
     finishSave(false);
-    await waitFor(() => expect((movedForm.querySelector(":scope > fieldset") as HTMLFieldSetElement).disabled).toBe(false));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: messages.en.deckCreate }).every((button) => !button.hasAttribute("disabled"))).toBe(true));
+    fireEvent.click(screen.getAllByRole("button", { name: messages.en.deckCreate })[0]!);
+    await screen.findByRole("dialog", { name: messages.en.deckCreate });
+    expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorNetwork);
+    expect(replaceSettings).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a pending desktop Deck save failure when its editor moves to mobile", async () => {
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn(() => pendingSave);
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    setViewport(390);
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+
+    finishSave(false);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorNetwork));
+  });
+
+  it("keeps focus in the mobile settings sheet after an existing Deck save refreshes its source", async () => {
+    setViewport(390);
+    const savedDeck = { ...deck, name: "Saved Deck" };
+    const replaceSettings = vi.fn(async () => true);
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: savedDeck.name } });
+    const save = screen.getByRole("button", { name: messages.en.saved });
+    save.focus();
+    fireEvent.submit(save.closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [savedDeck] }), replaceSettings });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(savedDeck.name));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.saved }));
+    expect(sheet.contains(document.activeElement)).toBe(true);
   });
 
   it.each(["Back", "Escape"])("keeps a mobile Deck save failure visible when %s is requested during saving", async (dismissal) => {
