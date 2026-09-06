@@ -529,6 +529,39 @@ describe("Deck surface", () => {
     expect(JSON.stringify(request.mock.calls)).not.toMatch(/github[_-]?pat|Bearer|token-value/iu);
   });
 
+  it("surfaces a widget enable failure inside the active privacy confirmation", async () => {
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "widgets.status") return { kind: "widget-status", enabledDeckIds: [] };
+      if (value.operation === "widgets.enable-deck") throw new Error("storage-failure");
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm }));
+
+    await waitFor(() => expect(screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle }).textContent).toContain(messages.en.widgetActionFailed));
+    expect(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm })).not.toHaveProperty("disabled", true);
+  });
+
+  it("closes the widget confirmation when its originating Deck is removed", async () => {
+    const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck", query: "repo:octo/other is:pr", builder: null };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, otherDeck] }) });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => value.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const bridge = bridgeWith(request);
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [otherDeck] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
+    expect(screen.getByRole("complementary", { name: messages.en.deckConfiguration }).hasAttribute("inert")).toBe(false);
+    expect(request).not.toHaveBeenCalledWith(expect.objectContaining({ operation: "widgets.enable-deck", configuration: expect.objectContaining({ deckId: otherDeck.id }) }));
+  });
+
   it("dismisses mobile widget privacy confirmation without closing the Deck sheet", async () => {
     setViewport(390);
     const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
@@ -719,7 +752,7 @@ describe("Deck surface", () => {
 
     await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "widgets.replace-deck-snapshot" })));
     await waitFor(() => expect(screen.getByRole("button", { name: messages.en.widgetDisable })).toBeTruthy());
-    expect(screen.getByRole("alert").textContent).toBe(messages.en.widgetActionFailed);
+    expect(screen.getAllByRole("alert").map((alert) => alert.textContent)).toContain(messages.en.widgetActionFailed);
     expect(screen.queryByRole("button", { name: messages.en.widgetEnable })).toBeNull();
   });
 
@@ -939,6 +972,14 @@ describe("Deck surface", () => {
     expect(screen.getByText(messages.en.empty)).toBeTruthy();
   });
 
+  it("nests empty Deck workspace states below the Deck heading", () => {
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect(screen.getByRole("status", { name: messages.en.deckCreate }).querySelector("h3")).toBeTruthy();
+  });
+
   it("prioritizes the current offline state over a cached refresh failure", async () => {
     writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, totalCount: 1, results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 1, failure: "token", nextRefreshAt: null, transitionKeys: [] });
     const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
@@ -1014,6 +1055,32 @@ describe("Deck surface", () => {
 
     await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
     await waitFor(() => expect(operations.slice(-2)).toEqual(["delete-settings", "clear-widget"]));
+  });
+
+  it("does not let an earlier Deck deletion close a newer mobile settings sheet", async () => {
+    setViewport(390);
+    const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    let finishDelete: (committed: boolean) => void = () => {};
+    const pendingDelete = new Promise<boolean>((resolve) => { finishDelete = resolve; });
+    const replaceSettings: IdentitySettingsValue["replaceSettings"] = vi.fn(async () => pendingDelete);
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, otherDeck] }), replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    const firstSheet = await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckDelete }));
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    fireEvent.keyDown(firstSheet, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull());
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: otherDeck.id } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+
+    finishDelete(true);
+
+    await waitFor(() => expect(screen.getByRole("dialog", { name: messages.en.deckConfiguration })).toBeTruthy());
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(otherDeck.name);
   });
 
   it("keeps Deck deletion authoritative over widget synchronization still building configuration", async () => {
