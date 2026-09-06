@@ -98,6 +98,22 @@ describe("DevHud UI foundation", () => {
     expect(screen.queryByRole("dialog", { name: "More" })).toBeNull();
   });
 
+  it("does not override focus transferred while sheet autofocus is pending", async () => {
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return <><Button onClick={() => setOpen(true)}>Open</Button><Sheet open={open} title="More" backLabel="Back" onClose={() => setOpen(false)}><Button>Destination</Button><Button>Keep focus</Button></Sheet></>;
+    }
+    render(<Harness />);
+    const opener = screen.getByRole("button", { name: "Open" });
+    opener.focus();
+    fireEvent.click(opener);
+    const retainedFocus = screen.getByRole("button", { name: "Keep focus" });
+    retainedFocus.focus();
+
+    await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    expect(document.activeElement).toBe(retainedFocus);
+  });
+
   it("skips fieldset-disabled controls when focusing a sheet", async () => {
     render(<Sheet open title="Read-only" backLabel="Back" onClose={() => undefined}><fieldset disabled><input aria-label="Disabled input" /></fieldset></Sheet>);
 
