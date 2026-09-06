@@ -79,6 +79,7 @@ describe("identity UI", () => {
     fireEvent.change(origin, { target: { value: "https://custom.example" } });
     fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
     const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    expect(confirmation.closest(".account-content")).toBeNull();
     await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenCalledWith(true));
     expect(onApiOrigin).not.toHaveBeenCalled();
     fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
@@ -107,6 +108,9 @@ describe("identity UI", () => {
     fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
     fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
     const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    const onboardingCard = document.querySelector<HTMLElement>(".onboarding-card");
+    expect(onboardingCard?.hasAttribute("inert")).toBe(true);
+    expect(confirmation.closest(".onboarding-card")).toBeNull();
     const signInButton = screen.getByRole("button", { name: messages.en.signIn }) as HTMLButtonElement;
     const continueButton = screen.getByRole("button", { name: messages.en.continueLocally }) as HTMLButtonElement;
     await waitFor(() => expect(signInButton.disabled).toBe(true));
@@ -119,6 +123,32 @@ describe("identity UI", () => {
     fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
     await waitFor(() => expect(signInButton.disabled).toBe(false));
     expect(continueButton.disabled).toBe(false);
+    expect(onboardingCard?.hasAttribute("inert")).toBe(false);
+  });
+
+  it("keeps the API-origin editor locked until its change settles", async () => {
+    let completeApply: (() => void) | undefined;
+    const onApiOrigin = vi.fn(() => new Promise<void>((resolve) => { completeApply = resolve; }));
+    render(<FirstRunIdentity copy={messages.en} apiOrigin="https://devhud.api.delino.io" onApiOrigin={onApiOrigin} onComplete={vi.fn()} apiChangeError={null} />);
+
+    const origin = screen.getByRole("textbox", { name: messages.en.apiOrigin }) as HTMLInputElement;
+    const trigger = screen.getByRole("button", { name: messages.en.applyApiOrigin }) as HTMLButtonElement;
+    fireEvent.change(origin, { target: { value: "https://custom.example" } });
+    fireEvent.click(trigger);
+    const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    const confirm = within(confirmation).getByRole("button", { name: messages.en.applyApiOrigin }) as HTMLButtonElement;
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(onApiOrigin).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBeNull();
+    expect(origin.disabled).toBe(true);
+    expect(trigger.disabled).toBe(true);
+    fireEvent.click(trigger);
+    expect(onApiOrigin).toHaveBeenCalledOnce();
+
+    await act(async () => { completeApply?.(); });
+    expect(origin.disabled).toBe(false);
+    expect(trigger.disabled).toBe(false);
   });
 
   it("defers first-run completion until an API-origin confirmation closes", async () => {

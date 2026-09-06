@@ -30,9 +30,11 @@ export function ApiOriginEditor({ copy, value, inputRef, autoFocus = false, onAp
   const [draft, setDraft] = useState(value);
   const [error, setError] = useState(false);
   const [pendingOrigin, setPendingOrigin] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
   const inputId = useId();
   const applyTrigger = useRef<HTMLButtonElement>(null);
   const cancelChange = useRef<HTMLButtonElement>(null);
+  const applyingRef = useRef(false);
   useEffect(() => setDraft(value), [value]);
   const confirmationOpen = pendingOrigin !== null;
   useEffect(() => {
@@ -40,6 +42,7 @@ export function ApiOriginEditor({ copy, value, inputRef, autoFocus = false, onAp
   }, [confirmationOpen, onConfirmationOpenChange]);
   useEffect(() => () => onConfirmationOpenChange?.(false), [onConfirmationOpenChange]);
   const apply = async () => {
+    if (disabled || applying || pendingOrigin !== null) return;
     const normalized = normalizeApiOrigin(draft);
     if (normalized === null) { setError(true); return; }
     setError(false);
@@ -48,16 +51,21 @@ export function ApiOriginEditor({ copy, value, inputRef, autoFocus = false, onAp
     setPendingOrigin(normalized);
   };
   const confirm = () => {
-    if (pendingOrigin === null) return;
+    if (pendingOrigin === null || applyingRef.current) return;
     const nextOrigin = pendingOrigin;
+    applyingRef.current = true;
+    setApplying(true);
     setPendingOrigin(null);
-    void onApply(nextOrigin);
+    void onApply(nextOrigin).finally(() => {
+      applyingRef.current = false;
+      setApplying(false);
+    });
   };
-  return <div className="api-origin-editor">
+  return <div className="api-origin-editor" aria-busy={applying}>
     <Field label={copy.apiOrigin} inputId={inputId} hint={copy.apiOriginHint} error={error ? copy.invalidApiOrigin : undefined}>
-      <input id={inputId} ref={inputRef} autoFocus={autoFocus} value={draft} onChange={(event) => setDraft(event.target.value)} aria-describedby={`${inputId}-hint${error ? ` ${inputId}-error` : ""}${warningId ? ` ${warningId}` : ""}`} />
+      <input id={inputId} ref={inputRef} autoFocus={autoFocus} value={draft} disabled={disabled || applying} onChange={(event) => setDraft(event.target.value)} aria-describedby={`${inputId}-hint${error ? ` ${inputId}-error` : ""}${warningId ? ` ${warningId}` : ""}`} />
     </Field>
-    <Button ref={applyTrigger} type="button" onClick={() => void apply()} disabled={disabled || normalizeApiOrigin(draft) === normalizeApiOrigin(value)}>{copy.applyApiOrigin}</Button>
+    <Button ref={applyTrigger} type="button" onClick={() => void apply()} disabled={disabled || applying || normalizeApiOrigin(draft) === normalizeApiOrigin(value)}>{copy.applyApiOrigin}</Button>
     {applyError && <p className="external-message" role="alert">{applyError}</p>}
     <Dialog open={confirmationOpen} title={copy.apiChangeConfirmTitle} initialFocusRef={cancelChange} returnFocusRef={applyTrigger} onClose={() => setPendingOrigin(null)}>
       <p>{copy.apiChangeConfirm}</p>
@@ -81,7 +89,7 @@ export function FirstRunIdentity({ copy, apiOrigin, onApiOrigin, onComplete, api
   useEffect(() => {
     if (!apiChangeConfirmationOpen && (identity.status === "authenticated" || identity.status === "blocked" || identity.status === "deletion-pending")) onComplete();
   }, [apiChangeConfirmationOpen, identity.status, onComplete]);
-  return <Card className="onboarding-card">
+  return <Card className="onboarding-card" inert={apiChangeConfirmationOpen}>
     <PageHeader eyebrow={copy.account} title={copy.accountTitle} summary={copy.firstRunSummary} level={1} />
     <ApiOriginEditor copy={copy} value={apiOrigin} autoFocus onApply={onApiOrigin} warningId="api-origin-security-warning" applyError={apiChangeError} onConfirmationOpenChange={setApiChangeConfirmationOpen} />
     <Card className="account-security"><h2>{copy.security}</h2><p id="api-origin-security-warning" className="notice">{copy.customApiWarning}</p></Card>

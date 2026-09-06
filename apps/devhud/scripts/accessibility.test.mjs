@@ -146,7 +146,7 @@ test("first run renders the localized local-choice controls and focuses the API 
   assert.match(identityUi, /copy\.continueLocally/u);
   assert.match(identityUi, /copy\.customApiWarning/u);
   assert.match(app, /if \(onboarding\) return boundary\(<main className="standalone-shell"/u);
-  assert.match(identityUi, /<Card className="onboarding-card">/u);
+  assert.match(identityUi, /<Card className="onboarding-card" inert=\{apiChangeConfirmationOpen\}>/u);
 });
 
 test("Account focuses its API origin input when the surface opens or is reselected from the palette", () => {

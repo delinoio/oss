@@ -328,7 +328,7 @@ describe("native App state", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
     fireEvent.click(within(await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).getByRole("button", { name: messages.en.applyApiOrigin }));
 
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.apiChangeFailed));
+    await waitFor(() => expect(within(document.querySelector(".api-origin-editor") as HTMLElement).getByRole("alert").textContent).toBe(messages.en.apiChangeFailed));
     expect(screen.queryByText(messages.en.externalFailed)).toBeNull();
   });
 

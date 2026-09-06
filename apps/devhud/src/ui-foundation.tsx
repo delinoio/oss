@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode, type Ref, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { ErrorIcon, InfoIcon, SuccessIcon, WarningIcon } from "./ui-icons";
 
 export const ShellLayout = { Sidebar: "sidebar", Rail: "rail", Mobile: "mobile" } as const;
@@ -143,7 +144,7 @@ function ModalSurface({ open, title, titleId, className, role = "dialog", initia
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
-  return <div className="ui-overlay" role="presentation"><section ref={surface} className={className} role={role} aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onKeyDown={keyDown}><h2 id={titleId}>{title}</h2>{children}</section></div>;
+  return createPortal(<div className="ui-overlay" role="presentation"><section ref={surface} className={className} role={role} aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onKeyDown={keyDown}><h2 id={titleId}>{title}</h2>{children}</section></div>, document.body);
 }
 
 export function Dialog({ open, title, role, initialFocusRef, returnFocusRef, restoreFocus = true, onClose, children }: { readonly open: boolean; readonly title: ReactNode; readonly role?: "dialog" | "alertdialog"; readonly initialFocusRef?: RefObject<HTMLElement | null>; readonly returnFocusRef?: RefObject<HTMLElement | null>; readonly restoreFocus?: boolean; readonly onClose: () => void; readonly children: ReactNode }) {
