@@ -104,9 +104,10 @@ test("form-control boundaries meet non-text contrast in light and dark themes", 
   }
 });
 
-test("action Button variants remain legible on hover", () => {
+test("action Button variants remain legible and distinguishable on hover", () => {
   assert.match(styles, /\.actions button:not\(\.ui-button\)\s*\{/u);
-  assert.match(styles, /\.ui-button-danger:hover\s*\{\s*background:var\(--error\)/u);
+  assert.match(styles, /\.ui-button-danger:hover\s*\{[^}]*background:var\(--error\);[^}]*box-shadow:0 0 0 2px var\(--line\)/u);
+  assert.match(styles, /\.ui-button-danger:active\s*\{\s*box-shadow:inset 0 0 0 2px var\(--line\)/u);
   assert.match(styles, /html\[data-theme="dark"\] \.ui-button-danger\s*\{\s*color:var\(--devhud-background\)/u);
   for (const block of themeBlocks) {
     assert(contrastRatio(customColor(block, "--text"), customColor(block, "--surface-muted")) >= 4.5);

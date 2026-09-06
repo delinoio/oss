@@ -63,7 +63,8 @@ button.data-row:active { box-shadow:inset 0 0 0 2px var(--line); }
 .ui-button-primary:hover { background:var(--button-hover); }
 .ui-button-primary:active { background:var(--button-pressed); }
 .ui-button-danger { color:#ffffff; border-color:var(--error); background:var(--error); }
-.ui-button-danger:hover { background:var(--error); }
+.ui-button-danger:hover { background:var(--error); box-shadow:0 0 0 2px var(--line); }
+.ui-button-danger:active { box-shadow:inset 0 0 0 2px var(--line); }
 html[data-theme="dark"] .ui-button-danger { color:var(--devhud-background); }
 .ui-button-ghost { border-color:transparent; background:transparent; }
 .ui-field { display:grid; gap:var(--space-1); max-width:510px; margin:var(--space-2) 0; }
