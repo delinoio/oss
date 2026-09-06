@@ -251,7 +251,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     setOptions({ delaySeconds: 0, includePointer: false, removeShadow: false });
   }, []);
 
-  const completeCapture = useCallback(async (action: CaptureActionId, captureOptions: CaptureOptions = options) => {
+  const completeCapture = useCallback(async (action: CaptureActionId, captureOptions: CaptureOptions = options, standaloneOpener: HTMLElement | null = null) => {
     if (captureInFlight.current) return;
     const generation = resetGeneration.current;
     const cancellationGeneration = captureCancellationGeneration.current;
@@ -260,7 +260,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     if (!originatingDraftId) {
       // A standalone capture can auto-open an editor after a prior draft editor
       // closed. Replace that stale opener with the control that began this flow.
-      draftEditorOpener.current = captureDialogOpener.current ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+      draftEditorOpener.current = captureDialogOpener.current ?? standaloneOpener ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     }
     captureOriginatingDraftId.current = originatingDraftId;
     setBusy(true); setError(null); setStatus(copy.captureSaving);
@@ -316,7 +316,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     }
   }, [bridge, copy, dismissCaptureDialog, installDraft, options, refresh, runDraftOperation, selected?.id, takeBrowserContext]);
 
-  const capture = useCallback(async (action: CaptureActionId) => {
+  const capture = useCallback(async (action: CaptureActionId, standaloneOpener: HTMLElement | null = null) => {
     if (captureInFlight.current || captureStatusInFlight.current) return;
     if (action === ShortcutActionId.CaptureSelection || action === ShortcutActionId.CaptureToolbar) {
       const generation = resetGeneration.current;
@@ -338,8 +338,8 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       }
       return;
     }
-    await completeCapture(action);
-  }, [captureDialog, completeCapture, copy, refreshCaptureStatus, selected?.id]);
+    await completeCapture(action, options, standaloneOpener);
+  }, [captureDialog, completeCapture, copy, options, refreshCaptureStatus, selected?.id]);
   const cancelInFlightCapture = useCallback(() => {
     if (!captureInFlight.current) return;
     captureCancellationGeneration.current += 1;
@@ -356,7 +356,10 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     if (!requestedAction || requestedAction.sequence === lastRequested.current) return;
     lastRequested.current = requestedAction.sequence;
     onRequestedActionConsumed?.(requestedAction.sequence);
-    void capture(requestedAction.action);
+    const opensCaptureDialog = requestedAction.action === ShortcutActionId.CaptureSelection || requestedAction.action === ShortcutActionId.CaptureToolbar;
+    // The palette unmounts before this effect runs, so direct captures need a
+    // live RealQA control rather than the palette's detached action as return focus.
+    void capture(requestedAction.action, opensCaptureDialog ? null : captureFocusFallback.current);
   }, [capture, onRequestedActionConsumed, requestedAction]);
   const dismissPreview = useCallback(() => {
     // Preview teardown must not leave the sheet focus trap without an in-sheet target.

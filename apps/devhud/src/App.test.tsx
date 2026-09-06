@@ -708,6 +708,42 @@ describe("native App state", () => {
   });
 
   it.each([
+    ["captureDisplay"],
+    ["captureWindow"],
+    ["captureAll"],
+  ] as const)("returns focus to Capture after a palette-started %s capture closes its editor", async (actionLabel) => {
+    const runtime: RuntimeSnapshot = { ...desktopRuntime, capabilities: { ...desktopRuntime.capabilities, capture: true } };
+    const draft = {
+      id: "019b0000-0000-7000-8000-000000000051",
+      revision: 1,
+      createdAt: 1_700_000_000,
+      updatedAt: 1_700_000_000,
+      expiresAt: 1_702_592_000,
+      hasBrowserContext: false,
+      imageCount: 1,
+      images: [{ id: "019b0000-0000-7000-8000-000000000052", width: 800, height: 600, previewUrl: "realqa://asset/draft/image/captured/1", crop: null, layers: [] }],
+      canUndo: false,
+      canRedo: false,
+    };
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "windows", shadowRemovalSupported: false, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return { kind: "capture-draft", draft };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<App bridge={bridgeWith(request)} initialRuntime={runtime} />);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.openPalette }));
+    const paletteAction = within(screen.getByRole("dialog", { name: messages.en.commandPalette })).getByRole("button", { name: messages.en[actionLabel] });
+    paletteAction.focus();
+    fireEvent.click(paletteAction);
+    await screen.findByRole("dialog", { name: messages.en.editorTitle });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.close }));
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.captureDisplay })));
+  });
+
+  it.each([
     ["captureSelection"],
     ["captureToolbar"],
   ] as const)("returns focus to an open editor after canceling a palette-started %s picker", async (dialogLabel) => {
