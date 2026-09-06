@@ -34,7 +34,7 @@ const notificationPermissionLabels: Record<NotificationPermission, keyof typeof 
 const defaultContentState: ContentState = { kind: ContentStateKind.Ready };
 type ExternalMessage = "opened" | "failed" | "invalid-api-origin";
 
-function ShellNavigationItem({ active, compact, destination, icon: Icon, label, selectedItemRef, tooltipId, onActivate, onNavigationBlur, onNavigationFocus }: { readonly active: boolean; readonly compact: boolean; readonly destination: SurfaceId; readonly icon: ComponentType<IconProps>; readonly label: string; readonly selectedItemRef: RefObject<HTMLButtonElement | null>; readonly tooltipId: string; readonly onActivate: () => void; readonly onNavigationBlur: (destination: NavigationDestination) => void; readonly onNavigationFocus: (destination: NavigationDestination) => void }) {
+function ShellNavigationItem({ active, compact, destination, disabled, icon: Icon, label, selectedItemRef, tooltipId, onActivate, onNavigationBlur, onNavigationFocus }: { readonly active: boolean; readonly compact: boolean; readonly destination: SurfaceId; readonly disabled: boolean; readonly icon: ComponentType<IconProps>; readonly label: string; readonly selectedItemRef: RefObject<HTMLButtonElement | null>; readonly tooltipId: string; readonly onActivate: () => void; readonly onNavigationBlur: (destination: NavigationDestination) => void; readonly onNavigationFocus: (destination: NavigationDestination) => void }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const tooltip = useRef<HTMLSpanElement>(null);
   const [focused, setFocused] = useState(false);
@@ -76,7 +76,7 @@ function ShellNavigationItem({ active, compact, destination, icon: Icon, label, 
   }, [positionTooltip, tooltipRequested]);
 
   return <>
-    <button ref={trigger} className="shell-nav-item" data-navigation-destination={destination} aria-label={label} aria-describedby={compact ? tooltipId : undefined} aria-current={active ? "page" : undefined} onClick={onActivate} onFocus={() => { setFocused(true); onNavigationFocus(destination); }} onBlur={() => { setFocused(false); onNavigationBlur(destination); }} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}>
+    <button ref={trigger} className="shell-nav-item" data-navigation-destination={destination} aria-label={label} aria-describedby={compact ? tooltipId : undefined} aria-current={active ? "page" : undefined} disabled={disabled} onClick={onActivate} onFocus={() => { setFocused(true); onNavigationFocus(destination); }} onBlur={() => { setFocused(false); onNavigationBlur(destination); }} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}>
       <Icon />
       {!compact && <span>{label}</span>}
     </button>
@@ -467,19 +467,23 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   if (onboarding) return boundary(<main className="standalone-shell" data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "loading"}><FirstRunIdentity copy={copy} apiOrigin={preferences.apiOrigin} onApiOrigin={applyApiOrigin} onComplete={finishOnboarding} apiChangeError={apiChangeError ? copy.externalFailed : null} /></main>);
 
   const moreCurrent = surface === SurfaceId.Realqa || surface === SurfaceId.Diagnostics;
-  const navigate = (nextSurface: SurfaceId) => { setSurface(nextSurface); setMoreOpen(false); };
+  const navigate = (nextSurface: SurfaceId) => {
+    if (screenModalConfirmationOpen) return;
+    setSurface(nextSurface);
+    setMoreOpen(false);
+  };
   const markNavigationFocused = (destination: NavigationDestination) => { focusedNavigationDestination.current = destination; };
   const markNavigationBlurred = (destination: NavigationDestination) => { if (focusedNavigationDestination.current === destination) focusedNavigationDestination.current = null; };
   const navigation = shellLayout !== ShellLayout.Mobile && <aside className={`shell-navigation shell-navigation-${shellLayout}`}>
     <h1 aria-label={shellLayout === ShellLayout.Rail ? copy.appName : undefined}>{shellLayout === ShellLayout.Sidebar ? copy.appName : "D"}</h1>
-    <nav aria-label={copy.mobileNavigation}>{surfaces.map((item) => <ShellNavigationItem active={surface === item} compact={shellLayout === ShellLayout.Rail} destination={item} icon={surfaceIcons[item]} key={item} label={copy[labels[item]]} selectedItemRef={selectedDesktopNavigationItem} tooltipId={`navigation-tooltip-${item}`} onActivate={() => navigate(item)} onNavigationBlur={markNavigationBlurred} onNavigationFocus={markNavigationFocused} />)}</nav>
+    <nav aria-label={copy.mobileNavigation}>{surfaces.map((item) => <ShellNavigationItem active={surface === item} compact={shellLayout === ShellLayout.Rail} destination={item} disabled={screenModalConfirmationOpen} icon={surfaceIcons[item]} key={item} label={copy[labels[item]]} selectedItemRef={selectedDesktopNavigationItem} tooltipId={`navigation-tooltip-${item}`} onActivate={() => navigate(item)} onNavigationBlur={markNavigationBlurred} onNavigationFocus={markNavigationFocused} />)}</nav>
     {mobile ? <Button className="palette-trigger" ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} disabled={screenModalConfirmationOpen} aria-label={copy.openPalette}>{shellLayout === ShellLayout.Sidebar ? copy.openPalette : null}</Button> : <ShortcutPaletteTrigger copy={copy} isMac={isMac} triggerRef={paletteTrigger} onOpen={openPalette} disabled={screenModalConfirmationOpen} compact={shellLayout === ShellLayout.Rail} />}
   </aside>;
   const topBar = shellLayout === ShellLayout.Mobile && <header className="mobile-app-bar"><h1>{copy.appName}</h1><span>{copy[labels[surface]]}</span><Button ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} disabled={screenModalConfirmationOpen} aria-label={copy.openPalette} /></header>;
   const bottomBar = shellLayout === ShellLayout.Mobile && <nav className="mobile-bottom-navigation" aria-label={copy.mobileNavigation}>
     {mobilePrimarySurfaces.map((item) => {
       const Icon = surfaceIcons[item];
-      return <button type="button" key={item} data-navigation-destination={item} aria-current={surface === item ? "page" : undefined} onClick={() => navigate(item)} onFocus={() => markNavigationFocused(item)} onBlur={() => markNavigationBlurred(item)}><Icon /><span>{copy[labels[item]]}</span></button>;
+      return <button type="button" key={item} data-navigation-destination={item} aria-current={surface === item ? "page" : undefined} disabled={screenModalConfirmationOpen} onClick={() => navigate(item)} onFocus={() => markNavigationFocused(item)} onBlur={() => markNavigationBlurred(item)}><Icon /><span>{copy[labels[item]]}</span></button>;
     })}
     <button key={MobileNavigationId.More} ref={moreTrigger} type="button" data-navigation-destination={MobileNavigationId.More} aria-current={moreCurrent ? "page" : undefined} aria-haspopup="dialog" aria-expanded={moreOpen} disabled={screenModalConfirmationOpen} onClick={openMore} onFocus={() => markNavigationFocused(MobileNavigationId.More)} onBlur={() => markNavigationBlurred(MobileNavigationId.More)}><MoreIcon /><span>{copy.more}</span></button>
   </nav>;

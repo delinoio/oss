@@ -68,17 +68,28 @@ describe("native App state", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
 
     const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    const navigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
+    const mobileDestinations = within(navigation).getAllByRole("button") as HTMLButtonElement[];
     const more = screen.getByRole("button", { name: messages.en.more }) as HTMLButtonElement;
     const paletteTrigger = screen.getByRole("button", { name: messages.en.openPalette }) as HTMLButtonElement;
     await waitFor(() => expect(more.disabled).toBe(true));
+    expect(mobileDestinations).toHaveLength(5);
+    expect(mobileDestinations.every((destination) => destination.disabled)).toBe(true);
     expect(paletteTrigger.disabled).toBe(true);
     fireEvent.click(more);
+    fireEvent.click(within(navigation).getByRole("button", { name: messages.en.home }));
+    fireEvent.click(within(navigation).getByRole("button", { name: messages.en.deck }));
+    fireEvent.click(within(navigation).getByRole("button", { name: messages.en.settings }));
     fireEvent.click(paletteTrigger);
     expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull();
     expect(screen.queryByRole("dialog", { name: messages.en.commandPalette })).toBeNull();
+    expect(screen.getByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBe(confirmation);
 
     fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
     await waitFor(() => expect(more.disabled).toBe(false));
+    expect(mobileDestinations.every((destination) => !destination.disabled)).toBe(true);
+    fireEvent.click(within(navigation).getByRole("button", { name: messages.en.home }));
+    expect(await screen.findByRole("heading", { name: messages.en.welcome })).toBeTruthy();
     expect(paletteTrigger.disabled).toBe(false);
     fireEvent.click(paletteTrigger);
     expect(await screen.findByRole("dialog", { name: messages.en.commandPalette })).toBeTruthy();
@@ -101,8 +112,14 @@ describe("native App state", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
 
     const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    const navigation = screen.getByRole("navigation", { name: messages.en.mobileNavigation });
+    const desktopDestinations = within(navigation).getAllByRole("button") as HTMLButtonElement[];
     const paletteTrigger = screen.getByRole("button", { name: messages.en.openPalette }) as HTMLButtonElement;
+    expect(desktopDestinations).toHaveLength(6);
+    expect(desktopDestinations.every((destination) => destination.disabled)).toBe(true);
     expect(paletteTrigger.disabled).toBe(true);
+    fireEvent.click(within(navigation).getByRole("button", { name: messages.en.home }));
+    expect(screen.getByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBe(confirmation);
     fireEvent.click(paletteTrigger);
     expect(screen.queryByRole("dialog", { name: messages.en.commandPalette })).toBeNull();
     await act(async () => {
@@ -116,6 +133,9 @@ describe("native App state", () => {
     expect(screen.getByRole("heading", { name: messages.en.accountTitle })).toBeTruthy();
 
     fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
+    await waitFor(() => expect(desktopDestinations.every((destination) => !destination.disabled)).toBe(true));
+    fireEvent.click(within(navigation).getByRole("button", { name: messages.en.home }));
+    expect(await screen.findByRole("heading", { name: messages.en.welcome })).toBeTruthy();
     expect(paletteTrigger.disabled).toBe(false);
     fireEvent.click(paletteTrigger);
     expect(await screen.findByRole("dialog", { name: messages.en.commandPalette })).toBeTruthy();
