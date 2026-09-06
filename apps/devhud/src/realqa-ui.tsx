@@ -623,7 +623,7 @@ function CaptureEditor({ draft, previewImage, previewRef, previewFocusFallbackRe
       await operation(current, installDraft);
     });
   };
-  const mutate = (command: CaptureEditorCommand) => {
+  const mutate = (command: CaptureEditorCommand, beforeInstall?: (current: CaptureDraft) => void) => {
     setFailed(false);
     return enqueueRevisionOperation(async (current, installDraft) => {
       try {
@@ -634,6 +634,7 @@ function CaptureEditor({ draft, previewImage, previewRef, previewFocusFallbackRe
             const survivor = current.images[removedIndex + 1] ?? current.images[removedIndex - 1];
             survivor && focusImageSelector(current.images, survivor.id);
           }
+          beforeInstall?.(current);
           installDraft(response.draft);
           if (editorActive.current) setMessage(copy.editorSaved);
         }
@@ -746,7 +747,9 @@ function CaptureEditor({ draft, previewImage, previewRef, previewFocusFallbackRe
       <label>{copy.editorColor}<input type="color" value={color} onChange={(event) => setColor(event.target.value)} /></label><label>{copy.editorStrokeWidth}<input type="range" min="1" max="32" value={strokeWidth} onChange={(event) => setStrokeWidth(Number(event.target.value))} /></label>{tool === "text" && <label>{copy.editorTextValue}<input autoFocus value={text} onChange={(event) => setText(limitAnnotationText(event.target.value))} /></label>}
       <fieldset className="editor-coordinate-fields"><legend>{copy.editorCoordinates}</legend>{(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{copy[key === "x" ? "captureX" : key === "y" ? "captureY" : key === "width" ? "captureWidth" : "captureHeight"]}<input type="number" min={key === "width" || key === "height" ? 1 : undefined} value={coordinates[key]} aria-invalid={!coordinatesValid} aria-describedby={!coordinatesValid ? coordinateErrorId : undefined} onChange={(event) => setCoordinates((current) => ({ ...current, [key]: Number(event.target.value) }))} /></label>)}{!coordinatesValid && <p id={coordinateErrorId} className="editor-coordinate-error" role="alert">{copy.editorCoordinatesInvalid}</p>}<button disabled={busy || !coordinatesValid || (tool === "text" && !text)} onClick={addFromCoordinates}>{copy.editorAdd}</button></fieldset>
       <div className="actions"><button disabled={busy || !draft.canUndo} onClick={() => void history("capture.editor.undo")}>{copy.editorUndo}</button><button disabled={busy || !draft.canRedo} onClick={() => void history("capture.editor.redo")}>{copy.editorRedo}</button></div>
-      <LayerList image={active} mutate={mutate} copy={copy} disabled={busy} />
+      <LayerList image={active} mutate={mutate} copy={copy} disabled={busy} onRemoveLayer={(layerId, control) => void mutate({ kind: "remove-layer", imageId: active.id, layerId }, (current) => {
+        if (document.activeElement === control) focusImageSelector(current.images, active.id);
+      })} />
       <Button variant="primary" disabled={busy} onClick={() => void flatten()}>{copy.editorFlatten}</Button>
       <Button ref={submissionTrigger} variant="primary" disabled={busy} onClick={() => setSubmissionOpen(true)}>{copy.issueSubmit}</Button>
       {message && (failed ? <StatePanel eyebrow={copy.error} title={copy.realqaSaveTitle} summary={message} headingLevel={3} tone="danger" role="alert" /> : <div role="status"><StatusBadge tone="success">{message}</StatusBadge></div>)}
@@ -819,8 +822,8 @@ function arrowHeadPoints(start: CapturePoint, end: CapturePoint, width: number):
   return [point(-0.65), point(0.65)];
 }
 
-function LayerList({ image, mutate, copy, disabled }: { readonly image: CaptureDraftImage; readonly mutate: (command: CaptureEditorCommand) => Promise<void>; readonly copy: Copy; readonly disabled: boolean }) {
-  return <section aria-labelledby="editor-layers-title"><h3 id="editor-layers-title">{copy.editorLayers}</h3>{image.layers.length === 0 ? <p>{copy.editorNoLayers}</p> : <ol className="layer-list">{image.layers.map((layer, index) => <li key={layer.id}><span>{copy[layer.tool === "arrow" ? "editorArrow" : layer.tool === "rectangle" ? "editorRectangle" : layer.tool === "drawing" ? "editorDrawing" : layer.tool === "text" ? "editorText" : layer.tool === "blur" ? "editorBlur" : "editorRedaction"]}</span><button disabled={disabled || index === 0} aria-label={copy.editorMoveEarlier} onClick={() => void mutate({ kind: "move-layer", imageId: image.id, layerId: layer.id, toIndex: index - 1 })}>↑</button><button disabled={disabled || index === image.layers.length - 1} aria-label={copy.editorMoveLater} onClick={() => void mutate({ kind: "move-layer", imageId: image.id, layerId: layer.id, toIndex: index + 1 })}>↓</button><button disabled={disabled} aria-label={copy.editorRemove} onClick={() => void mutate({ kind: "remove-layer", imageId: image.id, layerId: layer.id })}>×</button></li>)}</ol>}</section>;
+function LayerList({ image, mutate, copy, disabled, onRemoveLayer }: { readonly image: CaptureDraftImage; readonly mutate: (command: CaptureEditorCommand) => Promise<void>; readonly copy: Copy; readonly disabled: boolean; readonly onRemoveLayer: (layerId: string, control: HTMLButtonElement) => void }) {
+  return <section aria-labelledby="editor-layers-title"><h3 id="editor-layers-title">{copy.editorLayers}</h3>{image.layers.length === 0 ? <p>{copy.editorNoLayers}</p> : <ol className="layer-list">{image.layers.map((layer, index) => <li key={layer.id}><span>{copy[layer.tool === "arrow" ? "editorArrow" : layer.tool === "rectangle" ? "editorRectangle" : layer.tool === "drawing" ? "editorDrawing" : layer.tool === "text" ? "editorText" : layer.tool === "blur" ? "editorBlur" : "editorRedaction"]}</span><button disabled={disabled || index === 0} aria-label={copy.editorMoveEarlier} onClick={() => void mutate({ kind: "move-layer", imageId: image.id, layerId: layer.id, toIndex: index - 1 })}>↑</button><button disabled={disabled || index === image.layers.length - 1} aria-label={copy.editorMoveLater} onClick={() => void mutate({ kind: "move-layer", imageId: image.id, layerId: layer.id, toIndex: index + 1 })}>↓</button><button disabled={disabled} aria-label={copy.editorRemove} onClick={(event) => onRemoveLayer(layer.id, event.currentTarget)}>×</button></li>)}</ol>}</section>;
 }
 
 function normalizeBounds(start: CapturePoint, end: CapturePoint): CaptureRect { return { x: Math.min(start.x, end.x), y: Math.min(start.y, end.y), width: Math.max(1, Math.abs(end.x - start.x)), height: Math.max(1, Math.abs(end.y - start.y)) }; }

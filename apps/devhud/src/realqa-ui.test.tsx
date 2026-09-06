@@ -235,12 +235,17 @@ describe("RealQA capture and editor", () => {
     expect(blurPreview?.getAttribute("clip-path")).toBeNull();
     expect(blurPreview?.getAttribute("filter")).toContain("realqa-blur-filter-");
     expect(document.querySelector(".annotation-overlay feGaussianBlur")?.getAttribute("stdDeviation")).toBe("12");
-    fireEvent.click(screen.getAllByRole("button", { name: copy.editorRemove }).at(-1)!);
+    const remove = screen.getAllByRole("button", { name: copy.editorRemove }).at(-1)!;
+    remove.focus();
+    fireEvent.click(remove);
     await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({
       operation: "capture.editor.apply",
       expectedRevision: 3,
       command: expect.objectContaining({ kind: "remove-layer" }),
     })));
+    const imageSelector = screen.getByRole("button", { name: `${copy.editorImage} 1` });
+    expect(imageSelector).toBe(document.activeElement);
+    expect(screen.getByRole("dialog", { name: copy.editorTitle }).contains(document.activeElement)).toBe(true);
   });
 
   it("revalidates a listed draft before opening the editor", async () => {
