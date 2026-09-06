@@ -77,6 +77,40 @@ describe("native App state", () => {
     await waitFor(() => expect(more.disabled).toBe(false));
   });
 
+  it("suppresses desktop shortcuts while the Account API-change confirmation is open", async () => {
+    const listeners: Array<(event: NativeBridgeEventV1) => void> = [];
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        throw new Error(`unexpected operation ${request.operation}`);
+      },
+      async listen(listener) { listeners.push(listener); return () => {}; },
+    };
+    render(<App bridge={bridge} initialRuntime={desktopRuntime} />);
+    await waitFor(() => expect(listeners.length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+
+    const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    await act(async () => {
+      for (const listener of listeners) listener({ version: 1, kind: "shortcut-triggered", action: ShortcutActionId.CommandPalette });
+    });
+    await act(async () => {
+      for (const listener of listeners) listener({ version: 1, kind: "shortcut-triggered", action: ShortcutActionId.CaptureSelection });
+    });
+    expect(screen.queryByRole("dialog", { name: messages.en.commandPalette })).toBeNull();
+    expect(screen.getByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBe(confirmation);
+    expect(screen.getByRole("heading", { name: messages.en.accountTitle })).toBeTruthy();
+
+    fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
+    await act(async () => {
+      for (const listener of listeners) listener({ version: 1, kind: "shortcut-triggered", action: ShortcutActionId.CommandPalette });
+    });
+    expect(await screen.findByRole("dialog", { name: messages.en.commandPalette })).toBeTruthy();
+  });
+
   it("publishes Native Messaging configuration before Settings is opened", async () => {
     const invoke = vi.fn(async () => undefined);
     window.__TAURI_INTERNALS__ = { invoke };
