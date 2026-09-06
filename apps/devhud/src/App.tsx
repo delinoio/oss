@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { messages, type Copy } from "./localization";
 import { appendDiagnosticEvent, captureDiagnosticEvent, readDiagnosticCorrelations, readDiagnosticEvents, recentDiagnosticCorrelationIds } from "./diagnostics";
 import { DiagnosticsPanel } from "./diagnostics-ui";
@@ -13,9 +14,18 @@ import { ActionId, ExternalLinkTarget, LanguagePreference, PlatformCapability, S
 import { ShortcutActionId } from "./shortcuts";
 import { RealqaSurface, type CaptureActionId, type RealqaController } from "./realqa-ui";
 import { DesktopUpdaterPanel } from "./updater-ui";
+import { AppShell, Button, Card, DataRow, Dialog, Field, PageHeader, Sheet, ShellLayout, StatusBadge, useShellLayout } from "./ui-foundation";
+import { AccountIcon, ArrowRightIcon, DeckIcon, DiagnosticsIcon, HomeIcon, MoreIcon, RealqaIcon, SearchIcon, SettingsIcon, type IconProps } from "./ui-icons";
 
 const surfaces: readonly SurfaceId[] = [SurfaceId.Home, SurfaceId.Realqa, SurfaceId.Deck, SurfaceId.Settings, SurfaceId.Account, SurfaceId.Diagnostics];
 const labels: Record<SurfaceId, keyof typeof messages.en> = { home: "home", realqa: "realqa", deck: "deck", settings: "settings", account: "account", diagnostics: "diagnostics" };
+const surfaceIcons: Record<SurfaceId, ComponentType<IconProps>> = { home: HomeIcon, realqa: RealqaIcon, deck: DeckIcon, settings: SettingsIcon, account: AccountIcon, diagnostics: DiagnosticsIcon };
+const homeTools = [SurfaceId.Realqa, SurfaceId.Deck, SurfaceId.Settings, SurfaceId.Diagnostics] as const satisfies readonly SurfaceId[];
+const mobilePrimarySurfaces: readonly SurfaceId[] = [SurfaceId.Home, SurfaceId.Deck, SurfaceId.Settings, SurfaceId.Account];
+const MobileNavigationId = { More: "more" } as const;
+type NavigationDestination = SurfaceId | (typeof MobileNavigationId)[keyof typeof MobileNavigationId];
+const homeToolTitles: Record<(typeof homeTools)[number], keyof typeof messages.en> = { realqa: "realqaTitle", deck: "deckTitle", settings: "settingsTitle", diagnostics: "diagnosticsTitle" };
+const homeToolSummaries: Record<(typeof homeTools)[number], keyof typeof messages.en> = { realqa: "realqaSummary", deck: "deckSummary", settings: "settingsSummary", diagnostics: "diagnosticsSummary" };
 const notificationPermissionLabels: Record<NotificationPermission, keyof typeof messages.en> = {
   [NotificationPermission.NotDetermined]: "notificationNotDetermined",
   [NotificationPermission.Denied]: "notificationDenied",
@@ -23,6 +33,56 @@ const notificationPermissionLabels: Record<NotificationPermission, keyof typeof 
 };
 const defaultContentState: ContentState = { kind: ContentStateKind.Ready };
 type ExternalMessage = "opened" | "failed" | "invalid-api-origin";
+
+function ShellNavigationItem({ active, compact, destination, icon: Icon, label, selectedItemRef, tooltipId, onActivate, onNavigationBlur, onNavigationFocus }: { readonly active: boolean; readonly compact: boolean; readonly destination: SurfaceId; readonly icon: ComponentType<IconProps>; readonly label: string; readonly selectedItemRef: RefObject<HTMLButtonElement | null>; readonly tooltipId: string; readonly onActivate: () => void; readonly onNavigationBlur: (destination: NavigationDestination) => void; readonly onNavigationFocus: (destination: NavigationDestination) => void }) {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const tooltip = useRef<HTMLSpanElement>(null);
+  const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const tooltipRequested = compact && (focused || hovered);
+  const positionTooltip = useCallback(() => {
+    const bounds = trigger.current?.getBoundingClientRect();
+    const tooltipElement = tooltip.current;
+    if (!bounds || !tooltipElement) return;
+    // Packaged CSP rejects generated style attributes and cssText. Individual
+    // CSSOM property assignments keep measured geometry dynamic without them.
+    tooltipElement.style.setProperty("inset-block-start", `${bounds.top + bounds.height / 2}px`);
+    tooltipElement.style.setProperty("inset-inline-start", `${bounds.right + 12}px`);
+    tooltipElement.dataset.visible = "true";
+  }, []);
+
+  useEffect(() => {
+    if (!active) return;
+    selectedItemRef.current = trigger.current;
+    return () => {
+      if (selectedItemRef.current === trigger.current) selectedItemRef.current = null;
+    };
+  }, [active, selectedItemRef]);
+  useEffect(() => {
+    if (!tooltipRequested) {
+      tooltip.current?.removeAttribute("data-visible");
+      return;
+    }
+    positionTooltip();
+    const animation = requestAnimationFrame(positionTooltip);
+    addEventListener("resize", positionTooltip);
+    addEventListener("scroll", positionTooltip, true);
+    return () => {
+      tooltip.current?.removeAttribute("data-visible");
+      cancelAnimationFrame(animation);
+      removeEventListener("resize", positionTooltip);
+      removeEventListener("scroll", positionTooltip, true);
+    };
+  }, [positionTooltip, tooltipRequested]);
+
+  return <>
+    <button ref={trigger} className="shell-nav-item" data-navigation-destination={destination} aria-label={label} aria-describedby={compact ? tooltipId : undefined} aria-current={active ? "page" : undefined} onClick={onActivate} onFocus={() => { setFocused(true); onNavigationFocus(destination); }} onBlur={() => { setFocused(false); onNavigationBlur(destination); }} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}>
+      <Icon />
+      {!compact && <span>{label}</span>}
+    </button>
+    {compact && createPortal(<span ref={tooltip} id={tooltipId} className="nav-tooltip rail-nav-tooltip" role="tooltip">{label}</span>, document.body)}
+  </>;
+}
 
 export interface AppProps {
   readonly bridge?: NativeBridgeV1;
@@ -58,6 +118,10 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const [onboarding, setOnboarding] = useState(() => !hasCompletedOnboarding(storage));
   const [surface, setSurface] = useState<SurfaceId>(SurfaceId.Home);
   const [palette, setPalette] = useState(false);
+  const [paletteRestoresFocus, setPaletteRestoresFocus] = useState(true);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [moreRestoresFocus, setMoreRestoresFocus] = useState(true);
+  const [screenModalConfirmationOpen, setScreenModalConfirmationOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [externalMessage, setExternalMessage] = useState<ExternalMessage | null>(null);
   const [systemLanguage, setSystemLanguage] = useState(() => resolveLanguage(LanguagePreference.System, navigator.languages));
@@ -77,14 +141,18 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const [requestedCapture, setRequestedCapture] = useState<{ action: CaptureActionId; sequence: number } | null>(null);
   const search = useRef<HTMLInputElement>(null);
   const apiOriginInput = useRef<HTMLInputElement>(null);
-  const paletteRef = useRef<HTMLElement>(null);
   const captureSequence = useRef(0);
   const paletteTrigger = useRef<HTMLButtonElement>(null);
+  const moreTrigger = useRef<HTMLButtonElement>(null);
+  const selectedDesktopNavigationItem = useRef<HTMLButtonElement>(null);
   const externalAttempt = useRef(0);
   const identitySession = useRef<IdentitySession | null>(null);
   const updaterApprovalOpenRef = useRef(false);
   const language = preferences.language === LanguagePreference.System ? systemLanguage : preferences.language;
   const copy = messages[language];
+  const shellLayout = useShellLayout();
+  const previousShellLayout = useRef(shellLayout);
+  const focusedNavigationDestination = useRef<NavigationDestination | null>(null);
   const runtimeCapabilities = runtime ? capabilitiesFor(runtime) : { available: new Set<PlatformCapability>() };
   const mobile = runtime?.platform === RuntimePlatform.Ios || runtime?.platform === RuntimePlatform.Android;
   const isMac = runtime?.platform === RuntimePlatform.Ios || /Mac/u.test(navigator.userAgent);
@@ -111,8 +179,18 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     setPreferences(value);
   };
   const closePalette = (restoreTriggerFocus = true) => {
+    setPaletteRestoresFocus(restoreTriggerFocus);
     setPalette(false);
-    if (restoreTriggerFocus) requestAnimationFrame(() => paletteTrigger.current?.focus());
+  };
+  const openPalette = () => { setPaletteRestoresFocus(true); setPalette(true); };
+  const closeMore = (restoreTriggerFocus = true) => {
+    setMoreRestoresFocus(restoreTriggerFocus);
+    setMoreOpen(false);
+  };
+  const openMore = () => {
+    if (screenModalConfirmationOpen) return;
+    setMoreRestoresFocus(true);
+    setMoreOpen(true);
   };
 
   useEffect(() => {
@@ -143,18 +221,25 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
         const context = shortcutContext.current;
         if (context.mobile || context.onboarding) return;
         if (event.action === ShortcutActionId.CommandPalette) {
-          setPalette(true);
+          closeMore(false);
+          openPalette();
           return;
         }
         if (event.action.startsWith("realqa.capture.")) {
-          setPalette(false);
+          closeMore(false);
+          const captureAction = event.action as CaptureActionId;
+          const opensCaptureDialog = captureAction === ShortcutActionId.CaptureSelection || captureAction === ShortcutActionId.CaptureToolbar;
+          closePalette(!opensCaptureDialog);
           setSurface(SurfaceId.Realqa);
           captureSequence.current += 1;
-          setRequestedCapture({ action: event.action as CaptureActionId, sequence: captureSequence.current });
+          setRequestedCapture({ action: captureAction, sequence: captureSequence.current });
           return;
         }
         const action = actionRegistry.find((candidate) => candidate.id === event.action);
-        if (action && action.required.every((required) => context.capabilities.available.has(required)) && action.surface) setSurface(action.surface);
+        if (action && action.required.every((required) => context.capabilities.available.has(required)) && action.surface) {
+          closeMore(false);
+          setSurface(action.surface);
+        }
       }
     };
     void bridge.listen(receive).then(async (value) => {
@@ -187,6 +272,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       if (!active) return;
       setDeckLinkPending(false);
       if (pendingDeck.kind === "deck-link" && pendingDeck.deckId) {
+        closeMore(false);
         setDeckLink(pendingDeck.deckId);
         setSurface(SurfaceId.Deck);
       }
@@ -254,37 +340,37 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     media.addEventListener("change", updateTheme);
     return () => media.removeEventListener("change", updateTheme);
   }, [preferences.language, preferences.theme, language]);
-  useEffect(() => {
-    const key = (event: KeyboardEvent) => { if (event.key === "Escape" && palette) closePalette(); };
-    addEventListener("keydown", key);
-    return () => removeEventListener("keydown", key);
-  }, [palette]);
-  useEffect(() => { if (palette) search.current?.focus(); }, [palette]);
   useEffect(() => { if (surface === SurfaceId.Account) apiOriginInput.current?.focus(); }, [surface]);
+  useEffect(() => {
+    const previousLayout = previousShellLayout.current;
+    previousShellLayout.current = shellLayout;
+    if ((previousLayout === ShellLayout.Mobile) === (shellLayout === ShellLayout.Mobile)) return;
+    const previousDestination = focusedNavigationDestination.current;
+    if (!previousDestination) return;
+    const nextDestination = shellLayout === ShellLayout.Mobile
+      ? previousDestination === SurfaceId.Realqa || previousDestination === SurfaceId.Diagnostics ? MobileNavigationId.More : previousDestination
+      : previousDestination === MobileNavigationId.More ? surface : previousDestination;
+    const animation = requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-navigation-destination="${nextDestination}"]`)?.focus());
+    return () => cancelAnimationFrame(animation);
+  }, [shellLayout, surface]);
+  useEffect(() => {
+    if (shellLayout === ShellLayout.Mobile || !moreOpen) return;
+    closeMore(false);
+    requestAnimationFrame(() => selectedDesktopNavigationItem.current?.focus());
+  }, [shellLayout, moreOpen]);
 
   const actions = useMemo(() => availableActions(runtimeCapabilities).filter((action) => copy[action.title].toLowerCase().includes(query.toLowerCase())), [copy, query, runtime]);
   const unavailableCaptureActions = actionRegistry.filter((action) => action.required.includes(PlatformCapability.Capture) && !runtimeCapabilities.available.has(PlatformCapability.Capture));
   const execute = (id: ActionId) => {
     const action = actions.find((item) => item.id === id);
+    const opensCaptureDialog = id === ActionId.CaptureSelection || id === ActionId.CaptureToolbar;
     if (action?.surface) setSurface(action.surface);
     if (id.startsWith("realqa.capture.")) {
       captureSequence.current += 1;
       setRequestedCapture({ action: id as CaptureActionId, sequence: captureSequence.current });
     }
-    closePalette(action?.surface !== SurfaceId.Account);
+    closePalette(action?.surface !== SurfaceId.Account && !opensCaptureDialog);
     if (action?.surface === SurfaceId.Account) requestAnimationFrame(() => apiOriginInput.current?.focus());
-  };
-  const trapPaletteFocus = (event: ReactKeyboardEvent<HTMLElement>) => {
-    if (event.key !== "Tab") return;
-    const focusable = paletteRef.current?.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), select:not([disabled]), [href]");
-    if (!focusable?.length) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault(); last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault(); first.focus();
-    }
   };
   const openExternal = async (target: ExternalLinkTarget) => {
     if (mobile) {
@@ -364,27 +450,51 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const NativeMessagingBoundary = nativeMessaging?.Boundary;
   const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={preferences.apiOrigin} apiOrigin={preferences.apiOrigin} active online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onCallbackConsumed={clearConsumedAuthCallback} onDeckLinkPolicyReady={markDeckLinkPolicyReady} onContinueLocally={finishOnboarding} onLoggedOut={() => { realqaController.current?.reset(); setRequestedCapture(null); setSurface(SurfaceId.Account); }} initialAppearance={{ theme: preferences.theme, language: preferences.language }} identitySessionRef={identitySession}><UrlMappingDraftProvider><DeckPollingBoundary bridge={bridge} active={lifecycle === LifecycleState.Active} online={online} language={language}><SynchronizedAppearanceBoundary onAppearance={(appearance) => update({ theme: appearance.theme, language: appearance.language })} />{runtime.platform === RuntimePlatform.Desktop && NativeMessagingBoundary && <NativeMessagingBoundary />}{content}</DeckPollingBoundary></UrlMappingDraftProvider></DevHudServiceBoundary> : content;
 
-  if (runtimeState.kind !== ContentStateKind.Ready) return <main className="app-shell onboarding" data-devhud-ready="true"><section className="content"><ContentStateView state={runtimeState} copy={copy} onRetry={() => location.reload()} /></section></main>;
+  if (runtimeState.kind !== ContentStateKind.Ready) return <main className="standalone-shell" data-devhud-ready="true"><ContentStateView state={runtimeState} copy={copy} onRetry={() => location.reload()} /></main>;
 
-  if (onboarding) return boundary(<main className="app-shell onboarding" data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "loading"}><section className="content"><FirstRunIdentity copy={copy} apiOrigin={preferences.apiOrigin} onApiOrigin={applyApiOrigin} onComplete={finishOnboarding} />{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</section></main>);
+  if (onboarding) return boundary(<main className="standalone-shell" data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "loading"}><FirstRunIdentity copy={copy} apiOrigin={preferences.apiOrigin} onApiOrigin={applyApiOrigin} onComplete={finishOnboarding} />{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</main>);
 
-  return boundary(<main className="app-shell" data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "desktop"} data-lifecycle={lifecycle}>
+  const moreCurrent = surface === SurfaceId.Realqa || surface === SurfaceId.Diagnostics;
+  const navigate = (nextSurface: SurfaceId) => { setSurface(nextSurface); setMoreOpen(false); };
+  const markNavigationFocused = (destination: NavigationDestination) => { focusedNavigationDestination.current = destination; };
+  const markNavigationBlurred = (destination: NavigationDestination) => { if (focusedNavigationDestination.current === destination) focusedNavigationDestination.current = null; };
+  const navigation = shellLayout !== ShellLayout.Mobile && <aside className={`shell-navigation shell-navigation-${shellLayout}`}>
+    <h1 aria-label={shellLayout === ShellLayout.Rail ? copy.appName : undefined}>{shellLayout === ShellLayout.Sidebar ? copy.appName : "D"}</h1>
+    <nav aria-label={copy.mobileNavigation}>{surfaces.map((item) => <ShellNavigationItem active={surface === item} compact={shellLayout === ShellLayout.Rail} destination={item} icon={surfaceIcons[item]} key={item} label={copy[labels[item]]} selectedItemRef={selectedDesktopNavigationItem} tooltipId={`navigation-tooltip-${item}`} onActivate={() => navigate(item)} onNavigationBlur={markNavigationBlurred} onNavigationFocus={markNavigationFocused} />)}</nav>
+    {mobile ? <Button className="palette-trigger" ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} aria-label={copy.openPalette}>{shellLayout === ShellLayout.Sidebar ? copy.openPalette : null}</Button> : <ShortcutPaletteTrigger copy={copy} isMac={isMac} triggerRef={paletteTrigger} onOpen={openPalette} compact={shellLayout === ShellLayout.Rail} />}
+  </aside>;
+  const topBar = shellLayout === ShellLayout.Mobile && <header className="mobile-app-bar"><h1>{copy.appName}</h1><span>{copy[labels[surface]]}</span><Button ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} aria-label={copy.openPalette} /></header>;
+  const bottomBar = shellLayout === ShellLayout.Mobile && <nav className="mobile-bottom-navigation" aria-label={copy.mobileNavigation}>
+    {mobilePrimarySurfaces.map((item) => {
+      const Icon = surfaceIcons[item];
+      return <button type="button" key={item} data-navigation-destination={item} aria-current={surface === item ? "page" : undefined} onClick={() => navigate(item)} onFocus={() => markNavigationFocused(item)} onBlur={() => markNavigationBlurred(item)}><Icon /><span>{copy[labels[item]]}</span></button>;
+    })}
+    <button key={MobileNavigationId.More} ref={moreTrigger} type="button" data-navigation-destination={MobileNavigationId.More} aria-current={moreCurrent ? "page" : undefined} aria-haspopup="dialog" aria-expanded={moreOpen} disabled={screenModalConfirmationOpen} onClick={openMore} onFocus={() => markNavigationFocused(MobileNavigationId.More)} onBlur={() => markNavigationBlurred(MobileNavigationId.More)}><MoreIcon /><span>{copy.more}</span></button>
+  </nav>;
+
+  return boundary(<>
     {runtime?.platform === RuntimePlatform.Desktop && <SynchronizedShortcutBoundary bridge={bridge} />}
-    <aside aria-label={copy.mobileNavigation}>
-      <h1>{copy.appName}</h1>
-      <nav>{surfaces.map((item) => <button className={surface === item ? "active" : ""} aria-current={surface === item ? "page" : undefined} key={item} onClick={() => setSurface(item)}>{copy[labels[item]]}</button>)}</nav>
-      {mobile ? <button className="palette-trigger" ref={paletteTrigger} onClick={() => setPalette(true)} aria-label={copy.openPalette}>{copy.openPalette}</button> : <ShortcutPaletteTrigger copy={copy} isMac={isMac} triggerRef={paletteTrigger} onOpen={() => setPalette(true)} />}
-    </aside>
-    <section className="content" aria-live="polite">
-      {surface === SurfaceId.Home && <><p className="eyebrow">{copy.available}</p><h2>{copy.welcome}</h2><p>{copy.homeSummary}</p></>}
-      {surface === SurfaceId.Realqa && mobile && <><p className="eyebrow">{copy.desktopOnly}</p><h2>{copy.realqaMobileTitle}</h2><p>{copy.realqaMobileSummary}</p><p className="notice">{copy.unavailable}</p></>}
+    <AppShell layout={shellLayout} skipLabel={copy.skipToContent} navigation={navigation} topBar={topBar} bottomBar={bottomBar} data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "desktop"} data-lifecycle={lifecycle}>
+      {surface === SurfaceId.Home && <><PageHeader eyebrow={copy.availableTools} title={copy.welcome} summary={copy.homeSummary} /><div className="tool-grid">{homeTools.map((item) => {
+        const Icon = surfaceIcons[item];
+        return <Card key={item} interactive><DataRow icon={<Icon />} title={copy[homeToolTitles[item]]} description={copy[homeToolSummaries[item]]} trailing={<>{mobile && item === SurfaceId.Realqa && <StatusBadge tone="neutral">{copy.desktopOnly}</StatusBadge>}<ArrowRightIcon /></>} onClick={() => navigate(item)} /></Card>;
+      })}</div></>}
+      {surface === SurfaceId.Realqa && mobile && <><PageHeader eyebrow={copy.desktopOnly} title={copy.realqaMobileTitle} summary={copy.realqaMobileSummary} /><Card className="notice"><StatusBadge tone="neutral">{copy.desktopOnly}</StatusBadge><p>{copy.unavailable}</p></Card></>}
       {!mobile && runtimeCapabilities.available.has(PlatformCapability.Capture) && <RealqaSurface ref={realqaController} bridge={bridge} copy={copy} active={surface === SurfaceId.Realqa} paletteOpen={palette} onActivate={() => setSurface(SurfaceId.Realqa)} requestedAction={requestedCapture} onRequestedActionConsumed={consumeRequestedCapture} takeBrowserContext={nativeMessaging?.takeContext} />}
-      {surface === SurfaceId.Realqa && !mobile && !runtimeCapabilities.available.has(PlatformCapability.Capture) && <><p className="eyebrow">{copy.realqa}</p><h2>{copy.realqaTitle}</h2><p>{copy.realqaSummary}</p><div className="disabled-actions">{unavailableCaptureActions.map((action) => <button disabled key={action.id}>{copy[action.title]}</button>)}</div><p className="notice">{copy.unavailable}</p></>}
-      {surface === SurfaceId.Deck && <DeckSurface copy={copy} bridge={bridge} language={language} selectedDeckId={deckLink} onDismissMissingLink={() => setDeckLink(null)} />}
-      {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><SynchronizedSettingsBoundary copy={copy} bridge={bridge} onOpenExternal={openExternal} showNativeShortcuts={runtime?.platform === RuntimePlatform.Desktop} shortcutCapabilities={runtimeCapabilities} NativeMessagingSettings={nativeMessaging?.Settings} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{supportsNotifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}{runtime?.platform === RuntimePlatform.Desktop && <DesktopUpdaterPanel bridge={bridge} language={language} onApprovalOpenChange={handleUpdaterApprovalOpenChange} />}</>}
-      {surface === SurfaceId.Account && <><AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} /><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.githubCreateFinePat}</button><button onClick={() => void external(ExternalLinkTarget.ClassicPat)}>{copy.githubCreateClassicPat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
-      {surface === SurfaceId.Diagnostics && <><p className="eyebrow">{copy.diagnostics}</p><h2>{copy.diagnosticsTitle}</h2><p>{copy.diagnosticsSummary}</p>{runtime && <><dl className="runtime-diagnostics"><dt>{copy.diagnosticPlatform}</dt><dd>{runtime.operatingSystem}</dd><dt>{copy.diagnosticArchitecture}</dt><dd>{runtime.architecture}</dd><dt>{copy.diagnosticBridge}</dt><dd>v{runtime.bridgeVersion}</dd></dl><DiagnosticsPanel copy={copy} runtime={runtime} bridge={bridge} storage={storage} online={online} /></>}</>}
-    </section>
-    {palette && <div className="overlay" role="presentation"><section ref={paletteRef} className="palette" role="dialog" aria-modal="true" aria-label={copy.commandPalette} onKeyDown={trapPaletteFocus}><input ref={search} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchCommands} aria-label={copy.searchCommands} /><div className="commands">{actions.length === 0 ? <p role="status">{copy.noCommands}</p> : actions.map((action) => <button key={action.id} onClick={() => execute(action.id)}>{copy[action.title]}</button>)}</div><button onClick={() => closePalette()}>{copy.close}</button></section></div>}
-  </main>);
+      {surface === SurfaceId.Realqa && !mobile && !runtimeCapabilities.available.has(PlatformCapability.Capture) && <><PageHeader eyebrow={copy.realqa} title={copy.realqaTitle} summary={copy.realqaSummary} /><div className="disabled-actions">{unavailableCaptureActions.map((action) => <button disabled key={action.id}>{copy[action.title]}</button>)}</div><p className="notice">{copy.unavailable}</p></>}
+      {surface === SurfaceId.Deck && <DeckSurface copy={copy} bridge={bridge} language={language} selectedDeckId={deckLink} onDismissMissingLink={() => setDeckLink(null)} onModalConfirmationOpenChange={setScreenModalConfirmationOpen} />}
+      {surface === SurfaceId.Settings && <><PageHeader eyebrow={copy.settings} title={copy.settingsTitle} summary={copy.settingsSummary} /><SynchronizedSettingsBoundary copy={copy} bridge={bridge} onOpenExternal={openExternal} onModalConfirmationOpenChange={setScreenModalConfirmationOpen} showNativeShortcuts={runtime?.platform === RuntimePlatform.Desktop} shortcutCapabilities={runtimeCapabilities} NativeMessagingSettings={nativeMessaging?.Settings} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{supportsNotifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}{runtime?.platform === RuntimePlatform.Desktop && <DesktopUpdaterPanel bridge={bridge} language={language} onApprovalOpenChange={handleUpdaterApprovalOpenChange} />}</>}
+      {surface === SurfaceId.Account && <><AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} onDeleteConfirmationOpenChange={setScreenModalConfirmationOpen} /><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.githubCreateFinePat}</button><button onClick={() => void external(ExternalLinkTarget.ClassicPat)}>{copy.githubCreateClassicPat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
+      {surface === SurfaceId.Diagnostics && <><PageHeader eyebrow={copy.diagnostics} title={copy.diagnosticsTitle} summary={copy.diagnosticsSummary} />{runtime && <><dl className="runtime-diagnostics"><dt>{copy.diagnosticPlatform}</dt><dd>{runtime.operatingSystem}</dd><dt>{copy.diagnosticArchitecture}</dt><dd>{runtime.architecture}</dd><dt>{copy.diagnosticBridge}</dt><dd>v{runtime.bridgeVersion}</dd></dl><DiagnosticsPanel copy={copy} runtime={runtime} bridge={bridge} storage={storage} online={online} /></>}</>}
+    </AppShell>
+    <Dialog open={palette} title={copy.commandPalette} initialFocusRef={search} returnFocusRef={paletteTrigger} restoreFocus={paletteRestoresFocus} onClose={() => closePalette()}>
+      <Field label={copy.searchCommands} inputId="command-search"><input id="command-search" ref={search} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchCommands} /></Field>
+      <div className="commands">{actions.length === 0 ? <p role="status">{copy.noCommands}</p> : actions.map((action) => <Button variant="ghost" key={action.id} onClick={() => execute(action.id)}>{copy[action.title]}</Button>)}</div>
+      <Button onClick={() => closePalette()}>{copy.close}</Button>
+    </Dialog>
+    <Sheet open={moreOpen} title={copy.more} backLabel={copy.back} returnFocusRef={moreTrigger} restoreFocus={moreRestoresFocus} onClose={() => closeMore()}>
+      <DataRow icon={<RealqaIcon />} title={copy.realqa} description={mobile ? copy.realqaMobileSummary : copy.realqaSummary} trailing={mobile ? <StatusBadge tone="neutral">{copy.desktopOnly}</StatusBadge> : <ArrowRightIcon />} ariaCurrent={surface === SurfaceId.Realqa ? "page" : undefined} onClick={() => navigate(SurfaceId.Realqa)} />
+      <DataRow icon={<DiagnosticsIcon />} title={copy.diagnostics} description={copy.diagnosticsSummary} trailing={<ArrowRightIcon />} ariaCurrent={surface === SurfaceId.Diagnostics ? "page" : undefined} onClick={() => navigate(SurfaceId.Diagnostics)} />
+    </Sheet>
+  </>);
 }

@@ -1,4 +1,4 @@
-import { createContext, use, useEffect, useEffectEvent, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref } from "react";
+import { createContext, use, useEffect, useEffectEvent, useId, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref } from "react";
 import type { Copy } from "./localization";
 import { GitHubSettings, githubErrorCopy } from "./github-settings-ui.tsx";
 import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, readGitHubCredential, type GitHubProvider } from "./github-provider.ts";
@@ -11,6 +11,8 @@ import { inactiveDesktopShortcutBindings, ShortcutActionId, ShortcutContractErro
 import { findMappingOverlaps, type UrlRepositoryMapping } from "./url-mapping";
 import { R2Settings } from "./r2-settings-ui.tsx";
 import { LocalAgentSettings } from "./local-agent-settings-ui.tsx";
+import { Button, Card, Field, PageHeader } from "./ui-foundation";
+import { SearchIcon } from "./ui-icons";
 
 interface ApiEditorProps {
   readonly copy: Copy;
@@ -23,6 +25,7 @@ interface ApiEditorProps {
 export function ApiOriginEditor({ copy, value, inputRef, autoFocus = false, onApply }: ApiEditorProps) {
   const [draft, setDraft] = useState(value);
   const [error, setError] = useState(false);
+  const inputId = useId();
   useEffect(() => setDraft(value), [value]);
   const apply = async () => {
     const normalized = normalizeApiOrigin(draft);
@@ -32,11 +35,11 @@ export function ApiOriginEditor({ copy, value, inputRef, autoFocus = false, onAp
     await onApply(normalized);
   };
   return <div className="api-origin-editor">
-    <label>{copy.apiOrigin}<input ref={inputRef} autoFocus={autoFocus} value={draft} onChange={(event) => setDraft(event.target.value)} aria-describedby="api-origin-security-warning api-origin-validation" /></label>
-    <button type="button" onClick={() => void apply()} disabled={normalizeApiOrigin(draft) === normalizeApiOrigin(value)}>{copy.applyApiOrigin}</button>
+    <Field label={copy.apiOrigin} inputId={inputId} hint={copy.apiOriginHint} error={error ? copy.invalidApiOrigin : undefined}>
+      <input id={inputId} ref={inputRef} autoFocus={autoFocus} value={draft} onChange={(event) => setDraft(event.target.value)} aria-describedby={`${inputId}-hint ${error ? `${inputId}-error ` : ""}api-origin-security-warning`} />
+    </Field>
+    <Button type="button" onClick={() => void apply()} disabled={normalizeApiOrigin(draft) === normalizeApiOrigin(value)}>{copy.applyApiOrigin}</Button>
     <p id="api-origin-security-warning" className="notice">{copy.customApiWarning}</p>
-    <p>{copy.apiOriginHint}</p>
-    {error && <p id="api-origin-validation" role="alert">{copy.invalidApiOrigin}</p>}
   </div>;
 }
 
@@ -53,19 +56,17 @@ export function FirstRunIdentity({ copy, apiOrigin, onApiOrigin, onComplete }: I
   useEffect(() => {
     if (identity.status === "authenticated" || identity.status === "blocked" || identity.status === "deletion-pending") onComplete();
   }, [identity.status, onComplete]);
-  return <>
-    <p className="eyebrow">{copy.account}</p>
-    <h1>{copy.accountTitle}</h1>
-    <p>{copy.firstRunSummary}</p>
+  return <Card className="onboarding-card">
+    <PageHeader eyebrow={copy.account} title={copy.accountTitle} summary={copy.firstRunSummary} level={1} />
     <ApiOriginEditor copy={copy} value={apiOrigin} autoFocus onApply={onApiOrigin} />
     <div className="actions">
-      <button onClick={() => { setActionError(false); void identity.signIn().catch(() => setActionError(true)); }} disabled={identity.status === "starting" || identity.bootstrap === null || identity.signInPending}>{copy.signIn}</button>
-      <button onClick={identity.continueLocally}>{copy.continueLocally}</button>
+      <Button variant="primary" onClick={() => { setActionError(false); void identity.signIn().catch(() => setActionError(true)); }} disabled={identity.status === "starting" || identity.bootstrap === null || identity.signInPending}>{copy.signIn}</Button>
+      <Button onClick={identity.continueLocally}>{copy.continueLocally}</Button>
     </div>
     {identity.status === "starting" && <p role="status">{copy.fetchingBootstrap}</p>}
-    {identity.status === "error" && <section className="notice" role="alert"><p>{copy.bootstrapFailed}</p>{identity.identityResetAvailable && <p>{copy.resetSignInHint}</p>}<div className="actions"><button onClick={identity.retryIdentity}>{copy.retry}</button>{identity.identityResetAvailable && <button onClick={() => void identity.resetIdentity().catch(() => {})}>{copy.resetSignIn}</button>}</div></section>}
+    {identity.status === "error" && <Card className="notice" role="alert"><p>{copy.bootstrapFailed}</p>{identity.identityResetAvailable && <p>{copy.resetSignInHint}</p>}<div className="actions"><Button onClick={identity.retryIdentity}>{copy.retry}</Button>{identity.identityResetAvailable && <Button onClick={() => void identity.resetIdentity().catch(() => {})}>{copy.resetSignIn}</Button>}</div></Card>}
     {actionError && <p role="alert">{copy.signInFailed}</p>}
-  </>;
+  </Card>;
 }
 
 interface AccountIdentityProps {
@@ -73,15 +74,17 @@ interface AccountIdentityProps {
   readonly apiOrigin: string;
   readonly inputRef: Ref<HTMLInputElement>;
   readonly onApiOrigin: (value: string) => Promise<void>;
+  readonly onDeleteConfirmationOpenChange: (open: boolean) => void;
 }
 
-export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin }: AccountIdentityProps) {
+export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin, onDeleteConfirmationOpenChange }: AccountIdentityProps) {
   const identity = useIdentitySettings();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState(false);
   const deleteTrigger = useRef<HTMLButtonElement>(null);
   const deleteDialog = useRef<HTMLElement>(null);
   const cancelDelete = useRef<HTMLButtonElement>(null);
+  const deleteConfirmationOpen = confirmDelete && identity.status === "authenticated" && !identity.accountError && identity.account !== null;
   const invoke = (action: () => Promise<void>) => { setActionError(false); void action().catch(() => setActionError(true)); };
   const closeDeleteConfirmation = () => {
     setConfirmDelete(false);
@@ -94,6 +97,12 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin }: Acco
     addEventListener("keydown", closeOnEscape);
     return () => removeEventListener("keydown", closeOnEscape);
   }, [confirmDelete]);
+  useEffect(() => {
+    onDeleteConfirmationOpenChange(deleteConfirmationOpen);
+    return () => {
+      if (deleteConfirmationOpen) onDeleteConfirmationOpenChange(false);
+    };
+  }, [deleteConfirmationOpen, onDeleteConfirmationOpenChange]);
   return <>
     <p className="eyebrow">{copy.account}</p>
     <h2>{copy.accountTitle}</h2>
@@ -111,7 +120,7 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin }: Acco
     {identity.status === "blocked" && <section className="notice" role="status"><h3>{copy.blockedTitle}</h3><p>{copy.blockedSummary}</p><p>{copy.blockedLocalHint}</p><button onClick={() => invoke(identity.logout)}>{copy.logout}</button></section>}
     {identity.status === "deletion-pending" && <section className="notice" role="status"><h3>{copy.deletionPendingTitle}</h3><p>{copy.deletionPendingSummary}</p>{identity.account?.recoverableUntil && <p>{copy.recoverableUntil}: {new Date(Number(identity.account.recoverableUntil.seconds) * 1000).toLocaleString()}</p>}<div className="actions"><button onClick={() => invoke(identity.restoreAccount)}>{copy.restoreAccount}</button><button onClick={() => invoke(identity.logout)}>{copy.logout}</button></div></section>}
     {identity.status === "deletion-pending" && identity.deletionCleanupFailed && <section className="notice" role="alert"><p>{copy.accountActionFailed}</p><button onClick={() => void identity.retryDeletionCleanup()}>{copy.retry}</button></section>}
-    {confirmDelete && identity.status === "authenticated" && !identity.accountError && identity.account !== null && <section ref={deleteDialog} className="confirmation" role="alertdialog" aria-modal="true" aria-labelledby="delete-account-title" onKeyDown={(event) => trapDialogFocus(event, deleteDialog.current)}><h3 id="delete-account-title">{copy.deleteAccountConfirmTitle}</h3><p>{copy.deleteAccountConfirmSummary}</p><div className="actions"><button className="danger" onClick={() => { closeDeleteConfirmation(); invoke(identity.deleteAccount); }}>{copy.deleteAccount}</button><button ref={cancelDelete} onClick={closeDeleteConfirmation}>{copy.cancel}</button></div></section>}
+    {deleteConfirmationOpen && <section ref={deleteDialog} className="confirmation" role="alertdialog" aria-modal="true" aria-labelledby="delete-account-title" onKeyDown={(event) => trapDialogFocus(event, deleteDialog.current)}><h3 id="delete-account-title">{copy.deleteAccountConfirmTitle}</h3><p>{copy.deleteAccountConfirmSummary}</p><div className="actions"><button className="danger" onClick={() => { closeDeleteConfirmation(); invoke(identity.deleteAccount); }}>{copy.deleteAccount}</button><button ref={cancelDelete} onClick={closeDeleteConfirmation}>{copy.cancel}</button></div></section>}
     {actionError && <p role="alert">{copy.accountActionFailed}</p>}
   </>;
 }
@@ -214,7 +223,7 @@ function UrlMappingDraftStateProvider({ children, identity, isCurrentScope }: { 
   return <UrlMappingDraftContext value={{ draft, setDraft, setBaselineMappings, markDraftDirty, invalid, setInvalid, saved, setSaved, dirty, saving, setSaving, priorityDrafts, setPriorityDrafts, baseRevision, credentialOperationPending, runCredentialOperation, isCurrentScope, reset }}>{children}</UrlMappingDraftContext>;
 }
 
-export function SynchronizedSettingsBoundary(props: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly showNativeShortcuts?: boolean; readonly showLocalAgents?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities; readonly NativeMessagingSettings?: ComponentType<{ readonly copy: Copy }> }) {
+export function SynchronizedSettingsBoundary(props: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly onModalConfirmationOpenChange?: (open: boolean) => void; readonly showNativeShortcuts?: boolean; readonly showLocalAgents?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities; readonly NativeMessagingSettings?: ComponentType<{ readonly copy: Copy }> }) {
   const mappingDraft = use(UrlMappingDraftContext);
   return mappingDraft === null ? <UrlMappingDraftProvider><SynchronizedSettingsContent {...props} /></UrlMappingDraftProvider> : <SynchronizedSettingsContent {...props} />;
 }
@@ -284,12 +293,12 @@ const shortcutLabels: Record<ShortcutActionId, keyof Copy> = {
   [ShortcutActionId.CaptureToolbar]: "captureToolbar",
 };
 
-export function ShortcutPaletteTrigger({ copy, isMac, onOpen, triggerRef }: { readonly copy: Copy; readonly isMac: boolean; readonly onOpen: () => void; readonly triggerRef: Ref<HTMLButtonElement> }) {
+export function ShortcutPaletteTrigger({ copy, isMac, onOpen, triggerRef, compact = false }: { readonly copy: Copy; readonly isMac: boolean; readonly onOpen: () => void; readonly triggerRef: Ref<HTMLButtonElement>; readonly compact?: boolean }) {
   const { activeShortcutBindings } = useIdentitySettings();
   const binding = activeShortcutBindings[ShortcutActionId.CommandPalette];
   const modifiers = binding.modifiers.map((modifier) => modifier === ShortcutModifier.RightPrimary ? isMac ? copy.rightCommandK.replace(/ K$/u, "") : copy.rightControlK.replace(/ K$/u, "") : modifier === ShortcutModifier.Shift ? copy.shortcutShift : copy.shortcutAlt);
   const label = binding.enabled ? [...modifiers, copy[shortcutKeyLabels[binding.key]]].join(" + ") : copy.shortcutNone;
-  return <button ref={triggerRef} className="palette-trigger" onClick={onOpen} aria-label={copy.openPalette}>{label}</button>;
+  return <button ref={triggerRef} className="palette-trigger" onClick={onOpen} aria-label={copy.openPalette} aria-describedby={compact ? "palette-trigger-tooltip" : undefined}>{compact ? <><SearchIcon /><span id="palette-trigger-tooltip" className="nav-tooltip" role="tooltip">{copy.openPalette}</span></> : label}</button>;
 }
 
 function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onActiveBindings, onPersist }: { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly disabled: boolean; readonly capabilities: RuntimeCapabilities; readonly bindings: DevHudSettingsV1["shortcuts"]["desktop"]; readonly onActiveBindings: (bindings: DevHudSettingsV1["shortcuts"]["desktop"]) => void; readonly onPersist: (bindings: DevHudSettingsV1["shortcuts"]["desktop"]) => Promise<boolean> }) {
@@ -383,7 +392,7 @@ function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onAc
   </section>;
 }
 
-function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvider, onOpenExternal = (target) => browserShell.openExternal(target, ""), showNativeShortcuts = false, showLocalAgents = showNativeShortcuts, shortcutCapabilities = { available: new Set<PlatformCapability>() }, NativeMessagingSettings }: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly showNativeShortcuts?: boolean; readonly showLocalAgents?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities; readonly NativeMessagingSettings?: ComponentType<{ readonly copy: Copy }> }) {
+function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvider, onOpenExternal = (target) => browserShell.openExternal(target, ""), onModalConfirmationOpenChange, showNativeShortcuts = false, showLocalAgents = showNativeShortcuts, shortcutCapabilities = { available: new Set<PlatformCapability>() }, NativeMessagingSettings }: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly onModalConfirmationOpenChange?: (open: boolean) => void; readonly showNativeShortcuts?: boolean; readonly showLocalAgents?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities; readonly NativeMessagingSettings?: ComponentType<{ readonly copy: Copy }> }) {
   const identity = useIdentitySettings();
   const mappingDraft = use(UrlMappingDraftContext);
   if (mappingDraft === null) throw new Error("URL mapping draft provider is required");
@@ -407,8 +416,8 @@ function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvid
       <h3>{copy.synchronizedSettings}</h3>
       {identity.offline && <p className="notice" role="status">{copy.offlineSettingsReadOnly}</p>}
       {!identity.offline && <p>{copy.settingsRevision}: {identity.revision.toString()}</p>}
-    {identity.importDiff && <SnapshotChoice key="import" choiceId="import" copy={copy} entries={identity.importDiff} title={copy.importSettingsTitle} summary={copy.importSettingsSummary} primary={copy.uploadLocal} secondary={copy.replaceLocal} onPrimary={() => invoke(async () => { if (await identity.uploadLocal()) mappingDraft.reset(); })} onSecondary={() => invoke(async () => { if (await identity.replaceLocal()) mappingDraft.reset(); })} />}
-    {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onPrimary={() => invoke(async () => { if (await identity.reapplyConflictLocal()) mappingDraft.reset(); })} onSecondary={() => invoke(async () => { if (await identity.adoptConflictServer()) mappingDraft.reset(); })} />}
+    {identity.importDiff && <SnapshotChoice key="import" choiceId="import" copy={copy} entries={identity.importDiff} title={copy.importSettingsTitle} summary={copy.importSettingsSummary} primary={copy.uploadLocal} secondary={copy.replaceLocal} onOpenChange={onModalConfirmationOpenChange} onPrimary={() => invoke(async () => { if (await identity.uploadLocal()) mappingDraft.reset(); })} onSecondary={() => invoke(async () => { if (await identity.replaceLocal()) mappingDraft.reset(); })} />}
+    {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onOpenChange={onModalConfirmationOpenChange} onPrimary={() => invoke(async () => { if (await identity.reapplyConflictLocal()) mappingDraft.reset(); })} onSecondary={() => invoke(async () => { if (await identity.adoptConflictServer()) mappingDraft.reset(); })} />}
     {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <section className="notice" role="alert"><p>{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p><button onClick={() => invoke(identity.retrySettings)}>{copy.retry}</button></section>}
     </section>}
     <GitHubSettings copy={copy} bridge={bridge} provider={githubProvider} openExternal={onOpenExternal} credentialOperationPending={mappingDraft.credentialOperationPending} runCredentialOperation={mappingDraft.runCredentialOperation} />
@@ -564,7 +573,7 @@ function uuidV7(): string {
   return `${time.slice(0, 8)}-${time.slice(8)}-7${tail.slice(0, 3)}-${variant}${tail.slice(3, 6)}-${tail.slice(6, 18)}`;
 }
 
-function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, secondary, onPrimary, onSecondary }: { readonly choiceId: string; readonly copy: Copy; readonly entries: readonly SettingsDiffEntry[]; readonly title: string; readonly summary: string; readonly primary: string; readonly secondary: string; readonly onPrimary: () => void; readonly onSecondary: () => void }) {
+function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, secondary, onOpenChange, onPrimary, onSecondary }: { readonly choiceId: string; readonly copy: Copy; readonly entries: readonly SettingsDiffEntry[]; readonly title: string; readonly summary: string; readonly primary: string; readonly secondary: string; readonly onOpenChange?: (open: boolean) => void; readonly onPrimary: () => void; readonly onSecondary: () => void }) {
   const [open, setOpen] = useState(true);
   const dialog = useRef<HTMLElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -585,6 +594,12 @@ function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, seco
     addEventListener("keydown", closeOnEscape);
     return () => removeEventListener("keydown", closeOnEscape);
   }, [open]);
+  useEffect(() => {
+    onOpenChange?.(open);
+    return () => {
+      if (open) onOpenChange?.(false);
+    };
+  }, [onOpenChange, open]);
   if (!open) return <section className="notice"><p>{summary}</p><button onClick={() => setOpen(true)}>{title}</button></section>;
   const titleId = `snapshot-choice-${choiceId}-title`;
   return <section ref={dialog} className="snapshot-choice" role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={(event) => trapDialogFocus(event, dialog.current)}>

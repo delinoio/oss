@@ -184,6 +184,7 @@ function renderIdentityConflictProbe(bridge: NativeBridgeV1, replacement: DevHud
 beforeEach(() => {
   localStorage.clear();
   localStorage.setItem("devhud.shell.onboarding.v1", "complete");
+  Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1024 });
   Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
   Object.defineProperty(window, "matchMedia", { configurable: true, value: vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })) });
 });
@@ -195,6 +196,38 @@ afterEach(() => {
 });
 
 describe("generated Connect identity/settings fixture", () => {
+  it("keeps More unavailable while the mobile account deletion confirmation is open", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 390 });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: SettingsSchemaVersion, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+    const mobileRuntime: RuntimeSnapshot = { ...runtime, platform: RuntimePlatform.Ios, operatingSystem: "ios", architecture: "arm64", cefRevision: "" };
+
+    render(<App bridge={authenticatedBridge()} initialRuntime={mobileRuntime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    expect(await screen.findByText("Fixture User")).toBeTruthy();
+    const deleteTrigger = screen.getByRole("button", { name: messages.en.deleteAccount });
+    fireEvent.click(deleteTrigger);
+
+    const confirmation = screen.getByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle });
+    const cancel = within(confirmation).getByRole("button", { name: messages.en.cancel });
+    const more = screen.getByRole("button", { name: messages.en.more });
+    expect(cancel).toBe(document.activeElement);
+    expect((more as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(more);
+    expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull();
+    expect(screen.getByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle })).toBe(confirmation);
+    expect(cancel).toBe(document.activeElement);
+
+    fireEvent.click(cancel);
+    await waitFor(() => expect(deleteTrigger).toBe(document.activeElement));
+    expect((more as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("stores signed-out appearance edits in the guest snapshot", async () => {
     writeAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io", {
       settings: { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" } },
@@ -769,6 +802,7 @@ describe("generated Connect identity/settings fixture", () => {
   });
 
   it("requires explicit guest upload and preserves only the recovery session through deletion", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 390 });
     const local = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" as const } };
     const server = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "light" as const } };
     writeGuestSettings(localStorage, local);
@@ -825,6 +859,11 @@ describe("generated Connect identity/settings fixture", () => {
     const importDialog = screen.getByRole("dialog", { name: messages.en.importSettingsTitle });
     const importClose = within(importDialog).getByRole("button", { name: messages.en.close });
     const importReplace = within(importDialog).getByRole("button", { name: messages.en.replaceLocal });
+    const more = screen.getByRole("button", { name: messages.en.more });
+    await waitFor(() => expect((more as HTMLButtonElement).disabled).toBe(true));
+    expect(importClose).toBe(document.activeElement);
+    fireEvent.click(more);
+    expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull();
     expect(importClose).toBe(document.activeElement);
     importReplace.focus();
     fireEvent.keyDown(importDialog, { key: "Tab" });
@@ -837,13 +876,22 @@ describe("generated Connect identity/settings fixture", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: messages.en.importSettingsTitle })).toBeNull();
     await waitFor(() => expect(settingsTrigger).toBe(document.activeElement));
+    await waitFor(() => expect((more as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: messages.en.importSettingsTitle }));
     expect(screen.getByRole("dialog", { name: messages.en.importSettingsTitle })).toBeTruthy();
     expect(within(screen.getByRole("dialog", { name: messages.en.importSettingsTitle })).getByRole("button", { name: messages.en.close })).toBe(document.activeElement);
+    await waitFor(() => expect((more as HTMLButtonElement).disabled).toBe(true));
     expect(screen.getByText("$.appearance.theme")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.uploadLocal }));
     expect(await screen.findByText(messages.en.conflictTitle)).toBeTruthy();
+    const conflictDialog = screen.getByRole("dialog", { name: messages.en.conflictTitle });
+    const conflictClose = within(conflictDialog).getByRole("button", { name: messages.en.close });
+    await waitFor(() => expect((more as HTMLButtonElement).disabled).toBe(true));
+    expect(conflictClose).toBe(document.activeElement);
+    fireEvent.click(more);
+    expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull();
+    expect(conflictClose).toBe(document.activeElement);
     expect(replaceBodies[0]?.expectedRevision).toBe(fixture.serverRevision);
     expect(screen.getByText("$.appearance.theme")).toBeTruthy();
     expect(screen.queryByText(messages.en.importSettingsTitle)).toBeNull();
@@ -854,6 +902,7 @@ describe("generated Connect identity/settings fixture", () => {
     await waitFor(() => expect(screen.getByLabelText(messages.en.synchronizedSettings).textContent).toContain(`${messages.en.settingsRevision}: 5`));
     expect(screen.queryByText(messages.en.importSettingsTitle)).toBeNull();
     expect(screen.queryByText(messages.en.conflictTitle)).toBeNull();
+    await waitFor(() => expect((more as HTMLButtonElement).disabled).toBe(false));
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
     const deleteTrigger = await screen.findByRole("button", { name: messages.en.deleteAccount });

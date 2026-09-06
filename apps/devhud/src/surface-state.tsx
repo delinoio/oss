@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
 import type { Copy } from "./localization";
+import { Button, StatePanel } from "./ui-foundation";
 
 export const ContentStateKind = {
   Ready: "ready",
@@ -24,32 +24,24 @@ interface StateProps {
   readonly onRetry?: () => void;
 }
 
-function StateFrame({ eyebrow, title, children, role = "status" }: { readonly eyebrow: string; readonly title: string; readonly children: ReactNode; readonly role?: "status" | "alert" }) {
-  return <section className="state-panel" role={role} aria-labelledby={`state-${role}-title`}>
-    <p className="eyebrow">{eyebrow}</p>
-    <h2 id={`state-${role}-title`} tabIndex={-1}>{title}</h2>
-    {children}
-  </section>;
-}
-
 export function LoadingState({ copy }: StateProps) {
-  return <StateFrame eyebrow={copy.loading} title={copy.loadingTitle}><p aria-live="polite">{copy.loadingSummary}</p><span className="progress" aria-hidden="true" /></StateFrame>;
+  return <StatePanel eyebrow={copy.loading} title={copy.loadingTitle} summary={<span aria-live="polite">{copy.loadingSummary}</span>} progress />;
 }
 
 export function EmptyState({ copy }: StateProps) {
-  return <StateFrame eyebrow={copy.empty} title={copy.emptyTitle}><p>{copy.emptySummary}</p></StateFrame>;
+  return <StatePanel eyebrow={copy.empty} title={copy.emptyTitle} summary={copy.emptySummary} tone="neutral" />;
 }
 
 export function OfflineState({ copy, lastSuccessfulAt }: StateProps & { readonly lastSuccessfulAt?: string }) {
-  return <StateFrame eyebrow={copy.offline} title={copy.offlineTitle}><p>{copy.offlineSummary}</p>{lastSuccessfulAt && <p className="notice">{copy.lastSuccessfulRefresh}: <time dateTime={lastSuccessfulAt}>{lastSuccessfulAt}</time></p>}</StateFrame>;
+  return <StatePanel eyebrow={copy.offline} title={copy.offlineTitle} summary={copy.offlineSummary} tone="warning" details={lastSuccessfulAt && <p className="notice">{copy.lastSuccessfulRefresh}: <time dateTime={lastSuccessfulAt}>{lastSuccessfulAt}</time></p>} />;
 }
 
 export function BlockedState({ copy }: StateProps) {
-  return <StateFrame eyebrow={copy.blocked} title={copy.blockedTitle} role="alert"><p>{copy.blockedSummary}</p><p className="notice">{copy.blockedLocalHint}</p></StateFrame>;
+  return <StatePanel eyebrow={copy.blocked} title={copy.blockedTitle} summary={copy.blockedSummary} role="alert" tone="danger" details={<p className="notice">{copy.blockedLocalHint}</p>} />;
 }
 
 export function ErrorState({ copy, onRetry, retryable = true, correlationId }: StateProps & { readonly retryable?: boolean; readonly correlationId?: string }) {
-  return <StateFrame eyebrow={copy.error} title={copy.errorTitle} role="alert"><p>{copy.errorSummary}</p>{correlationId && <p className="correlation">{copy.correlationId}: <code>{correlationId}</code></p>}{retryable && onRetry && <button className="primary" onClick={onRetry}>{copy.retry}</button>}</StateFrame>;
+  return <StatePanel eyebrow={copy.error} title={copy.errorTitle} summary={copy.errorSummary} role="alert" tone="danger" details={correlationId && <p className="correlation">{copy.correlationId}: <code>{correlationId}</code></p>} actions={retryable && onRetry && <Button variant="primary" onClick={onRetry}>{copy.retry}</Button>} />;
 }
 
 export function ContentStateView({ state, copy, onRetry }: { readonly state: ContentState; readonly copy: Copy; readonly onRetry?: () => void }) {

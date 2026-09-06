@@ -47,14 +47,18 @@ describe("Deck surface", () => {
   it("requires explicit privacy consent before copying only the selected Deck into widget storage", async () => {
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => value.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
     const bridge = bridgeWith(request);
-    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} language="en" /></DeckPollingBoundary>);
+    const onModalConfirmationOpenChange = vi.fn();
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} language="en" onModalConfirmationOpenChange={onModalConfirmationOpenChange} /></DeckPollingBoundary>);
 
     await screen.findByRole("button", { name: messages.en.widgetEnable });
+    await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(false));
     fireEvent.click(screen.getByRole("button", { name: messages.en.widgetEnable }));
     expect(screen.getByRole("alertdialog").textContent).toContain(messages.en.widgetPrivacyWarning);
+    await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(true));
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.widgetPrivacyCancel })));
     fireEvent.keyDown(window, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(false));
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.widgetEnable })));
     fireEvent.click(screen.getByRole("button", { name: messages.en.widgetEnable }));
     fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm }));
@@ -63,6 +67,7 @@ describe("Deck surface", () => {
       operation: "widgets.enable-deck",
       configuration: { version: 1, deckId: deck.id, name: deck.name, query: deck.query, repositories: [{ owner: "octo", name: "widgets" }], profileId: profile.id, profileKind: profile.kind, scopeId: "origin.scope", language: "en" },
     }));
+    await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(false));
     expect(JSON.stringify(request.mock.calls)).not.toMatch(/github[_-]?pat|Bearer|token-value/iu);
   });
 

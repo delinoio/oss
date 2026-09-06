@@ -10,6 +10,26 @@ const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const mobileTargets = JSON.parse(readFileSync(join(appRoot, "mobile-platforms.json"), "utf8")).targets;
 const mobilePlatforms = JSON.parse(readFileSync(join(appRoot, "mobile-platforms.json"), "utf8"));
 
+test("mobile shell keeps an internal five-item navigation and repository-owned icon closure", () => {
+  const packageJson = JSON.parse(readFileSync(join(appRoot, "package.json"), "utf8"));
+  const app = readFileSync(join(appRoot, "src/App.tsx"), "utf8");
+  const foundation = readFileSync(join(appRoot, "src/ui-foundation.tsx"), "utf8");
+  const icons = readFileSync(join(appRoot, "src/ui-icons.tsx"), "utf8");
+  const dependencyNames = Object.keys({ ...packageJson.dependencies, ...packageJson.devDependencies });
+  for (const dependency of dependencyNames) {
+    assert.doesNotMatch(dependency, /(?:lucide|heroicons|react-icons|material-ui|@mui|chakra-ui|radix-ui|headlessui)/iu);
+  }
+  assert.match(app, /const mobilePrimarySurfaces: readonly SurfaceId\[\] = \[SurfaceId\.Home, SurfaceId\.Deck, SurfaceId\.Settings, SurfaceId\.Account\];/u);
+  assert.match(app, /const MobileNavigationId = \{ More: "more" \} as const;/u);
+  assert.match(app, /mobilePrimarySurfaces\.map[\s\S]*MobileNavigationId\.More/u);
+  assert.doesNotMatch(app, /mobilePrimarySurfaces[\s\S]{0,180}SurfaceId\.(?:Realqa|Diagnostics)/u);
+  assert.match(icons, /import type \{ SVGProps \} from "react";/u);
+  assert.doesNotMatch(icons, /from "(?!react")/u);
+  assert.match(foundation, /import \{[\s\S]*\} from "react";/u);
+  assert.match(foundation, /from "\.\/ui-icons"/u);
+  assert.doesNotMatch(foundation, /from "(?!react"|\.\/ui-icons")/u);
+});
+
 test("mobile policy validates every field in every immutable target tuple", () => {
   assert.doesNotThrow(() => assertMobileTargets(mobileTargets));
   for (const [index, target] of mobileTargets.entries()) {
