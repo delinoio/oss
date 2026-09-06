@@ -98,7 +98,7 @@ describe("DevHud UI foundation", () => {
     expect(screen.queryByRole("dialog", { name: "More" })).toBeNull();
   });
 
-  it("does not override focus transferred while sheet autofocus is pending", async () => {
+  it("does not override focus transferred within the sheet while autofocus is pending", async () => {
     function Harness() {
       const [open, setOpen] = useState(false);
       return <><Button onClick={() => setOpen(true)}>Open</Button><Sheet open={open} title="More" backLabel="Back" onClose={() => setOpen(false)}><Button>Destination</Button><Button>Keep focus</Button></Sheet></>;

@@ -125,9 +125,10 @@ function ModalSurface({ open, title, titleId, className, initialFocusRef, return
     capturedOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const animation = requestAnimationFrame(() => {
       const activeElement = document.activeElement;
-      // A nested confirmation can deliberately move focus before the sheet's deferred default focus runs.
-      // Preserve that transfer instead of stealing focus back to the sheet's first control.
-      if (activeElement instanceof HTMLElement && activeElement !== document.body && activeElement !== capturedOpener.current) return;
+      // A nested confirmation can deliberately move focus inside this surface before its deferred
+      // default focus runs. Preserve that transfer, but still claim focus after a closing sibling
+      // restores it outside this modal.
+      if (activeElement instanceof HTMLElement && activeElement !== capturedOpener.current && surface.current?.contains(activeElement)) return;
       const target = initialFocusRef?.current ?? surface.current?.querySelector<HTMLElement>(focusableSelector) ?? surface.current;
       target?.focus();
     });
