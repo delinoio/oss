@@ -71,7 +71,7 @@ button.data-row:active { box-shadow:inset 0 0 0 2px var(--line); }
 .status-badge { display:inline-flex; align-items:center; gap:6px; width:fit-content; padding:6px 10px; border:1px solid currentColor; border-radius:var(--radius-control); color:var(--muted); background:var(--surface); font-size:13px; font-weight:750; line-height:1.2; }
 .status-badge svg { width:16px; height:16px; }
 .status-badge-info { color:var(--info); }.status-badge-success { color:var(--success); }.status-badge-warning { color:var(--warning); }.status-badge-danger { color:var(--error); }
-.state-panel { max-width:720px; }.state-panel h2 { margin-top:var(--space-2); }.state-panel-actions { margin-top:var(--space-2); }.progress { display:block; width:48px; height:8px; margin-top:var(--space-3); border-radius:var(--radius-control); background:var(--accent); }.correlation code { overflow-wrap:anywhere; }
+.state-panel { max-width:720px; }.state-panel-title { margin-top:var(--space-2); }.state-panel-actions { margin-top:var(--space-2); }.progress { display:block; width:48px; height:8px; margin-top:var(--space-3); border-radius:var(--radius-control); background:var(--accent); }.correlation code { overflow-wrap:anywhere; }
 label { display:grid; gap:var(--space-1); max-width:510px; margin:var(--space-3) 0; color:var(--text); font-weight:700; }
 select,input,textarea { width:100%; min-height:var(--target-min); border:1px solid var(--line); border-radius:var(--radius-control); padding:10px 12px; color:var(--text); background:var(--surface); }
 .check { display:flex; align-items:center; min-height:var(--target-min); }.check input { width:20px; min-height:20px; height:20px; }
@@ -110,7 +110,7 @@ select,input,textarea { width:100%; min-height:var(--target-min); border:1px sol
 .deck-editor > fieldset { border:0; padding:0; }
 .deck-editor fieldset legend { padding-inline:var(--space-1); font-weight:800; }
 .deck-editor .ui-field { max-width:none; margin:0; }
-.deck-editor input[type="checkbox"] { justify-self:start; width:20px; min-height:20px; height:20px; }
+.deck-editor .deck-check { max-width:none; margin:0; }
 .deck-results { display:grid; gap:var(--space-1); padding:0; margin:0; list-style:none; }
 .deck-results > li { min-width:0; }
 .deck-results .ui-card { padding:0; }

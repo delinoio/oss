@@ -88,7 +88,9 @@ describe("Deck surface", () => {
     };
     view.unmount();
     render(<DeckPollingBoundary bridge={bridge} active online provider={emptyProvider}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
-    expect(await screen.findByRole("heading", { name: messages.en.deckEmptyResults })).toBeTruthy();
+    const empty = await screen.findByRole("heading", { name: messages.en.deckEmptyResults });
+    expect(empty).toBeTruthy();
+    expect(empty.tagName).toBe("H4");
   });
 
   it("identifies draft results hidden by the Deck configuration", async () => {
@@ -97,8 +99,34 @@ describe("Deck surface", () => {
     const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
     render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
 
-    expect(await screen.findByRole("heading", { name: messages.en.deckDraftsHidden })).toBeTruthy();
+    const hidden = await screen.findByRole("heading", { name: messages.en.deckDraftsHidden });
+    expect(hidden).toBeTruthy();
+    expect(hidden.tagName).toBe("H4");
     expect(screen.queryByRole("heading", { name: messages.en.deckEmptyResults })).toBeNull();
+  });
+
+  it("preserves unsaved edits while the editor moves between desktop and mobile presentations", async () => {
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Keep this edit" } });
+    setViewport(390);
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.deckSettings }));
+    expect((await screen.findByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Keep this edit");
+
+    setViewport(1024);
+    await screen.findByRole("complementary", { name: messages.en.deckConfiguration });
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Keep this edit");
+  });
+
+  it("keeps Deck checkbox controls inside their 44px label targets", () => {
+    const bridge = bridgeWith(async () => ({ kind: "ok" as const }));
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    for (const label of [messages.en.deckShowDrafts, messages.en.deckNotifications]) {
+      expect(screen.getByLabelText(label).closest("label")?.className).toContain("check");
+      expect(screen.getByLabelText(label).closest("label")?.className).toContain("deck-check");
+    }
   });
 
   it("keeps Deck selection available while creating a new Deck", async () => {
@@ -177,6 +205,32 @@ describe("Deck surface", () => {
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(screen.getByRole("dialog", { name: messages.en.deckConfiguration })).toBeTruthy();
     expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Keep this edit");
+  });
+
+  it("does not let Escape close the mobile sheet while widget enablement is busy", async () => {
+    setViewport(390);
+    let releaseEnable: () => void = () => {};
+    const enablePending = new Promise<void>((resolve) => { releaseEnable = resolve; });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "widgets.status") return { kind: "widget-status", enabledDeckIds: [] };
+      if (value.operation === "secure.read") return { kind: "secure-value", value: "token" };
+      if (value.operation === "widgets.enable-deck") await enablePending;
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    const confirmation = screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm }));
+    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm })).toHaveProperty("disabled", true));
+
+    fireEvent.keyDown(confirmation, { key: "Escape" });
+    expect(screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: messages.en.deckConfiguration })).toBeTruthy();
+    releaseEnable();
   });
 
   it("publishes the cached refresh attempt instead of treating synchronization as a new attempt", async () => {
@@ -478,6 +532,25 @@ describe("Deck surface", () => {
 
     expect(screen.getByRole("heading", { name: messages.en.offlineTitle })).toBeTruthy();
     expect(screen.queryByText(messages.en.empty)).toBeNull();
+  });
+
+  it("does not claim an empty successful refresh without a cache", () => {
+    const bridge = bridgeWith(async () => { throw new Error("unexpected request"); });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect(screen.queryByRole("heading", { name: messages.en.deckEmptyResults })).toBeNull();
+    expect(screen.getByText(messages.en.empty)).toBeTruthy();
+  });
+
+  it("prioritizes the current offline state over a cached refresh failure", async () => {
+    writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, totalCount: 1, results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 1, failure: "token", nextRefreshAt: null, transitionKeys: [] });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorToken));
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online={false} provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    expect(await screen.findByText(messages.en.deckOfflineCached)).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorToken);
   });
 
   it("renders loading instead of empty results during an uncached initial refresh", async () => {

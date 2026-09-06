@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { createRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { AppShell, Button, Dialog, Sheet, ShellLayout, resolveShellLayout } from "./ui-foundation";
+import { AppShell, Button, Dialog, Sheet, ShellLayout, StatePanel, resolveShellLayout } from "./ui-foundation";
 
 afterEach(() => {
   cleanup();
@@ -23,6 +23,12 @@ describe("DevHud UI foundation", () => {
     [320, ShellLayout.Mobile],
   ])("resolves %ipx to the contracted layout", (width, layout) => {
     expect(resolveShellLayout(width)).toBe(layout);
+  });
+
+  it("renders StatePanel titles at the requested nested heading level", () => {
+    render(<StatePanel eyebrow="Empty" title="No pull requests" summary="Nothing matched" headingLevel={4} />);
+
+    expect(screen.getByRole("heading", { name: "No pull requests", level: 4 }).className).toContain("state-panel-title");
   });
 
   it("tracks the rendered bottom-navigation height for fixed UI clearance", async () => {

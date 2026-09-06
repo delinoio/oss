@@ -13,6 +13,16 @@ import { DeckIcon } from "./ui-icons.tsx";
 import { WidgetContractVersion, widgetDeckCounts, widgetPullRequests, widgetRefreshState, type WidgetDeckConfiguration, type WidgetDeckSnapshot } from "./widget-contract.ts";
 
 type Deck = DevHudSettingsV1["decks"][number];
+interface DeckEditorDraft {
+  readonly name: string;
+  readonly profileRef: string;
+  readonly query: string;
+  readonly builder: DeckBuilder | null;
+  readonly refreshMinutes: 1 | 5 | 15 | 30;
+  readonly groupBy: Deck["display"]["groupBy"];
+  readonly showDrafts: boolean;
+  readonly notifications: readonly DeckNotificationKind[];
+}
 interface DeckPollingConfiguration { readonly signature: string; readonly refreshMinutes: Deck["refreshMinutes"]; readonly profileRef: Deck["profileRef"]; }
 
 interface DeckRefreshState { readonly cache: DeckCache | null; readonly cacheProfileRef: Deck["profileRef"] | null; readonly loading: boolean; readonly failure: DeckFailure | null; }
@@ -38,6 +48,34 @@ const WidgetAccessContext = createContext<WidgetAccessContextValue | null>(null)
 const emptyDeckRefreshState: DeckRefreshState = { cache: null, cacheProfileRef: null, loading: false, failure: null };
 const noDecks: readonly Deck[] = [];
 const DeckRepositoryValidationConcurrency = 2;
+
+function createDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["github"]["profiles"]): DeckEditorDraft {
+  return {
+    name: value?.name ?? "",
+    profileRef: value?.profileRef ?? profiles[0]?.id ?? "",
+    query: value?.query ?? "is:pr",
+    builder: value?.builder ?? parseDeckBuilder(value?.query ?? ""),
+    refreshMinutes: value?.refreshMinutes ?? 5,
+    groupBy: value?.display.groupBy ?? "none",
+    showDrafts: value?.display.showDrafts ?? true,
+    notifications: value?.notifications ?? [],
+  };
+}
+
+function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["github"]["profiles"]) {
+  const sourceKey = JSON.stringify({ value, initialProfileRef: profiles[0]?.id ?? "" });
+  const initial = useMemo(() => createDeckEditorDraft(value, profiles), [sourceKey]);
+  const [state, setState] = useState<{ readonly sourceKey: string; readonly draft: DeckEditorDraft }>(() => ({ sourceKey, draft: initial }));
+  const draft = state.sourceKey === sourceKey ? state.draft : initial;
+  useEffect(() => {
+    setState((current) => current.sourceKey === sourceKey ? current : { sourceKey, draft: initial });
+  }, [initial, sourceKey]);
+  const update = useCallback((change: (current: DeckEditorDraft) => DeckEditorDraft) => {
+    setState((current) => ({ sourceKey, draft: change(current.sourceKey === sourceKey ? current.draft : initial) }));
+  }, [initial, sourceKey]);
+  const reset = useCallback(() => setState({ sourceKey, draft: initial }), [initial, sourceKey]);
+  return { draft, update, reset };
+}
 
 class DeckPollingCancelledError extends Error {}
 
@@ -485,6 +523,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const isCreating = creating || selectedDeck === null;
   const deck = isCreating ? null : selectedDeck;
   const refreshState = deck === null ? emptyDeckRefreshState : polling.states[deck.id] ?? emptyDeckRefreshState;
+  const editorDraft = useDeckEditorDraft(deck, identity.settings.github.profiles);
   useEffect(() => {
     if (selectedDeckId && identity.settings.decks.some((item) => item.id === selectedDeckId)) {
       setSelected(selectedDeckId);
@@ -516,7 +555,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     setCreating(false);
     setSettingsOpen(false);
   };
-  const editor = <DeckEditor key={isCreating ? "create" : deck?.id} copy={copy} value={deck ?? undefined} profiles={identity.settings.github.profiles} disabled={isCreating ? creationDisabled : identity.readOnly} onSave={async (next) => {
+  const editor = <DeckEditor copy={copy} value={deck ?? undefined} draft={editorDraft.draft} onDraftChange={editorDraft.update} profiles={identity.settings.github.profiles} disabled={isCreating ? creationDisabled : identity.readOnly} onSave={async (next) => {
     await polling.validate(next);
     const committed = isCreating
       ? await identity.replaceSettings((current) => ({ ...current, decks: [...current.decks, next] }))
@@ -528,6 +567,10 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const cachedResults = refreshState.cache?.results ?? [];
   const results = deck === null ? [] : deck.display.showDrafts ? cachedResults : cachedResults.filter((pullRequest) => !pullRequest.draft);
   const draftsFiltered = deck !== null && !deck.display.showDrafts && cachedResults.length > 0 && results.length === 0;
+  const closeSettings = () => {
+    editorDraft.reset();
+    setSettingsOpen(false);
+  };
   return <section className="deck" aria-label={copy.deckTitle}>
     <PageHeader title={copy.deckTitle} summary={copy.deckSummary} actions={<div className="deck-workspace-controls">
       {selectedDeck && <Field label={copy.deckSelected} inputId="deck-selected"><select id="deck-selected" value={selectedDeck.id} onChange={(event) => selectDeck(event.target.value)}>{identity.settings.decks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>}
@@ -538,12 +581,12 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     <div className="deck-workspace-layout">
       <div className="deck-workspace" role="region" aria-label={copy.deckResults}>
         {deck ? <><DeckRefreshStatus copy={copy} state={refreshState} canPoll={polling.canPoll} online={polling.online} />
-          {!polling.online && refreshState.cache === null ? <OfflineState copy={copy} /> : refreshState.loading && refreshState.cache === null ? <LoadingState copy={copy} /> : refreshState.failure !== null && refreshState.cache === null ? <StatePanel eyebrow={copy.error} title={failureCopy(copy, refreshState.failure)} summary={copy.deckNoCachedResults} role="alert" tone="danger" /> : <DeckResults copy={copy} groupBy={deck.display.groupBy} results={results} draftsFiltered={draftsFiltered} successfulEmpty={refreshState.cache?.lastSuccessfulAt !== null && refreshState.failure === null && cachedResults.length === 0} />}
+          {!polling.online && refreshState.cache === null ? <OfflineState copy={copy} /> : refreshState.loading && refreshState.cache === null ? <LoadingState copy={copy} /> : refreshState.failure !== null && refreshState.cache === null ? <StatePanel eyebrow={copy.error} title={failureCopy(copy, refreshState.failure)} summary={copy.deckNoCachedResults} role="alert" tone="danger" /> : <DeckResults copy={copy} groupBy={deck.display.groupBy} results={results} draftsFiltered={draftsFiltered} successfulEmpty={refreshState.cache !== null && refreshState.cache.lastSuccessfulAt !== null && refreshState.failure === null && cachedResults.length === 0} />}
         </> : <StatePanel eyebrow={copy.deck} title={copy.deckCreate} summary={copy.deckNoDecks} tone="info" actions={<Button variant="primary" disabled={creationDisabled} onClick={openCreate}>{copy.deckCreate}</Button>} />}
       </div>
       {!mobile && <aside className="deck-configuration-panel" aria-label={copy.deckConfiguration}>{configuration}</aside>}
     </div>
-    {mobile && <Sheet open={settingsOpen} title={isCreating ? copy.deckCreate : copy.deckConfiguration} backLabel={copy.back} returnFocusRef={settingsTrigger} onClose={() => setSettingsOpen(false)}>{configuration}</Sheet>}
+    {mobile && <Sheet open={settingsOpen} title={isCreating ? copy.deckCreate : copy.deckConfiguration} backLabel={copy.back} returnFocusRef={settingsTrigger} onClose={closeSettings}>{configuration}</Sheet>}
   </section>;
 }
 
@@ -559,8 +602,8 @@ function DeckRefreshStatus({ copy, state, canPoll, online }: { readonly copy: Co
   const cache = state.cache;
   if (cache === null) return null;
   const failure = state.failure;
-  const tone = failure !== null ? failure === "rate-limit" || failure === "incomplete-results" ? "warning" : "danger" : state.loading ? "info" : !canPoll ? "warning" : "success";
-  const label = failure !== null ? failureCopy(copy, failure) : state.loading ? copy.deckRefreshing : !canPoll ? online ? copy.deckStale : copy.deckOfflineCached : copy.deckFresh;
+  const tone = !online ? "warning" : failure !== null ? failure === "rate-limit" || failure === "incomplete-results" ? "warning" : "danger" : state.loading ? "info" : !canPoll ? "warning" : "success";
+  const label = !online ? copy.deckOfflineCached : failure !== null ? failureCopy(copy, failure) : state.loading ? copy.deckRefreshing : !canPoll ? copy.deckStale : copy.deckFresh;
   return <Card className="deck-refresh-status"><StatusBadge tone={tone}>{label}</StatusBadge>{cache.lastSuccessfulAt && <p>{copy.lastSuccessfulRefresh}: <time dateTime={cache.lastSuccessfulAt}>{cache.lastSuccessfulAt}</time></p>}{failure !== null && <p role="alert">{failureCopy(copy, failure)}</p>}</Card>;
 }
 
@@ -584,7 +627,12 @@ function WidgetAccess({ cache, cacheProfileRef, copy, deck, failure, onConfirmat
   useEffect(() => {
     if (!confirming) return;
     cancelButton.current?.focus();
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape" && !busy) closeConfirmation(); };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (!busy) closeConfirmation();
+    };
     addEventListener("keydown", closeOnEscape);
     return () => removeEventListener("keydown", closeOnEscape);
   }, [busy, closeConfirmation, confirming]);
@@ -595,7 +643,7 @@ function WidgetAccess({ cache, cacheProfileRef, copy, deck, failure, onConfirmat
     };
   }, [confirming, onConfirmationOpenChange]);
   const trapDialogFocus = (event: ReactKeyboardEvent<HTMLElement>) => {
-    if (event.key === "Escape" && !busy) { event.preventDefault(); event.stopPropagation(); closeConfirmation(); return; }
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); if (!busy) closeConfirmation(); return; }
     if (event.key !== "Tab") return;
     const focusable = dialog.current?.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), select:not([disabled]), [href]");
     if (!focusable?.length) return;
@@ -645,15 +693,15 @@ function widgetSnapshot(deck: Deck, cache: DeckCache, failure: DeckFailure | nul
   return base;
 }
 
-function DeckEditor({ copy, value, profiles, disabled = false, onSave }: { readonly copy: Copy; readonly value?: DevHudSettingsV1["decks"][number]; readonly profiles: DevHudSettingsV1["github"]["profiles"]; readonly disabled?: boolean; readonly onSave: (deck: DevHudSettingsV1["decks"][number]) => Promise<boolean> }) {
-  const [name, setName] = useState(value?.name ?? ""); const [profileRef, setProfileRef] = useState(value?.profileRef ?? profiles[0]?.id ?? ""); const [query, setQuery] = useState(value?.query ?? "is:pr"); const [builder, setBuilder] = useState<DeckBuilder | null>(value?.builder ?? parseDeckBuilder(value?.query ?? "")); const [refreshMinutes, setRefreshMinutes] = useState<1 | 5 | 15 | 30>(value?.refreshMinutes ?? 5); const [groupBy, setGroupBy] = useState<Deck["display"]["groupBy"]>(value?.display.groupBy ?? "none"); const [showDrafts, setShowDrafts] = useState(value?.display.showDrafts ?? true); const [notifications, setNotifications] = useState<readonly DeckNotificationKind[]>(value?.notifications ?? []); const [invalid, setInvalid] = useState<"query" | "repository" | null>(null); const [saveFailure, setSaveFailure] = useState<DeckFailure | null>(null); const [saving, setSaving] = useState(false);
-  useEffect(() => { if (value) { setName(value.name); setProfileRef(value.profileRef); setQuery(value.query); setBuilder(value.builder ?? parseDeckBuilder(value.query)); setRefreshMinutes(value.refreshMinutes); setGroupBy(value.display.groupBy); setShowDrafts(value.display.showDrafts); setNotifications(value.notifications); } }, [value]);
+function DeckEditor({ copy, value, draft, onDraftChange, profiles, disabled = false, onSave }: { readonly copy: Copy; readonly value?: DevHudSettingsV1["decks"][number]; readonly draft: DeckEditorDraft; readonly onDraftChange: (change: (current: DeckEditorDraft) => DeckEditorDraft) => void; readonly profiles: DevHudSettingsV1["github"]["profiles"]; readonly disabled?: boolean; readonly onSave: (deck: DevHudSettingsV1["decks"][number]) => Promise<boolean> }) {
+  const { name, profileRef, query, builder, refreshMinutes, groupBy, showDrafts, notifications } = draft;
+  const [invalid, setInvalid] = useState<"query" | "repository" | null>(null); const [saveFailure, setSaveFailure] = useState<DeckFailure | null>(null); const [saving, setSaving] = useState(false);
   const submit = (event: FormEvent) => { event.preventDefault(); if (!validateDeckQuery(query) || !profileRef || !name.trim()) { setInvalid("query"); return; } if (!hasRepositoryQualifier(query) || deckRepositories(query) === null) { setInvalid("repository"); return; } setInvalid(null); setSaveFailure(null); setSaving(true); void onSave({ id: value?.id ?? createUuidV7(), name: name.trim(), profileRef, query, builder, display: { groupBy, showDrafts }, refreshMinutes, notifications }).then((committed) => { if (!committed) setSaveFailure("unknown"); }).catch((error) => setSaveFailure(classifyDeckFailure(error))).finally(() => setSaving(false)); };
-  const setBuilderValue = (field: keyof DeckBuilder, next: string) => { const trimmed = next.trim(); const builderValue = trimmed === "" ? null : trimmed as DeckBuilder[typeof field]; const nextQuery = applyDeckBuilder(query, field, builderValue); setQuery(nextQuery); setBuilder(parseDeckBuilder(nextQuery)); };
+  const setBuilderValue = (field: keyof DeckBuilder, next: string) => { const trimmed = next.trim(); const builderValue = trimmed === "" ? null : trimmed as DeckBuilder[typeof field]; const nextQuery = applyDeckBuilder(query, field, builderValue); onDraftChange((current) => ({ ...current, query: nextQuery, builder: parseDeckBuilder(nextQuery) })); };
   return <form onSubmit={submit} className="deck-editor"><fieldset disabled={disabled || saving}>
-    <Field label={copy.deckName} inputId="deck-name"><input id="deck-name" required value={name} onChange={(event) => setName(event.target.value)} /></Field>
-    <Field label={copy.deckProfile} inputId="deck-profile"><select id="deck-profile" required value={profileRef} onChange={(event) => setProfileRef(event.target.value)}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></Field>
-    <Field label={copy.deckQuery} inputId="deck-query"><input id="deck-query" required value={query} onChange={(event) => { setQuery(event.target.value); setBuilder(parseDeckBuilder(event.target.value)); }} /></Field>
+    <Field label={copy.deckName} inputId="deck-name"><input id="deck-name" required value={name} onChange={(event) => onDraftChange((current) => ({ ...current, name: event.target.value }))} /></Field>
+    <Field label={copy.deckProfile} inputId="deck-profile"><select id="deck-profile" required value={profileRef} onChange={(event) => onDraftChange((current) => ({ ...current, profileRef: event.target.value }))}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></Field>
+    <Field label={copy.deckQuery} inputId="deck-query"><input id="deck-query" required value={query} onChange={(event) => onDraftChange((current) => ({ ...current, query: event.target.value, builder: parseDeckBuilder(event.target.value) }))} /></Field>
     <fieldset disabled={hasDeckBooleanQuerySyntax(query)}><legend>{copy.deckBuilder}</legend>
       <Field label={copy.deckBuilderRepository} inputId="deck-builder-repository"><input id="deck-builder-repository" value={builder?.repository ?? ""} onChange={(event) => setBuilderValue("repository", event.target.value)} /></Field>
       <Field label={copy.deckBuilderAuthor} inputId="deck-builder-author"><input id="deck-builder-author" value={builder?.author ?? ""} onChange={(event) => setBuilderValue("author", event.target.value)} /></Field>
@@ -661,17 +709,17 @@ function DeckEditor({ copy, value, profiles, disabled = false, onSave }: { reado
       <Field label={copy.deckBuilderReview} inputId="deck-builder-review"><select id="deck-builder-review" value={builder?.review ?? ""} onChange={(event) => setBuilderValue("review", event.target.value)}><option value="">{copy.deckAny}</option><option value="approved">{copy.deckApproved}</option><option value="changes-requested">{copy.deckChangesRequested}</option><option value="required">{copy.deckRequired}</option></select></Field>
       <Field label={copy.deckBuilderState} inputId="deck-builder-state"><select id="deck-builder-state" value={builder?.state ?? ""} onChange={(event) => setBuilderValue("state", event.target.value)}><option value="">{copy.deckAny}</option><option value="open">{copy.deckOpen}</option><option value="closed">{copy.deckClosed}</option><option value="merged">{copy.deckMerged}</option></select></Field>
     </fieldset>
-    <Field label={copy.deckRefreshInterval} inputId="deck-refresh-interval"><select id="deck-refresh-interval" value={refreshMinutes} onChange={(event) => setRefreshMinutes(Number(event.target.value) as 1 | 5 | 15 | 30)}>{[1, 5, 15, 30].map((minutes) => <option key={minutes} value={minutes}>{minutes} {copy.deckMinutes}</option>)}</select></Field>
-    <Field label={copy.deckGroupBy} inputId="deck-group-by"><select id="deck-group-by" value={groupBy} onChange={(event) => setGroupBy(event.target.value as Deck["display"]["groupBy"])}><option value="none">{copy.deckGroupNone}</option><option value="repository">{copy.deckGroupRepository}</option><option value="author">{copy.deckGroupAuthor}</option></select></Field>
-    <Field label={copy.deckShowDrafts} inputId="deck-show-drafts"><input id="deck-show-drafts" type="checkbox" checked={showDrafts} onChange={(event) => setShowDrafts(event.target.checked)} /></Field>
-    <Field label={copy.deckNotifications} inputId="deck-notifications"><input id="deck-notifications" type="checkbox" checked={notifications.length > 0} onChange={(event) => setNotifications(event.target.checked ? ["review", "checks", "merged", "closed"] : [])} /></Field>
+    <Field label={copy.deckRefreshInterval} inputId="deck-refresh-interval"><select id="deck-refresh-interval" value={refreshMinutes} onChange={(event) => onDraftChange((current) => ({ ...current, refreshMinutes: Number(event.target.value) as 1 | 5 | 15 | 30 }))}>{[1, 5, 15, 30].map((minutes) => <option key={minutes} value={minutes}>{minutes} {copy.deckMinutes}</option>)}</select></Field>
+    <Field label={copy.deckGroupBy} inputId="deck-group-by"><select id="deck-group-by" value={groupBy} onChange={(event) => onDraftChange((current) => ({ ...current, groupBy: event.target.value as Deck["display"]["groupBy"] }))}><option value="none">{copy.deckGroupNone}</option><option value="repository">{copy.deckGroupRepository}</option><option value="author">{copy.deckGroupAuthor}</option></select></Field>
+    <label className="check deck-check" htmlFor="deck-show-drafts"><input id="deck-show-drafts" type="checkbox" checked={showDrafts} onChange={(event) => onDraftChange((current) => ({ ...current, showDrafts: event.target.checked }))} /><span>{copy.deckShowDrafts}</span></label>
+    <label className="check deck-check" htmlFor="deck-notifications"><input id="deck-notifications" type="checkbox" checked={notifications.length > 0} onChange={(event) => onDraftChange((current) => ({ ...current, notifications: event.target.checked ? ["review", "checks", "merged", "closed"] : [] }))} /><span>{copy.deckNotifications}</span></label>
     <Button variant="primary" type="submit">{copy.saved}</Button>{invalid && <p role="alert">{invalid === "repository" ? copy.deckRequireRepository : copy.deckRequirePullRequests}</p>}{saveFailure && <p role="alert">{failureCopy(copy, saveFailure)}</p>}
   </fieldset></form>;
 }
 
 function DeckResults({ copy, groupBy, results, draftsFiltered, successfulEmpty }: { readonly copy: Copy; readonly groupBy: DevHudSettingsV1["decks"][number]["display"]["groupBy"]; readonly results: readonly GitHubDeckPullRequest[]; readonly draftsFiltered: boolean; readonly successfulEmpty: boolean }) {
   const groups = groupDeckResults(results, groupBy);
-  return <section aria-labelledby="deck-results-title"><h3 id="deck-results-title">{copy.deckResults}</h3>{results.length === 0 ? draftsFiltered ? <StatePanel eyebrow={copy.empty} title={copy.deckDraftsHidden} summary={copy.deckDraftsHiddenSummary} tone="neutral" /> : successfulEmpty ? <StatePanel eyebrow={copy.empty} title={copy.deckEmptyResults} summary={copy.deckEmptyResultsSummary} tone="neutral" /> : <p>{copy.empty}</p> : groups.map((group) => <section key={group.key} aria-labelledby={group.label ? `deck-group-${group.key}` : undefined}>{group.label && <h4 id={`deck-group-${group.key}`}>{group.label}</h4>}<ul className="deck-results">{group.results.map((pullRequest) => <li key={pullRequest.nodeId}><Card interactive><DataRow icon={<DeckIcon />} title={`${pullRequest.repository.owner}/${pullRequest.repository.name} #${pullRequest.number} — ${pullRequest.title}`} description={<span className="deck-result-details"><span>{copy.deckAuthor}: {pullRequest.author}</span><span>{copy.deckLabels}: {pullRequest.labels.join(", ") || copy.deckNoLabels}</span><span>{copy.deckUpdated}: <time dateTime={pullRequest.updatedAt}>{pullRequest.updatedAt}</time></span></span>} trailing={<span className="deck-result-statuses"><StatusBadge tone={pullRequest.state === "open" ? "info" : pullRequest.state === "merged" ? "success" : "neutral"}>{deckStateCopy(copy, pullRequest.state)}{pullRequest.draft ? ` · ${copy.deckDraft}` : ""}</StatusBadge><StatusBadge tone={pullRequest.reviewDecision === "changes-requested" ? "warning" : pullRequest.reviewDecision === "approved" ? "success" : "neutral"}>{reviewCopy(copy, pullRequest.reviewDecision)}</StatusBadge><StatusBadge tone={pullRequest.checkRollup.state === "FAILURE" || pullRequest.checkRollup.state === "ERROR" ? "danger" : pullRequest.checkRollup.state === "SUCCESS" ? "success" : pullRequest.checkRollup.state === "PENDING" ? "warning" : "neutral"}>{checkCopy(copy, pullRequest.checkRollup.state)}</StatusBadge></span>} /></Card></li>)}</ul></section>)}</section>;
+  return <section aria-labelledby="deck-results-title"><h3 id="deck-results-title">{copy.deckResults}</h3>{results.length === 0 ? draftsFiltered ? <StatePanel eyebrow={copy.empty} title={copy.deckDraftsHidden} summary={copy.deckDraftsHiddenSummary} tone="neutral" headingLevel={4} /> : successfulEmpty ? <StatePanel eyebrow={copy.empty} title={copy.deckEmptyResults} summary={copy.deckEmptyResultsSummary} tone="neutral" headingLevel={4} /> : <p>{copy.empty}</p> : groups.map((group) => <section key={group.key} aria-labelledby={group.label ? `deck-group-${group.key}` : undefined}>{group.label && <h4 id={`deck-group-${group.key}`}>{group.label}</h4>}<ul className="deck-results">{group.results.map((pullRequest) => <li key={pullRequest.nodeId}><Card interactive><DataRow icon={<DeckIcon />} title={`${pullRequest.repository.owner}/${pullRequest.repository.name} #${pullRequest.number} — ${pullRequest.title}`} description={<span className="deck-result-details"><span>{copy.deckAuthor}: {pullRequest.author}</span><span>{copy.deckLabels}: {pullRequest.labels.join(", ") || copy.deckNoLabels}</span><span>{copy.deckUpdated}: <time dateTime={pullRequest.updatedAt}>{pullRequest.updatedAt}</time></span></span>} trailing={<span className="deck-result-statuses"><StatusBadge tone={pullRequest.state === "open" ? "info" : pullRequest.state === "merged" ? "success" : "neutral"}>{deckStateCopy(copy, pullRequest.state)}{pullRequest.draft ? ` · ${copy.deckDraft}` : ""}</StatusBadge><StatusBadge tone={pullRequest.reviewDecision === "changes-requested" ? "warning" : pullRequest.reviewDecision === "approved" ? "success" : "neutral"}>{reviewCopy(copy, pullRequest.reviewDecision)}</StatusBadge><StatusBadge tone={pullRequest.checkRollup.state === "FAILURE" || pullRequest.checkRollup.state === "ERROR" ? "danger" : pullRequest.checkRollup.state === "SUCCESS" ? "success" : pullRequest.checkRollup.state === "PENDING" ? "warning" : "neutral"}>{checkCopy(copy, pullRequest.checkRollup.state)}</StatusBadge></span>} /></Card></li>)}</ul></section>)}</section>;
 }
 
 function groupDeckResults(results: readonly GitHubDeckPullRequest[], groupBy: DevHudSettingsV1["decks"][number]["display"]["groupBy"]): readonly { readonly key: string; readonly label: string | null; readonly results: readonly GitHubDeckPullRequest[] }[] {
