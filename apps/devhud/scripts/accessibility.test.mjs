@@ -235,8 +235,13 @@ test("narrow layouts keep capture previews above the safe-area-aware navigation"
   assert.match(styles, /\.floating-capture-preview\{[^}]*bottom:1rem[^}]*\}[\s\S]*@media \(max-width:700px\)\{\.floating-capture-preview\{bottom:calc\(var\(--mobile-bottom-navigation-height, calc\(64px \+ env\(safe-area-inset-bottom\)\)\) \+ 1rem\)\}\}/u);
 });
 
+test("Deck configuration scrolls inside a viewport-bounded sticky panel", () => {
+  assert.match(styles, /\.deck-configuration-panel\s*\{[^}]*position:sticky;[^}]*top:var\(--space-2\);[^}]*max-block-size:calc\(100vh - var\(--space-2\) - var\(--space-2\)\);[^}]*overflow-y:auto;/u);
+});
+
 test("constrained Deck results place status badges below their content", () => {
-  assert.match(styles, /@media \(max-width:1279px\)\s*\{\s*\.deck-results \.data-row\s*\{[^}]*grid-template-columns:auto minmax\(0,1fr\)[^}]*\}[^}]*\.deck-results \.data-row-trailing\s*\{[^}]*grid-column:2;[^}]*justify-content:start/u);
+  assert.match(styles, /\.deck-workspace\s*\{[^}]*container-type:inline-size;/u);
+  assert.match(styles, /@container \(max-width:40rem\)\s*\{\s*\.deck-results \.data-row\s*\{[^}]*grid-template-columns:auto minmax\(0,1fr\)[^}]*\}[^}]*\.deck-results \.data-row-trailing\s*\{[^}]*grid-column:2;[^}]*justify-content:start/u);
 });
 
 test("mobile Deck selection can shrink with enlarged text", () => {
