@@ -240,6 +240,34 @@ describe("Deck surface", () => {
     await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorNetwork));
   });
 
+  it("keeps a failed Deck save draft when synchronized settings update the same Deck", async () => {
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn<IdentitySettingsValue["replaceSettings"]>(() => pendingSave);
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Submitted local edit" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+
+    const synchronizedDeck = { ...deck, name: "Synchronized update" };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [synchronizedDeck] }), replaceSettings });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", "Submitted local edit");
+    finishSave(false);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorNetwork));
+    expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", "Submitted local edit");
+
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledTimes(2));
+    const retry = replaceSettings.mock.calls[1]?.[0];
+    const retriedSettings = typeof retry === "function" ? retry(parseDevHudSettings({ ...settings, decks: [synchronizedDeck] })) : retry;
+    expect(retriedSettings.decks[0]?.name).toBe("Submitted local edit");
+  });
+
   it("keeps focus in the mobile settings sheet after an existing Deck save refreshes its source", async () => {
     setViewport(390);
     const savedDeck = { ...deck, name: "Saved Deck" };
@@ -643,6 +671,28 @@ describe("Deck surface", () => {
     expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull();
   });
 
+  it("does not reopen mobile settings after a widget confirmation spans a desktop resize", async () => {
+    setViewport(390);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+
+    setViewport(701);
+    await screen.findByRole("complementary", { name: messages.en.deckConfiguration });
+    expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull();
+    expect(screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyCancel }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
+
+    setViewport(390);
+    await screen.findByRole("button", { name: messages.en.deckSettings });
+    expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull();
+  });
+
   it("moves focus to mobile Deck settings when the desktop configuration leaves the layout", async () => {
     const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
     render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
@@ -953,7 +1003,7 @@ describe("Deck surface", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm })).toHaveProperty("disabled", true));
 
     setViewport(390);
-    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull();
     expect(screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeTruthy();
     expect(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm })).toHaveProperty("disabled", true);
     releaseEnable();

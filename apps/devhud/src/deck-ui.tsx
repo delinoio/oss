@@ -63,9 +63,10 @@ function createDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["g
 }
 
 function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["github"]["profiles"], creationSession: number) {
-  const sourceKey = JSON.stringify(value === null ? { value, initialProfileRef: profiles[0]?.id ?? "" } : { value });
+  const sourceKey = value?.id ?? JSON.stringify({ value, initialProfileRef: profiles[0]?.id ?? "" });
   const saveKey = value?.id ?? `creation:${creationSession}`;
-  const initial = useMemo(() => createDeckEditorDraft(value, profiles), [sourceKey]);
+  const initialSourceKey = JSON.stringify(value === null ? { value, initialProfileRef: profiles[0]?.id ?? "" } : { value });
+  const initial = useMemo(() => createDeckEditorDraft(value, profiles), [initialSourceKey]);
   const [state, setState] = useState<{ readonly sourceKey: string; readonly draft: DeckEditorDraft }>(() => ({ sourceKey, draft: initial }));
   const [creationDrafts, setCreationDrafts] = useState<ReadonlyMap<number, DeckEditorDraft>>(() => new Map());
   const [pendingSaves, setPendingSaves] = useState<ReadonlySet<string>>(() => new Set());
@@ -106,7 +107,7 @@ function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["gith
       return next;
     });
   }, [saveKey]);
-  const finishSave = useCallback((failure: DeckFailure | null) => {
+  const finishSave = useCallback((failure: DeckFailure | null, adopted: Deck | null = null) => {
     setPendingSaves((current) => {
       if (!current.has(saveKey)) return current;
       const next = new Set(current);
@@ -120,10 +121,11 @@ function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["gith
         next.delete(creationSession);
         return next;
       });
+      else if (adopted !== null) setState((current) => current.sourceKey === saveKey ? { sourceKey, draft: createDeckEditorDraft(adopted, profiles) } : current);
       return;
     }
     setSaveFailures((current) => new Map(current).set(saveKey, failure));
-  }, [creationSession, saveKey, value]);
+  }, [creationSession, profiles, saveKey, sourceKey, value]);
   return { sourceKey, draft, saving, saveFailure, hasFailedCreationSession: saveFailures.has(`creation:${creationSession}`), update, reset, beginSave, finishSave };
 }
 
@@ -702,11 +704,12 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
       const animation = requestAnimationFrame(() => mobileSettingsButton.current?.focus());
       return () => cancelAnimationFrame(animation);
     }
-    if (!wasMobile || mobile || !settingsOpen || widgetConfirmationOpen) return;
+    if (!wasMobile || mobile || !settingsOpen) return;
     // The Sheet unmounts on this layout move, so its opener cannot restore focus into the desktop editor.
     settingsSheetGeneration.current += 1;
     sheetReturnFocus.current = null;
     setSettingsOpen(false);
+    if (widgetConfirmationOpen) return;
     requestAnimationFrame(() => {
       if (deckNameInput.current !== null && !deckNameInput.current.disabled) deckNameInput.current.focus();
     });
@@ -916,10 +919,10 @@ function widgetSnapshot(deck: Deck, cache: DeckCache, failure: DeckFailure | nul
   return base;
 }
 
-function DeckEditor({ copy, value, draft, saving, saveFailure, nameInputRef, saveButtonRef, onDraftChange, onSaveStart, onSaveFinish, profiles, disabled = false, onSave }: { readonly copy: Copy; readonly value?: DevHudSettingsV1["decks"][number]; readonly draft: DeckEditorDraft; readonly saving: boolean; readonly saveFailure: DeckFailure | null; readonly nameInputRef?: RefObject<HTMLInputElement | null>; readonly saveButtonRef?: RefObject<HTMLButtonElement | null>; readonly onDraftChange: (change: (current: DeckEditorDraft) => DeckEditorDraft) => void; readonly onSaveStart: () => void; readonly onSaveFinish: (failure: DeckFailure | null) => void; readonly profiles: DevHudSettingsV1["github"]["profiles"]; readonly disabled?: boolean; readonly onSave: (deck: DevHudSettingsV1["decks"][number]) => Promise<boolean> }) {
+function DeckEditor({ copy, value, draft, saving, saveFailure, nameInputRef, saveButtonRef, onDraftChange, onSaveStart, onSaveFinish, profiles, disabled = false, onSave }: { readonly copy: Copy; readonly value?: DevHudSettingsV1["decks"][number]; readonly draft: DeckEditorDraft; readonly saving: boolean; readonly saveFailure: DeckFailure | null; readonly nameInputRef?: RefObject<HTMLInputElement | null>; readonly saveButtonRef?: RefObject<HTMLButtonElement | null>; readonly onDraftChange: (change: (current: DeckEditorDraft) => DeckEditorDraft) => void; readonly onSaveStart: () => void; readonly onSaveFinish: (failure: DeckFailure | null, adopted?: Deck | null) => void; readonly profiles: DevHudSettingsV1["github"]["profiles"]; readonly disabled?: boolean; readonly onSave: (deck: DevHudSettingsV1["decks"][number]) => Promise<boolean> }) {
   const { name, profileRef, query, builder, refreshMinutes, groupBy, showDrafts, notifications } = draft;
   const [invalid, setInvalid] = useState<"query" | "repository" | null>(null);
-  const submit = (event: FormEvent) => { event.preventDefault(); if (saving) return; if (!validateDeckQuery(query) || !profileRef || !name.trim()) { setInvalid("query"); return; } if (!hasRepositoryQualifier(query) || deckRepositories(query) === null) { setInvalid("repository"); return; } setInvalid(null); onSaveStart(); const next = { id: value?.id ?? createUuidV7(), name: name.trim(), profileRef, query, builder, display: { groupBy, showDrafts }, refreshMinutes, notifications }; void (async () => { try { onSaveFinish(await onSave(next) ? null : "unknown"); } catch (error) { onSaveFinish(classifyDeckFailure(error)); } })(); };
+  const submit = (event: FormEvent) => { event.preventDefault(); if (saving) return; if (!validateDeckQuery(query) || !profileRef || !name.trim()) { setInvalid("query"); return; } if (!hasRepositoryQualifier(query) || deckRepositories(query) === null) { setInvalid("repository"); return; } setInvalid(null); onSaveStart(); const next = { id: value?.id ?? createUuidV7(), name: name.trim(), profileRef, query, builder, display: { groupBy, showDrafts }, refreshMinutes, notifications }; void (async () => { try { const committed = await onSave(next); onSaveFinish(committed ? null : "unknown", committed ? next : null); } catch (error) { onSaveFinish(classifyDeckFailure(error)); } })(); };
   const setBuilderValue = (field: keyof DeckBuilder, next: string) => { const trimmed = next.trim(); const builderValue = trimmed === "" ? null : trimmed as DeckBuilder[typeof field]; const nextQuery = applyDeckBuilder(query, field, builderValue); onDraftChange((current) => ({ ...current, query: nextQuery, builder: parseDeckBuilder(nextQuery) })); };
   return <form onSubmit={submit} className="deck-editor"><fieldset disabled={disabled || saving}>
     <Field label={copy.deckName} inputId="deck-name"><input ref={nameInputRef} id="deck-name" required value={name} onChange={(event) => onDraftChange((current) => ({ ...current, name: event.target.value }))} /></Field>
