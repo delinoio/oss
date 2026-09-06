@@ -104,6 +104,17 @@ test("form-control boundaries meet non-text contrast in light and dark themes", 
   }
 });
 
+test("action Button variants remain legible on hover", () => {
+  assert.match(styles, /\.actions button:not\(\.ui-button\)\s*\{/u);
+  assert.match(styles, /\.ui-button-danger:hover\s*\{\s*background:var\(--error\)/u);
+  assert.match(styles, /html\[data-theme="dark"\] \.ui-button-danger\s*\{\s*color:var\(--devhud-background\)/u);
+  for (const block of themeBlocks) {
+    assert(contrastRatio(customColor(block, "--text"), customColor(block, "--surface-muted")) >= 4.5);
+  }
+  assert(contrastRatio("#ffffff", customColor(themeBlocks[0], "--error")) >= 4.5);
+  assert(contrastRatio(customColor(themeBlocks[1], "--devhud-background"), customColor(themeBlocks[1], "--error")) >= 4.5);
+});
+
 test("command palette uses buttons and has a localized empty state", () => {
   assert.doesNotMatch(app, /role="listbox"|role="option"/u);
   assert.match(app, /actions\.length === 0/u);

@@ -476,8 +476,10 @@ function FeedbackPanel({ feedback, headingLevel = 3 }: { readonly feedback: Real
 }
 
 function CaptureFeedback({ status, error }: { readonly status: string; readonly error: RealqaFeedback | null }) {
+  const { meta: { copy } } = useRealqa();
+  const statusTone: StatusTone = status === copy.captureSaving ? "info" : "success";
   return <>
-    {status && <div className="realqa-status" role="status" aria-live="polite"><StatusBadge tone="success">{status}</StatusBadge></div>}
+    {status && <div className="realqa-status" role="status" aria-live="polite"><StatusBadge tone={statusTone}>{status}</StatusBadge></div>}
     {error && <FeedbackPanel feedback={error} />}
   </>;
 }
