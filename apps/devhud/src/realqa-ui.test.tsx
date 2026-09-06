@@ -129,6 +129,31 @@ describe("RealQA capture and editor", () => {
     expect(alert.querySelector("svg")).toBeTruthy();
   });
 
+  it.each([
+    [NativeBridgeErrorCode.QuotaExhausted, "realqaQuotaTitle", "captureQuotaFull"],
+    [NativeBridgeErrorCode.PermissionDenied, "realqaPermissionTitle", "capturePermission"],
+    [NativeBridgeErrorCode.ProtectedContent, "realqaProtectedTitle", "captureProtected"],
+    [NativeBridgeErrorCode.TopologyChanged, "realqaTopologyTitle", "captureTopologyChanged"],
+    [NativeBridgeErrorCode.StorageFailure, "realqaSaveTitle", "realqaSaveFailed"],
+  ] as const)("dismisses the selection picker and presents %s capture feedback", async (code, titleKey, summaryKey) => {
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") throw new NativeBridgeError(code);
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureSelection }));
+    await screen.findByRole("dialog", { name: messages.en.captureSelection });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureNow }));
+
+    const alert = await screen.findByRole("alert");
+    expect(screen.queryByRole("dialog", { name: messages.en.captureSelection })).toBeNull();
+    expect(alert.textContent).toContain(messages.en[titleKey]);
+    expect(alert.textContent).toContain(messages.en[summaryKey]);
+  });
+
   it("presents an initial draft storage failure as a save failure", async () => {
     const { bridge } = bridgeWith(async (value) => {
       if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };

@@ -224,6 +224,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     captureOriginatingDraftId.current = undefined;
     captureStatusInFlight.current = false;
     captureDialogOpener.current = null;
+    draftEditorOpener.current = null;
     previewSequence.current += 1;
     draftsById.current.clear();
     draftOperationQueues.current.clear();
@@ -290,6 +291,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       if (generation !== resetGeneration.current) return;
       setStatus("");
       setError(errorCopy(copy, reason));
+      dismissCaptureDialog();
     } finally {
       if (generation !== resetGeneration.current) return;
       captureInFlight.current = false;
