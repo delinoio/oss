@@ -771,7 +771,8 @@ describe("RealQA capture and editor", () => {
     });
     render(<RealqaSurface bridge={bridge} copy={messages.en} />);
 
-    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+    const captureTrigger = screen.getByRole("button", { name: messages.en.captureDisplay });
+    fireEvent.click(captureTrigger);
     await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "capture.start" })));
     await openEditor();
     await act(async () => { resolveCapture?.({ kind: "capture-draft", draft }); });
@@ -781,6 +782,8 @@ describe("RealQA capture and editor", () => {
     expect(preview.querySelector("img")?.getAttribute("src")).toBe(draft.images[0].previewUrl);
     fireEvent.click(within(preview).getByRole("button", { name: messages.en.floatingPreviewOpen }));
     await waitFor(() => expect(screen.getByRole("img", { name: messages.en.editorCanvas }).querySelector("img")?.getAttribute("src")).toBe(draft.images[0].previewUrl));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.close }));
+    await waitFor(() => expect(document.activeElement).toBe(captureTrigger));
   });
 
   it("clears a stale draft opener before opening a floating preview", async () => {

@@ -432,7 +432,9 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   const openPreview = () => {
     if (!preview) return;
     if (selected?.id !== preview.id) {
-      draftEditorOpener.current = null;
+      // Replacing another editor unmounts both that sheet and the preview action.
+      // Keep a mounted RealQA control as the replacement sheet's return target.
+      draftEditorOpener.current = captureFocusFallback.current;
       setSelected(preview);
     }
     dismissPreview();
