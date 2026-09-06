@@ -112,6 +112,15 @@ function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["gith
       return next;
     });
   }, [creationSession, saveFailures, saveKey, sourceKey, value]);
+  const discardUnsubmitted = useCallback(() => {
+    if (value === null || saving || saveFailure !== null) return;
+    setDeckDrafts((current) => {
+      if (!current.has(sourceKey)) return current;
+      const next = new Map(current);
+      next.delete(sourceKey);
+      return next;
+    });
+  }, [saveFailure, saving, sourceKey, value]);
   const beginSave = useCallback(() => {
     setPendingSaves((current) => new Set(current).add(saveKey));
     setSaveFailures((current) => {
@@ -140,7 +149,7 @@ function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["gith
     }
     setSaveFailures((current) => new Map(current).set(saveKey, failure));
   }, [creationSession, profiles, saveKey, value]);
-  return { sourceKey, draft, saving, saveFailure, hasFailedCreationSession: saveFailures.has(`creation:${creationSession}`), update, reset, beginSave, finishSave };
+  return { sourceKey, draft, saving, saveFailure, hasFailedCreationSession: saveFailures.has(`creation:${creationSession}`), update, reset, discardUnsubmitted, beginSave, finishSave };
 }
 
 class DeckPollingCancelledError extends Error {}
@@ -774,6 +783,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   };
   const selectDeck = (deckId: string) => {
     if (isCreating && !pendingCreation) editorDraft.reset();
+    else if (!isCreating) editorDraft.discardUnsubmitted();
     editorGeneration.current += 1;
     onDismissMissingLink?.();
     setSelected(deckId);

@@ -545,6 +545,22 @@ describe("Deck surface", () => {
     expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(other.name);
   });
 
+  it("discards an unsubmitted Deck draft when selecting another Deck", () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    const synchronizedDeck = { ...deck, name: "Synchronized Deck" };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Abandoned local edit" } });
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: other.id } });
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [synchronizedDeck, other] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: synchronizedDeck.id } });
+
+    expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", synchronizedDeck.name);
+  });
+
   it("does not attach an in-flight save failure to another Deck", async () => {
     const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
     let finishSave: (committed: boolean) => void = () => {};
