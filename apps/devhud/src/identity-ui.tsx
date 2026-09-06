@@ -223,7 +223,7 @@ function UrlMappingDraftStateProvider({ children, identity, isCurrentScope }: { 
   return <UrlMappingDraftContext value={{ draft, setDraft, setBaselineMappings, markDraftDirty, invalid, setInvalid, saved, setSaved, dirty, saving, setSaving, priorityDrafts, setPriorityDrafts, baseRevision, credentialOperationPending, runCredentialOperation, isCurrentScope, reset }}>{children}</UrlMappingDraftContext>;
 }
 
-export function SynchronizedSettingsBoundary(props: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly showNativeShortcuts?: boolean; readonly showLocalAgents?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities; readonly NativeMessagingSettings?: ComponentType<{ readonly copy: Copy }> }) {
+export function SynchronizedSettingsBoundary(props: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly onModalConfirmationOpenChange?: (open: boolean) => void; readonly showNativeShortcuts?: boolean; readonly showLocalAgents?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities; readonly NativeMessagingSettings?: ComponentType<{ readonly copy: Copy }> }) {
   const mappingDraft = use(UrlMappingDraftContext);
   return mappingDraft === null ? <UrlMappingDraftProvider><SynchronizedSettingsContent {...props} /></UrlMappingDraftProvider> : <SynchronizedSettingsContent {...props} />;
 }
@@ -392,7 +392,7 @@ function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onAc
   </section>;
 }
 
-function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvider, onOpenExternal = (target) => browserShell.openExternal(target, ""), showNativeShortcuts = false, showLocalAgents = showNativeShortcuts, shortcutCapabilities = { available: new Set<PlatformCapability>() }, NativeMessagingSettings }: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly showNativeShortcuts?: boolean; readonly showLocalAgents?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities; readonly NativeMessagingSettings?: ComponentType<{ readonly copy: Copy }> }) {
+function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvider, onOpenExternal = (target) => browserShell.openExternal(target, ""), onModalConfirmationOpenChange, showNativeShortcuts = false, showLocalAgents = showNativeShortcuts, shortcutCapabilities = { available: new Set<PlatformCapability>() }, NativeMessagingSettings }: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly onModalConfirmationOpenChange?: (open: boolean) => void; readonly showNativeShortcuts?: boolean; readonly showLocalAgents?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities; readonly NativeMessagingSettings?: ComponentType<{ readonly copy: Copy }> }) {
   const identity = useIdentitySettings();
   const mappingDraft = use(UrlMappingDraftContext);
   if (mappingDraft === null) throw new Error("URL mapping draft provider is required");
@@ -416,8 +416,8 @@ function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvid
       <h3>{copy.synchronizedSettings}</h3>
       {identity.offline && <p className="notice" role="status">{copy.offlineSettingsReadOnly}</p>}
       {!identity.offline && <p>{copy.settingsRevision}: {identity.revision.toString()}</p>}
-    {identity.importDiff && <SnapshotChoice key="import" choiceId="import" copy={copy} entries={identity.importDiff} title={copy.importSettingsTitle} summary={copy.importSettingsSummary} primary={copy.uploadLocal} secondary={copy.replaceLocal} onPrimary={() => invoke(async () => { if (await identity.uploadLocal()) mappingDraft.reset(); })} onSecondary={() => invoke(async () => { if (await identity.replaceLocal()) mappingDraft.reset(); })} />}
-    {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onPrimary={() => invoke(async () => { if (await identity.reapplyConflictLocal()) mappingDraft.reset(); })} onSecondary={() => invoke(async () => { if (await identity.adoptConflictServer()) mappingDraft.reset(); })} />}
+    {identity.importDiff && <SnapshotChoice key="import" choiceId="import" copy={copy} entries={identity.importDiff} title={copy.importSettingsTitle} summary={copy.importSettingsSummary} primary={copy.uploadLocal} secondary={copy.replaceLocal} onOpenChange={onModalConfirmationOpenChange} onPrimary={() => invoke(async () => { if (await identity.uploadLocal()) mappingDraft.reset(); })} onSecondary={() => invoke(async () => { if (await identity.replaceLocal()) mappingDraft.reset(); })} />}
+    {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onOpenChange={onModalConfirmationOpenChange} onPrimary={() => invoke(async () => { if (await identity.reapplyConflictLocal()) mappingDraft.reset(); })} onSecondary={() => invoke(async () => { if (await identity.adoptConflictServer()) mappingDraft.reset(); })} />}
     {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <section className="notice" role="alert"><p>{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p><button onClick={() => invoke(identity.retrySettings)}>{copy.retry}</button></section>}
     </section>}
     <GitHubSettings copy={copy} bridge={bridge} provider={githubProvider} openExternal={onOpenExternal} credentialOperationPending={mappingDraft.credentialOperationPending} runCredentialOperation={mappingDraft.runCredentialOperation} />
@@ -573,7 +573,7 @@ function uuidV7(): string {
   return `${time.slice(0, 8)}-${time.slice(8)}-7${tail.slice(0, 3)}-${variant}${tail.slice(3, 6)}-${tail.slice(6, 18)}`;
 }
 
-function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, secondary, onPrimary, onSecondary }: { readonly choiceId: string; readonly copy: Copy; readonly entries: readonly SettingsDiffEntry[]; readonly title: string; readonly summary: string; readonly primary: string; readonly secondary: string; readonly onPrimary: () => void; readonly onSecondary: () => void }) {
+function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, secondary, onOpenChange, onPrimary, onSecondary }: { readonly choiceId: string; readonly copy: Copy; readonly entries: readonly SettingsDiffEntry[]; readonly title: string; readonly summary: string; readonly primary: string; readonly secondary: string; readonly onOpenChange?: (open: boolean) => void; readonly onPrimary: () => void; readonly onSecondary: () => void }) {
   const [open, setOpen] = useState(true);
   const dialog = useRef<HTMLElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -594,6 +594,12 @@ function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, seco
     addEventListener("keydown", closeOnEscape);
     return () => removeEventListener("keydown", closeOnEscape);
   }, [open]);
+  useEffect(() => {
+    onOpenChange?.(open);
+    return () => {
+      if (open) onOpenChange?.(false);
+    };
+  }, [onOpenChange, open]);
   if (!open) return <section className="notice"><p>{summary}</p><button onClick={() => setOpen(true)}>{title}</button></section>;
   const titleId = `snapshot-choice-${choiceId}-title`;
   return <section ref={dialog} className="snapshot-choice" role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={(event) => trapDialogFocus(event, dialog.current)}>
