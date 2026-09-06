@@ -97,11 +97,16 @@ test("form-control boundaries meet non-text contrast in light and dark themes", 
 test("Diagnostics disclosures preserve exact text selection and fit contracted responsive viewports", () => {
   assert.match(diagnosticsUi, /<details className="diagnostics-disclosure" open>/u);
   assert.match(diagnosticsUi, /<details className="diagnostics-disclosure">/u);
+  assert.match(diagnosticsUi, /<section key=\{previewGeneration\} className="diagnostics-disclosures"/u);
   assert.match(diagnosticsUi, /<pre className="diagnostics-preview"[^>]*tabIndex=\{0\}>\{bundle\.requestJson\}<\/pre>/u);
   assert.match(diagnosticsUi, /<pre className="diagnostics-preview"[^>]*tabIndex=\{0\}>\{bundle\.exportJson\}<\/pre>/u);
+  assert.match(styles, /\.diagnostics-disclosure > summary \{[^}]*display:list-item/u);
   assert.match(styles, /\.diagnostics-preview \{[^}]*max-height:min\(420px,45vh\);[^}]*overflow:auto;[^}]*font-family:ui-monospace[^}]*white-space:pre;[^}]*overflow-wrap:normal;[^}]*user-select:text/u);
   assert.match(styles, /\.diagnostics-preview:focus-visible \{[^}]*outline:3px solid var\(--focus\)/u);
   assert.match(styles, /\.diagnostics-runtime \{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/u);
+  assert.match(styles, /\.runtime-diagnostics \{[^}]*grid-template-columns:max-content minmax\(0,1fr\);[^}]*max-width:510px/u);
+  assert.match(styles, /\.runtime-diagnostics dt \{[^}]*font-weight:800/u);
+  assert.match(styles, /\.runtime-diagnostics dd \{[^}]*overflow-wrap:anywhere/u);
   assert.match(styles, /@media \(max-width:700px\) \{[\s\S]*?\.diagnostics-runtime \{ grid-template-columns:minmax\(0,1fr\)/u);
 });
 

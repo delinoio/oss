@@ -697,8 +697,15 @@ describe("diagnostics privacy boundary", () => {
     expect(requestPreview.tabIndex).toBe(0);
     expect(exportPreview.tabIndex).toBe(0);
     expect(requestPreview.textContent).toBe(prepared.requestJson);
+    requestDisclosure!.open = false;
+    exportDisclosure!.open = true;
+    fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+    expect(screen.getByText(messages.en.diagnosticsExactPayload).closest("details")).not.toBe(requestDisclosure);
+    expect(screen.getByText(messages.en.diagnosticsExactPayload).closest("details")?.open).toBe(true);
+    expect(screen.getByText(messages.en.diagnosticsExactExport).closest("details")?.open).toBe(false);
+    const refreshedExportPreview = screen.getByTestId("diagnostics-export-preview");
     fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsExport }));
-    expect(exportPreview.textContent).toBe(exportedContents);
+    expect(refreshedExportPreview.textContent).toBe(exportedContents);
   });
 
   it("keeps preview and export available without the crash-report capability", () => {

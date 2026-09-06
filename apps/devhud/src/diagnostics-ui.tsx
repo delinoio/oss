@@ -22,6 +22,7 @@ export function DiagnosticsPanel({ copy, runtime, bridge, storage, online }: Dia
   const submit = useMutation(DiagnosticsQuery.submitCrashReport);
   const [bundle, setBundle] = useState<PreparedDiagnosticsBundle | null>(null);
   const [previewRequested, setPreviewRequested] = useState(false);
+  const [previewGeneration, setPreviewGeneration] = useState(0);
   const [consentSelected, setConsentSelected] = useState(false);
   const [consentDigest, setConsentDigest] = useState<string | null>(null);
   const [exportState, setExportState] = useState<ExportState>("idle");
@@ -67,6 +68,7 @@ export function DiagnosticsPanel({ copy, runtime, bridge, storage, online }: Dia
     setSubmitError(null);
     setServerCorrelation(null);
     setPreviewRequested(true);
+    setPreviewGeneration((generation) => generation + 1);
     setBundle(latest ? prepareDiagnosticsBundle(latest, events) : null);
   };
 
@@ -144,7 +146,7 @@ export function DiagnosticsPanel({ copy, runtime, bridge, storage, online }: Dia
     </Card>
     <div className="diagnostics-preview-action"><Button variant="primary" onClick={preview}>{copy.diagnosticsPreview}</Button></div>
     {bundle === null ? previewRequested && <StatePanel eyebrow={copy.empty} title={copy.diagnosticsNoEventsTitle} summary={copy.diagnosticsNoEvents} tone="neutral" /> : <>
-      <section className="diagnostics-disclosures" aria-label={copy.diagnosticsDisclosures}>
+      <section key={previewGeneration} className="diagnostics-disclosures" aria-label={copy.diagnosticsDisclosures}>
         <details className="diagnostics-disclosure" open>
           <summary>{copy.diagnosticsExactPayload}</summary>
           <pre className="diagnostics-preview" data-testid="diagnostics-preview" tabIndex={0}>{bundle.requestJson}</pre>
