@@ -74,7 +74,7 @@ function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["gith
     setState((current) => ({ sourceKey, draft: change(current.sourceKey === sourceKey ? current.draft : initial) }));
   }, [initial, sourceKey]);
   const reset = useCallback(() => setState({ sourceKey, draft: initial }), [initial, sourceKey]);
-  return { draft, update, reset };
+  return { sourceKey, draft, update, reset };
 }
 
 class DeckPollingCancelledError extends Error {}
@@ -555,7 +555,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     setCreating(false);
     setSettingsOpen(false);
   };
-  const editor = <DeckEditor copy={copy} value={deck ?? undefined} draft={editorDraft.draft} onDraftChange={editorDraft.update} profiles={identity.settings.github.profiles} disabled={isCreating ? creationDisabled : identity.readOnly} onSave={async (next) => {
+  const editor = <DeckEditor key={editorDraft.sourceKey} copy={copy} value={deck ?? undefined} draft={editorDraft.draft} onDraftChange={editorDraft.update} profiles={identity.settings.github.profiles} disabled={isCreating ? creationDisabled : identity.readOnly} onSave={async (next) => {
     await polling.validate(next);
     const committed = isCreating
       ? await identity.replaceSettings((current) => ({ ...current, decks: [...current.decks, next] }))
@@ -569,11 +569,12 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const draftsFiltered = deck !== null && !deck.display.showDrafts && cachedResults.length > 0 && results.length === 0;
   const closeSettings = () => {
     editorDraft.reset();
+    if (isCreating && selectedDeck !== null) setCreating(false);
     setSettingsOpen(false);
   };
   return <section className="deck" aria-label={copy.deckTitle}>
     <PageHeader title={copy.deckTitle} summary={copy.deckSummary} actions={<div className="deck-workspace-controls">
-      {selectedDeck && <Field label={copy.deckSelected} inputId="deck-selected"><select id="deck-selected" value={selectedDeck.id} onChange={(event) => selectDeck(event.target.value)}>{identity.settings.decks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>}
+      {selectedDeck && <Field label={copy.deckSelected} inputId="deck-selected"><select id="deck-selected" value={isCreating ? "" : selectedDeck.id} onChange={(event) => event.target.value === "" ? openCreate() : selectDeck(event.target.value)}>{isCreating && <option value="">{copy.deckCreate}</option>}{identity.settings.decks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>}
       <Button variant="primary" disabled={creationDisabled} onClick={openCreate}>{copy.deckCreate}</Button>
       {deck && <Button disabled={refreshState.loading || !polling.canPoll} onClick={() => void polling.refresh(deck.id, true)}>{copy.deckRefresh}</Button>}
       {mobile && deck && <Button ref={settingsTrigger} onClick={() => setSettingsOpen(true)}>{copy.deckSettings}</Button>}
@@ -626,7 +627,7 @@ function WidgetAccess({ cache, cacheProfileRef, copy, deck, failure, onConfirmat
   }, []);
   useEffect(() => {
     if (!confirming) return;
-    cancelButton.current?.focus();
+    (busy ? dialog.current : cancelButton.current)?.focus();
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
@@ -646,7 +647,7 @@ function WidgetAccess({ cache, cacheProfileRef, copy, deck, failure, onConfirmat
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); if (!busy) closeConfirmation(); return; }
     if (event.key !== "Tab") return;
     const focusable = dialog.current?.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), select:not([disabled]), [href]");
-    if (!focusable?.length) return;
+    if (!focusable?.length) { event.preventDefault(); dialog.current?.focus(); return; }
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
@@ -672,7 +673,7 @@ function WidgetAccess({ cache, cacheProfileRef, copy, deck, failure, onConfirmat
   if (!widgetAccess.supported) return null;
   return <section className="widget-access" aria-labelledby={`widget-title-${deck.id}`}><h3 id={`widget-title-${deck.id}`}>{copy.widgetTitle}</h3>
     {enabled ? <><p role="status">{copy.widgetEnabled}</p><button ref={disableButton} type="button" disabled={busy} onClick={() => void disable()}>{copy.widgetDisable}</button></> : <button ref={enableTrigger} type="button" disabled={busy || profile === undefined} onClick={() => setConfirming(true)}>{copy.widgetEnable}</button>}
-    {confirming && <section ref={dialog} className="widget-privacy" role="alertdialog" aria-modal="true" aria-labelledby={`widget-privacy-title-${deck.id}`} aria-describedby={`widget-privacy-warning-${deck.id}`} onKeyDown={trapDialogFocus}><h4 id={`widget-privacy-title-${deck.id}`}>{copy.widgetPrivacyTitle}</h4><p id={`widget-privacy-warning-${deck.id}`}>{copy.widgetPrivacyWarning}</p><div className="actions"><button type="button" disabled={busy} onClick={() => void enable()}>{copy.widgetPrivacyConfirm}</button><button ref={cancelButton} type="button" disabled={busy} onClick={closeConfirmation}>{copy.widgetPrivacyCancel}</button></div></section>}
+    {confirming && <section ref={dialog} className="widget-privacy" role="alertdialog" aria-modal="true" aria-labelledby={`widget-privacy-title-${deck.id}`} aria-describedby={`widget-privacy-warning-${deck.id}`} tabIndex={-1} onKeyDown={trapDialogFocus}><h4 id={`widget-privacy-title-${deck.id}`}>{copy.widgetPrivacyTitle}</h4><p id={`widget-privacy-warning-${deck.id}`}>{copy.widgetPrivacyWarning}</p><div className="actions"><button type="button" disabled={busy} onClick={() => void enable()}>{copy.widgetPrivacyConfirm}</button><button ref={cancelButton} type="button" disabled={busy} onClick={closeConfirmation}>{copy.widgetPrivacyCancel}</button></div></section>}
     {failed && <p role="alert">{copy.widgetActionFailed}</p>}
   </section>;
 }

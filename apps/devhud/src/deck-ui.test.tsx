@@ -137,9 +137,72 @@ describe("Deck surface", () => {
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
     const selection = screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement;
-    expect(selection.value).toBe(deck.id);
+    expect(selection.value).toBe("");
     fireEvent.change(selection, { target: { value: other.id } });
     await waitFor(() => expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(other.id));
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(other.name);
+  });
+
+  it("lets the current Deck exit creation mode", () => {
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    const selection = screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement;
+    expect(selection.value).toBe("");
+    expect(screen.getByRole("option", { name: messages.en.deckCreate })).toBeTruthy();
+    fireEvent.change(selection, { target: { value: deck.id } });
+
+    expect(selection.value).toBe(deck.id);
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(deck.name);
+  });
+
+  it("cancels mobile Deck creation when the sheet is dismissed", async () => {
+    setViewport(390);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckCreate });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.back }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckCreate })).toBeNull());
+    expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(deck.id);
+    expect(screen.getByRole("button", { name: messages.en.deckSettings })).toBeTruthy();
+    expect(sheet).not.toBe(document.activeElement);
+  });
+
+  it("clears validation state when another Deck is selected", async () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckQuery), { target: { value: "" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckQuery).closest("form")!);
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", messages.en.deckRequirePullRequests);
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: other.id } });
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(other.name);
+  });
+
+  it("does not attach an in-flight save failure to another Deck", async () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn(() => pendingSave);
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }), replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saved }));
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: other.id } });
+    finishSave(false);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.saved })).toHaveProperty("disabled", false));
+    expect(screen.queryByText(messages.en.deckErrorNetwork)).toBeNull();
     expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(other.name);
   });
 
@@ -226,6 +289,11 @@ describe("Deck surface", () => {
     const confirmation = screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
     fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm }));
     await waitFor(() => expect(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm })).toHaveProperty("disabled", true));
+    await waitFor(() => expect(document.activeElement).toBe(confirmation));
+    fireEvent.keyDown(confirmation, { key: "Tab" });
+    expect(document.activeElement).toBe(confirmation);
+    fireEvent.keyDown(confirmation, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(confirmation);
 
     fireEvent.keyDown(confirmation, { key: "Escape" });
     expect(screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeTruthy();
