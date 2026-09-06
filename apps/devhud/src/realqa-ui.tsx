@@ -1,5 +1,5 @@
 import { createContext, use, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type PointerEvent, type Ref, type RefObject } from "react";
-import type { Copy } from "./localization";
+import type { Copy, CopyKey } from "./localization";
 import { NativeBridgeError, NativeBridgeErrorCode, type CaptureDisplay, type CaptureDraft, type CaptureDraftImage, type CaptureEditorCommand, type CaptureEditorLayer, type CaptureOptions, type CapturePoint, type CaptureRect, type FlattenedCaptureImage, type NativeBridgeV1 } from "./native-bridge";
 import { ShortcutActionId } from "./shortcuts";
 import { RealqaSubmissionModal } from "./realqa-submission-ui.tsx";
@@ -24,7 +24,7 @@ enum RealqaFeedbackKind {
   Open = "open",
   Delete = "delete",
 }
-type RealqaFeedback = { readonly kind: RealqaFeedbackKind; readonly summary: string };
+type RealqaFeedback = { readonly kind: RealqaFeedbackKind; readonly summaryKey: CopyKey };
 const MAX_ANNOTATION_TEXT_CHARACTERS = 2_048;
 const noBrowserContext = async () => null;
 
@@ -64,17 +64,17 @@ function useRealqa() {
   return value;
 }
 
-function errorCopy(copy: Copy, reason: unknown): RealqaFeedback | null {
+function errorCopy(reason: unknown): RealqaFeedback | null {
   if (reason instanceof NativeBridgeError) {
-    if (reason.code === NativeBridgeErrorCode.ProtectedContent) return { kind: RealqaFeedbackKind.Protected, summary: copy.captureProtected };
-    if (reason.code === NativeBridgeErrorCode.TopologyChanged) return { kind: RealqaFeedbackKind.Topology, summary: copy.captureTopologyChanged };
-    if (reason.code === NativeBridgeErrorCode.QuotaExhausted) return { kind: RealqaFeedbackKind.Quota, summary: copy.captureQuotaFull };
-    if (reason.code === NativeBridgeErrorCode.ImageLimit) return { kind: RealqaFeedbackKind.Capture, summary: copy.captureImageLimit };
-    if (reason.code === NativeBridgeErrorCode.PermissionDenied) return { kind: RealqaFeedbackKind.Permission, summary: copy.capturePermission };
-    if (reason.code === NativeBridgeErrorCode.StorageFailure) return { kind: RealqaFeedbackKind.Save, summary: copy.realqaSaveFailed };
+    if (reason.code === NativeBridgeErrorCode.ProtectedContent) return { kind: RealqaFeedbackKind.Protected, summaryKey: "captureProtected" };
+    if (reason.code === NativeBridgeErrorCode.TopologyChanged) return { kind: RealqaFeedbackKind.Topology, summaryKey: "captureTopologyChanged" };
+    if (reason.code === NativeBridgeErrorCode.QuotaExhausted) return { kind: RealqaFeedbackKind.Quota, summaryKey: "captureQuotaFull" };
+    if (reason.code === NativeBridgeErrorCode.ImageLimit) return { kind: RealqaFeedbackKind.Capture, summaryKey: "captureImageLimit" };
+    if (reason.code === NativeBridgeErrorCode.PermissionDenied) return { kind: RealqaFeedbackKind.Permission, summaryKey: "capturePermission" };
+    if (reason.code === NativeBridgeErrorCode.StorageFailure) return { kind: RealqaFeedbackKind.Save, summaryKey: "realqaSaveFailed" };
     if (reason.code === NativeBridgeErrorCode.Cancelled) return null;
   }
-  return { kind: RealqaFeedbackKind.Capture, summary: copy.captureFailed };
+  return { kind: RealqaFeedbackKind.Capture, summaryKey: "captureFailed" };
 }
 
 export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = false, onActivate, requestedAction, onRequestedActionConsumed, takeBrowserContext = noBrowserContext }: { readonly ref?: Ref<RealqaController>; readonly bridge: NativeBridgeV1; readonly copy: Copy; readonly active?: boolean; readonly paletteOpen?: boolean; readonly onActivate?: () => void; readonly requestedAction?: CaptureRequest | null; readonly onRequestedActionConsumed?: (sequence: number) => void; readonly takeBrowserContext?: (draftId: string, expectedRevision: number) => Promise<CaptureDraft | null> }) {
@@ -187,10 +187,10 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     } catch (reason) {
       if (generation !== resetGeneration.current || request !== draftOpenRequest.current) return;
       if (reason instanceof NativeBridgeError && reason.code === NativeBridgeErrorCode.NotFound) removeDraftLocally(draft.id);
-      setError({ kind: RealqaFeedbackKind.Open, summary: copy.realqaOpenFailed });
+      setError({ kind: RealqaFeedbackKind.Open, summaryKey: "realqaOpenFailed" });
       try { await refresh(); } catch { /* Keep the native open failure visible. */ }
     }
-  }, [bridge, copy.realqaOpenFailed, refresh, removeDraftLocally, runDraftOperation]);
+  }, [bridge, refresh, removeDraftLocally, runDraftOperation]);
 
   const refreshCaptureStatus = useCallback(async () => {
     const generation = resetGeneration.current;
@@ -208,10 +208,10 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     void Promise.allSettled([refreshCaptureStatus(), refresh()]).then(([native, stored]) => {
       if (generation !== resetGeneration.current) return;
       if (native.status === "rejected") {
-        setError(errorCopy(copy, native.reason));
+        setError(errorCopy(native.reason));
       }
       if (stored.status === "rejected") {
-        setError(errorCopy(copy, stored.reason));
+        setError(errorCopy(stored.reason));
       }
     });
   }, [copy, refresh, refreshCaptureStatus]);
@@ -225,6 +225,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   }, []);
   useEffect(() => {
     if (active) return;
+    draftOpenRequest.current += 1;
     setSelected(null);
     if (!captureInFlight.current) dismissCaptureDialog();
   }, [active, dismissCaptureDialog]);
@@ -306,13 +307,13 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       setSelected((current) => (current?.id ?? null) === originatingDraftId ? response.draft : current);
       setPreviewRequest({ draft: response.draft, imageId: previewImageId, sequence: ++previewSequence.current });
       setStatus(CaptureFeedbackState.Saved);
-      if (contextAttachmentFailed) setError({ kind: RealqaFeedbackKind.BrowserContext, summary: copy.browserContextAttachmentFailed });
+      if (contextAttachmentFailed) setError({ kind: RealqaFeedbackKind.BrowserContext, summaryKey: "browserContextAttachmentFailed" });
       dismissCaptureDialog(false);
       refreshAfterCapture = true;
     } catch (reason) {
       if (generation !== resetGeneration.current) return;
       setStatus(null);
-      setError(errorCopy(copy, reason));
+      setError(errorCopy(reason));
       dismissCaptureDialog();
     } finally {
       if (generation !== resetGeneration.current) return;
@@ -321,14 +322,17 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       setBusy(false);
     }
     if (refreshAfterCapture) void refresh().catch(() => { /* The capture response is already authoritative. */ });
-  }, [bridge, copy, dismissCaptureDialog, installDraft, options, refresh, runDraftOperation, selected?.id, takeBrowserContext]);
+  }, [bridge, dismissCaptureDialog, installDraft, options, refresh, runDraftOperation, selected?.id, takeBrowserContext]);
 
   const capture = useCallback(async (action: CaptureActionId, standaloneOpener: HTMLElement | null = null) => {
     if (captureInFlight.current || captureStatusInFlight.current) return;
     if (action === ShortcutActionId.CaptureSelection || action === ShortcutActionId.CaptureToolbar) {
       const generation = resetGeneration.current;
       captureStatusInFlight.current = true;
-      const opener = selected ? editorPreviewFallback.current : standaloneOpener ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+      const activeTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const opener = selected
+        ? activeTrigger?.isConnected && activeTrigger !== document.body ? activeTrigger : editorPreviewFallback.current
+        : standaloneOpener ?? activeTrigger;
       setError(null);
       try {
         const freshStatus = await refreshCaptureStatus();
@@ -340,7 +344,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
         setCaptureDialog(action);
       } catch (reason) {
         if (generation !== resetGeneration.current) return;
-        setError(errorCopy(copy, reason));
+        setError(errorCopy(reason));
       } finally {
         if (generation !== resetGeneration.current) return;
         captureStatusInFlight.current = false;
@@ -348,7 +352,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       return;
     }
     await completeCapture(action, options, standaloneOpener);
-  }, [captureDialog, completeCapture, copy, options, refreshCaptureStatus, selected?.id]);
+  }, [captureDialog, completeCapture, options, refreshCaptureStatus, selected?.id]);
   const cancelInFlightCapture = useCallback(() => {
     if (!captureInFlight.current) return;
     captureCancellationGeneration.current += 1;
@@ -425,7 +429,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       try { await refresh(); } catch { /* The successful native deletion is authoritative. */ }
     } catch {
       if (generation !== resetGeneration.current) return;
-      setError({ kind: RealqaFeedbackKind.Delete, summary: copy.realqaDeleteFailed });
+      setError({ kind: RealqaFeedbackKind.Delete, summaryKey: "realqaDeleteFailed" });
     }
   };
   const remove = async (draft: CaptureDraft) => {
@@ -526,7 +530,7 @@ function FeedbackPanel({ feedback, headingLevel = 3 }: { readonly feedback: Real
     [RealqaFeedbackKind.Delete]: { title: copy.realqaDeleteTitle, tone: "danger" },
   };
   const state = presentation[feedback.kind];
-  return <StatePanel eyebrow={copy.error} title={state.title} summary={feedback.summary} headingLevel={headingLevel} tone={state.tone} role="alert" />;
+  return <StatePanel eyebrow={copy.error} title={state.title} summary={copy[feedback.summaryKey]} headingLevel={headingLevel} tone={state.tone} role="alert" />;
 }
 
 function CaptureFeedback({ status, error }: { readonly status: CaptureFeedbackState | null; readonly error: RealqaFeedback | null }) {

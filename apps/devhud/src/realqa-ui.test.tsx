@@ -638,6 +638,60 @@ describe("RealQA capture and editor", () => {
     await waitFor(() => expect(document.activeElement).toBe(fallback));
   });
 
+  it("does not reopen a draft when its pending open completes after leaving RealQA", async () => {
+    let resolveOpen: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] };
+      throw new Error(`unexpected operation ${value.operation}`);
+    }, async () => new Promise((resolve) => { resolveOpen = resolve; }));
+    const view = render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    await waitFor(() => expect(resolveOpen).toBeTypeOf("function"));
+    view.rerender(<RealqaSurface bridge={bridge} copy={messages.en} active={false} />);
+    await act(async () => { resolveOpen?.({ kind: "capture-draft", draft }); });
+    view.rerender(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    expect(screen.queryByRole("dialog", { name: messages.en.editorTitle })).toBeNull();
+  });
+
+  it.each([ShortcutActionId.CaptureSelection, ShortcutActionId.CaptureToolbar])("restores an editor %s picker to its triggering capture action", async (action) => {
+    const { bridge } = bridgeWith();
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    await openEditor();
+
+    const editor = screen.getByRole("dialog", { name: messages.en.editorTitle });
+    const label = action === ShortcutActionId.CaptureToolbar ? messages.en.captureToolbar : messages.en.captureSelection;
+    const opener = within(editor).getByRole("button", { name: label });
+    opener.focus();
+    fireEvent.click(opener);
+    await screen.findByRole("dialog", { name: label });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureCancel }));
+
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
+  it("derives deferred capture feedback from the current locale", async () => {
+    let rejectCapture: ((reason: unknown) => void) | undefined;
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return new Promise((_resolve, reject) => { rejectCapture = reject; });
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    const view = render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+    await waitFor(() => expect(rejectCapture).toBeTypeOf("function"));
+    view.rerender(<RealqaSurface bridge={bridge} copy={messages.ko} />);
+    await act(async () => { rejectCapture?.(new NativeBridgeError(NativeBridgeErrorCode.QuotaExhausted)); });
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain(messages.ko.realqaQuotaTitle);
+    expect(alert.textContent).toContain(messages.ko.captureQuotaFull);
+  });
+
   it.each([
     ["success", undefined, "status", "captureSaved"],
     ["quota failure", NativeBridgeErrorCode.QuotaExhausted, "alert", "captureQuotaFull"],
