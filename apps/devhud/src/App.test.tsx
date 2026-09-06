@@ -133,7 +133,6 @@ describe("native App state", () => {
 
   it("rejects insecure custom APIs and confirms a secure API change before clearing its session", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     const transitionOperations: string[] = [];
     let pendingCallback: string | null = "devhud://auth/callback?code=old&state=old";
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
@@ -157,18 +156,17 @@ describe("native App state", () => {
 
     fireEvent.change(input, { target: { value: "https://devhud.api.delino.io/" } });
     expect((screen.getByRole("button", { name: messages.en.applyApiOrigin }) as HTMLButtonElement).disabled).toBe(true);
-    expect(confirm).not.toHaveBeenCalled();
     expect(request).not.toHaveBeenCalledWith(expect.objectContaining({ operation: "secure.purge" }));
 
     fireEvent.change(input, { target: { value: "http://remote.example" } });
     fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
     expect(screen.getByRole("alert").textContent).toBe(messages.en.invalidApiOrigin);
-    expect(confirm).not.toHaveBeenCalled();
-
     fireEvent.change(input, { target: { value: "https://custom.example" } });
     fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    await waitFor(() => expect(within(confirmation).getByRole("button", { name: messages.en.cancel })).toBe(document.activeElement));
+    fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.applyApiOrigin }));
     await waitFor(() => expect(JSON.parse(localStorage.getItem("devhud.shell.preferences.v1") ?? "null").apiOrigin).toBe("https://custom.example"));
-    expect(confirm).toHaveBeenCalledWith(messages.en.apiChangeConfirm);
     expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "secure.purge", scope: "api-change", profileId: expect.stringMatching(/^origin\./u) }));
     expect(pendingCallback).toBeNull();
     expect(transitionOperations).toEqual(["discard-callback", "purge-session", "configure-new-origin"]);

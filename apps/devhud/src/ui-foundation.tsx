@@ -106,15 +106,15 @@ export function StatePanel({ eyebrow, title, summary, role = "status", tone = "i
   </section>;
 }
 
-export function DataRow({ icon, title, description, trailing, onClick, ariaCurrent }: { readonly icon?: ReactNode; readonly title: ReactNode; readonly description?: ReactNode; readonly trailing?: ReactNode; readonly onClick?: () => void; readonly ariaCurrent?: "page" }) {
+export function DataRow({ icon, title, description, trailing, onClick, ariaCurrent, ariaLabel }: { readonly icon?: ReactNode; readonly title: ReactNode; readonly description?: ReactNode; readonly trailing?: ReactNode; readonly onClick?: () => void; readonly ariaCurrent?: "page"; readonly ariaLabel?: string }) {
   const content = <><span className="data-row-icon">{icon}</span><span className="data-row-content"><strong>{title}</strong>{description && <span>{description}</span>}</span>{trailing && <span className="data-row-trailing">{trailing}</span>}</>;
-  if (onClick) return <button type="button" className="data-row" onClick={onClick} aria-current={ariaCurrent}>{content}</button>;
+  if (onClick) return <button type="button" className="data-row" onClick={onClick} aria-current={ariaCurrent} aria-label={ariaLabel}>{content}</button>;
   return <div className="data-row">{content}</div>;
 }
 
 const focusableSelector = "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])";
 
-function ModalSurface({ open, title, titleId, className, initialFocusRef, returnFocusRef, restoreFocus, onClose, children }: { readonly open: boolean; readonly title: ReactNode; readonly titleId: string; readonly className: string; readonly initialFocusRef?: RefObject<HTMLElement | null>; readonly returnFocusRef?: RefObject<HTMLElement | null>; readonly restoreFocus: boolean; readonly onClose: () => void; readonly children: ReactNode }) {
+function ModalSurface({ open, title, titleId, className, role = "dialog", initialFocusRef, returnFocusRef, restoreFocus, onClose, children }: { readonly open: boolean; readonly title: ReactNode; readonly titleId: string; readonly className: string; readonly role?: "dialog" | "alertdialog"; readonly initialFocusRef?: RefObject<HTMLElement | null>; readonly returnFocusRef?: RefObject<HTMLElement | null>; readonly restoreFocus: boolean; readonly onClose: () => void; readonly children: ReactNode }) {
   const surface = useRef<HTMLElement>(null);
   const capturedOpener = useRef<HTMLElement | null>(null);
   const shouldRestore = useRef(restoreFocus);
@@ -142,12 +142,12 @@ function ModalSurface({ open, title, titleId, className, initialFocusRef, return
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
-  return <div className="ui-overlay" role="presentation"><section ref={surface} className={className} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onKeyDown={keyDown}><h2 id={titleId}>{title}</h2>{children}</section></div>;
+  return <div className="ui-overlay" role="presentation"><section ref={surface} className={className} role={role} aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onKeyDown={keyDown}><h2 id={titleId}>{title}</h2>{children}</section></div>;
 }
 
-export function Dialog({ open, title, initialFocusRef, returnFocusRef, restoreFocus = true, onClose, children }: { readonly open: boolean; readonly title: ReactNode; readonly initialFocusRef?: RefObject<HTMLElement | null>; readonly returnFocusRef?: RefObject<HTMLElement | null>; readonly restoreFocus?: boolean; readonly onClose: () => void; readonly children: ReactNode }) {
+export function Dialog({ open, title, role, initialFocusRef, returnFocusRef, restoreFocus = true, onClose, children }: { readonly open: boolean; readonly title: ReactNode; readonly role?: "dialog" | "alertdialog"; readonly initialFocusRef?: RefObject<HTMLElement | null>; readonly returnFocusRef?: RefObject<HTMLElement | null>; readonly restoreFocus?: boolean; readonly onClose: () => void; readonly children: ReactNode }) {
   const titleId = useId();
-  return <ModalSurface open={open} title={title} titleId={titleId} className="ui-dialog" initialFocusRef={initialFocusRef} returnFocusRef={returnFocusRef} restoreFocus={restoreFocus} onClose={onClose}>{children}</ModalSurface>;
+  return <ModalSurface open={open} title={title} titleId={titleId} className="ui-dialog" role={role} initialFocusRef={initialFocusRef} returnFocusRef={returnFocusRef} restoreFocus={restoreFocus} onClose={onClose}>{children}</ModalSurface>;
 }
 
 export function Sheet({ open, title, backLabel, initialFocusRef, returnFocusRef, restoreFocus = true, onClose, children }: { readonly open: boolean; readonly title: ReactNode; readonly backLabel: string; readonly initialFocusRef?: RefObject<HTMLElement | null>; readonly returnFocusRef?: RefObject<HTMLElement | null>; readonly restoreFocus?: boolean; readonly onClose: () => void; readonly children: ReactNode }) {

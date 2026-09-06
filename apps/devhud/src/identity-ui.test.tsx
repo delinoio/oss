@@ -2,6 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ComponentProps } from "react";
 
 import { AccountIdentity, ShortcutPaletteTrigger, SynchronizedSettingsBoundary, SynchronizedShortcutBoundary } from "./identity-ui";
 import { messages } from "./localization";
@@ -42,6 +43,71 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); cleanup(); });
 
 describe("identity UI", () => {
+  const accountProps = (overrides: Partial<ComponentProps<typeof AccountIdentity>> = {}) => ({
+    copy: messages.en,
+    apiOrigin: "https://devhud.api.delino.io",
+    inputRef: { current: null },
+    onApiOrigin: vi.fn(async () => undefined),
+    onDeleteConfirmationOpenChange: vi.fn(),
+    mobile: false,
+    onOpenExternal: vi.fn(),
+    externalMessage: null,
+    externalMessageText: "",
+    externalMessageIsError: false,
+    ...overrides,
+  });
+
+  it.each(["starting", "signed-out", "guest", "authenticated", "blocked", "deletion-pending", "error"] as const)("keeps the Account hierarchy and API origin available for %s", (status) => {
+    identity = identityWith({ status, account: status === "authenticated" ? ({ displayName: "Fixture User", email: "fixture@example.com" } as never) : null });
+    render(<AccountIdentity {...accountProps()} />);
+
+    const sections = Array.from(document.querySelectorAll<HTMLElement>(".account-section")).map((section) => section.getAttribute("aria-label"));
+    expect(sections.slice(0, 4)).toEqual([messages.en.session, messages.en.apiOrigin, messages.en.security, messages.en.externalTools]);
+    expect(screen.getByRole("textbox", { name: messages.en.apiOrigin })).toBeTruthy();
+    expect(Boolean(screen.queryByLabelText(messages.en.dangerZone))).toBe(status === "authenticated");
+  });
+
+  it("confirms origin changes and keeps external targets platform-scoped", async () => {
+    const onApiOrigin = vi.fn(async () => undefined);
+    const onOpenExternal = vi.fn();
+    render(<AccountIdentity {...accountProps({ onApiOrigin, onOpenExternal })} />);
+    const origin = screen.getByRole("textbox", { name: messages.en.apiOrigin });
+    fireEvent.change(origin, { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    expect(onApiOrigin).not.toHaveBeenCalled();
+    fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
+    expect(onApiOrigin).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).getByRole("button", { name: messages.en.applyApiOrigin }));
+    await waitFor(() => expect(onApiOrigin).toHaveBeenCalledWith("https://custom.example"));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.githubCreateFinePat }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.githubCreateClassicPat }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.issue }));
+    expect(onOpenExternal).toHaveBeenCalledTimes(3);
+
+    cleanup();
+    render(<AccountIdentity {...accountProps({ mobile: true, onOpenExternal })} />);
+    expect(screen.queryByRole("button", { name: messages.en.issue })).toBeNull();
+    expect(screen.getByRole("button", { name: messages.en.githubCreateFinePat })).toBeTruthy();
+  });
+
+  it("uses the shared alert dialog for Delete focus containment and restoration", async () => {
+    identity = identityWith({ status: "authenticated", account: { displayName: "Fixture User", email: "fixture@example.com" } as never });
+    render(<AccountIdentity {...accountProps()} />);
+    const trigger = screen.getByRole("button", { name: messages.en.deleteAccount });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle });
+    const cancel = within(dialog).getByRole("button", { name: messages.en.cancel });
+    const confirm = within(dialog).getByRole("button", { name: messages.en.deleteAccount });
+    await waitFor(() => expect(document.activeElement).toBe(cancel));
+    fireEvent.keyDown(cancel, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(confirm);
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
   it("retries a failed Native Messaging configuration publication", async () => {
     vi.useFakeTimers();
     nativeMessagingMock.configure.mockRejectedValueOnce(new Error("temporary bridge failure")).mockResolvedValue(undefined);
@@ -126,7 +192,7 @@ describe("identity UI", () => {
     const continueLocally = vi.fn();
     identity = identityWith({ status: "error", continueLocally });
 
-    render(<AccountIdentity copy={messages.en} apiOrigin="https://devhud.api.delino.io" inputRef={{ current: null }} onApiOrigin={vi.fn(async () => undefined)} onDeleteConfirmationOpenChange={vi.fn()} />);
+    render(<AccountIdentity copy={messages.en} apiOrigin="https://devhud.api.delino.io" inputRef={{ current: null }} onApiOrigin={vi.fn(async () => undefined)} onDeleteConfirmationOpenChange={vi.fn()} mobile={false} onOpenExternal={vi.fn()} externalMessage={null} externalMessageText="" externalMessageIsError={false} />);
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.continueLocally }));
     expect(continueLocally).toHaveBeenCalledOnce();
