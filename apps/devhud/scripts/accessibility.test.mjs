@@ -224,9 +224,10 @@ test("the UI foundation encodes the semantic, sizing, and responsive contracts",
   assert.match(styles, /@media \(max-width:700px\)/u);
 });
 
-test("Settings uses a sticky desktop contents list and focus-managed mobile details", () => {
+test("Settings uses a sticky wide desktop contents list, stacked narrow desktop layout, and focus-managed mobile details", () => {
   assert.match(styles, /\.settings-desktop\{display:grid;grid-template-columns:minmax\(220px,300px\) minmax\(0,1fr\)/u);
   assert.match(styles, /\.settings-toc\{position:sticky;inset-block-start:var\(--space-3\)/u);
+  assert.match(styles, /@media\(max-width:700px\)\{\.settings-desktop\{grid-template-columns:minmax\(0,1fr\)\}\.settings-toc\{position:static;inset-block-start:auto;max-height:none;overflow:visible\}/u);
   assert.match(styles, /\.settings-panel\[hidden\]\{display:none\}/u);
   assert.match(identityUi, /hidden=\{!active\} inert=\{!active\}/u);
   assert.match(identityUi, /panelRefs\.current\[id\]\?\.querySelector<HTMLElement>\("h3"\)\?\.focus\(\)/u);

@@ -121,5 +121,5 @@ select,input,textarea { width:100%; min-height:var(--target-min); border:1px sol
 .settings-panel .native-setting,.settings-panel .github-settings,.settings-panel .desktop-updater{max-width:none;margin-top:0;padding-top:0;border-top:0}
 .settings-mobile{display:grid;min-width:0}.settings-index{display:grid;gap:var(--space-1);padding:var(--space-1)}
 @media(max-width:800px){.settings-desktop{grid-template-columns:minmax(180px,240px) minmax(0,1fr);gap:var(--space-2)}.settings-toc .data-row{grid-template-columns:auto minmax(0,1fr)}.settings-toc .data-row-content>span{display:none}}
-@media(max-width:700px){.settings-panel{padding:var(--space-2)}.settings-panel>.ui-button:first-child{margin-bottom:var(--space-2)}}
+@media(max-width:700px){.settings-desktop{grid-template-columns:minmax(0,1fr)}.settings-toc{position:static;inset-block-start:auto;max-height:none;overflow:visible}.settings-panel{padding:var(--space-2)}.settings-panel>.ui-button:first-child{margin-bottom:var(--space-2)}}
 @media(prefers-contrast:more){.settings-toc .data-row[aria-current="page"]{outline:2px solid currentColor;outline-offset:-4px}}
