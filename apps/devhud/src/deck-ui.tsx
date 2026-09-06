@@ -67,26 +67,36 @@ function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["gith
   const saveKey = value?.id ?? `creation:${creationSession}`;
   const initial = useMemo(() => createDeckEditorDraft(value, profiles), [sourceKey]);
   const [state, setState] = useState<{ readonly sourceKey: string; readonly draft: DeckEditorDraft }>(() => ({ sourceKey, draft: initial }));
+  const [creationDrafts, setCreationDrafts] = useState<ReadonlyMap<number, DeckEditorDraft>>(() => new Map());
   const [pendingSaves, setPendingSaves] = useState<ReadonlySet<string>>(() => new Set());
   const [saveFailures, setSaveFailures] = useState<ReadonlyMap<string, DeckFailure>>(() => new Map());
-  const draft = state.sourceKey === sourceKey ? state.draft : initial;
+  const creationDraft = value === null ? creationDrafts.get(creationSession) : undefined;
+  const draft = creationDraft ?? (state.sourceKey === sourceKey ? state.draft : initial);
   const saving = pendingSaves.has(saveKey);
   const saveFailure = saveFailures.get(saveKey) ?? null;
   useEffect(() => {
     setState((current) => current.sourceKey === sourceKey ? current : { sourceKey, draft: initial });
   }, [initial, sourceKey]);
   const update = useCallback((change: (current: DeckEditorDraft) => DeckEditorDraft) => {
-    setState((current) => ({ sourceKey, draft: change(current.sourceKey === sourceKey ? current.draft : initial) }));
-  }, [initial, sourceKey]);
+    const next = change(draft);
+    setState({ sourceKey, draft: next });
+    if (value === null) setCreationDrafts((current) => new Map(current).set(creationSession, next));
+  }, [creationSession, draft, sourceKey, value]);
   const reset = useCallback(() => {
     setState({ sourceKey, draft: initial });
+    if (value === null) setCreationDrafts((current) => {
+      if (!current.has(creationSession)) return current;
+      const next = new Map(current);
+      next.delete(creationSession);
+      return next;
+    });
     setSaveFailures((current) => {
       if (!current.has(saveKey)) return current;
       const next = new Map(current);
       next.delete(saveKey);
       return next;
     });
-  }, [initial, saveKey, sourceKey]);
+  }, [creationSession, initial, saveKey, sourceKey, value]);
   const beginSave = useCallback(() => {
     setPendingSaves((current) => new Set(current).add(saveKey));
     setSaveFailures((current) => {
@@ -103,10 +113,18 @@ function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["gith
       next.delete(saveKey);
       return next;
     });
-    if (failure === null) return;
+    if (failure === null) {
+      if (value === null) setCreationDrafts((current) => {
+        if (!current.has(creationSession)) return current;
+        const next = new Map(current);
+        next.delete(creationSession);
+        return next;
+      });
+      return;
+    }
     setSaveFailures((current) => new Map(current).set(saveKey, failure));
-  }, [saveKey]);
-  return { sourceKey, draft, saving, saveFailure, update, reset, beginSave, finishSave };
+  }, [creationSession, saveKey, value]);
+  return { sourceKey, draft, saving, saveFailure, hasFailedCreationSession: saveFailures.has(`creation:${creationSession}`), update, reset, beginSave, finishSave };
 }
 
 class DeckPollingCancelledError extends Error {}
@@ -563,11 +581,15 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const widgetEnableTrigger = useRef<HTMLButtonElement>(null);
   const widgetDisableButton = useRef<HTMLButtonElement>(null);
   const mobileSettingsButton = useRef<HTMLButtonElement>(null);
+  const desktopConfigurationHadFocus = useRef(false);
+  const missingLinkedDeckReturnButton = useRef<HTMLButtonElement>(null);
+  const missingLinkedDeckFocusPending = useRef(false);
   const mobile = shellLayout === ShellLayout.Mobile;
   const previousMobile = useRef(mobile);
   const linkedDeckAvailable = selectedDeckId !== null && identity.settings.decks.some((item) => item.id === selectedDeckId);
   const previousLinkedDeck = useRef({ id: selectedDeckId, available: linkedDeckAvailable });
   const missingLinkedDeck = selectedDeckId !== null && !linkedDeckAvailable;
+  const previousMissingLinkedDeck = useRef(missingLinkedDeck);
   const noGitHubProfiles = identity.settings.github.profiles.length === 0;
   const selectedDeck = missingLinkedDeck ? null : identity.settings.decks.find((item) => item.id === selected) ?? identity.settings.decks[0] ?? null;
   const isCreating = creating || selectedDeck === null;
@@ -588,6 +610,21 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     setSettingsOpen(false);
   }, [linkedDeckAvailable, selectedDeckId]);
   useEffect(() => {
+    const wasMissingLinkedDeck = previousMissingLinkedDeck.current;
+    previousMissingLinkedDeck.current = missingLinkedDeck;
+    if (!missingLinkedDeck || wasMissingLinkedDeck || !mobile || !settingsOpen) return;
+    settingsSheetGeneration.current += 1;
+    sheetReturnFocus.current = null;
+    missingLinkedDeckFocusPending.current = true;
+    setSettingsOpen(false);
+  }, [missingLinkedDeck, mobile, settingsOpen]);
+  useEffect(() => {
+    if (!missingLinkedDeck || !missingLinkedDeckFocusPending.current) return;
+    missingLinkedDeckFocusPending.current = false;
+    const animation = requestAnimationFrame(() => missingLinkedDeckReturnButton.current?.focus());
+    return () => cancelAnimationFrame(animation);
+  }, [missingLinkedDeck]);
+  useEffect(() => {
     if (widgetConfirmationDeckId !== null && (widgetConfirmationDeck === null || missingLinkedDeck || noGitHubProfiles)) {
       widgetConfirmationFocusPending.current = !missingLinkedDeck && !noGitHubProfiles && (!mobile || settingsOpen);
       setWidgetConfirmationDeckId(null);
@@ -604,6 +641,13 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   useEffect(() => {
     const wasMobile = previousMobile.current;
     previousMobile.current = mobile;
+    if (!wasMobile && mobile) {
+      const shouldFocusSettings = desktopConfigurationHadFocus.current && !widgetConfirmationOpen;
+      desktopConfigurationHadFocus.current = false;
+      if (!shouldFocusSettings) return;
+      const animation = requestAnimationFrame(() => mobileSettingsButton.current?.focus());
+      return () => cancelAnimationFrame(animation);
+    }
     if (!wasMobile || mobile || !settingsOpen || widgetConfirmationOpen) return;
     // The Sheet unmounts on this layout move, so its opener cannot restore focus into the desktop editor.
     const animation = requestAnimationFrame(() => {
@@ -638,13 +682,13 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
       void polling.clear(value).catch(() => undefined);
     } catch { setDeleteFailedDeckId(value.id); }
   };
-  if (missingLinkedDeck) return <section className="deck" aria-labelledby="deck-title"><h2 id="deck-title">{copy.deckTitle}</h2><p role="alert">{copy.deckNotFound}</p><button type="button" onClick={onDismissMissingLink}>{copy.deckReturnToList}</button></section>;
+  if (missingLinkedDeck) return <section className="deck" aria-labelledby="deck-title"><h2 id="deck-title">{copy.deckTitle}</h2><p role="alert">{copy.deckNotFound}</p><button ref={missingLinkedDeckReturnButton} type="button" onClick={onDismissMissingLink}>{copy.deckReturnToList}</button></section>;
   if (noGitHubProfiles) return <>{polling.online ? <EmptyState copy={copy} /> : <OfflineState copy={copy} />}<p role="status">{copy.deckNoProfiles}</p></>;
   const creationDisabled = identity.readOnly || identity.settings.decks.length >= DeckLimit;
   const createDisabled = creationDisabled || pendingCreation;
   const openCreate = () => {
     if (pendingCreation) return;
-    if (!isCreating) setCreationSession((current) => current + 1);
+    if (!isCreating && !editorDraft.hasFailedCreationSession) setCreationSession((current) => current + 1);
     editorGeneration.current += 1;
     onDismissMissingLink?.();
     setCreating(true);
@@ -655,6 +699,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     }
   };
   const selectDeck = (deckId: string) => {
+    if (isCreating && !pendingCreation) editorDraft.reset();
     editorGeneration.current += 1;
     onDismissMissingLink?.();
     setSelected(deckId);
@@ -711,7 +756,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
           {!polling.online && refreshState.cache === null ? <OfflineState copy={copy} /> : refreshState.loading && refreshState.cache === null ? <LoadingState copy={copy} /> : refreshState.failure !== null && refreshState.cache === null ? <StatePanel eyebrow={copy.error} title={failureCopy(copy, refreshState.failure)} summary={copy.deckNoCachedResults} role="alert" tone="danger" headingLevel={3} /> : <DeckResults copy={copy} groupBy={deck.display.groupBy} results={results} draftsFiltered={draftsFiltered} successfulEmpty={refreshState.cache !== null && refreshState.cache.lastSuccessfulAt !== null && refreshState.failure === null && cachedResults.length === 0} />}
         </> : <StatePanel eyebrow={copy.deck} title={copy.deckCreate} summary={copy.deckNoDecks} tone="info" headingLevel={3} actions={<Button variant="primary" disabled={createDisabled} onClick={openCreate}>{copy.deckCreate}</Button>} />}
       </div>
-      {!mobile && <aside className="deck-configuration-panel" aria-label={copy.deckConfiguration} inert={widgetConfirmationOpen || undefined}>{configuration}</aside>}
+      {!mobile && <aside className="deck-configuration-panel" aria-label={copy.deckConfiguration} inert={widgetConfirmationOpen || undefined} onFocusCapture={() => { desktopConfigurationHadFocus.current = true; }} onBlurCapture={(event) => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) desktopConfigurationHadFocus.current = false; }}>{configuration}</aside>}
     </div>
     {mobile && <Sheet open={settingsOpen} inert={widgetConfirmationOpen} title={isCreating ? copy.deckCreate : copy.deckConfiguration} backLabel={copy.back} returnFocusRef={sheetReturnFocus} backButtonRef={settingsSheetBackButton} onClose={closeSettings}>{configuration}</Sheet>}
     {widgetConfirmationDeck && <WidgetPrivacyConfirmation cache={widgetConfirmationRefreshState.cache} cacheProfileRef={widgetConfirmationRefreshState.cacheProfileRef} copy={copy} deck={widgetConfirmationDeck} failure={widgetConfirmationRefreshState.failure} open={widgetConfirmationOpen} enableTriggerRef={widgetEnableTrigger} disableButtonRef={widgetDisableButton} fallbackFocusRef={mobileSettingsButton} onOpenChange={(open) => setWidgetConfirmationDeckId(open ? widgetConfirmationDeck.id : null)} />}
