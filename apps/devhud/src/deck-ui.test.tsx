@@ -267,6 +267,26 @@ describe("Deck surface", () => {
     expect(sheet.contains(document.activeElement)).toBe(true);
   });
 
+  it("closes mobile settings after Deck deletion and restores focus to Create", async () => {
+    setViewport(390);
+    const replaceSettings = vi.fn(async () => true);
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    const create = screen.getAllByRole("button", { name: messages.en.deckCreate })[0]!;
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckDelete }));
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [] }), replaceSettings });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(create));
+  });
+
   it.each(["Back", "Escape"])("keeps a mobile Deck save failure visible when %s is requested during saving", async (dismissal) => {
     setViewport(390);
     let finishSave: (committed: boolean) => void = () => {};
@@ -469,6 +489,7 @@ describe("Deck surface", () => {
     render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} language="en" onModalConfirmationOpenChange={onModalConfirmationOpenChange} /></DeckPollingBoundary>);
 
     await screen.findByRole("button", { name: messages.en.widgetEnable });
+    expect(screen.getByRole("heading", { name: messages.en.widgetTitle, level: 4 })).toBeTruthy();
     await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(false));
     fireEvent.click(screen.getByRole("button", { name: messages.en.widgetEnable }));
     expect(screen.getByRole("alertdialog").textContent).toContain(messages.en.widgetPrivacyWarning);

@@ -525,6 +525,8 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const editorGeneration = useRef(0);
   const createdDeckToFocus = useRef<string | null>(null);
   const createdDeckSaveButton = useRef<HTMLButtonElement>(null);
+  const createDeckButton = useRef<HTMLButtonElement>(null);
+  const sheetReturnFocus = useRef<HTMLElement>(null);
   const mobile = shellLayout === ShellLayout.Mobile;
   const linkedDeckAvailable = selectedDeckId !== null && identity.settings.decks.some((item) => item.id === selectedDeckId);
   const previousLinkedDeck = useRef({ id: selectedDeckId, available: linkedDeckAvailable });
@@ -560,6 +562,10 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     try {
       const committed = await identity.replaceSettings((current) => ({ ...current, decks: current.decks.filter((item) => item.id !== value.id) }));
       if (!committed) { setDeleteFailedDeckId(value.id); return; }
+      if (mobile && settingsOpen) {
+        sheetReturnFocus.current = createDeckButton.current;
+        setSettingsOpen(false);
+      }
       void widgetAccess.disable(value.id).catch(() => undefined);
       void polling.clear(value).catch(() => undefined);
     } catch { setDeleteFailedDeckId(value.id); }
@@ -573,7 +579,10 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     editorGeneration.current += 1;
     onDismissMissingLink?.();
     setCreating(true);
-    if (mobile) setSettingsOpen(true);
+    if (mobile) {
+      sheetReturnFocus.current = null;
+      setSettingsOpen(true);
+    }
   };
   const selectDeck = (deckId: string) => {
     editorGeneration.current += 1;
@@ -615,9 +624,9 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   return <section className="deck" aria-label={copy.deckTitle}>
     <PageHeader title={copy.deckTitle} summary={copy.deckSummary} actions={<div className="deck-workspace-controls">
       {selectedDeck && <Field label={copy.deckSelected} inputId="deck-selected"><select id="deck-selected" value={isCreating ? "" : selectedDeck.id} onChange={(event) => event.target.value === "" ? openCreate() : selectDeck(event.target.value)}>{isCreating && <option value="">{copy.deckCreate}</option>}{identity.settings.decks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>}
-      <Button variant="primary" disabled={createDisabled} onClick={openCreate}>{copy.deckCreate}</Button>
+      <Button ref={createDeckButton} variant="primary" disabled={createDisabled} onClick={openCreate}>{copy.deckCreate}</Button>
       {deck && <Button disabled={refreshState.loading || !polling.canPoll} onClick={() => void polling.refresh(deck.id, true)}>{copy.deckRefresh}</Button>}
-      {mobile && deck && <Button onClick={() => setSettingsOpen(true)}>{copy.deckSettings}</Button>}
+      {mobile && deck && <Button onClick={() => { sheetReturnFocus.current = null; setSettingsOpen(true); }}>{copy.deckSettings}</Button>}
     </div>} />
     <div className="deck-workspace-layout">
       <div className="deck-workspace">
@@ -627,7 +636,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
       </div>
       {!mobile && <aside className="deck-configuration-panel" aria-label={copy.deckConfiguration}>{configuration}</aside>}
     </div>
-    {mobile && <Sheet open={settingsOpen} title={isCreating ? copy.deckCreate : copy.deckConfiguration} backLabel={copy.back} onClose={closeSettings}>{configuration}</Sheet>}
+    {mobile && <Sheet open={settingsOpen} title={isCreating ? copy.deckCreate : copy.deckConfiguration} backLabel={copy.back} returnFocusRef={sheetReturnFocus} onClose={closeSettings}>{configuration}</Sheet>}
   </section>;
 }
 
@@ -711,9 +720,9 @@ function WidgetAccess({ cache, cacheProfileRef, copy, deck, failure, onConfirmat
   };
 
   if (!widgetAccess.supported) return null;
-  return <section className="widget-access" aria-labelledby={`widget-title-${deck.id}`}><h3 id={`widget-title-${deck.id}`}>{copy.widgetTitle}</h3>
+  return <section className="widget-access" aria-labelledby={`widget-title-${deck.id}`}><h4 id={`widget-title-${deck.id}`}>{copy.widgetTitle}</h4>
     {enabled ? <><p role="status">{copy.widgetEnabled}</p><button ref={disableButton} type="button" disabled={busy} onClick={() => void disable()}>{copy.widgetDisable}</button></> : <button ref={enableTrigger} type="button" disabled={busy || profile === undefined} onClick={() => setConfirming(true)}>{copy.widgetEnable}</button>}
-    {confirming && <section ref={dialog} className="widget-privacy" role="alertdialog" aria-modal="true" aria-labelledby={`widget-privacy-title-${deck.id}`} aria-describedby={`widget-privacy-warning-${deck.id}`} tabIndex={-1} onKeyDown={trapDialogFocus}><h4 id={`widget-privacy-title-${deck.id}`}>{copy.widgetPrivacyTitle}</h4><p id={`widget-privacy-warning-${deck.id}`}>{copy.widgetPrivacyWarning}</p><div className="actions"><button type="button" disabled={busy} onClick={() => void enable()}>{copy.widgetPrivacyConfirm}</button><button ref={cancelButton} type="button" disabled={busy} onClick={closeConfirmation}>{copy.widgetPrivacyCancel}</button></div></section>}
+    {confirming && <section ref={dialog} className="widget-privacy" role="alertdialog" aria-modal="true" aria-labelledby={`widget-privacy-title-${deck.id}`} aria-describedby={`widget-privacy-warning-${deck.id}`} tabIndex={-1} onKeyDown={trapDialogFocus}><h5 id={`widget-privacy-title-${deck.id}`}>{copy.widgetPrivacyTitle}</h5><p id={`widget-privacy-warning-${deck.id}`}>{copy.widgetPrivacyWarning}</p><div className="actions"><button type="button" disabled={busy} onClick={() => void enable()}>{copy.widgetPrivacyConfirm}</button><button ref={cancelButton} type="button" disabled={busy} onClick={closeConfirmation}>{copy.widgetPrivacyCancel}</button></div></section>}
     {failed && <p role="alert">{copy.widgetActionFailed}</p>}
   </section>;
 }
