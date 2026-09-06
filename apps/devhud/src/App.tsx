@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { messages, type Copy } from "./localization";
 import { appendDiagnosticEvent, captureDiagnosticEvent, readDiagnosticCorrelations, readDiagnosticEvents, recentDiagnosticCorrelationIds } from "./diagnostics";
@@ -35,14 +35,19 @@ type ExternalMessage = "opened" | "failed" | "invalid-api-origin";
 
 function ShellNavigationItem({ active, compact, icon: Icon, label, selectedItemRef, tooltipId, onActivate }: { readonly active: boolean; readonly compact: boolean; readonly icon: ComponentType<IconProps>; readonly label: string; readonly selectedItemRef: RefObject<HTMLButtonElement | null>; readonly tooltipId: string; readonly onActivate: () => void }) {
   const trigger = useRef<HTMLButtonElement>(null);
+  const tooltip = useRef<HTMLSpanElement>(null);
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
-  const [tooltipPosition, setTooltipPosition] = useState<CSSProperties | null>(null);
   const tooltipRequested = compact && (focused || hovered);
   const positionTooltip = useCallback(() => {
     const bounds = trigger.current?.getBoundingClientRect();
-    if (!bounds) return;
-    setTooltipPosition({ insetBlockStart: bounds.top + bounds.height / 2, insetInlineStart: bounds.right + 12 });
+    const tooltipElement = tooltip.current;
+    if (!bounds || !tooltipElement) return;
+    // Packaged CSP rejects generated style attributes and cssText. Individual
+    // CSSOM property assignments keep measured geometry dynamic without them.
+    tooltipElement.style.setProperty("inset-block-start", `${bounds.top + bounds.height / 2}px`);
+    tooltipElement.style.setProperty("inset-inline-start", `${bounds.right + 12}px`);
+    tooltipElement.dataset.visible = "true";
   }, []);
 
   useEffect(() => {
@@ -53,25 +58,28 @@ function ShellNavigationItem({ active, compact, icon: Icon, label, selectedItemR
     };
   }, [active, selectedItemRef]);
   useEffect(() => {
-    if (!tooltipRequested) return;
+    if (!tooltipRequested) {
+      tooltip.current?.removeAttribute("data-visible");
+      return;
+    }
     positionTooltip();
     const animation = requestAnimationFrame(positionTooltip);
     addEventListener("resize", positionTooltip);
     addEventListener("scroll", positionTooltip, true);
     return () => {
+      tooltip.current?.removeAttribute("data-visible");
       cancelAnimationFrame(animation);
       removeEventListener("resize", positionTooltip);
       removeEventListener("scroll", positionTooltip, true);
     };
   }, [positionTooltip, tooltipRequested]);
 
-  const tooltipVisible = tooltipRequested && tooltipPosition !== null;
   return <>
     <button ref={trigger} className="shell-nav-item" aria-label={label} aria-describedby={compact ? tooltipId : undefined} aria-current={active ? "page" : undefined} onClick={onActivate} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}>
       <Icon />
       {!compact && <span>{label}</span>}
     </button>
-    {compact && createPortal(<span id={tooltipId} className="nav-tooltip rail-nav-tooltip" role="tooltip" data-visible={tooltipVisible ? "true" : undefined} style={tooltipPosition ?? undefined}>{label}</span>, document.body)}
+    {compact && createPortal(<span ref={tooltip} id={tooltipId} className="nav-tooltip rail-nav-tooltip" role="tooltip">{label}</span>, document.body)}
   </>;
 }
 

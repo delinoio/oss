@@ -922,13 +922,18 @@ describe("responsive application shell", () => {
     const tooltip = document.getElementById(destination.getAttribute("aria-describedby") ?? "");
     expect(tooltip).toBeTruthy();
     expect(navigation.contains(tooltip)).toBe(false);
+    const bounds = vi.spyOn(destination, "getBoundingClientRect").mockReturnValue({ x: 8, y: 40, width: 44, height: 44, top: 40, right: 52, bottom: 84, left: 8, toJSON: () => ({}) });
 
     fireEvent.pointerEnter(destination);
     await waitFor(() => expect(tooltip?.dataset.visible).toBe("true"));
+    expect(tooltip?.style.getPropertyValue("inset-block-start")).toBe("62px");
+    expect(tooltip?.style.getPropertyValue("inset-inline-start")).toBe("64px");
     fireEvent.pointerLeave(destination);
     await waitFor(() => expect(tooltip?.dataset.visible).toBeUndefined());
+    bounds.mockReturnValue({ x: 8, y: 84, width: 44, height: 44, top: 84, right: 52, bottom: 128, left: 8, toJSON: () => ({}) });
     fireEvent.focus(destination);
     await waitFor(() => expect(tooltip?.dataset.visible).toBe("true"));
+    expect(tooltip?.style.getPropertyValue("inset-block-start")).toBe("106px");
     fireEvent.blur(destination);
     await waitFor(() => expect(tooltip?.dataset.visible).toBeUndefined());
   });

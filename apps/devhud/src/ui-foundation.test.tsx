@@ -54,6 +54,7 @@ describe("DevHud UI foundation", () => {
 
     unmount();
     expect(disconnect).toHaveBeenCalledOnce();
+    expect(shell?.style.getPropertyValue("--mobile-bottom-navigation-height")).toBe("");
   });
 
   it("contains dialog focus, closes with Escape, and restores the opener", async () => {

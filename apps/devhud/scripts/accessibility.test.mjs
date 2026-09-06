@@ -242,6 +242,14 @@ test("the shell exposes a localized skip target and named rail tooltips", () => 
   assert.match(styles, /\.rail-nav-tooltip\[data-visible="true"\]\s*\{[^}]*opacity:1;[^}]*visibility:visible/u);
 });
 
+test("measured shell geometry avoids CSP-blocked React style values", () => {
+  assert.doesNotMatch(app, /style=\{tooltipPosition/u);
+  assert.match(app, /tooltipElement\.style\.setProperty\("inset-block-start"/u);
+  assert.match(app, /tooltipElement\.style\.setProperty\("inset-inline-start"/u);
+  assert.doesNotMatch(foundation, /const shellStyle/u);
+  assert.match(foundation, /shellElement\.style\.setProperty\("--mobile-bottom-navigation-height"/u);
+});
+
 test("mobile dialogs subtract their safe-area-aware top offset from the viewport", () => {
   assert.match(styles, /\.ui-dialog\s*\{[^}]*max-height:calc\(100vh - 56px - env\(safe-area-inset-top\)\);[^}]*margin-top:calc\(40px \+ env\(safe-area-inset-top\)\)/u);
 });
