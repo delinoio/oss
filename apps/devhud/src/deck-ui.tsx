@@ -589,7 +589,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   }, [linkedDeckAvailable, selectedDeckId]);
   useEffect(() => {
     if (widgetConfirmationDeckId !== null && (widgetConfirmationDeck === null || missingLinkedDeck || noGitHubProfiles)) {
-      widgetConfirmationFocusPending.current = !missingLinkedDeck && !noGitHubProfiles && mobile && settingsOpen;
+      widgetConfirmationFocusPending.current = !missingLinkedDeck && !noGitHubProfiles && (!mobile || settingsOpen);
       setWidgetConfirmationDeckId(null);
       return;
     }

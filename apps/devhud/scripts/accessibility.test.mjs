@@ -276,6 +276,7 @@ test("Deck keeps configuration in the desktop panel and a named mobile sheet", (
   assert.match(deckUi, /sheetReturnFocus\.current = createDeckButton\.current;[\s\S]*setSettingsOpen\(false\)/u);
   assert.doesNotMatch(deckUi, /returnFocusRef=\{settingsTrigger\}/u);
   assert.match(styles, /\.deck-workspace-layout\s*\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(20rem,24rem\)/u);
+  assert.match(styles, /@media \(min-width:701px\) and \(max-width:1023px\) \{ \.deck-workspace-layout \{ grid-template-columns:minmax\(0,1fr\) minmax\(0,min\(24rem,42%\)\); \} \}/u);
   assert.match(styles, /\.deck-workspace-layout\s*\{\s*grid-template-columns:minmax\(0,1fr\);\s*\}/u);
 });
 
