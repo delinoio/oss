@@ -67,8 +67,8 @@ export function PageHeader({ eyebrow, title, summary, level = 2, actions }: { re
   </header>;
 }
 
-export function Card({ children, interactive = false, className, ...props }: HTMLAttributes<HTMLElement> & { readonly children: ReactNode; readonly interactive?: boolean }) {
-  return <section className={`ui-card${interactive ? " ui-card-interactive" : ""}${className ? ` ${className}` : ""}`} {...props}>{children}</section>;
+export function Card({ children, interactive = false, className, ref, ...props }: HTMLAttributes<HTMLElement> & { readonly children: ReactNode; readonly interactive?: boolean; readonly ref?: Ref<HTMLElement> }) {
+  return <section ref={ref} className={`ui-card${interactive ? " ui-card-interactive" : ""}${className ? ` ${className}` : ""}`} {...props}>{children}</section>;
 }
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
@@ -106,9 +106,9 @@ export function StatePanel({ eyebrow, title, summary, role = "status", tone = "i
   </section>;
 }
 
-export function DataRow({ icon, title, description, trailing, onClick, ariaCurrent }: { readonly icon?: ReactNode; readonly title: ReactNode; readonly description?: ReactNode; readonly trailing?: ReactNode; readonly onClick?: () => void; readonly ariaCurrent?: "page" }) {
+export function DataRow({ icon, title, description, trailing, onClick, ariaCurrent, ref }: { readonly icon?: ReactNode; readonly title: ReactNode; readonly description?: ReactNode; readonly trailing?: ReactNode; readonly onClick?: () => void; readonly ariaCurrent?: "page"; readonly ref?: Ref<HTMLButtonElement> }) {
   const content = <><span className="data-row-icon">{icon}</span><span className="data-row-content"><strong>{title}</strong>{description && <span>{description}</span>}</span>{trailing && <span className="data-row-trailing">{trailing}</span>}</>;
-  if (onClick) return <button type="button" className="data-row" onClick={onClick} aria-current={ariaCurrent}>{content}</button>;
+  if (onClick) return <button ref={ref} type="button" className="data-row" onClick={onClick} aria-current={ariaCurrent}>{content}</button>;
   return <div className="data-row">{content}</div>;
 }
 

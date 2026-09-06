@@ -119,7 +119,7 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
   });
 
   return <section className="github-settings" aria-labelledby="github-settings-title">
-    <h3 id="github-settings-title">{copy.githubSetupTitle}</h3>
+    <h3 id="github-settings-title" tabIndex={-1}>{copy.githubSetupTitle}</h3>
     <p>{copy.githubSetupSummary}</p>
     <p className="notice">{copy.githubDirectSecurity}</p>
     <p>{copy.githubFineRecommendation}</p>

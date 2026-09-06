@@ -1,18 +1,17 @@
-import { createContext, use, useEffect, useEffectEvent, useId, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref } from "react";
-import type { Copy } from "./localization";
+import { createContext, use, useEffect, useEffectEvent, useId, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref } from "react";
+import type { Copy, SupportedLanguage } from "./localization";
 import { GitHubSettings, githubErrorCopy } from "./github-settings-ui.tsx";
 import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, readGitHubCredential, type GitHubProvider } from "./github-provider.ts";
-import { NativeBridgeError, NativeBridgeErrorCode, nativeBridge, type NativeBridgeV1, type NativeShortcutPermission, type NativeShortcutPlatform } from "./native-bridge.ts";
+import { NativeBridgeError, NativeBridgeErrorCode, nativeBridge, type NativeBridgeV1 } from "./native-bridge.ts";
 import { useIdentitySettings } from "./service-boundary";
-import { browserShell, LanguagePreference, PlatformCapability, normalizeApiOrigin, ThemePreference, type ExternalLinkTarget, type RuntimeCapabilities } from "./shell";
+import { browserShell, LanguagePreference, normalizeApiOrigin, ThemePreference, type ExternalLinkTarget, type RuntimeCapabilities } from "./shell";
 import { parseDevHudSettings, type DevHudSettingsV1 } from "./settings-contract";
 import type { SettingsDiffEntry } from "./settings-diff";
-import { inactiveDesktopShortcutBindings, ShortcutActionId, ShortcutContractError, ShortcutKey, ShortcutModifier, ShortcutValidationCode, availableShortcutActions, parseDesktopShortcutBindings, type ShortcutBinding } from "./shortcuts";
 import { findMappingOverlaps, type UrlRepositoryMapping } from "./url-mapping";
 import { R2Settings } from "./r2-settings-ui.tsx";
-import { LocalAgentSettings } from "./local-agent-settings-ui.tsx";
-import { Button, Card, Field, PageHeader } from "./ui-foundation";
-import { SearchIcon } from "./ui-icons";
+import { SettingsSectionId, availableSettingsSections, type SettingsSectionCapabilities } from "./settings-sections";
+import { ArrowRightIcon } from "./ui-icons";
+import { Button, Card, DataRow, Field, PageHeader, StatusBadge } from "./ui-foundation";
 
 interface ApiEditorProps {
   readonly copy: Copy;
@@ -223,208 +222,120 @@ function UrlMappingDraftStateProvider({ children, identity, isCurrentScope }: { 
   return <UrlMappingDraftContext value={{ draft, setDraft, setBaselineMappings, markDraftDirty, invalid, setInvalid, saved, setSaved, dirty, saving, setSaving, priorityDrafts, setPriorityDrafts, baseRevision, credentialOperationPending, runCredentialOperation, isCurrentScope, reset }}>{children}</UrlMappingDraftContext>;
 }
 
-export function SynchronizedSettingsBoundary(props: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly onModalConfirmationOpenChange?: (open: boolean) => void; readonly showNativeShortcuts?: boolean; readonly showLocalAgents?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities; readonly NativeMessagingSettings?: ComponentType<{ readonly copy: Copy }> }) {
+export interface SettingsSectionContributions {
+  readonly Shortcuts?: ComponentType<{ readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly capabilities: RuntimeCapabilities }>;
+  readonly LocalAgents?: ComponentType<{ readonly copy: Copy; readonly bridge: NativeBridgeV1 }>;
+  readonly Updates?: ComponentType<{ readonly bridge: NativeBridgeV1; readonly language: SupportedLanguage; readonly onApprovalOpenChange?: (open: boolean) => void }>;
+}
+
+interface SettingsBoundaryProps {
+  readonly copy: Copy;
+  readonly bridge?: NativeBridgeV1;
+  readonly githubProvider?: GitHubProvider;
+  readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>;
+  readonly onModalConfirmationOpenChange?: (open: boolean) => void;
+  readonly onUpdaterApprovalOpenChange?: (open: boolean) => void;
+  readonly mobile?: boolean;
+  readonly language?: SupportedLanguage;
+  readonly shortcutCapabilities?: RuntimeCapabilities;
+  readonly sectionContributions?: SettingsSectionContributions;
+  readonly NativeMessagingSettings?: ComponentType<{ readonly copy: Copy }>;
+  readonly localAgentsAvailable?: boolean;
+  readonly notification?: { readonly permission: string; readonly failed: boolean; readonly onRequest: () => void };
+  readonly storeUpdates?: { readonly configured: boolean; readonly failed: boolean; readonly onOpen: () => void };
+}
+
+export function SynchronizedSettingsBoundary(props: SettingsBoundaryProps) {
   const mappingDraft = use(UrlMappingDraftContext);
   return mappingDraft === null ? <UrlMappingDraftProvider><SynchronizedSettingsContent {...props} /></UrlMappingDraftProvider> : <SynchronizedSettingsContent {...props} />;
 }
 
-function nativeShortcutsAreActive(status: { readonly error: ShortcutValidationCode | null; readonly permission: NativeShortcutPermission }) {
-  return status.error === null && status.permission === "available";
-}
-
-export function SynchronizedShortcutBoundary({ bridge = nativeBridge }: { readonly bridge?: NativeBridgeV1 }) {
-  const identity = useIdentitySettings();
-  const bindings = identity.settings.shortcuts.desktop;
-  useEffect(() => {
-    let active = true;
-    let unlisten: (() => void) | undefined;
-    void bridge.listen((event) => {
-      if (!active || event.version !== 1 || event.kind !== "shortcut-status") return;
-      identity.setActiveShortcutBindings(nativeShortcutsAreActive(event) && identity.shortcutHydrationReady ? event.bindings : inactiveDesktopShortcutBindings);
-    }).then((value) => {
-      if (!active) { value(); return; }
-      unlisten = value;
-    }).catch(() => {
-      // Status requests remain the fallback for hosts that do not emit events.
-    });
-    return () => { active = false; unlisten?.(); };
-  }, [bridge, identity.setActiveShortcutBindings, identity.shortcutHydrationReady]);
-  useEffect(() => {
-    let active = true;
-    if (!identity.shortcutHydrationReady) {
-      void bridge.request({ operation: "shortcuts.suspend" }).then((response) => {
-        if (active && response.kind === "shortcut-status") identity.setActiveShortcutBindings(inactiveDesktopShortcutBindings);
-      }).catch(() => {
-        // A pre-bridge host cannot suspend matching while hydration is pending.
-      });
-      return () => { active = false; };
-    }
-    void bridge.request({ operation: "shortcuts.apply", bindings }).then(async (response) => {
-      if (!active || response.kind !== "shortcut-status") return;
-      if (nativeShortcutsAreActive(response)) {
-        identity.setActiveShortcutBindings(response.bindings);
-        return;
-      }
-      if (response.error !== ShortcutValidationCode.Reserved) {
-        identity.setActiveShortcutBindings(inactiveDesktopShortcutBindings);
-        return;
-      }
-      identity.setActiveShortcutBindings(response.bindings);
-      const fallback = await bridge.request({ operation: "shortcuts.apply", bindings: response.bindings });
-      if (active && fallback.kind === "shortcut-status" && nativeShortcutsAreActive(fallback)) identity.setActiveShortcutBindings(fallback.bindings);
-    }).catch(() => {
-      // Native shortcut readiness must not make the shell itself fail to render.
-    });
-    return () => { active = false; };
-  }, [bindings, bridge, identity.setActiveShortcutBindings, identity.shortcutHydrationReady]);
-  return null;
-}
-
-const shortcutKeyLabels: Record<ShortcutKey, keyof Copy> = {
-  [ShortcutKey.K]: "shortcutKeyK", [ShortcutKey.Digit1]: "shortcutDigit1", [ShortcutKey.Digit2]: "shortcutDigit2", [ShortcutKey.Digit3]: "shortcutDigit3", [ShortcutKey.Digit4]: "shortcutDigit4", [ShortcutKey.Digit5]: "shortcutDigit5", [ShortcutKey.Space]: "shortcutSpace", [ShortcutKey.Tab]: "shortcutTab", [ShortcutKey.Q]: "shortcutKeyQ", [ShortcutKey.Delete]: "shortcutDelete", [ShortcutKey.Backspace]: "shortcutBackspace",
-};
-
-const shortcutLabels: Record<ShortcutActionId, keyof Copy> = {
-  [ShortcutActionId.CommandPalette]: "openPalette",
-  [ShortcutActionId.CaptureDisplay]: "captureDisplay",
-  [ShortcutActionId.CaptureActiveWindow]: "captureWindow",
-  [ShortcutActionId.CaptureAllDisplays]: "captureAll",
-  [ShortcutActionId.CaptureSelection]: "captureSelection",
-  [ShortcutActionId.CaptureToolbar]: "captureToolbar",
-};
-
-export function ShortcutPaletteTrigger({ copy, isMac, onOpen, triggerRef, compact = false }: { readonly copy: Copy; readonly isMac: boolean; readonly onOpen: () => void; readonly triggerRef: Ref<HTMLButtonElement>; readonly compact?: boolean }) {
-  const { activeShortcutBindings } = useIdentitySettings();
-  const binding = activeShortcutBindings[ShortcutActionId.CommandPalette];
-  const modifiers = binding.modifiers.map((modifier) => modifier === ShortcutModifier.RightPrimary ? isMac ? copy.rightCommandK.replace(/ K$/u, "") : copy.rightControlK.replace(/ K$/u, "") : modifier === ShortcutModifier.Shift ? copy.shortcutShift : copy.shortcutAlt);
-  const label = binding.enabled ? [...modifiers, copy[shortcutKeyLabels[binding.key]]].join(" + ") : copy.shortcutNone;
-  return <button ref={triggerRef} className="palette-trigger" onClick={onOpen} aria-label={copy.openPalette} aria-describedby={compact ? "palette-trigger-tooltip" : undefined}>{compact ? <><SearchIcon /><span id="palette-trigger-tooltip" className="nav-tooltip" role="tooltip">{copy.openPalette}</span></> : label}</button>;
-}
-
-function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onActiveBindings, onPersist }: { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly disabled: boolean; readonly capabilities: RuntimeCapabilities; readonly bindings: DevHudSettingsV1["shortcuts"]["desktop"]; readonly onActiveBindings: (bindings: DevHudSettingsV1["shortcuts"]["desktop"]) => void; readonly onPersist: (bindings: DevHudSettingsV1["shortcuts"]["desktop"]) => Promise<boolean> }) {
-  const [status, setStatus] = useState<{ platform: NativeShortcutPlatform; permission: NativeShortcutPermission; error: ShortcutValidationCode | null } | null>(null);
-  const [saving, setSaving] = useState(false);
-  useEffect(() => {
-    let active = true;
-    void bridge.request({ operation: "shortcuts.status" }).then((response) => {
-      if (active && response.kind === "shortcut-status") setStatus(response);
-    }).catch(() => {
-      // A settings refresh must not turn an otherwise usable shell into a shortcut error state.
-    });
-    return () => { active = false; };
-  }, [bindings, bridge]);
-  useEffect(() => {
-    let active = true;
-    let unlisten: (() => void) | undefined;
-    void bridge.listen((event) => {
-      if (active && event.version === 1 && event.kind === "shortcut-status") setStatus(event);
-    }).then((value) => {
-      if (!active) { value(); return; }
-      unlisten = value;
-    }).catch(() => {});
-    return () => { active = false; unlisten?.(); };
-  }, [bridge]);
-  const commit = async (action: ShortcutActionId, update: Partial<ShortcutBinding>) => {
-    if (saving) return;
-    const candidate = { ...bindings, [action]: { ...bindings[action], ...update } };
-    setSaving(true);
-    try {
-      const structured = parseDesktopShortcutBindings(candidate);
-      const result = await bridge.request({ operation: "shortcuts.stage", bindings: structured });
-      if (result.kind !== "shortcut-status" || result.error !== null) { if (result.kind === "shortcut-status") setStatus(result); return; }
-      try {
-        if (await onPersist(structured)) {
-          const committed = await bridge.request({ operation: "shortcuts.commit", bindings: structured });
-          if (committed.kind === "shortcut-status") setStatus(committed);
-          return;
-        }
-        const rollback = await bridge.request({ operation: "shortcuts.rollback" });
-        if (rollback.kind === "shortcut-status") setStatus(rollback);
-      } catch {
-        await bridge.request({ operation: "shortcuts.rollback" }).catch(() => {});
-        setStatus({ platform: result.platform, permission: result.permission, error: ShortcutValidationCode.RegistrationFailed });
-      }
-    } catch (error) {
-      setStatus((current) => ({ platform: current?.platform ?? "unsupported", permission: error instanceof NativeBridgeError ? "denied" : current?.permission ?? "unsupported", error: error instanceof ShortcutContractError ? error.code : error instanceof NativeBridgeError ? ShortcutValidationCode.PermissionDenied : ShortcutValidationCode.Malformed }));
-    } finally {
-      setSaving(false);
-    }
-  };
-  const requestPermission = async () => {
-    try {
-      const permission = await bridge.request({ operation: "shortcuts.request-permission" });
-      if (permission.kind !== "shortcut-status") return;
-      if (permission.permission !== "available") { setStatus(permission); return; }
-      const result = await bridge.request({ operation: "shortcuts.apply", bindings });
-      if (result.kind !== "shortcut-status") return;
-      setStatus(result);
-      if (nativeShortcutsAreActive(result)) { onActiveBindings(result.bindings); return; }
-      if (result.error !== ShortcutValidationCode.Reserved) { onActiveBindings(inactiveDesktopShortcutBindings); return; }
-      onActiveBindings(result.bindings);
-      const fallback = await bridge.request({ operation: "shortcuts.apply", bindings: result.bindings });
-      if (fallback.kind === "shortcut-status") {
-        setStatus(fallback);
-        if (nativeShortcutsAreActive(fallback)) onActiveBindings(fallback.bindings);
-      }
-    } catch (error) {
-      setStatus((current) => ({ platform: current?.platform ?? "unsupported", permission: error instanceof NativeBridgeError ? "denied" : current?.permission ?? "unsupported", error: error instanceof NativeBridgeError ? ShortcutValidationCode.PermissionDenied : ShortcutValidationCode.RegistrationFailed }));
-    }
-  };
-  const errorCopy = status?.error === ShortcutValidationCode.Conflict ? copy.shortcutConflict : status?.error === ShortcutValidationCode.Reserved ? copy.shortcutReserved : status?.error === ShortcutValidationCode.PermissionDenied ? copy.shortcutPermissionDenied : status?.error === ShortcutValidationCode.RegistrationFailed ? copy.shortcutRegistrationFailed : status?.error === ShortcutValidationCode.Malformed ? copy.shortcutMalformed : null;
-  const availableActions = availableShortcutActions(capabilities);
-  return <section className="native-setting" aria-label={copy.keyboardShortcuts}>
-    <h3>{copy.keyboardShortcuts}</h3>
-    {Object.values(ShortcutActionId).map((action) => {
-      const binding = bindings[action];
-      const unavailable = !availableActions.includes(action);
-      return <fieldset key={action} disabled={disabled || saving || unavailable}><legend>{copy[shortcutLabels[action]]}</legend>
-        {unavailable && <p className="notice">{copy.unavailable}</p>}
-        <label className="check"><input type="checkbox" checked={binding.enabled} onChange={(event) => void commit(action, { enabled: event.target.checked })} />{copy.shortcutEnabled}</label>
-        <span>{copy.shortcutModifier}</span>{([ShortcutModifier.RightPrimary, ShortcutModifier.Shift, ShortcutModifier.Alt] as const).map((modifier) => <label className="check" key={modifier}><input type="checkbox" checked={binding.modifiers.includes(modifier)} onChange={(event) => void commit(action, { modifiers: event.target.checked ? [...binding.modifiers, modifier] : binding.modifiers.filter((current) => current !== modifier) })} />{modifier === ShortcutModifier.RightPrimary ? copy.shortcutRightPrimary : modifier === ShortcutModifier.Shift ? copy.shortcutShift : copy.shortcutAlt}</label>)}
-        <label>{copy.shortcutKey}<select value={binding.key} onChange={(event) => void commit(action, { key: event.target.value as ShortcutKey })}>{Object.values(ShortcutKey).map((key) => <option key={key} value={key}>{copy[shortcutKeyLabels[key]]}</option>)}</select></label>
-      </fieldset>;
-    })}
-    {status?.platform === "macos" && <p className="notice">{copy.shortcutMacAccessibility} {copy.shortcutMacInputMonitoring}</p>}
-    {status?.platform === "x11" && <p className="notice">{copy.shortcutLinuxGuidance}</p>}
-    {(status?.permission === "denied" || status?.permission === "not-determined") && <button type="button" onClick={requestPermission}>{copy.shortcutRequestPermission}</button>}
-    {status?.permission === "unsupported" && <p className="notice">{copy.shortcutUnsupported}</p>}
-    {errorCopy && <p className="native-setting-error" role="alert">{errorCopy}</p>}
-  </section>;
-}
-
-function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvider, onOpenExternal = (target) => browserShell.openExternal(target, ""), onModalConfirmationOpenChange, showNativeShortcuts = false, showLocalAgents = showNativeShortcuts, shortcutCapabilities = { available: new Set<PlatformCapability>() }, NativeMessagingSettings }: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly onModalConfirmationOpenChange?: (open: boolean) => void; readonly showNativeShortcuts?: boolean; readonly showLocalAgents?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities; readonly NativeMessagingSettings?: ComponentType<{ readonly copy: Copy }> }) {
+function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvider, onOpenExternal = (target) => browserShell.openExternal(target, ""), onModalConfirmationOpenChange, onUpdaterApprovalOpenChange, mobile = false, language = "en", shortcutCapabilities = { available: new Set() }, sectionContributions, NativeMessagingSettings, localAgentsAvailable = false, notification, storeUpdates }: SettingsBoundaryProps) {
   const identity = useIdentitySettings();
   const mappingDraft = use(UrlMappingDraftContext);
   if (mappingDraft === null) throw new Error("URL mapping draft provider is required");
   const [actionError, setActionError] = useState(false);
+  const [selected, setSelected] = useState<SettingsSectionId>(SettingsSectionId.Appearance);
+  const [mobileDetail, setMobileDetail] = useState(false);
+  const panelRefs = useRef<Partial<Record<SettingsSectionId, HTMLElement | null>>>({});
+  const openerRefs = useRef<Partial<Record<SettingsSectionId, HTMLButtonElement | null>>>({});
+  const capabilities: SettingsSectionCapabilities = {
+    mobile,
+    shortcuts: sectionContributions?.Shortcuts !== undefined,
+    nativeMessaging: NativeMessagingSettings !== undefined,
+    localAgents: localAgentsAvailable && sectionContributions?.LocalAgents !== undefined,
+    notifications: notification !== undefined,
+    updates: mobile ? storeUpdates !== undefined : sectionContributions?.Updates !== undefined,
+  };
+  const sections = useMemo(() => availableSettingsSections(capabilities), [mobile, capabilities.shortcuts, capabilities.nativeMessaging, capabilities.localAgents, capabilities.notifications, capabilities.updates]);
+  const availableIds = sections.map(({ id }) => id);
+  const focusHeading = (id: SettingsSectionId) => requestAnimationFrame(() => panelRefs.current[id]?.querySelector<HTMLElement>("h3")?.focus());
+  const select = (id: SettingsSectionId) => {
+    setSelected(id);
+    if (mobile) setMobileDetail(true);
+    focusHeading(id);
+  };
+  const back = () => {
+    setMobileDetail(false);
+    requestAnimationFrame(() => openerRefs.current[selected]?.focus());
+  };
+  useEffect(() => {
+    if (availableIds.includes(selected)) return;
+    setSelected(SettingsSectionId.Appearance);
+    focusHeading(SettingsSectionId.Appearance);
+  }, [availableIds.join("\u0000"), mobileDetail, selected]);
   const invoke = (action: () => Promise<unknown>) => { setActionError(false); void action().catch(() => setActionError(true)); };
+  const invokeSnapshotAction = async (action: () => Promise<boolean>) => {
+    setActionError(false);
+    try {
+      const applied = await action();
+      if (applied) mappingDraft.reset();
+      return applied;
+    } catch {
+      setActionError(true);
+      return false;
+    }
+  };
   const replaceAppearance = (appearance: Partial<DevHudSettingsV1["appearance"]>) => invoke(() => identity.replaceSettings((current) => ({
     ...current,
     appearance: { ...current.appearance, ...appearance },
   })));
+  const content = (id: SettingsSectionId): ReactNode => {
+    if (id === SettingsSectionId.Appearance) return <section><h3 tabIndex={-1}>{copy.settingsAppearanceTitle}</h3><p>{copy.settingsAppearanceSummary}</p><Field label={copy.theme} inputId="settings-theme"><select id="settings-theme" value={identity.settings.appearance.theme} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ theme: event.target.value as DevHudSettingsV1["appearance"]["theme"] })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></Field><Field label={copy.language} inputId="settings-language"><select id="settings-language" value={identity.settings.appearance.language} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ language: event.target.value as DevHudSettingsV1["appearance"]["language"] })}><option value={LanguagePreference.System}>{copy.system}</option><option value={LanguagePreference.English}>{copy.english}</option><option value={LanguagePreference.Korean}>{copy.korean}</option></select></Field></section>;
+    if (id === SettingsSectionId.Shortcuts && sectionContributions?.Shortcuts) return <section><h3 tabIndex={-1}>{copy.settingsShortcutsTitle}</h3><p>{copy.settingsShortcutsSummary}</p><sectionContributions.Shortcuts copy={copy} bridge={bridge} capabilities={shortcutCapabilities} /></section>;
+    if (id === SettingsSectionId.ChromeExtension && NativeMessagingSettings) return <NativeMessagingSettings copy={copy} />;
+    if (id === SettingsSectionId.UrlMappings) return <UrlMappingSettings copy={copy} bridge={bridge} githubProvider={githubProvider} />;
+    if (id === SettingsSectionId.GitHubCredentials) return <GitHubSettings copy={copy} bridge={bridge} provider={githubProvider} openExternal={onOpenExternal} credentialOperationPending={mappingDraft.credentialOperationPending} runCredentialOperation={mappingDraft.runCredentialOperation} />;
+    if (id === SettingsSectionId.CloudflareR2) return <R2Settings copy={copy} bridge={bridge} />;
+    if (id === SettingsSectionId.LocalAgents && sectionContributions?.LocalAgents) return <sectionContributions.LocalAgents copy={copy} bridge={bridge} />;
+    if (id === SettingsSectionId.Notifications && notification) return <section><h3 tabIndex={-1}>{copy.settingsNotificationsTitle}</h3><p>{copy.settingsNotificationsSummary}</p><Button variant="primary" onClick={notification.onRequest}>{copy.notificationPermission}</Button><output aria-live="polite">{notification.permission}</output>{notification.failed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</section>;
+    if (id === SettingsSectionId.Updates && mobile && storeUpdates) return <section><h3 tabIndex={-1}>{copy.settingsUpdatesTitle}</h3><p>{copy.updatePolicy}</p>{storeUpdates.configured && <Button variant="primary" onClick={storeUpdates.onOpen}>{copy.openAppStore}</Button>}{storeUpdates.failed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</section>;
+    if (id === SettingsSectionId.Updates && sectionContributions?.Updates) return <sectionContributions.Updates bridge={bridge} language={language} onApprovalOpenChange={onUpdaterApprovalOpenChange} />;
+    return null;
+  };
   return <>
-    <label>{copy.theme}<select value={identity.settings.appearance.theme} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ theme: event.target.value as DevHudSettingsV1["appearance"]["theme"] })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label>
-    <label>{copy.language}<select value={identity.settings.appearance.language} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ language: event.target.value as DevHudSettingsV1["appearance"]["language"] })}><option value={LanguagePreference.System}>{copy.system}</option><option value={LanguagePreference.English}>{copy.english}</option><option value={LanguagePreference.Korean}>{copy.korean}</option></select></label>
-    {showNativeShortcuts && <ShortcutSettings copy={copy} bridge={bridge} disabled={!identity.shortcutHydrationReady} capabilities={shortcutCapabilities} bindings={identity.settings.shortcuts.desktop} onActiveBindings={identity.setActiveShortcutBindings} onPersist={(desktop) => identity.replaceSettings((current) => ({ ...current, shortcuts: { ...current.shortcuts, desktop } }))} />}
-    {showLocalAgents && <LocalAgentSettings copy={copy} bridge={bridge} />}
-    {NativeMessagingSettings && <NativeMessagingSettings copy={copy} />}
-    <UrlMappingSettings copy={copy} bridge={bridge} githubProvider={githubProvider} />
-    {(identity.status === "guest" || identity.status === "signed-out" || identity.status === "starting") && <p className="notice">{copy.guestSettingsLocal}</p>}
-    {identity.status === "blocked" && <p className="notice">{copy.blockedLocalHint}</p>}
-    {identity.status === "deletion-pending" && <p className="notice">{copy.deletionPendingSummary}</p>}
-    {identity.status === "authenticated" && <section className="synchronized-settings" aria-label={copy.synchronizedSettings}>
-      <h3>{copy.synchronizedSettings}</h3>
-      {identity.offline && <p className="notice" role="status">{copy.offlineSettingsReadOnly}</p>}
-      {!identity.offline && <p>{copy.settingsRevision}: {identity.revision.toString()}</p>}
-    {identity.importDiff && <SnapshotChoice key="import" choiceId="import" copy={copy} entries={identity.importDiff} title={copy.importSettingsTitle} summary={copy.importSettingsSummary} primary={copy.uploadLocal} secondary={copy.replaceLocal} onOpenChange={onModalConfirmationOpenChange} onPrimary={() => invoke(async () => { if (await identity.uploadLocal()) mappingDraft.reset(); })} onSecondary={() => invoke(async () => { if (await identity.replaceLocal()) mappingDraft.reset(); })} />}
-    {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onOpenChange={onModalConfirmationOpenChange} onPrimary={() => invoke(async () => { if (await identity.reapplyConflictLocal()) mappingDraft.reset(); })} onSecondary={() => invoke(async () => { if (await identity.adoptConflictServer()) mappingDraft.reset(); })} />}
-    {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <section className="notice" role="alert"><p>{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p><button onClick={() => invoke(identity.retrySettings)}>{copy.retry}</button></section>}
-    </section>}
-    <GitHubSettings copy={copy} bridge={bridge} provider={githubProvider} openExternal={onOpenExternal} credentialOperationPending={mappingDraft.credentialOperationPending} runCredentialOperation={mappingDraft.runCredentialOperation} />
-    <R2Settings copy={copy} bridge={bridge} />
+    <PageHeader eyebrow={copy.settings} title={copy.settingsTitle} summary={copy.settingsSummary} />
+    <section className="settings-summary" aria-label={copy.synchronizedSettings}>
+      {(identity.status === "guest" || identity.status === "signed-out" || identity.status === "starting") && <StatusBadge tone="neutral">{copy.guestSettingsLocal}</StatusBadge>}
+      {identity.status === "blocked" && <StatusBadge tone="warning">{copy.blockedLocalHint}</StatusBadge>}
+      {identity.status === "deletion-pending" && <StatusBadge tone="warning">{copy.deletionPendingSummary}</StatusBadge>}
+      {identity.status === "authenticated" && (identity.offline ? <StatusBadge tone="warning">{copy.offlineSettingsReadOnly}</StatusBadge> : <StatusBadge tone="success">{copy.settingsRevision}: {identity.revision.toString()}</StatusBadge>)}
+      {identity.importDiff && <SnapshotChoice key="import" choiceId="import" copy={copy} entries={identity.importDiff} title={copy.importSettingsTitle} summary={copy.importSettingsSummary} primary={copy.uploadLocal} secondary={copy.replaceLocal} onOpenChange={onModalConfirmationOpenChange} onPrimary={() => invokeSnapshotAction(identity.uploadLocal)} onSecondary={() => invokeSnapshotAction(identity.replaceLocal)} />}
+      {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onOpenChange={onModalConfirmationOpenChange} onPrimary={() => invokeSnapshotAction(identity.reapplyConflictLocal)} onSecondary={() => invokeSnapshotAction(identity.adoptConflictServer)} />}
+      {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <section className="notice" role="alert"><p>{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p><Button onClick={() => invoke(identity.retrySettings)}>{copy.retry}</Button></section>}
+    </section>
+    <div className={mobile ? "settings-mobile" : "settings-desktop"}>
+      {mobile && !mobileDetail && <Card className="settings-index" aria-label={copy.settingsSections}>{sections.map((section) => { const Icon = section.icon; return <DataRow key={section.id} ref={(element) => { openerRefs.current[section.id] = element; }} icon={<Icon />} title={copy[section.title]} description={copy[section.summary]} trailing={<ArrowRightIcon />} onClick={() => select(section.id)} />; })}</Card>}
+      {!mobile && <nav className="settings-toc" aria-label={copy.settingsSections}><Card>{sections.map((section) => { const Icon = section.icon; return <DataRow key={section.id} icon={<Icon />} title={copy[section.title]} description={copy[section.summary]} ariaCurrent={selected === section.id ? "page" : undefined} onClick={() => select(section.id)} />; })}</Card></nav>}
+      <div className="settings-panels">
+        {sections.map((section) => {
+          const active = selected === section.id && (!mobile || mobileDetail);
+          return <Card key={section.id} ref={(element) => { panelRefs.current[section.id] = element; }} className="settings-panel" data-settings-section={section.id} hidden={!active} inert={!active}>{mobile && <Button variant="ghost" onClick={back}>{copy.backToSettings}</Button>}{content(section.id)}</Card>;
+        })}
+      </div>
+    </div>
   </>;
 }
-
 function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvider({ fetch: globalThis.fetch }) }: { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly githubProvider?: GitHubProvider }) {
   const identity = useIdentitySettings();
   const mappingDraft = use(UrlMappingDraftContext);
@@ -490,7 +401,7 @@ function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvide
     } finally { if (isCurrentScope()) setSaving(false); }
   };
   return <section className="url-mappings" aria-labelledby="url-mappings-title">
-    <h3 id="url-mappings-title">{copy.urlMappingsTitle}</h3><p>{copy.urlMappingsSummary}</p><p id="url-mapping-hint">{copy.mappingPatternHint}</p>
+    <h3 id="url-mappings-title" tabIndex={-1}>{copy.urlMappingsTitle}</h3><p>{copy.urlMappingsSummary}</p><p id="url-mapping-hint">{copy.mappingPatternHint}</p>
     {draft.map((mapping, index) => <fieldset key={mapping.id} disabled={identity.readOnly || saving} aria-label={`${copy.urlMappingsTitle} ${index + 1}`}>
       <legend>{`${mapping.repository.owner}/${mapping.repository.name}`}</legend>
       <label>{copy.urlPattern}<input value={mapping.pattern} aria-describedby="url-mapping-hint" onChange={(event) => change(mapping.id, "pattern", event.target.value)} /></label>
@@ -573,7 +484,7 @@ function uuidV7(): string {
   return `${time.slice(0, 8)}-${time.slice(8)}-7${tail.slice(0, 3)}-${variant}${tail.slice(3, 6)}-${tail.slice(6, 18)}`;
 }
 
-function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, secondary, onOpenChange, onPrimary, onSecondary }: { readonly choiceId: string; readonly copy: Copy; readonly entries: readonly SettingsDiffEntry[]; readonly title: string; readonly summary: string; readonly primary: string; readonly secondary: string; readonly onOpenChange?: (open: boolean) => void; readonly onPrimary: () => void; readonly onSecondary: () => void }) {
+function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, secondary, onOpenChange, onPrimary, onSecondary }: { readonly choiceId: string; readonly copy: Copy; readonly entries: readonly SettingsDiffEntry[]; readonly title: string; readonly summary: string; readonly primary: string; readonly secondary: string; readonly onOpenChange?: (open: boolean) => void; readonly onPrimary: () => Promise<boolean>; readonly onSecondary: () => Promise<boolean> }) {
   const [open, setOpen] = useState(true);
   const dialog = useRef<HTMLElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -582,9 +493,8 @@ function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, seco
     setOpen(false);
     requestAnimationFrame(() => restoreFocus.current?.focus());
   };
-  const choose = (action: () => void) => {
-    action();
-    requestAnimationFrame(() => restoreFocus.current?.focus());
+  const choose = async (action: () => Promise<boolean>) => {
+    if (await action()) requestAnimationFrame(() => restoreFocus.current?.focus());
   };
   useEffect(() => {
     if (!open) return;
@@ -606,7 +516,7 @@ function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, seco
     <button ref={closeButton} type="button" onClick={close}>{copy.close}</button>
     <h4 id={titleId}>{title}</h4><p>{summary}</p>
     <table><caption>{copy.completeSnapshotDiff}</caption><thead><tr><th scope="col">{copy.settingPath}</th><th scope="col">{copy.localValue}</th><th scope="col">{copy.serverValue}</th></tr></thead><tbody>{entries.length === 0 ? <tr><td colSpan={3}>{copy.noDifferences}</td></tr> : entries.map((entry) => <tr key={`${entry.path}:${entry.kind}`}><th scope="row">{entry.path}</th><td><code>{printValue(entry.local)}</code></td><td><code>{printValue(entry.server)}</code></td></tr>)}</tbody></table>
-    <div className="actions"><button onClick={() => choose(onPrimary)}>{primary}</button><button onClick={() => choose(onSecondary)}>{secondary}</button></div>
+    <div className="actions"><button onClick={() => void choose(onPrimary)}>{primary}</button><button onClick={() => void choose(onSecondary)}>{secondary}</button></div>
   </section>;
 }
 

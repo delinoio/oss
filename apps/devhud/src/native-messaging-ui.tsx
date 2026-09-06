@@ -64,7 +64,7 @@ export function NativeMessagingSettings({ copy }: { readonly copy: Copy }) {
   }).catch(() => setFailed(true)); };
   const remove = () => { setFailed(false); void nativeMessaging.unpair().then(() => { setPairing(null); setPaired(false); }).catch(() => setFailed(true)); };
   return <section className="native-setting" aria-labelledby="native-messaging-title">
-    <h3 id="native-messaging-title">{copy.nativeMessagingTitle}</h3><p>{copy.nativeMessagingSummary}</p>
+    <h3 id="native-messaging-title" tabIndex={-1}>{copy.nativeMessagingTitle}</h3><p>{copy.nativeMessagingSummary}</p>
     <p className={failed ? "native-setting-error" : undefined} role="status">{failed ? copy.nativeMessagingFailed : paired ? copy.nativeMessagingPaired : copy.nativeMessagingNotPaired}</p>
     {pairing && <p>{copy.nativeMessagingPairingCode}: <code>{pairing.nonce}</code></p>}
     <button className="primary" type="button" onClick={begin}>{copy.nativeMessagingPair}</button>

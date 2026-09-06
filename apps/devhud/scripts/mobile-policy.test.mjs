@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, extname, join, relative, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -9,6 +9,36 @@ import { assertAndroidArtifactEntries, assertAndroidArtifactManifest, assertAndr
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const mobileTargets = JSON.parse(readFileSync(join(appRoot, "mobile-platforms.json"), "utf8")).targets;
 const mobilePlatforms = JSON.parse(readFileSync(join(appRoot, "mobile-platforms.json"), "utf8"));
+
+function frontendModuleClosure(entry) {
+  const visited = new Set();
+  const visit = (path) => {
+    const resolvedPath = resolve(path);
+    if (visited.has(resolvedPath)) return;
+    visited.add(resolvedPath);
+    if (extname(resolvedPath) === ".css") return;
+    const source = readFileSync(resolvedPath, "utf8");
+    for (const match of source.matchAll(/(?:from\s+|import\s*(?:\(\s*)?)["'](\.[^"']+)["']/gu)) {
+      const imported = resolve(dirname(resolvedPath), match[1]);
+      const candidates = extname(imported) ? [imported] : [imported, `${imported}.ts`, `${imported}.tsx`, `${imported}.mjs`, `${imported}.js`, join(imported, "index.ts"), join(imported, "index.tsx")];
+      const target = candidates.find(existsSync);
+      if (target) visit(target);
+    }
+  };
+  visit(entry);
+  return [...visited].map((path) => relative(appRoot, path).replaceAll("\\", "/"));
+}
+
+test("mobile Settings excludes desktop integration modules from its frontend closure", () => {
+  const closure = frontendModuleClosure(join(appRoot, "src/main.mobile.tsx"));
+  for (const forbidden of ["src/desktop-settings-ui.ts", "src/shortcut-settings-ui.tsx", "src/local-agent-settings-ui.tsx", "src/native-messaging-ui.tsx", "src/updater-ui.tsx"]) {
+    assert.ok(!closure.includes(forbidden), `${forbidden} entered the mobile frontend dependency closure`);
+  }
+  const desktopClosure = frontendModuleClosure(join(appRoot, "src/main.desktop.tsx"));
+  for (const required of ["src/desktop-settings-ui.ts", "src/shortcut-settings-ui.tsx", "src/local-agent-settings-ui.tsx", "src/native-messaging-ui.tsx", "src/updater-ui.tsx"]) {
+    assert.ok(desktopClosure.includes(required), `${required} is missing from the desktop frontend dependency closure`);
+  }
+});
 
 test("mobile shell keeps an internal five-item navigation and repository-owned icon closure", () => {
   const packageJson = JSON.parse(readFileSync(join(appRoot, "package.json"), "utf8"));
