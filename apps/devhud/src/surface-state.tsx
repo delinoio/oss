@@ -1,3 +1,4 @@
+import type { RefObject } from "react";
 import type { Copy } from "./localization";
 import { Button, StatePanel } from "./ui-foundation";
 
@@ -22,18 +23,19 @@ export type ContentState =
 interface StateProps {
   readonly copy: Copy;
   readonly onRetry?: () => void;
+  readonly titleRef?: RefObject<HTMLHeadingElement | null>;
 }
 
 export function LoadingState({ copy }: StateProps) {
   return <StatePanel eyebrow={copy.loading} title={copy.loadingTitle} summary={<span aria-live="polite">{copy.loadingSummary}</span>} progress />;
 }
 
-export function EmptyState({ copy }: StateProps) {
-  return <StatePanel eyebrow={copy.empty} title={copy.emptyTitle} summary={copy.emptySummary} tone="neutral" />;
+export function EmptyState({ copy, titleRef }: StateProps) {
+  return <StatePanel eyebrow={copy.empty} title={copy.emptyTitle} summary={copy.emptySummary} tone="neutral" titleRef={titleRef} />;
 }
 
-export function OfflineState({ copy, lastSuccessfulAt }: StateProps & { readonly lastSuccessfulAt?: string }) {
-  return <StatePanel eyebrow={copy.offline} title={copy.offlineTitle} summary={copy.offlineSummary} tone="warning" details={lastSuccessfulAt && <p className="notice">{copy.lastSuccessfulRefresh}: <time dateTime={lastSuccessfulAt}>{lastSuccessfulAt}</time></p>} />;
+export function OfflineState({ copy, lastSuccessfulAt, titleRef }: StateProps & { readonly lastSuccessfulAt?: string }) {
+  return <StatePanel eyebrow={copy.offline} title={copy.offlineTitle} summary={copy.offlineSummary} tone="warning" details={lastSuccessfulAt && <p className="notice">{copy.lastSuccessfulRefresh}: <time dateTime={lastSuccessfulAt}>{lastSuccessfulAt}</time></p>} titleRef={titleRef} />;
 }
 
 export function BlockedState({ copy }: StateProps) {

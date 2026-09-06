@@ -661,6 +661,24 @@ describe("Deck surface", () => {
 
     await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
     await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(false));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: messages.en.emptyTitle })));
+  });
+
+  it("defers a linked Deck selection until its widget confirmation closes", async () => {
+    const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck", query: "repo:octo/other is:pr", builder: { repository: "octo/other", author: null, review: null, label: null, state: null } };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, otherDeck] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={otherDeck.id} /></DeckPollingBoundary>);
+
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(deck.name);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyCancel }));
+    const selection = screen.getByRole("combobox", { name: messages.en.deckSelected });
+    await waitFor(() => expect((selection as HTMLSelectElement).value).toBe(otherDeck.id));
+    await waitFor(() => expect(document.activeElement).toBe(selection));
   });
 
   it("clears the screen-modal flag when a missing Deck deep link replaces an open widget confirmation", async () => {
@@ -1150,6 +1168,18 @@ describe("Deck surface", () => {
     expect(screen.queryByText(messages.en.empty)).toBeNull();
   });
 
+  it("treats a failed-only cache as uncached for offline and error states", async () => {
+    writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, results: [], lastSuccessfulAt: null, rate: null, failures: 1, failure: "network", nextRefreshAt: null, transitionKeys: [] });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online={false} provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect(await screen.findByRole("heading", { name: messages.en.offlineTitle })).toBeTruthy();
+    expect(screen.queryByText(messages.en.deckOfflineCached)).toBeNull();
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(messages.en.deckNoCachedResults));
+    expect(screen.queryByRole("heading", { name: messages.en.deckEmptyResults })).toBeNull();
+  });
+
   it("does not claim an empty successful refresh without a cache", () => {
     const bridge = bridgeWith(async () => { throw new Error("unexpected request"); });
     render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
@@ -1342,7 +1372,7 @@ describe("Deck surface", () => {
 
     render(<DeckPollingBoundary bridge={bridge} active online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
 
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.githubErrorSecureStorage));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(messages.en.githubErrorSecureStorage));
     await waitFor(() => {
       const cache = JSON.parse(localStorage.getItem(deckCacheKey(cacheScope, deck.id)) ?? "null") as { rate: unknown; results: unknown };
       expect(cache.rate).toBeNull();
@@ -1487,7 +1517,7 @@ describe("Deck surface", () => {
     });
     render(<DeckPollingBoundary bridge={bridge} active online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
 
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.githubErrorSecureStorage));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(messages.en.githubErrorSecureStorage));
   });
 
   it("keeps a missing deep link visible until the user returns to the Deck list", () => {

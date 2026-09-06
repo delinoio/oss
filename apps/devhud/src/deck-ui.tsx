@@ -580,10 +580,14 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const widgetConfirmationFocusPending = useRef(false);
   const widgetEnableTrigger = useRef<HTMLButtonElement>(null);
   const widgetDisableButton = useRef<HTMLButtonElement>(null);
+  const deckSelection = useRef<HTMLSelectElement>(null);
+  const deferredLinkedDeckFocus = useRef(false);
   const mobileSettingsButton = useRef<HTMLButtonElement>(null);
   const desktopConfigurationHadFocus = useRef(false);
   const missingLinkedDeckReturnButton = useRef<HTMLButtonElement>(null);
   const missingLinkedDeckFocusPending = useRef(false);
+  const noProfilesStateHeading = useRef<HTMLHeadingElement>(null);
+  const noProfilesFocusPending = useRef(false);
   const mobile = shellLayout === ShellLayout.Mobile;
   const previousMobile = useRef(mobile);
   const linkedDeckAvailable = selectedDeckId !== null && identity.settings.decks.some((item) => item.id === selectedDeckId);
@@ -595,20 +599,32 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const isCreating = creating || selectedDeck === null;
   const deck = isCreating ? null : selectedDeck;
   const refreshState = deck === null ? emptyDeckRefreshState : polling.states[deck.id] ?? emptyDeckRefreshState;
+  const hasSuccessfulSnapshot = refreshState.cache !== null && refreshState.cache.lastSuccessfulAt !== null;
   const widgetConfirmationDeck = widgetConfirmationDeckId === null ? null : identity.settings.decks.find((item) => item.id === widgetConfirmationDeckId) ?? null;
   const widgetConfirmationOpen = widgetConfirmationDeck !== null;
   const widgetConfirmationRefreshState = widgetConfirmationDeck === null ? emptyDeckRefreshState : polling.states[widgetConfirmationDeck.id] ?? emptyDeckRefreshState;
   const editorDraft = useDeckEditorDraft(deck, identity.settings.github.profiles, creationSession);
   useEffect(() => {
     const previous = previousLinkedDeck.current;
+    if (selectedDeckId === null || !linkedDeckAvailable || (previous.id === selectedDeckId && previous.available)) {
+      previousLinkedDeck.current = { id: selectedDeckId, available: linkedDeckAvailable };
+      return;
+    }
+    if (widgetConfirmationOpen) {
+      deferredLinkedDeckFocus.current = true;
+      return;
+    }
     previousLinkedDeck.current = { id: selectedDeckId, available: linkedDeckAvailable };
-    if (selectedDeckId === null || !linkedDeckAvailable || (previous.id === selectedDeckId && previous.available)) return;
     editorGeneration.current += 1;
     setSelected(selectedDeckId);
     setCreating(false);
     settingsSheetGeneration.current += 1;
     setSettingsOpen(false);
-  }, [linkedDeckAvailable, selectedDeckId]);
+    if (!deferredLinkedDeckFocus.current) return;
+    deferredLinkedDeckFocus.current = false;
+    const animation = requestAnimationFrame(() => deckSelection.current?.focus());
+    return () => cancelAnimationFrame(animation);
+  }, [linkedDeckAvailable, selectedDeckId, widgetConfirmationOpen]);
   useEffect(() => {
     const wasMissingLinkedDeck = previousMissingLinkedDeck.current;
     previousMissingLinkedDeck.current = missingLinkedDeck;
@@ -626,7 +642,8 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   }, [missingLinkedDeck]);
   useEffect(() => {
     if (widgetConfirmationDeckId !== null && (widgetConfirmationDeck === null || missingLinkedDeck || noGitHubProfiles)) {
-      widgetConfirmationFocusPending.current = !missingLinkedDeck && !noGitHubProfiles && (!mobile || settingsOpen);
+      if (noGitHubProfiles) noProfilesFocusPending.current = true;
+      else widgetConfirmationFocusPending.current = !missingLinkedDeck && (!mobile || settingsOpen);
       setWidgetConfirmationDeckId(null);
       return;
     }
@@ -638,6 +655,12 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     });
     return () => cancelAnimationFrame(animation);
   }, [missingLinkedDeck, mobile, noGitHubProfiles, settingsOpen, widgetConfirmationDeck, widgetConfirmationDeckId]);
+  useEffect(() => {
+    if (!noGitHubProfiles || !noProfilesFocusPending.current) return;
+    noProfilesFocusPending.current = false;
+    const animation = requestAnimationFrame(() => noProfilesStateHeading.current?.focus());
+    return () => cancelAnimationFrame(animation);
+  }, [noGitHubProfiles]);
   useEffect(() => {
     const wasMobile = previousMobile.current;
     previousMobile.current = mobile;
@@ -683,7 +706,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     } catch { setDeleteFailedDeckId(value.id); }
   };
   if (missingLinkedDeck) return <section className="deck" aria-labelledby="deck-title"><h2 id="deck-title">{copy.deckTitle}</h2><p role="alert">{copy.deckNotFound}</p><button ref={missingLinkedDeckReturnButton} type="button" onClick={onDismissMissingLink}>{copy.deckReturnToList}</button></section>;
-  if (noGitHubProfiles) return <>{polling.online ? <EmptyState copy={copy} /> : <OfflineState copy={copy} />}<p role="status">{copy.deckNoProfiles}</p></>;
+  if (noGitHubProfiles) return <>{polling.online ? <EmptyState copy={copy} titleRef={noProfilesStateHeading} /> : <OfflineState copy={copy} titleRef={noProfilesStateHeading} />}<p role="status">{copy.deckNoProfiles}</p></>;
   const creationDisabled = identity.readOnly || identity.settings.decks.length >= DeckLimit;
   const createDisabled = creationDisabled || pendingCreation;
   const openCreate = () => {
@@ -745,7 +768,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   };
   return <section className="deck" aria-label={copy.deckTitle}>
     <PageHeader title={copy.deckTitle} summary={copy.deckSummary} actions={<div className="deck-workspace-controls">
-      {selectedDeck && <Field label={copy.deckSelected} inputId="deck-selected"><select id="deck-selected" value={isCreating ? "" : selectedDeck.id} onChange={(event) => event.target.value === "" ? openCreate() : selectDeck(event.target.value)}>{isCreating && <option value="">{copy.deckCreate}</option>}{identity.settings.decks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>}
+      {selectedDeck && <Field label={copy.deckSelected} inputId="deck-selected"><select ref={deckSelection} id="deck-selected" value={isCreating ? "" : selectedDeck.id} onChange={(event) => event.target.value === "" ? openCreate() : selectDeck(event.target.value)}>{isCreating && <option value="">{copy.deckCreate}</option>}{identity.settings.decks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>}
       <Button ref={createDeckButton} variant="primary" disabled={createDisabled} onClick={openCreate}>{copy.deckCreate}</Button>
       {deck && <Button disabled={refreshState.loading || !polling.canPoll} onClick={() => void polling.refresh(deck.id, true)}>{copy.deckRefresh}</Button>}
       {mobile && deck && <Button ref={mobileSettingsButton} onClick={openSettings}>{copy.deckSettings}</Button>}
@@ -753,7 +776,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     <div className="deck-workspace-layout">
       <div className="deck-workspace">
         {deck ? <><DeckRefreshStatus copy={copy} state={refreshState} canPoll={polling.canPoll} online={polling.online} />
-          {!polling.online && refreshState.cache === null ? <OfflineState copy={copy} /> : refreshState.loading && refreshState.cache === null ? <LoadingState copy={copy} /> : refreshState.failure !== null && refreshState.cache === null ? <StatePanel eyebrow={copy.error} title={failureCopy(copy, refreshState.failure)} summary={copy.deckNoCachedResults} role="alert" tone="danger" headingLevel={3} /> : <DeckResults copy={copy} groupBy={deck.display.groupBy} results={results} draftsFiltered={draftsFiltered} successfulEmpty={refreshState.cache !== null && refreshState.cache.lastSuccessfulAt !== null && refreshState.failure === null && cachedResults.length === 0} />}
+          {!polling.online && !hasSuccessfulSnapshot ? <OfflineState copy={copy} /> : refreshState.loading && !hasSuccessfulSnapshot ? <LoadingState copy={copy} /> : refreshState.failure !== null && !hasSuccessfulSnapshot ? <StatePanel eyebrow={copy.error} title={failureCopy(copy, refreshState.failure)} summary={copy.deckNoCachedResults} role="alert" tone="danger" headingLevel={3} /> : <DeckResults copy={copy} groupBy={deck.display.groupBy} results={results} draftsFiltered={draftsFiltered} successfulEmpty={hasSuccessfulSnapshot && refreshState.failure === null && cachedResults.length === 0} />}
         </> : <StatePanel eyebrow={copy.deck} title={copy.deckCreate} summary={copy.deckNoDecks} tone="info" headingLevel={3} actions={<Button variant="primary" disabled={createDisabled} onClick={openCreate}>{copy.deckCreate}</Button>} />}
       </div>
       {!mobile && <aside className="deck-configuration-panel" aria-label={copy.deckConfiguration} inert={widgetConfirmationOpen || undefined} onFocusCapture={() => { desktopConfigurationHadFocus.current = true; }} onBlurCapture={(event) => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) desktopConfigurationHadFocus.current = false; }}>{configuration}</aside>}
@@ -773,7 +796,7 @@ function DeckConfiguration({ copy, deck, refreshState, readOnly, deleteFailed, o
 
 function DeckRefreshStatus({ copy, state, canPoll, online }: { readonly copy: Copy; readonly state: DeckRefreshState; readonly canPoll: boolean; readonly online: boolean }) {
   const cache = state.cache;
-  if (cache === null) return null;
+  if (cache === null || cache.lastSuccessfulAt === null) return null;
   const failure = state.failure;
   const tone = !online ? "warning" : failure !== null ? failure === "rate-limit" || failure === "incomplete-results" ? "warning" : "danger" : state.loading ? "info" : !canPoll ? "warning" : "success";
   const label = !online ? copy.deckOfflineCached : failure !== null ? failureCopy(copy, failure) : state.loading ? copy.deckRefreshing : !canPoll ? copy.deckStale : copy.deckFresh;
