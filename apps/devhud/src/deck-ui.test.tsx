@@ -268,6 +268,28 @@ describe("Deck surface", () => {
     expect(retriedSettings.decks[0]?.name).toBe("Submitted local edit");
   });
 
+  it("shows later synchronized changes after an existing Deck save is adopted", async () => {
+    const savedDeck = { ...deck, name: "Saved Deck" };
+    const remoteDeck = { ...savedDeck, name: "Remote Deck" };
+    const replaceSettings = vi.fn(async () => true);
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: savedDeck.name } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [savedDeck] }), replaceSettings });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await waitFor(() => expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(savedDeck.name));
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [remoteDeck] }), replaceSettings });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(remoteDeck.name);
+  });
+
   it("keeps focus in the mobile settings sheet after an existing Deck save refreshes its source", async () => {
     setViewport(390);
     const savedDeck = { ...deck, name: "Saved Deck" };

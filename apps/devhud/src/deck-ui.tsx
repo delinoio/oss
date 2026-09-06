@@ -75,6 +75,17 @@ function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["gith
   const draft = creationDraft ?? deckDrafts.get(sourceKey) ?? initial;
   const saving = pendingSaves.has(saveKey);
   const saveFailure = saveFailures.get(saveKey) ?? null;
+  useEffect(() => {
+    if (value === null) return;
+    const adopted = createDeckEditorDraft(value, profiles);
+    setDeckDrafts((current) => {
+      const local = current.get(sourceKey);
+      if (local === undefined || JSON.stringify(local) !== JSON.stringify(adopted)) return current;
+      const next = new Map(current);
+      next.delete(sourceKey);
+      return next;
+    });
+  }, [profiles, sourceKey, value]);
   const update = useCallback((change: (current: DeckEditorDraft) => DeckEditorDraft) => {
     const next = change(draft);
     if (value === null) setCreationDrafts((current) => new Map(current).set(creationSession, next));
