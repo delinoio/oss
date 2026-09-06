@@ -643,6 +643,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
       return;
     }
     previousLinkedDeck.current = { id: selectedDeckId, available: linkedDeckAvailable };
+    editorDraft.discardUnsubmitted();
     editorGeneration.current += 1;
     setSelected(selectedDeckId);
     setCreating(false);

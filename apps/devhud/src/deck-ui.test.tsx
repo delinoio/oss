@@ -561,6 +561,46 @@ describe("Deck surface", () => {
     expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", synchronizedDeck.name);
   });
 
+  it("discards an unsubmitted Deck draft when a native link selects another Deck", async () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    const synchronizedDeck = { ...deck, name: "Synchronized Deck" };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={deck.id} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Abandoned local edit" } });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={other.id} /></DeckPollingBoundary>);
+    await waitFor(() => expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", other.name));
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [synchronizedDeck, other] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={other.id} /></DeckPollingBoundary>);
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={synchronizedDeck.id} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", synchronizedDeck.name));
+  });
+
+  it("keeps a submitted Deck draft when a native link selects another Deck", async () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn<IdentitySettingsValue["replaceSettings"]>(() => pendingSave);
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }), replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={deck.id} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Submitted local edit" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={other.id} /></DeckPollingBoundary>);
+    await waitFor(() => expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", other.name));
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={deck.id} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", "Submitted local edit"));
+    expect(screen.getByRole("button", { name: messages.en.saved }).closest("fieldset")).toHaveProperty("disabled", true);
+    finishSave(false);
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveProperty("textContent", messages.en.deckErrorNetwork));
+    expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", "Submitted local edit");
+  });
+
   it("discards an unsubmitted Deck draft before creating another Deck", () => {
     const synchronizedDeck = { ...deck, name: "Synchronized Deck" };
     const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
