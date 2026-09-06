@@ -122,6 +122,29 @@ describe("identity UI", () => {
     await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 
+  it("keeps Account confirmation triggers mutually exclusive", async () => {
+    identity = identityWith({ status: "authenticated", account: { displayName: "Fixture User", email: "fixture@example.com" } as never });
+    render(<AccountIdentity {...accountProps()} />);
+    const apply = screen.getByRole("button", { name: messages.en.applyApiOrigin }) as HTMLButtonElement;
+    const deleteTrigger = screen.getByRole("button", { name: messages.en.deleteAccount }) as HTMLButtonElement;
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(apply);
+    const apiConfirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    await waitFor(() => expect(deleteTrigger.disabled).toBe(true));
+    fireEvent.click(deleteTrigger);
+    expect(screen.queryByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle })).toBeNull();
+    fireEvent.click(within(apiConfirmation).getByRole("button", { name: messages.en.cancel }));
+    await waitFor(() => expect(deleteTrigger.disabled).toBe(false));
+
+    fireEvent.click(deleteTrigger);
+    const deleteConfirmation = await screen.findByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle });
+    await waitFor(() => expect(apply.disabled).toBe(true));
+    fireEvent.click(apply);
+    expect(screen.queryByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBeNull();
+    fireEvent.click(within(deleteConfirmation).getByRole("button", { name: messages.en.cancel }));
+    await waitFor(() => expect(apply.disabled).toBe(false));
+  });
+
   it("retries a failed Native Messaging configuration publication", async () => {
     vi.useFakeTimers();
     nativeMessagingMock.configure.mockRejectedValueOnce(new Error("temporary bridge failure")).mockResolvedValue(undefined);
