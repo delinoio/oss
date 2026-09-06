@@ -597,6 +597,29 @@ describe("RealQA capture and editor", () => {
     expect(saved.closest(".status-badge")?.classList.contains("status-badge-success")).toBe(true);
   });
 
+  it("shows pending capture feedback inside an active selection dialog", async () => {
+    let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return new Promise((resolve) => { resolveCapture = resolve; });
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureSelection }));
+    const dialog = await screen.findByRole("dialog", { name: messages.en.captureSelection });
+    fireEvent.change(within(dialog).getByRole("combobox", { name: messages.en.captureTimer }), { target: { value: "5" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: messages.en.captureNow }));
+
+    const saving = await within(dialog).findByRole("status");
+    expect(saving.textContent).toContain(messages.en.captureSaving);
+    expect(saving.querySelector(".status-badge-info")).toBeTruthy();
+
+    await act(async () => { resolveCapture?.({ kind: "capture-draft", draft }); });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.captureSelection })).toBeNull());
+  });
+
   it("uses fresh topology when opening a dialog and ignores an older pending status", async () => {
     let statusRequests = 0;
     let resolveInitialStatus: ((response: NativeBridgeResponseV1) => void) | undefined;

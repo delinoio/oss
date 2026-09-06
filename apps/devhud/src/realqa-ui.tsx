@@ -427,7 +427,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       <div className="realqa-flow">
         <CaptureActions />
         <DraftPolicy />
-        {!selected && <CaptureFeedback status={status} error={error} />}
+        {!selected && !captureDialog && <CaptureFeedback status={status} error={error} />}
         <DraftList />
       </div>
       {selected && <CaptureEditor key={selected.id} draft={selected} previewImage={!captureDialog && !paletteOpen ? previewImage : null} previewRef={inSheetPreview} previewFocusFallbackRef={editorPreviewFallback} returnFocusRef={draftEditorOpener} restoreFocus onPreviewOpen={openPreview} />}
@@ -502,7 +502,7 @@ function DraftList() {
 }
 
 function CaptureDialog({ action, status, options, onOptions, onCapture, onClose }: { readonly action: CaptureActionId; readonly status: { topology: readonly CaptureDisplay[]; shadowRemovalSupported: boolean } | null; readonly options: CaptureOptions; readonly onOptions: (options: CaptureOptions) => void; readonly onCapture: (action: CaptureActionId, options: CaptureOptions) => Promise<void>; readonly onClose: () => void }) {
-  const { meta: { copy }, state: { busy } } = useRealqa();
+  const { meta: { copy }, state: { busy, status: captureStatus } } = useRealqa();
   const first = status?.topology[0];
   const [mode, setMode] = useState<"region" | "window" | "display" | "active-window" | "all-displays">("region");
   const [optionShadow, setOptionShadow] = useState(false);
@@ -530,6 +530,7 @@ function CaptureDialog({ action, status, options, onOptions, onCapture, onClose 
   // The surface records the trigger before the topology refresh; ModalSurface must not restore a later-focused element.
   return <Dialog open title={action === ShortcutActionId.CaptureToolbar ? copy.captureToolbar : copy.captureSelection} initialFocusRef={captureNow} restoreFocus={false} onClose={onClose}><div className="capture-dialog">
     <p>{copy.captureRegionHelp}</p>
+    {busy && captureStatus && <CaptureFeedback status={captureStatus} error={null} />}
     <fieldset><legend>{copy.captureMode}</legend><label className="check"><input name="capture-mode" type="radio" checked={mode === "region"} onChange={() => setMode("region")} />{copy.captureRegionMode}</label><label className="check"><input name="capture-mode" type="radio" checked={mode === "window"} onChange={() => setMode("window")} />{copy.captureWindowMode}</label>{action === ShortcutActionId.CaptureToolbar && <><label className="check"><input name="capture-mode" type="radio" checked={mode === "display"} onChange={() => setMode("display")} />{copy.captureDisplay}</label><label className="check"><input name="capture-mode" type="radio" checked={mode === "active-window"} onChange={() => setMode("active-window")} />{copy.captureWindow}</label><label className="check"><input name="capture-mode" type="radio" checked={mode === "all-displays"} onChange={() => setMode("all-displays")} />{copy.captureAll}</label></>}</fieldset>
     {mode === "region" && <><RegionPicker displays={status?.topology ?? []} value={rect} onChange={setRect} label={copy.captureRegionPicker} /><div className="capture-coordinates">{(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{copy[key === "x" ? "captureX" : key === "y" ? "captureY" : key === "width" ? "captureWidth" : "captureHeight"]}<input type="number" value={rect[key]} aria-invalid={!regionValid} aria-describedby={!regionValid ? regionErrorId : undefined} onChange={(event) => updateRect(key, event.target.value)} /></label>)}</div>{!regionValid && <p id={regionErrorId} className="editor-coordinate-error" role="alert">{copy.captureRegionInvalid}</p>}</>}
     <label>{copy.captureTimer}<select value={options.delaySeconds ?? 0} onChange={(event) => onOptions({ ...options, delaySeconds: Number(event.target.value) as 0 | 5 | 10 })}><option value="0">{copy.captureTimerOff}</option><option value="5">{copy.captureTimerFive}</option><option value="10">{copy.captureTimerTen}</option></select></label>
