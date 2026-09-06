@@ -577,6 +577,40 @@ describe("Deck surface", () => {
     releaseEnable();
   });
 
+  it("keeps widget privacy confirmation and enablement busy state through responsive configuration moves", async () => {
+    setViewport(390);
+    let releaseEnable: () => void = () => {};
+    const enablePending = new Promise<void>((resolve) => { releaseEnable = resolve; });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "widgets.status") return { kind: "widget-status", enabledDeckIds: [] };
+      if (value.operation === "secure.read") return { kind: "secure-value", value: "token" };
+      if (value.operation === "widgets.enable-deck") await enablePending;
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    expect(sheet.hasAttribute("inert")).toBe(true);
+
+    setViewport(1024);
+    const panel = await screen.findByRole("complementary", { name: messages.en.deckConfiguration });
+    expect(panel.hasAttribute("inert")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm }));
+    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm })).toHaveProperty("disabled", true));
+
+    setViewport(390);
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    expect(screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeTruthy();
+    expect(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm })).toHaveProperty("disabled", true);
+    releaseEnable();
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "widgets.enable-deck", configuration: expect.objectContaining({ deckId: deck.id }) }));
+  });
+
   it("publishes the cached refresh attempt instead of treating synchronization as a new attempt", async () => {
     const lastSuccessfulAt = "2026-08-17T00:00:00.000Z";
     writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, totalCount: 1, results: [pullRequest], lastSuccessfulAt, rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
@@ -894,6 +928,15 @@ describe("Deck surface", () => {
     await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorToken));
     view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online={false} provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
     expect(await screen.findByText(messages.en.deckOfflineCached)).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorToken);
+  });
+
+  it("does not repeat an online cached refresh failure already shown by the status badge", async () => {
+    writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, totalCount: 1, results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 1, failure: "token", nextRefreshAt: null, transitionKeys: [] });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.getAllByText(messages.en.deckErrorToken)).toHaveLength(1));
     expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorToken);
   });
 
