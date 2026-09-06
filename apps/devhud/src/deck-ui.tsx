@@ -23,6 +23,10 @@ interface DeckEditorDraft {
   readonly showDrafts: boolean;
   readonly notifications: readonly DeckNotificationKind[];
 }
+interface SuccessfulDeckDraft {
+  readonly draft: DeckEditorDraft;
+  readonly sourceSignature: string;
+}
 interface DeckPollingConfiguration { readonly signature: string; readonly refreshMinutes: Deck["refreshMinutes"]; readonly profileRef: Deck["profileRef"]; }
 
 interface DeckRefreshState { readonly cache: DeckCache | null; readonly cacheProfileRef: Deck["profileRef"] | null; readonly loading: boolean; readonly failure: DeckFailure | null; }
@@ -62,17 +66,18 @@ function createDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["g
   };
 }
 
-function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["github"]["profiles"], creationSession: number) {
+function useDeckEditorDraft(value: Deck | null, decks: readonly Deck[], profiles: DevHudSettingsV1["github"]["profiles"], creationSession: number) {
   const sourceKey = value?.id ?? JSON.stringify({ value, initialProfileRef: profiles[0]?.id ?? "" });
   const saveKey = value?.id ?? `creation:${creationSession}`;
   const initialSourceKey = JSON.stringify(value === null ? { value, initialProfileRef: profiles[0]?.id ?? "" } : { value });
   const initial = useMemo(() => createDeckEditorDraft(value, profiles), [initialSourceKey]);
   const [deckDrafts, setDeckDrafts] = useState<ReadonlyMap<string, DeckEditorDraft>>(() => new Map());
+  const [successfulDeckDrafts, setSuccessfulDeckDrafts] = useState<ReadonlyMap<string, SuccessfulDeckDraft>>(() => new Map());
   const [creationDrafts, setCreationDrafts] = useState<ReadonlyMap<number, DeckEditorDraft>>(() => new Map());
   const [pendingSaves, setPendingSaves] = useState<ReadonlySet<string>>(() => new Set());
   const [saveFailures, setSaveFailures] = useState<ReadonlyMap<string, DeckFailure>>(() => new Map());
   const creationDraft = value === null ? creationDrafts.get(creationSession) : undefined;
-  const draft = creationDraft ?? deckDrafts.get(sourceKey) ?? initial;
+  const draft = creationDraft ?? deckDrafts.get(sourceKey) ?? successfulDeckDrafts.get(sourceKey)?.draft ?? initial;
   const saving = pendingSaves.has(saveKey);
   const saveFailure = saveFailures.get(saveKey) ?? null;
   useEffect(() => {
@@ -103,10 +108,32 @@ function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["gith
       return next;
     });
   }, [creationSession, profiles, sourceKey, value]);
+  useEffect(() => {
+    const synchronizedDecks = new Map(decks.map((deck) => [deck.id, deck]));
+    setSuccessfulDeckDrafts((current) => {
+      let next: Map<string, SuccessfulDeckDraft> | null = null;
+      for (const [deckId, successful] of current) {
+        const synchronized = synchronizedDecks.get(deckId);
+        if (synchronized === undefined || JSON.stringify(synchronized) !== successful.sourceSignature) {
+          next ??= new Map(current);
+          next.delete(deckId);
+        }
+      }
+      return next ?? current;
+    });
+  }, [decks]);
   const update = useCallback((change: (current: DeckEditorDraft) => DeckEditorDraft) => {
     const next = change(draft);
     if (value === null) setCreationDrafts((current) => new Map(current).set(creationSession, next));
-    else setDeckDrafts((current) => new Map(current).set(sourceKey, next));
+    else {
+      setDeckDrafts((current) => new Map(current).set(sourceKey, next));
+      setSuccessfulDeckDrafts((current) => {
+        if (!current.has(sourceKey)) return current;
+        const drafts = new Map(current);
+        drafts.delete(sourceKey);
+        return drafts;
+      });
+    }
   }, [creationSession, draft, sourceKey, value]);
   const reset = useCallback(({ retainFailure = false }: { readonly retainFailure?: boolean } = {}) => {
     if (retainFailure && saveFailures.has(saveKey)) return;
@@ -120,6 +147,12 @@ function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["gith
       if (!current.has(sourceKey)) return current;
       const next = new Map(current);
       next.delete(sourceKey);
+      return next;
+    });
+    setSuccessfulDeckDrafts((current) => {
+      if (!current.has(saveKey)) return current;
+      const next = new Map(current);
+      next.delete(saveKey);
       return next;
     });
     setSaveFailures((current) => {
@@ -161,7 +194,15 @@ function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["gith
         next.delete(creationSession);
         return next;
       });
-      else if (adopted !== null) setDeckDrafts((current) => new Map(current).set(saveKey, createDeckEditorDraft(adopted, profiles)));
+      else if (adopted !== null) {
+        setDeckDrafts((current) => {
+          if (!current.has(saveKey)) return current;
+          const next = new Map(current);
+          next.delete(saveKey);
+          return next;
+        });
+        setSuccessfulDeckDrafts((current) => new Map(current).set(saveKey, { draft: createDeckEditorDraft(adopted, profiles), sourceSignature: JSON.stringify(value) }));
+      }
       return;
     }
     setSaveFailures((current) => new Map(current).set(saveKey, failure));
@@ -651,7 +692,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const widgetConfirmationDeck = widgetConfirmationDeckId === null ? null : identity.settings.decks.find((item) => item.id === widgetConfirmationDeckId) ?? null;
   const widgetConfirmationOpen = widgetConfirmationDeck !== null;
   const widgetConfirmationRefreshState = widgetConfirmationDeck === null ? emptyDeckRefreshState : polling.states[widgetConfirmationDeck.id] ?? emptyDeckRefreshState;
-  const editorDraft = useDeckEditorDraft(deck, identity.settings.github.profiles, creationSession);
+  const editorDraft = useDeckEditorDraft(deck, identity.settings.decks, identity.settings.github.profiles, creationSession);
   useEffect(() => {
     const previous = previousLinkedDeck.current;
     if (selectedDeckId === null || !linkedDeckAvailable || (previous.id === selectedDeckId && previous.available)) {
