@@ -81,6 +81,7 @@ async function openEditor(copy: Copy = messages.en, index = 0) {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -991,7 +992,11 @@ describe("RealQA capture and editor", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.editorAdd }));
     await waitFor(() => expect(preview.querySelector("img")?.getAttribute("src")).toContain("/5"));
 
-    fireEvent.click(screen.getByRole("button", { name: messages.en.floatingPreviewOpen }));
+    const previewOpen = screen.getByRole("button", { name: messages.en.floatingPreviewOpen });
+    const firstImage = screen.getByRole("button", { name: `${messages.en.editorImage} 1` });
+    previewOpen.focus();
+    fireEvent.click(previewOpen);
+    expect(firstImage).toBe(document.activeElement);
     fireEvent.click(screen.getByRole("button", { name: messages.en.editorAdd }));
     await waitFor(() => expect(applyRequests).toHaveLength(2));
     expect(applyRequests[1].expectedRevision).toBe(5);
@@ -1021,6 +1026,37 @@ describe("RealQA capture and editor", () => {
     const preview = await screen.findByRole("complementary", { name: messages.en.floatingPreview });
     expect(preview.querySelector("img")?.getAttribute("src")).toBe(appendedImage.previewUrl);
     expect(screen.getByRole("dialog", { name: messages.en.editorTitle }).contains(preview)).toBe(true);
+  });
+
+  it("keeps focus in the editor sheet when an in-sheet preview times out", async () => {
+    const appendedImage = {
+      ...draft.images[0],
+      id: "019b0000-0000-7000-8000-000000000020",
+      previewUrl: "realqa://asset/draft/image/appended/4",
+      layers: [],
+    };
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return { kind: "capture-draft", draft: { ...draft, revision: 4, imageCount: 2, images: [...draft.images, appendedImage] } };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    await openEditor();
+    const setTimeoutSpy = vi.spyOn(window, "setTimeout");
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+
+    const preview = await screen.findByRole("complementary", { name: messages.en.floatingPreview });
+    const previewOpen = within(preview).getByRole("button", { name: messages.en.floatingPreviewOpen });
+    const firstImage = screen.getByRole("button", { name: `${messages.en.editorImage} 1` });
+    previewOpen.focus();
+    const dismiss = setTimeoutSpy.mock.calls.find(([, delay]) => delay === 5_000)?.[0];
+    if (typeof dismiss !== "function") throw new Error("missing preview timeout");
+    await act(async () => { dismiss(); });
+
+    expect(screen.queryByRole("complementary", { name: messages.en.floatingPreview })).toBeNull();
+    expect(firstImage).toBe(document.activeElement);
+    expect(screen.getByRole("dialog", { name: messages.en.editorTitle }).contains(document.activeElement)).toBe(true);
   });
 
   it("caps text annotations at the native Unicode character limit", async () => {

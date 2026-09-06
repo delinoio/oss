@@ -94,6 +94,8 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   const draftOpenRequest = useRef(0);
   const captureDialogOpener = useRef<HTMLElement | null>(null);
   const draftEditorOpener = useRef<HTMLElement | null>(null);
+  const inSheetPreview = useRef<HTMLElement | null>(null);
+  const editorPreviewFallback = useRef<HTMLButtonElement | null>(null);
   const previewSequence = useRef(0);
   const resetGeneration = useRef(0);
   const draftsById = useRef(new Map<string, CaptureDraft>());
@@ -338,11 +340,18 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     onRequestedActionConsumed?.(requestedAction.sequence);
     void capture(requestedAction.action);
   }, [capture, onRequestedActionConsumed, requestedAction]);
+  const dismissPreview = useCallback(() => {
+    // Preview teardown must not leave the sheet focus trap without an in-sheet target.
+    if (document.activeElement instanceof HTMLElement && inSheetPreview.current?.contains(document.activeElement)) {
+      editorPreviewFallback.current?.focus();
+    }
+    setPreviewRequest(null);
+  }, []);
   useEffect(() => {
     if (!previewRequest) return;
-    const timer = window.setTimeout(() => setPreviewRequest(null), 5_000);
+    const timer = window.setTimeout(dismissPreview, 5_000);
     return () => window.clearTimeout(timer);
-  }, [previewRequest?.sequence]);
+  }, [dismissPreview, previewRequest?.sequence]);
   useEffect(() => {
     const key = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -396,7 +405,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       draftEditorOpener.current = null;
       setSelected(preview);
     }
-    setPreviewRequest(null);
+    dismissPreview();
     onActivate?.();
   };
   const value: RealqaContextValue = {
@@ -414,7 +423,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
         {!selected && <CaptureFeedback status={status} error={error} />}
         <DraftList />
       </div>
-      {selected && <CaptureEditor key={selected.id} draft={selected} previewImage={!captureDialog && !paletteOpen ? previewImage : null} returnFocusRef={draftEditorOpener} restoreFocus={draftEditorOpener.current !== null} onPreviewOpen={openPreview} />}
+      {selected && <CaptureEditor key={selected.id} draft={selected} previewImage={!captureDialog && !paletteOpen ? previewImage : null} previewRef={inSheetPreview} previewFocusFallbackRef={editorPreviewFallback} returnFocusRef={draftEditorOpener} restoreFocus={draftEditorOpener.current !== null} onPreviewOpen={openPreview} />}
       {captureDialog && <CaptureDialog key={captureDialog} action={captureDialog} status={captureStatus} options={options} onOptions={setOptions} onCapture={completeCapture} onClose={cancelCapture} />}
     </>}
     {preview && previewImage && !selected && !captureDialog && !paletteOpen && <aside className="floating-capture-preview" aria-label={copy.floatingPreview}>
@@ -565,7 +574,7 @@ function RegionPicker({ displays, value, onChange, label }: { readonly displays:
   </svg>;
 }
 
-function CaptureEditor({ draft, previewImage, returnFocusRef, restoreFocus, onPreviewOpen }: { readonly draft: CaptureDraft; readonly previewImage: CaptureDraftImage | null; readonly returnFocusRef: RefObject<HTMLElement | null>; readonly restoreFocus: boolean; readonly onPreviewOpen: () => void }) {
+function CaptureEditor({ draft, previewImage, previewRef, previewFocusFallbackRef, returnFocusRef, restoreFocus, onPreviewOpen }: { readonly draft: CaptureDraft; readonly previewImage: CaptureDraftImage | null; readonly previewRef: RefObject<HTMLElement | null>; readonly previewFocusFallbackRef: RefObject<HTMLButtonElement | null>; readonly returnFocusRef: RefObject<HTMLElement | null>; readonly restoreFocus: boolean; readonly onPreviewOpen: () => void }) {
   const { state: { busy, status, error }, actions, meta: { bridge, copy } } = useRealqa();
   const [imageId, setImageId] = useState(draft.images[0]?.id ?? "");
   const [tool, setTool] = useState<EditorTool>("arrow");
@@ -699,11 +708,11 @@ function CaptureEditor({ draft, previewImage, returnFocusRef, restoreFocus, onPr
     await actions.confirmIssueCreated(draft.id, expectedRevision);
   };
   return <Sheet open title={copy.editorTitle} backLabel={copy.close} returnFocusRef={returnFocusRef} restoreFocus={restoreFocus} onClose={actions.close}><section className="capture-editor" aria-label={copy.editorTitle}>
-    {previewImage && <aside className="sheet-capture-preview" aria-label={copy.floatingPreview}><img src={previewImage.previewUrl} alt="" /><button onClick={onPreviewOpen}>{copy.floatingPreviewOpen}</button></aside>}
+    {previewImage && <aside ref={previewRef} className="sheet-capture-preview" aria-label={copy.floatingPreview}><img src={previewImage.previewUrl} alt="" /><button onClick={onPreviewOpen}>{copy.floatingPreviewOpen}</button></aside>}
     <CaptureFeedback status={status} error={error} />
     <p className="editor-close-hint">{copy.editorCloseHint}</p>
     {draft.browserContext && <section aria-labelledby="browser-context-title"><h3 id="browser-context-title">{copy.browserContextAttached}</h3><dl className="runtime-diagnostics"><dt>{copy.browserContextPageTitle}</dt><dd>{draft.browserContext.context.title || "—"}</dd><dt>{copy.browserContextRedactedUrl}</dt><dd>{draft.browserContext.context.url}</dd></dl><details><summary>{copy.browserContextDetails}</summary><dl className="runtime-diagnostics"><dt>{copy.browserContextViewport}</dt><dd>{draft.browserContext.context.viewport.width} × {draft.browserContext.context.viewport.height}</dd><dt>{copy.browserContextUserAgent}</dt><dd>{draft.browserContext.context.userAgent}</dd><dt>{copy.browserContextSelectedBounds}</dt><dd>{draft.browserContext.context.selectedBounds ? `x ${draft.browserContext.context.selectedBounds.x}, y ${draft.browserContext.context.selectedBounds.y}, width ${draft.browserContext.context.selectedBounds.width}, height ${draft.browserContext.context.selectedBounds.height}` : copy.browserContextNone}</dd><dt>{copy.browserContextAccessibility}</dt><dd>{Object.entries(draft.browserContext.context.accessibility).length ? <dl>{Object.entries(draft.browserContext.context.accessibility).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl> : copy.browserContextNone}</dd><dt>{copy.browserContextMarkup}</dt><dd><pre>{draft.browserContext.context.outerHtml || copy.browserContextNone}</pre></dd></dl></details><Button variant="danger" disabled={busy} onClick={removeBrowserContext}>{copy.browserContextRemove}</Button></section>}
-    <div className="editor-image-order" aria-label={copy.realqaImages}>{draft.images.map((image, index) => <div key={image.id}><button aria-pressed={image.id === active.id} onClick={() => setImageId(image.id)}>{copy.editorImage} {index + 1}</button><button disabled={busy || index === 0} aria-label={copy.editorMoveEarlier} onClick={() => moveImage(index, -1)}>←</button><button disabled={busy || index === draft.images.length - 1} aria-label={copy.editorMoveLater} onClick={() => moveImage(index, 1)}>→</button><button disabled={busy || draft.images.length === 1} aria-label={copy.editorRemove} onClick={() => void mutate({ kind: "remove-image", imageId: image.id })}>×</button></div>)}</div>
+    <div className="editor-image-order" aria-label={copy.realqaImages}>{draft.images.map((image, index) => <div key={image.id}><button ref={index === 0 ? previewFocusFallbackRef : undefined} aria-pressed={image.id === active.id} onClick={() => setImageId(image.id)}>{copy.editorImage} {index + 1}</button><button disabled={busy || index === 0} aria-label={copy.editorMoveEarlier} onClick={() => moveImage(index, -1)}>←</button><button disabled={busy || index === draft.images.length - 1} aria-label={copy.editorMoveLater} onClick={() => moveImage(index, 1)}>→</button><button disabled={busy || draft.images.length === 1} aria-label={copy.editorRemove} onClick={() => void mutate({ kind: "remove-image", imageId: image.id })}>×</button></div>)}</div>
     <div className="editor-layout"><div className="editor-workspace"><div className="editor-canvas" role="img" aria-label={copy.editorCanvas} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp}>
       <img draggable={false} src={active.previewUrl} alt="" />
       <AnnotationOverlay image={active} drawing={drawing} tool={tool} />
