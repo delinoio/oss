@@ -63,7 +63,7 @@ function createDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["g
 }
 
 function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["github"]["profiles"]) {
-  const sourceKey = JSON.stringify({ value, initialProfileRef: profiles[0]?.id ?? "" });
+  const sourceKey = JSON.stringify(value === null ? { value, initialProfileRef: profiles[0]?.id ?? "" } : { value });
   const initial = useMemo(() => createDeckEditorDraft(value, profiles), [sourceKey]);
   const [state, setState] = useState<{ readonly sourceKey: string; readonly draft: DeckEditorDraft }>(() => ({ sourceKey, draft: initial }));
   const draft = state.sourceKey === sourceKey ? state.draft : initial;
@@ -515,7 +515,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const [selected, setSelected] = useState<string | null>(selectedDeckId);
   const [creating, setCreating] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [deleteFailed, setDeleteFailed] = useState(false);
+  const [deleteFailedDeckId, setDeleteFailedDeckId] = useState<string | null>(null);
   const editorGeneration = useRef(0);
   const mobile = shellLayout === ShellLayout.Mobile;
   const missingLinkedDeck = selectedDeckId !== null && !identity.settings.decks.some((item) => item.id === selectedDeckId);
@@ -533,13 +533,13 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     }
   }, [identity.settings.decks, selectedDeckId]);
   const deleteDeck = async (value: Deck) => {
-    setDeleteFailed(false);
+    setDeleteFailedDeckId(null);
     try {
       const committed = await identity.replaceSettings((current) => ({ ...current, decks: current.decks.filter((item) => item.id !== value.id) }));
-      if (!committed) { setDeleteFailed(true); return; }
+      if (!committed) { setDeleteFailedDeckId(value.id); return; }
       void widgetAccess.disable(value.id).catch(() => undefined);
       void polling.clear(value).catch(() => undefined);
-    } catch { setDeleteFailed(true); }
+    } catch { setDeleteFailedDeckId(value.id); }
   };
   if (missingLinkedDeck) return <section className="deck" aria-labelledby="deck-title"><h2 id="deck-title">{copy.deckTitle}</h2><p role="alert">{copy.deckNotFound}</p><button type="button" onClick={onDismissMissingLink}>{copy.deckReturnToList}</button></section>;
   if (identity.settings.github.profiles.length === 0) return <>{polling.online ? <EmptyState copy={copy} /> : <OfflineState copy={copy} />}<p role="status">{copy.deckNoProfiles}</p></>;
@@ -547,7 +547,6 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const openCreate = () => {
     editorGeneration.current += 1;
     onDismissMissingLink?.();
-    setSelected(null);
     setCreating(true);
     if (mobile) setSettingsOpen(true);
   };
@@ -569,7 +568,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     if (committed && creatingAtSubmit && generation === editorGeneration.current) { setSelected(next.id); setCreating(false); }
     return committed;
   }} />;
-  const configuration = <DeckConfiguration copy={copy} deck={deck} refreshState={refreshState} readOnly={identity.readOnly} deleteFailed={deleteFailed} onDelete={() => deck && void deleteDeck(deck)}>{editor}{deck && <WidgetAccess key={`widget-${deck.id}`} cache={refreshState.cache} cacheProfileRef={refreshState.cacheProfileRef} copy={copy} deck={deck} failure={refreshState.failure} onConfirmationOpenChange={onModalConfirmationOpenChange} />}</DeckConfiguration>;
+  const configuration = <DeckConfiguration copy={copy} deck={deck} refreshState={refreshState} readOnly={identity.readOnly} deleteFailed={deck !== null && deleteFailedDeckId === deck.id} onDelete={() => deck && void deleteDeck(deck)}>{editor}{deck && <WidgetAccess key={`widget-${deck.id}`} cache={refreshState.cache} cacheProfileRef={refreshState.cacheProfileRef} copy={copy} deck={deck} failure={refreshState.failure} onConfirmationOpenChange={onModalConfirmationOpenChange} />}</DeckConfiguration>;
   const cachedResults = refreshState.cache?.results ?? [];
   const results = deck === null ? [] : deck.display.showDrafts ? cachedResults : cachedResults.filter((pullRequest) => !pullRequest.draft);
   const draftsFiltered = deck !== null && !deck.display.showDrafts && cachedResults.length > 0 && results.length === 0;

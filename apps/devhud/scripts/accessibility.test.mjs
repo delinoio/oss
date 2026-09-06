@@ -235,6 +235,10 @@ test("narrow layouts keep capture previews above the safe-area-aware navigation"
   assert.match(styles, /\.floating-capture-preview\{[^}]*bottom:1rem[^}]*\}[\s\S]*@media \(max-width:700px\)\{\.floating-capture-preview\{bottom:calc\(var\(--mobile-bottom-navigation-height, calc\(64px \+ env\(safe-area-inset-bottom\)\)\) \+ 1rem\)\}\}/u);
 });
 
+test("rail-width Deck results place status badges below their content", () => {
+  assert.match(styles, /@media \(min-width:701px\) and \(max-width:1023px\)\s*\{\s*\.deck-results \.data-row\s*\{[^}]*grid-template-columns:auto minmax\(0,1fr\)[^}]*\}[^}]*\.deck-results \.data-row-trailing\s*\{[^}]*grid-column:2;[^}]*justify-content:start/u);
+});
+
 test("the shell exposes a localized skip target and named rail tooltips", () => {
   assert.match(foundation, /className="skip-link" href="#devhud-main-content"/u);
   assert.match(foundation, /id="devhud-main-content" className="content" tabIndex=\{-1\}/u);

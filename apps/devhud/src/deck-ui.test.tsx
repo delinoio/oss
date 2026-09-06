@@ -119,6 +119,19 @@ describe("Deck surface", () => {
     expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Keep this edit");
   });
 
+  it("preserves an existing Deck draft when an unrelated first profile changes", () => {
+    const firstProfile = { id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "First", kind: "fine-grained" as const };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [firstProfile, profile] } }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Keep this profile-independent edit" } });
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [profile] } }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Keep this profile-independent edit");
+  });
+
   it("keeps Deck checkbox controls inside their 44px label targets", () => {
     const bridge = bridgeWith(async () => ({ kind: "ok" as const }));
     render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
@@ -182,6 +195,24 @@ describe("Deck surface", () => {
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckCreate })).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(selection));
+  });
+
+  it("returns to the Deck selected before mobile creation was dismissed", async () => {
+    setViewport(390);
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    const selection = screen.getByRole("combobox", { name: messages.en.deckSelected });
+    fireEvent.change(selection, { target: { value: other.id } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckCreate });
+    fireEvent.keyDown(sheet, { key: "Escape" });
+
+    await waitFor(() => expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(other.id));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    expect((await screen.findByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(other.name);
   });
 
   it("clears validation state when another Deck is selected", async () => {
@@ -677,6 +708,21 @@ describe("Deck surface", () => {
     await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.deckDeleteFailed));
     expect(screen.getByRole("button", { name: messages.en.deckDelete })).not.toHaveProperty("disabled", true);
     expect(request).not.toHaveBeenCalledWith({ operation: "widgets.disable-deck", deckId: deck.id });
+  });
+
+  it("does not show one Deck's deletion failure after selecting another Deck", async () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    const replaceSettings: IdentitySettingsValue["replaceSettings"] = vi.fn(async () => { throw new Error("offline"); });
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }), replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckDelete }));
+    await screen.findByRole("alert");
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: other.id } });
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(other.name);
   });
 
   it("commits Deck deletion before clearing selected widget state", async () => {
