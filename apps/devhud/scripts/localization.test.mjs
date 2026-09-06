@@ -21,6 +21,21 @@ test("keeps the responsive shell and accessibility copy complete in both languag
   assert.equal(messages.ko.skipToContent, "콘텐츠로 건너뛰기");
   for (const language of ["en", "ko"]) {
     for (const key of ["more", "back", "skipToContent", "availableTools"]) assert.ok(messages[language][key]);
+    for (const key of [
+      "settingsSections",
+      "backToSettings",
+      "settingsAppearanceTitle",
+      "settingsAppearanceSummary",
+      "settingsShortcutsTitle",
+      "settingsShortcutsSummary",
+      "settingsChromeTitle",
+      "settingsChromeSummary",
+      "settingsNotificationsTitle",
+      "settingsNotificationsSummary",
+      "settingsUpdatesTitle",
+      "settingsUpdatesSummary",
+      "openAppStore",
+    ]) assert.ok(messages[language][key], `missing ${language}.${key}`);
   }
 });
 

@@ -8,6 +8,8 @@ const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const styles = readFileSync(join(appRoot, "src/styles.css"), "utf8");
 const app = readFileSync(join(appRoot, "src/App.tsx"), "utf8");
 const identityUi = readFileSync(join(appRoot, "src/identity-ui.tsx"), "utf8");
+const settingsSections = readFileSync(join(appRoot, "src/settings-sections.tsx"), "utf8");
+const shortcutUi = readFileSync(join(appRoot, "src/shortcut-settings-ui.tsx"), "utf8");
 const foundation = readFileSync(join(appRoot, "src/ui-foundation.tsx"), "utf8");
 const icons = readFileSync(join(appRoot, "src/ui-icons.tsx"), "utf8");
 const main = readFileSync(join(appRoot, "src/main.tsx"), "utf8");
@@ -105,7 +107,7 @@ test("command palette shortcut is unavailable during onboarding", () => {
   assert.match(app, /event\.action === ShortcutActionId\.CommandPalette/u);
   assert.match(app, /actionRegistry\.find\(\(candidate\) => candidate\.id === event\.action\)/u);
   assert.match(app, /ShortcutPaletteTrigger/u);
-  assert.match(identityUi, /binding\.enabled \? \[\.\.\.modifiers, copy\[shortcutKeyLabels\[binding\.key\]\]\]\.join/u);
+  assert.match(shortcutUi, /binding\.enabled \? \[\.\.\.modifiers, copy\[shortcutKeyLabels\[binding\.key\]\]\]\.join/u);
 });
 
 test("document preferences are synchronized before the first localized render", () => {
@@ -220,6 +222,25 @@ test("the UI foundation encodes the semantic, sizing, and responsive contracts",
   assert.match(styles, /padding:[^;}]*calc\(var\(--mobile-bottom-navigation-height\) \+ var\(--space-3\)\)/u);
   assert.match(styles, /@media \(min-width:701px\) and \(max-width:1023px\)/u);
   assert.match(styles, /@media \(max-width:700px\)/u);
+});
+
+test("Settings uses a sticky desktop contents list and focus-managed mobile details", () => {
+  assert.match(styles, /\.settings-desktop\{display:grid;grid-template-columns:minmax\(220px,300px\) minmax\(0,1fr\)/u);
+  assert.match(styles, /\.settings-toc\{position:sticky;inset-block-start:var\(--space-3\)/u);
+  assert.match(styles, /\.settings-panel\[hidden\]\{display:none\}/u);
+  assert.match(identityUi, /hidden=\{!active\} inert=\{!active\}/u);
+  assert.match(identityUi, /panelRefs\.current\[id\]\?\.querySelector<HTMLElement>\("h3"\)\?\.focus\(\)/u);
+  assert.match(identityUi, /openerRefs\.current\[selected\]\?\.focus\(\)/u);
+  assert.match(identityUi, /aria-label=\{copy\.settingsSections\}/u);
+});
+
+test("Settings section metadata is localized and uses repository-owned icons", () => {
+  for (const id of ["Appearance", "Shortcuts", "ChromeExtension", "UrlMappings", "GitHubCredentials", "CloudflareR2", "LocalAgents", "Notifications", "Updates"]) {
+    assert.match(settingsSections, new RegExp(`${id}:`, "u"));
+  }
+  assert.match(settingsSections, /title: "settingsAppearanceTitle"/u);
+  assert.match(settingsSections, /summary: "settingsAppearanceSummary"/u);
+  assert.doesNotMatch(settingsSections, /<img|https?:\/\//u);
 });
 
 test("reduced motion preserves visibility transforms", () => {
