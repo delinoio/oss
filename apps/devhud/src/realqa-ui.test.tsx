@@ -464,6 +464,46 @@ describe("RealQA capture and editor", () => {
     await act(async () => { resolveCapture?.({ kind: "capture-draft", draft }); });
   });
 
+  it("keeps a shortcut capture dialog above an open editor sheet", async () => {
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    const rendered = render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    await openEditor();
+
+    rendered.rerender(<RealqaSurface bridge={bridge} copy={messages.en} requestedAction={{ action: ShortcutActionId.CaptureSelection, sequence: 1 }} />);
+    const captureDialog = await screen.findByRole("dialog", { name: messages.en.captureSelection });
+    const overlays = document.querySelectorAll(".ui-overlay");
+
+    expect(overlays[overlays.length - 1]?.contains(captureDialog)).toBe(true);
+  });
+
+  it("cancels an in-flight append when Escape closes an editor sheet", async () => {
+    let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const { bridge, request } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return new Promise((resolve) => { resolveCapture = resolve; });
+      if (value.operation === "capture.cancel") return { kind: "ok" };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    await openEditor();
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      operation: "capture.start",
+      options: expect.objectContaining({ appendToDraftId: draft.id }),
+    })));
+    fireEvent.keyDown(screen.getByRole("dialog", { name: messages.en.editorTitle }), { key: "Escape" });
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "capture.cancel" }));
+    expect(screen.queryByRole("dialog", { name: messages.en.editorTitle })).toBeNull();
+    await act(async () => { resolveCapture?.({ kind: "capture-draft", draft }); });
+  });
+
   it("preserves later draft navigation when a capture completes", async () => {
     let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;
     const { bridge } = bridgeWith(async (value) => {

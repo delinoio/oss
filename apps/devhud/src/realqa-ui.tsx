@@ -355,9 +355,13 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     removeDraftLocally(draftId);
     try { await refresh(); } catch { /* The successful native confirmation is authoritative. */ }
   };
+  const closeEditor = () => {
+    setSelected(null);
+    if (captureInFlight.current) void bridge.request({ operation: "capture.cancel" }).catch(() => {});
+  };
   const value: RealqaContextValue = {
     state: { drafts, unreadableDraftIds, selected, busy, status, error, preview },
-    actions: { capture, open: openDraft, close: () => setSelected(null), remove, removeUnreadable, confirmIssueCreated, runDraftOperation, refresh },
+    actions: { capture, open: openDraft, close: closeEditor, remove, removeUnreadable, confirmIssueCreated, runDraftOperation, refresh },
     meta: { copy, bridge },
   };
 
@@ -371,8 +375,8 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
         {error && <FeedbackPanel feedback={error} />}
         <DraftList />
       </div>
-      {captureDialog && <CaptureDialog key={captureDialog} action={captureDialog} status={captureStatus} options={options} onOptions={setOptions} onCapture={completeCapture} onClose={cancelCapture} />}
       {selected && <CaptureEditor key={selected.id} draft={selected} />}
+      {captureDialog && <CaptureDialog key={captureDialog} action={captureDialog} status={captureStatus} options={options} onOptions={setOptions} onCapture={completeCapture} onClose={cancelCapture} />}
     </>}
     {preview && previewImage && !captureDialog && !paletteOpen && <aside className="floating-capture-preview" aria-label={copy.floatingPreview}>
       <img src={previewImage.previewUrl} alt="" />

@@ -91,4 +91,16 @@ describe("DevHud UI foundation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.queryByRole("dialog", { name: "More" })).toBeNull();
   });
+
+  it("includes disclosure summaries in sheet focus containment", async () => {
+    render(<Sheet open title="More" backLabel="Back" onClose={() => {}}><details><summary>Inspect</summary><p>Details</p></details><Button>Later</Button></Sheet>);
+    const summary = screen.getByText("Inspect");
+    const back = screen.getByRole("button", { name: "Back" });
+
+    await waitFor(() => expect(document.activeElement).toBe(summary));
+    fireEvent.keyDown(summary, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(back);
+    fireEvent.keyDown(back, { key: "Tab" });
+    expect(document.activeElement).toBe(summary);
+  });
 });
