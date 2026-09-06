@@ -561,6 +561,20 @@ describe("Deck surface", () => {
     expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", synchronizedDeck.name);
   });
 
+  it("discards an unsubmitted Deck draft before creating another Deck", () => {
+    const synchronizedDeck = { ...deck, name: "Synchronized Deck" };
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Abandoned local edit" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [synchronizedDeck] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: synchronizedDeck.id } });
+
+    expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", synchronizedDeck.name);
+  });
+
   it("does not attach an in-flight save failure to another Deck", async () => {
     const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
     let finishSave: (committed: boolean) => void = () => {};
@@ -1670,6 +1684,18 @@ describe("Deck surface", () => {
       expect(cache.results).toEqual([pullRequest]);
     });
     await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "widgets.replace-deck-snapshot", snapshot: expect.objectContaining({ deckId: deck.id, rate: null }) }));
+  });
+
+  it("keeps a rate-limit reset time in the mobile Deck workspace", async () => {
+    setViewport(390);
+    const resetAt = "2026-08-17T01:00:00.000Z";
+    writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, totalCount: 0, results: [], lastSuccessfulAt: null, rate: { limit: 30, remaining: 0, used: 30, resetAt, resource: "search", retryAfterSeconds: 3_600 }, failures: 1, failure: "rate-limit", nextRefreshAt: resetAt, transitionKeys: [] });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    const reset = await screen.findByText(messages.en.deckRateReset, { exact: false });
+    expect(reset.closest(".deck-workspace")).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull();
   });
 
   it("keeps a legacy total absent across failure and retries without an ETag", async () => {

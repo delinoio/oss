@@ -771,7 +771,10 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const createDisabled = creationDisabled || pendingCreation;
   const openCreate = () => {
     if (pendingCreation) return;
-    if (!isCreating && !editorDraft.hasFailedCreationSession) setCreationSession((current) => current + 1);
+    if (!isCreating) {
+      editorDraft.discardUnsubmitted();
+      if (!editorDraft.hasFailedCreationSession) setCreationSession((current) => current + 1);
+    }
     editorGeneration.current += 1;
     onDismissMissingLink?.();
     setCreating(true);
@@ -811,7 +814,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
       if (creatingAtSubmit) setPendingCreation(false);
     }
   }} />;
-  const configuration = <DeckConfiguration copy={copy} deck={deck} refreshState={refreshState} readOnly={identity.readOnly} deleteFailed={deck !== null && deleteFailedDeckId === deck.id} onDelete={() => deck && void deleteDeck(deck)}>{editor}{deck && <WidgetAccess key={`widget-${deck.id}`} cache={refreshState.cache} cacheProfileRef={refreshState.cacheProfileRef} copy={copy} deck={deck} failure={refreshState.failure} enableTriggerRef={widgetEnableTrigger} disableButtonRef={widgetDisableButton} onOpenConfirmation={() => setWidgetConfirmationDeckId(deck.id)} />}</DeckConfiguration>;
+  const configuration = <DeckConfiguration copy={copy} deck={deck} readOnly={identity.readOnly} deleteFailed={deck !== null && deleteFailedDeckId === deck.id} onDelete={() => deck && void deleteDeck(deck)}>{editor}{deck && <WidgetAccess key={`widget-${deck.id}`} cache={refreshState.cache} cacheProfileRef={refreshState.cacheProfileRef} copy={copy} deck={deck} failure={refreshState.failure} enableTriggerRef={widgetEnableTrigger} disableButtonRef={widgetDisableButton} onOpenConfirmation={() => setWidgetConfirmationDeckId(deck.id)} />}</DeckConfiguration>;
   const cachedResults = refreshState.cache?.results ?? [];
   const results = deck === null ? [] : deck.display.showDrafts ? cachedResults : cachedResults.filter((pullRequest) => !pullRequest.draft);
   const draftsFiltered = deck !== null && !deck.display.showDrafts && cachedResults.length > 0 && results.length === 0;
@@ -839,6 +842,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     <div className="deck-workspace-layout">
       <div className="deck-workspace">
         {deck ? <><DeckRefreshStatus copy={copy} state={refreshState} canPoll={polling.canPoll} online={polling.online} />
+          {refreshState.cache?.lastSuccessfulAt === null && refreshState.cache.rate?.resetAt && <DeckRateReset copy={copy} resetAt={refreshState.cache.rate.resetAt} />}
           {!polling.online && !hasSuccessfulSnapshot ? <OfflineState copy={copy} /> : refreshState.loading && !hasSuccessfulSnapshot ? <LoadingState copy={copy} /> : refreshState.failure !== null && !hasSuccessfulSnapshot ? <StatePanel eyebrow={copy.error} title={failureCopy(copy, refreshState.failure)} summary={copy.deckNoCachedResults} role="alert" tone="danger" headingLevel={3} /> : <DeckResults copy={copy} groupBy={deck.display.groupBy} results={results} draftsFiltered={draftsFiltered} successfulEmpty={hasSuccessfulSnapshot && refreshState.failure === null && cachedResults.length === 0} />}
         </> : <StatePanel eyebrow={copy.deck} title={copy.deckCreate} summary={copy.deckNoDecks} tone="info" headingLevel={3} actions={<Button variant="primary" disabled={createDisabled} onClick={openCreate}>{copy.deckCreate}</Button>} />}
       </div>
@@ -849,10 +853,9 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   </section>;
 }
 
-function DeckConfiguration({ copy, deck, refreshState, readOnly, deleteFailed, onDelete, children }: PropsWithChildren<{ readonly copy: Copy; readonly deck: Deck | null; readonly refreshState: DeckRefreshState; readonly readOnly: boolean; readonly deleteFailed: boolean; readonly onDelete: () => void }>) {
+function DeckConfiguration({ copy, deck, readOnly, deleteFailed, onDelete, children }: PropsWithChildren<{ readonly copy: Copy; readonly deck: Deck | null; readonly readOnly: boolean; readonly deleteFailed: boolean; readonly onDelete: () => void }>) {
   return <Card className="deck-configuration"><h3>{deck === null ? copy.deckCreate : copy.deckConfiguration}</h3>{children}
     {deck && <div className="deck-configuration-actions"><Button variant="danger" disabled={readOnly} onClick={onDelete}>{copy.deckDelete}</Button></div>}
-    {refreshState.cache?.rate?.resetAt && <p className="deck-rate-reset">{copy.deckRateReset}: <time dateTime={refreshState.cache.rate.resetAt}>{refreshState.cache.rate.resetAt}</time></p>}
     {deleteFailed && <p role="alert">{copy.deckDeleteFailed}</p>}
   </Card>;
 }
@@ -864,7 +867,11 @@ function DeckRefreshStatus({ copy, state, canPoll, online }: { readonly copy: Co
   const tone = !online ? "warning" : failure !== null ? failure === "rate-limit" || failure === "incomplete-results" ? "warning" : "danger" : state.loading ? "info" : !canPoll ? "warning" : "success";
   const label = !online ? copy.deckOfflineCached : failure !== null ? failureCopy(copy, failure) : state.loading ? copy.deckRefreshing : !canPoll ? copy.deckStale : copy.deckFresh;
   const badge = <StatusBadge tone={tone}>{label}</StatusBadge>;
-  return <Card className="deck-refresh-status">{online && failure !== null ? <div role="alert">{badge}</div> : badge}{cache.lastSuccessfulAt && <p>{copy.lastSuccessfulRefresh}: <time dateTime={cache.lastSuccessfulAt}>{cache.lastSuccessfulAt}</time></p>}{!online && failure !== null && <p role="alert">{failureCopy(copy, failure)}</p>}</Card>;
+  return <Card className="deck-refresh-status">{online && failure !== null ? <div role="alert">{badge}</div> : badge}{cache.lastSuccessfulAt && <p>{copy.lastSuccessfulRefresh}: <time dateTime={cache.lastSuccessfulAt}>{cache.lastSuccessfulAt}</time></p>}{cache.rate?.resetAt && <DeckRateReset copy={copy} resetAt={cache.rate.resetAt} />}{!online && failure !== null && <p role="alert">{failureCopy(copy, failure)}</p>}</Card>;
+}
+
+function DeckRateReset({ copy, resetAt }: { readonly copy: Copy; readonly resetAt: string }) {
+  return <p className="deck-rate-reset">{copy.deckRateReset}: <time dateTime={resetAt}>{resetAt}</time></p>;
 }
 
 function WidgetAccess({ cache, cacheProfileRef, copy, deck, failure, enableTriggerRef, disableButtonRef, onOpenConfirmation }: { readonly cache: DeckCache | null; readonly cacheProfileRef: Deck["profileRef"] | null; readonly copy: Copy; readonly deck: Deck; readonly failure: DeckFailure | null; readonly enableTriggerRef: RefObject<HTMLButtonElement | null>; readonly disableButtonRef: RefObject<HTMLButtonElement | null>; readonly onOpenConfirmation: () => void }) {
