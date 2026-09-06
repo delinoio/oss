@@ -602,6 +602,29 @@ describe("RealQA capture and editor", () => {
     await act(async () => { resolveCapture?.({ kind: "capture-draft", draft }); });
   });
 
+  it("does not cancel a standalone capture when closing an independently opened editor", async () => {
+    let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const { bridge, request } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return new Promise((resolve) => { resolveCapture = resolve; });
+      if (value.operation === "capture.cancel") return { kind: "ok" };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      operation: "capture.start",
+      options: expect.objectContaining({ appendToDraftId: undefined }),
+    })));
+    await openEditor();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.close }));
+
+    expect(request.mock.calls.some(([value]) => value.operation === "capture.cancel")).toBe(false);
+    await act(async () => { resolveCapture?.({ kind: "capture-draft", draft }); });
+  });
+
   it("preserves later draft navigation when a capture completes", async () => {
     let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;
     const { bridge } = bridgeWith(async (value) => {

@@ -85,6 +85,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   const [options, setOptions] = useState<CaptureOptions>({ delaySeconds: 0, includePointer: false, removeShadow: false });
   const lastRequested = useRef<number | null>(null);
   const captureInFlight = useRef(false);
+  const captureOriginatingDraftId = useRef<string | null | undefined>(undefined);
   const captureCancellationGeneration = useRef(0);
   const captureStatusInFlight = useRef(false);
   const captureStatusRequest = useRef(0);
@@ -215,6 +216,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     draftOpenRequest.current += 1;
     lastRequested.current = null;
     captureInFlight.current = false;
+    captureOriginatingDraftId.current = undefined;
     captureStatusInFlight.current = false;
     captureDialogOpener.current = null;
     previewSequence.current += 1;
@@ -238,6 +240,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     const cancellationGeneration = captureCancellationGeneration.current;
     captureInFlight.current = true;
     const originatingDraftId = selected?.id ?? null;
+    captureOriginatingDraftId.current = originatingDraftId;
     setBusy(true); setError(null); setStatus(copy.captureSaving);
     try {
       const requestCapture = async (appendToDraftId?: string) => {
@@ -285,6 +288,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     } finally {
       if (generation !== resetGeneration.current) return;
       captureInFlight.current = false;
+      captureOriginatingDraftId.current = undefined;
       setBusy(false);
     }
   }, [bridge, copy, dismissCaptureDialog, installDraft, options, refresh, runDraftOperation, selected?.id, takeBrowserContext]);
@@ -379,8 +383,9 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     try { await refresh(); } catch { /* The successful native confirmation is authoritative. */ }
   };
   const closeEditor = () => {
+    const selectedDraftId = selected?.id;
     setSelected(null);
-    cancelInFlightCapture();
+    if (selectedDraftId && captureOriginatingDraftId.current === selectedDraftId) cancelInFlightCapture();
   };
   const value: RealqaContextValue = {
     state: { drafts, unreadableDraftIds, selected, busy, status, error, preview },
