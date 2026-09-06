@@ -62,26 +62,40 @@ function createDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["g
   };
 }
 
-function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["github"]["profiles"]) {
+function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["github"]["profiles"], creationSession: number) {
   const sourceKey = JSON.stringify(value === null ? { value, initialProfileRef: profiles[0]?.id ?? "" } : { value });
-  const saveKey = value?.id ?? sourceKey;
+  const saveKey = value?.id ?? `creation:${creationSession}`;
   const initial = useMemo(() => createDeckEditorDraft(value, profiles), [sourceKey]);
-  const [state, setState] = useState<{ readonly sourceKey: string; readonly draft: DeckEditorDraft; readonly saveFailure: DeckFailure | null }>(() => ({ sourceKey, draft: initial, saveFailure: null }));
+  const [state, setState] = useState<{ readonly sourceKey: string; readonly draft: DeckEditorDraft }>(() => ({ sourceKey, draft: initial }));
   const [pendingSaves, setPendingSaves] = useState<ReadonlySet<string>>(() => new Set());
+  const [saveFailures, setSaveFailures] = useState<ReadonlyMap<string, DeckFailure>>(() => new Map());
   const draft = state.sourceKey === sourceKey ? state.draft : initial;
   const saving = pendingSaves.has(saveKey);
-  const saveFailure = state.sourceKey === sourceKey ? state.saveFailure : null;
+  const saveFailure = saveFailures.get(saveKey) ?? null;
   useEffect(() => {
-    setState((current) => current.sourceKey === sourceKey ? current : { sourceKey, draft: initial, saveFailure: null });
+    setState((current) => current.sourceKey === sourceKey ? current : { sourceKey, draft: initial });
   }, [initial, sourceKey]);
   const update = useCallback((change: (current: DeckEditorDraft) => DeckEditorDraft) => {
-    setState((current) => ({ sourceKey, draft: change(current.sourceKey === sourceKey ? current.draft : initial), saveFailure: current.sourceKey === sourceKey ? current.saveFailure : null }));
+    setState((current) => ({ sourceKey, draft: change(current.sourceKey === sourceKey ? current.draft : initial) }));
   }, [initial, sourceKey]);
-  const reset = useCallback(() => setState((current) => ({ sourceKey, draft: initial, saveFailure: null })), [initial, sourceKey]);
+  const reset = useCallback(() => {
+    setState({ sourceKey, draft: initial });
+    setSaveFailures((current) => {
+      if (!current.has(saveKey)) return current;
+      const next = new Map(current);
+      next.delete(saveKey);
+      return next;
+    });
+  }, [initial, saveKey, sourceKey]);
   const beginSave = useCallback(() => {
     setPendingSaves((current) => new Set(current).add(saveKey));
-    setState((current) => current.sourceKey === sourceKey ? { ...current, saveFailure: null } : { sourceKey, draft: initial, saveFailure: null });
-  }, [initial, saveKey, sourceKey]);
+    setSaveFailures((current) => {
+      if (!current.has(saveKey)) return current;
+      const next = new Map(current);
+      next.delete(saveKey);
+      return next;
+    });
+  }, [saveKey]);
   const finishSave = useCallback((failure: DeckFailure | null) => {
     setPendingSaves((current) => {
       if (!current.has(saveKey)) return current;
@@ -89,8 +103,9 @@ function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["gith
       next.delete(saveKey);
       return next;
     });
-    setState((current) => current.sourceKey === sourceKey ? { ...current, saveFailure: failure } : current);
-  }, [saveKey, sourceKey]);
+    if (failure === null) return;
+    setSaveFailures((current) => new Map(current).set(saveKey, failure));
+  }, [saveKey]);
   return { sourceKey, draft, saving, saveFailure, update, reset, beginSave, finishSave };
 }
 
@@ -535,6 +550,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const [widgetConfirmationDeckId, setWidgetConfirmationDeckId] = useState<string | null>(null);
   const [deleteFailedDeckId, setDeleteFailedDeckId] = useState<string | null>(null);
   const [pendingCreation, setPendingCreation] = useState(false);
+  const [creationSession, setCreationSession] = useState(0);
   const editorGeneration = useRef(0);
   const settingsSheetGeneration = useRef(0);
   const createdDeckToFocus = useRef<string | null>(null);
@@ -554,7 +570,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const widgetConfirmationDeck = widgetConfirmationDeckId === null ? null : identity.settings.decks.find((item) => item.id === widgetConfirmationDeckId) ?? null;
   const widgetConfirmationOpen = widgetConfirmationDeck !== null;
   const widgetConfirmationRefreshState = widgetConfirmationDeck === null ? emptyDeckRefreshState : polling.states[widgetConfirmationDeck.id] ?? emptyDeckRefreshState;
-  const editorDraft = useDeckEditorDraft(deck, identity.settings.github.profiles);
+  const editorDraft = useDeckEditorDraft(deck, identity.settings.github.profiles, creationSession);
   useEffect(() => {
     const previous = previousLinkedDeck.current;
     previousLinkedDeck.current = { id: selectedDeckId, available: linkedDeckAvailable };
@@ -576,7 +592,10 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     const animation = requestAnimationFrame(() => createdDeckSaveButton.current?.focus());
     return () => cancelAnimationFrame(animation);
   }, [deck?.id, mobile, settingsOpen]);
-  useEffect(() => { onModalConfirmationOpenChange?.(widgetConfirmationOpen); }, [onModalConfirmationOpenChange, widgetConfirmationOpen]);
+  useEffect(() => {
+    onModalConfirmationOpenChange?.(widgetConfirmationOpen);
+    return () => onModalConfirmationOpenChange?.(false);
+  }, [onModalConfirmationOpenChange, widgetConfirmationOpen]);
   const deleteDeck = async (value: Deck) => {
     const deletingSheetGeneration = mobile && settingsOpen ? settingsSheetGeneration.current : null;
     setDeleteFailedDeckId(null);
@@ -598,6 +617,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const createDisabled = creationDisabled || pendingCreation;
   const openCreate = () => {
     if (pendingCreation) return;
+    if (!isCreating) setCreationSession((current) => current + 1);
     editorGeneration.current += 1;
     onDismissMissingLink?.();
     setCreating(true);

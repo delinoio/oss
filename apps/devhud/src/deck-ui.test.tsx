@@ -146,6 +146,30 @@ describe("Deck surface", () => {
     expect(replaceSettings).toHaveBeenCalledOnce();
   });
 
+  it("keeps a pending creation disabled when synchronized profiles reorder", async () => {
+    const otherProfile = { ...profile, id: "018f47a2-7b3c-7def-8abc-1234567890ae", name: "Personal" };
+    const settingsWithProfiles = parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [profile, otherProfile] } });
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn(() => pendingSave);
+    identity = identityWith({ settings: settingsWithProfiles, replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Created Deck" } });
+    fireEvent.change(screen.getByLabelText(messages.en.deckQuery), { target: { value: "repo:octo/widgets is:pr" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settingsWithProfiles, github: { ...settingsWithProfiles.github, profiles: [otherProfile, profile] } }), replaceSettings });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect(screen.getByRole("button", { name: messages.en.saved }).closest("fieldset")).toHaveProperty("disabled", true);
+    finishSave(false);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorNetwork));
+  });
+
   it("keeps Create unavailable after leaving a pending Deck creation", async () => {
     const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
     let finishSave: (committed: boolean) => void = () => {};
@@ -439,6 +463,8 @@ describe("Deck surface", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: messages.en.saved })).toHaveProperty("disabled", false));
     expect(screen.queryByText(messages.en.deckErrorNetwork)).toBeNull();
     expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(other.name);
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: deck.id } });
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", messages.en.deckErrorNetwork);
   });
 
   it("keeps a Deck save pending when returning to its editor", async () => {
@@ -527,6 +553,18 @@ describe("Deck surface", () => {
     }));
     await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(false));
     expect(JSON.stringify(request.mock.calls)).not.toMatch(/github[_-]?pat|Bearer|token-value/iu);
+  });
+
+  it("clears the screen-modal flag when an open widget confirmation unmounts", async () => {
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const onModalConfirmationOpenChange = vi.fn();
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} onModalConfirmationOpenChange={onModalConfirmationOpenChange} /></DeckPollingBoundary>);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(true));
+    view.unmount();
+    expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(false);
   });
 
   it("surfaces a widget enable failure inside the active privacy confirmation", async () => {
