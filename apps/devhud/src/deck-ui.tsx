@@ -557,6 +557,9 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const createdDeckSaveButton = useRef<HTMLButtonElement>(null);
   const createDeckButton = useRef<HTMLButtonElement>(null);
   const sheetReturnFocus = useRef<HTMLElement>(null);
+  const deckNameInput = useRef<HTMLInputElement>(null);
+  const settingsSheetBackButton = useRef<HTMLButtonElement>(null);
+  const widgetConfirmationFocusPending = useRef(false);
   const widgetEnableTrigger = useRef<HTMLButtonElement>(null);
   const widgetDisableButton = useRef<HTMLButtonElement>(null);
   const mobile = shellLayout === ShellLayout.Mobile;
@@ -582,8 +585,19 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     setSettingsOpen(false);
   }, [linkedDeckAvailable, selectedDeckId]);
   useEffect(() => {
-    if (widgetConfirmationDeckId !== null && widgetConfirmationDeck === null) setWidgetConfirmationDeckId(null);
-  }, [widgetConfirmationDeck, widgetConfirmationDeckId]);
+    if (widgetConfirmationDeckId !== null && widgetConfirmationDeck === null) {
+      widgetConfirmationFocusPending.current = mobile && settingsOpen;
+      setWidgetConfirmationDeckId(null);
+      return;
+    }
+    if (!widgetConfirmationFocusPending.current) return;
+    widgetConfirmationFocusPending.current = false;
+    const animation = requestAnimationFrame(() => {
+      if (deckNameInput.current !== null && !deckNameInput.current.disabled) deckNameInput.current.focus();
+      else settingsSheetBackButton.current?.focus();
+    });
+    return () => cancelAnimationFrame(animation);
+  }, [mobile, settingsOpen, widgetConfirmationDeck, widgetConfirmationDeckId]);
   useEffect(() => {
     // Creation replaces the keyed editor while its Sheet stays open, so restore focus after the replacement mounts.
     if (createdDeckToFocus.current !== deck?.id) return;
@@ -635,7 +649,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     settingsSheetGeneration.current += 1;
     setSettingsOpen(false);
   };
-  const editor = <DeckEditor key={deck?.id ?? "create"} copy={copy} value={deck ?? undefined} draft={editorDraft.draft} saving={editorDraft.saving} saveFailure={editorDraft.saveFailure} saveButtonRef={createdDeckSaveButton} onDraftChange={editorDraft.update} onSaveStart={editorDraft.beginSave} onSaveFinish={editorDraft.finishSave} profiles={identity.settings.github.profiles} disabled={isCreating ? creationDisabled : identity.readOnly} onSave={async (next) => {
+  const editor = <DeckEditor key={deck?.id ?? "create"} copy={copy} value={deck ?? undefined} draft={editorDraft.draft} saving={editorDraft.saving} saveFailure={editorDraft.saveFailure} nameInputRef={deckNameInput} saveButtonRef={createdDeckSaveButton} onDraftChange={editorDraft.update} onSaveStart={editorDraft.beginSave} onSaveFinish={editorDraft.finishSave} profiles={identity.settings.github.profiles} disabled={isCreating ? creationDisabled : identity.readOnly} onSave={async (next) => {
     // A save can outlive a selection change, so only its originating editor may navigate on completion.
     const generation = editorGeneration.current;
     const creatingAtSubmit = isCreating;
@@ -686,7 +700,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
       </div>
       {!mobile && <aside className="deck-configuration-panel" aria-label={copy.deckConfiguration} inert={widgetConfirmationOpen || undefined}>{configuration}</aside>}
     </div>
-    {mobile && <Sheet open={settingsOpen} inert={widgetConfirmationOpen} title={isCreating ? copy.deckCreate : copy.deckConfiguration} backLabel={copy.back} returnFocusRef={sheetReturnFocus} onClose={closeSettings}>{configuration}</Sheet>}
+    {mobile && <Sheet open={settingsOpen} inert={widgetConfirmationOpen} title={isCreating ? copy.deckCreate : copy.deckConfiguration} backLabel={copy.back} returnFocusRef={sheetReturnFocus} backButtonRef={settingsSheetBackButton} onClose={closeSettings}>{configuration}</Sheet>}
     {widgetConfirmationDeck && <WidgetPrivacyConfirmation cache={widgetConfirmationRefreshState.cache} cacheProfileRef={widgetConfirmationRefreshState.cacheProfileRef} copy={copy} deck={widgetConfirmationDeck} failure={widgetConfirmationRefreshState.failure} open={widgetConfirmationOpen} enableTriggerRef={widgetEnableTrigger} disableButtonRef={widgetDisableButton} onOpenChange={(open) => setWidgetConfirmationDeckId(open ? widgetConfirmationDeck.id : null)} />}
   </section>;
 }
@@ -783,13 +797,13 @@ function widgetSnapshot(deck: Deck, cache: DeckCache, failure: DeckFailure | nul
   return base;
 }
 
-function DeckEditor({ copy, value, draft, saving, saveFailure, saveButtonRef, onDraftChange, onSaveStart, onSaveFinish, profiles, disabled = false, onSave }: { readonly copy: Copy; readonly value?: DevHudSettingsV1["decks"][number]; readonly draft: DeckEditorDraft; readonly saving: boolean; readonly saveFailure: DeckFailure | null; readonly saveButtonRef?: RefObject<HTMLButtonElement | null>; readonly onDraftChange: (change: (current: DeckEditorDraft) => DeckEditorDraft) => void; readonly onSaveStart: () => void; readonly onSaveFinish: (failure: DeckFailure | null) => void; readonly profiles: DevHudSettingsV1["github"]["profiles"]; readonly disabled?: boolean; readonly onSave: (deck: DevHudSettingsV1["decks"][number]) => Promise<boolean> }) {
+function DeckEditor({ copy, value, draft, saving, saveFailure, nameInputRef, saveButtonRef, onDraftChange, onSaveStart, onSaveFinish, profiles, disabled = false, onSave }: { readonly copy: Copy; readonly value?: DevHudSettingsV1["decks"][number]; readonly draft: DeckEditorDraft; readonly saving: boolean; readonly saveFailure: DeckFailure | null; readonly nameInputRef?: RefObject<HTMLInputElement | null>; readonly saveButtonRef?: RefObject<HTMLButtonElement | null>; readonly onDraftChange: (change: (current: DeckEditorDraft) => DeckEditorDraft) => void; readonly onSaveStart: () => void; readonly onSaveFinish: (failure: DeckFailure | null) => void; readonly profiles: DevHudSettingsV1["github"]["profiles"]; readonly disabled?: boolean; readonly onSave: (deck: DevHudSettingsV1["decks"][number]) => Promise<boolean> }) {
   const { name, profileRef, query, builder, refreshMinutes, groupBy, showDrafts, notifications } = draft;
   const [invalid, setInvalid] = useState<"query" | "repository" | null>(null);
   const submit = (event: FormEvent) => { event.preventDefault(); if (saving) return; if (!validateDeckQuery(query) || !profileRef || !name.trim()) { setInvalid("query"); return; } if (!hasRepositoryQualifier(query) || deckRepositories(query) === null) { setInvalid("repository"); return; } setInvalid(null); onSaveStart(); const next = { id: value?.id ?? createUuidV7(), name: name.trim(), profileRef, query, builder, display: { groupBy, showDrafts }, refreshMinutes, notifications }; void (async () => { try { onSaveFinish(await onSave(next) ? null : "unknown"); } catch (error) { onSaveFinish(classifyDeckFailure(error)); } })(); };
   const setBuilderValue = (field: keyof DeckBuilder, next: string) => { const trimmed = next.trim(); const builderValue = trimmed === "" ? null : trimmed as DeckBuilder[typeof field]; const nextQuery = applyDeckBuilder(query, field, builderValue); onDraftChange((current) => ({ ...current, query: nextQuery, builder: parseDeckBuilder(nextQuery) })); };
   return <form onSubmit={submit} className="deck-editor"><fieldset disabled={disabled || saving}>
-    <Field label={copy.deckName} inputId="deck-name"><input id="deck-name" required value={name} onChange={(event) => onDraftChange((current) => ({ ...current, name: event.target.value }))} /></Field>
+    <Field label={copy.deckName} inputId="deck-name"><input ref={nameInputRef} id="deck-name" required value={name} onChange={(event) => onDraftChange((current) => ({ ...current, name: event.target.value }))} /></Field>
     <Field label={copy.deckProfile} inputId="deck-profile"><select id="deck-profile" required value={profileRef} onChange={(event) => onDraftChange((current) => ({ ...current, profileRef: event.target.value }))}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></Field>
     <Field label={copy.deckQuery} inputId="deck-query"><input id="deck-query" required value={query} onChange={(event) => onDraftChange((current) => ({ ...current, query: event.target.value, builder: parseDeckBuilder(event.target.value) }))} /></Field>
     <fieldset disabled={hasDeckBooleanQuerySyntax(query)}><legend>{copy.deckBuilder}</legend>
