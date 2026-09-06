@@ -94,6 +94,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   const draftOpenRequest = useRef(0);
   const captureDialogOpener = useRef<HTMLElement | null>(null);
   const draftEditorOpener = useRef<HTMLElement | null>(null);
+  const captureFocusFallback = useRef<HTMLButtonElement | null>(null);
   const inSheetPreview = useRef<HTMLElement | null>(null);
   const editorPreviewFallback = useRef<HTMLButtonElement | null>(null);
   const paletteWasOpen = useRef(false);
@@ -311,7 +312,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     if (action === ShortcutActionId.CaptureSelection || action === ShortcutActionId.CaptureToolbar) {
       const generation = resetGeneration.current;
       captureStatusInFlight.current = true;
-      const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const opener = selected ? editorPreviewFallback.current : (document.activeElement instanceof HTMLElement ? document.activeElement : null);
       setError(null);
       try {
         const freshStatus = await refreshCaptureStatus();
@@ -329,7 +330,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       return;
     }
     await completeCapture(action);
-  }, [captureDialog, completeCapture, copy, refreshCaptureStatus]);
+  }, [captureDialog, completeCapture, copy, refreshCaptureStatus, selected?.id]);
   const cancelInFlightCapture = useCallback(() => {
     if (!captureInFlight.current) return;
     captureCancellationGeneration.current += 1;
@@ -418,6 +419,8 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     const generation = resetGeneration.current;
     await runDraftOperation(draftId, () => bridge.request({ operation: "capture.confirm-issue-created", draftId, expectedRevision }));
     if (generation !== resetGeneration.current) return;
+    // The selected draft card is removed with the sheet. Return to a control that remains mounted.
+    draftEditorOpener.current = captureFocusFallback.current;
     removeDraftLocally(draftId);
     try { await refresh(); } catch { /* The successful native confirmation is authoritative. */ }
   };
@@ -445,7 +448,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     {active && <>
       <PageHeader eyebrow={copy.realqa} title={copy.realqaTitle} summary={copy.realqaSummary} />
       <div className="realqa-flow">
-        <CaptureActions />
+        <CaptureActions focusFallbackRef={captureFocusFallback} />
         <DraftPolicy />
         {!selected && !captureDialog && <CaptureFeedback status={status} error={error} />}
         <DraftList />
@@ -453,14 +456,14 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       {selected && <CaptureEditor key={selected.id} draft={selected} previewImage={!captureDialog && !paletteOpen ? previewImage : null} previewRef={inSheetPreview} previewFocusFallbackRef={editorPreviewFallback} returnFocusRef={draftEditorOpener} restoreFocus onPreviewOpen={openPreview} />}
       {captureDialog && <CaptureDialog key={captureDialog} action={captureDialog} status={captureStatus} options={options} onOptions={setOptions} onCapture={completeCapture} onClose={cancelCapture} />}
     </>}
-    {preview && previewImage && !selected && !captureDialog && !paletteOpen && <aside className="floating-capture-preview" aria-label={copy.floatingPreview}>
+    {preview && previewImage && (!active || !selected) && !captureDialog && !paletteOpen && <aside className="floating-capture-preview" aria-label={copy.floatingPreview}>
       <img src={previewImage.previewUrl} alt="" />
       <button onClick={openPreview}>{copy.floatingPreviewOpen}</button>
     </aside>}
   </RealqaContext>;
 }
 
-function CaptureActions() {
+function CaptureActions({ focusFallbackRef }: { readonly focusFallbackRef: RefObject<HTMLButtonElement | null> }) {
   const { state, actions, meta: { copy } } = useRealqa();
   const items: readonly [CaptureActionId, keyof Copy][] = [
     [ShortcutActionId.CaptureDisplay, "captureDisplay"], [ShortcutActionId.CaptureActiveWindow, "captureWindow"],
@@ -468,7 +471,7 @@ function CaptureActions() {
   ];
   return <Card className="realqa-capture-card" aria-labelledby="realqa-capture-title">
     <div className="realqa-section-heading"><div><StatusBadge tone="info">{copy.realqaCapture}</StatusBadge><h3 id="realqa-capture-title">{copy.realqaCapture}</h3></div></div>
-    <Button variant="primary" disabled={state.busy} onClick={() => void actions.capture(ShortcutActionId.CaptureDisplay)}>{copy.captureDisplay}</Button>
+    <Button ref={focusFallbackRef} variant="primary" disabled={state.busy} onClick={() => void actions.capture(ShortcutActionId.CaptureDisplay)}>{copy.captureDisplay}</Button>
     <div className="capture-actions" aria-label={copy.captureMode}>{items.slice(1).map(([action, label]) => <Button key={action} disabled={state.busy} onClick={() => void actions.capture(action)}>{copy[label]}</Button>)}</div>
   </Card>;
 }

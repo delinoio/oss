@@ -888,6 +888,26 @@ describe("RealQA capture and editor", () => {
     await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "capture.confirm-issue-created", draftId: draft.id, expectedRevision: draft.revision }));
     await waitFor(() => expect(screen.queryByRole("heading", { name: messages.en.editorTitle })).toBeNull());
     expect(screen.queryByRole("button", { name: messages.en.realqaOpenEditor })).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.captureDisplay })));
+  });
+
+  it("shows a standalone preview when a capture completes after leaving RealQA", async () => {
+    let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return new Promise((resolve) => { resolveCapture = resolve; });
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    const rendered = render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+    await waitFor(() => expect(resolveCapture).toBeTypeOf("function"));
+
+    rendered.rerender(<RealqaSurface bridge={bridge} copy={messages.en} active={false} />);
+    await act(async () => { resolveCapture?.({ kind: "capture-draft", draft }); });
+
+    expect(await screen.findByRole("complementary", { name: messages.en.floatingPreview })).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: messages.en.editorTitle })).toBeNull();
   });
 
   it("hides the floating preview while a capture dialog is open", async () => {
