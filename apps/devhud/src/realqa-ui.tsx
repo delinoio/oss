@@ -112,6 +112,13 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   const previewImage = previewRequest?.draft.images.find((image) => image.id === previewRequest.imageId) ?? previewRequest?.draft.images[0] ?? null;
 
   useLayoutEffect(() => {
+    if (!active || draftEditorOpener.current?.isConnected) return;
+    // RealQA navigation recreates its controls. A delayed standalone capture must
+    // restore its editor to the newly mounted Capture control, not the old surface.
+    draftEditorOpener.current = captureFocusFallback.current;
+  }, [active]);
+
+  useLayoutEffect(() => {
     if (!active || !previewActivationNeedsFocusFallback.current) return;
     // An off-surface preview mounts CaptureActions only after onActivate changes the shell surface.
     draftEditorOpener.current = captureFocusFallback.current;

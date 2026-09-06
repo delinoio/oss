@@ -1095,6 +1095,34 @@ describe("RealQA capture and editor", () => {
     expect(screen.queryByRole("dialog", { name: messages.en.editorTitle })).toBeNull();
   });
 
+  it.each(["before", "after"] as const)("returns focus to the remounted Capture control when a standalone capture completes %s returning to RealQA", async (completion) => {
+    let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return new Promise((resolve) => { resolveCapture = resolve; });
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    function Harness() {
+      const [active, setActive] = useState(true);
+      return <><button onClick={() => setActive(false)}>leave RealQA</button><button onClick={() => setActive(true)}>return to RealQA</button><RealqaSurface bridge={bridge} copy={messages.en} active={active} /></>;
+    }
+    render(<Harness />);
+
+    const initialCapture = screen.getByRole("button", { name: messages.en.captureDisplay });
+    initialCapture.focus();
+    fireEvent.click(initialCapture);
+    await waitFor(() => expect(resolveCapture).toBeTypeOf("function"));
+    fireEvent.click(screen.getByRole("button", { name: "leave RealQA" }));
+    if (completion === "before") await act(async () => { resolveCapture?.({ kind: "capture-draft", draft }); });
+    fireEvent.click(screen.getByRole("button", { name: "return to RealQA" }));
+    if (completion === "after") await act(async () => { resolveCapture?.({ kind: "capture-draft", draft }); });
+
+    await screen.findByRole("dialog", { name: messages.en.editorTitle });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.close }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.captureDisplay })));
+  });
+
   it.each(["click", "escape"] as const)("returns focus to Capture after activating an off-surface preview with %s", async (dismissal) => {
     let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;
     const { bridge } = bridgeWith(async (value) => {
