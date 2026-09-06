@@ -650,11 +650,12 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     if (selectedDeckId !== null || localSelectedDeckAvailable || !wasAvailable || createdDeckToFocus.current === selected) return;
     editorGeneration.current += 1;
     setSelected(null);
-    if (!mobile || !settingsOpen) return;
+    // A confirmation owns the focus handoff when its Deck disappears.
+    if (!mobile || !settingsOpen || widgetConfirmationDeckId !== null) return;
     settingsSheetGeneration.current += 1;
     sheetReturnFocus.current = mobileSettingsButton.current;
     setSettingsOpen(false);
-  }, [localSelectedDeckAvailable, mobile, selected, selectedDeckId, settingsOpen]);
+  }, [localSelectedDeckAvailable, mobile, selected, selectedDeckId, settingsOpen, widgetConfirmationDeckId]);
   useEffect(() => {
     const wasMissingGitHubProfiles = previousNoGitHubProfiles.current;
     previousNoGitHubProfiles.current = noGitHubProfiles;
@@ -794,6 +795,8 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     setSettingsOpen(false);
   };
   const openSettings = () => {
+    // The visible fallback becomes the active source while its mobile editor is open.
+    if (selectedDeck !== null) setSelected(selectedDeck.id);
     sheetReturnFocus.current = null;
     settingsSheetGeneration.current += 1;
     setSettingsOpen(true);
