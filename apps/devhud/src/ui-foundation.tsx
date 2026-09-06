@@ -94,11 +94,11 @@ export function StatusBadge({ tone = "neutral", children }: { readonly tone?: St
   return <span className={`status-badge status-badge-${tone}`}><StatusIcon /><span>{children}</span></span>;
 }
 
-export function StatePanel({ eyebrow, title, summary, role = "status", tone = "info", details, actions, progress = false }: { readonly eyebrow: ReactNode; readonly title: ReactNode; readonly summary: ReactNode; readonly role?: "status" | "alert"; readonly tone?: StatusTone; readonly details?: ReactNode; readonly actions?: ReactNode; readonly progress?: boolean }) {
+export function StatePanel({ eyebrow, title, summary, headingLevel = 2, role = "status", tone = "info", details, actions, progress = false }: { readonly eyebrow: ReactNode; readonly title: ReactNode; readonly summary: ReactNode; readonly headingLevel?: 2 | 3 | 4; readonly role?: "status" | "alert"; readonly tone?: StatusTone; readonly details?: ReactNode; readonly actions?: ReactNode; readonly progress?: boolean }) {
   const titleId = useId();
   return <section className="state-panel" role={role} aria-labelledby={titleId}>
     <StatusBadge tone={tone}>{eyebrow}</StatusBadge>
-    <h2 id={titleId} tabIndex={-1}>{title}</h2>
+    {headingLevel === 2 ? <h2 id={titleId} tabIndex={-1}>{title}</h2> : headingLevel === 3 ? <h3 id={titleId} tabIndex={-1}>{title}</h3> : <h4 id={titleId} tabIndex={-1}>{title}</h4>}
     <p>{summary}</p>
     {details}
     {actions && <div className="state-panel-actions">{actions}</div>}

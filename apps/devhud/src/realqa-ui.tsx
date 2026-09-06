@@ -66,6 +66,7 @@ function errorCopy(copy: Copy, reason: unknown): RealqaFeedback | null {
     if (reason.code === NativeBridgeErrorCode.QuotaExhausted) return { kind: RealqaFeedbackKind.Quota, summary: copy.captureQuotaFull };
     if (reason.code === NativeBridgeErrorCode.ImageLimit) return { kind: RealqaFeedbackKind.Capture, summary: copy.captureImageLimit };
     if (reason.code === NativeBridgeErrorCode.PermissionDenied) return { kind: RealqaFeedbackKind.Permission, summary: copy.capturePermission };
+    if (reason.code === NativeBridgeErrorCode.StorageFailure) return { kind: RealqaFeedbackKind.Save, summary: copy.captureFailed };
     if (reason.code === NativeBridgeErrorCode.Cancelled) return null;
   }
   return { kind: RealqaFeedbackKind.Capture, summary: copy.captureFailed };
@@ -84,6 +85,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   const [options, setOptions] = useState<CaptureOptions>({ delaySeconds: 0, includePointer: false, removeShadow: false });
   const lastRequested = useRef<number | null>(null);
   const captureInFlight = useRef(false);
+  const captureCancellationGeneration = useRef(0);
   const captureStatusInFlight = useRef(false);
   const captureStatusRequest = useRef(0);
   const draftListRequest = useRef(0);
@@ -233,11 +235,15 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   const completeCapture = useCallback(async (action: CaptureActionId, captureOptions: CaptureOptions = options) => {
     if (captureInFlight.current) return;
     const generation = resetGeneration.current;
+    const cancellationGeneration = captureCancellationGeneration.current;
     captureInFlight.current = true;
     const originatingDraftId = selected?.id ?? null;
     setBusy(true); setError(null); setStatus(copy.captureSaving);
     try {
       const requestCapture = async (appendToDraftId?: string) => {
+        // A queued append can outlive the editor that requested it. Do not begin
+        // native work after the user has already canceled that capture attempt.
+        if (cancellationGeneration !== captureCancellationGeneration.current) return null;
         const response = await bridge.request({ operation: "capture.start", actionId: action, options: { ...captureOptions, appendToDraftId } });
         if (response.kind !== "capture-draft") return { response, contextAttachmentFailed: false };
         try {
@@ -250,17 +256,19 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       const captureResult = originatingDraftId
         ? await runDraftOperation(originatingDraftId, async (current, install) => {
           const appended = await requestCapture(current.id);
+          if (!appended) return null;
           if (appended.response.kind === "capture-draft") install(appended.response.draft);
           return {
             ...appended,
             previewImageId: appended.response.kind === "capture-draft" ? appended.response.draft.images[current.images.length]?.id : undefined,
           };
         })
-        : await requestCapture().then((captured) => ({
+        : await requestCapture().then((captured) => captured && ({
           ...captured,
           previewImageId: captured.response.kind === "capture-draft" ? captured.response.draft.images[0]?.id : undefined,
         }));
       if (generation !== resetGeneration.current) return;
+      if (!captureResult) return;
       const { response, previewImageId, contextAttachmentFailed } = captureResult;
       if (response.kind !== "capture-draft") return;
       if (!originatingDraftId) installDraft(response.draft);
@@ -305,10 +313,16 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     }
     await completeCapture(action);
   }, [captureDialog, completeCapture, copy, refreshCaptureStatus]);
+  const cancelInFlightCapture = useCallback(() => {
+    if (!captureInFlight.current) return;
+    captureCancellationGeneration.current += 1;
+    setStatus("");
+    void bridge.request({ operation: "capture.cancel" }).catch(() => {});
+  }, [bridge]);
   const cancelCapture = useCallback(() => {
     dismissCaptureDialog();
-    if (busy) void bridge.request({ operation: "capture.cancel" }).catch(() => {});
-  }, [bridge, busy, dismissCaptureDialog]);
+    cancelInFlightCapture();
+  }, [cancelInFlightCapture, dismissCaptureDialog]);
 
   useImperativeHandle(ref, () => ({ execute: capture, reset }), [capture, reset]);
   useEffect(() => {
@@ -366,7 +380,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   };
   const closeEditor = () => {
     setSelected(null);
-    if (captureInFlight.current) void bridge.request({ operation: "capture.cancel" }).catch(() => {});
+    cancelInFlightCapture();
   };
   const value: RealqaContextValue = {
     state: { drafts, unreadableDraftIds, selected, busy, status, error, preview },
@@ -416,7 +430,7 @@ function DraftPolicy() {
   </Card>;
 }
 
-function FeedbackPanel({ feedback }: { readonly feedback: RealqaFeedback }) {
+function FeedbackPanel({ feedback, headingLevel = 3 }: { readonly feedback: RealqaFeedback; readonly headingLevel?: 2 | 3 | 4 }) {
   const { meta: { copy } } = useRealqa();
   const presentation: Record<RealqaFeedbackKind, { readonly title: string; readonly tone: StatusTone }> = {
     [RealqaFeedbackKind.Capture]: { title: copy.realqaCaptureFailedTitle, tone: "danger" },
@@ -429,7 +443,7 @@ function FeedbackPanel({ feedback }: { readonly feedback: RealqaFeedback }) {
     [RealqaFeedbackKind.Delete]: { title: copy.realqaDeleteTitle, tone: "danger" },
   };
   const state = presentation[feedback.kind];
-  return <StatePanel eyebrow={copy.error} title={state.title} summary={feedback.summary} tone={state.tone} role="alert" />;
+  return <StatePanel eyebrow={copy.error} title={state.title} summary={feedback.summary} headingLevel={headingLevel} tone={state.tone} role="alert" />;
 }
 
 function CaptureFeedback({ status, error }: { readonly status: string; readonly error: RealqaFeedback | null }) {
@@ -442,12 +456,12 @@ function CaptureFeedback({ status, error }: { readonly status: string; readonly 
 function DraftList() {
   const { state: { drafts, unreadableDraftIds }, actions, meta: { copy } } = useRealqa();
   return <section aria-labelledby="realqa-drafts-title"><h3 id="realqa-drafts-title">{copy.realqaDrafts}</h3>
-    {drafts.length === 0 && unreadableDraftIds.length === 0 ? <StatePanel eyebrow={copy.empty} title={copy.realqaEmptyTitle} summary={copy.realqaNoDrafts} tone="neutral" /> : <ul className="draft-list">{drafts.map((draft) => <li key={draft.id}><Card>
+    {drafts.length === 0 && unreadableDraftIds.length === 0 ? <StatePanel eyebrow={copy.empty} title={copy.realqaEmptyTitle} summary={copy.realqaNoDrafts} headingLevel={4} tone="neutral" /> : <ul className="draft-list">{drafts.map((draft) => <li key={draft.id}><Card>
       <button className="draft-preview" onClick={() => void actions.open(draft)}><img src={draft.images[0]?.previewUrl} alt="" loading="lazy" decoding="async" /><span>{draft.imageCount} {copy.realqaImages}</span></button>
       {draft.hasBrowserContext && <StatusBadge tone="info">{copy.browserContextAttached}</StatusBadge>}
       <time dateTime={new Date(draft.expiresAt * 1000).toISOString()}>{copy.realqaDraftExpiry}: {new Date(draft.expiresAt * 1000).toLocaleString()}</time>
       <div className="actions"><Button onClick={() => void actions.open(draft)}>{copy.realqaOpenEditor}</Button><Button variant="danger" onClick={() => void actions.remove(draft)}>{copy.realqaDeleteDraft}</Button></div>
-    </Card></li>)}{unreadableDraftIds.map((draftId) => <li key={draftId}><StatePanel eyebrow={copy.error} title={copy.realqaUnreadableTitle} summary={copy.realqaUnreadableDraft} tone="warning" role="status" actions={<Button variant="danger" onClick={() => void actions.removeUnreadable(draftId)}>{copy.realqaDeleteDraft}</Button>} /></li>)}</ul>}
+    </Card></li>)}{unreadableDraftIds.map((draftId) => <li key={draftId}><StatePanel eyebrow={copy.error} title={copy.realqaUnreadableTitle} summary={copy.realqaUnreadableDraft} headingLevel={4} tone="warning" role="status" actions={<Button variant="danger" onClick={() => void actions.removeUnreadable(draftId)}>{copy.realqaDeleteDraft}</Button>} /></li>)}</ul>}
   </section>;
 }
 
@@ -682,7 +696,7 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
       <LayerList image={active} mutate={mutate} copy={copy} disabled={busy} />
       <Button variant="primary" disabled={busy} onClick={() => void flatten()}>{copy.editorFlatten}</Button>
       <Button ref={submissionTrigger} variant="primary" disabled={busy} onClick={() => setSubmissionOpen(true)}>{copy.issueSubmit}</Button>
-      {message && (failed ? <StatePanel eyebrow={copy.error} title={copy.realqaSaveTitle} summary={message} tone="danger" role="alert" /> : <div role="status"><StatusBadge tone="success">{message}</StatusBadge></div>)}
+      {message && (failed ? <StatePanel eyebrow={copy.error} title={copy.realqaSaveTitle} summary={message} headingLevel={3} tone="danger" role="alert" /> : <div role="status"><StatusBadge tone="success">{message}</StatusBadge></div>)}
     </aside></div>
     {submissionOpen && <RealqaSubmissionModal draft={draft} bridge={bridge} copy={copy} onClose={closeSubmission} onConfirmed={confirmCreated} />}
   </section></Sheet>;

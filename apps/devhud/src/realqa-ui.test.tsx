@@ -112,6 +112,7 @@ describe("RealQA capture and editor", () => {
     [NativeBridgeErrorCode.PermissionDenied, "realqaPermissionTitle", "capturePermission"],
     [NativeBridgeErrorCode.ProtectedContent, "realqaProtectedTitle", "captureProtected"],
     [NativeBridgeErrorCode.TopologyChanged, "realqaTopologyTitle", "captureTopologyChanged"],
+    [NativeBridgeErrorCode.StorageFailure, "realqaSaveTitle", "captureFailed"],
   ] as const)("presents %s with localized text and an icon-backed state panel", async (code, titleKey, summaryKey) => {
     const { bridge } = bridgeWith(async (value) => {
       if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
@@ -125,6 +126,54 @@ describe("RealQA capture and editor", () => {
     expect(alert.textContent).toContain(messages.en[titleKey]);
     expect(alert.textContent).toContain(messages.en[summaryKey]);
     expect(alert.querySelector("svg")).toBeTruthy();
+  });
+
+  it("presents an initial draft storage failure as a save failure", async () => {
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") throw new NativeBridgeError(NativeBridgeErrorCode.StorageFailure);
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain(messages.en.realqaSaveTitle);
+    expect(alert.textContent).toContain(messages.en.captureFailed);
+  });
+
+  it("keeps nested RealQA state-panel headings below their containing sections", async () => {
+    const unreadableId = "019b0000-0000-7000-8000-000000000099";
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [unreadableId] };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    expect((await screen.findByRole("heading", { name: messages.en.realqaUnreadableTitle })).tagName).toBe("H4");
+    cleanup();
+
+    const empty = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={empty.bridge} copy={messages.en} />);
+    expect((await screen.findByRole("heading", { name: messages.en.realqaEmptyTitle })).tagName).toBe("H4");
+  });
+
+  it("keeps editor save feedback below the sheet heading", async () => {
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] };
+      if (value.operation === "capture.editor.apply") throw new Error("save failed");
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    await openEditor();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.editorAdd }));
+
+    expect((await screen.findByRole("heading", { name: messages.en.realqaSaveTitle })).tagName).toBe("H3");
   });
 
   it.each([["en", messages.en], ["ko", messages.ko]] as const)("exposes the accessible %s editor and ordered layer controls", async (_language, copy) => {
@@ -786,6 +835,31 @@ describe("RealQA capture and editor", () => {
     fireEvent.click(add);
     await waitFor(() => expect(applyRequests).toHaveLength(2));
     expect(applyRequests[1].expectedRevision).toBe(5);
+  });
+
+  it("does not start a queued append capture after closing the editor", async () => {
+    let resolveEditor: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const captureRequests: Extract<NativeBridgeRequestV1, { operation: "capture.start" }>[] = [];
+    const { bridge, request } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] };
+      if (value.operation === "capture.editor.apply") return new Promise((resolve) => { resolveEditor = resolve; });
+      if (value.operation === "capture.start") { captureRequests.push(value); return { kind: "capture-draft", draft }; }
+      if (value.operation === "capture.cancel") return { kind: "ok" };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    await openEditor();
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.editorAdd }));
+    await waitFor(() => expect(resolveEditor).toBeTypeOf("function"));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+    expect(captureRequests).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.close }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "capture.cancel" }));
+
+    await act(async () => { resolveEditor?.({ kind: "capture-draft", draft: { ...draft, revision: 4 } }); });
+    await waitFor(() => expect(captureRequests).toHaveLength(0));
   });
 
   it("keeps a floating preview on the latest editor revision", async () => {
