@@ -59,7 +59,7 @@ function errorCopy(copy: Copy, reason: unknown) {
   return copy.captureFailed;
 }
 
-export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = false, onActivate, requestedAction, onRequestedActionConsumed, takeBrowserContext = noBrowserContext }: { readonly ref?: Ref<RealqaController>; readonly bridge: NativeBridgeV1; readonly copy: Copy; readonly active?: boolean; readonly paletteOpen?: boolean; readonly onActivate?: () => void; readonly requestedAction?: CaptureRequest | null; readonly onRequestedActionConsumed?: (sequence: number) => void; readonly takeBrowserContext?: (draftId: string, expectedRevision: number) => Promise<CaptureDraft | null> }) {
+export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = false, screenModalConfirmationOpen = false, onActivate, requestedAction, onRequestedActionConsumed, takeBrowserContext = noBrowserContext }: { readonly ref?: Ref<RealqaController>; readonly bridge: NativeBridgeV1; readonly copy: Copy; readonly active?: boolean; readonly paletteOpen?: boolean; readonly screenModalConfirmationOpen?: boolean; readonly onActivate?: () => void; readonly requestedAction?: CaptureRequest | null; readonly onRequestedActionConsumed?: (sequence: number) => void; readonly takeBrowserContext?: (draftId: string, expectedRevision: number) => Promise<CaptureDraft | null> }) {
   const [drafts, setDrafts] = useState<readonly CaptureDraft[]>([]);
   const [unreadableDraftIds, setUnreadableDraftIds] = useState<readonly string[]>([]);
   const [selected, setSelected] = useState<CaptureDraft | null>(null);
@@ -369,9 +369,9 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       {captureDialog && <CaptureDialog key={captureDialog} action={captureDialog} status={captureStatus} options={options} onOptions={setOptions} onCapture={completeCapture} onClose={cancelCapture} />}
       {selected ? <CaptureEditor key={selected.id} draft={selected} /> : <DraftList />}
     </>}
-    {preview && previewImage && !captureDialog && !paletteOpen && <aside className="floating-capture-preview" aria-label={copy.floatingPreview}>
+    {preview && previewImage && !captureDialog && !paletteOpen && <aside className="floating-capture-preview" aria-label={copy.floatingPreview} inert={screenModalConfirmationOpen}>
       <img src={previewImage.previewUrl} alt="" />
-      <button onClick={() => { setSelected(preview); setPreviewRequest(null); onActivate?.(); }}>{copy.floatingPreviewOpen}</button>
+      <button onClick={() => { if (screenModalConfirmationOpen) return; setSelected(preview); setPreviewRequest(null); onActivate?.(); }}>{copy.floatingPreviewOpen}</button>
     </aside>}
   </RealqaContext>;
 }

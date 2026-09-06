@@ -126,10 +126,10 @@ describe("identity UI", () => {
     expect(onboardingCard?.hasAttribute("inert")).toBe(false);
   });
 
-  it("keeps the API-origin editor locked until its change settles", async () => {
+  it("keeps the API-origin confirmation open until its change settles and restores editor focus", async () => {
     let completeApply: (() => void) | undefined;
     const onApiOrigin = vi.fn(() => new Promise<void>((resolve) => { completeApply = resolve; }));
-    render(<FirstRunIdentity copy={messages.en} apiOrigin="https://devhud.api.delino.io" onApiOrigin={onApiOrigin} onComplete={vi.fn()} apiChangeError={null} />);
+    render(<AccountIdentity {...accountProps({ onApiOrigin })} />);
 
     const origin = screen.getByRole("textbox", { name: messages.en.apiOrigin }) as HTMLInputElement;
     const trigger = screen.getByRole("button", { name: messages.en.applyApiOrigin }) as HTMLButtonElement;
@@ -140,15 +140,20 @@ describe("identity UI", () => {
     fireEvent.click(confirm);
 
     await waitFor(() => expect(onApiOrigin).toHaveBeenCalledOnce());
-    expect(screen.queryByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBeNull();
+    expect(screen.getByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBe(confirmation);
     expect(origin.disabled).toBe(true);
     expect(trigger.disabled).toBe(true);
+    expect(confirm.disabled).toBe(true);
+    fireEvent.keyDown(confirmation, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBe(confirmation);
     fireEvent.click(trigger);
     expect(onApiOrigin).toHaveBeenCalledOnce();
 
     await act(async () => { completeApply?.(); });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBeNull());
     expect(origin.disabled).toBe(false);
     expect(trigger.disabled).toBe(false);
+    await waitFor(() => expect(document.activeElement).toBe(origin));
   });
 
   it("defers first-run completion until an API-origin confirmation closes", async () => {

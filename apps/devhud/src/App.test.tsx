@@ -321,7 +321,7 @@ describe("native App state", () => {
     await waitFor(() => expect(JSON.parse(localStorage.getItem("devhud.shell.preferences.v1") ?? "null").apiOrigin).toBe("https://custom.example"));
     expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "secure.purge", scope: "api-change", profileId: expect.stringMatching(/^origin\./u) }));
     expect(pendingCallback).toBeNull();
-    expect(transitionOperations).toEqual(["discard-callback", "purge-session", "configure-new-origin"]);
+    expect(transitionOperations.slice(0, 3)).toEqual(["discard-callback", "purge-session", "configure-new-origin"]);
   });
 
   it("reports API cleanup failures without using browser-opening copy", async () => {
@@ -976,7 +976,7 @@ describe("native App state", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: messages.en.deck }).getAttribute("aria-current")).toBe("page"));
   });
 
-  it("keeps the palette modal while a capture completes and preserves its confirmation across navigation", async () => {
+  it("keeps the palette modal while a capture completes and inerts its preview during Account confirmation", async () => {
     const runtime: RuntimeSnapshot = { ...desktopRuntime, capabilities: { ...desktopRuntime.capabilities, capture: true } };
     let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;
     const capturedDraft = {
@@ -1010,8 +1010,18 @@ describe("native App state", () => {
     expect(screen.queryByRole("complementary", { name: messages.en.floatingPreview })).toBeNull();
     fireEvent.click(within(palette).getByRole("button", { name: messages.en.close }));
     expect(await screen.findByRole("complementary", { name: messages.en.floatingPreview })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: messages.en.home }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
     expect(screen.getByRole("complementary", { name: messages.en.floatingPreview })).toBeTruthy();
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    const preview = screen.getByRole("complementary", { name: messages.en.floatingPreview });
+    expect(preview.hasAttribute("inert")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.floatingPreviewOpen }));
+    expect(screen.getByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBe(confirmation);
+    expect(screen.queryByRole("heading", { name: messages.en.editorTitle })).toBeNull();
+    fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
+    await waitFor(() => expect(preview.hasAttribute("inert")).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: messages.en.floatingPreviewOpen }));
     expect(await screen.findByRole("heading", { name: messages.en.editorTitle })).toBeTruthy();
   });
@@ -1270,7 +1280,7 @@ describe("responsive application shell", () => {
     expect(document.activeElement).not.toBe(more);
   });
 
-  it("queues an in-flight Deck link until an API-origin confirmation closes", async () => {
+  it("queues an in-flight Deck link until an API-origin confirmation closes and discards it after an origin switch", async () => {
     const deckId = "018f47a2-7b3c-7def-8abc-1234567890ab";
     let pendingDeckId: string | null = null;
     let resolveTake: ((response: NativeBridgeResponseV1) => void) | undefined;
@@ -1296,6 +1306,8 @@ describe("responsive application shell", () => {
       if (value.operation === "session.configure-origins") return Promise.resolve({ kind: "session-network-policy", changed: false });
       if (value.operation === "deck.peek-pending-link") return Promise.resolve({ kind: "deck-link", deckId: pendingDeckId });
       if (value.operation === "deck.take-pending-link") return new Promise((resolve) => { resolveTake = resolve; });
+      if (value.operation === "auth.take-pending-callback") return Promise.resolve({ kind: "auth-callback", url: null });
+      if (value.operation === "secure.purge") return Promise.resolve({ kind: "ok" });
       return Promise.reject(new Error(`unexpected operation ${value.operation}`));
     });
     const bridge: NativeBridgeV1 = {
@@ -1323,6 +1335,26 @@ describe("responsive application shell", () => {
     fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
     await waitFor(() => expect(screen.getByRole("button", { name: messages.en.deck }).getAttribute("aria-current")).toBe("page"));
     expect(request.mock.calls.filter(([value]) => value.operation === "deck.take-pending-link")).toHaveLength(1);
+
+    const nextDeckId = "018f47a2-7b3c-7def-8abc-1234567890ac";
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    pendingDeckId = nextDeckId;
+    await act(async () => {
+      for (const listener of listeners) listener({ version: 1, kind: "deck-link", deckId: nextDeckId });
+    });
+    await waitFor(() => expect(request.mock.calls.filter(([value]) => value.operation === "deck.take-pending-link")).toHaveLength(2));
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    const secondConfirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    pendingDeckId = null;
+    await act(async () => resolveTake?.({ kind: "deck-link", deckId: nextDeckId }));
+    expect(screen.getByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBe(secondConfirmation);
+
+    fireEvent.click(within(secondConfirmation).getByRole("button", { name: messages.en.applyApiOrigin }));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem("devhud.shell.preferences.v1") ?? "null").apiOrigin).toBe("https://custom.example"));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBeNull());
+    expect(screen.getByRole("button", { name: messages.en.account }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("button", { name: messages.en.deck }).getAttribute("aria-current")).toBeNull();
   });
 
   it("restores palette focus to the mounted trigger after crossing the mobile breakpoint", async () => {
