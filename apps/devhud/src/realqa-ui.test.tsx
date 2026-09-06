@@ -422,7 +422,10 @@ describe("RealQA capture and editor", () => {
     expect(screen.getByText("Captured content")).toBeTruthy();
     expect(screen.getByText("<main>Captured page</main>")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: messages.en.browserContextRemove }));
+    const firstImage = screen.getByRole("button", { name: `${messages.en.editorImage} 1` });
+    const removeContext = screen.getByRole("button", { name: messages.en.browserContextRemove });
+    removeContext.focus();
+    fireEvent.click(removeContext);
 
     await waitFor(() => expect(request).toHaveBeenCalledWith({
       operation: "capture.remove-browser-context",
@@ -431,6 +434,8 @@ describe("RealQA capture and editor", () => {
     }));
     expect(screen.queryByRole("heading", { name: messages.en.browserContextAttached })).toBeNull();
     expect(screen.getByText(messages.en.browserContextRemoved).closest("[role='status']")).toBeTruthy();
+    expect(firstImage).toBe(document.activeElement);
+    expect(screen.getByRole("dialog", { name: messages.en.editorTitle }).contains(document.activeElement)).toBe(true);
   });
 
   it("keeps attached context visible when revision-checked removal fails", async () => {
@@ -764,6 +769,37 @@ describe("RealQA capture and editor", () => {
     close.focus();
     fireEvent.click(close);
     await waitFor(() => expect(firstOpener).not.toBe(document.activeElement));
+  });
+
+  it("replaces a stale draft opener when a standalone capture auto-opens its editor", async () => {
+    const capturedDraft: CaptureDraft = {
+      ...draft,
+      id: "019b0000-0000-7000-8000-000000000020",
+      revision: 4,
+      images: [{ ...draft.images[0], id: "019b0000-0000-7000-8000-000000000021", previewUrl: "realqa://asset/draft/image/captured/4" }],
+    };
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft, secondDraft], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return { kind: "capture-draft", draft: capturedDraft };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    const [firstOpener] = await screen.findAllByRole("button", { name: messages.en.realqaOpenEditor });
+    firstOpener.focus();
+    fireEvent.click(firstOpener);
+    await screen.findByRole("dialog", { name: messages.en.editorTitle });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.close }));
+    await waitFor(() => expect(firstOpener).toBe(document.activeElement));
+
+    const captureTrigger = screen.getByRole("button", { name: messages.en.captureDisplay });
+    captureTrigger.focus();
+    fireEvent.click(captureTrigger);
+    await screen.findByRole("dialog", { name: messages.en.editorTitle });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.close }));
+
+    await waitFor(() => expect(captureTrigger).toBe(document.activeElement));
   });
 
   it("keeps a successful capture when the follow-up refresh fails", async () => {
@@ -1193,11 +1229,15 @@ describe("RealQA capture and editor", () => {
     const secondImage = screen.getByRole("button", { name: `${messages.en.editorImage} 2` });
     fireEvent.click(secondImage);
     expect(secondImage.getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(within(secondImage.parentElement!).getByRole("button", { name: messages.en.editorRemove }));
+    const remove = within(secondImage.parentElement!).getByRole("button", { name: messages.en.editorRemove });
+    remove.focus();
+    fireEvent.click(remove);
 
     const firstImage = await screen.findByRole("button", { name: `${messages.en.editorImage} 1` });
     await waitFor(() => expect(firstImage.getAttribute("aria-pressed")).toBe("true"));
     expect(screen.getByRole("img", { name: messages.en.editorCanvas }).querySelector("img")?.getAttribute("src")).toBe(remainingDraft.images[0].previewUrl);
+    expect(firstImage).toBe(document.activeElement);
+    expect(screen.getByRole("dialog", { name: messages.en.editorTitle }).contains(document.activeElement)).toBe(true);
   });
 
   it("clears mounted draft state through the logout controller reset", async () => {

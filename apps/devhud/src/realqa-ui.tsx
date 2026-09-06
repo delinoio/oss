@@ -246,6 +246,11 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     const cancellationGeneration = captureCancellationGeneration.current;
     captureInFlight.current = true;
     const originatingDraftId = selected?.id ?? null;
+    if (!originatingDraftId) {
+      // A standalone capture can auto-open an editor after a prior draft editor
+      // closed. Replace that stale opener with the control that began this flow.
+      draftEditorOpener.current = captureDialogOpener.current ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    }
     captureOriginatingDraftId.current = originatingDraftId;
     setBusy(true); setError(null); setStatus(copy.captureSaving);
     try {
@@ -591,6 +596,9 @@ function CaptureEditor({ draft, previewImage, previewRef, previewFocusFallbackRe
   const [failed, setFailed] = useState(false);
   const [submissionOpen, setSubmissionOpen] = useState(false);
   const submissionTrigger = useRef<HTMLButtonElement>(null);
+  const imageSelectorControls = useRef(new Map<string, HTMLButtonElement>());
+  const imageRemovalControls = useRef(new Map<string, HTMLButtonElement>());
+  const browserContextRemovalControl = useRef<HTMLButtonElement>(null);
   const editorActive = useRef(true);
   const active = draft.images.find((image) => image.id === imageId) ?? draft.images[0];
   useEffect(() => {
@@ -603,6 +611,10 @@ function CaptureEditor({ draft, previewImage, previewRef, previewFocusFallbackRe
     }
   }, [draft.images, imageId]);
   useEffect(() => { if (busy) setDrawing([]); }, [busy]);
+  const focusImageSelector = (images: readonly CaptureDraftImage[], imageId: string) => {
+    if (images[0]?.id === imageId) previewFocusFallbackRef.current?.focus();
+    else imageSelectorControls.current.get(imageId)?.focus();
+  };
 
   const enqueueRevisionOperation = (operation: (current: CaptureDraft, installDraft: (draft: CaptureDraft) => void) => Promise<void>) => {
     if (busy) return Promise.resolve();
@@ -617,6 +629,11 @@ function CaptureEditor({ draft, previewImage, previewRef, previewFocusFallbackRe
       try {
         const response = await bridge.request({ operation: "capture.editor.apply", draftId: current.id, expectedRevision: current.revision, command });
         if (response.kind === "capture-draft") {
+          if (command.kind === "remove-image" && document.activeElement === imageRemovalControls.current.get(command.imageId)) {
+            const removedIndex = current.images.findIndex((image) => image.id === command.imageId);
+            const survivor = current.images[removedIndex + 1] ?? current.images[removedIndex - 1];
+            survivor && focusImageSelector(current.images, survivor.id);
+          }
           installDraft(response.draft);
           if (editorActive.current) setMessage(copy.editorSaved);
         }
@@ -649,6 +666,10 @@ function CaptureEditor({ draft, previewImage, previewRef, previewFocusFallbackRe
       try {
         const response = await bridge.request({ operation: "capture.remove-browser-context", draftId: current.id, expectedRevision: current.revision });
         if (response.kind === "capture-draft") {
+          if (document.activeElement === browserContextRemovalControl.current) {
+            const retainedImage = current.images.find((image) => image.id === imageId) ?? current.images[0];
+            retainedImage && focusImageSelector(current.images, retainedImage.id);
+          }
           installDraft(response.draft);
           if (editorActive.current) setMessage(copy.browserContextRemoved);
         }
@@ -715,8 +736,8 @@ function CaptureEditor({ draft, previewImage, previewRef, previewFocusFallbackRe
     {previewImage && <aside ref={previewRef} className="sheet-capture-preview" aria-label={copy.floatingPreview}><img src={previewImage.previewUrl} alt="" /><button onClick={onPreviewOpen}>{copy.floatingPreviewOpen}</button></aside>}
     <CaptureFeedback status={status} error={error} />
     <p className="editor-close-hint">{copy.editorCloseHint}</p>
-    {draft.browserContext && <section aria-labelledby="browser-context-title"><h3 id="browser-context-title">{copy.browserContextAttached}</h3><dl className="runtime-diagnostics"><dt>{copy.browserContextPageTitle}</dt><dd>{draft.browserContext.context.title || "—"}</dd><dt>{copy.browserContextRedactedUrl}</dt><dd>{draft.browserContext.context.url}</dd></dl><details><summary>{copy.browserContextDetails}</summary><dl className="runtime-diagnostics"><dt>{copy.browserContextViewport}</dt><dd>{draft.browserContext.context.viewport.width} × {draft.browserContext.context.viewport.height}</dd><dt>{copy.browserContextUserAgent}</dt><dd>{draft.browserContext.context.userAgent}</dd><dt>{copy.browserContextSelectedBounds}</dt><dd>{draft.browserContext.context.selectedBounds ? `x ${draft.browserContext.context.selectedBounds.x}, y ${draft.browserContext.context.selectedBounds.y}, width ${draft.browserContext.context.selectedBounds.width}, height ${draft.browserContext.context.selectedBounds.height}` : copy.browserContextNone}</dd><dt>{copy.browserContextAccessibility}</dt><dd>{Object.entries(draft.browserContext.context.accessibility).length ? <dl>{Object.entries(draft.browserContext.context.accessibility).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl> : copy.browserContextNone}</dd><dt>{copy.browserContextMarkup}</dt><dd><pre>{draft.browserContext.context.outerHtml || copy.browserContextNone}</pre></dd></dl></details><Button variant="danger" disabled={busy} onClick={removeBrowserContext}>{copy.browserContextRemove}</Button></section>}
-    <div className="editor-image-order" aria-label={copy.realqaImages}>{draft.images.map((image, index) => <div key={image.id}><button ref={index === 0 ? previewFocusFallbackRef : undefined} aria-pressed={image.id === active.id} onClick={() => setImageId(image.id)}>{copy.editorImage} {index + 1}</button><button disabled={busy || index === 0} aria-label={copy.editorMoveEarlier} onClick={() => moveImage(index, -1)}>←</button><button disabled={busy || index === draft.images.length - 1} aria-label={copy.editorMoveLater} onClick={() => moveImage(index, 1)}>→</button><button disabled={busy || draft.images.length === 1} aria-label={copy.editorRemove} onClick={() => void mutate({ kind: "remove-image", imageId: image.id })}>×</button></div>)}</div>
+    {draft.browserContext && <section aria-labelledby="browser-context-title"><h3 id="browser-context-title">{copy.browserContextAttached}</h3><dl className="runtime-diagnostics"><dt>{copy.browserContextPageTitle}</dt><dd>{draft.browserContext.context.title || "—"}</dd><dt>{copy.browserContextRedactedUrl}</dt><dd>{draft.browserContext.context.url}</dd></dl><details><summary>{copy.browserContextDetails}</summary><dl className="runtime-diagnostics"><dt>{copy.browserContextViewport}</dt><dd>{draft.browserContext.context.viewport.width} × {draft.browserContext.context.viewport.height}</dd><dt>{copy.browserContextUserAgent}</dt><dd>{draft.browserContext.context.userAgent}</dd><dt>{copy.browserContextSelectedBounds}</dt><dd>{draft.browserContext.context.selectedBounds ? `x ${draft.browserContext.context.selectedBounds.x}, y ${draft.browserContext.context.selectedBounds.y}, width ${draft.browserContext.context.selectedBounds.width}, height ${draft.browserContext.context.selectedBounds.height}` : copy.browserContextNone}</dd><dt>{copy.browserContextAccessibility}</dt><dd>{Object.entries(draft.browserContext.context.accessibility).length ? <dl>{Object.entries(draft.browserContext.context.accessibility).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl> : copy.browserContextNone}</dd><dt>{copy.browserContextMarkup}</dt><dd><pre>{draft.browserContext.context.outerHtml || copy.browserContextNone}</pre></dd></dl></details><Button ref={browserContextRemovalControl} variant="danger" disabled={busy} onClick={removeBrowserContext}>{copy.browserContextRemove}</Button></section>}
+    <div className="editor-image-order" aria-label={copy.realqaImages}>{draft.images.map((image, index) => <div key={image.id}><button ref={index === 0 ? previewFocusFallbackRef : (element) => { if (element) imageSelectorControls.current.set(image.id, element); else imageSelectorControls.current.delete(image.id); }} aria-pressed={image.id === active.id} onClick={() => setImageId(image.id)}>{copy.editorImage} {index + 1}</button><button disabled={busy || index === 0} aria-label={copy.editorMoveEarlier} onClick={() => moveImage(index, -1)}>←</button><button disabled={busy || index === draft.images.length - 1} aria-label={copy.editorMoveLater} onClick={() => moveImage(index, 1)}>→</button><button ref={(element) => { if (element) imageRemovalControls.current.set(image.id, element); else imageRemovalControls.current.delete(image.id); }} disabled={busy || draft.images.length === 1} aria-label={copy.editorRemove} onClick={() => void mutate({ kind: "remove-image", imageId: image.id })}>×</button></div>)}</div>
     <div className="editor-layout"><div className="editor-workspace"><div className="editor-canvas" role="img" aria-label={copy.editorCanvas} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp}>
       <img draggable={false} src={active.previewUrl} alt="" />
       <AnnotationOverlay image={active} drawing={drawing} tool={tool} />
