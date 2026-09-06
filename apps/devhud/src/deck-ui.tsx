@@ -67,28 +67,30 @@ function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["gith
   const saveKey = value?.id ?? `creation:${creationSession}`;
   const initialSourceKey = JSON.stringify(value === null ? { value, initialProfileRef: profiles[0]?.id ?? "" } : { value });
   const initial = useMemo(() => createDeckEditorDraft(value, profiles), [initialSourceKey]);
-  const [state, setState] = useState<{ readonly sourceKey: string; readonly draft: DeckEditorDraft }>(() => ({ sourceKey, draft: initial }));
+  const [deckDrafts, setDeckDrafts] = useState<ReadonlyMap<string, DeckEditorDraft>>(() => new Map());
   const [creationDrafts, setCreationDrafts] = useState<ReadonlyMap<number, DeckEditorDraft>>(() => new Map());
   const [pendingSaves, setPendingSaves] = useState<ReadonlySet<string>>(() => new Set());
   const [saveFailures, setSaveFailures] = useState<ReadonlyMap<string, DeckFailure>>(() => new Map());
   const creationDraft = value === null ? creationDrafts.get(creationSession) : undefined;
-  const draft = creationDraft ?? (state.sourceKey === sourceKey ? state.draft : initial);
+  const draft = creationDraft ?? deckDrafts.get(sourceKey) ?? initial;
   const saving = pendingSaves.has(saveKey);
   const saveFailure = saveFailures.get(saveKey) ?? null;
-  useEffect(() => {
-    setState((current) => current.sourceKey === sourceKey ? current : { sourceKey, draft: initial });
-  }, [initial, sourceKey]);
   const update = useCallback((change: (current: DeckEditorDraft) => DeckEditorDraft) => {
     const next = change(draft);
-    setState({ sourceKey, draft: next });
     if (value === null) setCreationDrafts((current) => new Map(current).set(creationSession, next));
+    else setDeckDrafts((current) => new Map(current).set(sourceKey, next));
   }, [creationSession, draft, sourceKey, value]);
   const reset = useCallback(() => {
-    setState({ sourceKey, draft: initial });
     if (value === null) setCreationDrafts((current) => {
       if (!current.has(creationSession)) return current;
       const next = new Map(current);
       next.delete(creationSession);
+      return next;
+    });
+    else setDeckDrafts((current) => {
+      if (!current.has(sourceKey)) return current;
+      const next = new Map(current);
+      next.delete(sourceKey);
       return next;
     });
     setSaveFailures((current) => {
@@ -121,11 +123,11 @@ function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["gith
         next.delete(creationSession);
         return next;
       });
-      else if (adopted !== null) setState((current) => current.sourceKey === saveKey ? { sourceKey, draft: createDeckEditorDraft(adopted, profiles) } : current);
+      else if (adopted !== null) setDeckDrafts((current) => new Map(current).set(saveKey, createDeckEditorDraft(adopted, profiles)));
       return;
     }
     setSaveFailures((current) => new Map(current).set(saveKey, failure));
-  }, [creationSession, profiles, saveKey, sourceKey, value]);
+  }, [creationSession, profiles, saveKey, value]);
   return { sourceKey, draft, saving, saveFailure, hasFailedCreationSession: saveFailures.has(`creation:${creationSession}`), update, reset, beginSave, finishSave };
 }
 
@@ -644,7 +646,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     missingLinkedDeckFocusPending.current = false;
     const animation = requestAnimationFrame(() => missingLinkedDeckReturnButton.current?.focus());
     return () => cancelAnimationFrame(animation);
-  }, [missingLinkedDeck]);
+  }, [missingLinkedDeck, widgetConfirmationOpen]);
   useEffect(() => {
     const wasAvailable = previousLocalSelectedDeckAvailable.current;
     previousLocalSelectedDeckAvailable.current = localSelectedDeckAvailable;
@@ -670,7 +672,8 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   useEffect(() => {
     if (widgetConfirmationDeckId !== null && (widgetConfirmationDeck === null || missingLinkedDeck || noGitHubProfiles)) {
       if (noGitHubProfiles) noProfilesFocusPending.current = true;
-      else widgetConfirmationFocusPending.current = !missingLinkedDeck && (!mobile || settingsOpen);
+      else if (missingLinkedDeck) missingLinkedDeckFocusPending.current = true;
+      else widgetConfirmationFocusPending.current = !mobile || settingsOpen;
       setWidgetConfirmationDeckId(null);
       return;
     }

@@ -521,6 +521,34 @@ describe("Deck surface", () => {
     expect(await screen.findByRole("alert")).toHaveProperty("textContent", messages.en.deckErrorNetwork);
   });
 
+  it("preserves a submitted Deck draft when switching away during its save", async () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn<IdentitySettingsValue["replaceSettings"]>(() => pendingSave);
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }), replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Submitted local edit" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: other.id } });
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: deck.id } });
+
+    expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", "Submitted local edit");
+    expect(screen.getByRole("button", { name: messages.en.saved }).closest("fieldset")).toHaveProperty("disabled", true);
+    finishSave(false);
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveProperty("textContent", messages.en.deckErrorNetwork));
+    expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", "Submitted local edit");
+
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledTimes(2));
+    const retry = replaceSettings.mock.calls[1]?.[0];
+    const retriedSettings = typeof retry === "function" ? retry(parseDevHudSettings({ ...settings, decks: [deck, other] })) : retry;
+    expect(retriedSettings.decks[0]?.name).toBe("Submitted local edit");
+  });
+
   it("keeps a Deck save pending when returning to its editor", async () => {
     const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
     let finishSave: (committed: boolean) => void = () => {};
@@ -825,7 +853,8 @@ describe("Deck surface", () => {
     await waitFor(() => expect(document.activeElement).toBe(selection));
   });
 
-  it("clears the screen-modal flag when a missing Deck deep link replaces an open widget confirmation", async () => {
+  it.each([1024, 800])("clears the screen-modal flag and focuses Return to Deck list at %ipx when a missing Deck deep link replaces an open widget confirmation", async (viewport) => {
+    setViewport(viewport);
     const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
     const onModalConfirmationOpenChange = vi.fn();
     const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} onModalConfirmationOpenChange={onModalConfirmationOpenChange} /></DeckPollingBoundary>);
@@ -836,6 +865,7 @@ describe("Deck surface", () => {
 
     await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
     await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(false));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.deckReturnToList })));
   });
 
   it("surfaces a widget enable failure inside the active privacy confirmation", async () => {
