@@ -799,6 +799,33 @@ describe("native App state", () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.captureDisplay })));
   });
 
+  it("returns palette focus to a picker that was already open", async () => {
+    const runtime: RuntimeSnapshot = { ...desktopRuntime, capabilities: { ...desktopRuntime.capabilities, capture: true } };
+    let receive: ((event: NativeBridgeEventV1) => void) | undefined;
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "windows", shadowRemovalSupported: false, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    const bridge: NativeBridgeV1 = {
+      request,
+      async listen(listener) { receive = listener; return () => {}; },
+    };
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    await waitFor(() => expect(receive).toBeTypeOf("function"));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.realqa }));
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.captureSelection }));
+    const picker = await screen.findByRole("dialog", { name: messages.en.captureSelection });
+
+    await act(async () => receive?.({ version: 1, kind: "shortcut-triggered", action: ShortcutActionId.CommandPalette }));
+    fireEvent.click(await within(screen.getByRole("dialog", { name: messages.en.commandPalette })).findByRole("button", { name: messages.en.close }));
+
+    const captureNow = within(picker).getByRole("button", { name: messages.en.captureNow });
+    await waitFor(() => expect(document.activeElement).toBe(captureNow));
+    fireEvent.keyDown(captureNow, { key: "Tab" });
+    expect(picker.contains(document.activeElement)).toBe(true);
+  });
+
   it("suppresses global shortcuts while an updater approval is open", async () => {
     const updaterStatus: DesktopUpdaterStatus = {
       kind: "available",

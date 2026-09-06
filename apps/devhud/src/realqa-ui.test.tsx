@@ -121,10 +121,47 @@ describe("RealQA capture and editor", () => {
     screen.getByRole("button", { name: messages.en.captureDisplay }).focus();
     view.rerender(<RealqaSurface bridge={bridge} copy={messages.en} paletteOpen={false} />);
 
-    const image = screen.getByRole("button", { name: `${messages.en.editorImage} 1` });
+    const editor = screen.getByRole("dialog", { name: messages.en.editorTitle });
+    const image = within(editor).getByRole("button", { name: `${messages.en.editorImage} 1` });
     await waitFor(() => expect(document.activeElement).toBe(image));
-    fireEvent.keyDown(image, { key: "Tab", shiftKey: true });
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.close }));
+    const captureDisplay = within(editor).getByRole("button", { name: messages.en.captureDisplay });
+    captureDisplay.focus();
+    fireEvent.keyDown(captureDisplay, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(within(editor).getByRole("button", { name: messages.en.close }));
+  });
+
+  it("returns palette focus to an already-open capture picker", async () => {
+    const { bridge } = bridgeWith();
+    const view = render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureSelection }));
+    const picker = await screen.findByRole("dialog", { name: messages.en.captureSelection });
+
+    view.rerender(<RealqaSurface bridge={bridge} copy={messages.en} paletteOpen />);
+    screen.getByRole("button", { name: messages.en.captureDisplay }).focus();
+    view.rerender(<RealqaSurface bridge={bridge} copy={messages.en} paletteOpen={false} />);
+
+    const captureNow = within(picker).getByRole("button", { name: messages.en.captureNow });
+    await waitFor(() => expect(document.activeElement).toBe(captureNow));
+    fireEvent.keyDown(captureNow, { key: "Tab" });
+    expect(picker.contains(document.activeElement)).toBe(true);
+  });
+
+  it("starts append captures from the editor sheet", async () => {
+    const { bridge, request } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return { kind: "capture-draft", draft: { ...draft, revision: 4 } };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    await openEditor();
+
+    fireEvent.click(within(screen.getByRole("dialog", { name: messages.en.editorTitle })).getByRole("button", { name: messages.en.captureDisplay }));
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      operation: "capture.start",
+      options: expect.objectContaining({ appendToDraftId: draft.id }),
+    })));
   });
 
   it.each([
@@ -883,17 +920,22 @@ describe("RealQA capture and editor", () => {
     await waitFor(() => expect(captureTrigger).toBe(document.activeElement));
   });
 
-  it("enables the standalone capture opener before an editor opened during a delayed refresh closes", async () => {
+  it("starts another capture while the previous reconciliation refresh is pending", async () => {
     let listRequests = 0;
+    let captureStarts = 0;
     let resolveRefresh: ((response: NativeBridgeResponseV1) => void) | undefined;
     const { bridge } = bridgeWith(async (value) => {
       if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
       if (value.operation === "capture.list-drafts") {
         listRequests += 1;
         if (listRequests === 1) return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
-        return new Promise((resolve) => { resolveRefresh = resolve; });
+        if (listRequests === 2) return new Promise((resolve) => { resolveRefresh = resolve; });
+        return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] };
       }
-      if (value.operation === "capture.start") return { kind: "capture-draft", draft };
+      if (value.operation === "capture.start") {
+        captureStarts += 1;
+        return { kind: "capture-draft", draft };
+      }
       throw new Error(`unexpected operation ${value.operation}`);
     });
     render(<RealqaSurface bridge={bridge} copy={messages.en} />);
@@ -903,10 +945,13 @@ describe("RealQA capture and editor", () => {
     opener.focus();
     fireEvent.click(opener);
     await screen.findByRole("dialog", { name: messages.en.editorTitle });
+    await waitFor(() => expect(captureStarts).toBe(1));
     expect(opener).toHaveProperty("disabled", false);
     fireEvent.click(screen.getByRole("button", { name: messages.en.close }));
 
     await waitFor(() => expect(document.activeElement).toBe(opener));
+    fireEvent.click(opener);
+    await waitFor(() => expect(captureStarts).toBe(2));
     await act(async () => { resolveRefresh?.({ kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] }); });
   });
 
