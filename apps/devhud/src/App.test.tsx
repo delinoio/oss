@@ -314,6 +314,24 @@ describe("native App state", () => {
     expect(transitionOperations).toEqual(["discard-callback", "purge-session", "configure-new-origin"]);
   });
 
+  it("reports API cleanup failures without using browser-opening copy", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const bridge = bridgeWith(async (request) => {
+      if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      if (request.operation === "auth.take-pending-callback") throw new Error("callback-discard-failed");
+      throw new Error(`unexpected operation ${request.operation}`);
+    });
+
+    render(<App bridge={bridge} initialRuntime={mobileRuntime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).getByRole("button", { name: messages.en.applyApiOrigin }));
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.apiChangeFailed));
+    expect(screen.queryByText(messages.en.externalFailed)).toBeNull();
+  });
+
   it("loads the default content state once", async () => {
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
       if (value.operation === "runtime.snapshot") return { kind: "runtime", snapshot: mobileRuntime };

@@ -79,8 +79,8 @@ export function FirstRunIdentity({ copy, apiOrigin, onApiOrigin, onComplete, api
   const [actionError, setActionError] = useState(false);
   const [apiChangeConfirmationOpen, setApiChangeConfirmationOpen] = useState(false);
   useEffect(() => {
-    if (identity.status === "authenticated" || identity.status === "blocked" || identity.status === "deletion-pending") onComplete();
-  }, [identity.status, onComplete]);
+    if (!apiChangeConfirmationOpen && (identity.status === "authenticated" || identity.status === "blocked" || identity.status === "deletion-pending")) onComplete();
+  }, [apiChangeConfirmationOpen, identity.status, onComplete]);
   return <Card className="onboarding-card">
     <PageHeader eyebrow={copy.account} title={copy.accountTitle} summary={copy.firstRunSummary} level={1} />
     <ApiOriginEditor copy={copy} value={apiOrigin} autoFocus onApply={onApiOrigin} warningId="api-origin-security-warning" applyError={apiChangeError} onConfirmationOpenChange={setApiChangeConfirmationOpen} />
@@ -124,6 +124,7 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin, onModa
   }, [modalConfirmationOpen, onModalConfirmationOpenChange]);
   useEffect(() => () => onModalConfirmationOpenChange(false), [onModalConfirmationOpenChange]);
   return <>
+    <div className="account-content" inert={modalConfirmationOpen}>
     <PageHeader eyebrow={copy.account} title={copy.accountTitle} summary={copy.accountSummary} />
     <div className="account-sections">
       <Card className="account-section" aria-label={copy.session}><h3>{copy.session}</h3>
@@ -139,7 +140,8 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin, onModa
       <Card className="account-section" aria-label={copy.apiOrigin}><h3>{copy.apiOrigin}</h3><ApiOriginEditor copy={copy} value={apiOrigin} inputRef={inputRef} onApply={onApiOrigin} warningId="api-origin-security-warning" applyError={apiChangeError} onConfirmationOpenChange={setApiChangeConfirmationOpen} disabled={modalConfirmationOpen} /></Card>
       <Card className="account-section account-security" aria-label={copy.security}><h3>{copy.security}</h3><p id="api-origin-security-warning" className="notice">{copy.customApiWarning}</p>{identity.status === "error" && <StatePanel headingLevel={4} eyebrow={copy.security} tone="danger" role="alert" title={copy.bootstrapFailed} summary={copy.bootstrapFailed} details={identity.identityResetAvailable ? <p>{copy.resetSignInHint}</p> : undefined} actions={<><Button onClick={identity.retryIdentity}>{copy.retry}</Button><Button onClick={identity.continueLocally}>{copy.continueLocally}</Button>{identity.identityResetAvailable && <Button onClick={() => void identity.resetIdentity().catch(() => {})}>{copy.resetSignIn}</Button>}</>} />}{identity.status === "deletion-pending" && identity.deletionCleanupFailed && <StatePanel headingLevel={4} eyebrow={copy.security} tone="danger" role="alert" title={copy.accountActionFailed} summary={copy.accountActionFailed} actions={<Button onClick={() => void identity.retryDeletionCleanup()}>{copy.retry}</Button>} />}</Card>
       <Card className="account-section" aria-label={copy.externalTools}><h3>{copy.externalTools}</h3><div className="account-external-tools"><DataRow ariaLabel={copy.githubCreateFinePat} title={copy.githubCreateFinePat} description={copy.pat} onClick={() => onOpenExternal(ExternalLinkTarget.Pat)} /><DataRow ariaLabel={copy.githubCreateClassicPat} title={copy.githubCreateClassicPat} description={copy.pat} onClick={() => onOpenExternal(ExternalLinkTarget.ClassicPat)} />{!mobile && <DataRow ariaLabel={copy.issue} title={copy.issue} description={copy.projectIssueHint} onClick={() => onOpenExternal(ExternalLinkTarget.Issue)} />}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</Card>
-      {identity.status === "authenticated" && !identity.accountError && identity.account !== null && <Card className="account-section account-danger" aria-label={copy.dangerZone}><h3>{copy.dangerZone}</h3><p>{copy.deleteAccountConfirmSummary}</p><Button ref={deleteTrigger} variant="danger" onClick={() => setConfirmDelete(true)} disabled={modalConfirmationOpen}>{copy.deleteAccount}</Button></Card>}
+      {identity.status === "authenticated" && !identity.accountError && identity.account !== null && <Card className="account-section account-danger" aria-label={copy.dangerZone}><h3>{copy.dangerZone}</h3><p>{copy.deleteAccountSummary}</p><Button ref={deleteTrigger} variant="danger" onClick={() => setConfirmDelete(true)} disabled={modalConfirmationOpen}>{copy.deleteAccount}</Button></Card>}
+    </div>
     </div>
     <Dialog open={deleteConfirmationOpen} role="alertdialog" title={copy.deleteAccountConfirmTitle} initialFocusRef={cancelDelete} returnFocusRef={deleteTrigger} onClose={() => setConfirmDelete(false)}><p>{copy.deleteAccountConfirmSummary}</p><div className="actions"><Button ref={cancelDelete} onClick={() => setConfirmDelete(false)}>{copy.cancel}</Button><Button variant="danger" onClick={() => { setConfirmDelete(false); invoke(identity.deleteAccount); }}>{copy.deleteAccount}</Button></div></Dialog>
   </>;

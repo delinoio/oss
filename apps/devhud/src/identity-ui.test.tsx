@@ -121,12 +121,60 @@ describe("identity UI", () => {
     expect(continueButton.disabled).toBe(false);
   });
 
+  it("defers first-run completion until an API-origin confirmation closes", async () => {
+    const onComplete = vi.fn();
+    const props = { copy: messages.en, apiOrigin: "https://devhud.api.delino.io", onApiOrigin: vi.fn(async () => undefined), onComplete, apiChangeError: null };
+    const view = render(<FirstRunIdentity {...props} />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    identity = identityWith({ status: "authenticated" });
+    view.rerender(<FirstRunIdentity {...props} />);
+    expect(onComplete).not.toHaveBeenCalled();
+
+    fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
+    await waitFor(() => expect(onComplete).toHaveBeenCalledOnce());
+  });
+
   it("keeps the custom-origin warning and API-change failures beside the editor", () => {
-    render(<AccountIdentity {...accountProps({ apiChangeError: messages.en.externalFailed })} />);
+    render(<AccountIdentity {...accountProps({ apiChangeError: messages.en.apiChangeFailed })} />);
     const input = screen.getByRole("textbox", { name: messages.en.apiOrigin });
     expect(input.getAttribute("aria-describedby")).toContain("api-origin-security-warning");
     expect(document.getElementById("api-origin-security-warning")?.textContent).toBe(messages.en.customApiWarning);
-    expect(screen.getByRole("alert").textContent).toBe(messages.en.externalFailed);
+    expect(screen.getByRole("alert").textContent).toBe(messages.en.apiChangeFailed);
+  });
+
+  it("makes non-modal Account content inert while either confirmation is open", async () => {
+    identity = identityWith({ status: "authenticated", account: { displayName: "Fixture User", email: "fixture@example.com" } as never });
+    render(<AccountIdentity {...accountProps()} />);
+    const content = document.querySelector<HTMLElement>(".account-content");
+    if (content === null) throw new Error("account content missing");
+    const deleteTrigger = screen.getByRole("button", { name: messages.en.deleteAccount });
+
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    const apiConfirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    expect(content.hasAttribute("inert")).toBe(true);
+    fireEvent.click(within(apiConfirmation).getByRole("button", { name: messages.en.cancel }));
+    await waitFor(() => expect(content.hasAttribute("inert")).toBe(false));
+
+    fireEvent.click(deleteTrigger);
+    const deleteConfirmation = await screen.findByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle });
+    expect(content.hasAttribute("inert")).toBe(true);
+    fireEvent.click(within(deleteConfirmation).getByRole("button", { name: messages.en.cancel }));
+    await waitFor(() => expect(content.hasAttribute("inert")).toBe(false));
+  });
+
+  it("uses neutral deletion copy until deletion is confirmed", async () => {
+    identity = identityWith({ status: "authenticated", account: { displayName: "Fixture User", email: "fixture@example.com" } as never });
+    render(<AccountIdentity {...accountProps()} />);
+    const dangerZone = screen.getByLabelText(messages.en.dangerZone);
+    expect(within(dangerZone).getByText(messages.en.deleteAccountSummary)).toBeTruthy();
+    expect(within(dangerZone).queryByText(messages.en.deleteAccountConfirmSummary)).toBeNull();
+
+    fireEvent.click(within(dangerZone).getByRole("button", { name: messages.en.deleteAccount }));
+    expect(within(await screen.findByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle })).getByText(messages.en.deleteAccountConfirmSummary)).toBeTruthy();
   });
 
   it("uses the shared alert dialog for Delete focus containment and restoration", async () => {
