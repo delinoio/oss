@@ -62,13 +62,14 @@ describe("DevHud UI foundation", () => {
       const [open, setOpen] = useState(false);
       const opener = createRef<HTMLButtonElement>();
       const first = createRef<HTMLButtonElement>();
-      return <><Button ref={opener} onClick={() => setOpen(true)}>Open</Button><Dialog open={open} title="Commands" initialFocusRef={first} returnFocusRef={opener} onClose={() => setOpen(false)}><Button ref={first}>First</Button><Button>Last</Button></Dialog></>;
+      return <><Button ref={opener} onClick={() => setOpen(true)}>Open</Button><section inert><Dialog open={open} title="Commands" initialFocusRef={first} returnFocusRef={opener} onClose={() => setOpen(false)}><Button ref={first}>First</Button><Button>Last</Button></Dialog></section></>;
     }
     render(<Harness />);
     const opener = screen.getByRole("button", { name: "Open" });
     opener.focus();
     fireEvent.click(opener);
     const dialog = screen.getByRole("dialog", { name: "Commands" });
+    expect(dialog.closest("[inert]")).toBeNull();
     const first = screen.getByRole("button", { name: "First" });
     const last = screen.getByRole("button", { name: "Last" });
     await waitFor(() => expect(document.activeElement).toBe(first));

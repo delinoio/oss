@@ -27,7 +27,7 @@ test("mobile shell keeps an internal five-item navigation and repository-owned i
   assert.doesNotMatch(icons, /from "(?!react")/u);
   assert.match(foundation, /import \{[\s\S]*\} from "react";/u);
   assert.match(foundation, /from "\.\/ui-icons"/u);
-  assert.doesNotMatch(foundation, /from "(?!react"|\.\/ui-icons")/u);
+  assert.doesNotMatch(foundation, /from "(?!react"|react-dom"|\.\/ui-icons")/u);
 });
 
 test("mobile policy validates every field in every immutable target tuple", () => {

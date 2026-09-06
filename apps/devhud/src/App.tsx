@@ -33,8 +33,9 @@ const notificationPermissionLabels: Record<NotificationPermission, keyof typeof 
 };
 const defaultContentState: ContentState = { kind: ContentStateKind.Ready };
 type ExternalMessage = "opened" | "failed" | "invalid-api-origin";
+type ConsumedDeckLink = { readonly deckId: string; readonly policyOrigin: string };
 
-function ShellNavigationItem({ active, compact, destination, icon: Icon, label, selectedItemRef, tooltipId, onActivate, onNavigationBlur, onNavigationFocus }: { readonly active: boolean; readonly compact: boolean; readonly destination: SurfaceId; readonly icon: ComponentType<IconProps>; readonly label: string; readonly selectedItemRef: RefObject<HTMLButtonElement | null>; readonly tooltipId: string; readonly onActivate: () => void; readonly onNavigationBlur: (destination: NavigationDestination) => void; readonly onNavigationFocus: (destination: NavigationDestination) => void }) {
+function ShellNavigationItem({ active, compact, destination, disabled, icon: Icon, label, selectedItemRef, tooltipId, onActivate, onNavigationBlur, onNavigationFocus }: { readonly active: boolean; readonly compact: boolean; readonly destination: SurfaceId; readonly disabled: boolean; readonly icon: ComponentType<IconProps>; readonly label: string; readonly selectedItemRef: RefObject<HTMLButtonElement | null>; readonly tooltipId: string; readonly onActivate: () => void; readonly onNavigationBlur: (destination: NavigationDestination) => void; readonly onNavigationFocus: (destination: NavigationDestination) => void }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const tooltip = useRef<HTMLSpanElement>(null);
   const [focused, setFocused] = useState(false);
@@ -76,7 +77,7 @@ function ShellNavigationItem({ active, compact, destination, icon: Icon, label, 
   }, [positionTooltip, tooltipRequested]);
 
   return <>
-    <button ref={trigger} className="shell-nav-item" data-navigation-destination={destination} aria-label={label} aria-describedby={compact ? tooltipId : undefined} aria-current={active ? "page" : undefined} onClick={onActivate} onFocus={() => { setFocused(true); onNavigationFocus(destination); }} onBlur={() => { setFocused(false); onNavigationBlur(destination); }} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}>
+    <button ref={trigger} className="shell-nav-item" data-navigation-destination={destination} aria-label={label} aria-describedby={compact ? tooltipId : undefined} aria-current={active ? "page" : undefined} disabled={disabled} onClick={onActivate} onFocus={() => { setFocused(true); onNavigationFocus(destination); }} onBlur={() => { setFocused(false); onNavigationBlur(destination); }} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}>
       <Icon />
       {!compact && <span>{label}</span>}
     </button>
@@ -124,6 +125,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const [screenModalConfirmationOpen, setScreenModalConfirmationOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [externalMessage, setExternalMessage] = useState<ExternalMessage | null>(null);
+  const [apiChangeError, setApiChangeError] = useState(false);
   const [systemLanguage, setSystemLanguage] = useState(() => resolveLanguage(LanguagePreference.System, navigator.languages));
   const [runtime, setRuntime] = useState<RuntimeSnapshot | undefined>(initialRuntime);
   const [runtimeState, setRuntimeState] = useState<ContentState>(() => initialRuntime ? initialContentState : { kind: ContentStateKind.Loading });
@@ -135,6 +137,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const [authCallback, setAuthCallback] = useState<string | null>(null);
   const [deckLink, setDeckLink] = useState<string | null>(null);
   const [deckLinkPending, setDeckLinkPending] = useState(false);
+  const [consumedDeckLink, setConsumedDeckLink] = useState<ConsumedDeckLink | null>(null);
   const [deckLinkPolicyOrigin, setDeckLinkPolicyOrigin] = useState<string | null>(null);
   const [updaterApprovalOpen, setUpdaterApprovalOpen] = useState(false);
   const [online, setOnline] = useState(() => navigator.onLine);
@@ -147,7 +150,9 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const selectedDesktopNavigationItem = useRef<HTMLButtonElement>(null);
   const externalAttempt = useRef(0);
   const identitySession = useRef<IdentitySession | null>(null);
+  const deckLinkTakeInFlight = useRef(false);
   const updaterApprovalOpenRef = useRef(false);
+  const screenModalConfirmationOpenRef = useRef(false);
   const language = preferences.language === LanguagePreference.System ? systemLanguage : preferences.language;
   const copy = messages[language];
   const shellLayout = useShellLayout();
@@ -167,11 +172,16 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     updaterApprovalOpenRef.current = open;
     setUpdaterApprovalOpen(open);
   }, []);
+  const handleScreenModalConfirmationOpenChange = useCallback((open: boolean) => {
+    screenModalConfirmationOpenRef.current = open;
+    setScreenModalConfirmationOpen(open);
+  }, []);
 
   const update = (next: Partial<Preferences>) => {
     if ("apiOrigin" in next) {
       externalAttempt.current += 1;
       setExternalMessage(null);
+      setApiChangeError(false);
     }
     const value = { ...preferences, ...next };
     synchronizeDocumentPreferences(document.documentElement, value, matchMedia("(prefers-color-scheme: dark)").matches, navigator.languages);
@@ -182,7 +192,11 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     setPaletteRestoresFocus(restoreTriggerFocus);
     setPalette(false);
   };
-  const openPalette = () => { setPaletteRestoresFocus(true); setPalette(true); };
+  const openPalette = () => {
+    if (screenModalConfirmationOpen) return;
+    setPaletteRestoresFocus(true);
+    setPalette(true);
+  };
   const closeMore = (restoreTriggerFocus = true) => {
     setMoreRestoresFocus(restoreTriggerFocus);
     setMoreOpen(false);
@@ -217,7 +231,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       }
       if (event.kind === "deck-link") peekPendingDeckLink();
       if (event.kind === "shortcut-triggered") {
-        if (updaterApprovalOpenRef.current) return;
+        if (updaterApprovalOpenRef.current || screenModalConfirmationOpenRef.current) return;
         const context = shortcutContext.current;
         if (context.mobile || context.onboarding) return;
         if (event.action === ShortcutActionId.CommandPalette) {
@@ -266,21 +280,26 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     };
   }, [bridge, initialContentState, initialRuntime]);
   useEffect(() => {
-    if (onboarding || updaterApprovalOpen || !deckLinkPending || deckLinkPolicyOrigin !== preferences.apiOrigin) return;
-    let active = true;
+    if (onboarding || updaterApprovalOpen || screenModalConfirmationOpen || !deckLinkPending || consumedDeckLink !== null || deckLinkPolicyOrigin !== preferences.apiOrigin || deckLinkTakeInFlight.current) return;
+    deckLinkTakeInFlight.current = true;
     void bridge.request({ operation: "deck.take-pending-link" }).then((pendingDeck) => {
-      if (!active) return;
       setDeckLinkPending(false);
-      if (pendingDeck.kind === "deck-link" && pendingDeck.deckId) {
-        closeMore(false);
-        setDeckLink(pendingDeck.deckId);
-        setSurface(SurfaceId.Deck);
-      }
+      if (pendingDeck.kind === "deck-link" && pendingDeck.deckId) setConsumedDeckLink({ deckId: pendingDeck.deckId, policyOrigin: preferences.apiOrigin });
     }).catch(() => {
-      if (active) setDeckLinkPending(false);
-    });
-    return () => { active = false; };
-  }, [bridge, deckLinkPending, deckLinkPolicyOrigin, onboarding, preferences.apiOrigin, updaterApprovalOpen]);
+      setDeckLinkPending(false);
+    }).finally(() => { deckLinkTakeInFlight.current = false; });
+  }, [bridge, consumedDeckLink, deckLinkPending, deckLinkPolicyOrigin, onboarding, preferences.apiOrigin, screenModalConfirmationOpen, updaterApprovalOpen]);
+  useEffect(() => {
+    if (consumedDeckLink !== null && consumedDeckLink.policyOrigin !== preferences.apiOrigin) {
+      setConsumedDeckLink(null);
+      return;
+    }
+    if (onboarding || updaterApprovalOpen || screenModalConfirmationOpen || consumedDeckLink === null) return;
+    closeMore(false);
+    setDeckLink(consumedDeckLink.deckId);
+    setConsumedDeckLink(null);
+    setSurface(SurfaceId.Deck);
+  }, [consumedDeckLink, onboarding, preferences.apiOrigin, screenModalConfirmationOpen, updaterApprovalOpen]);
   useEffect(() => {
     if (!runtime) return;
     const captureError = (event: ErrorEvent) => {
@@ -398,6 +417,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const finishOnboarding = () => {
     externalAttempt.current += 1;
     setExternalMessage(null);
+    setApiChangeError(false);
     completeOnboarding(storage);
     setOnboarding(false);
     setSurface(SurfaceId.Home);
@@ -411,9 +431,9 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const applyApiOrigin = async (nextOrigin: string) => {
     const normalized = normalizeApiOrigin(nextOrigin);
     if (normalized === null || normalized === normalizeApiOrigin(preferences.apiOrigin)) return;
-    if (!window.confirm(copy.apiChangeConfirm)) return;
+    setApiChangeError(false);
     try { await clearIdentityForApiChange(bridge, storage, preferences.apiOrigin, identitySession); }
-    catch { setExternalMessage("failed"); return; }
+    catch { setApiChangeError(true); return; }
     setAuthCallback(null);
     update({ apiOrigin: normalized });
     const policy = await bridge.request({ operation: "session.configure-origins", apiOrigin: normalized });
@@ -452,39 +472,43 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
 
   if (runtimeState.kind !== ContentStateKind.Ready) return <main className="standalone-shell" data-devhud-ready="true"><ContentStateView state={runtimeState} copy={copy} onRetry={() => location.reload()} /></main>;
 
-  if (onboarding) return boundary(<main className="standalone-shell" data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "loading"}><FirstRunIdentity copy={copy} apiOrigin={preferences.apiOrigin} onApiOrigin={applyApiOrigin} onComplete={finishOnboarding} />{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</main>);
+  if (onboarding) return boundary(<main className="standalone-shell" data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "loading"}><FirstRunIdentity copy={copy} apiOrigin={preferences.apiOrigin} onApiOrigin={applyApiOrigin} onComplete={finishOnboarding} apiChangeError={apiChangeError ? copy.apiChangeFailed : null} /></main>);
 
   const moreCurrent = surface === SurfaceId.Realqa || surface === SurfaceId.Diagnostics;
-  const navigate = (nextSurface: SurfaceId) => { setSurface(nextSurface); setMoreOpen(false); };
+  const navigate = (nextSurface: SurfaceId) => {
+    if (screenModalConfirmationOpen) return;
+    setSurface(nextSurface);
+    setMoreOpen(false);
+  };
   const markNavigationFocused = (destination: NavigationDestination) => { focusedNavigationDestination.current = destination; };
   const markNavigationBlurred = (destination: NavigationDestination) => { if (focusedNavigationDestination.current === destination) focusedNavigationDestination.current = null; };
   const navigation = shellLayout !== ShellLayout.Mobile && <aside className={`shell-navigation shell-navigation-${shellLayout}`}>
     <h1 aria-label={shellLayout === ShellLayout.Rail ? copy.appName : undefined}>{shellLayout === ShellLayout.Sidebar ? copy.appName : "D"}</h1>
-    <nav aria-label={copy.mobileNavigation}>{surfaces.map((item) => <ShellNavigationItem active={surface === item} compact={shellLayout === ShellLayout.Rail} destination={item} icon={surfaceIcons[item]} key={item} label={copy[labels[item]]} selectedItemRef={selectedDesktopNavigationItem} tooltipId={`navigation-tooltip-${item}`} onActivate={() => navigate(item)} onNavigationBlur={markNavigationBlurred} onNavigationFocus={markNavigationFocused} />)}</nav>
-    {mobile ? <Button className="palette-trigger" ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} aria-label={copy.openPalette}>{shellLayout === ShellLayout.Sidebar ? copy.openPalette : null}</Button> : <ShortcutPaletteTrigger copy={copy} isMac={isMac} triggerRef={paletteTrigger} onOpen={openPalette} compact={shellLayout === ShellLayout.Rail} />}
+    <nav aria-label={copy.mobileNavigation}>{surfaces.map((item) => <ShellNavigationItem active={surface === item} compact={shellLayout === ShellLayout.Rail} destination={item} disabled={screenModalConfirmationOpen} icon={surfaceIcons[item]} key={item} label={copy[labels[item]]} selectedItemRef={selectedDesktopNavigationItem} tooltipId={`navigation-tooltip-${item}`} onActivate={() => navigate(item)} onNavigationBlur={markNavigationBlurred} onNavigationFocus={markNavigationFocused} />)}</nav>
+    {mobile ? <Button className="palette-trigger" ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} disabled={screenModalConfirmationOpen} aria-label={copy.openPalette}>{shellLayout === ShellLayout.Sidebar ? copy.openPalette : null}</Button> : <ShortcutPaletteTrigger copy={copy} isMac={isMac} triggerRef={paletteTrigger} onOpen={openPalette} disabled={screenModalConfirmationOpen} compact={shellLayout === ShellLayout.Rail} />}
   </aside>;
-  const topBar = shellLayout === ShellLayout.Mobile && <header className="mobile-app-bar"><h1>{copy.appName}</h1><span>{copy[labels[surface]]}</span><Button ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} aria-label={copy.openPalette} /></header>;
+  const topBar = shellLayout === ShellLayout.Mobile && <header className="mobile-app-bar"><h1>{copy.appName}</h1><span>{copy[labels[surface]]}</span><Button ref={paletteTrigger} variant="ghost" icon={<SearchIcon />} onClick={openPalette} disabled={screenModalConfirmationOpen} aria-label={copy.openPalette} /></header>;
   const bottomBar = shellLayout === ShellLayout.Mobile && <nav className="mobile-bottom-navigation" aria-label={copy.mobileNavigation}>
     {mobilePrimarySurfaces.map((item) => {
       const Icon = surfaceIcons[item];
-      return <button type="button" key={item} data-navigation-destination={item} aria-current={surface === item ? "page" : undefined} onClick={() => navigate(item)} onFocus={() => markNavigationFocused(item)} onBlur={() => markNavigationBlurred(item)}><Icon /><span>{copy[labels[item]]}</span></button>;
+      return <button type="button" key={item} data-navigation-destination={item} aria-current={surface === item ? "page" : undefined} disabled={screenModalConfirmationOpen} onClick={() => navigate(item)} onFocus={() => markNavigationFocused(item)} onBlur={() => markNavigationBlurred(item)}><Icon /><span>{copy[labels[item]]}</span></button>;
     })}
     <button key={MobileNavigationId.More} ref={moreTrigger} type="button" data-navigation-destination={MobileNavigationId.More} aria-current={moreCurrent ? "page" : undefined} aria-haspopup="dialog" aria-expanded={moreOpen} disabled={screenModalConfirmationOpen} onClick={openMore} onFocus={() => markNavigationFocused(MobileNavigationId.More)} onBlur={() => markNavigationBlurred(MobileNavigationId.More)}><MoreIcon /><span>{copy.more}</span></button>
   </nav>;
 
   return boundary(<>
     {runtime?.platform === RuntimePlatform.Desktop && <SynchronizedShortcutBoundary bridge={bridge} />}
-    <AppShell layout={shellLayout} skipLabel={copy.skipToContent} navigation={navigation} topBar={topBar} bottomBar={bottomBar} data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "desktop"} data-lifecycle={lifecycle}>
+    <AppShell layout={shellLayout} skipLabel={copy.skipToContent} skipLinkInert={screenModalConfirmationOpen} navigation={navigation} topBar={topBar} bottomBar={bottomBar} data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "desktop"} data-lifecycle={lifecycle}>
       {surface === SurfaceId.Home && <><PageHeader eyebrow={copy.availableTools} title={copy.welcome} summary={copy.homeSummary} /><div className="tool-grid">{homeTools.map((item) => {
         const Icon = surfaceIcons[item];
         return <Card key={item} interactive><DataRow icon={<Icon />} title={copy[homeToolTitles[item]]} description={copy[homeToolSummaries[item]]} trailing={<>{mobile && item === SurfaceId.Realqa && <StatusBadge tone="neutral">{copy.desktopOnly}</StatusBadge>}<ArrowRightIcon /></>} onClick={() => navigate(item)} /></Card>;
       })}</div></>}
       {surface === SurfaceId.Realqa && mobile && <><PageHeader eyebrow={copy.desktopOnly} title={copy.realqaMobileTitle} summary={copy.realqaMobileSummary} /><Card className="notice"><StatusBadge tone="neutral">{copy.desktopOnly}</StatusBadge><p>{copy.unavailable}</p></Card></>}
-      {!mobile && runtimeCapabilities.available.has(PlatformCapability.Capture) && <RealqaSurface ref={realqaController} bridge={bridge} copy={copy} active={surface === SurfaceId.Realqa} paletteOpen={palette} onActivate={() => setSurface(SurfaceId.Realqa)} requestedAction={requestedCapture} onRequestedActionConsumed={consumeRequestedCapture} takeBrowserContext={nativeMessaging?.takeContext} />}
+      {!mobile && runtimeCapabilities.available.has(PlatformCapability.Capture) && <RealqaSurface ref={realqaController} bridge={bridge} copy={copy} active={surface === SurfaceId.Realqa} paletteOpen={palette} screenModalConfirmationOpen={screenModalConfirmationOpen} onActivate={() => navigate(SurfaceId.Realqa)} requestedAction={requestedCapture} onRequestedActionConsumed={consumeRequestedCapture} takeBrowserContext={nativeMessaging?.takeContext} />}
       {surface === SurfaceId.Realqa && !mobile && !runtimeCapabilities.available.has(PlatformCapability.Capture) && <><PageHeader eyebrow={copy.realqa} title={copy.realqaTitle} summary={copy.realqaSummary} /><div className="disabled-actions">{unavailableCaptureActions.map((action) => <button disabled key={action.id}>{copy[action.title]}</button>)}</div><p className="notice">{copy.unavailable}</p></>}
-      {surface === SurfaceId.Deck && <DeckSurface copy={copy} bridge={bridge} language={language} selectedDeckId={deckLink} onDismissMissingLink={() => setDeckLink(null)} onModalConfirmationOpenChange={setScreenModalConfirmationOpen} />}
-      {surface === SurfaceId.Settings && <><PageHeader eyebrow={copy.settings} title={copy.settingsTitle} summary={copy.settingsSummary} /><SynchronizedSettingsBoundary copy={copy} bridge={bridge} onOpenExternal={openExternal} onModalConfirmationOpenChange={setScreenModalConfirmationOpen} showNativeShortcuts={runtime?.platform === RuntimePlatform.Desktop} shortcutCapabilities={runtimeCapabilities} NativeMessagingSettings={nativeMessaging?.Settings} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{supportsNotifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}{runtime?.platform === RuntimePlatform.Desktop && <DesktopUpdaterPanel bridge={bridge} language={language} onApprovalOpenChange={handleUpdaterApprovalOpenChange} />}</>}
-      {surface === SurfaceId.Account && <><AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} onDeleteConfirmationOpenChange={setScreenModalConfirmationOpen} /><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.githubCreateFinePat}</button><button onClick={() => void external(ExternalLinkTarget.ClassicPat)}>{copy.githubCreateClassicPat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
+      {surface === SurfaceId.Deck && <DeckSurface copy={copy} bridge={bridge} language={language} selectedDeckId={deckLink} onDismissMissingLink={() => setDeckLink(null)} onModalConfirmationOpenChange={handleScreenModalConfirmationOpenChange} />}
+      {surface === SurfaceId.Settings && <><PageHeader eyebrow={copy.settings} title={copy.settingsTitle} summary={copy.settingsSummary} /><SynchronizedSettingsBoundary copy={copy} bridge={bridge} onOpenExternal={openExternal} onModalConfirmationOpenChange={handleScreenModalConfirmationOpenChange} showNativeShortcuts={runtime?.platform === RuntimePlatform.Desktop} shortcutCapabilities={runtimeCapabilities} NativeMessagingSettings={nativeMessaging?.Settings} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{supportsNotifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}{runtime?.platform === RuntimePlatform.Desktop && <DesktopUpdaterPanel bridge={bridge} language={language} onApprovalOpenChange={handleUpdaterApprovalOpenChange} />}</>}
+      {surface === SurfaceId.Account && <AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} onModalConfirmationOpenChange={handleScreenModalConfirmationOpenChange} mobile={mobile} onOpenExternal={(target) => void external(target)} externalMessage={externalMessage} externalMessageText={externalMessageText} externalMessageIsError={externalMessageIsError} apiChangeError={apiChangeError ? copy.apiChangeFailed : null} />}
       {surface === SurfaceId.Diagnostics && <><PageHeader eyebrow={copy.diagnostics} title={copy.diagnosticsTitle} summary={copy.diagnosticsSummary} />{runtime && <><dl className="runtime-diagnostics"><dt>{copy.diagnosticPlatform}</dt><dd>{runtime.operatingSystem}</dd><dt>{copy.diagnosticArchitecture}</dt><dd>{runtime.architecture}</dd><dt>{copy.diagnosticBridge}</dt><dd>v{runtime.bridgeVersion}</dd></dl><DiagnosticsPanel copy={copy} runtime={runtime} bridge={bridge} storage={storage} online={online} /></>}</>}
     </AppShell>
     <Dialog open={palette} title={copy.commandPalette} initialFocusRef={search} returnFocusRef={paletteTrigger} restoreFocus={paletteRestoresFocus} onClose={() => closePalette()}>

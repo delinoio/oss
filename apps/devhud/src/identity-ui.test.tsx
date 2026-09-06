@@ -2,8 +2,9 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ComponentProps } from "react";
 
-import { AccountIdentity, ShortcutPaletteTrigger, SynchronizedSettingsBoundary, SynchronizedShortcutBoundary } from "./identity-ui";
+import { AccountIdentity, FirstRunIdentity, ShortcutPaletteTrigger, SynchronizedSettingsBoundary, SynchronizedShortcutBoundary } from "./identity-ui";
 import { messages } from "./localization";
 import { localAgentPromptRepositories } from "./local-agent-settings-ui";
 import { NativeMessagingSettings, SynchronizedNativeMessagingBoundary } from "./native-messaging-ui";
@@ -42,6 +43,214 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); cleanup(); });
 
 describe("identity UI", () => {
+  const accountProps = (overrides: Partial<ComponentProps<typeof AccountIdentity>> = {}) => ({
+    copy: messages.en,
+    apiOrigin: "https://devhud.api.delino.io",
+    inputRef: { current: null },
+    onApiOrigin: vi.fn(async () => undefined),
+    onModalConfirmationOpenChange: vi.fn(),
+    mobile: false,
+    onOpenExternal: vi.fn(),
+    externalMessage: null,
+    externalMessageText: "",
+    externalMessageIsError: false,
+    apiChangeError: null,
+    ...overrides,
+  });
+
+  it.each(["starting", "signed-out", "guest", "authenticated", "blocked", "deletion-pending", "error"] as const)("keeps the Account hierarchy and API origin available for %s", (status) => {
+    identity = identityWith({ status, account: status === "authenticated" ? ({ displayName: "Fixture User", email: "fixture@example.com" } as never) : null });
+    render(<AccountIdentity {...accountProps()} />);
+
+    const sections = Array.from(document.querySelectorAll<HTMLElement>(".account-section")).map((section) => section.getAttribute("aria-label"));
+    expect(sections.slice(0, 4)).toEqual([messages.en.session, messages.en.apiOrigin, messages.en.security, messages.en.externalTools]);
+    expect(screen.getByRole("textbox", { name: messages.en.apiOrigin })).toBeTruthy();
+    expect(Array.from(document.querySelectorAll(".account-section .state-panel h2"))).toHaveLength(0);
+    expect(Array.from(document.querySelectorAll(".account-section .state-panel h4")).length).toBe(status === "authenticated" ? 0 : 1);
+    expect(Boolean(screen.queryByLabelText(messages.en.dangerZone))).toBe(status === "authenticated");
+  });
+
+  it("confirms origin changes and keeps external targets platform-scoped", async () => {
+    const onApiOrigin = vi.fn(async () => undefined);
+    const onOpenExternal = vi.fn();
+    const onModalConfirmationOpenChange = vi.fn();
+    render(<AccountIdentity {...accountProps({ onApiOrigin, onOpenExternal, onModalConfirmationOpenChange })} />);
+    const origin = screen.getByRole("textbox", { name: messages.en.apiOrigin });
+    fireEvent.change(origin, { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    expect(confirmation.closest(".account-content")).toBeNull();
+    await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenCalledWith(true));
+    expect(onApiOrigin).not.toHaveBeenCalled();
+    fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
+    await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(false));
+    expect(onApiOrigin).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).getByRole("button", { name: messages.en.applyApiOrigin }));
+    await waitFor(() => expect(onApiOrigin).toHaveBeenCalledWith("https://custom.example"));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.githubCreateFinePat }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.githubCreateClassicPat }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.issue }));
+    expect(onOpenExternal).toHaveBeenCalledTimes(3);
+
+    cleanup();
+    render(<AccountIdentity {...accountProps({ mobile: true, onOpenExternal })} />);
+    expect(screen.queryByRole("button", { name: messages.en.issue })).toBeNull();
+    expect(screen.getByRole("button", { name: messages.en.githubCreateFinePat })).toBeTruthy();
+  });
+
+  it("disables first-run actions while confirming an API-origin change", async () => {
+    const signIn = vi.fn(async () => undefined);
+    const continueLocally = vi.fn();
+    identity = identityWith({ bootstrap: {} as never, signIn, continueLocally });
+    render(<FirstRunIdentity copy={messages.en} apiOrigin="https://devhud.api.delino.io" onApiOrigin={vi.fn(async () => undefined)} onComplete={vi.fn()} apiChangeError={null} />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    const onboardingCard = document.querySelector<HTMLElement>(".onboarding-card");
+    expect(onboardingCard?.hasAttribute("inert")).toBe(true);
+    expect(confirmation.closest(".onboarding-card")).toBeNull();
+    const signInButton = screen.getByRole("button", { name: messages.en.signIn }) as HTMLButtonElement;
+    const continueButton = screen.getByRole("button", { name: messages.en.continueLocally }) as HTMLButtonElement;
+    await waitFor(() => expect(signInButton.disabled).toBe(true));
+    expect(continueButton.disabled).toBe(true);
+    fireEvent.click(signInButton);
+    fireEvent.click(continueButton);
+    expect(signIn).not.toHaveBeenCalled();
+    expect(continueLocally).not.toHaveBeenCalled();
+
+    fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
+    await waitFor(() => expect(signInButton.disabled).toBe(false));
+    expect(continueButton.disabled).toBe(false);
+    expect(onboardingCard?.hasAttribute("inert")).toBe(false);
+  });
+
+  it("keeps the API-origin confirmation open until its change settles and restores editor focus", async () => {
+    let completeApply: (() => void) | undefined;
+    const onApiOrigin = vi.fn(() => new Promise<void>((resolve) => { completeApply = resolve; }));
+    render(<AccountIdentity {...accountProps({ onApiOrigin })} />);
+
+    const origin = screen.getByRole("textbox", { name: messages.en.apiOrigin }) as HTMLInputElement;
+    const trigger = screen.getByRole("button", { name: messages.en.applyApiOrigin }) as HTMLButtonElement;
+    fireEvent.change(origin, { target: { value: "https://custom.example" } });
+    fireEvent.click(trigger);
+    const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    const confirm = within(confirmation).getByRole("button", { name: messages.en.applyApiOrigin }) as HTMLButtonElement;
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(onApiOrigin).toHaveBeenCalledOnce());
+    expect(screen.getByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBe(confirmation);
+    expect(origin.disabled).toBe(true);
+    expect(trigger.disabled).toBe(true);
+    expect(confirm.disabled).toBe(true);
+    fireEvent.keyDown(confirmation, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBe(confirmation);
+    fireEvent.click(trigger);
+    expect(onApiOrigin).toHaveBeenCalledOnce();
+
+    await act(async () => { completeApply?.(); });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBeNull());
+    expect(origin.disabled).toBe(false);
+    expect(trigger.disabled).toBe(false);
+    await waitFor(() => expect(document.activeElement).toBe(origin));
+  });
+
+  it("defers first-run completion until an API-origin confirmation closes", async () => {
+    const onComplete = vi.fn();
+    const props = { copy: messages.en, apiOrigin: "https://devhud.api.delino.io", onApiOrigin: vi.fn(async () => undefined), onComplete, apiChangeError: null };
+    const view = render(<FirstRunIdentity {...props} />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    identity = identityWith({ status: "authenticated" });
+    view.rerender(<FirstRunIdentity {...props} />);
+    expect(onComplete).not.toHaveBeenCalled();
+
+    fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
+    await waitFor(() => expect(onComplete).toHaveBeenCalledOnce());
+  });
+
+  it("keeps the custom-origin warning and API-change failures beside the editor", () => {
+    render(<AccountIdentity {...accountProps({ apiChangeError: messages.en.apiChangeFailed })} />);
+    const input = screen.getByRole("textbox", { name: messages.en.apiOrigin });
+    expect(input.getAttribute("aria-describedby")).toContain("api-origin-security-warning");
+    expect(document.getElementById("api-origin-security-warning")?.textContent).toBe(messages.en.customApiWarning);
+    expect(screen.getByRole("alert").textContent).toBe(messages.en.apiChangeFailed);
+  });
+
+  it("makes non-modal Account content inert while either confirmation is open", async () => {
+    identity = identityWith({ status: "authenticated", account: { displayName: "Fixture User", email: "fixture@example.com" } as never });
+    render(<AccountIdentity {...accountProps()} />);
+    const content = document.querySelector<HTMLElement>(".account-content");
+    if (content === null) throw new Error("account content missing");
+    const deleteTrigger = screen.getByRole("button", { name: messages.en.deleteAccount });
+
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    const apiConfirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    expect(content.hasAttribute("inert")).toBe(true);
+    fireEvent.click(within(apiConfirmation).getByRole("button", { name: messages.en.cancel }));
+    await waitFor(() => expect(content.hasAttribute("inert")).toBe(false));
+
+    fireEvent.click(deleteTrigger);
+    const deleteConfirmation = await screen.findByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle });
+    expect(content.hasAttribute("inert")).toBe(true);
+    fireEvent.click(within(deleteConfirmation).getByRole("button", { name: messages.en.cancel }));
+    await waitFor(() => expect(content.hasAttribute("inert")).toBe(false));
+  });
+
+  it("uses neutral deletion copy until deletion is confirmed", async () => {
+    identity = identityWith({ status: "authenticated", account: { displayName: "Fixture User", email: "fixture@example.com" } as never });
+    render(<AccountIdentity {...accountProps()} />);
+    const dangerZone = screen.getByLabelText(messages.en.dangerZone);
+    expect(within(dangerZone).getByText(messages.en.deleteAccountSummary)).toBeTruthy();
+    expect(within(dangerZone).queryByText(messages.en.deleteAccountConfirmSummary)).toBeNull();
+
+    fireEvent.click(within(dangerZone).getByRole("button", { name: messages.en.deleteAccount }));
+    expect(within(await screen.findByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle })).getByText(messages.en.deleteAccountConfirmSummary)).toBeTruthy();
+  });
+
+  it("uses the shared alert dialog for Delete focus containment and restoration", async () => {
+    identity = identityWith({ status: "authenticated", account: { displayName: "Fixture User", email: "fixture@example.com" } as never });
+    render(<AccountIdentity {...accountProps()} />);
+    const trigger = screen.getByRole("button", { name: messages.en.deleteAccount });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle });
+    const cancel = within(dialog).getByRole("button", { name: messages.en.cancel });
+    const confirm = within(dialog).getByRole("button", { name: messages.en.deleteAccount });
+    await waitFor(() => expect(document.activeElement).toBe(cancel));
+    fireEvent.keyDown(cancel, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(confirm);
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  it("keeps Account confirmation triggers mutually exclusive", async () => {
+    identity = identityWith({ status: "authenticated", account: { displayName: "Fixture User", email: "fixture@example.com" } as never });
+    render(<AccountIdentity {...accountProps()} />);
+    const apply = screen.getByRole("button", { name: messages.en.applyApiOrigin }) as HTMLButtonElement;
+    const deleteTrigger = screen.getByRole("button", { name: messages.en.deleteAccount }) as HTMLButtonElement;
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(apply);
+    const apiConfirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    await waitFor(() => expect(deleteTrigger.disabled).toBe(true));
+    fireEvent.click(deleteTrigger);
+    expect(screen.queryByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle })).toBeNull();
+    fireEvent.click(within(apiConfirmation).getByRole("button", { name: messages.en.cancel }));
+    await waitFor(() => expect(deleteTrigger.disabled).toBe(false));
+
+    fireEvent.click(deleteTrigger);
+    const deleteConfirmation = await screen.findByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle });
+    await waitFor(() => expect(apply.disabled).toBe(true));
+    fireEvent.click(apply);
+    expect(screen.queryByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBeNull();
+    fireEvent.click(within(deleteConfirmation).getByRole("button", { name: messages.en.cancel }));
+    await waitFor(() => expect(apply.disabled).toBe(false));
+  });
+
   it("retries a failed Native Messaging configuration publication", async () => {
     vi.useFakeTimers();
     nativeMessagingMock.configure.mockRejectedValueOnce(new Error("temporary bridge failure")).mockResolvedValue(undefined);
@@ -126,7 +335,7 @@ describe("identity UI", () => {
     const continueLocally = vi.fn();
     identity = identityWith({ status: "error", continueLocally });
 
-    render(<AccountIdentity copy={messages.en} apiOrigin="https://devhud.api.delino.io" inputRef={{ current: null }} onApiOrigin={vi.fn(async () => undefined)} onDeleteConfirmationOpenChange={vi.fn()} />);
+    render(<AccountIdentity copy={messages.en} apiOrigin="https://devhud.api.delino.io" inputRef={{ current: null }} onApiOrigin={vi.fn(async () => undefined)} onModalConfirmationOpenChange={vi.fn()} mobile={false} onOpenExternal={vi.fn()} externalMessage={null} externalMessageText="" externalMessageIsError={false} apiChangeError={null} />);
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.continueLocally }));
     expect(continueLocally).toHaveBeenCalledOnce();
