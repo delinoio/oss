@@ -80,7 +80,15 @@ function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["gith
     const adopted = createDeckEditorDraft(value, profiles);
     setDeckDrafts((current) => {
       const local = current.get(sourceKey);
-      if (local === undefined || JSON.stringify(local) !== JSON.stringify(adopted)) return current;
+      if (local === undefined) return current;
+      // A synchronized profile removal also adopts a valid Deck reassignment. Keep the
+      // local edits, but never retain a removed credential or choose an implicit fallback.
+      if (!profiles.some((profile) => profile.id === local.profileRef)) {
+        const next = new Map(current);
+        next.set(sourceKey, { ...local, profileRef: adopted.profileRef });
+        return next;
+      }
+      if (JSON.stringify(local) !== JSON.stringify(adopted)) return current;
       const next = new Map(current);
       next.delete(sourceKey);
       return next;
@@ -594,6 +602,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const [deleteFailedDeckId, setDeleteFailedDeckId] = useState<string | null>(null);
   const [pendingCreation, setPendingCreation] = useState(false);
   const [creationSession, setCreationSession] = useState(0);
+  const [desktopFocusPending, setDesktopFocusPending] = useState(false);
   const editorGeneration = useRef(0);
   const settingsSheetGeneration = useRef(0);
   const createdDeckToFocus = useRef<string | null>(null);
@@ -741,10 +750,24 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     sheetReturnFocus.current = null;
     setSettingsOpen(false);
     if (widgetConfirmationOpen) return;
-    requestAnimationFrame(() => {
-      if (deckNameInput.current !== null && !deckNameInput.current.disabled) deckNameInput.current.focus();
-    });
+    setDesktopFocusPending(true);
   }, [isCreating, mobile, settingsOpen, widgetConfirmationOpen]);
+  useEffect(() => {
+    if (mobile) {
+      setDesktopFocusPending(false);
+      return;
+    }
+    if (!desktopFocusPending || widgetConfirmationOpen) return;
+    if (deckNameInput.current !== null && !deckNameInput.current.matches(":disabled")) {
+      setDesktopFocusPending(false);
+      deckNameInput.current.focus();
+      return;
+    }
+    if (deckSelection.current !== null && !deckSelection.current.disabled) {
+      setDesktopFocusPending(false);
+      deckSelection.current.focus();
+    }
+  }, [desktopFocusPending, editorDraft.saving, mobile, widgetConfirmationOpen]);
   useEffect(() => {
     // Creation replaces the keyed editor while its Sheet stays open, so restore focus after the replacement mounts.
     if (createdDeckToFocus.current !== deck?.id) return;
