@@ -637,6 +637,20 @@ describe("Deck surface", () => {
     await waitFor(() => expect(document.activeElement).toBe(settings));
   });
 
+  it("opens and focuses the mobile creation sheet when its desktop editor leaves the layout", async () => {
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    const name = screen.getByLabelText(messages.en.deckName);
+    name.focus();
+    setViewport(390);
+
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckCreate });
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText(messages.en.deckName)));
+    expect(sheet.contains(document.activeElement)).toBe(true);
+  });
+
   it("clears the screen-modal flag when an open widget confirmation unmounts", async () => {
     const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
     const onModalConfirmationOpenChange = vi.fn();

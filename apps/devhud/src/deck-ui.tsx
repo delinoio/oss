@@ -668,6 +668,12 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
       const shouldFocusSettings = desktopConfigurationHadFocus.current && !widgetConfirmationOpen;
       desktopConfigurationHadFocus.current = false;
       if (!shouldFocusSettings) return;
+      if (isCreating) {
+        sheetReturnFocus.current = null;
+        settingsSheetGeneration.current += 1;
+        setSettingsOpen(true);
+        return;
+      }
       const animation = requestAnimationFrame(() => mobileSettingsButton.current?.focus());
       return () => cancelAnimationFrame(animation);
     }
@@ -677,7 +683,7 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
       if (deckNameInput.current !== null && !deckNameInput.current.disabled) deckNameInput.current.focus();
     });
     return () => cancelAnimationFrame(animation);
-  }, [mobile, settingsOpen, widgetConfirmationOpen]);
+  }, [isCreating, mobile, settingsOpen, widgetConfirmationOpen]);
   useEffect(() => {
     // Creation replaces the keyed editor while its Sheet stays open, so restore focus after the replacement mounts.
     if (createdDeckToFocus.current !== deck?.id) return;
