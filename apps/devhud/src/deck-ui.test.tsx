@@ -141,6 +141,44 @@ describe("Deck surface", () => {
     expect(update(reassignedSettings).decks[0]).toMatchObject({ name: "Keep this edit", profileRef: otherProfile.id });
   });
 
+  it("clears a removed profile from an active Create Deck draft", async () => {
+    const otherProfile = { ...profile, id: "018f47a2-7b3c-7def-8abc-1234567890ae", name: "Personal" };
+    const settingsWithProfiles = parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [profile, otherProfile] } });
+    const replaceSettings = vi.fn(async () => true);
+    identity = identityWith({ settings: settingsWithProfiles, replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Keep this creation" } });
+    fireEvent.change(screen.getByLabelText(messages.en.deckProfile), { target: { value: otherProfile.id } });
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [profile] } }), replaceSettings });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect((screen.getByLabelText(messages.en.deckProfile) as HTMLSelectElement).value).toBe(""));
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Keep this creation");
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    expect(replaceSettings).not.toHaveBeenCalled();
+  });
+
+  it.each([1024, 800])("pins the initial Deck editor through a settings reorder at %ipx", (viewport) => {
+    setViewport(viewport);
+    const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck", query: "repo:octo/other is:pr", builder: { repository: "octo/other", author: null, review: null, label: null, state: null } };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, otherDeck] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    const name = screen.getByLabelText(messages.en.deckName) as HTMLInputElement;
+    name.focus();
+    fireEvent.change(name, { target: { value: "Keep the pinned Deck" } });
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [otherDeck, deck] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(deck.id);
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Keep the pinned Deck");
+    expect(document.activeElement).toBe(screen.getByLabelText(messages.en.deckName));
+  });
+
   it("keeps Create unavailable while a Deck creation is pending", async () => {
     let finishSave: (committed: boolean) => void = () => {};
     const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });

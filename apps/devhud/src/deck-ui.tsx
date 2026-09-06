@@ -76,7 +76,16 @@ function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["gith
   const saving = pendingSaves.has(saveKey);
   const saveFailure = saveFailures.get(saveKey) ?? null;
   useEffect(() => {
-    if (value === null) return;
+    if (value === null) {
+      setCreationDrafts((current) => {
+        const local = current.get(creationSession);
+        if (local === undefined || profiles.some((profile) => profile.id === local.profileRef)) return current;
+        // A creation draft cannot inherit a different profile after synchronization removes
+        // its selection. Keep its edits and require the user to choose a valid profile.
+        return new Map(current).set(creationSession, { ...local, profileRef: "" });
+      });
+      return;
+    }
     const adopted = createDeckEditorDraft(value, profiles);
     setDeckDrafts((current) => {
       const local = current.get(sourceKey);
@@ -93,7 +102,7 @@ function useDeckEditorDraft(value: Deck | null, profiles: DevHudSettingsV1["gith
       next.delete(sourceKey);
       return next;
     });
-  }, [profiles, sourceKey, value]);
+  }, [creationSession, profiles, sourceKey, value]);
   const update = useCallback((change: (current: DeckEditorDraft) => DeckEditorDraft) => {
     const next = change(draft);
     if (value === null) setCreationDrafts((current) => new Map(current).set(creationSession, next));
@@ -595,7 +604,9 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const polling = useDeckPolling();
   const widgetAccess = useWidgetAccess();
   const shellLayout = useShellLayout();
-  const [selected, setSelected] = useState<string | null>(selectedDeckId);
+  // Desktop and rail editors render immediately, so pin their visible fallback before an
+  // incoming Settings reordering can replace the editor and discard its focused draft.
+  const [selected, setSelected] = useState<string | null>(() => selectedDeckId ?? (shellLayout === ShellLayout.Mobile ? null : identity.settings.decks[0]?.id ?? null));
   const [creating, setCreating] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [widgetConfirmationDeckId, setWidgetConfirmationDeckId] = useState<string | null>(null);
@@ -988,7 +999,7 @@ function DeckEditor({ copy, value, draft, saving, saveFailure, nameInputRef, sav
   const setBuilderValue = (field: keyof DeckBuilder, next: string) => { const trimmed = next.trim(); const builderValue = trimmed === "" ? null : trimmed as DeckBuilder[typeof field]; const nextQuery = applyDeckBuilder(query, field, builderValue); onDraftChange((current) => ({ ...current, query: nextQuery, builder: parseDeckBuilder(nextQuery) })); };
   return <form onSubmit={submit} className="deck-editor"><fieldset disabled={disabled || saving}>
     <Field label={copy.deckName} inputId="deck-name"><input ref={nameInputRef} id="deck-name" required value={name} onChange={(event) => onDraftChange((current) => ({ ...current, name: event.target.value }))} /></Field>
-    <Field label={copy.deckProfile} inputId="deck-profile"><select id="deck-profile" required value={profileRef} onChange={(event) => onDraftChange((current) => ({ ...current, profileRef: event.target.value }))}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></Field>
+    <Field label={copy.deckProfile} inputId="deck-profile"><select id="deck-profile" required value={profileRef} onChange={(event) => onDraftChange((current) => ({ ...current, profileRef: event.target.value }))}><option value="" disabled>{copy.deckProfile}</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></Field>
     <Field label={copy.deckQuery} inputId="deck-query"><input id="deck-query" required value={query} onChange={(event) => onDraftChange((current) => ({ ...current, query: event.target.value, builder: parseDeckBuilder(event.target.value) }))} /></Field>
     <fieldset disabled={hasDeckBooleanQuerySyntax(query)}><legend>{copy.deckBuilder}</legend>
       <Field label={copy.deckBuilderRepository} inputId="deck-builder-repository"><input id="deck-builder-repository" value={builder?.repository ?? ""} onChange={(event) => setBuilderValue("repository", event.target.value)} /></Field>
