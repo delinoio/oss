@@ -714,6 +714,31 @@ describe("Deck surface", () => {
     expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull();
   });
 
+  it("closes an open mobile Deck sheet when its locally selected Deck disappears", async () => {
+    setViewport(390);
+    const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, otherDeck] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    const selection = screen.getByRole("combobox", { name: messages.en.deckSelected });
+    fireEvent.change(selection, { target: { value: otherDeck.id } });
+    await waitFor(() => expect((selection as HTMLSelectElement).value).toBe(otherDeck.id));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    screen.getByLabelText(messages.en.deckName).focus();
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull());
+    await waitFor(() => expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(deck.id));
+    const settingsButton = screen.getByRole("button", { name: messages.en.deckSettings });
+    await waitFor(() => expect(document.activeElement).toBe(settingsButton));
+    fireEvent.click(settingsButton);
+    expect((await screen.findByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(deck.name);
+  });
+
   it("defers a linked Deck selection until its widget confirmation closes", async () => {
     const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck", query: "repo:octo/other is:pr", builder: { repository: "octo/other", author: null, review: null, label: null, state: null } };
     identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, otherDeck] }) });

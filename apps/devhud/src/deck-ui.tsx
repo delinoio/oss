@@ -594,6 +594,8 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
   const previousLinkedDeck = useRef({ id: selectedDeckId, available: linkedDeckAvailable });
   const missingLinkedDeck = selectedDeckId !== null && !linkedDeckAvailable;
   const previousMissingLinkedDeck = useRef(missingLinkedDeck);
+  const localSelectedDeckAvailable = selected === null || identity.settings.decks.some((item) => item.id === selected);
+  const previousLocalSelectedDeckAvailable = useRef(localSelectedDeckAvailable);
   const noGitHubProfiles = identity.settings.github.profiles.length === 0;
   const previousNoGitHubProfiles = useRef(noGitHubProfiles);
   const selectedDeck = missingLinkedDeck ? null : identity.settings.decks.find((item) => item.id === selected) ?? identity.settings.decks[0] ?? null;
@@ -641,6 +643,18 @@ export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink,
     const animation = requestAnimationFrame(() => missingLinkedDeckReturnButton.current?.focus());
     return () => cancelAnimationFrame(animation);
   }, [missingLinkedDeck]);
+  useEffect(() => {
+    const wasAvailable = previousLocalSelectedDeckAvailable.current;
+    previousLocalSelectedDeckAvailable.current = localSelectedDeckAvailable;
+    // Creation selects its new Deck before synchronized Settings publishes it locally.
+    if (selectedDeckId !== null || localSelectedDeckAvailable || !wasAvailable || createdDeckToFocus.current === selected) return;
+    editorGeneration.current += 1;
+    setSelected(null);
+    if (!mobile || !settingsOpen) return;
+    settingsSheetGeneration.current += 1;
+    sheetReturnFocus.current = mobileSettingsButton.current;
+    setSettingsOpen(false);
+  }, [localSelectedDeckAvailable, mobile, selected, selectedDeckId, settingsOpen]);
   useEffect(() => {
     const wasMissingGitHubProfiles = previousNoGitHubProfiles.current;
     previousNoGitHubProfiles.current = noGitHubProfiles;
