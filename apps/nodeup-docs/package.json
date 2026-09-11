@@ -11,6 +11,6 @@
     "test": "rspress build && node scripts/validate-clean-urls.mjs"
   },
   "devDependencies": {
-    "@rspress/core": "^2.0.14"
+    "@rspress/core": "2.0.14"
   }
 }
