@@ -24,6 +24,14 @@ test("keeps the responsive shell and accessibility copy complete in both languag
   }
 });
 
+test("localizes scan-first Deck workspace and sheet cues", () => {
+  for (const language of ["en", "ko"]) {
+    for (const key of ["deckSelected", "deckSettings", "deckConfiguration", "deckFresh", "deckRefreshing", "deckOfflineCached", "deckEmptyResults", "deckDraftsHidden", "deckDraftsHiddenSummary", "deckAuthor", "deckLabels", "deckUpdated"]) assert.ok(messages[language][key]);
+  }
+  assert.match(messages.en.deckOfflineCached, /Offline/u);
+  assert.match(messages.ko.deckOfflineCached, /오프라인/u);
+});
+
 test("describes RealQA without claiming that available capture is disconnected", () => {
   assert.doesNotMatch(messages.en.realqaSummary, /not connected/iu);
   assert.doesNotMatch(messages.ko.realqaSummary, /연결되지/iu);

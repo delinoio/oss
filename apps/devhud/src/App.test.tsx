@@ -979,6 +979,7 @@ describe("responsive application shell", () => {
     render(<App bridge={bridgeWith(request)} initialRuntime={{ ...mobileRuntime, capabilities: { ...mobileRuntime.capabilities, widgets: true } }} />);
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.deck }));
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.deckSettings }));
     fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
     const confirmation = screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
     const cancel = within(confirmation).getByRole("button", { name: messages.en.widgetPrivacyCancel });

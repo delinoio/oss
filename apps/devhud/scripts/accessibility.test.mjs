@@ -10,6 +10,7 @@ const app = readFileSync(join(appRoot, "src/App.tsx"), "utf8");
 const diagnosticsUi = readFileSync(join(appRoot, "src/diagnostics-ui.tsx"), "utf8");
 const identityUi = readFileSync(join(appRoot, "src/identity-ui.tsx"), "utf8");
 const foundation = readFileSync(join(appRoot, "src/ui-foundation.tsx"), "utf8");
+const deckUi = readFileSync(join(appRoot, "src/deck-ui.tsx"), "utf8");
 const icons = readFileSync(join(appRoot, "src/ui-icons.tsx"), "utf8");
 const main = readFileSync(join(appRoot, "src/main.tsx"), "utf8");
 const nativeHost = readFileSync(join(appRoot, "src-tauri/src/main.rs"), "utf8");
@@ -251,6 +252,26 @@ test("narrow layouts keep capture previews above the safe-area-aware navigation"
   assert.match(styles, /\.floating-capture-preview\{[^}]*bottom:1rem[^}]*\}[\s\S]*@media \(max-width:700px\)\{\.floating-capture-preview\{bottom:calc\(var\(--mobile-bottom-navigation-height, calc\(64px \+ env\(safe-area-inset-bottom\)\)\) \+ 1rem\)\}\}/u);
 });
 
+test("Deck configuration scrolls inside a viewport-bounded sticky panel", () => {
+  assert.match(styles, /\.deck-configuration-panel\s*\{[^}]*position:sticky;[^}]*top:var\(--space-2\);[^}]*max-block-size:calc\(100vh - var\(--space-2\) - var\(--space-2\)\);[^}]*overflow-y:auto;/u);
+});
+
+test("constrained Deck results place status badges below their content", () => {
+  assert.match(styles, /\.deck-workspace\s*\{[^}]*container-type:inline-size;/u);
+  assert.match(styles, /@container \(max-width:40rem\)\s*\{\s*\.deck-results \.data-row\s*\{[^}]*grid-template-columns:auto minmax\(0,1fr\)[^}]*\}[^}]*\.deck-results \.data-row-trailing\s*\{[^}]*grid-column:2;[^}]*justify-content:start/u);
+  assert.match(styles, /\.deck-result-statuses \.status-badge\s*\{[^}]*max-width:100%;[^}]*white-space:normal;[^}]*overflow-wrap:anywhere;/u);
+});
+
+test("mobile Deck selection can shrink with enlarged text", () => {
+  assert.match(styles, /@media \(max-width: 700px\)\s*\{[\s\S]*?\.deck-workspace-controls \.ui-field\s*\{[^}]*flex:1 1 100%;[^}]*min-width:0;/u);
+});
+
+test("rail and lower-sidebar Deck headers stack and constrain their actions", () => {
+  assert.match(styles, /@media \(min-width:701px\) and \(max-width:1023px\)\s*\{[^}]*\.deck > \.page-header\s*\{\s*display:block;\s*\}[^}]*\.deck > \.page-header \.page-header-actions\s*\{[^}]*min-width:0;[^}]*width:100%;[^}]*\}[^}]*\.deck-workspace-controls\s*\{[^}]*justify-content:start;[^}]*min-width:0;[^}]*\}[^}]*\.deck-workspace-controls \.ui-field\s*\{[^}]*flex:1 1 11rem;[^}]*max-width:100%;/u);
+  assert.match(styles, /\.deck\s*\{\s*container-type:inline-size;\s*\}/u);
+  assert.match(styles, /@container \(max-width:64rem\)\s*\{[^}]*\.deck > \.page-header\s*\{\s*display:block;\s*\}[^}]*\.deck > \.page-header \.page-header-actions\s*\{[^}]*min-width:0;[^}]*width:100%;[^}]*\}[^}]*\.deck-workspace-controls\s*\{[^}]*justify-content:start;[^}]*min-width:0;[^}]*\}[^}]*\.deck-workspace-controls \.ui-field\s*\{[^}]*flex:1 1 11rem;[^}]*max-width:100%;/u);
+});
+
 test("the shell exposes a localized skip target and named rail tooltips", () => {
   assert.match(foundation, /className="skip-link" href="#devhud-main-content"/u);
   assert.match(foundation, /id="devhud-main-content" className="content" tabIndex=\{-1\}/u);
@@ -277,7 +298,27 @@ test("modal primitives own focus trapping, Escape, and opener restoration", () =
   assert.match(foundation, /event\.shiftKey && document\.activeElement === first[\s\S]*last\.focus\(\)/u);
   assert.match(foundation, /document\.activeElement === last[\s\S]*first\.focus\(\)/u);
   assert.match(foundation, /returnFocusRef\?\.current \?\? capturedOpener\.current/u);
-  assert.match(foundation, /role="dialog" aria-modal="true"/u);
+  assert.match(foundation, /role = "dialog"/u);
+  assert.match(foundation, /role=\{role\} aria-modal="true"/u);
+});
+
+test("Deck keeps configuration in the desktop panel and a named mobile sheet", () => {
+  assert.match(deckUi, /!mobile && <aside className="deck-configuration-panel" aria-label=\{copy\.deckConfiguration\}/u);
+  assert.match(deckUi, /mobile && <Sheet open=\{settingsOpen\} inert=\{widgetConfirmationOpen\} title=\{isCreating \? copy\.deckCreate : copy\.deckConfiguration\} backLabel=\{copy\.back\}/u);
+  assert.match(deckUi, /backLabel=\{copy\.back\} returnFocusRef=\{sheetReturnFocus\} backButtonRef=\{settingsSheetBackButton\} onClose=\{closeSettings\}/u);
+  assert.match(deckUi, /sheetReturnFocus\.current = createDeckButton\.current;[\s\S]*setSettingsOpen\(false\)/u);
+  assert.doesNotMatch(deckUi, /returnFocusRef=\{settingsTrigger\}/u);
+  assert.match(styles, /\.deck-workspace-layout\s*\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(20rem,24rem\)/u);
+  assert.match(styles, /@media \(min-width:701px\) and \(max-width:1023px\) \{[\s\S]*?\.deck-workspace-layout \{ grid-template-columns:minmax\(0,1fr\) minmax\(0,min\(24rem,42%\)\); \}/u);
+  assert.match(styles, /@media \(min-width:1024px\) and \(max-width:1279px\) \{[\s\S]*?\.deck-workspace-layout \{ grid-template-columns:minmax\(0,1fr\) minmax\(0,min\(24rem,42%\)\); \}/u);
+  assert.match(styles, /\.deck-workspace-layout\s*\{\s*grid-template-columns:minmax\(0,1fr\);\s*\}/u);
+});
+
+test("Deck checkbox labels retain the shared 44px interaction target", () => {
+  assert.match(deckUi, /<label className="check deck-check" htmlFor="deck-show-drafts">/u);
+  assert.match(deckUi, /<label className="check deck-check" htmlFor="deck-notifications">/u);
+  assert.match(styles, /\.check\s*\{[^}]*min-height:var\(--target-min\)/u);
+  assert.match(styles, /\.check input\s*\{[^}]*width:20px[^}]*min-height:20px[^}]*height:20px/u);
 });
 
 test("foundation icons are repository-owned decorative SVGs", () => {
