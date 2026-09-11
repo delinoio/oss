@@ -34,7 +34,7 @@
       "@expo/cli>undici": "7.29.0",
       "@expo/plist>@xmldom/xmldom": "0.8.13",
       "@stoplight/spectral-core>minimatch": "3.1.5",
-      "@xmldom/xmldom": "0.8.13",
+      "@xmldom/xmldom": "0.8.15",
       "axios": "1.16.0",
       "basic-ftp": "5.3.1",
       "brace-expansion@>=1.0.0 <1.1.16": "1.1.18",
