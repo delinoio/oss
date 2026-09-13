@@ -370,6 +370,8 @@ export function assertMobileContracts({ platforms, tauri, ios, android, cargo, a
   for (const operation of ["runtime.snapshot", "lifecycle.open-external", "auth.peek-pending-callback", "auth.take-pending-callback", "secure.read", "secure.write", "notifications.request-permission", "updates.status", "widgets.replace-deck-snapshot"]) assert(nativeBridge.includes(`\"${operation}\"`), `typed bridge operation missing: ${operation}`);
   assert(nativeBridge.includes("readonly widgets: boolean"), "runtime widget capability must be platform-reported");
   assert(app.includes("mobile &&") && app.includes("copy.realqaMobileTitle"), "mobile RealQA unavailable state is missing");
+  assert(/surface === SurfaceId\.Realqa && mobile && <><PageHeader[\s\S]*realqaMobileSummary[\s\S]*<\/Card><\/>/u.test(app), "mobile RealQA must retain only its localized desktop-only notice");
+  assert(/!mobile && runtimeCapabilities\.available\.has\(PlatformCapability\.Capture\) && <RealqaSurface/u.test(app), "capture, editor, and issue-submission UI must remain outside the mobile closure");
   assert(app.includes("!mobile") && app.includes("ExternalLinkTarget.Issue"), "issue creation is not explicitly desktop-only");
   assert(workflow.includes("devhud-mobile-contracts") && workflow.includes("devhud-android-emulator"), "mobile CI validation jobs are incomplete");
   assertMobileCi(workflow);

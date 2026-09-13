@@ -89,13 +89,31 @@ describe("DevHud UI foundation", () => {
 
   it("closes a sheet through its named back control", async () => {
     function Harness() {
-      const [open, setOpen] = useState(true);
-      return <Sheet open={open} title="More" backLabel="Back" onClose={() => setOpen(false)}><Button>Destination</Button></Sheet>;
+      const [open, setOpen] = useState(false);
+      const opener = createRef<HTMLButtonElement>();
+      const returnFocusRef = createRef<HTMLButtonElement>();
+      return <><Button ref={opener} onClick={() => setOpen(true)}>Open</Button><Sheet open={open} title="More" backLabel="Back" returnFocusRef={returnFocusRef} onClose={() => setOpen(false)}><Button>Destination</Button></Sheet></>;
     }
     render(<Harness />);
+    const opener = screen.getByRole("button", { name: "Open" });
+    opener.focus();
+    fireEvent.click(opener);
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Destination" })));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.queryByRole("dialog", { name: "More" })).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
+  it("includes disclosure summaries in sheet focus containment", async () => {
+    render(<Sheet open title="More" backLabel="Back" onClose={() => {}}><details><summary>Inspect</summary><p>Details</p></details><Button>Later</Button></Sheet>);
+    const summary = screen.getByText("Inspect");
+    const back = screen.getByRole("button", { name: "Back" });
+
+    await waitFor(() => expect(document.activeElement).toBe(summary));
+    fireEvent.keyDown(summary, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(back);
+    fireEvent.keyDown(back, { key: "Tab" });
+    expect(document.activeElement).toBe(summary);
   });
 
   it("does not override focus transferred within the sheet while autofocus is pending", async () => {

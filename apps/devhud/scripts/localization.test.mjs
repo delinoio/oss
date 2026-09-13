@@ -103,6 +103,16 @@ test("localizes recoverable encrypted-draft deletion failures", () => {
   assert.match(messages.ko.realqaDeleteFailed, /초안 삭제/u);
 });
 
+test("localizes the fixed RealQA encryption policy and typed recovery states without usage metrics", () => {
+  for (const language of ["en", "ko"]) {
+    const copy = messages[language];
+    for (const key of ["realqaCapture", "realqaPolicyTitle", "realqaPolicySummary", "realqaPolicyQuota", "realqaEmptyTitle", "realqaUnreadableTitle", "realqaQuotaTitle", "realqaPermissionTitle", "realqaProtectedTitle", "realqaTopologyTitle", "realqaSaveTitle", "realqaOpenTitle", "realqaDeleteTitle"]) assert.ok(copy[key]);
+    assert.match(copy.realqaPolicySummary, language === "en" ? /encrypted.*device.*30-day/iu : /이 기기.*암호화.*30일/u);
+    assert.match(copy.realqaPolicyQuota, /10\s*GiB/u);
+    assert.doesNotMatch(copy.realqaPolicyQuota, /(?:used|%|사용량)/iu);
+  }
+});
+
 test("uses the first supported platform language", () => {
   assert.equal(selectSupportedLanguage(["fr-FR", "ko-KR", "en-US"]), "ko");
   assert.equal(selectSupportedLanguage(["fr-FR", "en-US", "ko-KR"]), "en");
