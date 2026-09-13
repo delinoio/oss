@@ -216,7 +216,7 @@ describe("generated Connect identity/settings fixture", () => {
     const confirmation = screen.getByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle });
     const cancel = within(confirmation).getByRole("button", { name: messages.en.cancel });
     const more = screen.getByRole("button", { name: messages.en.more });
-    expect(cancel).toBe(document.activeElement);
+    await waitFor(() => expect(cancel).toBe(document.activeElement));
     expect((more as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(more);
     expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull();
@@ -910,10 +910,11 @@ describe("generated Connect identity/settings fixture", () => {
     const firstConfirmation = screen.getByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle });
     const cancel = within(firstConfirmation).getByRole("button", { name: messages.en.cancel });
     const confirmDelete = within(firstConfirmation).getByRole("button", { name: messages.en.deleteAccount });
-    expect(cancel).toBe(document.activeElement);
+    await waitFor(() => expect(cancel).toBe(document.activeElement));
+    confirmDelete.focus();
     fireEvent.keyDown(firstConfirmation, { key: "Tab" });
-    expect(confirmDelete).toBe(document.activeElement);
-    fireEvent.keyDown(window, { key: "Escape" });
+    expect(cancel).toBe(document.activeElement);
+    fireEvent.keyDown(firstConfirmation, { key: "Escape" });
     expect(screen.queryByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle })).toBeNull();
     await waitFor(() => expect(deleteTrigger).toBe(document.activeElement));
     fireEvent.click(screen.getByRole("button", { name: messages.en.deleteAccount }));

@@ -164,7 +164,7 @@ test("first run renders the localized local-choice controls and focuses the API 
   assert.match(identityUi, /copy\.continueLocally/u);
   assert.match(identityUi, /copy\.customApiWarning/u);
   assert.match(app, /if \(onboarding\) return boundary\(<main className="standalone-shell"/u);
-  assert.match(identityUi, /<Card className="onboarding-card">/u);
+  assert.match(identityUi, /<Card className="onboarding-card" inert=\{apiChangeConfirmationOpen\}>/u);
 });
 
 test("Account focuses its API origin input when the surface opens or is reselected from the palette", () => {
@@ -184,6 +184,27 @@ test("Account opener actions and invalidating edits ignore stale external comple
   assert.match(app, /const finishOnboarding = \(\) => \{\s+externalAttempt\.current \+= 1;\s+setExternalMessage\(null\);/u);
   assert.match(app, /clearIdentityForApiChange\(bridge, storage, preferences\.apiOrigin, identitySession\)/u);
   assert.match(identityUi, /identity\.signIn\(\)/u);
+});
+
+test("Account uses the shared semantic hierarchy and confirmations", () => {
+  const accountRender = identityUi.slice(identityUi.indexOf("return <>"));
+  const order = ["aria-label={copy.session}", "aria-label={copy.apiOrigin}", "aria-label={copy.security}", "aria-label={copy.externalTools}", "aria-label={copy.dangerZone}"];
+  let previous = -1;
+  for (const label of order) {
+    const next = accountRender.indexOf(label);
+    assert(next > previous, `${label} must follow the Account semantic order`);
+    previous = next;
+  }
+  assert.match(identityUi, /role="alertdialog"/u);
+  assert.match(identityUi, /initialFocusRef=\{cancelDelete\}/u);
+  assert.match(identityUi, /returnFocusRef=\{deleteTrigger\}/u);
+  assert.match(identityUi, /apiChangeConfirmTitle/u);
+  assert.match(identityUi, /warningId="api-origin-security-warning"/u);
+  assert.match(identityUi, /onConfirmationOpenChange=\{setApiChangeConfirmationOpen\}/u);
+  assert.match(identityUi, /headingLevel=\{4\}/u);
+  assert.match(foundation, /readonly headingLevel\?: 2 \| 3 \| 4 \| 5 \| 6/u);
+  assert.doesNotMatch(app, /window\.confirm\(/u);
+  assert.match(foundation, /role\?: "dialog" \| "alertdialog"/u);
 });
 
 test("RealQA exposes unsupported capture actions as disabled controls", () => {
