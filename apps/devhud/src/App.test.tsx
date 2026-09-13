@@ -352,6 +352,30 @@ describe("native App state", () => {
     expect(screen.queryByText(messages.en.externalFailed)).toBeNull();
   });
 
+  it("reports API-origin policy configuration failures without persisting the new origin", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "session.configure-origins") {
+        if (value.apiOrigin === "https://custom.example") throw new Error("policy-configuration-failed");
+        return { kind: "session-network-policy", changed: false };
+      }
+      if (value.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+      if (value.operation === "secure.purge") return { kind: "ok" };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+
+    render(<App bridge={bridgeWith(request)} initialRuntime={mobileRuntime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).getByRole("button", { name: messages.en.applyApiOrigin }));
+
+    await waitFor(() => expect(within(document.querySelector(".api-origin-editor") as HTMLElement).getByRole("alert").textContent).toBe(messages.en.apiChangeFailed));
+    expect(screen.queryByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBeNull();
+    expect(JSON.parse(localStorage.getItem("devhud.shell.preferences.v1") ?? "null").apiOrigin).toBe("https://devhud.api.delino.io");
+    expect(screen.queryByText(messages.en.externalFailed)).toBeNull();
+  });
+
   it("loads the default content state once", async () => {
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
       if (value.operation === "runtime.snapshot") return { kind: "runtime", snapshot: mobileRuntime };

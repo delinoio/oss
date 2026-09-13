@@ -435,7 +435,9 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     try { await clearIdentityForApiChange(bridge, storage, preferences.apiOrigin, identitySession); }
     catch { setApiChangeError(true); return; }
     setAuthCallback(null);
-    const policy = await bridge.request({ operation: "session.configure-origins", apiOrigin: normalized });
+    let policy;
+    try { policy = await bridge.request({ operation: "session.configure-origins", apiOrigin: normalized }); }
+    catch { setApiChangeError(true); return; }
     update({ apiOrigin: normalized });
     if (policy.kind === "session-network-policy" && policy.changed) location.reload();
   };
