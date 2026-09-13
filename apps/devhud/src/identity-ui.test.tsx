@@ -3,10 +3,11 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AccountIdentity, ShortcutPaletteTrigger, SynchronizedSettingsBoundary, SynchronizedShortcutBoundary } from "./identity-ui";
+import { AccountIdentity, SynchronizedSettingsBoundary } from "./identity-ui";
 import { messages } from "./localization";
-import { localAgentPromptRepositories } from "./local-agent-settings-ui";
+import { LocalAgentSettings, localAgentPromptRepositories } from "./local-agent-settings-ui";
 import { NativeMessagingSettings, SynchronizedNativeMessagingBoundary } from "./native-messaging-ui";
+import { ShortcutPaletteTrigger, SynchronizedShortcutBoundary } from "./shortcut-settings-ui";
 import { LocalAgentKind, LocalAgentMode, type NativeBridgeV1 } from "./native-bridge";
 import type { IdentitySettingsValue } from "./service-boundary";
 import { defaultDevHudSettings, parseDevHudSettings } from "./settings-contract";
@@ -164,6 +165,7 @@ describe("identity UI", () => {
 
   it("does not offer an unchanged URL-mapping draft for saving", () => {
     render(<SynchronizedSettingsBoundary copy={messages.en} />);
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(messages.en.urlMappingsTitle, "u") }));
 
     expect((screen.getByRole("button", { name: messages.en.saveUrlMappings }) as HTMLButtonElement).disabled).toBe(true);
     expect(identity.replaceSettingsAt).not.toHaveBeenCalled();
@@ -189,7 +191,8 @@ describe("identity UI", () => {
     const replaceSettings = vi.fn<IdentitySettingsValue["replaceSettings"]>(async () => true);
     identity = identityWith({ settings, replaceSettings });
 
-    render(<SynchronizedSettingsBoundary copy={messages.en} showLocalAgents />);
+    render(<SynchronizedSettingsBoundary copy={messages.en} localAgentsAvailable sectionContributions={{ LocalAgents: LocalAgentSettings }} />);
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(messages.en.localAgentsTitle, "u") }));
     const codex = screen.getByRole("group", { name: /Codex 0\.147\.0/u });
     const trackerPrompt = within(codex).getByLabelText(`${messages.en.localAgentRepositoryPrompt}: octo/issues`);
     fireEvent.change(trackerPrompt, { target: { value: "Use the issue template." } });
@@ -225,6 +228,7 @@ describe("identity UI", () => {
     identity = identityWith({ settings: { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [{ id: profileId, name: "Work", kind: "fine-grained" as const }] }, urlMappings: [mapping] } });
 
     render(<SynchronizedSettingsBoundary copy={messages.en} />);
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(messages.en.urlMappingsTitle, "u") }));
     const pattern = screen.getByLabelText(messages.en.urlPattern);
     fireEvent.change(pattern, { target: { value: "https://example.com/issues/**" } });
     expect((screen.getByRole("button", { name: messages.en.saveUrlMappings }) as HTMLButtonElement).disabled).toBe(false);
@@ -253,6 +257,7 @@ describe("identity UI", () => {
     const githubProvider = { id: "github.com", validateRepository: vi.fn(async () => {}) } as unknown as import("./github-provider").GitHubProvider;
 
     render(<SynchronizedSettingsBoundary copy={messages.en} bridge={bridge} githubProvider={githubProvider} />);
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(messages.en.urlMappingsTitle, "u") }));
     fireEvent.change(screen.getByLabelText(messages.en.repositoryName), { target: { value: "reviewed" } });
     fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
 

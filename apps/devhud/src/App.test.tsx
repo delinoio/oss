@@ -11,6 +11,7 @@ import type { IdentitySession } from "./identity-client";
 import { messages } from "./localization";
 import { LifecycleState, NativeBridgeError, NativeBridgeErrorCode, NotificationPermission, RuntimePlatform, type DesktopUpdaterStatus, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { desktopNativeMessagingIntegration } from "./native-messaging-ui";
+import { desktopSettingsIntegration } from "./desktop-settings-ui";
 import { saveGuestSettings } from "./service-boundary";
 import { defaultDevHudSettings } from "./settings-contract";
 import { ShortcutActionId } from "./shortcuts";
@@ -82,6 +83,7 @@ describe("native App state", () => {
     });
     render(<App bridge={bridgeWith(request)} initialRuntime={mobileRuntime} />);
     fireEvent.click(screen.getByRole("button", { name: copy.settings }));
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(copy.githubSetupTitle, "u") }));
 
     expect(screen.getByRole("heading", { name: copy.githubSetupTitle })).toBeTruthy();
     expect(screen.getByText(copy.githubDirectSecurity)).toBeTruthy();
@@ -102,8 +104,9 @@ describe("native App state", () => {
       if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
       throw new Error(`unexpected operation ${request.operation}`);
     });
-    render(<App bridge={bridge} initialRuntime={desktopRuntime} />);
+    render(<App bridge={bridge} initialRuntime={desktopRuntime} desktopSettings={desktopSettingsIntegration} />);
     fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(messages.en.githubSetupTitle, "u") }));
     fireEvent.click(screen.getByRole("button", { name: messages.en.githubCreateFinePat }));
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("open_external", { target: "fine-grained-pat", apiOrigin: "https://devhud.api.delino.io" }));
   });
@@ -513,6 +516,7 @@ describe("native App state", () => {
 
     render(<App bridge={bridgeWith(request)} initialRuntime={desktopRuntime} />);
     fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(messages.en.settingsNotificationsTitle, "u") }));
     fireEvent.click(screen.getByRole("button", { name: messages.en.notificationPermission }));
 
     await waitFor(() => expect(requestPermission).toHaveBeenCalledOnce());
@@ -527,6 +531,7 @@ describe("native App state", () => {
 
     render(<App bridge={bridgeWith(request)} initialRuntime={desktopRuntime} />);
     fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(messages.en.settingsNotificationsTitle, "u") }));
     fireEvent.click(screen.getByRole("button", { name: messages.en.notificationPermission }));
 
     await waitFor(() => expect(requestPermission).toHaveBeenCalledOnce());
@@ -558,6 +563,7 @@ describe("native App state", () => {
     await waitFor(() => expect(request.mock.calls.filter(([value]) => value.operation === "notifications.permission")).toHaveLength(2));
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(messages.en.settingsNotificationsTitle, "u") }));
     expect(await screen.findByText(messages.en.notificationDenied)).toBeTruthy();
   });
 
@@ -576,6 +582,7 @@ describe("native App state", () => {
 
     render(<App bridge={bridgeWith(request)} initialRuntime={runtime} />);
     fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(messages.en.settingsNotificationsTitle, "u") }));
     expect(await screen.findByText(messages.en.notificationAuthorized)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.notificationPermission }));
@@ -641,12 +648,13 @@ describe("native App state", () => {
 
     render(<App bridge={bridgeWith(request)} initialRuntime={runtime} />);
     fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
-    fireEvent.click(await screen.findByRole("button", { name: messages.en.updatePolicy }));
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(messages.en.settingsUpdatesTitle, "u") }));
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.openAppStore }));
 
     expect((await screen.findByRole("alert")).textContent).toBe(messages.en.storeOpenFailed);
     expect(screen.queryByText(messages.en.errorTitle)).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: messages.en.updatePolicy }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.openAppStore }));
     await waitFor(() => expect(screen.queryByText(messages.en.storeOpenFailed)).toBeNull());
     expect(openAttempts).toBe(2);
   });
@@ -728,8 +736,9 @@ describe("native App state", () => {
       },
     };
 
-    render(<App bridge={bridge} initialRuntime={desktopRuntime} />);
+    render(<App bridge={bridge} initialRuntime={desktopRuntime} desktopSettings={desktopSettingsIntegration} />);
     fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(messages.en.settingsUpdatesTitle, "u") }));
     fireEvent.click(await screen.findByRole("button", { name: "Approve download" }));
     expect(screen.getByRole("dialog", { name: "Download this signed update?" })).toBeTruthy();
 
@@ -789,8 +798,9 @@ describe("native App state", () => {
       },
     };
 
-    render(<App bridge={bridge} initialRuntime={desktopRuntime} />);
+    render(<App bridge={bridge} initialRuntime={desktopRuntime} desktopSettings={desktopSettingsIntegration} />);
     fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(messages.en.settingsUpdatesTitle, "u") }));
     fireEvent.click(await screen.findByRole("button", { name: "Approve download" }));
     expect(screen.getByRole("dialog", { name: "Download this signed update?" })).toBeTruthy();
     await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "session.configure-origins", apiOrigin: "https://devhud.api.delino.io" }));
@@ -857,7 +867,7 @@ describe("responsive application shell", () => {
   it("renders the six-surface desktop sidebar and only the four approved Home tools", () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1440 });
     vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
-    render(<App bridge={unavailableBridge()} initialRuntime={desktopRuntime} />);
+    render(<App bridge={unavailableBridge()} initialRuntime={desktopRuntime} desktopSettings={desktopSettingsIntegration} />);
 
     const shell = document.querySelector<HTMLElement>("[data-shell-layout]");
     expect(shell?.dataset.shellLayout).toBe("sidebar");
@@ -895,7 +905,7 @@ describe("responsive application shell", () => {
   it.each([1023, 701])("renders the named tooltip rail at %ipx", (width) => {
     Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width });
     vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
-    render(<App bridge={unavailableBridge()} initialRuntime={desktopRuntime} />);
+    render(<App bridge={unavailableBridge()} initialRuntime={desktopRuntime} desktopSettings={desktopSettingsIntegration} />);
 
     expect(document.querySelector<HTMLElement>("[data-shell-layout]")?.dataset.shellLayout).toBe("rail");
     expect(screen.getByRole("heading", { level: 1, name: messages.en.appName }).textContent).toBe("D");

@@ -61,7 +61,7 @@ export function R2Settings({ copy, bridge }: { readonly copy: Copy; readonly bri
     finally { setBusy(false); }
   };
 
-  return <section className="native-setting" aria-labelledby="r2-settings-title"><h3 id="r2-settings-title">{copy.r2SettingsTitle}</h3><p>{copy.r2SettingsSummary}</p>
+  return <section className="native-setting" aria-labelledby="r2-settings-title"><h3 id="r2-settings-title" tabIndex={-1}>{copy.r2SettingsTitle}</h3><p>{copy.r2SettingsSummary}</p>
     <label>{copy.r2ProfileName}<input value={name} disabled={busy || identity.readOnly} onChange={(event) => setName(event.target.value)} /></label>
     <label>{copy.r2AccountId}<input value={accountId} disabled={busy || identity.readOnly} onChange={(event) => setAccountId(event.target.value)} /></label>
     <label>{copy.r2Bucket}<input value={bucket} disabled={busy || identity.readOnly} onChange={(event) => setBucket(event.target.value)} /></label>
