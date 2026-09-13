@@ -654,10 +654,58 @@ describe("diagnostics privacy boundary", () => {
     renderDiagnosticsPanel();
 
     expect(screen.queryByText(messages.en.diagnosticsNoEvents)).toBeNull();
+    expect(screen.queryByTestId("diagnostics-preview")).toBeNull();
+    expect(screen.queryByTestId("diagnostics-export-preview")).toBeNull();
+    expect(screen.queryByRole("button", { name: messages.en.diagnosticsExport })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: messages.en.diagnosticsConsent })).toBeNull();
+    expect(screen.queryByRole("button", { name: messages.en.diagnosticsSubmit })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
 
     expect(screen.getByText(messages.en.diagnosticsNoEvents)).toBeTruthy();
+  });
+
+  it("renders the prepared request and export JSON verbatim in independently controlled disclosures", () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    const event = fixtureEvent(now);
+    const prepared = prepareDiagnosticsBundle(event, [event]);
+    let exportedContents = "";
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "diagnostics.export") exportedContents = request.contents;
+        return { kind: "diagnostics-export", outcome: "saved" };
+      },
+      async listen() { return () => {}; },
+    };
+    appendDiagnosticEvent(localStorage, event, now);
+    mockAuthenticatedIdentity([StaticCapability.CRASH_REPORTS]);
+    renderDiagnosticsPanel(bridge);
+
+    expect(screen.getByText(messages.en.diagnosticPlatform).closest(".diagnostics-runtime")?.textContent).toContain(runtime.operatingSystem);
+    expect(screen.getByText(messages.en.diagnosticArchitecture).closest(".diagnostics-runtime")?.textContent).toContain(runtime.architecture);
+    expect(screen.getByText(messages.en.diagnosticBridge).closest(".diagnostics-runtime")?.textContent).toContain(`v${runtime.bridgeVersion}`);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+
+    const requestDisclosure = screen.getByText(messages.en.diagnosticsExactPayload).closest("details");
+    const exportDisclosure = screen.getByText(messages.en.diagnosticsExactExport).closest("details");
+    const requestPreview = screen.getByTestId("diagnostics-preview");
+    const exportPreview = screen.getByTestId("diagnostics-export-preview");
+    expect(requestDisclosure?.open).toBe(true);
+    expect(exportDisclosure?.open).toBe(false);
+    expect(requestPreview.tagName).toBe("PRE");
+    expect(exportPreview.tagName).toBe("PRE");
+    expect(requestPreview.tabIndex).toBe(0);
+    expect(exportPreview.tabIndex).toBe(0);
+    expect(requestPreview.textContent).toBe(prepared.requestJson);
+    requestDisclosure!.open = false;
+    exportDisclosure!.open = true;
+    fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+    expect(screen.getByText(messages.en.diagnosticsExactPayload).closest("details")).not.toBe(requestDisclosure);
+    expect(screen.getByText(messages.en.diagnosticsExactPayload).closest("details")?.open).toBe(true);
+    expect(screen.getByText(messages.en.diagnosticsExactExport).closest("details")?.open).toBe(false);
+    const refreshedExportPreview = screen.getByTestId("diagnostics-export-preview");
+    fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsExport }));
+    expect(refreshedExportPreview.textContent).toBe(exportedContents);
   });
 
   it("keeps preview and export available without the crash-report capability", () => {
@@ -671,6 +719,27 @@ describe("diagnostics privacy boundary", () => {
     expect(screen.getByRole("button", { name: messages.en.diagnosticsExport })).toBeTruthy();
     expect(screen.queryByRole("checkbox", { name: messages.en.diagnosticsConsent })).toBeNull();
     expect(screen.queryByRole("button", { name: messages.en.diagnosticsSubmit })).toBeNull();
+    expect(screen.getByText(messages.en.diagnosticsUnsupportedTitle)).toBeTruthy();
+  });
+
+  it.each([
+    { name: "guest", status: "guest", online: true, capabilities: [], exportAvailable: true, stateCopy: "diagnosticsGuestTitle" },
+    { name: "signed out", status: "signed-out", online: true, capabilities: [], exportAvailable: true, stateCopy: "diagnosticsGuestTitle" },
+    { name: "offline", status: "authenticated", online: false, capabilities: [StaticCapability.CRASH_REPORTS], exportAvailable: true, stateCopy: "diagnosticsOfflineTitle" },
+    { name: "blocked", status: "blocked", online: true, capabilities: [StaticCapability.CRASH_REPORTS], exportAvailable: true, stateCopy: "diagnosticsBlockedTitle" },
+    { name: "deletion pending", status: "deletion-pending", online: true, capabilities: [StaticCapability.CRASH_REPORTS], exportAvailable: false, stateCopy: "diagnosticsDeletionPendingTitle" },
+  ] as const)("preserves local diagnostics boundaries for $name identities", ({ status, online, capabilities, exportAvailable, stateCopy }) => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    appendDiagnosticEvent(localStorage, fixtureEvent(now), now);
+    mockIdentity(status, capabilities);
+    renderDiagnosticsPanel(undefined, online);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+
+    expect(Boolean(screen.queryByRole("button", { name: messages.en.diagnosticsExport }))).toBe(exportAvailable);
+    expect(screen.queryByRole("checkbox", { name: messages.en.diagnosticsConsent })).toBeNull();
+    expect(screen.queryByRole("button", { name: messages.en.diagnosticsSubmit })).toBeNull();
+    expect(screen.getByRole("heading", { name: messages.en[stateCopy] })).toBeTruthy();
   });
 
   for (const invalidatingStatus of ["deletion-pending", "signed-out"] as const) {
@@ -1019,8 +1088,12 @@ async function renderDiagnosticsPanelAndSubmit(): Promise<void> {
 }
 
 function mockAuthenticatedIdentity(capabilities: readonly StaticCapability[]): void {
+  mockIdentity("authenticated", capabilities);
+}
+
+function mockIdentity(status: serviceBoundary.IdentityStatus, capabilities: readonly StaticCapability[]): void {
   vi.spyOn(serviceBoundary, "useIdentitySettings").mockReturnValue({
-    status: "authenticated",
+    status,
     bootstrap: { capabilities },
   } as ReturnType<typeof serviceBoundary.useIdentitySettings>);
 }
@@ -1028,6 +1101,6 @@ function mockAuthenticatedIdentity(capabilities: readonly StaticCapability[]): v
 function renderDiagnosticsPanel(bridge: NativeBridgeV1 = {
     async request() { return { kind: "ok" }; },
     async listen() { return () => {}; },
-  }): void {
-  render(createElement(DiagnosticsPanel, { copy: messages.en, runtime, bridge, storage: localStorage, online: true }));
+  }, online = true): void {
+  render(createElement(DiagnosticsPanel, { copy: messages.en, runtime, bridge, storage: localStorage, online }));
 }

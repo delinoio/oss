@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { createRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { AppShell, Button, Dialog, Sheet, ShellLayout, resolveShellLayout } from "./ui-foundation";
+import { AppShell, Button, Dialog, Sheet, ShellLayout, StatePanel, resolveShellLayout } from "./ui-foundation";
 
 afterEach(() => {
   cleanup();
@@ -23,6 +23,12 @@ describe("DevHud UI foundation", () => {
     [320, ShellLayout.Mobile],
   ])("resolves %ipx to the contracted layout", (width, layout) => {
     expect(resolveShellLayout(width)).toBe(layout);
+  });
+
+  it("renders StatePanel titles at the requested nested heading level", () => {
+    render(<StatePanel eyebrow="Empty" title="No pull requests" summary="Nothing matched" headingLevel={4} />);
+
+    expect(screen.getByRole("heading", { name: "No pull requests", level: 4 }).className).toContain("state-panel-title");
   });
 
   it("tracks the rendered bottom-navigation height for fixed UI clearance", async () => {
@@ -90,5 +96,28 @@ describe("DevHud UI foundation", () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Destination" })));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.queryByRole("dialog", { name: "More" })).toBeNull();
+  });
+
+  it("does not override focus transferred within the sheet while autofocus is pending", async () => {
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return <><Button onClick={() => setOpen(true)}>Open</Button><Sheet open={open} title="More" backLabel="Back" onClose={() => setOpen(false)}><Button>Destination</Button><Button>Keep focus</Button></Sheet></>;
+    }
+    render(<Harness />);
+    const opener = screen.getByRole("button", { name: "Open" });
+    opener.focus();
+    fireEvent.click(opener);
+    const retainedFocus = screen.getByRole("button", { name: "Keep focus" });
+    retainedFocus.focus();
+
+    await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    expect(document.activeElement).toBe(retainedFocus);
+  });
+
+  it("skips fieldset-disabled controls when focusing a sheet", async () => {
+    render(<Sheet open title="Read-only" backLabel="Back" onClose={() => undefined}><fieldset disabled><input aria-label="Disabled input" /></fieldset></Sheet>);
+
+    expect(screen.getByLabelText("Disabled input").matches(":disabled")).toBe(true);
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Back" })));
   });
 });
