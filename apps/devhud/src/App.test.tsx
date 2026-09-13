@@ -287,9 +287,13 @@ describe("native App state", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
     const transitionOperations: string[] = [];
     let pendingCallback: string | null = "devhud://auth/callback?code=old&state=old";
+    let completeCustomOriginPolicy: (() => void) | undefined;
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
       if (value.operation === "session.configure-origins") {
-        if (value.apiOrigin === "https://custom.example") transitionOperations.push("configure-new-origin");
+        if (value.apiOrigin === "https://custom.example") {
+          transitionOperations.push("configure-new-origin");
+          return new Promise((resolve) => { completeCustomOriginPolicy = () => resolve({ kind: "session-network-policy", changed: false }); });
+        }
         return { kind: "session-network-policy", changed: false };
       }
       if (value.operation === "auth.take-pending-callback") {
@@ -318,7 +322,13 @@ describe("native App state", () => {
     const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
     await waitFor(() => expect(within(confirmation).getByRole("button", { name: messages.en.cancel })).toBe(document.activeElement));
     fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.applyApiOrigin }));
+    await waitFor(() => expect(transitionOperations).toContain("configure-new-origin"));
+    expect(screen.getByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBe(confirmation);
+    expect((screen.getByRole("textbox", { name: messages.en.apiOrigin }) as HTMLInputElement).disabled).toBe(true);
+    expect(JSON.parse(localStorage.getItem("devhud.shell.preferences.v1") ?? "null").apiOrigin).toBe("https://devhud.api.delino.io");
+    await act(async () => { completeCustomOriginPolicy?.(); });
     await waitFor(() => expect(JSON.parse(localStorage.getItem("devhud.shell.preferences.v1") ?? "null").apiOrigin).toBe("https://custom.example"));
+    expect(screen.queryByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBeNull();
     expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "secure.purge", scope: "api-change", profileId: expect.stringMatching(/^origin\./u) }));
     expect(pendingCallback).toBeNull();
     expect(transitionOperations.slice(0, 3)).toEqual(["discard-callback", "purge-session", "configure-new-origin"]);
