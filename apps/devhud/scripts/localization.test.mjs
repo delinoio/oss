@@ -24,6 +24,14 @@ test("keeps the responsive shell and accessibility copy complete in both languag
   }
 });
 
+test("localizes scan-first Deck workspace and sheet cues", () => {
+  for (const language of ["en", "ko"]) {
+    for (const key of ["deckSelected", "deckSettings", "deckConfiguration", "deckFresh", "deckRefreshing", "deckOfflineCached", "deckEmptyResults", "deckDraftsHidden", "deckDraftsHiddenSummary", "deckAuthor", "deckLabels", "deckUpdated"]) assert.ok(messages[language][key]);
+  }
+  assert.match(messages.en.deckOfflineCached, /Offline/u);
+  assert.match(messages.ko.deckOfflineCached, /오프라인/u);
+});
+
 test("describes RealQA without claiming that available capture is disconnected", () => {
   assert.doesNotMatch(messages.en.realqaSummary, /not connected/iu);
   assert.doesNotMatch(messages.ko.realqaSummary, /연결되지/iu);
@@ -64,6 +72,20 @@ test("sanitizes each persisted preference independently", () => {
 
 test("describes Korean diagnostics as redacted rather than deleted", () => {
   assert.match(messages.ko.diagnosticsSummary, /민감 정보가 삭제된/u);
+});
+
+test("localizes the staged Diagnostics privacy and disclosure flow", () => {
+  for (const language of ["en", "ko"]) {
+    assert.ok(messages[language].diagnosticsRuntime);
+    assert.ok(messages[language].diagnosticsPrivacy);
+    assert.ok(messages[language].diagnosticsExactPayload);
+    assert.ok(messages[language].diagnosticsExactExport);
+    assert.ok(messages[language].diagnosticsUnsupported);
+    assert.ok(messages[language].diagnosticsDeletionPending);
+  }
+  assert.match(messages.en.diagnosticsRetention, /7 days, 500 events, and 1 MiB/u);
+  assert.match(messages.en.diagnosticsRetention, /off by default/u);
+  assert.match(messages.ko.diagnosticsRetention, /7일, 500개 이벤트, 1 MiB/u);
 });
 
 test("localizes recoverable notification permission failures", () => {

@@ -33,6 +33,11 @@ function bridgeWith(request: (request: NativeBridgeRequestV1) => Promise<NativeB
   return { request, listen: vi.fn(async () => () => undefined) };
 }
 
+function setViewport(width: number): void {
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+  fireEvent(window, new Event("resize"));
+}
+
 function provider() {
   return {
     ...createGitHubProvider({ fetch: vi.fn() }),
@@ -40,10 +45,768 @@ function provider() {
   };
 }
 
-beforeEach(() => { localStorage.clear(); identity = identityWith(); });
+beforeEach(() => { setViewport(1024); localStorage.clear(); identity = identityWith(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("Deck surface", () => {
+  it("keeps selection, refresh, last success, and semantic pull-request rows in the desktop workspace", async () => {
+    const lastSuccessfulAt = "2026-08-17T00:00:00.000Z";
+    const reviewed = { ...pullRequest, draft: true, reviewDecision: "approved" as const, checkRollup: { state: "SUCCESS", contexts: [] }, labels: ["ready"] };
+    writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, totalCount: 1, results: [reviewed], lastSuccessfulAt, rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect(screen.getByRole("region", { name: messages.en.deckTitle })).toBeTruthy();
+    expect(screen.getAllByRole("region", { name: messages.en.deckResults })).toHaveLength(1);
+    expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(deck.id);
+    expect(screen.getByRole("button", { name: messages.en.deckRefresh })).toBeTruthy();
+    expect(screen.getByRole("complementary", { name: messages.en.deckConfiguration })).toBeTruthy();
+    expect(await screen.findByText(messages.en.deckStale)).toBeTruthy();
+    expect(screen.getByText(messages.en.lastSuccessfulRefresh, { exact: false })).toBeTruthy();
+    expect(screen.getByText(`octo/widgets #${pullRequest.number} — ${pullRequest.title}`)).toBeTruthy();
+    expect(screen.getByText(`${messages.en.deckAuthor}: ${pullRequest.author}`)).toBeTruthy();
+    expect(screen.getByText(`${messages.en.deckLabels}: ready`)).toBeTruthy();
+    expect(screen.getByText(`${messages.en.deckUpdated}:`, { exact: false })).toBeTruthy();
+    expect(screen.getByText(`${messages.en.deckOpen} · ${messages.en.deckDraft}`)).toBeTruthy();
+    expect(screen.getAllByText(messages.en.deckApproved).length).toBeGreaterThan(1);
+    expect(screen.getByText(messages.en.deckChecksSuccess)).toBeTruthy();
+  });
+
+  it("distinguishes a fresh response and an empty successful response from loading or offline states", async () => {
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    const providerWithResult = {
+      ...provider(),
+      searchPullRequests: vi.fn(async () => ({ items: [{ nodeId: pullRequest.nodeId, number: pullRequest.number, title: pullRequest.title, url: pullRequest.url, draft: pullRequest.draft, repository: pullRequest.repository }], nextPage: null, notModified: false, totalCount: 1, incompleteResults: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })),
+      enrichPullRequests: vi.fn(async () => ({ items: [pullRequest], metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })),
+    };
+    const view = render(<DeckPollingBoundary bridge={bridge} active online provider={providerWithResult}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    expect(await screen.findByText(messages.en.deckFresh)).toBeTruthy();
+
+    const emptyProvider = {
+      ...provider(),
+      searchPullRequests: vi.fn(async () => ({ items: [], nextPage: null, notModified: false, totalCount: 0, incompleteResults: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })),
+      enrichPullRequests: vi.fn(async () => ({ items: [], metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })),
+    };
+    view.unmount();
+    render(<DeckPollingBoundary bridge={bridge} active online provider={emptyProvider}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    const empty = await screen.findByRole("heading", { name: messages.en.deckEmptyResults });
+    expect(empty).toBeTruthy();
+    expect(empty.tagName).toBe("H4");
+  });
+
+  it("identifies draft results hidden by the Deck configuration", async () => {
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [{ ...deck, display: { ...deck.display, showDrafts: false } }] }) });
+    writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, totalCount: 1, results: [{ ...pullRequest, draft: true }], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    const hidden = await screen.findByRole("heading", { name: messages.en.deckDraftsHidden });
+    expect(hidden).toBeTruthy();
+    expect(hidden.tagName).toBe("H4");
+    expect(screen.queryByRole("heading", { name: messages.en.deckEmptyResults })).toBeNull();
+  });
+
+  it("preserves unsaved edits while the editor moves between desktop and mobile presentations", async () => {
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Keep this edit" } });
+    setViewport(390);
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.deckSettings }));
+    expect((await screen.findByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Keep this edit");
+
+    setViewport(1024);
+    await screen.findByRole("complementary", { name: messages.en.deckConfiguration });
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Keep this edit");
+  });
+
+  it("reconciles a removed draft profile to the synchronized Deck assignment", async () => {
+    const otherProfile = { ...profile, id: "018f47a2-7b3c-7def-8abc-1234567890ae", name: "Personal" };
+    const reassignedDeck = { ...deck, profileRef: otherProfile.id };
+    const reassignedSettings = parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [otherProfile] }, decks: [reassignedDeck] });
+    const replaceSettings = vi.fn(async (_update: unknown) => true);
+    identity = identityWith({ replaceSettings: replaceSettings as IdentitySettingsValue["replaceSettings"] });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Keep this edit" } });
+    identity = identityWith({ settings: reassignedSettings, replaceSettings: replaceSettings as IdentitySettingsValue["replaceSettings"] });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Keep this edit");
+    expect((screen.getByLabelText(messages.en.deckProfile) as HTMLSelectElement).value).toBe(otherProfile.id);
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    const update = replaceSettings.mock.calls[0]?.[0] as (current: typeof reassignedSettings) => typeof reassignedSettings;
+    expect(update(reassignedSettings).decks[0]).toMatchObject({ name: "Keep this edit", profileRef: otherProfile.id });
+  });
+
+  it("clears a removed profile from an active Create Deck draft", async () => {
+    const otherProfile = { ...profile, id: "018f47a2-7b3c-7def-8abc-1234567890ae", name: "Personal" };
+    const settingsWithProfiles = parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [profile, otherProfile] } });
+    const replaceSettings = vi.fn(async () => true);
+    identity = identityWith({ settings: settingsWithProfiles, replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Keep this creation" } });
+    fireEvent.change(screen.getByLabelText(messages.en.deckProfile), { target: { value: otherProfile.id } });
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [profile] } }), replaceSettings });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect((screen.getByLabelText(messages.en.deckProfile) as HTMLSelectElement).value).toBe(""));
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Keep this creation");
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    expect(replaceSettings).not.toHaveBeenCalled();
+  });
+
+  it.each([1024, 800])("pins the initial Deck editor through a settings reorder at %ipx", (viewport) => {
+    setViewport(viewport);
+    const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck", query: "repo:octo/other is:pr", builder: { repository: "octo/other", author: null, review: null, label: null, state: null } };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, otherDeck] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    const name = screen.getByLabelText(messages.en.deckName) as HTMLInputElement;
+    name.focus();
+    fireEvent.change(name, { target: { value: "Keep the pinned Deck" } });
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [otherDeck, deck] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(deck.id);
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Keep the pinned Deck");
+    expect(document.activeElement).toBe(screen.getByLabelText(messages.en.deckName));
+  });
+
+  it("keeps Create unavailable while a Deck creation is pending", async () => {
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn(() => pendingSave);
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Created Deck" } });
+    fireEvent.change(screen.getByLabelText(messages.en.deckQuery), { target: { value: "repo:octo/widgets is:pr" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    expect(screen.getAllByRole("button", { name: messages.en.deckCreate }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+
+    setViewport(390);
+    expect(screen.getAllByRole("button", { name: messages.en.deckCreate }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+
+    finishSave(false);
+    await waitFor(() => expect(screen.getAllByRole("button", { name: messages.en.deckCreate }).every((button) => !button.hasAttribute("disabled"))).toBe(true));
+    fireEvent.click(screen.getAllByRole("button", { name: messages.en.deckCreate })[0]!);
+    await screen.findByRole("dialog", { name: messages.en.deckCreate });
+    expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorNetwork);
+    expect(replaceSettings).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a pending creation disabled when synchronized profiles reorder", async () => {
+    const otherProfile = { ...profile, id: "018f47a2-7b3c-7def-8abc-1234567890ae", name: "Personal" };
+    const settingsWithProfiles = parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [profile, otherProfile] } });
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn(() => pendingSave);
+    identity = identityWith({ settings: settingsWithProfiles, replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Created Deck" } });
+    fireEvent.change(screen.getByLabelText(messages.en.deckQuery), { target: { value: "repo:octo/widgets is:pr" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settingsWithProfiles, github: { ...settingsWithProfiles.github, profiles: [otherProfile, profile] } }), replaceSettings });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect(screen.getByRole("button", { name: messages.en.saved }).closest("fieldset")).toHaveProperty("disabled", true);
+    finishSave(false);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorNetwork));
+  });
+
+  it("keeps Create unavailable after leaving a pending Deck creation", async () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn(() => pendingSave);
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }), replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Created Deck" } });
+    fireEvent.change(screen.getByLabelText(messages.en.deckQuery), { target: { value: "repo:octo/widgets is:pr" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: other.id } });
+    await waitFor(() => expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(other.id));
+    const create = screen.getByRole("button", { name: messages.en.deckCreate });
+    expect(create).toHaveProperty("disabled", true);
+    fireEvent.click(create);
+    expect(replaceSettings).toHaveBeenCalledOnce();
+
+    finishSave(false);
+    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.deckCreate })).toHaveProperty("disabled", false));
+  });
+
+  it("reopens a failed Deck creation with its submitted draft", async () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn(() => pendingSave);
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }), replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Created Deck" } });
+    fireEvent.change(screen.getByLabelText(messages.en.deckQuery), { target: { value: "repo:octo/widgets is:pr" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: other.id } });
+    await waitFor(() => expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(other.id));
+
+    finishSave(false);
+    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.deckCreate })).toHaveProperty("disabled", false));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+
+    expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", "Created Deck");
+    expect(screen.getByLabelText(messages.en.deckQuery)).toHaveProperty("value", "repo:octo/widgets is:pr");
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", messages.en.deckErrorNetwork);
+  });
+
+  it("keeps a pending desktop Deck save failure when its editor moves to mobile", async () => {
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn(() => pendingSave);
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    setViewport(390);
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+
+    finishSave(false);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorNetwork));
+  });
+
+  it("keeps a failed Deck save draft when synchronized settings update the same Deck", async () => {
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn<IdentitySettingsValue["replaceSettings"]>(() => pendingSave);
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Submitted local edit" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+
+    const synchronizedDeck = { ...deck, name: "Synchronized update" };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [synchronizedDeck] }), replaceSettings });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", "Submitted local edit");
+    finishSave(false);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorNetwork));
+    expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", "Submitted local edit");
+
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledTimes(2));
+    const retry = replaceSettings.mock.calls[1]?.[0];
+    const retriedSettings = typeof retry === "function" ? retry(parseDevHudSettings({ ...settings, decks: [synchronizedDeck] })) : retry;
+    expect(retriedSettings.decks[0]?.name).toBe("Submitted local edit");
+  });
+
+  it("shows later synchronized changes after an existing Deck save is adopted", async () => {
+    const savedDeck = { ...deck, name: "Saved Deck" };
+    const remoteDeck = { ...savedDeck, name: "Remote Deck" };
+    const replaceSettings = vi.fn(async () => true);
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: savedDeck.name } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [savedDeck] }), replaceSettings });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await waitFor(() => expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(savedDeck.name));
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [remoteDeck] }), replaceSettings });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(remoteDeck.name);
+  });
+
+  it("keeps focus in the mobile settings sheet after an existing Deck save refreshes its source", async () => {
+    setViewport(390);
+    const savedDeck = { ...deck, name: "Saved Deck" };
+    const replaceSettings = vi.fn(async () => true);
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: savedDeck.name } });
+    const save = screen.getByRole("button", { name: messages.en.saved });
+    save.focus();
+    fireEvent.submit(save.closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [savedDeck] }), replaceSettings });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(savedDeck.name));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.saved }));
+    expect(sheet.contains(document.activeElement)).toBe(true);
+  });
+
+  it("keeps a deep-linked mobile settings sheet open after an existing Deck save", async () => {
+    setViewport(390);
+    const savedDeck = { ...deck, name: "Saved Deck" };
+    const replaceSettings = vi.fn(async () => true);
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={deck.id} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: savedDeck.name } });
+    const save = screen.getByRole("button", { name: messages.en.saved });
+    save.focus();
+    fireEvent.submit(save.closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [savedDeck] }), replaceSettings });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={deck.id} /></DeckPollingBoundary>);
+
+    expect(await screen.findByRole("dialog", { name: messages.en.deckConfiguration })).toBe(sheet);
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.saved })));
+  });
+
+  it("focuses the replacement Save button after mobile Deck creation", async () => {
+    setViewport(390);
+    let createdDeck: (typeof settings)["decks"][number] | null = null;
+    const replaceSettings: IdentitySettingsValue["replaceSettings"] = vi.fn(async (update) => {
+      const next = typeof update === "function" ? update(settings) : update;
+      createdDeck = next.decks.at(-1) ?? null;
+      return true;
+    });
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    await screen.findByRole("dialog", { name: messages.en.deckCreate });
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Created Deck" } });
+    fireEvent.change(screen.getByLabelText(messages.en.deckQuery), { target: { value: "repo:octo/widgets is:pr" } });
+    const save = screen.getByRole("button", { name: messages.en.saved });
+    save.focus();
+    fireEvent.submit(save.closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    expect(createdDeck).not.toBeNull();
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, createdDeck!] }), replaceSettings });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.saved })));
+    expect(sheet.contains(document.activeElement)).toBe(true);
+  });
+
+  it("closes mobile settings after Deck deletion and restores focus to Create", async () => {
+    setViewport(390);
+    const replaceSettings = vi.fn(async () => true);
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    const create = screen.getAllByRole("button", { name: messages.en.deckCreate })[0]!;
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckDelete }));
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [] }), replaceSettings });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(create));
+  });
+
+  it.each(["Back", "Escape"])("keeps a mobile Deck save failure visible when %s is requested during saving", async (dismissal) => {
+    setViewport(390);
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn(() => pendingSave);
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Unsaved Deck" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+
+    if (dismissal === "Back") fireEvent.click(screen.getByRole("button", { name: messages.en.back }));
+    else fireEvent.keyDown(sheet, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: messages.en.deckConfiguration })).toBeTruthy();
+
+    finishSave(false);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorNetwork));
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Unsaved Deck");
+  });
+
+  it.each(["Back", "Escape"])("retains a completed failed mobile Deck save when %s closes Settings", async (dismissal) => {
+    setViewport(390);
+    const replaceSettings = vi.fn(async () => false);
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Failed submitted Deck" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorNetwork));
+
+    if (dismissal === "Back") fireEvent.click(screen.getByRole("button", { name: messages.en.back }));
+    else fireEvent.keyDown(sheet, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Failed submitted Deck");
+    expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorNetwork);
+  });
+
+  it("preserves an existing Deck draft when an unrelated first profile changes", () => {
+    const firstProfile = { id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "First", kind: "fine-grained" as const };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [firstProfile, profile] } }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Keep this profile-independent edit" } });
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [profile] } }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Keep this profile-independent edit");
+  });
+
+  it("keeps Deck checkbox controls inside their 44px label targets", () => {
+    const bridge = bridgeWith(async () => ({ kind: "ok" as const }));
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    for (const label of [messages.en.deckShowDrafts, messages.en.deckNotifications]) {
+      expect(screen.getByLabelText(label).closest("label")?.className).toContain("check");
+      expect(screen.getByLabelText(label).closest("label")?.className).toContain("deck-check");
+    }
+  });
+
+  it("keeps Deck selection available while creating a new Deck", async () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    const selection = screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement;
+    expect(selection.value).toBe("");
+    fireEvent.change(selection, { target: { value: other.id } });
+    await waitFor(() => expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(other.id));
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(other.name);
+  });
+
+  it("lets the current Deck exit creation mode", () => {
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    const selection = screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement;
+    expect(selection.value).toBe("");
+    expect(screen.getByRole("option", { name: messages.en.deckCreate })).toBeTruthy();
+    fireEvent.change(selection, { target: { value: deck.id } });
+
+    expect(selection.value).toBe(deck.id);
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(deck.name);
+  });
+
+  it("cancels mobile Deck creation when the sheet is dismissed", async () => {
+    setViewport(390);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    const create = screen.getByRole("button", { name: messages.en.deckCreate });
+    create.focus();
+    fireEvent.click(create);
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckCreate });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.back }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckCreate })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(create));
+    expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(deck.id);
+    expect(screen.getByRole("button", { name: messages.en.deckSettings })).toBeTruthy();
+    expect(sheet).not.toBe(document.activeElement);
+
+    const selection = screen.getByRole("combobox", { name: messages.en.deckSelected });
+    selection.focus();
+    fireEvent.change(selection, { target: { value: "" } });
+    const selectorSheet = await screen.findByRole("dialog", { name: messages.en.deckCreate });
+    fireEvent.keyDown(selectorSheet, { key: "Escape" });
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckCreate })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(selection));
+  });
+
+  it("returns to the Deck selected before mobile creation was dismissed", async () => {
+    setViewport(390);
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    const selection = screen.getByRole("combobox", { name: messages.en.deckSelected });
+    fireEvent.change(selection, { target: { value: other.id } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckCreate });
+    fireEvent.keyDown(sheet, { key: "Escape" });
+
+    await waitFor(() => expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(other.id));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    expect((await screen.findByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(other.name);
+  });
+
+  it("clears validation state when another Deck is selected", async () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckQuery), { target: { value: "" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckQuery).closest("form")!);
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", messages.en.deckRequirePullRequests);
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: other.id } });
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(other.name);
+  });
+
+  it("discards an unsubmitted Deck draft when selecting another Deck", () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    const synchronizedDeck = { ...deck, name: "Synchronized Deck" };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Abandoned local edit" } });
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: other.id } });
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [synchronizedDeck, other] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: synchronizedDeck.id } });
+
+    expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", synchronizedDeck.name);
+  });
+
+  it("discards an unsubmitted Deck draft when a native link selects another Deck", async () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    const synchronizedDeck = { ...deck, name: "Synchronized Deck" };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={deck.id} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Abandoned local edit" } });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={other.id} /></DeckPollingBoundary>);
+    await waitFor(() => expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", other.name));
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [synchronizedDeck, other] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={other.id} /></DeckPollingBoundary>);
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={synchronizedDeck.id} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", synchronizedDeck.name));
+  });
+
+  it("keeps a submitted Deck draft when a native link selects another Deck", async () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn<IdentitySettingsValue["replaceSettings"]>(() => pendingSave);
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }), replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={deck.id} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Submitted local edit" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={other.id} /></DeckPollingBoundary>);
+    await waitFor(() => expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", other.name));
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={deck.id} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", "Submitted local edit"));
+    expect(screen.getByRole("button", { name: messages.en.saved }).closest("fieldset")).toHaveProperty("disabled", true);
+    finishSave(false);
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveProperty("textContent", messages.en.deckErrorNetwork));
+    expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", "Submitted local edit");
+  });
+
+  it("discards an unsubmitted Deck draft before creating another Deck", () => {
+    const synchronizedDeck = { ...deck, name: "Synchronized Deck" };
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Abandoned local edit" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [synchronizedDeck] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: synchronizedDeck.id } });
+
+    expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", synchronizedDeck.name);
+  });
+
+  it("does not attach an in-flight save failure to another Deck", async () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn(() => pendingSave);
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }), replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saved }));
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: other.id } });
+    finishSave(false);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.saved })).toHaveProperty("disabled", false));
+    expect(screen.queryByText(messages.en.deckErrorNetwork)).toBeNull();
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(other.name);
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: deck.id } });
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", messages.en.deckErrorNetwork);
+  });
+
+  it("preserves a submitted Deck draft when switching away during its save", async () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn<IdentitySettingsValue["replaceSettings"]>(() => pendingSave);
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }), replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Submitted local edit" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: other.id } });
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: deck.id } });
+
+    expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", "Submitted local edit");
+    expect(screen.getByRole("button", { name: messages.en.saved }).closest("fieldset")).toHaveProperty("disabled", true);
+    finishSave(false);
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveProperty("textContent", messages.en.deckErrorNetwork));
+    expect(screen.getByLabelText(messages.en.deckName)).toHaveProperty("value", "Submitted local edit");
+
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledTimes(2));
+    const retry = replaceSettings.mock.calls[1]?.[0];
+    const retriedSettings = typeof retry === "function" ? retry(parseDevHudSettings({ ...settings, decks: [deck, other] })) : retry;
+    expect(retriedSettings.decks[0]?.name).toBe("Submitted local edit");
+  });
+
+  it("adopts a synchronized Deck update after its successful save completes while another Deck is selected", async () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    const synchronized = { ...deck, name: "Synchronized Deck" };
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn<IdentitySettingsValue["replaceSettings"]>(() => pendingSave);
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }), replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Submitted local edit" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: other.id } });
+    finishSave(true);
+    await waitFor(() => expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(other.name));
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [synchronized, other] }), replaceSettings });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: deck.id } });
+
+    await waitFor(() => expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(synchronized.name));
+  });
+
+  it("keeps a Deck save pending when returning to its editor", async () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn(() => pendingSave);
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }), replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saved }));
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: other.id } });
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: deck.id } });
+
+    expect(screen.getByRole("button", { name: messages.en.saved }).closest("fieldset")).toHaveProperty("disabled", true);
+    finishSave(false);
+    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.saved }).closest("fieldset")).toHaveProperty("disabled", false));
+  });
+
+  it("does not let completed Deck creation override a newer selection", async () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn(() => pendingSave);
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }), replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Created Deck" } });
+    fireEvent.change(screen.getByLabelText(messages.en.deckQuery), { target: { value: "repo:octo/widgets is:pr" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saved }));
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: other.id } });
+    finishSave(true);
+
+    await waitFor(() => expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(other.id));
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(other.name);
+  });
+
+  it("keeps configuration out of the mobile workspace until its sheet opens and discards dismissed edits", async () => {
+    setViewport(390);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect(screen.queryByLabelText(messages.en.deckName)).toBeNull();
+    const opener = screen.getByRole("button", { name: messages.en.deckSettings });
+    opener.focus();
+    fireEvent.click(opener);
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    const name = screen.getByLabelText(messages.en.deckName);
+    await waitFor(() => expect(document.activeElement).toBe(name));
+    fireEvent.change(name, { target: { value: "Discard this edit" } });
+    fireEvent.keyDown(sheet, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+    fireEvent.click(opener);
+    expect((await screen.findByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(deck.name);
+  });
+
   it("requires explicit privacy consent before copying only the selected Deck into widget storage", async () => {
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => value.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
     const bridge = bridgeWith(request);
@@ -51,6 +814,7 @@ describe("Deck surface", () => {
     render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} language="en" onModalConfirmationOpenChange={onModalConfirmationOpenChange} /></DeckPollingBoundary>);
 
     await screen.findByRole("button", { name: messages.en.widgetEnable });
+    expect(screen.getByRole("heading", { name: messages.en.widgetTitle, level: 4 })).toBeTruthy();
     await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(false));
     fireEvent.click(screen.getByRole("button", { name: messages.en.widgetEnable }));
     expect(screen.getByRole("alertdialog").textContent).toContain(messages.en.widgetPrivacyWarning);
@@ -69,6 +833,577 @@ describe("Deck surface", () => {
     }));
     await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(false));
     expect(JSON.stringify(request.mock.calls)).not.toMatch(/github[_-]?pat|Bearer|token-value/iu);
+  });
+
+  it("restores the mobile Deck settings action when a desktop widget confirmation is dismissed after resizing", async () => {
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    setViewport(390);
+    const settings = await screen.findByRole("button", { name: messages.en.deckSettings });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyCancel }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(settings));
+  });
+
+  it("restores the mobile Deck settings action when a desktop widget confirmation enables after resizing", async () => {
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    setViewport(390);
+    const settings = await screen.findByRole("button", { name: messages.en.deckSettings });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(settings));
+  });
+
+  it("moves focus into the desktop editor when an open mobile Deck sheet leaves the layout", async () => {
+    setViewport(390);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    const name = screen.getByLabelText(messages.en.deckName);
+    name.focus();
+    setViewport(701);
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull());
+    const desktopName = screen.getByLabelText(messages.en.deckName);
+    await waitFor(() => expect(document.activeElement).toBe(desktopName));
+    expect(screen.getByRole("complementary", { name: messages.en.deckConfiguration })).toBeTruthy();
+  });
+
+  it("moves focus to the Deck selector when a pending mobile save widens to desktop", async () => {
+    setViewport(390);
+    let finishSave: (committed: boolean) => void = () => {};
+    const replaceSettings = vi.fn(() => new Promise<boolean>((resolve) => { finishSave = resolve; }));
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    fireEvent.change(await screen.findByLabelText(messages.en.deckName), { target: { value: "Pending Deck" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    setViewport(701);
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("combobox", { name: messages.en.deckSelected })));
+    finishSave(false);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorNetwork));
+  });
+
+  it("focuses the desktop editor after an initial pending creation widens", async () => {
+    setViewport(390);
+    let finishSave: (committed: boolean) => void = () => {};
+    const replaceSettings = vi.fn(() => new Promise<boolean>((resolve) => { finishSave = resolve; }));
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [] }), replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getAllByRole("button", { name: messages.en.deckCreate })[0]!);
+    await screen.findByRole("dialog", { name: messages.en.deckCreate });
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Created Deck" } });
+    fireEvent.change(screen.getByLabelText(messages.en.deckQuery), { target: { value: "repo:octo/widgets is:pr" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    setViewport(701);
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckCreate })).toBeNull());
+    finishSave(false);
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText(messages.en.deckName)));
+  });
+
+  it("leaves the mobile Deck settings sheet closed after it moves to desktop", async () => {
+    setViewport(390);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    setViewport(701);
+
+    const desktopName = screen.getByLabelText(messages.en.deckName);
+    await waitFor(() => expect(document.activeElement).toBe(desktopName));
+    setViewport(390);
+
+    await screen.findByRole("button", { name: messages.en.deckSettings });
+    expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull();
+  });
+
+  it("does not reopen mobile settings after a widget confirmation spans a desktop resize", async () => {
+    setViewport(390);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+
+    setViewport(701);
+    await screen.findByRole("complementary", { name: messages.en.deckConfiguration });
+    expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull();
+    expect(screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyCancel }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
+
+    setViewport(390);
+    await screen.findByRole("button", { name: messages.en.deckSettings });
+    expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull();
+  });
+
+  it("moves focus to mobile Deck settings when the desktop configuration leaves the layout", async () => {
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    screen.getByLabelText(messages.en.deckName).focus();
+    setViewport(390);
+
+    const settings = await screen.findByRole("button", { name: messages.en.deckSettings });
+    await waitFor(() => expect(document.activeElement).toBe(settings));
+  });
+
+  it("opens and focuses the mobile creation sheet when its desktop editor leaves the layout", async () => {
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    const name = screen.getByLabelText(messages.en.deckName);
+    name.focus();
+    setViewport(390);
+
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckCreate });
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText(messages.en.deckName)));
+    expect(sheet.contains(document.activeElement)).toBe(true);
+  });
+
+  it("restores Create after a responsive creation sheet closes", async () => {
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    screen.getByLabelText(messages.en.deckName).focus();
+    setViewport(390);
+
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckCreate });
+    fireEvent.keyDown(sheet, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckCreate })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.deckCreate })));
+  });
+
+  it("clears the screen-modal flag when an open widget confirmation unmounts", async () => {
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const onModalConfirmationOpenChange = vi.fn();
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} onModalConfirmationOpenChange={onModalConfirmationOpenChange} /></DeckPollingBoundary>);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(true));
+    view.unmount();
+    expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("clears the screen-modal flag when an open widget confirmation loses its GitHub profile", async () => {
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const onModalConfirmationOpenChange = vi.fn();
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} onModalConfirmationOpenChange={onModalConfirmationOpenChange} /></DeckPollingBoundary>);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [] }, decks: [] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} onModalConfirmationOpenChange={onModalConfirmationOpenChange} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
+    await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(false));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: messages.en.emptyTitle })));
+  });
+
+  it("closes an open mobile Deck sheet when its final GitHub profile disappears", async () => {
+    setViewport(390);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [] }, decks: [] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: messages.en.emptyTitle })));
+    identity = identityWith();
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await screen.findByRole("button", { name: messages.en.deckSettings });
+    expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull();
+  });
+
+  it("closes an open mobile Deck sheet and focuses Create when its final Deck disappears", async () => {
+    setViewport(390);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    screen.getByLabelText(messages.en.deckName).focus();
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(screen.getAllByRole("button", { name: messages.en.deckCreate })[0]));
+  });
+
+  it.each([1024, 800])("focuses Return to Deck list at %ipx when a missing Deck link replaces focused configuration", async (viewport) => {
+    setViewport(viewport);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    screen.getByLabelText(messages.en.deckName).focus();
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId="018f47a2-7b3c-7def-8abc-1234567890ad" /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.deckReturnToList })));
+  });
+
+  it.each([1024, 800])("focuses the no-profile heading at %ipx when the final profile replaces focused configuration", async (viewport) => {
+    setViewport(viewport);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    screen.getByLabelText(messages.en.deckName).focus();
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [] }, decks: [] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: messages.en.emptyTitle })));
+  });
+
+  it("closes an open mobile Deck sheet when its locally selected Deck disappears", async () => {
+    setViewport(390);
+    const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, otherDeck] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    const selection = screen.getByRole("combobox", { name: messages.en.deckSelected });
+    fireEvent.change(selection, { target: { value: otherDeck.id } });
+    await waitFor(() => expect((selection as HTMLSelectElement).value).toBe(otherDeck.id));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    screen.getByLabelText(messages.en.deckName).focus();
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull());
+    await waitFor(() => expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(deck.id));
+    const settingsButton = screen.getByRole("button", { name: messages.en.deckSettings });
+    await waitFor(() => expect(document.activeElement).toBe(settingsButton));
+    fireEvent.click(settingsButton);
+    expect((await screen.findByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(deck.name);
+  });
+
+  it.each([1024, 800])("keeps focus in the surviving configuration editor at %ipx when its selected Deck disappears", async (viewport) => {
+    setViewport(viewport);
+    const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, otherDeck] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: otherDeck.id } });
+    const name = screen.getByLabelText(messages.en.deckName);
+    name.focus();
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(deck.id));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText(messages.en.deckName)));
+  });
+
+  it("keeps mobile creation active when its prior selected Deck disappears", async () => {
+    setViewport(390);
+    const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    let finishSave: (committed: boolean) => void = () => {};
+    const pendingSave = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const replaceSettings = vi.fn<IdentitySettingsValue["replaceSettings"]>(() => pendingSave);
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, otherDeck] }), replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: otherDeck.id } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    await screen.findByRole("dialog", { name: messages.en.deckCreate });
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Created Deck" } });
+    fireEvent.change(screen.getByLabelText(messages.en.deckQuery), { target: { value: "repo:octo/created is:pr" } });
+    fireEvent.submit(screen.getByLabelText(messages.en.deckName).closest("form")!);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    const update = replaceSettings.mock.calls[0]?.[0];
+    const createdSettings = typeof update === "function" ? update(parseDevHudSettings({ ...settings, decks: [deck] })) : update;
+    const createdDeck = createdSettings.decks.find((item) => item.id !== deck.id)!;
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck] }), replaceSettings });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    expect(screen.getByRole("dialog", { name: messages.en.deckCreate })).toBeTruthy();
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Created Deck");
+
+    finishSave(true);
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, createdDeck] }), replaceSettings });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(createdDeck.id));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.saved })));
+  });
+
+  it("closes an open mobile Deck sheet when its implicitly selected Deck disappears", async () => {
+    setViewport(390);
+    const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, otherDeck] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    screen.getByLabelText(messages.en.deckName).focus();
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [otherDeck] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull());
+    await waitFor(() => expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(otherDeck.id));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.deckSettings })));
+  });
+
+  it("defers a linked Deck selection until its widget confirmation closes", async () => {
+    const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck", query: "repo:octo/other is:pr", builder: { repository: "octo/other", author: null, review: null, label: null, state: null } };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, otherDeck] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={otherDeck.id} /></DeckPollingBoundary>);
+
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(deck.name);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyCancel }));
+    const selection = screen.getByRole("combobox", { name: messages.en.deckSelected });
+    await waitFor(() => expect((selection as HTMLSelectElement).value).toBe(otherDeck.id));
+    await waitFor(() => expect(document.activeElement).toBe(selection));
+  });
+
+  it.each([1024, 800])("clears the screen-modal flag and focuses Return to Deck list at %ipx when a missing Deck deep link replaces an open widget confirmation", async (viewport) => {
+    setViewport(viewport);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const onModalConfirmationOpenChange = vi.fn();
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} onModalConfirmationOpenChange={onModalConfirmationOpenChange} /></DeckPollingBoundary>);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId="018f47a2-7b3c-7def-8abc-1234567890ad" onModalConfirmationOpenChange={onModalConfirmationOpenChange} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
+    await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenLastCalledWith(false));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.deckReturnToList })));
+  });
+
+  it("surfaces a widget enable failure inside the active privacy confirmation", async () => {
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "widgets.status") return { kind: "widget-status", enabledDeckIds: [] };
+      if (value.operation === "widgets.enable-deck") throw new Error("storage-failure");
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm }));
+
+    await waitFor(() => expect(screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle }).textContent).toContain(messages.en.widgetActionFailed));
+    expect(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm })).not.toHaveProperty("disabled", true);
+  });
+
+  it("restores focus to Disable when snapshot publication fails after widget enablement", async () => {
+    writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, totalCount: 1, results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "widgets.status") return { kind: "widget-status", enabledDeckIds: [] };
+      if (value.operation === "secure.read") return { kind: "secure-value", value: "token" };
+      if (value.operation === "widgets.replace-deck-snapshot") throw new Error("snapshot-failure");
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm }));
+    await waitFor(() => expect(screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle }).textContent).toContain(messages.en.widgetActionFailed));
+    const disable = screen.getByRole("button", { name: messages.en.widgetDisable });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyCancel }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(disable));
+  });
+
+  it("closes the widget confirmation when its originating Deck is removed", async () => {
+    const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck", query: "repo:octo/other is:pr", builder: null };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, otherDeck] }) });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => value.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const bridge = bridgeWith(request);
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [otherDeck] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
+    expect(screen.getByRole("complementary", { name: messages.en.deckConfiguration }).hasAttribute("inert")).toBe(false);
+    expect(request).not.toHaveBeenCalledWith(expect.objectContaining({ operation: "widgets.enable-deck", configuration: expect.objectContaining({ deckId: otherDeck.id }) }));
+  });
+
+  it("restores desktop configuration focus when the confirmed Deck is removed", async () => {
+    const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck", query: "repo:octo/other is:pr", builder: null };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, otherDeck] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.widgetPrivacyCancel })));
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [otherDeck] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
+    const name = screen.getByLabelText(messages.en.deckName);
+    await waitFor(() => expect(document.activeElement).toBe(name));
+  });
+
+  it("restores mobile Deck sheet focus when the confirmed Deck is removed", async () => {
+    setViewport(390);
+    const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck", query: "repo:octo/other is:pr", builder: null };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, otherDeck] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetEnable }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.widgetPrivacyCancel })));
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [otherDeck] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
+    const sheet = screen.getByRole("dialog", { name: messages.en.deckConfiguration });
+    expect(sheet.hasAttribute("inert")).toBe(false);
+    const name = screen.getByLabelText(messages.en.deckName);
+    await waitFor(() => expect(document.activeElement).toBe(name));
+    fireEvent.keyDown(name, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.back }));
+  });
+
+  it("dismisses mobile widget privacy confirmation without closing the Deck sheet", async () => {
+    setViewport(390);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    const name = screen.getByLabelText(messages.en.deckName) as HTMLInputElement;
+    fireEvent.change(name, { target: { value: "Keep this edit" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetEnable }));
+    const confirmation = screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    fireEvent.keyDown(confirmation, { key: "Escape" });
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(screen.getByRole("dialog", { name: messages.en.deckConfiguration })).toBeTruthy();
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Keep this edit");
+  });
+
+  it.each(["Back", "Escape"])("keeps the mobile Deck sheet open when %s is requested during widget confirmation", async (dismissal) => {
+    setViewport(390);
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Keep this edit" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+
+    if (dismissal === "Back") fireEvent.click(screen.getByRole("button", { name: messages.en.back }));
+    else fireEvent.keyDown(sheet, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: messages.en.deckConfiguration })).toBeTruthy();
+    expect(screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeTruthy();
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe("Keep this edit");
+  });
+
+  it("does not let Escape close the mobile sheet while widget enablement is busy", async () => {
+    setViewport(390);
+    let releaseEnable: () => void = () => {};
+    const enablePending = new Promise<void>((resolve) => { releaseEnable = resolve; });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "widgets.status") return { kind: "widget-status", enabledDeckIds: [] };
+      if (value.operation === "secure.read") return { kind: "secure-value", value: "token" };
+      if (value.operation === "widgets.enable-deck") await enablePending;
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.widgetEnable }));
+    const confirmation = screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm }));
+    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm })).toHaveProperty("disabled", true));
+    await waitFor(() => expect(document.activeElement).toBe(confirmation));
+    fireEvent.keyDown(confirmation, { key: "Tab" });
+    expect(document.activeElement).toBe(confirmation);
+    fireEvent.keyDown(confirmation, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(confirmation);
+
+    fireEvent.keyDown(confirmation, { key: "Escape" });
+    expect(screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: messages.en.deckConfiguration })).toBeTruthy();
+    releaseEnable();
+  });
+
+  it("keeps widget privacy confirmation and enablement busy state through responsive configuration moves", async () => {
+    setViewport(390);
+    let releaseEnable: () => void = () => {};
+    const enablePending = new Promise<void>((resolve) => { releaseEnable = resolve; });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "widgets.status") return { kind: "widget-status", enabledDeckIds: [] };
+      if (value.operation === "secure.read") return { kind: "secure-value", value: "token" };
+      if (value.operation === "widgets.enable-deck") await enablePending;
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    const sheet = await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetEnable }));
+    await screen.findByRole("alertdialog", { name: messages.en.widgetPrivacyTitle });
+    expect(sheet.hasAttribute("inert")).toBe(true);
+
+    setViewport(1024);
+    const panel = await screen.findByRole("complementary", { name: messages.en.deckConfiguration });
+    expect(panel.hasAttribute("inert")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm }));
+    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm })).toHaveProperty("disabled", true));
+
+    setViewport(390);
+    expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull();
+    expect(screen.getByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeTruthy();
+    expect(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm })).toHaveProperty("disabled", true);
+    releaseEnable();
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: messages.en.widgetPrivacyTitle })).toBeNull());
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "widgets.enable-deck", configuration: expect.objectContaining({ deckId: deck.id }) }));
   });
 
   it("publishes the cached refresh attempt instead of treating synchronization as a new attempt", async () => {
@@ -160,7 +1495,7 @@ describe("Deck surface", () => {
 
     await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "widgets.replace-deck-snapshot" })));
     await waitFor(() => expect(screen.getByRole("button", { name: messages.en.widgetDisable })).toBeTruthy());
-    expect(screen.getByRole("alert").textContent).toBe(messages.en.widgetActionFailed);
+    expect(screen.getAllByRole("alert").map((alert) => alert.textContent)).toContain(messages.en.widgetActionFailed);
     expect(screen.queryByRole("button", { name: messages.en.widgetEnable })).toBeNull();
   });
 
@@ -372,6 +1707,54 @@ describe("Deck surface", () => {
     expect(screen.queryByText(messages.en.empty)).toBeNull();
   });
 
+  it("treats a failed-only cache as uncached for offline and error states", async () => {
+    writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, results: [], lastSuccessfulAt: null, rate: null, failures: 1, failure: "network", nextRefreshAt: null, transitionKeys: [] });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online={false} provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect(await screen.findByRole("heading", { name: messages.en.offlineTitle })).toBeTruthy();
+    expect(screen.queryByText(messages.en.deckOfflineCached)).toBeNull();
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(messages.en.deckNoCachedResults));
+    expect(screen.queryByRole("heading", { name: messages.en.deckEmptyResults })).toBeNull();
+  });
+
+  it("does not claim an empty successful refresh without a cache", () => {
+    const bridge = bridgeWith(async () => { throw new Error("unexpected request"); });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect(screen.queryByRole("heading", { name: messages.en.deckEmptyResults })).toBeNull();
+    expect(screen.getByText(messages.en.empty)).toBeTruthy();
+  });
+
+  it("nests empty Deck workspace states below the Deck heading", () => {
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect(screen.getByRole("status", { name: messages.en.deckCreate }).querySelector("h3")).toBeTruthy();
+  });
+
+  it("prioritizes the current offline state over a cached refresh failure", async () => {
+    writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, totalCount: 1, results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 1, failure: "token", nextRefreshAt: null, transitionKeys: [] });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorToken));
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online={false} provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    expect(await screen.findByText(messages.en.deckOfflineCached)).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorToken);
+  });
+
+  it("does not repeat an online cached refresh failure already shown by the status badge", async () => {
+    writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, totalCount: 1, results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 1, failure: "token", nextRefreshAt: null, transitionKeys: [] });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.getAllByText(messages.en.deckErrorToken)).toHaveLength(1));
+    expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorToken);
+  });
+
   it("renders loading instead of empty results during an uncached initial refresh", async () => {
     const searchPullRequests = vi.fn(() => new Promise<never>(() => {}));
     const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
@@ -396,6 +1779,21 @@ describe("Deck surface", () => {
     expect(request).not.toHaveBeenCalledWith({ operation: "widgets.disable-deck", deckId: deck.id });
   });
 
+  it("does not show one Deck's deletion failure after selecting another Deck", async () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    const replaceSettings: IdentitySettingsValue["replaceSettings"] = vi.fn(async () => { throw new Error("offline"); });
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }), replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckDelete }));
+    await screen.findByRole("alert");
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: other.id } });
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(other.name);
+  });
+
   it("commits Deck deletion before clearing selected widget state", async () => {
     const operations: string[] = [];
     const replaceSettings: IdentitySettingsValue["replaceSettings"] = vi.fn(async () => { operations.push("delete-settings"); return true; });
@@ -412,6 +1810,32 @@ describe("Deck surface", () => {
 
     await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
     await waitFor(() => expect(operations.slice(-2)).toEqual(["delete-settings", "clear-widget"]));
+  });
+
+  it("does not let an earlier Deck deletion close a newer mobile settings sheet", async () => {
+    setViewport(390);
+    const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    let finishDelete: (committed: boolean) => void = () => {};
+    const pendingDelete = new Promise<boolean>((resolve) => { finishDelete = resolve; });
+    const replaceSettings: IdentitySettingsValue["replaceSettings"] = vi.fn(async () => pendingDelete);
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, otherDeck] }), replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    const firstSheet = await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckDelete }));
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    fireEvent.keyDown(firstSheet, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull());
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: otherDeck.id } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+
+    finishDelete(true);
+
+    await waitFor(() => expect(screen.getByRole("dialog", { name: messages.en.deckConfiguration })).toBeTruthy());
+    expect((screen.getByLabelText(messages.en.deckName) as HTMLInputElement).value).toBe(otherDeck.name);
   });
 
   it("keeps Deck deletion authoritative over widget synchronization still building configuration", async () => {
@@ -487,13 +1911,25 @@ describe("Deck surface", () => {
 
     render(<DeckPollingBoundary bridge={bridge} active online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
 
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.githubErrorSecureStorage));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(messages.en.githubErrorSecureStorage));
     await waitFor(() => {
       const cache = JSON.parse(localStorage.getItem(deckCacheKey(cacheScope, deck.id)) ?? "null") as { rate: unknown; results: unknown };
       expect(cache.rate).toBeNull();
       expect(cache.results).toEqual([pullRequest]);
     });
     await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "widgets.replace-deck-snapshot", snapshot: expect.objectContaining({ deckId: deck.id, rate: null }) }));
+  });
+
+  it("keeps a rate-limit reset time in the mobile Deck workspace", async () => {
+    setViewport(390);
+    const resetAt = "2026-08-17T01:00:00.000Z";
+    writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, totalCount: 0, results: [], lastSuccessfulAt: null, rate: { limit: 30, remaining: 0, used: 30, resetAt, resource: "search", retryAfterSeconds: 3_600 }, failures: 1, failure: "rate-limit", nextRefreshAt: resetAt, transitionKeys: [] });
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    const reset = await screen.findByText(messages.en.deckRateReset, { exact: false });
+    expect(reset.closest(".deck-workspace")).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull();
   });
 
   it("keeps a legacy total absent across failure and retries without an ETag", async () => {
@@ -632,7 +2068,7 @@ describe("Deck surface", () => {
     });
     render(<DeckPollingBoundary bridge={bridge} active online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
 
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.githubErrorSecureStorage));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(messages.en.githubErrorSecureStorage));
   });
 
   it("keeps a missing deep link visible until the user returns to the Deck list", () => {
@@ -648,6 +2084,26 @@ describe("Deck surface", () => {
     expect(screen.getByRole("button", { name: messages.en.deckCreate })).toBeTruthy();
   });
 
+  it("closes an open mobile settings sheet when a missing Deck deep link arrives", async () => {
+    setViewport(390);
+    const dismiss = vi.fn();
+    const bridge = bridgeWith(async (request) => request.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} onDismissMissingLink={dismiss} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckSettings }));
+    await screen.findByRole("dialog", { name: messages.en.deckConfiguration });
+    screen.getByLabelText(messages.en.deckName).focus();
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId="018f47a2-7b3c-7def-8abc-1234567890ad" onDismissMissingLink={dismiss} /></DeckPollingBoundary>);
+
+    const returnToList = await screen.findByRole("button", { name: messages.en.deckReturnToList });
+    await waitFor(() => expect(document.activeElement).toBe(returnToList));
+    fireEvent.click(returnToList);
+    expect(dismiss).toHaveBeenCalledOnce();
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} onDismissMissingLink={dismiss} /></DeckPollingBoundary>);
+
+    expect(screen.queryByRole("dialog", { name: messages.en.deckConfiguration })).toBeNull();
+  });
+
   it("clears a consumed deep link when the user manually selects another Deck", () => {
     const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
     identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }) });
@@ -655,12 +2111,12 @@ describe("Deck surface", () => {
     const bridge = bridgeWith(async () => { throw new Error("unexpected request"); });
     const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={deck.id} onDismissMissingLink={dismiss} /></DeckPollingBoundary>);
 
-    fireEvent.click(screen.getByRole("button", { name: other.name }));
+    fireEvent.change(screen.getByRole("combobox", { name: messages.en.deckSelected }), { target: { value: other.id } });
     expect(dismiss).toHaveBeenCalledOnce();
 
     identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }) });
     view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={null} onDismissMissingLink={dismiss} /></DeckPollingBoundary>);
-    expect(screen.getByRole("button", { name: other.name }).className).toContain("active");
+    expect((screen.getByRole("combobox", { name: messages.en.deckSelected }) as HTMLSelectElement).value).toBe(other.id);
   });
 
   it("cancels native notifications when synchronized Decks disappear", async () => {
