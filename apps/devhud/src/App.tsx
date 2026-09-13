@@ -126,6 +126,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const [query, setQuery] = useState("");
   const [externalMessage, setExternalMessage] = useState<ExternalMessage | null>(null);
   const [apiChangeError, setApiChangeError] = useState(false);
+  const [identityBoundaryGeneration, setIdentityBoundaryGeneration] = useState(0);
   const [systemLanguage, setSystemLanguage] = useState(() => resolveLanguage(LanguagePreference.System, navigator.languages));
   const [runtime, setRuntime] = useState<RuntimeSnapshot | undefined>(initialRuntime);
   const [runtimeState, setRuntimeState] = useState<ContentState>(() => initialRuntime ? initialContentState : { kind: ContentStateKind.Loading });
@@ -437,7 +438,11 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     setAuthCallback(null);
     let policy;
     try { policy = await bridge.request({ operation: "session.configure-origins", apiOrigin: normalized }); }
-    catch { setApiChangeError(true); return; }
+    catch {
+      setIdentityBoundaryGeneration((current) => current + 1);
+      setApiChangeError(true);
+      return;
+    }
     update({ apiOrigin: normalized });
     if (policy.kind === "session-network-policy" && policy.changed) location.reload();
   };
@@ -470,7 +475,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const externalMessageIsError = externalMessage !== "opened";
 
   const NativeMessagingBoundary = nativeMessaging?.Boundary;
-  const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={preferences.apiOrigin} apiOrigin={preferences.apiOrigin} active online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onCallbackConsumed={clearConsumedAuthCallback} onDeckLinkPolicyReady={markDeckLinkPolicyReady} onContinueLocally={finishOnboarding} onLoggedOut={() => { realqaController.current?.reset(); setRequestedCapture(null); setSurface(SurfaceId.Account); }} initialAppearance={{ theme: preferences.theme, language: preferences.language }} identitySessionRef={identitySession}><UrlMappingDraftProvider><DeckPollingBoundary bridge={bridge} active={lifecycle === LifecycleState.Active} online={online} language={language}><SynchronizedAppearanceBoundary onAppearance={(appearance) => update({ theme: appearance.theme, language: appearance.language })} />{runtime.platform === RuntimePlatform.Desktop && NativeMessagingBoundary && <NativeMessagingBoundary />}{content}</DeckPollingBoundary></UrlMappingDraftProvider></DevHudServiceBoundary> : content;
+  const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={`${preferences.apiOrigin}:${identityBoundaryGeneration}`} apiOrigin={preferences.apiOrigin} active online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onCallbackConsumed={clearConsumedAuthCallback} onDeckLinkPolicyReady={markDeckLinkPolicyReady} onContinueLocally={finishOnboarding} onLoggedOut={() => { realqaController.current?.reset(); setRequestedCapture(null); setSurface(SurfaceId.Account); }} initialAppearance={{ theme: preferences.theme, language: preferences.language }} identitySessionRef={identitySession}><UrlMappingDraftProvider><DeckPollingBoundary bridge={bridge} active={lifecycle === LifecycleState.Active} online={online} language={language}><SynchronizedAppearanceBoundary onAppearance={(appearance) => update({ theme: appearance.theme, language: appearance.language })} />{runtime.platform === RuntimePlatform.Desktop && NativeMessagingBoundary && <NativeMessagingBoundary />}{content}</DeckPollingBoundary></UrlMappingDraftProvider></DevHudServiceBoundary> : content;
 
   if (runtimeState.kind !== ContentStateKind.Ready) return <main className="standalone-shell" data-devhud-ready="true"><ContentStateView state={runtimeState} copy={copy} onRetry={() => location.reload()} /></main>;
 
