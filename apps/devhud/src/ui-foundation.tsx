@@ -113,7 +113,7 @@ export function DataRow({ icon, title, description, trailing, onClick, ariaCurre
   return <div className="data-row">{content}</div>;
 }
 
-const focusableSelector = "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex='-1'])";
+const focusableSelector = "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, a[href], [tabindex]:not([tabindex='-1'])";
 
 function ModalSurface({ open, title, titleId, className, role = "dialog", descriptionId, inert = false, surfaceRef, initialFocusRef, returnFocusRef, restoreFocus, onClose, children }: { readonly open: boolean; readonly title: ReactNode; readonly titleId: string; readonly className: string; readonly role?: "dialog" | "alertdialog"; readonly descriptionId?: string; readonly inert?: boolean; readonly surfaceRef?: RefObject<HTMLElement | null>; readonly initialFocusRef?: RefObject<HTMLElement | null>; readonly returnFocusRef?: RefObject<HTMLElement | null>; readonly restoreFocus: boolean; readonly onClose: () => void; readonly children: ReactNode }) {
   const surface = useRef<HTMLElement>(null);

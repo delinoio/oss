@@ -1,6 +1,6 @@
 import { UploadContentType, UploadQuery } from "@delinoio/devhud-api-client";
 import { useMutation } from "@connectrpc/connect-query";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { uuidV7 } from "./diagnostics.ts";
 import type { Copy } from "./localization.ts";
 import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, issueMarker, readGitHubCredential, type GitHubProvider, type GitHubRepositoryRef } from "./github-provider.ts";
@@ -9,6 +9,7 @@ import { localAgentExecutablePath, localAgentHasConsent } from "./local-agent-se
 import { useIdentitySettings } from "./service-boundary.tsx";
 import { composeIssueBody, decodeSha256Hex, editableBrowserDiagnostics, IssueBodyTooLargeError, IssueTitleInvalidError, parseEditableBrowserDiagnostics, sanitizeIssueTitle, stripFinalSubmissionMarker } from "./realqa-submission.ts";
 import { projectedOfficialImageUrls, projectedR2ImageUrls, uploadOfficialImages, uploadR2Images } from "./realqa-upload.ts";
+import { Button, Dialog } from "./ui-foundation.tsx";
 
 interface SubmissionModalProps {
   readonly draft: CaptureDraft;
@@ -46,7 +47,6 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
   const [createdUrl, setCreatedUrl] = useState<string | null>(null);
   const [cleanupPending, setCleanupPending] = useState(false);
   const [pendingUploadCleanupIds, setPendingUploadCleanupIds] = useState<readonly string[]>([]);
-  const dialog = useRef<HTMLElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
   const submittedRevision = useRef<number | null>(null);
   const selectedRepository = repositories.find((entry) => repositoryKeyFor(entry) === repositoryKey) ?? null;
@@ -88,15 +88,6 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
   }, [bridge, copy.issueLabelsFailed, identity.githubPatScopeId, identity.settings.github.issueTracker, provider, repositoryKey, profileRef]);
 
   const close = () => { if (!busy && !uploadCleanupPending) onClose(); };
-  const keyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); return; }
-    if (event.key !== "Tab") return;
-    const focusable = dialog.current?.querySelectorAll<HTMLElement>("button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href]");
-    if (!focusable?.length) return;
-    const first = focusable[0], last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-    if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-  };
   const toggleImage = (imageId: string) => setSelectedImages((current) => {
     const next = new Set(current); if (next.has(imageId)) next.delete(imageId); else next.add(imageId); return next;
   });
@@ -298,8 +289,7 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
     finally { setBusy(false); }
   };
 
-  return <div className="overlay" role="presentation"><section ref={dialog} className="issue-dialog" role="dialog" aria-modal="true" aria-labelledby="issue-dialog-title" onKeyDown={keyDown}>
-    <h3 id="issue-dialog-title">{copy.issueModalTitle}</h3>
+  return <Dialog open title={copy.issueModalTitle} initialFocusRef={titleInput} onClose={close}><div className="issue-dialog">
     <label>{copy.issueRepository}<select value={repositoryKey} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => { const association = repositoryAssociations.find((entry) => repositoryKeyFor(entry) === event.target.value); setRepositoryKey(event.target.value); if (association) setProfileRef(association.profileRef); }}><option value="">{copy.issueSelectRepository}</option>{repositories.map((repository) => <option key={repositoryKeyFor(repository)} value={repositoryKeyFor(repository)}>{repository.owner}/{repository.name}</option>)}</select></label>
     <label>{copy.issueCredential}<select value={profileRef} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => { setProfileRef(event.target.value); setAgentId(""); }}><option value="">{copy.githubSelectProfile}</option>{identity.settings.github.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
     <label>{copy.localAgentSubmission}<select value={selectedAgent?.id ?? ""} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => setAgentId(event.target.value)}><option value="">{copy.localAgentManual}</option>{availableAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.kind} — {agent.mode === LocalAgentMode.Draft ? copy.localAgentDraftMode : copy.localAgentDirectMode}</option>)}</select></label>
@@ -315,8 +305,8 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
     {selectedImageCount > 0 && <p className="notice">{copy.issuePublicImageWarning}</p>}
     {status && <p role="status" aria-live="polite">{status}</p>}{error && <p role="alert" className="native-setting-error">{error}</p>}
     {createdUrl && <p><a href={createdUrl} target="_blank" rel="noreferrer">{createdUrl}</a></p>}
-    <div className="actions">{agentRunId && <button type="button" onClick={() => void cancelAgent()}>{copy.localAgentCancel}</button>}{uploadCleanupPending ? <button className="primary" disabled={busy} onClick={() => void retryUploadCleanup()}>{copy.issueRetryUploadCleanup}</button> : cleanupPending ? <button className="primary" disabled={busy} onClick={() => void retryCleanup()}>{copy.issueRetryDraftCleanup}</button> : <button className="primary" disabled={busy || !!createdUrl || !selectedRepository || !selectedProfile || title.trim() === ""} onClick={() => void submit()}>{copy.issueSubmit}</button>}<button disabled={busy || uploadCleanupPending} onClick={close}>{copy.close}</button></div>
-  </section></div>;
+    <div className="actions">{agentRunId && <Button onClick={() => void cancelAgent()}>{copy.localAgentCancel}</Button>}{uploadCleanupPending ? <Button variant="primary" disabled={busy} onClick={() => void retryUploadCleanup()}>{copy.issueRetryUploadCleanup}</Button> : cleanupPending ? <Button variant="primary" disabled={busy} onClick={() => void retryCleanup()}>{copy.issueRetryDraftCleanup}</Button> : <Button variant="primary" disabled={busy || !!createdUrl || !selectedRepository || !selectedProfile || title.trim() === ""} onClick={() => void submit()}>{copy.issueSubmit}</Button>}<Button disabled={busy || uploadCleanupPending} onClick={close}>{copy.close}</Button></div>
+  </div></Dialog>;
 }
 
 type SubmissionRepository = GitHubRepositoryRef & { readonly profileRef: string };

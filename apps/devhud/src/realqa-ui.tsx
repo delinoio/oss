@@ -1,13 +1,30 @@
-import { createContext, use, useCallback, useEffect, useImperativeHandle, useRef, useState, type KeyboardEvent, type PointerEvent, type Ref } from "react";
-import type { Copy } from "./localization";
+import { createContext, use, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type PointerEvent, type Ref, type RefObject } from "react";
+import type { Copy, CopyKey } from "./localization";
 import { NativeBridgeError, NativeBridgeErrorCode, type CaptureDisplay, type CaptureDraft, type CaptureDraftImage, type CaptureEditorCommand, type CaptureEditorLayer, type CaptureOptions, type CapturePoint, type CaptureRect, type FlattenedCaptureImage, type NativeBridgeV1 } from "./native-bridge";
 import { ShortcutActionId } from "./shortcuts";
 import { RealqaSubmissionModal } from "./realqa-submission-ui.tsx";
+import { Button, Card, Dialog, PageHeader, Sheet, StatePanel, StatusBadge, type StatusTone } from "./ui-foundation";
 
 export type CaptureActionId = Exclude<ShortcutActionId, typeof ShortcutActionId.CommandPalette>;
 type EditorTool = "crop" | "arrow" | "rectangle" | "drawing" | "text" | "blur" | "redaction";
 type CaptureRequest = { readonly action: CaptureActionId; readonly sequence: number };
 type FloatingPreviewRequest = { readonly draft: CaptureDraft; readonly imageId?: string; readonly sequence: number };
+enum CaptureFeedbackState {
+  Saving = "saving",
+  Saved = "saved",
+}
+enum RealqaFeedbackKind {
+  BrowserContext = "browser-context",
+  Capture = "capture",
+  Quota = "quota",
+  Permission = "permission",
+  Protected = "protected",
+  Topology = "topology",
+  Save = "save",
+  Open = "open",
+  Delete = "delete",
+}
+type RealqaFeedback = { readonly kind: RealqaFeedbackKind; readonly summaryKey: CopyKey };
 const MAX_ANNOTATION_TEXT_CHARACTERS = 2_048;
 const noBrowserContext = async () => null;
 
@@ -22,8 +39,8 @@ interface RealqaContextValue {
     readonly unreadableDraftIds: readonly string[];
     readonly selected: CaptureDraft | null;
     readonly busy: boolean;
-    readonly status: string;
-    readonly error: string | null;
+    readonly status: CaptureFeedbackState | null;
+    readonly error: RealqaFeedback | null;
     readonly preview: CaptureDraft | null;
   };
   readonly actions: {
@@ -47,16 +64,17 @@ function useRealqa() {
   return value;
 }
 
-function errorCopy(copy: Copy, reason: unknown) {
+function errorCopy(reason: unknown): RealqaFeedback | null {
   if (reason instanceof NativeBridgeError) {
-    if (reason.code === NativeBridgeErrorCode.ProtectedContent) return copy.captureProtected;
-    if (reason.code === NativeBridgeErrorCode.TopologyChanged) return copy.captureTopologyChanged;
-    if (reason.code === NativeBridgeErrorCode.QuotaExhausted) return copy.captureQuotaFull;
-    if (reason.code === NativeBridgeErrorCode.ImageLimit) return copy.captureImageLimit;
-    if (reason.code === NativeBridgeErrorCode.PermissionDenied) return copy.capturePermission;
+    if (reason.code === NativeBridgeErrorCode.ProtectedContent) return { kind: RealqaFeedbackKind.Protected, summaryKey: "captureProtected" };
+    if (reason.code === NativeBridgeErrorCode.TopologyChanged) return { kind: RealqaFeedbackKind.Topology, summaryKey: "captureTopologyChanged" };
+    if (reason.code === NativeBridgeErrorCode.QuotaExhausted) return { kind: RealqaFeedbackKind.Quota, summaryKey: "captureQuotaFull" };
+    if (reason.code === NativeBridgeErrorCode.ImageLimit) return { kind: RealqaFeedbackKind.Capture, summaryKey: "captureImageLimit" };
+    if (reason.code === NativeBridgeErrorCode.PermissionDenied) return { kind: RealqaFeedbackKind.Permission, summaryKey: "capturePermission" };
+    if (reason.code === NativeBridgeErrorCode.StorageFailure) return { kind: RealqaFeedbackKind.Save, summaryKey: "realqaSaveFailed" };
     if (reason.code === NativeBridgeErrorCode.Cancelled) return null;
   }
-  return copy.captureFailed;
+  return { kind: RealqaFeedbackKind.Capture, summaryKey: "captureFailed" };
 }
 
 export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = false, onActivate, requestedAction, onRequestedActionConsumed, takeBrowserContext = noBrowserContext }: { readonly ref?: Ref<RealqaController>; readonly bridge: NativeBridgeV1; readonly copy: Copy; readonly active?: boolean; readonly paletteOpen?: boolean; readonly onActivate?: () => void; readonly requestedAction?: CaptureRequest | null; readonly onRequestedActionConsumed?: (sequence: number) => void; readonly takeBrowserContext?: (draftId: string, expectedRevision: number) => Promise<CaptureDraft | null> }) {
@@ -64,25 +82,48 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   const [unreadableDraftIds, setUnreadableDraftIds] = useState<readonly string[]>([]);
   const [selected, setSelected] = useState<CaptureDraft | null>(null);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<CaptureFeedbackState | null>(null);
+  const [error, setError] = useState<RealqaFeedback | null>(null);
   const [previewRequest, setPreviewRequest] = useState<FloatingPreviewRequest | null>(null);
   const [captureDialog, setCaptureDialog] = useState<CaptureActionId | null>(null);
   const [captureStatus, setCaptureStatus] = useState<{ topology: readonly CaptureDisplay[]; shadowRemovalSupported: boolean } | null>(null);
   const [options, setOptions] = useState<CaptureOptions>({ delaySeconds: 0, includePointer: false, removeShadow: false });
   const lastRequested = useRef<number | null>(null);
   const captureInFlight = useRef(false);
+  const captureOriginatingDraftId = useRef<string | null | undefined>(undefined);
+  const captureCancellationGeneration = useRef(0);
   const captureStatusInFlight = useRef(false);
   const captureStatusRequest = useRef(0);
   const draftListRequest = useRef(0);
   const draftOpenRequest = useRef(0);
   const captureDialogOpener = useRef<HTMLElement | null>(null);
+  const captureDialogFocusFallback = useRef<HTMLButtonElement | null>(null);
+  const draftEditorOpener = useRef<HTMLElement | null>(null);
+  const captureFocusFallback = useRef<HTMLButtonElement | null>(null);
+  const previewActivationNeedsFocusFallback = useRef(false);
+  const inSheetPreview = useRef<HTMLElement | null>(null);
+  const editorPreviewFallback = useRef<HTMLButtonElement | null>(null);
+  const paletteWasOpen = useRef(false);
   const previewSequence = useRef(0);
   const resetGeneration = useRef(0);
   const draftsById = useRef(new Map<string, CaptureDraft>());
   const draftOperationQueues = useRef(new Map<string, Promise<void>>());
   const preview = previewRequest?.draft ?? null;
   const previewImage = previewRequest?.draft.images.find((image) => image.id === previewRequest.imageId) ?? previewRequest?.draft.images[0] ?? null;
+
+  useLayoutEffect(() => {
+    if (!active || draftEditorOpener.current?.isConnected) return;
+    // RealQA navigation recreates its controls. A delayed standalone capture must
+    // restore its editor to the newly mounted Capture control, not the old surface.
+    draftEditorOpener.current = captureFocusFallback.current;
+  }, [active]);
+
+  useLayoutEffect(() => {
+    if (!active || !previewActivationNeedsFocusFallback.current) return;
+    // An off-surface preview mounts CaptureActions only after onActivate changes the shell surface.
+    draftEditorOpener.current = captureFocusFallback.current;
+    previewActivationNeedsFocusFallback.current = false;
+  }, [active, preview]);
 
   const replaceDrafts = useCallback((next: readonly CaptureDraft[]) => {
     draftsById.current = new Map(next.map((draft) => [draft.id, draft]));
@@ -140,6 +181,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   const openDraft = useCallback(async (draft: CaptureDraft) => {
     const generation = resetGeneration.current;
     const request = ++draftOpenRequest.current;
+    draftEditorOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setError(null);
     try {
       const response = await runDraftOperation(draft.id, async (_current, install) => {
@@ -152,10 +194,10 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     } catch (reason) {
       if (generation !== resetGeneration.current || request !== draftOpenRequest.current) return;
       if (reason instanceof NativeBridgeError && reason.code === NativeBridgeErrorCode.NotFound) removeDraftLocally(draft.id);
-      setError(copy.realqaOpenFailed);
+      setError({ kind: RealqaFeedbackKind.Open, summaryKey: "realqaOpenFailed" });
       try { await refresh(); } catch { /* Keep the native open failure visible. */ }
     }
-  }, [bridge, copy.realqaOpenFailed, refresh, removeDraftLocally, runDraftOperation]);
+  }, [bridge, refresh, removeDraftLocally, runDraftOperation]);
 
   const refreshCaptureStatus = useCallback(async () => {
     const generation = resetGeneration.current;
@@ -173,23 +215,24 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     void Promise.allSettled([refreshCaptureStatus(), refresh()]).then(([native, stored]) => {
       if (generation !== resetGeneration.current) return;
       if (native.status === "rejected") {
-        setError(errorCopy(copy, native.reason));
+        setError(errorCopy(native.reason));
       }
       if (stored.status === "rejected") {
-        setError(errorCopy(copy, stored.reason));
+        setError(errorCopy(stored.reason));
       }
     });
   }, [copy, refresh, refreshCaptureStatus]);
 
   const dismissCaptureDialog = useCallback((clearStatus = true) => {
     setCaptureDialog(null);
-    if (clearStatus) setStatus("");
+    if (clearStatus) setStatus(null);
     const opener = captureDialogOpener.current;
     captureDialogOpener.current = null;
     if (opener) requestAnimationFrame(() => { if (opener.isConnected) opener.focus(); });
   }, []);
   useEffect(() => {
     if (active) return;
+    draftOpenRequest.current += 1;
     setSelected(null);
     if (!captureInFlight.current) dismissCaptureDialog();
   }, [active, dismissCaptureDialog]);
@@ -201,8 +244,11 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     draftOpenRequest.current += 1;
     lastRequested.current = null;
     captureInFlight.current = false;
+    captureOriginatingDraftId.current = undefined;
     captureStatusInFlight.current = false;
     captureDialogOpener.current = null;
+    draftEditorOpener.current = null;
+    previewActivationNeedsFocusFallback.current = false;
     previewSequence.current += 1;
     draftsById.current.clear();
     draftOperationQueues.current.clear();
@@ -210,7 +256,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     setUnreadableDraftIds([]);
     setSelected(null);
     setBusy(false);
-    setStatus("");
+    setStatus(null);
     setError(null);
     setPreviewRequest(null);
     setCaptureDialog(null);
@@ -218,14 +264,25 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     setOptions({ delaySeconds: 0, includePointer: false, removeShadow: false });
   }, []);
 
-  const completeCapture = useCallback(async (action: CaptureActionId, captureOptions: CaptureOptions = options) => {
+  const completeCapture = useCallback(async (action: CaptureActionId, captureOptions: CaptureOptions = options, standaloneOpener: HTMLElement | null = null) => {
     if (captureInFlight.current) return;
     const generation = resetGeneration.current;
+    const cancellationGeneration = captureCancellationGeneration.current;
     captureInFlight.current = true;
     const originatingDraftId = selected?.id ?? null;
-    setBusy(true); setError(null); setStatus(copy.captureSaving);
+    if (!originatingDraftId) {
+      // A standalone capture can auto-open an editor after a prior draft editor
+      // closed. Replace that stale opener with the control that began this flow.
+      draftEditorOpener.current = captureDialogOpener.current ?? standaloneOpener ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    }
+    captureOriginatingDraftId.current = originatingDraftId;
+    setBusy(true); setError(null); setStatus(CaptureFeedbackState.Saving);
+    let refreshAfterCapture = false;
     try {
       const requestCapture = async (appendToDraftId?: string) => {
+        // A queued append can outlive the editor that requested it. Do not begin
+        // native work after the user has already canceled that capture attempt.
+        if (cancellationGeneration !== captureCancellationGeneration.current) return null;
         const response = await bridge.request({ operation: "capture.start", actionId: action, options: { ...captureOptions, appendToDraftId } });
         if (response.kind !== "capture-draft") return { response, contextAttachmentFailed: false };
         try {
@@ -238,78 +295,123 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       const captureResult = originatingDraftId
         ? await runDraftOperation(originatingDraftId, async (current, install) => {
           const appended = await requestCapture(current.id);
+          if (!appended) return null;
           if (appended.response.kind === "capture-draft") install(appended.response.draft);
           return {
             ...appended,
             previewImageId: appended.response.kind === "capture-draft" ? appended.response.draft.images[current.images.length]?.id : undefined,
           };
         })
-        : await requestCapture().then((captured) => ({
+        : await requestCapture().then((captured) => captured && ({
           ...captured,
           previewImageId: captured.response.kind === "capture-draft" ? captured.response.draft.images[0]?.id : undefined,
         }));
       if (generation !== resetGeneration.current) return;
+      if (!captureResult) return;
       const { response, previewImageId, contextAttachmentFailed } = captureResult;
       if (response.kind !== "capture-draft") return;
       if (!originatingDraftId) installDraft(response.draft);
       setSelected((current) => (current?.id ?? null) === originatingDraftId ? response.draft : current);
       setPreviewRequest({ draft: response.draft, imageId: previewImageId, sequence: ++previewSequence.current });
-      setStatus(copy.captureSaved);
-      if (contextAttachmentFailed) setError(copy.nativeMessagingFailed);
+      setStatus(CaptureFeedbackState.Saved);
+      if (contextAttachmentFailed) setError({ kind: RealqaFeedbackKind.BrowserContext, summaryKey: "browserContextAttachmentFailed" });
       dismissCaptureDialog(false);
-      try { await refresh(); } catch { /* The capture response is already authoritative. */ }
+      refreshAfterCapture = true;
     } catch (reason) {
       if (generation !== resetGeneration.current) return;
-      setStatus("");
-      setError(errorCopy(copy, reason));
+      setStatus(null);
+      setError(errorCopy(reason));
+      dismissCaptureDialog();
     } finally {
       if (generation !== resetGeneration.current) return;
       captureInFlight.current = false;
+      captureOriginatingDraftId.current = undefined;
       setBusy(false);
     }
-  }, [bridge, copy, dismissCaptureDialog, installDraft, options, refresh, runDraftOperation, selected?.id, takeBrowserContext]);
+    if (refreshAfterCapture) void refresh().catch(() => { /* The capture response is already authoritative. */ });
+  }, [bridge, dismissCaptureDialog, installDraft, options, refresh, runDraftOperation, selected?.id, takeBrowserContext]);
 
-  const capture = useCallback(async (action: CaptureActionId) => {
+  const capture = useCallback(async (action: CaptureActionId, standaloneOpener: HTMLElement | null = null) => {
     if (captureInFlight.current || captureStatusInFlight.current) return;
     if (action === ShortcutActionId.CaptureSelection || action === ShortcutActionId.CaptureToolbar) {
       const generation = resetGeneration.current;
       captureStatusInFlight.current = true;
-      const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const activeTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const opener = selected
+        ? activeTrigger?.isConnected && activeTrigger !== document.body ? activeTrigger : editorPreviewFallback.current
+        : standaloneOpener ?? activeTrigger;
       setError(null);
       try {
         const freshStatus = await refreshCaptureStatus();
         if (generation !== resetGeneration.current) return;
         if (!freshStatus) return;
-        if (!captureDialog) captureDialogOpener.current = opener;
+        if (!captureDialog) {
+          captureDialogOpener.current = opener?.isConnected ? opener : captureFocusFallback.current;
+        }
         setCaptureDialog(action);
       } catch (reason) {
         if (generation !== resetGeneration.current) return;
-        setError(errorCopy(copy, reason));
+        setError(errorCopy(reason));
       } finally {
         if (generation !== resetGeneration.current) return;
         captureStatusInFlight.current = false;
       }
       return;
     }
-    await completeCapture(action);
-  }, [captureDialog, completeCapture, copy, refreshCaptureStatus]);
+    await completeCapture(action, options, standaloneOpener);
+  }, [captureDialog, completeCapture, options, refreshCaptureStatus, selected?.id]);
+  const cancelInFlightCapture = useCallback(() => {
+    if (!captureInFlight.current) return;
+    captureCancellationGeneration.current += 1;
+    setStatus(null);
+    void bridge.request({ operation: "capture.cancel" }).catch(() => {});
+  }, [bridge]);
   const cancelCapture = useCallback(() => {
     dismissCaptureDialog();
-    if (busy) void bridge.request({ operation: "capture.cancel" }).catch(() => {});
-  }, [bridge, busy, dismissCaptureDialog]);
+    cancelInFlightCapture();
+  }, [cancelInFlightCapture, dismissCaptureDialog]);
 
   useImperativeHandle(ref, () => ({ execute: capture, reset }), [capture, reset]);
   useEffect(() => {
     if (!requestedAction || requestedAction.sequence === lastRequested.current) return;
     lastRequested.current = requestedAction.sequence;
     onRequestedActionConsumed?.(requestedAction.sequence);
-    void capture(requestedAction.action);
+    // The palette unmounts before this effect runs, so requested captures need
+    // a live RealQA control rather than the palette's detached action as return focus.
+    void capture(requestedAction.action, captureFocusFallback.current);
   }, [capture, onRequestedActionConsumed, requestedAction]);
+  const dismissPreview = useCallback(() => {
+    // Preview teardown must not leave the sheet focus trap without an in-sheet target.
+    if (document.activeElement instanceof HTMLElement && inSheetPreview.current?.contains(document.activeElement)) {
+      editorPreviewFallback.current?.focus();
+    }
+    setPreviewRequest(null);
+  }, []);
   useEffect(() => {
     if (!previewRequest) return;
-    const timer = window.setTimeout(() => setPreviewRequest(null), 5_000);
+    const timer = window.setTimeout(dismissPreview, 5_000);
     return () => window.clearTimeout(timer);
-  }, [previewRequest?.sequence]);
+  }, [dismissPreview, previewRequest?.sequence]);
+  useEffect(() => {
+    if (paletteOpen) {
+      paletteWasOpen.current = true;
+      return;
+    }
+    if (!paletteWasOpen.current) return;
+    paletteWasOpen.current = false;
+    const focusFallback = captureDialog ? captureDialogFocusFallback.current : selected ? editorPreviewFallback.current : null;
+    if (!focusFallback) return;
+    let deferredRecovery = 0;
+    const recovery = requestAnimationFrame(() => {
+      // The palette restores its trigger in its own animation frame. Recover
+      // afterward so the still-open picker or editor retains keyboard focus.
+      deferredRecovery = requestAnimationFrame(() => focusFallback.focus());
+    });
+    return () => {
+      cancelAnimationFrame(recovery);
+      cancelAnimationFrame(deferredRecovery);
+    };
+  }, [captureDialog, paletteOpen, selected]);
   useEffect(() => {
     const key = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -334,7 +436,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       try { await refresh(); } catch { /* The successful native deletion is authoritative. */ }
     } catch {
       if (generation !== resetGeneration.current) return;
-      setError(copy.realqaDeleteFailed);
+      setError({ kind: RealqaFeedbackKind.Delete, summaryKey: "realqaDeleteFailed" });
     }
   };
   const remove = async (draft: CaptureDraft) => {
@@ -349,64 +451,127 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     const generation = resetGeneration.current;
     await runDraftOperation(draftId, () => bridge.request({ operation: "capture.confirm-issue-created", draftId, expectedRevision }));
     if (generation !== resetGeneration.current) return;
+    // The selected draft card is removed with the sheet. Return to a control that remains mounted.
+    draftEditorOpener.current = captureFocusFallback.current;
     removeDraftLocally(draftId);
     try { await refresh(); } catch { /* The successful native confirmation is authoritative. */ }
   };
+  const closeEditor = () => {
+    const selectedDraftId = selected?.id;
+    setSelected(null);
+    if (selectedDraftId && captureOriginatingDraftId.current === selectedDraftId) cancelInFlightCapture();
+  };
+  const openPreview = () => {
+    if (!preview) return;
+    const replacesEditor = selected?.id !== preview.id;
+    // This preview may already be selected while RealQA is off-surface. Record the
+    // replacement before activation so the mounted Capture control becomes the return target.
+    // Do not replace an open editor's original opener when dismissing its own preview.
+    previewActivationNeedsFocusFallback.current = !active || replacesEditor;
+    if (replacesEditor) {
+      setSelected(preview);
+    }
+    dismissPreview();
+    onActivate?.();
+  };
   const value: RealqaContextValue = {
     state: { drafts, unreadableDraftIds, selected, busy, status, error, preview },
-    actions: { capture, open: openDraft, close: () => setSelected(null), remove, removeUnreadable, confirmIssueCreated, runDraftOperation, refresh },
+    actions: { capture, open: openDraft, close: closeEditor, remove, removeUnreadable, confirmIssueCreated, runDraftOperation, refresh },
     meta: { copy, bridge },
   };
 
   return <RealqaContext value={value}>
     {active && <>
-      <p className="eyebrow">{copy.realqa}</p>
-      <h2>{copy.realqaTitle}</h2>
-      <p>{copy.realqaQuotaHint}</p>
-      <CaptureActions />
-      {status && <p role="status" aria-live="polite">{status}</p>}
-      {error && <p role="alert" className="native-setting-error">{error}</p>}
-      {captureDialog && <CaptureDialog key={captureDialog} action={captureDialog} status={captureStatus} options={options} onOptions={setOptions} onCapture={completeCapture} onClose={cancelCapture} />}
-      {selected ? <CaptureEditor key={selected.id} draft={selected} /> : <DraftList />}
+      <PageHeader eyebrow={copy.realqa} title={copy.realqaTitle} summary={copy.realqaSummary} />
+      <div className="realqa-flow">
+        <CaptureActions focusFallbackRef={captureFocusFallback} hidden={selected !== null} />
+        <DraftPolicy />
+        {!selected && !captureDialog && <CaptureFeedback status={status} error={error} />}
+        <DraftList />
+      </div>
+      {selected && <CaptureEditor key={selected.id} draft={selected} previewImage={!captureDialog && !paletteOpen ? previewImage : null} previewRef={inSheetPreview} previewFocusFallbackRef={editorPreviewFallback} returnFocusRef={draftEditorOpener} restoreFocus onPreviewOpen={openPreview} />}
+      {captureDialog && <CaptureDialog key={captureDialog} action={captureDialog} status={captureStatus} options={options} onOptions={setOptions} onCapture={completeCapture} onClose={cancelCapture} focusRef={captureDialogFocusFallback} />}
     </>}
-    {preview && previewImage && !captureDialog && !paletteOpen && <aside className="floating-capture-preview" aria-label={copy.floatingPreview}>
+    {preview && previewImage && (!active || !selected) && !captureDialog && !paletteOpen && <aside className="floating-capture-preview" aria-label={copy.floatingPreview}>
       <img src={previewImage.previewUrl} alt="" />
-      <button onClick={() => { setSelected(preview); setPreviewRequest(null); onActivate?.(); }}>{copy.floatingPreviewOpen}</button>
+      <button onClick={openPreview}>{copy.floatingPreviewOpen}</button>
     </aside>}
   </RealqaContext>;
 }
 
-function CaptureActions() {
+function CaptureActions({ focusFallbackRef, beforeCapture, hidden = false }: { readonly focusFallbackRef?: RefObject<HTMLButtonElement | null>; readonly beforeCapture?: () => void; readonly hidden?: boolean }) {
   const { state, actions, meta: { copy } } = useRealqa();
+  const titleId = useId();
   const items: readonly [CaptureActionId, keyof Copy][] = [
     [ShortcutActionId.CaptureDisplay, "captureDisplay"], [ShortcutActionId.CaptureActiveWindow, "captureWindow"],
     [ShortcutActionId.CaptureAllDisplays, "captureAll"], [ShortcutActionId.CaptureSelection, "captureSelection"], [ShortcutActionId.CaptureToolbar, "captureToolbar"],
   ];
-  return <div className="capture-actions" aria-label={copy.captureMode}>{items.map(([action, label]) => <button key={action} disabled={state.busy} onClick={() => void actions.capture(action)}>{copy[label]}</button>)}</div>;
+  const capture = (action: CaptureActionId) => {
+    if (action !== ShortcutActionId.CaptureSelection && action !== ShortcutActionId.CaptureToolbar) beforeCapture?.();
+    void actions.capture(action);
+  };
+  return <Card className="realqa-capture-card" aria-hidden={hidden || undefined} aria-labelledby={titleId}>
+    <div className="realqa-section-heading"><div><StatusBadge tone="info">{copy.realqaCapture}</StatusBadge><h3 id={titleId}>{copy.realqaCapture}</h3></div></div>
+    <Button ref={focusFallbackRef} variant="primary" disabled={state.busy} onClick={() => capture(ShortcutActionId.CaptureDisplay)}>{copy.captureDisplay}</Button>
+    <div className="capture-actions" aria-label={copy.captureMode}>{items.slice(1).map(([action, label]) => <Button key={action} disabled={state.busy} onClick={() => capture(action)}>{copy[label]}</Button>)}</div>
+  </Card>;
+}
+
+function DraftPolicy() {
+  const { meta: { copy } } = useRealqa();
+  return <Card className="realqa-policy" aria-labelledby="realqa-policy-title">
+    <StatusBadge tone="info">{copy.realqaPolicyTitle}</StatusBadge>
+    <h3 id="realqa-policy-title">{copy.realqaPolicyTitle}</h3>
+    <p>{copy.realqaPolicySummary}</p>
+    <p>{copy.realqaPolicyQuota}</p>
+  </Card>;
+}
+
+function FeedbackPanel({ feedback, headingLevel = 3 }: { readonly feedback: RealqaFeedback; readonly headingLevel?: 2 | 3 | 4 }) {
+  const { meta: { copy } } = useRealqa();
+  const presentation: Record<RealqaFeedbackKind, { readonly title: string; readonly tone: StatusTone }> = {
+    [RealqaFeedbackKind.BrowserContext]: { title: copy.browserContextAttachmentTitle, tone: "warning" },
+    [RealqaFeedbackKind.Capture]: { title: copy.realqaCaptureFailedTitle, tone: "danger" },
+    [RealqaFeedbackKind.Quota]: { title: copy.realqaQuotaTitle, tone: "warning" },
+    [RealqaFeedbackKind.Permission]: { title: copy.realqaPermissionTitle, tone: "warning" },
+    [RealqaFeedbackKind.Protected]: { title: copy.realqaProtectedTitle, tone: "danger" },
+    [RealqaFeedbackKind.Topology]: { title: copy.realqaTopologyTitle, tone: "warning" },
+    [RealqaFeedbackKind.Save]: { title: copy.realqaSaveTitle, tone: "danger" },
+    [RealqaFeedbackKind.Open]: { title: copy.realqaOpenTitle, tone: "danger" },
+    [RealqaFeedbackKind.Delete]: { title: copy.realqaDeleteTitle, tone: "danger" },
+  };
+  const state = presentation[feedback.kind];
+  return <StatePanel eyebrow={copy.error} title={state.title} summary={copy[feedback.summaryKey]} headingLevel={headingLevel} tone={state.tone} role="alert" />;
+}
+
+function CaptureFeedback({ status, error }: { readonly status: CaptureFeedbackState | null; readonly error: RealqaFeedback | null }) {
+  const { meta: { copy } } = useRealqa();
+  const statusTone: StatusTone = status === CaptureFeedbackState.Saving ? "info" : "success";
+  const statusText = status === CaptureFeedbackState.Saving ? copy.captureSaving : copy.captureSaved;
+  return <>
+    {status && <div className="realqa-status" role="status" aria-live="polite"><StatusBadge tone={statusTone}>{statusText}</StatusBadge></div>}
+    {error && <FeedbackPanel feedback={error} />}
+  </>;
 }
 
 function DraftList() {
   const { state: { drafts, unreadableDraftIds }, actions, meta: { copy } } = useRealqa();
   return <section aria-labelledby="realqa-drafts-title"><h3 id="realqa-drafts-title">{copy.realqaDrafts}</h3>
-    {drafts.length === 0 && unreadableDraftIds.length === 0 ? <p>{copy.realqaNoDrafts}</p> : <ul className="draft-list">{drafts.map((draft) => <li key={draft.id}>
+    {drafts.length === 0 && unreadableDraftIds.length === 0 ? <StatePanel eyebrow={copy.empty} title={copy.realqaEmptyTitle} summary={copy.realqaNoDrafts} headingLevel={4} tone="neutral" /> : <ul className="draft-list">{drafts.map((draft) => <li key={draft.id}><Card>
       <button className="draft-preview" onClick={() => void actions.open(draft)}><img src={draft.images[0]?.previewUrl} alt="" loading="lazy" decoding="async" /><span>{draft.imageCount} {copy.realqaImages}</span></button>
-      {draft.hasBrowserContext && <span>{copy.browserContextAttached}</span>}
+      {draft.hasBrowserContext && <StatusBadge tone="info">{copy.browserContextAttached}</StatusBadge>}
       <time dateTime={new Date(draft.expiresAt * 1000).toISOString()}>{copy.realqaDraftExpiry}: {new Date(draft.expiresAt * 1000).toLocaleString()}</time>
-      <div className="actions"><button onClick={() => void actions.open(draft)}>{copy.realqaOpenEditor}</button><button className="danger" onClick={() => void actions.remove(draft)}>{copy.realqaDeleteDraft}</button></div>
-    </li>)}{unreadableDraftIds.map((draftId) => <li key={draftId}>
-      <p role="status">{copy.realqaUnreadableDraft}</p>
-      <div className="actions"><button className="danger" onClick={() => void actions.removeUnreadable(draftId)}>{copy.realqaDeleteDraft}</button></div>
-    </li>)}</ul>}
+      <div className="actions"><Button onClick={() => void actions.open(draft)}>{copy.realqaOpenEditor}</Button><Button variant="danger" onClick={() => void actions.remove(draft)}>{copy.realqaDeleteDraft}</Button></div>
+    </Card></li>)}{unreadableDraftIds.map((draftId) => <li key={draftId}><StatePanel eyebrow={copy.error} title={copy.realqaUnreadableTitle} summary={copy.realqaUnreadableDraft} headingLevel={4} tone="warning" role="status" actions={<Button variant="danger" onClick={() => void actions.removeUnreadable(draftId)}>{copy.realqaDeleteDraft}</Button>} /></li>)}</ul>}
   </section>;
 }
 
-function CaptureDialog({ action, status, options, onOptions, onCapture, onClose }: { readonly action: CaptureActionId; readonly status: { topology: readonly CaptureDisplay[]; shadowRemovalSupported: boolean } | null; readonly options: CaptureOptions; readonly onOptions: (options: CaptureOptions) => void; readonly onCapture: (action: CaptureActionId, options: CaptureOptions) => Promise<void>; readonly onClose: () => void }) {
-  const { meta: { copy }, state: { busy } } = useRealqa();
+function CaptureDialog({ action, status, options, onOptions, onCapture, onClose, focusRef }: { readonly action: CaptureActionId; readonly status: { topology: readonly CaptureDisplay[]; shadowRemovalSupported: boolean } | null; readonly options: CaptureOptions; readonly onOptions: (options: CaptureOptions) => void; readonly onCapture: (action: CaptureActionId, options: CaptureOptions) => Promise<void>; readonly onClose: () => void; readonly focusRef: RefObject<HTMLButtonElement | null> }) {
+  const { meta: { copy }, state: { busy, status: captureStatus } } = useRealqa();
   const first = status?.topology[0];
   const [mode, setMode] = useState<"region" | "window" | "display" | "active-window" | "all-displays">("region");
   const [optionShadow, setOptionShadow] = useState(false);
   const [rect, setRect] = useState<CaptureRect>(() => ({ x: first?.logicalBounds.x ?? 0, y: first?.logicalBounds.y ?? 0, width: Math.min(640, first?.logicalBounds.width ?? 640), height: Math.min(480, first?.logicalBounds.height ?? 480) }));
-  const dialog = useRef<HTMLElement>(null);
   const updateRect = (key: keyof CaptureRect, value: string) => setRect((current) => ({ ...current, [key]: Number(value) }));
   const regionValid = captureRegionValid(rect);
   const regionErrorId = "capture-region-error";
@@ -415,29 +580,28 @@ function CaptureDialog({ action, status, options, onOptions, onCapture, onClose 
     if (mode === "region" && !regionValid) return;
     void onCapture(submitAction, { ...options, removeShadow: options.removeShadow || optionShadow, selectionWindow: mode === "window", ...(mode === "region" ? { selection: rect } : {}) });
   };
-  const keyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key === "Alt" && status?.shadowRemovalSupported) setOptionShadow(true);
-    const target = event.target instanceof Element ? event.target : null;
-    const interactive = target?.closest("button,input,select,textarea,a,[contenteditable='true']");
-    if (event.key === " " && !interactive) { event.preventDefault(); setMode((current) => current === "region" ? "window" : "region"); }
-    if (event.key === "Escape") { event.stopPropagation(); onClose(); }
-    if (event.key !== "Tab") return;
-    const focusable = dialog.current?.querySelectorAll<HTMLElement>("button:not([disabled]),input:not([disabled]),select:not([disabled])");
-    if (!focusable?.length) return;
-    const firstItem = focusable[0], lastItem = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === firstItem) { event.preventDefault(); lastItem.focus(); }
-    if (!event.shiftKey && document.activeElement === lastItem) { event.preventDefault(); firstItem.focus(); }
-  };
-  return <div className="overlay" role="presentation"><section ref={dialog} className="capture-dialog" role="dialog" aria-modal="true" aria-labelledby="capture-dialog-title" onKeyDown={keyDown} onKeyUp={(event) => { if (event.key === "Alt") setOptionShadow(false); }}>
-    <h3 id="capture-dialog-title">{action === ShortcutActionId.CaptureToolbar ? copy.captureToolbar : copy.captureSelection}</h3>
+  useEffect(() => {
+    const keyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Alt" && status?.shadowRemovalSupported) setOptionShadow(true);
+      const target = event.target instanceof Element ? event.target : null;
+      const interactive = target?.closest("button,input,select,textarea,a,[contenteditable='true']");
+      if (event.key === " " && !interactive) { event.preventDefault(); setMode((current) => current === "region" ? "window" : "region"); }
+    };
+    const keyUp = (event: globalThis.KeyboardEvent) => { if (event.key === "Alt") setOptionShadow(false); };
+    addEventListener("keydown", keyDown); addEventListener("keyup", keyUp);
+    return () => { removeEventListener("keydown", keyDown); removeEventListener("keyup", keyUp); };
+  }, [status?.shadowRemovalSupported]);
+  // The surface records the trigger before the topology refresh; ModalSurface must not restore a later-focused element.
+  return <Dialog open title={action === ShortcutActionId.CaptureToolbar ? copy.captureToolbar : copy.captureSelection} initialFocusRef={focusRef} restoreFocus={false} onClose={onClose}><div className="capture-dialog">
     <p>{copy.captureRegionHelp}</p>
+    {busy && captureStatus && <CaptureFeedback status={captureStatus} error={null} />}
     <fieldset><legend>{copy.captureMode}</legend><label className="check"><input name="capture-mode" type="radio" checked={mode === "region"} onChange={() => setMode("region")} />{copy.captureRegionMode}</label><label className="check"><input name="capture-mode" type="radio" checked={mode === "window"} onChange={() => setMode("window")} />{copy.captureWindowMode}</label>{action === ShortcutActionId.CaptureToolbar && <><label className="check"><input name="capture-mode" type="radio" checked={mode === "display"} onChange={() => setMode("display")} />{copy.captureDisplay}</label><label className="check"><input name="capture-mode" type="radio" checked={mode === "active-window"} onChange={() => setMode("active-window")} />{copy.captureWindow}</label><label className="check"><input name="capture-mode" type="radio" checked={mode === "all-displays"} onChange={() => setMode("all-displays")} />{copy.captureAll}</label></>}</fieldset>
     {mode === "region" && <><RegionPicker displays={status?.topology ?? []} value={rect} onChange={setRect} label={copy.captureRegionPicker} /><div className="capture-coordinates">{(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{copy[key === "x" ? "captureX" : key === "y" ? "captureY" : key === "width" ? "captureWidth" : "captureHeight"]}<input type="number" value={rect[key]} aria-invalid={!regionValid} aria-describedby={!regionValid ? regionErrorId : undefined} onChange={(event) => updateRect(key, event.target.value)} /></label>)}</div>{!regionValid && <p id={regionErrorId} className="editor-coordinate-error" role="alert">{copy.captureRegionInvalid}</p>}</>}
     <label>{copy.captureTimer}<select value={options.delaySeconds ?? 0} onChange={(event) => onOptions({ ...options, delaySeconds: Number(event.target.value) as 0 | 5 | 10 })}><option value="0">{copy.captureTimerOff}</option><option value="5">{copy.captureTimerFive}</option><option value="10">{copy.captureTimerTen}</option></select></label>
     <label className="check"><input type="checkbox" checked={options.includePointer ?? false} onChange={(event) => onOptions({ ...options, includePointer: event.target.checked })} />{copy.capturePointer}</label>
     {status?.shadowRemovalSupported && <label className="check"><input type="checkbox" checked={(options.removeShadow ?? false) || optionShadow} onChange={(event) => onOptions({ ...options, removeShadow: event.target.checked })} />{copy.captureShadow}</label>}
-    <div className="actions"><button autoFocus className="primary" disabled={busy || (mode === "region" && !regionValid)} onClick={submit}>{copy.captureNow}</button><button onClick={onClose}>{copy.captureCancel}</button></div>
-  </section></div>;
+    <div className="actions"><Button ref={focusRef} autoFocus variant="primary" disabled={busy || (mode === "region" && !regionValid)} onClick={submit}>{copy.captureNow}</Button><Button onClick={onClose}>{copy.captureCancel}</Button></div>
+  </div></Dialog>;
 }
 
 function RegionPicker({ displays, value, onChange, label }: { readonly displays: readonly CaptureDisplay[]; readonly value: CaptureRect; readonly onChange: (value: CaptureRect) => void; readonly label: string }) {
@@ -484,8 +648,8 @@ function RegionPicker({ displays, value, onChange, label }: { readonly displays:
   </svg>;
 }
 
-function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
-  const { state: { busy }, actions, meta: { bridge, copy } } = useRealqa();
+function CaptureEditor({ draft, previewImage, previewRef, previewFocusFallbackRef, returnFocusRef, restoreFocus, onPreviewOpen }: { readonly draft: CaptureDraft; readonly previewImage: CaptureDraftImage | null; readonly previewRef: RefObject<HTMLElement | null>; readonly previewFocusFallbackRef: RefObject<HTMLButtonElement | null>; readonly returnFocusRef: RefObject<HTMLElement | null>; readonly restoreFocus: boolean; readonly onPreviewOpen: () => void }) {
+  const { state: { busy, status, error }, actions, meta: { bridge, copy } } = useRealqa();
   const [imageId, setImageId] = useState(draft.images[0]?.id ?? "");
   const [tool, setTool] = useState<EditorTool>("arrow");
   const [color, setColor] = useState("#ef4444");
@@ -497,6 +661,9 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
   const [failed, setFailed] = useState(false);
   const [submissionOpen, setSubmissionOpen] = useState(false);
   const submissionTrigger = useRef<HTMLButtonElement>(null);
+  const imageSelectorControls = useRef(new Map<string, HTMLButtonElement>());
+  const imageRemovalControls = useRef(new Map<string, HTMLButtonElement>());
+  const browserContextRemovalControl = useRef<HTMLButtonElement>(null);
   const editorActive = useRef(true);
   const active = draft.images.find((image) => image.id === imageId) ?? draft.images[0];
   useEffect(() => {
@@ -509,6 +676,10 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
     }
   }, [draft.images, imageId]);
   useEffect(() => { if (busy) setDrawing([]); }, [busy]);
+  const focusImageSelector = (images: readonly CaptureDraftImage[], imageId: string) => {
+    if (images[0]?.id === imageId) previewFocusFallbackRef.current?.focus();
+    else imageSelectorControls.current.get(imageId)?.focus();
+  };
 
   const enqueueRevisionOperation = (operation: (current: CaptureDraft, installDraft: (draft: CaptureDraft) => void) => Promise<void>) => {
     if (busy) return Promise.resolve();
@@ -517,12 +688,18 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
       await operation(current, installDraft);
     });
   };
-  const mutate = (command: CaptureEditorCommand) => {
+  const mutate = (command: CaptureEditorCommand, beforeInstall?: (current: CaptureDraft) => void) => {
     setFailed(false);
     return enqueueRevisionOperation(async (current, installDraft) => {
       try {
         const response = await bridge.request({ operation: "capture.editor.apply", draftId: current.id, expectedRevision: current.revision, command });
         if (response.kind === "capture-draft") {
+          if (command.kind === "remove-image" && document.activeElement === imageRemovalControls.current.get(command.imageId)) {
+            const removedIndex = current.images.findIndex((image) => image.id === command.imageId);
+            const survivor = current.images[removedIndex + 1] ?? current.images[removedIndex - 1];
+            survivor && focusImageSelector(current.images, survivor.id);
+          }
+          beforeInstall?.(current);
           installDraft(response.draft);
           if (editorActive.current) setMessage(copy.editorSaved);
         }
@@ -555,6 +732,10 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
       try {
         const response = await bridge.request({ operation: "capture.remove-browser-context", draftId: current.id, expectedRevision: current.revision });
         if (response.kind === "capture-draft") {
+          if (document.activeElement === browserContextRemovalControl.current) {
+            const retainedImage = current.images.find((image) => image.id === imageId) ?? current.images[0];
+            retainedImage && focusImageSelector(current.images, retainedImage.id);
+          }
           installDraft(response.draft);
           if (editorActive.current) setMessage(copy.browserContextRemoved);
         }
@@ -617,10 +798,13 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
   const confirmCreated = async (expectedRevision: number) => {
     await actions.confirmIssueCreated(draft.id, expectedRevision);
   };
-  return <section className="capture-editor" aria-labelledby="capture-editor-title">
-    <div className="editor-heading"><div><h3 id="capture-editor-title">{copy.editorTitle}</h3><p>{copy.editorCloseHint}</p></div><button onClick={actions.close}>{copy.close}</button></div>
-    {draft.browserContext && <section aria-labelledby="browser-context-title"><h4 id="browser-context-title">{copy.browserContextAttached}</h4><dl className="runtime-diagnostics"><dt>{copy.browserContextPageTitle}</dt><dd>{draft.browserContext.context.title || "—"}</dd><dt>{copy.browserContextRedactedUrl}</dt><dd>{draft.browserContext.context.url}</dd></dl><details><summary>{copy.browserContextDetails}</summary><dl className="runtime-diagnostics"><dt>{copy.browserContextViewport}</dt><dd>{draft.browserContext.context.viewport.width} × {draft.browserContext.context.viewport.height}</dd><dt>{copy.browserContextUserAgent}</dt><dd>{draft.browserContext.context.userAgent}</dd><dt>{copy.browserContextSelectedBounds}</dt><dd>{draft.browserContext.context.selectedBounds ? `x ${draft.browserContext.context.selectedBounds.x}, y ${draft.browserContext.context.selectedBounds.y}, width ${draft.browserContext.context.selectedBounds.width}, height ${draft.browserContext.context.selectedBounds.height}` : copy.browserContextNone}</dd><dt>{copy.browserContextAccessibility}</dt><dd>{Object.entries(draft.browserContext.context.accessibility).length ? <dl>{Object.entries(draft.browserContext.context.accessibility).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl> : copy.browserContextNone}</dd><dt>{copy.browserContextMarkup}</dt><dd><pre>{draft.browserContext.context.outerHtml || copy.browserContextNone}</pre></dd></dl></details><button className="danger" disabled={busy} onClick={removeBrowserContext}>{copy.browserContextRemove}</button></section>}
-    <div className="editor-image-order" aria-label={copy.realqaImages}>{draft.images.map((image, index) => <div key={image.id}><button aria-pressed={image.id === active.id} onClick={() => setImageId(image.id)}>{copy.editorImage} {index + 1}</button><button disabled={busy || index === 0} aria-label={copy.editorMoveEarlier} onClick={() => moveImage(index, -1)}>←</button><button disabled={busy || index === draft.images.length - 1} aria-label={copy.editorMoveLater} onClick={() => moveImage(index, 1)}>→</button><button disabled={busy || draft.images.length === 1} aria-label={copy.editorRemove} onClick={() => void mutate({ kind: "remove-image", imageId: image.id })}>×</button></div>)}</div>
+  return <Sheet open title={copy.editorTitle} backLabel={copy.close} initialFocusRef={previewFocusFallbackRef} returnFocusRef={returnFocusRef} restoreFocus={restoreFocus} onClose={actions.close}><section className="capture-editor" aria-label={copy.editorTitle}>
+    {previewImage && <aside ref={previewRef} className="sheet-capture-preview" aria-label={copy.floatingPreview}><img src={previewImage.previewUrl} alt="" /><button onClick={onPreviewOpen}>{copy.floatingPreviewOpen}</button></aside>}
+    <CaptureFeedback status={status} error={error} />
+    <CaptureActions beforeCapture={() => previewFocusFallbackRef.current?.focus()} />
+    <p className="editor-close-hint">{copy.editorCloseHint}</p>
+    {draft.browserContext && <section aria-labelledby="browser-context-title"><h3 id="browser-context-title">{copy.browserContextAttached}</h3><dl className="runtime-diagnostics"><dt>{copy.browserContextPageTitle}</dt><dd>{draft.browserContext.context.title || "—"}</dd><dt>{copy.browserContextRedactedUrl}</dt><dd>{draft.browserContext.context.url}</dd></dl><details><summary>{copy.browserContextDetails}</summary><dl className="runtime-diagnostics"><dt>{copy.browserContextViewport}</dt><dd>{draft.browserContext.context.viewport.width} × {draft.browserContext.context.viewport.height}</dd><dt>{copy.browserContextUserAgent}</dt><dd>{draft.browserContext.context.userAgent}</dd><dt>{copy.browserContextSelectedBounds}</dt><dd>{draft.browserContext.context.selectedBounds ? `x ${draft.browserContext.context.selectedBounds.x}, y ${draft.browserContext.context.selectedBounds.y}, width ${draft.browserContext.context.selectedBounds.width}, height ${draft.browserContext.context.selectedBounds.height}` : copy.browserContextNone}</dd><dt>{copy.browserContextAccessibility}</dt><dd>{Object.entries(draft.browserContext.context.accessibility).length ? <dl>{Object.entries(draft.browserContext.context.accessibility).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl> : copy.browserContextNone}</dd><dt>{copy.browserContextMarkup}</dt><dd><pre>{draft.browserContext.context.outerHtml || copy.browserContextNone}</pre></dd></dl></details><Button ref={browserContextRemovalControl} variant="danger" disabled={busy} onClick={removeBrowserContext}>{copy.browserContextRemove}</Button></section>}
+    <div className="editor-image-order" aria-label={copy.realqaImages}>{draft.images.map((image, index) => <div key={image.id}><button ref={index === 0 ? previewFocusFallbackRef : (element) => { if (element) imageSelectorControls.current.set(image.id, element); else imageSelectorControls.current.delete(image.id); }} aria-pressed={image.id === active.id} onClick={() => setImageId(image.id)}>{copy.editorImage} {index + 1}</button><button disabled={busy || index === 0} aria-label={copy.editorMoveEarlier} onClick={() => moveImage(index, -1)}>←</button><button disabled={busy || index === draft.images.length - 1} aria-label={copy.editorMoveLater} onClick={() => moveImage(index, 1)}>→</button><button ref={(element) => { if (element) imageRemovalControls.current.set(image.id, element); else imageRemovalControls.current.delete(image.id); }} disabled={busy || draft.images.length === 1} aria-label={copy.editorRemove} onClick={() => void mutate({ kind: "remove-image", imageId: image.id })}>×</button></div>)}</div>
     <div className="editor-layout"><div className="editor-workspace"><div className="editor-canvas" role="img" aria-label={copy.editorCanvas} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp}>
       <img draggable={false} src={active.previewUrl} alt="" />
       <AnnotationOverlay image={active} drawing={drawing} tool={tool} />
@@ -629,13 +813,15 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
       <label>{copy.editorColor}<input type="color" value={color} onChange={(event) => setColor(event.target.value)} /></label><label>{copy.editorStrokeWidth}<input type="range" min="1" max="32" value={strokeWidth} onChange={(event) => setStrokeWidth(Number(event.target.value))} /></label>{tool === "text" && <label>{copy.editorTextValue}<input autoFocus value={text} onChange={(event) => setText(limitAnnotationText(event.target.value))} /></label>}
       <fieldset className="editor-coordinate-fields"><legend>{copy.editorCoordinates}</legend>{(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{copy[key === "x" ? "captureX" : key === "y" ? "captureY" : key === "width" ? "captureWidth" : "captureHeight"]}<input type="number" min={key === "width" || key === "height" ? 1 : undefined} value={coordinates[key]} aria-invalid={!coordinatesValid} aria-describedby={!coordinatesValid ? coordinateErrorId : undefined} onChange={(event) => setCoordinates((current) => ({ ...current, [key]: Number(event.target.value) }))} /></label>)}{!coordinatesValid && <p id={coordinateErrorId} className="editor-coordinate-error" role="alert">{copy.editorCoordinatesInvalid}</p>}<button disabled={busy || !coordinatesValid || (tool === "text" && !text)} onClick={addFromCoordinates}>{copy.editorAdd}</button></fieldset>
       <div className="actions"><button disabled={busy || !draft.canUndo} onClick={() => void history("capture.editor.undo")}>{copy.editorUndo}</button><button disabled={busy || !draft.canRedo} onClick={() => void history("capture.editor.redo")}>{copy.editorRedo}</button></div>
-      <LayerList image={active} mutate={mutate} copy={copy} disabled={busy} />
-      <button className="primary" disabled={busy} onClick={() => void flatten()}>{copy.editorFlatten}</button>
-      <button ref={submissionTrigger} className="primary" disabled={busy} onClick={() => setSubmissionOpen(true)}>{copy.issueSubmit}</button>
-      {message && <p role={failed ? "alert" : "status"}>{message}</p>}
+      <LayerList image={active} mutate={mutate} copy={copy} disabled={busy} onRemoveLayer={(layerId, control) => void mutate({ kind: "remove-layer", imageId: active.id, layerId }, (current) => {
+        if (document.activeElement === control) focusImageSelector(current.images, active.id);
+      })} />
+      <Button variant="primary" disabled={busy} onClick={() => void flatten()}>{copy.editorFlatten}</Button>
+      <Button ref={submissionTrigger} variant="primary" disabled={busy} onClick={() => setSubmissionOpen(true)}>{copy.issueSubmit}</Button>
+      {message && (failed ? <StatePanel eyebrow={copy.error} title={copy.realqaSaveTitle} summary={message} headingLevel={3} tone="danger" role="alert" /> : <div role="status"><StatusBadge tone="success">{message}</StatusBadge></div>)}
     </aside></div>
     {submissionOpen && <RealqaSubmissionModal draft={draft} bridge={bridge} copy={copy} onClose={closeSubmission} onConfirmed={confirmCreated} />}
-  </section>;
+  </section></Sheet>;
 }
 
 function AnnotationOverlay({ image, drawing, tool }: { readonly image: CaptureDraftImage; readonly drawing: readonly CapturePoint[]; readonly tool: EditorTool }) {
@@ -702,8 +888,8 @@ function arrowHeadPoints(start: CapturePoint, end: CapturePoint, width: number):
   return [point(-0.65), point(0.65)];
 }
 
-function LayerList({ image, mutate, copy, disabled }: { readonly image: CaptureDraftImage; readonly mutate: (command: CaptureEditorCommand) => Promise<void>; readonly copy: Copy; readonly disabled: boolean }) {
-  return <section aria-labelledby="editor-layers-title"><h4 id="editor-layers-title">{copy.editorLayers}</h4>{image.layers.length === 0 ? <p>{copy.editorNoLayers}</p> : <ol className="layer-list">{image.layers.map((layer, index) => <li key={layer.id}><span>{copy[layer.tool === "arrow" ? "editorArrow" : layer.tool === "rectangle" ? "editorRectangle" : layer.tool === "drawing" ? "editorDrawing" : layer.tool === "text" ? "editorText" : layer.tool === "blur" ? "editorBlur" : "editorRedaction"]}</span><button disabled={disabled || index === 0} aria-label={copy.editorMoveEarlier} onClick={() => void mutate({ kind: "move-layer", imageId: image.id, layerId: layer.id, toIndex: index - 1 })}>↑</button><button disabled={disabled || index === image.layers.length - 1} aria-label={copy.editorMoveLater} onClick={() => void mutate({ kind: "move-layer", imageId: image.id, layerId: layer.id, toIndex: index + 1 })}>↓</button><button disabled={disabled} aria-label={copy.editorRemove} onClick={() => void mutate({ kind: "remove-layer", imageId: image.id, layerId: layer.id })}>×</button></li>)}</ol>}</section>;
+function LayerList({ image, mutate, copy, disabled, onRemoveLayer }: { readonly image: CaptureDraftImage; readonly mutate: (command: CaptureEditorCommand) => Promise<void>; readonly copy: Copy; readonly disabled: boolean; readonly onRemoveLayer: (layerId: string, control: HTMLButtonElement) => void }) {
+  return <section aria-labelledby="editor-layers-title"><h3 id="editor-layers-title">{copy.editorLayers}</h3>{image.layers.length === 0 ? <p>{copy.editorNoLayers}</p> : <ol className="layer-list">{image.layers.map((layer, index) => <li key={layer.id}><span>{copy[layer.tool === "arrow" ? "editorArrow" : layer.tool === "rectangle" ? "editorRectangle" : layer.tool === "drawing" ? "editorDrawing" : layer.tool === "text" ? "editorText" : layer.tool === "blur" ? "editorBlur" : "editorRedaction"]}</span><button disabled={disabled || index === 0} aria-label={copy.editorMoveEarlier} onClick={() => void mutate({ kind: "move-layer", imageId: image.id, layerId: layer.id, toIndex: index - 1 })}>↑</button><button disabled={disabled || index === image.layers.length - 1} aria-label={copy.editorMoveLater} onClick={() => void mutate({ kind: "move-layer", imageId: image.id, layerId: layer.id, toIndex: index + 1 })}>↓</button><button disabled={disabled} aria-label={copy.editorRemove} onClick={(event) => onRemoveLayer(layer.id, event.currentTarget)}>×</button></li>)}</ol>}</section>;
 }
 
 function normalizeBounds(start: CapturePoint, end: CapturePoint): CaptureRect { return { x: Math.min(start.x, end.x), y: Math.min(start.y, end.y), width: Math.max(1, Math.abs(end.x - start.x)), height: Math.max(1, Math.abs(end.y - start.y)) }; }
