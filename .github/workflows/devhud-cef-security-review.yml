@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout pinned repository state
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -111,7 +111,7 @@ jobs:
           NODE
 
       - name: Upload bounded metadata report
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: devhud-cef-security-review-${{ github.run_id }}-${{ github.run_attempt }}
           path: devhud-cef-security-review.json
