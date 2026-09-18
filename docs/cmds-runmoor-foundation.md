@@ -83,6 +83,14 @@ Use `log/slog` text or JSON for lifecycle transitions, preparation duration, ret
 - `.github/workflows/runmoor.yml` adds read-only opt-in-path Docker integration without altering existing CI jobs or development ports. `.github/workflows/release-runmoor.yml` supports `runmoor@v<MAJOR.MINOR.PATCH>` tags and manual dispatch. Dry-run stages contain no signing or publication authority; initial releases are prereleases.
 - Release validation builds three architectures and verify archive inventory/checksums, strict tag parsing, prerelease marking, secret-free dry run and publication isolation. Real keyless signing occurs only in publication jobs with job-scoped permissions.
 
+### Implementation validation (2026-09-18)
+
+- Passed root `go test ./...` and `go vet ./...` after generating the administrator embed bundle; passed Runmoor unit/lifecycle/API tests and native macOS arm64 race tests.
+- Passed real local Docker plain and DinD integration: nested build, container-action workspace/externals mounts, service-container network and localhost access, CPU/memory configuration, fresh-adapter recovery, cancellation, repeated cleanup, and preservation of unrelated resources. No GitHub job was assigned in this validation.
+- Built and inspected all three native release archives, verified their exact inventory and SHA256SUMS, and ran the packaged macOS arm64 and Linux arm64 version commands. Windows amd64 command and test binaries cross-compiled successfully; Windows execution was not performed locally.
+- Passed public-docs `pnpm test`, workflow lint, 13 CI contract tests, and all 150 release fixture tests in a local Linux container. The Linux run supplies the Debian packaging utilities and GNU tar required by existing unrelated release fixtures.
+- Live GitHub authentication/job assignment, real local Tart execution, actual user-service installation, real signing, tag pushes and public release publication were intentionally not performed. Their implementation and test seams remain available; the preview must continue to disclose those live verification limits.
+
 ## Dependencies and Integrations
 
 Use GitHub.com scale-set APIs, a local Docker engine, external Tart/Guest Agent, launchd/systemd, and native sleep inhibition utilities. No public inbound endpoint is required; Docker/Tart use ordinary NAT. Public docs and release workflows remain in their existing repository domains.
