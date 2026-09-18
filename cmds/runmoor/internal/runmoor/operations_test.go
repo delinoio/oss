@@ -215,3 +215,126 @@ func TestGuestStateUsesCanonicalPrivateTemporaryDirectory(t *testing.T) {
 		t.Fatal("guest private state crosses an OS symlink")
 	}
 }
+
+type serviceFixture struct{ commands [][]string }
+
+func (f *serviceFixture) Run(_ context.Context, name string, args, env []string, _ io.Reader) ([]byte, error) {
+	f.commands = append(f.commands, append([]string{name}, args...))
+	for _, value := range env {
+		if strings.Contains(value, "fixture-service-secret") {
+			return nil, errors.New("credential copied into service command")
+		}
+	}
+	if name == "launchctl" && len(args) > 0 && args[0] == "print" {
+		return nil, errors.New("not loaded")
+	}
+	return nil, nil
+}
+func (f *serviceFixture) Start(string, []string, []string) (int, error) {
+	return 0, errors.New("unexpected service spawn")
+}
+func TestUserServiceLifecycleUsesIsolatedUserDirectory(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("supported user services")
+	}
+	c, s := fixtureStore(t)
+	s.Close()
+	home := filepath.Dir(c.Storage.State)
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", home)
+	t.Setenv("RUNMOOR_PAT", "fixture-service-secret")
+	fixture := &serviceFixture{}
+	for _, action := range []string{"install", "start", "stop", "uninstall"} {
+		if err := Service(context.Background(), action, filepath.Join(home, "config.toml"), c, fixture); err != nil {
+			t.Fatalf("%s: %v", action, err)
+		}
+		if action == "install" {
+			if err := Service(context.Background(), action, filepath.Join(home, "config.toml"), c, fixture); err == nil {
+				t.Fatal("service overwrite allowed")
+			}
+		}
+	}
+	if _, err := os.Stat(servicePath()); !os.IsNotExist(err) {
+		t.Fatal("service definition remains after uninstall")
+	}
+	if len(fixture.commands) < 3 {
+		t.Fatal("service manager lifecycle not exercised")
+	}
+}
+func TestCapacityWaitIsVisibleWithoutPreemptingWork(t *testing.T) {
+	m, _, _, driver, pool := testManager(t)
+	id := seedRunner(t, m, pool, Busy)
+	driver.live[id] = true
+	m.poolLoops[pool] = func() {}
+	m.Store.Update(func(s *Snapshot) error { s.Config.Host.MaxRunners = 1; s.Pools[pool].Demand = 2; return nil })
+	if err := m.step(); err != nil {
+		t.Fatal(err)
+	}
+	snap := m.Store.View()
+	if snap.Pools[pool].Problem == nil || snap.Pools[pool].Problem.Code != ErrCapacity || snap.Runners[id].Forced {
+		t.Fatal("capacity shortage is hidden or preempts work")
+	}
+}
+
+func TestForceStopCancelsInFlightPreparationImmediately(t *testing.T) {
+	m, _, _, _, pool := testManager(t)
+	id := seedRunner(t, m, pool, Preparing)
+	started := make(chan struct{})
+	cancelled := make(chan struct{})
+	m.startWork(id, func(ctx context.Context) { close(started); <-ctx.Done(); close(cancelled) })
+	<-started
+	if err := m.Stop(true); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-cancelled:
+	case <-time.After(time.Second):
+		t.Fatal("force stop left preparation waiting for its original timeout")
+	}
+}
+
+func TestConfigurationAcceptancePreservesConcurrentStop(t *testing.T) {
+	m, c, _, _, _ := testManager(t)
+	if err := m.Stop(false); err != nil {
+		t.Fatal(err)
+	}
+	c.Logging.Level = "debug"
+	if err := m.accept(c, false); err != nil {
+		t.Fatal(err)
+	}
+	if !m.Store.View().Stopping {
+		t.Fatal("reload cleared a committed stop request")
+	}
+}
+
+func TestPrivateControlSocketAndVersionedUncoloredStatus(t *testing.T) {
+	m, c, _, _, pool := testManager(t)
+	t.Setenv("RUNMOOR_TEST_CREDENTIAL", "host-only-test-credential")
+	seedRunner(t, m, pool, Busy)
+	server, err := m.ServeControl()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	info, err := os.Stat(filepath.Join(c.Storage.State, "control.sock"))
+	if err != nil || info.Mode().Perm() != 0600 {
+		t.Fatal("control socket is not private")
+	}
+	response, err := SendControl(context.Background(), c, ControlRequest{Action: "status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.SchemaVersion != 1 || response.Status.SchemaVersion != 1 || !response.Status.Running {
+		t.Fatal("invalid status envelope")
+	}
+	var output bytes.Buffer
+	printStatus(&output, response.Status, true)
+	if strings.Contains(output.String(), "\x1b") || strings.Contains(output.String(), "host-only-test-credential") {
+		t.Fatal("status leaks color or credentials")
+	}
+	invalid := m.Control(context.Background(), ControlRequest{Action: "pause", Force: true})
+	requireCode(t, invalid.Problem, ErrConfig)
+	if m.Store.View().Paused {
+		t.Fatal("invalid control mutated state")
+	}
+}

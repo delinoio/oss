@@ -179,7 +179,7 @@ func (d *DockerDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, 
 	if p.Mode == DinD {
 		initMounts = append(initMounts, mount.Mount{Type: mount.TypeVolume, Source: r.Name + "-externals", Target: "/run/runmoor-externals"}, mount.Mount{Type: mount.TypeVolume, Source: r.Name + "-socket", Target: "/run/runmoor-socket"})
 	}
-	initScript := `set -eu; uid=$(id -u runner); gid=$(id -g runner); chown "$uid:$gid" /run/runmoor-work; if [ "$2" = dind ]; then cp -a "$1/externals/." /run/runmoor-externals/; chown "$uid:$gid" /run/runmoor-socket; fi`
+	initScript := `set -eu; uid=$(id -u runner); gid=$(id -g runner); [ "$uid:$gid" = 1001:1001 ]; chown "$uid:$gid" /run/runmoor-work; if [ "$2" = dind ]; then cp -a "$1/externals/." /run/runmoor-externals/; chown "$uid:$gid" /run/runmoor-socket; fi`
 	init, e := cli.ContainerCreate(ctx, &container.Config{Image: p.Image, User: "root", Entrypoint: []string{"/bin/sh", "-c", initScript, "runmoor", p.RunnerPath, string(p.Mode)}, Labels: dockerLabels(s, r, "init")}, &container.HostConfig{NetworkMode: "none", Resources: limits(p.Resources), Mounts: initMounts, LogConfig: container.LogConfig{Type: "none"}}, nil, nil, r.Name+"-init")
 	if e != nil {
 		return dockerProblem()

@@ -67,6 +67,8 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 			return nil, m.imageFailure(im.ID, problem(ErrPreparation, "Cannot open the setup VM.", "Inspect Tart and close unused setup VMs before retrying."))
 		}
 	case "seal":
+		ctx, cancel := context.WithTimeout(ctx, c.Preparation(Tart))
+		defer cancel()
 		if im.Phase == ImageSealed {
 			return im, nil
 		}
@@ -276,6 +278,14 @@ func (m *ImageManager) Reconcile(ctx context.Context, c Config) error {
 		}
 		v, e := m.Tart.vm(ctx, c, im.VM)
 		if e != nil {
+			if err := m.Store.Update(func(s *Snapshot) error {
+				if im := s.Images[id]; im != nil && im.Problem == nil {
+					im.Problem = problem(ErrOwnership, "Image preparation state cannot be confirmed; its reservation remains held.", "Restore Tart connectivity and the matching private image data, then inspect image list. Preserve uncertain setup processes and ownership records.")
+				}
+				return nil
+			}); err != nil {
+				return err
+			}
 			continue
 		}
 		if !v.Running {

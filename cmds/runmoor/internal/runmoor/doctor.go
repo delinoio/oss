@@ -13,6 +13,7 @@ import (
 
 type Check struct {
 	Name    string   `json:"name"`
+	Image   string   `json:"image,omitempty"`
 	Pool    string   `json:"pool,omitempty"`
 	OK      bool     `json:"ok"`
 	Warning bool     `json:"warning,omitempty"`
@@ -22,10 +23,14 @@ type DoctorReport struct {
 	SchemaVersion int     `json:"schema_version"`
 	Version       string  `json:"version"`
 	Checks        []Check `json:"checks"`
+	Status        *Status `json:"status,omitempty"`
 }
 
 func Doctor(ctx context.Context, c Config, s Snapshot, factory func(Connection) (Remote, error), drivers DriverFactory) DoctorReport {
 	r := DoctorReport{SchemaVersion: 1, Version: Version, Checks: []Check{}}
+	if s.Installation != "" {
+		r.Status = statusOf(s, false)
+	}
 	add := func(name, pool string, err error, warning bool) {
 		v := Check{Name: name, Pool: pool, OK: err == nil, Warning: warning}
 		if err != nil {
@@ -35,12 +40,42 @@ func Doctor(ctx context.Context, c Config, s Snapshot, factory func(Connection) 
 	}
 	add("platform", "", platformCheck(ctx), false)
 	add("disk_reserve", "", diskCheck(c), false)
-	name, _ := powerCommand()
+	name, args := powerCommand()
+	if runtime.GOOS == "darwin" {
+		args = []string{"-i", "/usr/bin/true"}
+	} else {
+		args[len(args)-1] = "/bin/true"
+	}
 	_, err := exec.LookPath(name)
 	if err != nil {
 		err = problem(ErrPower, "Sleep inhibition utility is unavailable.", "Install or enable the documented OS sleep inhibition utility.")
 	}
+
+	if err == nil {
+		probe, cancel := context.WithTimeout(ctx, 5*time.Second)
+		_, err = (OSCommand{}).Run(probe, name, args, minimalEnv(), nil)
+		cancel()
+		if err != nil {
+			err = problem(ErrPower, "OS sleep inhibition could not be acquired in this user session.", "Check power-management permissions; work may continue without guaranteed sleep inhibition.")
+		}
+	}
 	add("sleep_inhibition", "", err, true)
+	for _, p := range s.Pools {
+		if p.Problem != nil {
+			add("pool_state", p.Spec.Name, p.Problem, false)
+		}
+	}
+	for _, runner := range s.Runners {
+		if runner.Phase != Completed && runner.Problem != nil {
+			add("execution_recovery", runner.PoolID, runner.Problem, false)
+		}
+	}
+
+	for _, im := range s.Images {
+		if im.Problem != nil {
+			r.Checks = append(r.Checks, Check{Name: "image_recovery", Image: im.ID, Problem: im.Problem})
+		}
+	}
 	for _, p := range c.Pools {
 		probe, cancel := context.WithTimeout(ctx, 30*time.Second)
 		driver, e := drivers(p.Backend)

@@ -45,10 +45,13 @@ func (m *Manager) remote(p PoolState) (Remote, error) {
 	}
 	return r, e
 }
-func (m *Manager) activate(c Config) error {
+func (m *Manager) activate(c Config) error { return m.accept(c, true) }
+func (m *Manager) accept(c Config, restart bool) error {
 	return m.Store.Update(func(s *Snapshot) error {
 		if s.Generation != "" && fingerprint(s.Config) == fingerprint(c) {
-			s.Stopping = false
+			if restart {
+				s.Stopping = false
+			}
 			return nil
 		}
 		gen := newID()
@@ -81,7 +84,9 @@ func (m *Manager) activate(c Config) error {
 		s.Config = c
 		s.Generation = gen
 		s.Generations[gen] = c
-		s.Stopping = false
+		if restart {
+			s.Stopping = false
+		}
 		return nil
 	})
 }
@@ -257,6 +262,7 @@ func (m *Manager) step() error {
 		})
 	}
 	var created []string
+	var capacityProblems []*Problem
 	err := m.Store.Update(func(v *Snapshot) error {
 		for _, poolID := range Schedule(*v) {
 			p := v.Pools[poolID]
@@ -266,11 +272,34 @@ func (m *Manager) step() error {
 			p.Problem = nil
 			created = append(created, id)
 		}
+
+		for _, p := range v.Pools {
+			if !eligible(*v, p) {
+				continue
+			}
+			count, busy := liveCount(*v, p.ID)
+			target := max(p.Demand, busy+p.Spec.MinIdle)
+			if count < target {
+				if p.Problem == nil || p.Problem.Code == ErrCapacity || p.Problem.Code == ErrDisk {
+					q := problem(ErrCapacity, "Available host or pool capacity is below requested demand or the idle target.", "Wait for owned jobs or image setup to finish, or adjust explicit budgets; running work is preserved.")
+					q.Pool = p.Spec.Name
+					if p.Problem == nil || p.Problem.Code != ErrCapacity {
+						capacityProblems = append(capacityProblems, q)
+					}
+					p.Problem = q
+				}
+			} else if p.Problem != nil && (p.Problem.Code == ErrCapacity || p.Problem.Code == ErrDisk) {
+				p.Problem = nil
+			}
+		}
 		v.Cursor++
 		return nil
 	})
 	if err != nil {
 		return err
+	}
+	for _, p := range capacityProblems {
+		logProblem(m.Log, "capacity_wait", p)
 	}
 	for _, id := range created {
 		id := id
@@ -864,12 +893,15 @@ func (m *Manager) Stop(force bool) error {
 		return nil
 	})
 	if err == nil {
+		if force {
+			m.cancelForcedWorkers("")
+		}
 		m.Log.Info("manager_stop_requested", "force", force)
 	}
 	return err
 }
 func (m *Manager) StopPool(name string, force bool) error {
-	return m.Store.Update(func(s *Snapshot) error {
+	err := m.Store.Update(func(s *Snapshot) error {
 		found := false
 		for _, p := range s.Pools {
 			if p.Spec.Name != name || p.Phase == Retired {
@@ -893,6 +925,23 @@ func (m *Manager) StopPool(name string, force bool) error {
 		}
 		return nil
 	})
+	if err == nil && force {
+		m.cancelForcedWorkers(name)
+	}
+	return err
+}
+func (m *Manager) cancelForcedWorkers(name string) {
+	s := m.Store.View()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, r := range s.Runners {
+		if !r.Forced || (name != "" && s.Pools[r.PoolID].Spec.Name != name) {
+			continue
+		}
+		if cancel := m.workers[id]; cancel != nil {
+			cancel()
+		}
+	}
 }
 func (m *Manager) Pause(name string) error {
 	return m.Store.Update(func(s *Snapshot) error {
@@ -974,6 +1023,8 @@ func (m *Manager) validatePool(ctx context.Context, c Config, p Pool, s Snapshot
 func (m *Manager) Reload(ctx context.Context) error {
 	m.reloadMu.Lock()
 	defer m.reloadMu.Unlock()
+	m.imageMu.Lock()
+	defer m.imageMu.Unlock()
 	c, e := LoadConfig(m.ConfigPath)
 	if e != nil {
 		return e
@@ -987,7 +1038,7 @@ func (m *Manager) Reload(ctx context.Context) error {
 			return e
 		}
 	}
-	if e = m.activate(c); e != nil {
+	if e = m.accept(c, false); e != nil {
 		return e
 	}
 	m.Log.Info("configuration_accepted", "generation", m.Store.View().Generation)

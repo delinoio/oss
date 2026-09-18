@@ -368,6 +368,14 @@ func printStatus(w io.Writer, s *Status, jsonOutput bool) {
 			fmt.Fprintln(w, r.Problem.Error())
 		}
 	}
+	for _, im := range s.Images {
+		if im.Phase != ImageSealed || im.Problem != nil {
+			fmt.Fprintf(w, "Image %s: %s\n", im.ID, im.Phase)
+			if im.Problem != nil {
+				fmt.Fprintln(w, im.Problem.Error())
+			}
+		}
+	}
 	if s.Power != nil {
 		fmt.Fprintln(w, s.Power.Error())
 	}

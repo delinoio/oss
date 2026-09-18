@@ -41,6 +41,7 @@ type Status struct {
 	PendingCleanup int          `json:"pending_cleanup"`
 	Pools          []PoolStatus `json:"pools"`
 	Runners        []Runner     `json:"runners"`
+	Images         []*Image     `json:"images"`
 	Power          *Problem     `json:"power_warning,omitempty"`
 }
 type PoolStatus struct {
@@ -58,7 +59,7 @@ type PoolStatus struct {
 
 func statusOf(s Snapshot, running bool) *Status {
 	used, n, vms := usage(s)
-	v := &Status{SchemaVersion: 1, Version: Version, Running: running, Generation: s.Generation, Paused: s.Paused, Stopping: s.Stopping, Budget: s.Config.Host, Reserved: used, Active: n, VMs: vms, PendingCleanup: pendingCleanup(s), Pools: []PoolStatus{}, Runners: []Runner{}, Power: s.PowerProblem}
+	v := &Status{SchemaVersion: 1, Version: Version, Running: running, Generation: s.Generation, Paused: s.Paused, Stopping: s.Stopping, Budget: s.Config.Host, Reserved: used, Active: n, VMs: vms, PendingCleanup: pendingCleanup(s), Pools: []PoolStatus{}, Runners: []Runner{}, Power: s.PowerProblem, Images: []*Image{}}
 	for _, p := range sortedPools(s) {
 		if p.Phase == Retired {
 			continue
@@ -71,6 +72,10 @@ func statusOf(s Snapshot, running bool) *Status {
 			v.Runners = append(v.Runners, *r)
 		}
 	}
+	for _, im := range s.Images {
+		v.Images = append(v.Images, im)
+	}
+	sort.Slice(v.Images, func(i, j int) bool { return v.Images[i].ID < v.Images[j].ID })
 	sort.Slice(v.Runners, func(i, j int) bool { return v.Runners[i].ID < v.Runners[j].ID })
 	return v
 }
@@ -129,6 +134,9 @@ func (m *Manager) Control(ctx context.Context, req ControlRequest) ControlRespon
 	case "doctor":
 		s := m.Store.View()
 		r := Doctor(ctx, s.Config, s, m.RemoteFactory, m.Drivers)
+		if r.Status != nil {
+			r.Status.Running = true
+		}
 		resp.Doctor = &r
 	case "status":
 		resp.Status = statusOf(m.Store.View(), true)
