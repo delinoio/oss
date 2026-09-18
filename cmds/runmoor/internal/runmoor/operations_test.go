@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -224,6 +225,87 @@ func TestPowerFailureRemainsWarningAndJobsKeepRunning(t *testing.T) {
 	}
 	if !p.active || m.Store.View().PowerProblem == nil || m.Store.View().Runners[id].Forced {
 		t.Fatal("power failure interrupted work or disappeared")
+	}
+}
+
+func TestImageMutationsRequireManagerBeforeOfflineSideEffects(t *testing.T) {
+	for _, action := range []string{"create", "open", "seal", "remove"} {
+		t.Run(action, func(t *testing.T) {
+			c := fixtureConfig(t)
+			c.Pools, c.Connections = nil, nil
+			path := filepath.Join(filepath.Dir(c.Storage.State), "config.toml")
+			data, err := toml.Marshal(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			var out bytes.Buffer
+			if Execute([]string{"--config", path, "image", action}, &out, &out) != 1 || !strings.Contains(out.String(), string(ErrControl)) {
+				t.Fatal("image mutation did not require its lifetime owner", out.String())
+			}
+			if _, err = os.Stat(c.Storage.State); !os.IsNotExist(err) {
+				t.Fatal("offline image mutation created state")
+			}
+		})
+	}
+}
+
+func TestImageOnlyManagerKeepsOpenSetupInhibitedAfterCLIReturns(t *testing.T) {
+	c, s := fixtureStore(t)
+	c.Pools, c.Connections = nil, nil
+	c, err := NormalizeConfig(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(c.Storage.State, "config.toml")
+	data, err := toml.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager(s, path, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(func() { m.cancel(); m.wg.Wait() })
+	driver, _ := fakeTart(c)
+	m.Images.Tart = driver
+	power := &failingPower{}
+	m.Power = power
+	if err = m.activate(c); err != nil {
+		t.Fatal(err)
+	}
+	server, err := m.ServeControl()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	cli := func(args ...string) {
+		t.Helper()
+		var out bytes.Buffer
+		if Execute(append([]string{"--config", path, "image"}, args...), &out, &out) != 0 {
+			t.Fatal(out.String())
+		}
+	}
+	cli("create", "--name", "setup", "--ipsw", "/operator/local.ipsw", "--cpu", "1", "--memory-mib", "512")
+	var id string
+	for key := range s.View().Images {
+		id = key
+	}
+	cli("open", "--id", id)
+	if err = m.step(); err != nil {
+		t.Fatal(err)
+	}
+	if !power.active || s.View().Images[id].Phase != ImageOpen {
+		t.Fatal("setup lifetime lost its sleep inhibitor when the CLI returned")
+	}
+	cli("seal", "--id", id, "--runner-version", "2.337.0")
+	if err = m.step(); err != nil {
+		t.Fatal(err)
+	}
+	if power.active {
+		t.Fatal("sealed, stopped image retained its sleep inhibitor")
 	}
 }
 

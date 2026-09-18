@@ -44,6 +44,8 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 
 ### Tart images and jobs
 
+- Image mutations require a running manager; the CLI never executes them offline. The manager retains sleep inhibition for open setup/validation revisions after the request returns. Offline image listing remains available. Initial setup accepts explicit host budgets with no pools/connections; add the Tart pool and reload after sealing.
+
 - Initial compatibility pins: Tart 2.37.0, Guest Agent 0.14.2, macOS 14+ arm64. Require functional Guest Agent RPC and an exact runner version in the prepared non-root guest account.
 - `image create --name NAME --cpu N --memory-mib N` accepts exactly one `--ipsw PATH` or `--from SOURCE`. Sources are a stopped local Tart name (optional `--source-home`), absolute `.tvm`, sealed Runmoor revision UUID, or `oci://` input resolved to a digest. Imports never modify the operator's source image.
 - `image open --id UUID` opens a mutable setup revision for account/Xcode/tool installation. `image seal --id UUID --runner-version VERSION [--runner-path PATH]` validates guest readiness, clean runner registration/workspace and exact versions, stops the VM, hashes the base files and publishes an immutable local revision. Editing requires a new revision. `image remove` refuses referenced or active images.
@@ -61,7 +63,7 @@ launchd and systemd user services invoke the same foreground manager and drain c
 - State: `$XDG_STATE_HOME/runmoor`, otherwise `~/.local/state/runmoor`.
 - Data: `$XDG_DATA_HOME/runmoor`, otherwise `~/.local/share/runmoor`.
 - TOML may override absolute state/data directories. The Unix socket path must fit macOS's length limit. Directories are mode 0700; files/socket are 0600. Reject symlinks and foreign ownership at sensitive file boundaries.
-- SQLite schema v1 stores an atomic snapshot row under WAL/FULL durability: installation identity, configuration generations/references, pool/session metadata without tokens, runner lifecycle and reservations, image revisions, and cleanup progress. A nonblocking file lock excludes concurrent manager or offline image ownership of the same state.
+- SQLite schema v1 stores an atomic snapshot row under WAL/FULL durability: installation identity, configuration generations/references, pool/session metadata without tokens, runner lifecycle and reservations, image revisions, and cleanup progress. A nonblocking file lock excludes concurrent manager or offline state access.
 - Delete completed execution history after seven days. Preserve unresolved cleanup and ownership indefinitely. Sealed images remain until explicit deletion. Unsupported state versions are rejected without conversion.
 - Storage relocation is accepted only after all executions complete cleanup and all image setup/removal operations close; it atomically rebinds retained generations while preserving installation ownership. Backup only after drain and stop: preserve the complete state and managed data directories, protect referenced credentials separately, and pair backups with a compatible binary. Updates and rollback are manual; never open a newer state schema with an older binary.
 

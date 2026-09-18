@@ -101,7 +101,7 @@
 - Rspress routes, navigation, and sidebar in `apps/public-docs/rspress.config.ts` must stay aligned with `docs/apps-public-docs-foundation.md`.
 - `public-docs` must use clean URLs, write production output to `apps/public-docs/doc_build`, and validate stable route artifacts plus generated internal `.html` links through `pnpm --filter public-docs test`.
 - Current public-docs in-site top-level product page IDs are `devhud`, `cargo-mono`, `derun`, `with-watch`, and `runmoor`.
-- Runmoor public routes must document all supported CLI/configuration and image/service workflows, manual verification/update/rollback, external licenses, and the unverified live GitHub/Tart preview boundary. Keep internal scheduling/storage implementation in `docs/`.
+- Runmoor public routes must document all supported CLI/configuration and image/service workflows, manual verification/update/rollback, external licenses, and the unverified live GitHub/Tart preview boundary. Document that image changes require a running manager, including initial preparation without pools or connections. Keep internal scheduling/storage implementation in `docs/`.
 - The stable `/devhud` page documents public product availability and the coordinated all-channels GA rule without exposing release credentials, private workflow details, or deployment internals.
 - Nodeup and binpm are major public projects exposed from `apps/public-docs` through external top-level navigation links: Nodeup points to `https://nodeup.delino.io` and binpm points to `https://binpm.delino.io`.
 - The legacy `/nodeup` public-docs route must remain a lightweight handoff page to `https://nodeup.delino.io` for compatibility with previously shared URLs.

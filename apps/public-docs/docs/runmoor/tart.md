@@ -2,6 +2,20 @@
 
 Install **Tart 2.37.0** on macOS 14+ arm64 yourself. Install **Tart Guest Agent 0.14.2** with RPC enabled in the guest's non-root runner account. Account setup, login, Xcode licensing and tools remain manual. Review the version-specific [Tart license](https://github.com/openai/tart/blob/2.37.0/LICENSE) and [Guest Agent license](https://github.com/openai/tart-guest-agent/blob/v0.14.2/LICENSE), currently FSL-1.1-ALv2, plus the applicable Apple software terms. They are external software, not bundled or relicensed by Runmoor.
 
+Image changes (`create`, `open`, `seal`, `remove`) require a running manager. Keep `runmoor run` or the user service running until setup and validation finish, so sleep inhibition covers a setup VM after `image open` returns. `image list` remains available offline. For the first image, start with a configuration containing only explicit host budgets and no pools or connections:
+
+```toml
+schema_version = 1
+
+[host]
+max_runners = 2
+cpu = 4
+memory_mib = 8192
+min_free_disk_mib = 20480
+```
+
+Choose budgets appropriate for your Mac, start `runmoor run`, and issue image commands from a second terminal using the same configuration. After sealing, add the connection and Tart pool, then run `runmoor reload`.
+
 ```sh
 runmoor image create --name xcode --ipsw "$HOME/Downloads/restore.ipsw" --cpu 2 --memory-mib 4096
 runmoor image create --name imported --from LOCAL_TART_NAME --cpu 2 --memory-mib 4096

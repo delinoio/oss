@@ -184,6 +184,7 @@ func Execute(args []string, out, errOut io.Writer) int {
 			if p, ok := sendErr.(*Problem); !ok || p.Code != ErrControl {
 				return printFailure(errOut, *jsonOutput, sendErr)
 			}
+			return printFailure(errOut, *jsonOutput, problem(ErrControl, "Image changes require a running manager to supervise setup and sleep inhibition.", "Start 'runmoor run' or the user service with this configuration. For initial image preparation, omit pools until a revision is sealed."))
 		}
 		if command == "status" || command == "image" && sub == "list" {
 			action := "status"
@@ -233,20 +234,13 @@ func Execute(args []string, out, errOut io.Writer) int {
 		images := &ImageManager{Store: store, Tart: &TartDriver{Exec: OSCommand{}}}
 		probe, cancel := context.WithTimeout(ctx, 2*time.Hour)
 		defer cancel()
-		if sub == "list" {
-			_ = images.Reconcile(probe, c)
-			var all []*Image
-			for _, v := range store.View().Images {
-				all = append(all, v)
-			}
-			writeJSON(out, ControlResponse{SchemaVersion: 1, Images: all})
-			return 0
+		_ = images.Reconcile(probe, c)
+		var all []*Image
+		for _, v := range store.View().Images {
+			all = append(all, v)
 		}
-		v, er := images.Operate(probe, c, im)
-		e = er
-		if e == nil {
-			writeJSON(out, v)
-		}
+		writeJSON(out, ControlResponse{SchemaVersion: 1, Images: all})
+		return 0
 	case "reload", "pause", "resume", "drain", "stop":
 		probe, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		_, e = SendControl(probe, c, ControlRequest{Action: command, Pool: *pool, Force: *force})
