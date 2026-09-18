@@ -195,7 +195,7 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 
-# Turborepo
+# Legacy task cache (older checkouts)
 .turbo/
 
 # air tmp files

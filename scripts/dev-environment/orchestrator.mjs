@@ -173,10 +173,12 @@ function testingOverrides(source = process.env) {
   );
 }
 
-function rootChildEnvironment(mode) {
+// Vite Task 0.3.3 does not filter the environment of uncached tasks. Keep this
+// boundary independent of runner caching, including during future upgrades.
+export function rootChildEnvironment(mode, source = process.env, platform = process.platform) {
   return {
-    ...safeBaseEnvironment(),
-    ...testingOverrides(),
+    ...safeBaseEnvironment(source, platform),
+    ...testingOverrides(source),
     DEVHUD_LOCAL_MODE: mode,
   };
 }
@@ -350,10 +352,10 @@ async function requireTeamEnvironment(lifecycle) {
   await exactInfisicalVersion(lifecycle);
   const { configFile } = resolveInfisicalConfigPaths();
   if (!(await exists(configFile))) {
-    throw new Error("[project.uninitialized] local Infisical project configuration is missing; run pnpm env:login");
+    throw new Error("[project.uninitialized] local Infisical project configuration is missing; run pnpm exec vp run env:login");
   }
   if (!(await authenticated(lifecycle))) {
-    throw new Error("[authentication.required] Infisical authentication is required; run pnpm env:login");
+    throw new Error("[authentication.required] Infisical authentication is required; run pnpm exec vp run env:login");
   }
 }
 
@@ -490,7 +492,7 @@ async function acquireTeamConfigurationPin({ comparisonKey, issuerDigest }) {
   } catch (error) {
     if (error.code !== "EEXIST") throw error;
     throw new Error(
-      "[state.team-startup-active] another pnpm dev invocation already owns this checkout; stop it, or remove the ignored team configuration pin only after confirming no team development process remains",
+      "[state.team-startup-active] another pnpm exec vp run dev invocation already owns this checkout; stop it, or remove the ignored team configuration pin only after confirming no team development process remains",
     );
   }
 
@@ -558,10 +560,10 @@ async function checkDocker(lifecycle) {
     );
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
-    throw new Error("[tool.missing] Docker with Compose support is required for pnpm dev:oss");
+    throw new Error("[tool.missing] Docker with Compose support is required for pnpm exec vp run dev:oss");
   }
   if (result.code !== 0) {
-    throw new Error("[tool.missing] Docker with Compose support is required for pnpm dev:oss");
+    throw new Error("[tool.missing] Docker with Compose support is required for pnpm exec vp run dev:oss");
   }
   await assertLocalDockerDaemon(lifecycle, docker);
 }
@@ -625,7 +627,7 @@ async function assertLocalDockerDaemon(lifecycle, docker) {
     : selectedHost || (await inspectDockerEndpoint(lifecycle, docker));
   if (!dockerEndpointIsLocal(endpoint)) {
     throw new Error(
-      "[docker.remote-daemon] pnpm dev:oss requires a local Docker socket, named pipe, or loopback TCP endpoint",
+      "[docker.remote-daemon] pnpm exec vp run dev:oss requires a local Docker socket, named pipe, or loopback TCP endpoint",
     );
   }
 }
@@ -655,7 +657,7 @@ async function acquireOssStartupLock(source = process.env) {
   } catch (error) {
     if (error.code !== "EEXIST") throw error;
     throw new Error(
-      "[state.oss-startup-active] another pnpm dev:oss invocation already owns this checkout; stop it, or remove the ignored OSS startup lock only after confirming no development process remains",
+      "[state.oss-startup-active] another pnpm exec vp run dev:oss invocation already owns this checkout; stop it, or remove the ignored OSS startup lock only after confirming no development process remains",
     );
   }
 
@@ -770,20 +772,16 @@ export async function down({ quiet = false, projectName, lifecycle } = {}) {
   if (!quiet) process.stdout.write("OSS dependencies stopped; persistent volumes were preserved.\n");
 }
 
-async function startTurbo(lifecycle, mode) {
+export const developmentTaskArguments = Object.freeze([
+  "exec", "vp", "run", "--parallel", "--concurrency-limit=3",
+  "--filter=devhud", "--filter=devhud-admin", "--filter=@delinoio/devhud-api", "dev",
+]);
+
+async function startTasks(lifecycle, mode) {
   const pnpm = toolInvocation("pnpm", "DEVHUD_TEST_PNPM");
   return lifecycle.run(
     pnpm.command,
-    [
-      ...pnpm.prefix,
-      "exec",
-      "turbo",
-      "run",
-      "dev",
-      "--filter=devhud",
-      "--filter=devhud-admin",
-      "--filter=@delinoio/devhud-api",
-    ],
+    [...pnpm.prefix, ...developmentTaskArguments],
     { cwd: repositoryRoot, env: rootChildEnvironment(mode) },
   );
 }
@@ -797,7 +795,7 @@ async function startTeam(lifecycle) {
   );
   try {
     await runService(lifecycle, "team", "api", "migrate");
-    return await startTurbo(lifecycle, "team");
+    return await startTasks(lifecycle, "team");
   } finally {
     await releaseConfigurationPin();
   }
@@ -837,7 +835,7 @@ async function startOss(lifecycle) {
         throw new Error("[dependencies.start] OSS dependencies did not become healthy");
       }
       await runService(lifecycle, "oss", "api", "migrate");
-      return await startTurbo(lifecycle, "oss");
+      return await startTasks(lifecycle, "oss");
     } finally {
       if (dependenciesStarted || lifecycle.signal) {
         await down({ quiet: Boolean(lifecycle.signal), projectName, lifecycle });

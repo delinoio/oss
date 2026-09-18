@@ -7,25 +7,25 @@ This workspace contains one bilingual React/Rsbuild shell and target-isolated Ru
 From the repository root:
 
 ```sh
-pnpm --filter devhud dev
-pnpm --filter devhud build
-pnpm --filter devhud test
-pnpm --filter devhud typecheck
-pnpm --filter devhud lint
-pnpm --filter devhud test:unit
-pnpm --filter devhud test:components
-pnpm --filter devhud test:accessibility
-pnpm --filter devhud test:security
-pnpm --filter devhud test:adapters
-pnpm --filter devhud test:native:capture
-pnpm --filter devhud test:native:shortcuts
-pnpm --filter devhud test:native:ipc
-pnpm --filter devhud test:native:updater
-pnpm --filter devhud build:frontend
-pnpm --filter devhud verify:pins
-pnpm --filter devhud mobile:generate
-pnpm --filter devhud verify:mobile
-pnpm --filter devhud smoke:platform
+pnpm exec vp run devhud#dev
+pnpm exec vp run devhud#build
+pnpm exec vp run devhud#test
+pnpm exec vp run devhud#typecheck
+pnpm exec vp run devhud#lint
+pnpm exec vp run devhud#test:unit
+pnpm exec vp run devhud#test:components
+pnpm exec vp run devhud#test:accessibility
+pnpm exec vp run devhud#test:security
+pnpm exec vp run devhud#test:adapters
+pnpm exec vp run devhud#test:native:capture
+pnpm exec vp run devhud#test:native:shortcuts
+pnpm exec vp run devhud#test:native:ipc
+pnpm exec vp run devhud#test:native:updater
+pnpm exec vp run devhud#build:frontend
+pnpm exec vp run devhud#verify:pins
+pnpm exec vp run devhud#mobile:generate
+pnpm exec vp run devhud#verify:mobile
+pnpm exec vp run devhud#smoke:platform
 ```
 
 The split commands are the CI contracts for frontend, credential/redaction and direct-provider fixtures, and native capture/shortcut/IPC/updater conformance. They do not sign, publish, deploy, or contact release services.

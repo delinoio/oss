@@ -1,11 +1,3 @@
-import { spawnSync } from "node:child_process";
-
-const packageManagerPath = process.env.npm_execpath;
-if (!packageManagerPath) throw new Error("package manager entrypoint is unavailable");
-
-const result = spawnSync(process.execPath, [packageManagerPath, "run", "build"], {
-  env: { ...process.env, DEVHUD_EXTENSION_TEST_BUILD: "1" },
-  stdio: "inherit",
-});
-if (result.error) throw result.error;
-process.exitCode = result.status ?? 1;
+// Fixture identity is restricted to validation builds; production requires the release identity.
+process.env.DEVHUD_EXTENSION_TEST_BUILD = "1";
+await import("./compile.mjs");

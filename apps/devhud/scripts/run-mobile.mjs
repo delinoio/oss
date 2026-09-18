@@ -87,7 +87,7 @@ export function mobileExecution(rawArguments) {
     return {
       command: "xcodebuild",
       prerequisites: [
-        { command: "pnpm", arguments: ["build:frontend"], env: { TAURI_ENV_PLATFORM: "ios" } },
+        { command: "pnpm", arguments: ["exec", "vp", "run", "build:frontend"], env: { TAURI_ENV_PLATFORM: "ios" } },
         { command: "cargo", arguments: ["build", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "cli", "--bin", "devhud-tauri-cli"] },
       ],
       optionsServerArguments: [...rawArguments, "--open"],

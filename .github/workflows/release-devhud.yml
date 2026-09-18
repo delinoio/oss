@@ -478,7 +478,7 @@ jobs:
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc, cache: pnpm }
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm --filter public-docs test
+      - run: pnpm exec vp run public-docs#test
       - name: Bind the DevHud page to the exact release candidate
         env:
           DEVHUD_DOCS_RELEASE_IDENTITY: "devhud@v${{ needs.identity.outputs.version }}@${{ needs.identity.outputs.revision }}"

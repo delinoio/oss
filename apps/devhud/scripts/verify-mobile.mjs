@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import taskConfig from "../vite.config.ts";
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -102,7 +103,7 @@ assertMobileContracts({
   iosNativeBridge: text("src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift"),
   iosWidgetStateStore: text("src-tauri/mobile/ios/Sources/WidgetStateStore.swift"),
   iosPlist: text("src-tauri/Info.ios.plist"),
-  packageJson: json("package.json"),
+  tasks: taskConfig.run.tasks,
   nativeBridge: text("src/native-bridge.ts"),
   app: text("src/App.tsx"),
   workflow: readFileSync(join(repoRoot, ".github/workflows/CI.yml"), "utf8"),

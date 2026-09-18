@@ -48,10 +48,10 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Validate workflow syntax
-        run: pnpm ci:workflows
+        run: pnpm exec vp run ci:workflows
 
-      - name: Validate CI contracts and affected behavior
-        run: pnpm ci:contracts
+      - name: Validate CI contracts and path selection
+        run: pnpm exec vp run ci:contracts
 
   go-quality:
     name: Go Quality
@@ -69,6 +69,11 @@ jobs:
         with:
           filters: |
             go:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
               - .github/workflows/CI.yml
               - go.mod
               - go.sum
@@ -80,6 +85,10 @@ jobs:
               - packages/devhud-api-client/**
               - protos/**
               - servers/**
+              - .nvmrc
+              - scripts/**
+              - .nvmrc
+              - scripts/**
 
       - name: Determine whether to run
         id: gate
@@ -127,7 +136,7 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
           pnpm install --frozen-lockfile --ignore-scripts
-          pnpm --filter devhud-admin build:embedded
+          pnpm exec vp run devhud-admin#build:embedded
 
       - name: Check go fmt
         if: ${{ steps.gate.outputs.run == 'true' }}
@@ -168,6 +177,11 @@ jobs:
         with:
           filters: |
             go:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
               - .github/workflows/CI.yml
               - go.mod
               - go.sum
@@ -226,7 +240,7 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
           pnpm install --frozen-lockfile --ignore-scripts
-          pnpm --filter devhud-admin build:embedded
+          pnpm exec vp run devhud-admin#build:embedded
 
       - name: Run go test
         if: ${{ steps.gate.outputs.run == 'true' }}
@@ -262,7 +276,9 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Test repository environment contract
-        run: pnpm test:dev-environment
+        run: |
+          pnpm exec vp run test:dev-environment
+          pnpm exec vp run test:tasks
 
 
   rust-fmt:
@@ -345,17 +361,27 @@ jobs:
         with:
           filters: |
             rust:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
               - .github/workflows/CI.yml
               - Cargo.toml
               - Cargo.lock
-              - '**/Cargo.toml'
-              - '**/Cargo.lock'
+              - **/Cargo.toml
+              - **/Cargo.lock
               - rust-toolchain
               - rust-toolchain.toml
-              - '**/rust-toolchain'
-              - '**/rust-toolchain.toml'
-              - '**/*.rs'
+              - **/rust-toolchain
+              - **/rust-toolchain.toml
+              - **/*.rs
               - crates/**
+              - .nvmrc
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - scripts/**
 
       - name: Determine whether to run
         id: gate
@@ -405,7 +431,7 @@ jobs:
 
       - name: Build DevHUD frontend
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: pnpm --filter devhud build:frontend
+        run: pnpm exec vp run devhud#build:frontend
 
       - name: Install DevHUD Linux prerequisites
         if: ${{ steps.gate.outputs.run == 'true' }}
@@ -437,17 +463,27 @@ jobs:
         with:
           filters: |
             rust:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
               - .github/workflows/CI.yml
               - Cargo.toml
               - Cargo.lock
-              - '**/Cargo.toml'
-              - '**/Cargo.lock'
+              - **/Cargo.toml
+              - **/Cargo.lock
               - rust-toolchain
               - rust-toolchain.toml
-              - '**/rust-toolchain'
-              - '**/rust-toolchain.toml'
-              - '**/*.rs'
+              - **/rust-toolchain
+              - **/rust-toolchain.toml
+              - **/*.rs
               - crates/**
+              - .nvmrc
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - scripts/**
 
       - name: Determine whether to run
         id: gate
@@ -496,7 +532,7 @@ jobs:
 
       - name: Build DevHUD frontend
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: pnpm --filter devhud build:frontend
+        run: pnpm exec vp run devhud#build:frontend
 
       - name: Install DevHUD Linux prerequisites
         if: ${{ steps.gate.outputs.run == 'true' }}
@@ -530,6 +566,18 @@ jobs:
           filters: |
             ci_workflow:
               - .github/workflows/CI.yml
+            workspace:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
+              - .nvmrc
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - scripts/**
+              - apps/mpapp/**
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v5
@@ -539,7 +587,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: lts/*
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
@@ -549,27 +597,11 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
-          PUSH_BASE: ${{ github.event.before }}
-          PUSH_HEAD: ${{ github.sha }}
-          WORKSPACE: mpapp
+          CHANGED: ${{ steps.filter.outputs.workspace }}
         run: |
-          set -euo pipefail
-
           run=false
-          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
-            run=true
-          else
-            if [ "${EVENT_NAME}" = "push" ]; then
-              export TURBO_SCM_BASE="${PUSH_BASE}"
-              export TURBO_SCM_HEAD="${PUSH_HEAD}"
-            fi
-            pnpm install --frozen-lockfile --ignore-scripts
-            affected_json="$(pnpm exec turbo run test --affected --filter "${WORKSPACE}" --dry=json)"
-            printf '%s\n' "${affected_json}"
-            run="$(printf '%s' "${affected_json}" | jq -r '.tasks | any(.package == env.WORKSPACE)')"
-          fi
-
-          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$CI_WORKFLOW_CHANGED" = true ] || [ "$CHANGED" = true ]; then run=true; fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
 
       - name: Skip (mpapp unaffected)
         if: ${{ steps.gate.outputs.run != 'true' }}
@@ -582,22 +614,7 @@ jobs:
 
       - name: Run mpapp tests
         if: ${{ steps.gate.outputs.run == 'true' }}
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' }}
-          PUSH_BASE: ${{ github.event.before }}
-          PUSH_HEAD: ${{ github.sha }}
-        run: |
-          args=(run test --filter mpapp)
-          if [ "$FORCE_RUN" != true ]; then
-            args+=(--affected)
-            if [ "$EVENT_NAME" = push ]; then
-              export TURBO_SCM_BASE="$PUSH_BASE"
-              export TURBO_SCM_HEAD="$PUSH_HEAD"
-            fi
-          fi
-          pnpm exec turbo "${args[@]}"
+        run: pnpm exec vp run mpapp#test
 
   node-mpapp-lint:
     name: Node mpapp lint
@@ -616,6 +633,18 @@ jobs:
           filters: |
             ci_workflow:
               - .github/workflows/CI.yml
+            workspace:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
+              - .nvmrc
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - scripts/**
+              - apps/mpapp/**
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v5
@@ -625,7 +654,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: lts/*
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
@@ -635,27 +664,11 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
-          PUSH_BASE: ${{ github.event.before }}
-          PUSH_HEAD: ${{ github.sha }}
-          WORKSPACE: mpapp
+          CHANGED: ${{ steps.filter.outputs.workspace }}
         run: |
-          set -euo pipefail
-
           run=false
-          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
-            run=true
-          else
-            if [ "${EVENT_NAME}" = "push" ]; then
-              export TURBO_SCM_BASE="${PUSH_BASE}"
-              export TURBO_SCM_HEAD="${PUSH_HEAD}"
-            fi
-            pnpm install --frozen-lockfile --ignore-scripts
-            affected_json="$(pnpm exec turbo run lint --affected --filter "${WORKSPACE}" --dry=json)"
-            printf '%s\n' "${affected_json}"
-            run="$(printf '%s' "${affected_json}" | jq -r '.tasks | any(.package == env.WORKSPACE)')"
-          fi
-
-          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$CI_WORKFLOW_CHANGED" = true ] || [ "$CHANGED" = true ]; then run=true; fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
 
       - name: Skip (mpapp unaffected)
         if: ${{ steps.gate.outputs.run != 'true' }}
@@ -668,23 +681,7 @@ jobs:
 
       - name: Run mpapp lint
         if: ${{ steps.gate.outputs.run == 'true' }}
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' }}
-          PUSH_BASE: ${{ github.event.before }}
-          PUSH_HEAD: ${{ github.sha }}
-        run: |
-          args=(run lint --filter mpapp)
-          if [ "$FORCE_RUN" != true ]; then
-            args+=(--affected)
-            if [ "$EVENT_NAME" = push ]; then
-              export TURBO_SCM_BASE="$PUSH_BASE"
-              export TURBO_SCM_HEAD="$PUSH_HEAD"
-            fi
-          fi
-          pnpm exec turbo "${args[@]}"
-
+        run: pnpm exec vp run mpapp#lint
 
   node-binpm-docs-test:
     name: Node binpm-docs test
@@ -703,6 +700,18 @@ jobs:
           filters: |
             ci_workflow:
               - .github/workflows/CI.yml
+            workspace:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
+              - .nvmrc
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - scripts/**
+              - apps/binpm-docs/**
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v5
@@ -712,7 +721,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: lts/*
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
@@ -722,27 +731,11 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
-          PUSH_BASE: ${{ github.event.before }}
-          PUSH_HEAD: ${{ github.sha }}
-          WORKSPACE: binpm-docs
+          CHANGED: ${{ steps.filter.outputs.workspace }}
         run: |
-          set -euo pipefail
-
           run=false
-          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
-            run=true
-          else
-            if [ "${EVENT_NAME}" = "push" ]; then
-              export TURBO_SCM_BASE="${PUSH_BASE}"
-              export TURBO_SCM_HEAD="${PUSH_HEAD}"
-            fi
-            pnpm install --frozen-lockfile --ignore-scripts
-            affected_json="$(pnpm exec turbo run test --affected --filter "${WORKSPACE}" --dry=json)"
-            printf '%s\n' "${affected_json}"
-            run="$(printf '%s' "${affected_json}" | jq -r '.tasks | any(.package == env.WORKSPACE)')"
-          fi
-
-          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$CI_WORKFLOW_CHANGED" = true ] || [ "$CHANGED" = true ]; then run=true; fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
 
       - name: Skip (binpm-docs unaffected)
         if: ${{ steps.gate.outputs.run != 'true' }}
@@ -755,22 +748,7 @@ jobs:
 
       - name: Run binpm-docs tests
         if: ${{ steps.gate.outputs.run == 'true' }}
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' }}
-          PUSH_BASE: ${{ github.event.before }}
-          PUSH_HEAD: ${{ github.sha }}
-        run: |
-          args=(run test --filter binpm-docs)
-          if [ "$FORCE_RUN" != true ]; then
-            args+=(--affected)
-            if [ "$EVENT_NAME" = push ]; then
-              export TURBO_SCM_BASE="$PUSH_BASE"
-              export TURBO_SCM_HEAD="$PUSH_HEAD"
-            fi
-          fi
-          pnpm exec turbo "${args[@]}"
+        run: pnpm exec vp run binpm-docs#test
 
   node-nodeup-docs-test:
     name: Node nodeup-docs test
@@ -789,6 +767,18 @@ jobs:
           filters: |
             ci_workflow:
               - .github/workflows/CI.yml
+            workspace:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
+              - .nvmrc
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - scripts/**
+              - apps/nodeup-docs/**
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v5
@@ -798,7 +788,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: lts/*
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
@@ -808,27 +798,11 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
-          PUSH_BASE: ${{ github.event.before }}
-          PUSH_HEAD: ${{ github.sha }}
-          WORKSPACE: nodeup-docs
+          CHANGED: ${{ steps.filter.outputs.workspace }}
         run: |
-          set -euo pipefail
-
           run=false
-          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
-            run=true
-          else
-            if [ "${EVENT_NAME}" = "push" ]; then
-              export TURBO_SCM_BASE="${PUSH_BASE}"
-              export TURBO_SCM_HEAD="${PUSH_HEAD}"
-            fi
-            pnpm install --frozen-lockfile --ignore-scripts
-            affected_json="$(pnpm exec turbo run test --affected --filter "${WORKSPACE}" --dry=json)"
-            printf '%s\n' "${affected_json}"
-            run="$(printf '%s' "${affected_json}" | jq -r '.tasks | any(.package == env.WORKSPACE)')"
-          fi
-
-          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$CI_WORKFLOW_CHANGED" = true ] || [ "$CHANGED" = true ]; then run=true; fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
 
       - name: Skip (nodeup-docs unaffected)
         if: ${{ steps.gate.outputs.run != 'true' }}
@@ -841,22 +815,7 @@ jobs:
 
       - name: Run nodeup-docs tests
         if: ${{ steps.gate.outputs.run == 'true' }}
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' }}
-          PUSH_BASE: ${{ github.event.before }}
-          PUSH_HEAD: ${{ github.sha }}
-        run: |
-          args=(run test --filter nodeup-docs)
-          if [ "$FORCE_RUN" != true ]; then
-            args+=(--affected)
-            if [ "$EVENT_NAME" = push ]; then
-              export TURBO_SCM_BASE="$PUSH_BASE"
-              export TURBO_SCM_HEAD="$PUSH_HEAD"
-            fi
-          fi
-          pnpm exec turbo "${args[@]}"
+        run: pnpm exec vp run nodeup-docs#test
 
   node-public-docs-test:
     name: Node public-docs test
@@ -875,8 +834,20 @@ jobs:
           filters: |
             ci_workflow:
               - .github/workflows/CI.yml
-            public_docs:
+            workspace:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
+              - .nvmrc
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - scripts/**
               - apps/public-docs/**
+              - docs/**
+              - packaging/**
               - packaging/devhud/**
               - docs/project-devhud.md
               - docs/apps-devhud-operations-contract.md
@@ -892,7 +863,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: lts/*
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
@@ -902,28 +873,11 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
-          PUBLIC_DOCS_CHANGED: ${{ steps.filter.outputs.public_docs }}
-          PUSH_BASE: ${{ github.event.before }}
-          PUSH_HEAD: ${{ github.sha }}
-          WORKSPACE: public-docs
+          CHANGED: ${{ steps.filter.outputs.workspace }}
         run: |
-          set -euo pipefail
-
           run=false
-          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ] || [ "${PUBLIC_DOCS_CHANGED}" = "true" ]; then
-            run=true
-          else
-            if [ "${EVENT_NAME}" = "push" ]; then
-              export TURBO_SCM_BASE="${PUSH_BASE}"
-              export TURBO_SCM_HEAD="${PUSH_HEAD}"
-            fi
-            pnpm install --frozen-lockfile --ignore-scripts
-            affected_json="$(pnpm exec turbo run test --affected --filter "${WORKSPACE}" --dry=json)"
-            printf '%s\n' "${affected_json}"
-            run="$(printf '%s' "${affected_json}" | jq -r '.tasks | any(.package == env.WORKSPACE)')"
-          fi
-
-          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$CI_WORKFLOW_CHANGED" = true ] || [ "$CHANGED" = true ]; then run=true; fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
 
       - name: Skip (public-docs unaffected)
         if: ${{ steps.gate.outputs.run != 'true' }}
@@ -936,22 +890,7 @@ jobs:
 
       - name: Run public-docs tests
         if: ${{ steps.gate.outputs.run == 'true' }}
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' || steps.filter.outputs.public_docs == 'true' }}
-          PUSH_BASE: ${{ github.event.before }}
-          PUSH_HEAD: ${{ github.sha }}
-        run: |
-          args=(run test --filter public-docs)
-          if [ "$FORCE_RUN" != true ]; then
-            args+=(--affected)
-            if [ "$EVENT_NAME" = push ]; then
-              export TURBO_SCM_BASE="$PUSH_BASE"
-              export TURBO_SCM_HEAD="$PUSH_HEAD"
-            fi
-          fi
-          pnpm exec turbo "${args[@]}"
+        run: pnpm exec vp run public-docs#test
 
   devhud-frontend:
     name: DevHud frontend contracts
@@ -971,17 +910,20 @@ jobs:
           filters: |
             ci_workflow:
               - .github/workflows/CI.yml
-            node_runtime:
-              - .nvmrc
             devhud_frontend:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
               - .nvmrc
               - package.json
               - pnpm-lock.yaml
               - pnpm-workspace.yaml
-              - turbo.json
               - apps/devhud/**
               - packages/**
               - protos/**
+              - scripts/**
 
       - name: Determine whether to run
         id: gate
@@ -1017,24 +959,15 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Run affected frontend contracts
+      - name: Run frontend contracts
         if: ${{ steps.gate.outputs.run == 'true' }}
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' || steps.filter.outputs.node_runtime == 'true' }}
-          PUSH_BASE: ${{ github.event.before }}
-          PUSH_HEAD: ${{ github.sha }}
         run: |
-          args=(run typecheck lint test:unit test:components test:accessibility build:frontend --filter devhud)
-          if [ "$FORCE_RUN" != true ]; then
-            args+=(--affected)
-            if [ "$EVENT_NAME" = push ]; then
-              export TURBO_SCM_BASE="$PUSH_BASE"
-              export TURBO_SCM_HEAD="$PUSH_HEAD"
-            fi
-          fi
-          pnpm exec turbo "${args[@]}"
+          pnpm exec vp run devhud#typecheck
+          pnpm exec vp run devhud#lint
+          pnpm exec vp run devhud#test:unit
+          pnpm exec vp run devhud#test:components
+          pnpm exec vp run devhud#test:accessibility
+          pnpm exec vp run devhud#build:frontend
 
   devhud-extension:
     name: DevHud Chrome extension
@@ -1053,16 +986,21 @@ jobs:
         with:
           filters: |
             extension:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
               - .github/workflows/CI.yml
               - .nvmrc
               - package.json
               - pnpm-lock.yaml
               - pnpm-workspace.yaml
-              - turbo.json
               - apps/devhud-chrome-extension/**
               - apps/devhud/src-tauri/icons/**
               - crates/devhud-native-messaging-host/**
               - packaging/devhud/**
+              - scripts/**
 
       - name: Determine whether to run
         id: gate
@@ -1100,12 +1038,12 @@ jobs:
       - name: Typecheck, test accessibility, and build deterministic ZIPs
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
-          pnpm --filter devhud-chrome-extension lint
-          pnpm --filter devhud-chrome-extension test:unit
-          pnpm --filter devhud-chrome-extension test:components
-          pnpm --filter devhud-chrome-extension test:accessibility
-          pnpm --filter devhud-chrome-extension test:package
-          pnpm --filter devhud-chrome-extension build:test
+          pnpm exec vp run devhud-chrome-extension#lint
+          pnpm exec vp run devhud-chrome-extension#test:unit
+          pnpm exec vp run devhud-chrome-extension#test:components
+          pnpm exec vp run devhud-chrome-extension#test:accessibility
+          pnpm exec vp run devhud-chrome-extension#test:package
+          pnpm exec vp run devhud-chrome-extension#build:test
           cmp apps/devhud-chrome-extension/artifacts/devhud-chrome-web-store.zip apps/devhud-chrome-extension/artifacts/devhud-chrome-github-validation.zip
 
   devhud-rust-conformance:
@@ -1125,6 +1063,11 @@ jobs:
         with:
           filters: |
             rust_conformance:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
               - .github/workflows/CI.yml
               - .nvmrc
               - Cargo.toml
@@ -1134,6 +1077,10 @@ jobs:
               - crates/devhud-native-messaging-host/**
               - packages/**
               - protos/**
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - scripts/**
 
       - name: Determine whether to run
         id: gate
@@ -1174,15 +1121,15 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
           pnpm install --frozen-lockfile --ignore-scripts
-          pnpm --filter devhud build:frontend
+          pnpm exec vp run devhud#build:frontend
 
       - name: Run capture, shortcut, IPC, and updater suites
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
-          pnpm --filter devhud test:native:capture
-          pnpm --filter devhud test:native:shortcuts
-          pnpm --filter devhud test:native:ipc
-          pnpm --filter devhud test:native:updater
+          pnpm exec vp run devhud#test:native:capture
+          pnpm exec vp run devhud#test:native:shortcuts
+          pnpm exec vp run devhud#test:native:ipc
+          pnpm exec vp run devhud#test:native:updater
 
   devhud-security:
     name: DevHud security and direct-adapter fixtures
@@ -1201,12 +1148,16 @@ jobs:
         with:
           filters: |
             security:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
               - .github/workflows/CI.yml
               - .nvmrc
               - package.json
               - pnpm-lock.yaml
               - pnpm-workspace.yaml
-              - turbo.json
               - apps/devhud/**
               - apps/devhud-admin/**
               - apps/devhud-chrome-extension/**
@@ -1214,6 +1165,7 @@ jobs:
               - protos/**
               - servers/**
               - crates/devhud-native-messaging-host/**
+              - scripts/**
 
       - name: Determine whether to run
         id: gate
@@ -1251,7 +1203,8 @@ jobs:
       - name: Run credential, lifecycle, redaction, GitHub, R2, and agent fixtures
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
-          pnpm exec turbo run test:security test:adapters --filter devhud
+          pnpm exec vp run devhud#test:security
+          pnpm exec vp run devhud#test:adapters
           node --test apps/devhud/scripts/diagnostics-policy.test.mjs apps/devhud/scripts/native-bridge.test.mjs apps/devhud/scripts/mobile-policy.test.mjs
 
   devhud-desktop:
@@ -1330,6 +1283,11 @@ jobs:
         with:
           filters: |
             devhud:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
               - .github/workflows/CI.yml
               - apps/devhud/**
               - apps/devhud-chrome-extension/**
@@ -1346,6 +1304,8 @@ jobs:
               - pnpm-lock.yaml
               - pnpm-workspace.yaml
               - rust-toolchain
+              - package.json
+              - scripts/**
 
       - name: Determine whether to run
         id: gate
@@ -1402,15 +1362,15 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         shell: bash
         run: |
-          pnpm --filter devhud-chrome-extension test
-          pnpm --filter devhud test
-          pnpm --filter devhud verify:pins
+          pnpm exec vp run devhud-chrome-extension#test
+          pnpm exec vp run devhud#test
+          pnpm exec vp run devhud#verify:pins
 
       - name: Build native production package
         if: ${{ steps.gate.outputs.run == 'true' }}
         env:
           DEVHUD_PACKAGE_KIND: ${{ matrix.package }}
-        run: pnpm --filter devhud build -- --bundles ${{ matrix.bundle }}
+        run: pnpm exec vp run devhud#build --bundles ${{ matrix.bundle }}
 
       - name: Prepare Windows installed layout
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'windows' }}
@@ -1508,7 +1468,7 @@ jobs:
 
       - name: Run macOS platform smoke
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'macos' }}
-        run: pnpm --filter devhud smoke:platform -- --artifact "$DEVHUD_SMOKE_ARTIFACT"
+        run: pnpm exec vp run devhud#smoke:platform --artifact "$DEVHUD_SMOKE_ARTIFACT"
 
       - name: Verify macOS Native Messaging register and unregister lifecycle
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'macos' }}
@@ -1525,14 +1485,14 @@ jobs:
       - name: Run Windows platform smoke
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'windows' }}
         shell: pwsh
-        run: pnpm --filter devhud smoke:platform -- --artifact "$env:DEVHUD_SMOKE_ARTIFACT"
+        run: pnpm exec vp run devhud#smoke:platform --artifact "$env:DEVHUD_SMOKE_ARTIFACT"
 
       - name: Run Ubuntu X11 platform smoke
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'linux' }}
         env:
           XDG_SESSION_TYPE: x11
           WAYLAND_DISPLAY: ""
-        run: APPIMAGE="$DEVHUD_SMOKE_APPIMAGE" APPDIR="$DEVHUD_SMOKE_APPDIR" dbus-run-session -- xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact "$DEVHUD_SMOKE_ARTIFACT"
+        run: APPIMAGE="$DEVHUD_SMOKE_APPIMAGE" APPDIR="$DEVHUD_SMOKE_APPDIR" dbus-run-session -- xvfb-run -a pnpm exec vp run devhud#smoke:platform --artifact "$DEVHUD_SMOKE_ARTIFACT"
 
       - name: Verify Ubuntu AppImage Native Messaging register and unregister lifecycle
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'linux' && matrix.bundle == 'appimage' }}
@@ -1656,6 +1616,11 @@ jobs:
         with:
           filters: |
             devhud:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
               - .github/workflows/CI.yml
               - apps/devhud/**
               - packages/**
@@ -1668,6 +1633,12 @@ jobs:
               - pnpm-lock.yaml
               - pnpm-workspace.yaml
               - rust-toolchain
+              - package.json
+              - scripts/**
+              - package.json
+              - scripts/**
+              - package.json
+              - scripts/**
 
       - name: Determine whether to run
         id: gate
@@ -1711,9 +1682,9 @@ jobs:
       - name: Verify shared frontend and mobile contracts
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
-          pnpm --filter devhud build:frontend
-          pnpm --filter devhud mobile:check
-          pnpm --filter devhud test:components
+          pnpm exec vp run devhud#build:frontend
+          pnpm exec vp run devhud#mobile:check
+          pnpm exec vp run devhud#test:components
 
   devhud-ios-simulator:
     name: DevHUD iOS simulator (${{ matrix.target }})
@@ -1742,6 +1713,11 @@ jobs:
         with:
           filters: |
             devhud:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
               - .github/workflows/CI.yml
               - apps/devhud/**
               - packages/**
@@ -1802,7 +1778,7 @@ jobs:
 
       - name: Generate pinned iOS project
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: pnpm --filter devhud mobile:generate -- --platform ios
+        run: pnpm exec vp run devhud#mobile:generate --platform ios
 
       # cargo-mobile2 selects a named simulator on Intel. Initialize
       # CoreSimulator first so Xcode exposes devices instead of placeholders.
@@ -1855,6 +1831,11 @@ jobs:
         with:
           filters: |
             devhud:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
               - .github/workflows/CI.yml
               - apps/devhud/**
               - packages/**
@@ -1936,7 +1917,7 @@ jobs:
 
       - name: Generate pinned Android project
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: pnpm --filter devhud mobile:generate -- --platform android
+        run: pnpm exec vp run devhud#mobile:generate --platform android
 
       - name: Build Android artifacts
         if: ${{ steps.gate.outputs.run == 'true' && matrix.combined == false }}
@@ -1997,6 +1978,11 @@ jobs:
         with:
           filters: |
             devhud_protocol:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
               - .github/workflows/CI.yml
               - buf.yaml
               - buf.gen.yaml
@@ -2006,10 +1992,10 @@ jobs:
               - package.json
               - pnpm-workspace.yaml
               - pnpm-lock.yaml
-              - turbo.json
               - protos/**
               - packages/**
               - scripts/check-proto-breaking.sh
+              - scripts/**
 
       - name: Determine whether to run
         id: gate
@@ -2061,7 +2047,7 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         env:
           DEVHUD_PROTO_BASELINE: ${{ github.event_name == 'push' && github.event.before || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && 'HEAD^') || 'origin/main' }}
-        run: pnpm proto:check
+        run: pnpm exec vp run proto:check
 
       - name: Test Go bindings
         if: ${{ steps.gate.outputs.run == 'true' }}
@@ -2070,9 +2056,9 @@ jobs:
       - name: Check TypeScript client
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
-          pnpm --filter @delinoio/devhud-api-client lint
-          pnpm --filter @delinoio/devhud-api-client test
-          pnpm --filter @delinoio/devhud-api-client build
+          pnpm exec vp run @delinoio/devhud-api-client#lint
+          pnpm exec vp run @delinoio/devhud-api-client#test
+          pnpm exec vp run @delinoio/devhud-api-client#build
 
   devhud-admin:
     name: DevHud Admin
@@ -2088,6 +2074,11 @@ jobs:
         with:
           filters: |
             devhud_admin:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
               - .github/workflows/CI.yml
               - .nvmrc
               - package.json
@@ -2099,6 +2090,7 @@ jobs:
               - packages/**
               - protos/**
               - servers/devhud-api/internal/adminassets/**
+              - scripts/**
 
       - name: Determine whether to run
         id: gate
@@ -2139,7 +2131,7 @@ jobs:
 
       - name: Test administrator SPA and verify generated embedded assets
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: pnpm --filter devhud-admin --fail-if-no-match test
+        run: pnpm exec vp run devhud-admin#test
 
   devhud-api:
     name: DevHud API Integration
@@ -2157,6 +2149,11 @@ jobs:
         with:
           filters: |
             devhud_api:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
               - .github/workflows/CI.yml
               - go.mod
               - go.sum
@@ -2168,6 +2165,8 @@ jobs:
               - protos/**
               - servers/**
               - scripts/ci/check-go-format.mjs
+              - .nvmrc
+              - scripts/**
 
       - name: Determine whether to run
         id: gate
@@ -2214,18 +2213,18 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
           pnpm install --frozen-lockfile --ignore-scripts
-          pnpm --filter devhud-admin build:embedded
+          pnpm exec vp run devhud-admin#build:embedded
 
       - name: Check API formatting, vet, builds, and unit tests
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
-          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:format
-          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:vet
-          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:build
-          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:unit
-          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:migrations
-          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:api
-          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:sweeper
+          pnpm exec vp run @delinoio/devhud-api#ci:format
+          pnpm exec vp run @delinoio/devhud-api#ci:vet
+          pnpm exec vp run @delinoio/devhud-api#ci:build
+          pnpm exec vp run @delinoio/devhud-api#ci:unit
+          pnpm exec vp run @delinoio/devhud-api#ci:migrations
+          pnpm exec vp run @delinoio/devhud-api#ci:api
+          pnpm exec vp run @delinoio/devhud-api#ci:sweeper
 
       - name: Start PostgreSQL
         if: ${{ steps.gate.outputs.run == 'true' }}
@@ -2260,7 +2259,7 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         env:
           DEVHUD_TEST_DATABASE_URL: postgres://devhud:devhud@127.0.0.1:5432/devhud_api_test?sslmode=disable
-        run: pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:integration
+        run: pnpm exec vp run @delinoio/devhud-api#ci:integration
 
       - name: Stop PostgreSQL
         if: ${{ always() && steps.gate.outputs.run == 'true' }}
@@ -2287,6 +2286,11 @@ jobs:
         with:
           filters: |
             oci:
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - scripts/tasks/**
               - .dockerignore
               - .github/workflows/CI.yml
               - go.mod
@@ -2300,6 +2304,8 @@ jobs:
               - packages/**
               - packaging/devhud/**
               - scripts/release/**
+              - .nvmrc
+              - scripts/**
 
       - name: Determine whether to run
         id: gate
@@ -2345,7 +2351,7 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' && matrix.target == 'sweeper' }}
         run: |
           pnpm install --frozen-lockfile --ignore-scripts
-          pnpm --filter devhud-admin build:embedded
+          pnpm exec vp run devhud-admin#build:embedded
 
       - name: Download Syft
         id: syft
@@ -2461,6 +2467,14 @@ jobs:
               - crates/devhud-native-messaging-host/**
               - packaging/devhud/**
               - scripts/release/**
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - scripts/**
 
       - name: Determine whether to run
         id: gate
@@ -2537,6 +2551,14 @@ jobs:
               - docs/repository-workflow-contract.md
               - scripts/release/devhud-operations.test.mjs
               - servers/devhud-api/internal/rpc/diagnostics.go
+              - vite.config.ts
+              - apps/*/vite.config.ts
+              - packages/*/vite.config.ts
+              - servers/*/vite.config.ts
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - scripts/**
 
       - name: Determine whether to run
         id: gate

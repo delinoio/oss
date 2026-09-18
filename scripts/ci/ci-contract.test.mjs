@@ -11,6 +11,9 @@ const apiDockerfileSource = readFileSync(`${root}/servers/devhud-api/Dockerfile`
 const workflow = load(workflowSource);
 const packages = Object.fromEntries([
   "package.json",
+  "apps/binpm-docs/package.json",
+  "apps/nodeup-docs/package.json",
+  "apps/mpapp/package.json",
   "apps/devhud/package.json",
   "apps/devhud-admin/package.json",
   "apps/devhud-chrome-extension/package.json",
@@ -18,9 +21,12 @@ const packages = Object.fromEntries([
   "packages/devhud-api-client/package.json",
   "servers/devhud-api/package.json",
 ].map((path) => [path, JSON.parse(readFileSync(`${root}/${path}`, "utf8"))]));
-const turbo = JSON.parse(readFileSync(`${root}/turbo.json`, "utf8"));
-const adminTurbo = JSON.parse(readFileSync(`${root}/apps/devhud-admin/turbo.json`, "utf8"));
-const extensionTurbo = JSON.parse(readFileSync(`${root}/apps/devhud-chrome-extension/turbo.json`, "utf8"));
+const configs = Object.fromEntries(await Promise.all(Object.keys(packages).map(async (path) => [
+  path, (await import(`${root}/${path.replace("package.json", "vite.config.ts")}`)).default.run.tasks,
+])));
+const taskCommands = Object.fromEntries(Object.entries(configs).map(([path, tasks]) => [
+  path, Object.fromEntries(Object.entries(tasks).map(([name, task]) => [name, task.command])),
+]));
 const devhudTauri = JSON.parse(readFileSync(`${root}/apps/devhud/src-tauri/tauri.conf.json`, "utf8"));
 
 const legacyJobs = [
@@ -74,13 +80,13 @@ test("DevHud jobs self-gate and the path contract covers every implemented bound
     assert.ok(ociFilter.includes(path), `devhud-oci: ${path}`);
   }
   assert.ok(JSON.stringify(step(workflow.jobs["devhud-admin"], "filter")).includes(".nvmrc"));
-  assert.ok(JSON.stringify(step(workflow.jobs["devhud-protocol"], "filter")).includes("turbo.json"));
+  assert.ok(JSON.stringify(step(workflow.jobs["devhud-protocol"], "filter")).includes("vite.config.ts"));
   for (const id of ["devhud-frontend", "devhud-extension", "devhud-rust-conformance"]) {
     const filter = JSON.stringify(step(workflow.jobs[id], "filter"));
     assert.ok(filter.includes(".nvmrc"), `${id}: .nvmrc`);
   }
   const securityFilter = JSON.stringify(step(workflow.jobs["devhud-security"], "filter"));
-  for (const path of [".nvmrc", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "turbo.json"]) {
+  for (const path of [".nvmrc", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "vite.config.ts"]) {
     assert.ok(securityFilter.includes(path), `devhud-security: ${path}`);
   }
   for (const id of ["devhud-supply-chain", "devhud-release-contracts"]) {
@@ -93,36 +99,30 @@ test("DevHud jobs self-gate and the path contract covers every implemented bound
   }
 });
 
-test("Node jobs use the committed Turbo binary with frozen installs and affected no-ops", () => {
-  assert.doesNotMatch(workflowSource, /pnpm\s+dlx\s+turbo/iu);
+test("Node jobs use pinned Vite Task with path gates and frozen installs", () => {
+  assert.equal(packages["package.json"].devDependencies["vite-plus"], "0.3.3");
+  assert.doesNotMatch(workflowSource, /turbo|--affected|--dry=json|TURBO_SCM_|pnpm\s+dlx/iu);
   assert.match(workflowSource, /pnpm install --frozen-lockfile --ignore-scripts/u);
-  assert.match(workflowSource, /pnpm exec turbo run test --affected --filter/u);
-  assert.match(workflowSource, /--dry=json/u);
-  assert.match(packages["package.json"].scripts["ci:affected"], /^turbo run$/u);
-  const affectedLegacyJobs = new Map([
-    ["node-mpapp-test", "Run mpapp tests"],
-    ["node-mpapp-lint", "Run mpapp lint"],
-    ["node-binpm-docs-test", "Run binpm-docs tests"],
-    ["node-nodeup-docs-test", "Run nodeup-docs tests"],
-    ["node-public-docs-test", "Run public-docs tests"],
-  ]);
-  for (const [id, runStepName] of affectedLegacyJobs) {
+  for (const [id, packageName] of [
+    ["node-mpapp-test", "mpapp"], ["node-mpapp-lint", "mpapp"],
+    ["node-binpm-docs-test", "binpm-docs"], ["node-nodeup-docs-test", "nodeup-docs"],
+    ["node-public-docs-test", "public-docs"],
+  ]) {
     const job = workflow.jobs[id];
-    for (const candidate of [step(job, "gate"), namedStep(job, runStepName)]) {
-      const source = JSON.stringify(candidate);
-      for (const expected of ["github.event.before", "github.sha", "TURBO_SCM_BASE", "TURBO_SCM_HEAD"]) {
-        assert.ok(source.includes(expected), `${id} push range: ${expected}`);
-      }
+    const filter = step(job, "filter").with.filters;
+    for (const path of [`.github/workflows/CI.yml`, `apps/${packageName}/**`, "vite.config.ts", "pnpm-lock.yaml", "scripts/**"]) {
+      assert.ok(filter.includes(path), `${id}: ${path}`);
     }
+    const gate = step(job, "gate");
+    assert.equal(gate.env.CHANGED, "${{ steps.filter.outputs.workspace }}");
+    assert.match(gate.run, /workflow_dispatch/u);
+    const run = job.steps.find((candidate) => candidate.run?.startsWith(`pnpm exec vp run ${packageName}#`));
+    assert.equal(run.if, "${{ steps.gate.outputs.run == 'true' }}");
   }
-  const frontend = JSON.stringify(workflow.jobs["devhud-frontend"]);
-  for (const expected of ["github.event.before", "TURBO_SCM_BASE", "TURBO_SCM_HEAD"]) {
-    assert.ok(frontend.includes(expected), `devhud-frontend push range: ${expected}`);
+  const frontend = namedStep(workflow.jobs["devhud-frontend"], "Run frontend contracts");
+  for (const task of ["typecheck", "lint", "test:unit", "test:components", "test:accessibility", "build:frontend"]) {
+    assert.ok(frontend.run.includes(`pnpm exec vp run devhud#${task}`));
   }
-  const frontendFilter = step(workflow.jobs["devhud-frontend"], "filter").with.filters;
-  assert.match(frontendFilter, /node_runtime:\n\s+- \.nvmrc/u);
-  const frontendRun = namedStep(workflow.jobs["devhud-frontend"], "Run affected frontend contracts");
-  assert.match(frontendRun.env.FORCE_RUN, /steps\.filter\.outputs\.node_runtime == 'true'/u);
 });
 
 test("DevHud API PostgreSQL starts only after its path gate", () => {
@@ -178,7 +178,7 @@ test("implemented DevHud conformance commands are wired to their owning jobs", (
     ["devhud-api", ["ci:format", "ci:vet", "ci:build", "ci:unit", "ci:migrations", "ci:integration", "ci:api", "ci:sweeper"]],
     ["devhud-rust-conformance", ["test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:native:updater"]],
     ["devhud-frontend", ["typecheck", "lint", "test:unit", "test:components", "test:accessibility", "build:frontend"]],
-    ["devhud-admin", ["devhud-admin --fail-if-no-match test"]],
+    ["devhud-admin", ["devhud-admin#test"]],
     ["devhud-extension", ["test:unit", "test:components", "test:accessibility", "test:package", "devhud-chrome-web-store.zip", "devhud-chrome-github-validation.zip"]],
     ["devhud-security", ["test:security", "test:adapters", "diagnostics-policy.test.mjs", "native-bridge.test.mjs", "mobile-policy.test.mjs"]],
     ["devhud-desktop", ["verify:pins", "smoke:platform", "xvfb-run", "io.delino.devhud.native_messaging"]],
@@ -195,11 +195,11 @@ test("implemented DevHud conformance commands are wired to their owning jobs", (
   const apiCommands = workflow.jobs["devhud-api"].steps
     .filter((candidate) => typeof candidate.run === "string")
     .flatMap((candidate) => candidate.run.split("\n"))
-    .filter((line) => line.includes("pnpm --filter @delinoio/devhud-api"));
+    .filter((line) => line.includes("pnpm exec vp run @delinoio/devhud-api#"));
   assert.equal(apiCommands.length, 8);
-  for (const command of apiCommands) assert.match(command, /--fail-if-no-match ci:/u);
-  assert.match(packages["apps/devhud/package.json"].scripts.test, /^pnpm lint && pnpm test:unit && pnpm test:components/u);
-  assert.match(JSON.stringify(workflow.jobs["devhud-security"]), /pnpm exec turbo run test:security test:adapters --filter devhud/u);
+  for (const command of apiCommands) assert.match(command, /@delinoio\/devhud-api#ci:/u);
+  assert.match(taskCommands["apps/devhud/package.json"].test, /^vp run lint && vp run test:unit && vp run test:components/u);
+  assert.match(JSON.stringify(workflow.jobs["devhud-security"]), /pnpm exec vp run devhud#test:security[\s\S]*pnpm exec vp run devhud#test:adapters/u);
 });
 
 test("OCI validation is multi-architecture, non-root, migration-bearing, and local-only", () => {
@@ -226,7 +226,7 @@ test("OCI validation is multi-architecture, non-root, migration-bearing, and loc
   assert.equal(setupPNPM.with.version, "10.26.2");
   assert.equal(setupNode.with["node-version-file"], ".nvmrc");
   assert.match(generateAssets.run, /pnpm install --frozen-lockfile --ignore-scripts/u);
-  assert.match(generateAssets.run, /pnpm --filter devhud-admin build:embedded/u);
+  assert.match(generateAssets.run, /pnpm exec vp run devhud-admin#build:embedded/u);
   const generateAssetsIndex = job.steps.indexOf(generateAssets);
   const buildAndInspectIndex = job.steps.findIndex(({ name }) => name === "Build and inspect amd64/arm64 OCI layout");
   assert.ok(generateAssetsIndex >= 0 && generateAssetsIndex < buildAndInspectIndex);
@@ -306,6 +306,12 @@ test("macOS and AppImage desktop validation exercises packaged Native Messaging 
 });
 
 test("package-local CI commands and deterministic cache boundaries are explicit", () => {
+  for (const [path, tasks] of Object.entries(configs)) {
+    for (const [name, task] of Object.entries(tasks)) {
+      assert.equal(typeof task.cache, "boolean", `${path}#${name}: explicitly opt in to caching`);
+      assert.equal(packages[path].scripts?.[name], undefined, `${path}#${name}: duplicate script`);
+    }
+  }
   const requiredScripts = new Map([
     ["apps/devhud/package.json", ["typecheck", "lint", "test:unit", "test:components", "test:accessibility", "test:security", "test:adapters", "build:frontend", "test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:native:updater"]],
     ["apps/devhud-admin/package.json", ["typecheck", "lint", "test:unit", "test:components", "test:accessibility", "build:frontend", "verify:embedded"]],
@@ -314,35 +320,38 @@ test("package-local CI commands and deterministic cache boundaries are explicit"
     ["apps/public-docs/package.json", ["build:frontend", "test:routes"]],
   ]);
   for (const [path, names] of requiredScripts) {
-    for (const name of names) assert.equal(typeof packages[path].scripts[name], "string", `${path}#${name}`);
+    for (const name of names) assert.equal(typeof taskCommands[path][name], "string", `${path}#${name}`);
   }
-  for (const output of ["dist/**", "build/**", "artifacts/**", "doc_build/**"]) assert.ok(turbo.tasks["build:frontend"].outputs.includes(output), output);
-  assert.ok(turbo.tasks.build.inputs.includes("$TURBO_DEFAULT$"), "build must hash package-default tracked inputs");
-  for (const output of ["protos/gen/**", "packages/devhud-api-client/src/gen/**"]) assert.ok(turbo.tasks["//#proto:generate"].outputs.includes(output), output);
-  assert.equal(packages["package.json"].scripts["proto:generate:cached"], "turbo run //#proto:generate");
-  assert.match(packages["package.json"].scripts["proto:fresh"], /^turbo run \/\/#proto:generate --force &&/u);
-  const adminScripts = packages["apps/devhud-admin/package.json"].scripts;
-  for (const task of ["build:embedded", "verify:embedded"]) {
-    assert.match(adminScripts[task], /^pnpm --filter @delinoio\/devhud-api-client build && pnpm build &&/u, task);
-  }
+  const rootTasks = configs["package.json"];
+  assert.deepEqual(rootTasks["proto:generate"].output, ["protos/gen/**", "packages/devhud-api-client/src/gen/**"]);
+  assert.equal(rootTasks["proto:generate"].cache, true);
+  assert.equal(rootTasks["proto:generate:cached"].command, "vp run proto:generate");
+  assert.match(rootTasks["proto:fresh"].command, /^vp run --no-cache proto:generate &&/u);
+  const adminTasks = configs["apps/devhud-admin/package.json"];
   for (const task of ["build", "build:frontend", "build:embedded", "verify:embedded"]) {
-    assert.equal(adminTurbo.tasks[task].cache, false, task);
+    assert.equal(adminTasks[task].cache, false, task);
+    assert.deepEqual(adminTasks[task].dependsOn, [task.endsWith(":embedded") ? "build" : "@delinoio/devhud-api-client#build"], task);
   }
-  assert.deepEqual(extensionTurbo.extends, ["//"]);
-  for (const task of ["build", "build:frontend"]) {
-    assert.deepEqual(extensionTurbo.tasks[task].inputs, [
-      "$TURBO_DEFAULT$",
-      "$TURBO_ROOT$/apps/devhud/src-tauri/icons/icon.png",
-    ], task);
+  for (const task of ["build", "build:test", "build:frontend"]) {
+    const definition = configs["apps/devhud-chrome-extension/package.json"][task];
+    assert.ok(definition.input.some((entry) => entry.pattern === "apps/devhud/src-tauri/icons/icon.png" && entry.base === "workspace"));
+    assert.deepEqual(definition.output, ["dist/**", "build/**", "artifacts/**"]);
   }
-  const nativeTurbo = JSON.parse(readFileSync(`${root}/apps/devhud/turbo.json`, "utf8"));
-  for (const task of ["test:unit", "test:components", "test:security", "test:adapters"]) assert.deepEqual(nativeTurbo.tasks[task].dependsOn, ["^build"], task);
+  const nativeTasks = configs["apps/devhud/package.json"];
+  for (const [name, task] of Object.entries(configs["servers/devhud-api/package.json"])) {
+    if (name.startsWith("ci:") && name !== "ci:format") {
+      assert.deepEqual(task.dependsOn, ["devhud-admin#build:embedded"], name);
+    }
+  }
+  for (const task of ["test:unit", "test:components", "test:security", "test:adapters"]) {
+    assert.deepEqual(nativeTasks[task].dependsOn, ["@delinoio/devhud-api-client#build"], task);
+  }
   for (const task of [
     "build", "test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:native:updater",
     "mobile:generate", "build:ios", "build:android", "smoke:platform",
-  ]) assert.equal(nativeTurbo.tasks[task].cache, false, task);
-
-  const devhudScripts = packages["apps/devhud/package.json"].scripts;
+  ]) assert.equal(nativeTasks[task].cache, false, task);
+  assert.deepEqual(nativeTasks["build:frontend"].output, ["dist/**"]);
+  const devhudScripts = taskCommands["apps/devhud/package.json"];
   const devhudTestFiles = readdirSync(`${root}/apps/devhud/src`).filter((path) => /\.test\.tsx?$/u.test(path));
   for (const path of devhudTestFiles) {
     const script = path.endsWith(".tsx") ? devhudScripts["test:components"] : devhudScripts["test:unit"];
@@ -368,6 +377,6 @@ test("CI is read-only and contains no publication or secret injection path", () 
 test("local CI commands are documented by repository contracts", () => {
   const contract = readFileSync(`${root}/docs/repository-workflow-contract.md`, "utf8");
   const project = readFileSync(`${root}/docs/project-devhud.md`, "utf8");
-  for (const command of ["pnpm ci:workflows", "pnpm ci:contracts", "pnpm ci:release-fixtures"]) assert.ok(contract.includes(command), command);
+  for (const command of ["pnpm exec vp run ci:workflows", "pnpm exec vp run ci:contracts", "pnpm exec vp run ci:release-fixtures"]) assert.ok(contract.includes(command), command);
   for (const command of ["test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:security", "test:adapters"]) assert.ok(project.includes(command), command);
 });

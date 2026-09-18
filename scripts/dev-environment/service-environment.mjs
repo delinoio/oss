@@ -152,7 +152,7 @@ async function runInjected({
       ) {
         throw new EnvironmentError(
           "environment.configuration-changed",
-          "team service configuration changed after preflight; retry pnpm dev",
+          "team service configuration changed after preflight; retry pnpm exec vp run dev",
           [comparisonName],
         );
       }
@@ -184,7 +184,7 @@ async function readTeamConfigurationPin() {
   } catch {
     throw new EnvironmentError(
       "environment.configuration-pin",
-      "team service launch is not bound to root preflight; run pnpm dev",
+      "team service launch is not bound to root preflight; run pnpm exec vp run dev",
     );
   }
   if (
@@ -201,7 +201,7 @@ async function readTeamConfigurationPin() {
   ) {
     throw new EnvironmentError(
       "environment.configuration-pin",
-      "team service launch is not bound to a valid root preflight; retry pnpm dev",
+      "team service launch is not bound to a valid root preflight; retry pnpm exec vp run dev",
     );
   }
   return {
@@ -273,7 +273,7 @@ async function runTeam({ contract, action, comparisonName, scriptPath, execute }
       rejection ??
       new EnvironmentError(
         "environment.unavailable",
-        `${contract.service} authentication or secret path is unavailable; run pnpm env:doctor`,
+        `${contract.service} authentication or secret path is unavailable; run pnpm exec vp run env:doctor`,
       )
     );
   }

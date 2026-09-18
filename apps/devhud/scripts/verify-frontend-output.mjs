@@ -14,7 +14,7 @@ const annotationFont = join(appRoot, "src-tauri/assets/fonts/noto-sans-kr/NotoSa
 const annotationFontSha256 = createHash("sha256").update(readFileSync(annotationFont)).digest("hex");
 
 function build(platform) {
-  const result = spawnSync("pnpm", ["run", "build:frontend"], {
+  const result = spawnSync("pnpm", ["exec", "vp", "run", "build:frontend"], {
     cwd: appRoot,
     encoding: "utf8",
     env: { ...process.env, TAURI_ENV_PLATFORM: platform },

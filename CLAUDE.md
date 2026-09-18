@@ -15,7 +15,7 @@ When working in a specific directory, apply the rules from that directory and al
 - Write all code and comments in English.
 - Prefer enum types over strings whenever possible.
 - If you modified Rust code, run `cargo test` from the root directory before finishing your task.
-- If you modified frontend code, run `pnpm test` from the frontend directory before finishing your task.
+- If you modified frontend code, run `pnpm exec vp run test` from the frontend directory before finishing your task.
 - Commit your work as frequent as possible using git. Do NOT use `--no-verify` flag.
 - Run `git commit` only after `git add`; once files are staged, commit without unnecessary delay so staged changes are preserved in history.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
@@ -191,9 +191,9 @@ Coverage expectations:
 - `rust-fmt`: runs `cargo fmt --all --check`.
 - `rust-clippy`: runs `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
 - `rust-test`: runs `cargo test --workspace --all-targets`.
-- `node-mpapp-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp test`.
-- `node-mpapp-lint`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp lint`.
-- `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.
+- `node-mpapp-test`: runs `pnpm install --frozen-lockfile` and `pnpm exec vp run mpapp#test`.
+- `node-mpapp-lint`: runs `pnpm install --frozen-lockfile` and `pnpm exec vp run mpapp#lint`.
+- `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm exec vp run public-docs#test`.
 - `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
 
 Change-scoped execution rules:
@@ -260,8 +260,8 @@ Release automation baseline:
 
 ### Testing and Validation
 
-- If frontend code changes in this domain, run `pnpm test` before finishing.
-- If `apps/public-docs` changes, run `pnpm --filter public-docs test` before finishing.
+- If frontend code changes in this domain, run `pnpm exec vp run test` before finishing.
+- If `apps/public-docs` changes, run `pnpm exec vp run public-docs#test` before finishing.
 - Update relevant docs in `docs/` for every behavior, structure, or interface change.
 
 

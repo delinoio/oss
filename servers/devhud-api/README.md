@@ -4,7 +4,7 @@ Go Connect RPC service for DevHud Bootstrap, Settings, Upload, Account,
 Administration, Diagnostics, embedded migrations, and administrator assets. Its
 development listener is fixed at `127.0.0.1:46307`.
 
-Use `pnpm dev` for authorized team development or `pnpm dev:oss` for the
+Use `pnpm exec vp run dev` for authorized team development or `pnpm exec vp run dev:oss` for the
 public-contributor environment. The package owns local validation, migration,
 and serve wrappers; root scripts only orchestrate their order. The team wrapper
 accepts the documented API allowlist and rejects missing, unknown, invalid, or
@@ -23,10 +23,10 @@ those applications. If the issuer is overridden, use the exact same value in
 `apps/devhud-admin/.env`; never put GitHub PATs, BYO R2 credentials, or
 production, deployment, release, or signing secrets there.
 
-Run `pnpm --filter @delinoio/devhud-api migrate:local` only inside a selected
+Run `pnpm exec vp run @delinoio/devhud-api#migrate:local` only inside a selected
 root development mode. The local API wrapper generates and validates the
 ignored administrator bundle before migration or serving. Before direct Go
-commands, run `pnpm --filter devhud-admin build:embedded`. The package-local CI
+commands, run `pnpm exec vp run devhud-admin#build:embedded`. The package-local CI
 commands are `ci:format`, `ci:vet`,
 `ci:build`, `ci:unit`, `ci:migrations`, `ci:integration`, `ci:api`, and
 `ci:sweeper`; migration and integration commands require the documented test

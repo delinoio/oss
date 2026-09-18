@@ -5,6 +5,7 @@
 Each project must have one project index document and one or more domain contract documents.
 
 ## Repository Defaults
+- Repository task commands, cache ownership, and runner validation are defined in `docs/repository-task-contract.md`.
 - Repository-wide default technology choices and workflow defaults are defined in `docs/repository-defaults.md`.
 - Repository configuration, stable root development commands, local development modes, environment ownership, startup-generation integrity, and secret classification are defined in `docs/repository-environment-contract.md`.
 - Project and domain contracts must document deviations from those defaults when a different language, ID format, search backend, build toolchain, static-site deployment platform, or file storage/access pattern is chosen.

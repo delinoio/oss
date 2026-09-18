@@ -780,33 +780,33 @@ test("team setup initializes only through env:login and startup uses exact Infis
     }
     for (const canary of canaries) assert.equal(serialized.includes(canary), false, canary);
   }
-  const turbo = recorded.filter(
-    (event) => event.tool === "pnpm" && event.action === "turbo",
+  const viteTask = recorded.filter(
+    (event) => event.tool === "pnpm" && event.action === "vite-task",
   );
-  assert.deepEqual(turbo.map((event) => event.mode), ["team", "team"]);
+  assert.deepEqual(viteTask.map((event) => event.mode), ["team", "team"]);
   const firstAdminAssets = recorded.findIndex(
     (event) => event.tool === "pnpm" && event.action === "admin-assets",
   );
   const firstMigration = recorded.findIndex(
     (event) => event.tool === "go" && event.action === "migrate",
   );
-  const firstTurbo = recorded.findIndex(
-    (event) => event.tool === "pnpm" && event.action === "turbo",
+  const firstViteTask = recorded.findIndex(
+    (event) => event.tool === "pnpm" && event.action === "vite-task",
   );
   assert.ok(
     firstAdminAssets !== -1 &&
       firstAdminAssets < firstMigration &&
-      firstMigration < firstTurbo,
+      firstMigration < firstViteTask,
   );
 });
 
-test("team startup binds migration and Turbo services to the preflight issuer", async (t) => {
+test("team startup binds migration and ViteTask services to the preflight issuer", async (t) => {
   const temporaryDirectory = await mkdtemp(
     resolve(tmpdir(), "devhud-team-configuration-pin-"),
   );
   const environment = {
     ...fakeEnvironment(temporaryDirectory),
-    DEVHUD_TEST_RUN_TURBO_SERVICES: "1",
+    DEVHUD_TEST_RUN_VITE_TASK_SERVICES: "1",
   };
   t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
 
@@ -817,8 +817,8 @@ test("team startup binds migration and Turbo services to the preflight issuer", 
 
   const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
   const order = recorded.map((event) => `${event.tool}:${event.action}`);
-  assert.ok(order.indexOf("go:migrate") < order.indexOf("pnpm:turbo"), order.join(", "));
-  assert.ok(order.indexOf("pnpm:turbo") < order.indexOf("go:serve"), order.join(", "));
+  assert.ok(order.indexOf("go:migrate") < order.indexOf("pnpm:vite-task"), order.join(", "));
+  assert.ok(order.indexOf("pnpm:vite-task") < order.indexOf("go:serve"), order.join(", "));
   assert.ok(order.indexOf("go:serve") < order.indexOf("admin:serve"), order.join(", "));
   assert.ok(order.indexOf("admin:serve") < order.indexOf("frontend:serve"), order.join(", "));
   const { teamConfigurationPinFile } = resolveLocalStatePaths(environment);
@@ -854,7 +854,7 @@ test("team startup rejects issuer rotation before migration", async (t) => {
   await assert.rejects(stat(teamConfigurationPinFile), { code: "ENOENT" });
 });
 
-test("Turbo-owned services reject issuer rotation after migration", async (t) => {
+test("ViteTask-owned services reject issuer rotation after migration", async (t) => {
   const temporaryDirectory = await mkdtemp(
     resolve(tmpdir(), "devhud-team-service-rotation-"),
   );
@@ -862,7 +862,7 @@ test("Turbo-owned services reject issuer rotation after migration", async (t) =>
   const environment = {
     ...fakeEnvironment(temporaryDirectory),
     DEVHUD_TEST_ADMIN_LOGTO_ISSUER_AFTER_FIRST_RUN: rotatedIssuer,
-    DEVHUD_TEST_RUN_TURBO_SERVICES: "1",
+    DEVHUD_TEST_RUN_VITE_TASK_SERVICES: "1",
   };
   t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
 
@@ -882,11 +882,11 @@ test("Turbo-owned services reject issuer rotation after migration", async (t) =>
   await assert.rejects(stat(teamConfigurationPinFile), { code: "ENOENT" });
 });
 
-test("team configuration pin is private, exclusive, and released after Turbo", async (t) => {
+test("team configuration pin is private, exclusive, and released after ViteTask", async (t) => {
   const temporaryDirectory = await mkdtemp(
     resolve(tmpdir(), "devhud-team-pin-ownership-"),
   );
-  const releaseFile = resolve(temporaryDirectory, "release-turbo");
+  const releaseFile = resolve(temporaryDirectory, "release-vite-task");
   const firstEventLog = resolve(temporaryDirectory, "first-events.jsonl");
   const baseEnvironment = fakeEnvironment(temporaryDirectory);
   const firstEnvironment = {
@@ -908,7 +908,7 @@ test("team configuration pin is private, exclusive, and released after Turbo", a
 
   await waitForEvent(
     firstEventLog,
-    (event) => event.tool === "pnpm" && event.action === "turbo-blocked",
+    (event) => event.tool === "pnpm" && event.action === "vite-task-blocked",
   );
   const { stateDirectory, teamConfigurationPinFile } =
     resolveLocalStatePaths(baseEnvironment);
@@ -969,8 +969,8 @@ test("team startup rejects missing project binding or authentication without int
     assert.match(
       result.stderr,
       scenario === "project"
-        ? /\[project\.uninitialized\].*pnpm env:login/u
-        : /\[authentication\.required\].*pnpm env:login/u,
+        ? /\[project\.uninitialized\].*pnpm exec vp run env:login/u
+        : /\[authentication\.required\].*pnpm exec vp run env:login/u,
     );
     const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
     assert.equal(recorded.some((event) => ["login", "init"].includes(event.action)), false);
@@ -1126,7 +1126,7 @@ for (const [selector, remoteEndpoints] of [
   }
 }
 
-test("OSS startup never invokes Infisical, orders health before migration and Turbo, and preserves volumes", async (t) => {
+test("OSS startup never invokes Infisical, orders health before migration and ViteTask, and preserves volumes", async (t) => {
   const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-oss-test-"));
   const environment = fakeEnvironment(temporaryDirectory);
   const localState = resolveLocalStatePaths(environment);
@@ -1137,8 +1137,8 @@ test("OSS startup never invokes Infisical, orders health before migration and Tu
   assert.equal(recorded.some((event) => event.tool === "infisical"), false);
   const order = recorded.map((event) => `${event.tool}:${event.action}`);
   assert.ok(order.indexOf("docker:up") < order.indexOf("go:migrate"), order.join(", "));
-  assert.ok(order.indexOf("go:migrate") < order.indexOf("pnpm:turbo"), order.join(", "));
-  assert.ok(order.indexOf("pnpm:turbo") < order.lastIndexOf("docker:down"), order.join(", "));
+  assert.ok(order.indexOf("go:migrate") < order.indexOf("pnpm:vite-task"), order.join(", "));
+  assert.ok(order.indexOf("pnpm:vite-task") < order.lastIndexOf("docker:down"), order.join(", "));
   const downEvent = recorded.findLast((event) => event.tool === "docker" && event.action === "down");
   assert.equal(downEvent.args.includes("--volumes"), false);
   assert.equal(downEvent.args.includes("-v"), false);
@@ -1167,7 +1167,7 @@ test("OSS startup never invokes Infisical, orders health before migration and Tu
 
 test("OSS startup is exclusive per checkout and releases ownership after cleanup", async (t) => {
   const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-oss-lock-"));
-  const releaseFile = resolve(temporaryDirectory, "release-turbo");
+  const releaseFile = resolve(temporaryDirectory, "release-vite-task");
   const firstEventLog = resolve(temporaryDirectory, "first-events.jsonl");
   const baseEnvironment = fakeEnvironment(temporaryDirectory);
   const firstEnvironment = {
@@ -1188,7 +1188,7 @@ test("OSS startup is exclusive per checkout and releases ownership after cleanup
 
   await waitForEvent(
     firstEventLog,
-    (event) => event.tool === "pnpm" && event.action === "turbo-blocked",
+    (event) => event.tool === "pnpm" && event.action === "vite-task-blocked",
   );
 
   const secondEventLog = resolve(temporaryDirectory, "second-events.jsonl");
@@ -1256,7 +1256,7 @@ test(
     const result = await interruptCliDuring(
       ["start", "oss"],
       environment,
-      (event) => event.tool === "pnpm" && event.action === "turbo-blocked",
+      (event) => event.tool === "pnpm" && event.action === "vite-task-blocked",
     );
     assert.equal(result.signal, "SIGTERM");
     const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
@@ -1467,27 +1467,12 @@ test("repository policy is immutable, orchestration-only, and free of first-part
   assert.doesNotMatch(compose, /command: \["npm",/u);
   assert.match(postgresInit, /WHERE NOT EXISTS[\s\S]*\\gexec/u);
 
-  const turbo = JSON.parse(await readFile(resolve(repositoryRoot, "turbo.json"), "utf8"));
-  assert.deepEqual(turbo.tasks.dev.env, [
-    "CARGO_HOME",
-    "DEVHUD_LOCAL_MODE",
-    "DISPLAY",
-    "RUSTUP_HOME",
-    "XAUTHORITY",
-    "XDG_RUNTIME_DIR",
-  ]);
-  assert.ok(turbo.tasks.build.inputs.includes(".env"));
-  assert.ok(turbo.tasks["build:api"].inputs.includes(".env"));
-  for (const name of ["globalEnv", "globalPassThroughEnv", "passThroughEnv"]) {
-    assert.equal(turbo[name], undefined);
-    assert.equal(turbo.tasks.dev[name], undefined);
-  }
-
-  const rootPackage = JSON.parse(await readFile(resolve(repositoryRoot, "package.json"), "utf8"));
+  const rootTasks = (await import("../../vite.config.ts")).default.run.tasks;
   for (const command of ["env:login", "env:doctor", "dev", "dev:oss", "dev:oss:down"]) {
-    assert.equal(typeof rootPackage.scripts[command], "string");
+    assert.equal(typeof rootTasks[command].command, "string");
+    assert.equal(rootTasks[command].cache, false);
   }
-  assert.match(rootPackage.scripts.dev, /start team/u);
+  assert.match(rootTasks.dev.command, /start team/u);
   assert.match(
     await readFile(
       resolve(repositoryRoot, "apps/devhud-admin/scripts/development.mjs"),
@@ -1564,13 +1549,11 @@ test("incomplete generated identity material fails closed", async (t) => {
 });
 
 test("root documentation development commands bypass the DevHud team environment", async () => {
-  const rootPackage = JSON.parse(
-    await readFile(resolve(repositoryRoot, "package.json"), "utf8"),
-  );
+  const rootTasks = (await import("../../vite.config.ts")).default.run.tasks;
   const commands = [
     {
       name: "dev:public-docs",
-      value: "pnpm --filter public-docs dev",
+      value: "vp run public-docs#dev",
       contracts: [
         "docs/project-public-docs.md",
         "docs/apps-public-docs-foundation.md",
@@ -1578,7 +1561,7 @@ test("root documentation development commands bypass the DevHud team environment
     },
     {
       name: "dev:nodeup-docs",
-      value: "pnpm --filter nodeup-docs dev",
+      value: "vp run nodeup-docs#dev",
       contracts: [
         "docs/project-nodeup.md",
         "docs/apps-nodeup-docs-foundation.md",
@@ -1586,7 +1569,7 @@ test("root documentation development commands bypass the DevHud team environment
     },
     {
       name: "dev:binpm-docs",
-      value: "pnpm --filter binpm-docs dev",
+      value: "vp run binpm-docs#dev",
       contracts: [
         "docs/project-binpm.md",
         "docs/apps-binpm-docs-foundation.md",
@@ -1594,10 +1577,10 @@ test("root documentation development commands bypass the DevHud team environment
     },
   ];
   for (const command of commands) {
-    assert.equal(rootPackage.scripts[command.name], command.value, command.name);
+    assert.equal(rootTasks[command.name].command, command.value, command.name);
     for (const contract of command.contracts) {
       const contents = await readFile(resolve(repositoryRoot, contract), "utf8");
-      assert.ok(contents.includes(`pnpm ${command.name}`), contract);
+      assert.ok(contents.includes(`pnpm exec vp run ${command.name}`), contract);
     }
   }
 });
@@ -1625,11 +1608,11 @@ test("environment source of truth, catalog, domain contracts, READMEs, and AGENT
     "utf8",
   );
   for (const command of [
-    "pnpm env:login",
-    "pnpm env:doctor",
-    "pnpm dev",
-    "pnpm dev:oss",
-    "pnpm dev:oss:down",
+    "pnpm exec vp run env:login",
+    "pnpm exec vp run env:doctor",
+    "pnpm exec vp run dev",
+    "pnpm exec vp run dev:oss",
+    "pnpm exec vp run dev:oss:down",
   ]) {
     assert.ok(contract.includes(command), command);
   }

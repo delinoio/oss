@@ -46,8 +46,8 @@
 - Debug logging must avoid secret/token exposure.
 
 ## Build and Test
-- Local validation: `pnpm --filter mpapp test`
-- Lint validation: `pnpm --filter mpapp lint`
+- Local validation: `pnpm exec vp run mpapp#test`
+- Lint validation: `pnpm exec vp run mpapp#lint`
 - CI alignment: `node-mpapp-test` and `node-mpapp-lint` jobs
 
 ## Dependencies and Integrations

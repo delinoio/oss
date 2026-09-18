@@ -81,9 +81,10 @@ async function execute(action, environment) {
     pnpm.command,
     [
       ...pnpm.prefix,
-      "--filter",
-      "devhud-admin",
-      "build:embedded",
+      "exec",
+      "vp",
+      "run",
+      "devhud-admin#build:embedded",
     ],
     {
       ...safeBaseEnvironment(environment),

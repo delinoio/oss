@@ -326,7 +326,7 @@ export function assertMobileCi(workflow) {
   assert(androidJob.includes('--android-artifact "${aab_artifacts[0]}"') && androidJob.includes('--bundletool-jar "${{ steps.bundletool.outputs.jar }}"'), "Android production CI must inspect the generated App Bundle manifest");
 }
 
-export function assertMobileContracts({ platforms, tauri, ios, android, cargo, androidManifest, androidDebugManifest, androidBackupRules, androidDataExtractionRules, androidPluginManifest, androidNativeBridge, androidWidgetStore, androidChannelEnglish, androidChannelKorean, iosAppEntitlements, iosNativeBridge, iosWidgetStateStore, iosPlist, packageJson, nativeBridge, app, workflow }) {
+export function assertMobileContracts({ platforms, tauri, ios, android, cargo, androidManifest, androidDebugManifest, androidBackupRules, androidDataExtractionRules, androidPluginManifest, androidNativeBridge, androidWidgetStore, androidChannelEnglish, androidChannelKorean, iosAppEntitlements, iosNativeBridge, iosWidgetStateStore, iosPlist, tasks, nativeBridge, app, workflow }) {
   assert(platforms.schemaVersion === 1, "unsupported mobile platform schema");
   assert(platforms.identity === "io.delino.devhud" && tauri.identifier === platforms.identity, "mobile identity changed");
   assert(platforms.deepLinkScheme === "devhud", "deep-link scheme changed");
@@ -366,7 +366,7 @@ export function assertMobileContracts({ platforms, tauri, ios, android, cargo, a
   assert(!/com\.apple\.developer\.|NSExtension/iu.test(iosPlist), "uncontracted iOS entitlement or extension detected");
   assertIosNativeBridge(iosNativeBridge, iosWidgetStateStore);
 
-  assert(packageJson.scripts["build:ios"] && packageJson.scripts["build:android"] && packageJson.scripts["mobile:generate"], "package-local mobile commands are incomplete");
+  assert(tasks["build:ios"] && tasks["build:android"] && tasks["mobile:generate"], "package-local mobile commands are incomplete");
   for (const operation of ["runtime.snapshot", "lifecycle.open-external", "auth.peek-pending-callback", "auth.take-pending-callback", "secure.read", "secure.write", "notifications.request-permission", "updates.status", "widgets.replace-deck-snapshot"]) assert(nativeBridge.includes(`\"${operation}\"`), `typed bridge operation missing: ${operation}`);
   assert(nativeBridge.includes("readonly widgets: boolean"), "runtime widget capability must be platform-reported");
   assert(app.includes("mobile &&") && app.includes("copy.realqaMobileTitle"), "mobile RealQA unavailable state is missing");

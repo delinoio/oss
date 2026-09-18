@@ -9,20 +9,20 @@ Production URL: https://nodeup.delino.io
 Run from repository root:
 
 ```bash
-pnpm --filter nodeup-docs dev
-pnpm --filter nodeup-docs test
-pnpm --filter nodeup-docs build
-pnpm --filter nodeup-docs preview
+pnpm exec vp run nodeup-docs#dev
+pnpm exec vp run nodeup-docs#test
+pnpm exec vp run nodeup-docs#build
+pnpm exec vp run nodeup-docs#preview
 ```
 
-`pnpm --filter nodeup-docs dev` runs Rspress on fixed port `46303`.
-`pnpm --filter nodeup-docs preview` serves the production build on fixed port `46251`.
+`pnpm exec vp run nodeup-docs#dev` runs Rspress on fixed port `46303`.
+`pnpm exec vp run nodeup-docs#preview` serves the production build on fixed port `46251`.
 
 If either fixed port is already in use, the command prints recovery steps before exiting. Stop the conflicting listener with a tool such as `lsof -nP -iTCP:<port> -sTCP:LISTEN`, or use a temporary local override:
 
 ```bash
-NODEUP_DOCS_DEV_PORT=46313 pnpm --filter nodeup-docs dev
-NODEUP_DOCS_PREVIEW_PORT=46253 pnpm --filter nodeup-docs preview
+NODEUP_DOCS_DEV_PORT=46313 pnpm exec vp run nodeup-docs#dev
+NODEUP_DOCS_PREVIEW_PORT=46253 pnpm exec vp run nodeup-docs#preview
 ```
 
 These are explicit temporary overrides; the commands never search for a free port. The documented defaults remain `46303` for development and `46251` for preview.

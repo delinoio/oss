@@ -19,13 +19,6 @@
       "import": "./dist/gen/*.js"
     }
   },
-  "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "pnpm typecheck",
-    "test:unit": "vitest run",
-    "test": "vitest run"
-  },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.0",
     "@connectrpc/connect": "2.1.2"

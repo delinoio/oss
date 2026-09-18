@@ -116,7 +116,7 @@ The Windows examples create `.exe` Nodeup shim aliases. Batch wrappers that call
 node --version
 npm --version
 yarn install
-pnpm test
+pnpm exec vp run test
 ```
 
 Managed alias dispatch installs a missing version selected by the active selector before running the command.

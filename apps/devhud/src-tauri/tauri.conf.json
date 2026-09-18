@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "io.delino.devhud",
   "build": {
-    "beforeDevCommand": "pnpm dev:frontend",
-    "beforeBuildCommand": "pnpm build:frontend",
+    "beforeDevCommand": "pnpm exec vp run dev:frontend",
+    "beforeBuildCommand": "pnpm exec vp run build:frontend",
     "devUrl": "http://127.0.0.1:46305",
     "frontendDist": "../dist"
   },

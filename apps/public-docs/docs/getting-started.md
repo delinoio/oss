@@ -20,7 +20,7 @@ pnpm install
 Run from the repository root:
 
 ```bash
-pnpm --filter public-docs dev
+pnpm exec vp run public-docs#dev
 ```
 
 Rspress starts a local docs server for previewing navigation and page content.
@@ -31,7 +31,7 @@ The development server port is fixed to `46302`. If it is occupied, the command 
 Run from the repository root:
 
 ```bash
-pnpm --filter public-docs test
+pnpm exec vp run public-docs#test
 ```
 
 This builds the site and validates every stable clean route plus generated
@@ -42,8 +42,8 @@ internal links. It should pass before opening a pull request.
 Run from the repository root:
 
 ```bash
-pnpm --filter public-docs build
-pnpm --filter public-docs preview
+pnpm exec vp run public-docs#build
+pnpm exec vp run public-docs#preview
 ```
 
 The production build is written to the app's deployment output directory for Cloudflare

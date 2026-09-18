@@ -483,7 +483,7 @@ test("mobile policy rejects CEF leakage", () => {
     platforms: { schemaVersion: 1, identity: "io.delino.devhud", deepLinkScheme: "devhud", authCallback: "devhud://auth/callback", frontendDist: "../dist", minimumVersions: { ios: "16.0", androidApi: 29 }, androidArtifactInspector: mobilePlatforms.androidArtifactInspector, widgets: mobilePlatforms.widgets, targets: mobileTargets },
     tauri: { identifier: "io.delino.devhud", build: { frontendDist: "../dist" } },
     ios: { bundle: { iOS: { minimumSystemVersion: "16.0" } } },
-    android: { bundle: { android: { minSdkVersion: 29 } } }, cargo: "", androidManifest: "android.permission.INTERNET", androidPluginManifest: "", androidNativeBridge: "", iosPlist: "", packageJson: { scripts: {} }, nativeBridge: "", app: "", workflow: "",
+    android: { bundle: { android: { minSdkVersion: 29 } } }, cargo: "", androidManifest: "android.permission.INTERNET", androidPluginManifest: "", androidNativeBridge: "", iosPlist: "", tasks: {}, nativeBridge: "", app: "", workflow: "",
   };
   assert.throws(() => assertMobileContracts(base), /system-webview features/u);
 });

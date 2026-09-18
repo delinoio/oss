@@ -15,7 +15,7 @@ async function exists(path) {
 
 const eventLog = process.env.DEVHUD_TEST_EVENT_LOG;
 const args = process.argv.slice(2);
-const action = args.includes("build:embedded") ? "admin-assets" : "turbo";
+const action = args.includes("devhud-admin#build:embedded") ? "admin-assets" : "vite-task";
 const forbidden = [
   "DEVHUD_DATABASE_URL",
   "DEVHUD_LOGTO_ISSUER",
@@ -27,10 +27,10 @@ const forbidden = [
   "DOCKER_CONTEXT",
 ];
 if (forbidden.some((name) => process.env[name])) {
-  process.stderr.write("Turbo received a service configuration value\n");
+  process.stderr.write("ViteTask received a service configuration value\n");
   process.exitCode = 5;
 } else if (!["team", "oss"].includes(process.env.DEVHUD_LOCAL_MODE)) {
-  process.stderr.write("Turbo did not receive the bounded mode selector\n");
+  process.stderr.write("ViteTask did not receive the bounded mode selector\n");
   process.exitCode = 6;
 } else if (eventLog) {
   await appendFile(
@@ -39,9 +39,9 @@ if (forbidden.some((name) => process.env[name])) {
     "utf8",
   );
   if (
-    action === "turbo" &&
+    action === "vite-task" &&
     process.env.DEVHUD_LOCAL_MODE === "team" &&
-    process.env.DEVHUD_TEST_RUN_TURBO_SERVICES === "1"
+    process.env.DEVHUD_TEST_RUN_VITE_TASK_SERVICES === "1"
   ) {
     for (const script of [
       resolve(process.cwd(), "servers/devhud-api/scripts/local.mjs"),
@@ -64,10 +64,10 @@ if (forbidden.some((name) => process.env[name])) {
       }
     }
   }
-  if (action === "turbo" && process.env.DEVHUD_TEST_BLOCK_PNPM === "1") {
+  if (action === "vite-task" && process.env.DEVHUD_TEST_BLOCK_PNPM === "1") {
     await appendFile(
       eventLog,
-      `${JSON.stringify({ tool: "pnpm", action: "turbo-blocked" })}\n`,
+      `${JSON.stringify({ tool: "pnpm", action: "vite-task-blocked" })}\n`,
       "utf8",
     );
     const releaseFile = process.env.DEVHUD_TEST_PNPM_RELEASE_FILE;

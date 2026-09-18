@@ -7,7 +7,7 @@ const workflow = readFileSync(fileURLToPath(new URL("../../.github/workflows/pac
 const apiDockerfile = readFileSync(fileURLToPath(new URL("../../servers/devhud-api/Dockerfile", import.meta.url)), "utf8");
 
 test("private workflow fails immediately when Windows platform smoke fails", () => {
-  assert.ok(workflow.includes('pnpm --filter devhud smoke:platform -- --artifact "$installDir\\devhud.exe"\n          if ($LASTEXITCODE -ne 0) { throw "platform smoke failed with exit code $LASTEXITCODE" }'));
+  assert.ok(workflow.includes('pnpm exec vp run devhud#smoke:platform --artifact "$installDir\\devhud.exe"\n          if ($LASTEXITCODE -ne 0) { throw "platform smoke failed with exit code $LASTEXITCODE" }'));
 });
 
 test("private OCI packaging generates verified administrator assets before Go validation", () => {
@@ -16,7 +16,7 @@ test("private OCI packaging generates verified administrator assets before Go va
     workflow.indexOf("\n  assemble:"),
   );
   const install = "pnpm install --frozen-lockfile --ignore-scripts";
-  const assets = "pnpm --filter devhud-admin build:embedded";
+  const assets = "pnpm exec vp run devhud-admin#build:embedded";
   const goTest = "go test ./servers/devhud-api/...";
   const dockerBuild = "docker buildx build";
   for (const command of [install, assets, goTest, dockerBuild]) {
@@ -29,7 +29,7 @@ test("private OCI packaging generates verified administrator assets before Go va
 
 test("API Docker builds own one verified bundle for both binaries", () => {
   assert.match(apiDockerfile, /FROM --platform=\$BUILDPLATFORM node:24-bookworm-slim AS administrator-assets/u);
-  assert.match(apiDockerfile, /pnpm --filter devhud-admin build:embedded/u);
+  assert.match(apiDockerfile, /pnpm exec vp run devhud-admin#build:embedded/u);
   assert.match(
     apiDockerfile,
     /COPY --from=administrator-assets \/src\/servers\/devhud-api\/internal\/adminassets\/dist \.\/servers\/devhud-api\/internal\/adminassets\/dist/u,
@@ -60,13 +60,13 @@ test("private workflow validates AppImage sandbox metadata before preparing its 
     'sudo chmod 4755 "$sandbox"',
     'executable=$(realpath "$appdir/bin/devhud")',
     'host=$(realpath "$appdir/bin/devhud-native-messaging-host")',
-    'smoke:platform -- --artifact "$executable"',
+    'smoke:platform --artifact "$executable"',
   ]) assert.ok(workflow.includes(command), `missing AppImage validation command: ${command}`);
   assert.ok(ubuntu.indexOf(metadataInspection) < ubuntu.indexOf(extraction));
   assert.ok(ubuntu.indexOf(extraction) < ubuntu.indexOf(repair));
   assert.ok(ubuntu.includes('appimage=$(realpath "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage")'));
-  assert.ok(ubuntu.includes('APPIMAGE="$appimage" APPDIR="$appdir" dbus-run-session -- xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact "$executable"'));
-  assert.ok(!workflow.includes('smoke:platform -- --artifact "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage"'));
+  assert.ok(ubuntu.includes('APPIMAGE="$appimage" APPDIR="$appdir" dbus-run-session -- xvfb-run -a pnpm exec vp run devhud#smoke:platform --artifact "$executable"'));
+  assert.ok(!workflow.includes('smoke:platform --artifact "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage"'));
 });
 
 test("private workflow compiles the exact installed package kind for every desktop row", () => {
@@ -106,7 +106,7 @@ test("private workflow keeps each Linux Native Messaging lifecycle inside a D-Bu
 });
 
 test("private workflow validates the combined Android App Bundle once", () => {
-  const command = 'verify:mobile -- --android-artifact "$PWD/private-artifacts/devhud-android-arm64-armv7-google-play.aab" --android-abi arm64-v8a --android-abi armeabi-v7a --bundletool-jar "${{ steps.bundletool.outputs.jar }}"';
+  const command = 'verify:mobile --android-artifact "$PWD/private-artifacts/devhud-android-arm64-armv7-google-play.aab" --android-abi arm64-v8a --android-abi armeabi-v7a --bundletool-jar "${{ steps.bundletool.outputs.jar }}"';
   assert.equal(workflow.split(command).length - 1, 1);
 });
 

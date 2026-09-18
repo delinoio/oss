@@ -4,17 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "prepare:app": "echo 'devhud-chrome-extension: no prepare step'",
-    "build": "node -e \"require('node:fs').rmSync('build',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node scripts/build.mjs",
-    "build:test": "node scripts/build-test.mjs",
-    "build:frontend": "pnpm build:test",
-    "typecheck": "tsc --noEmit",
-    "lint": "pnpm typecheck && node --test scripts/policy.test.mjs",
-    "test:unit": "vitest run",
-    "test:components": "vitest run src/popup.test.ts src/popup-language.test.ts",
-    "test:accessibility": "vitest run src/popup.test.ts src/popup-language.test.ts",
-    "test:package": "node --test scripts/policy.test.mjs scripts/deterministic-build.test.mjs",
-    "test": "pnpm lint && pnpm test:unit && pnpm test:accessibility && node --test scripts/deterministic-build.test.mjs"
+    "prepare:app": "echo 'devhud-chrome-extension: no prepare step'"
   },
   "devDependencies": {
     "@types/chrome": "0.1.32",

@@ -7,20 +7,20 @@ Rspress-based public documentation app for the Delino OSS monorepo.
 Run from the repository root:
 
 ```bash
-pnpm --filter public-docs dev
-pnpm --filter public-docs test
-pnpm --filter public-docs build
-pnpm --filter public-docs build:frontend
-pnpm --filter public-docs test:routes
-pnpm --filter public-docs preview
+pnpm exec vp run public-docs#dev
+pnpm exec vp run public-docs#test
+pnpm exec vp run public-docs#build
+pnpm exec vp run public-docs#build:frontend
+pnpm exec vp run public-docs#test:routes
+pnpm exec vp run public-docs#preview
 ```
 
-`pnpm --filter public-docs dev` runs Rspress on fixed port `46302`. It checks the exact port before startup and exits on conflicts instead of automatically selecting another port.
+`pnpm exec vp run public-docs#dev` runs Rspress on fixed port `46302`. It checks the exact port before startup and exits on conflicts instead of automatically selecting another port.
 Production output is written to `doc_build` for Cloudflare Pages. Rspress clean
 URLs are enabled, so stable public routes such as `/getting-started` do not use
 `.html` suffixes.
 
-`pnpm --filter public-docs test` builds the site and runs
+`pnpm exec vp run public-docs#test` builds the site and runs
 `scripts/validate-clean-urls.mjs`. The validator checks generated artifacts for
 `/`, `/getting-started`, `/projects-overview`, `/documentation-lifecycle`,
 all stable routes, required headings and links, accessibility landmarks, public

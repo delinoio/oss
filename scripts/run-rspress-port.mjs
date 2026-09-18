@@ -56,7 +56,7 @@ function checkPortAvailable(portToCheck, hostToCheck) {
 }
 
 function printPortConflict(portInUse) {
-  const packageCommand = `pnpm --filter ${appName} ${command}`;
+  const packageCommand = `pnpm exec vp run ${appName}#${command}`;
 
   console.error(`${appName}: port ${portInUse} is already in use.`);
   console.error("");

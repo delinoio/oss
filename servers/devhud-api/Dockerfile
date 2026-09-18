@@ -2,14 +2,14 @@
 FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS administrator-assets
 WORKDIR /src
 RUN corepack enable && corepack prepare pnpm@10.26.2 --activate
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml vite.config.ts ./
 COPY apps/devhud-admin/package.json ./apps/devhud-admin/package.json
 COPY packages/devhud-api-client/package.json ./packages/devhud-api-client/package.json
-RUN pnpm install --frozen-lockfile --ignore-scripts --filter devhud-admin...
+RUN pnpm install --frozen-lockfile --ignore-scripts --filter delinoio-oss-workspace --filter devhud-admin...
 COPY apps/devhud-admin ./apps/devhud-admin
 COPY packages/devhud-api-client ./packages/devhud-api-client
 RUN mkdir -p servers/devhud-api/internal/adminassets && \
-    pnpm --filter devhud-admin build:embedded
+    pnpm exec vp run devhud-admin#build:embedded
 
 FROM --platform=$BUILDPLATFORM golang:1.25.7-bookworm AS build
 WORKDIR /src
