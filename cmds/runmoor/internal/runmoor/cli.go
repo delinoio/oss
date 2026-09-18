@@ -297,17 +297,16 @@ func waitStopped(ctx context.Context, c Config, pool string) error {
 		cancel()
 		if e != nil {
 			store, se := OpenStore(c)
-			if se == nil {
-				s := store.View()
-				store.Close()
-				if allTerminated(s) {
-					return nil
+			if se != nil {
+				if !waitContext(ctx, time.Second) {
+					return problem(ErrControl, "Waiting for drain was interrupted; the manager keeps draining.", "Inspect status before stopping the service.")
 				}
+				continue
 			}
-			if !waitContext(ctx, time.Second) {
-				return problem(ErrControl, "Waiting for drain was interrupted; the manager keeps draining.", "Inspect status before stopping the service.")
-			}
-			continue
+			// Apply the same pool/generation selection when the manager's socket
+			// disappears but detached work in other pools is still active.
+			resp.Status = statusOf(store.View(), false)
+			store.Close()
 		}
 		active := false
 		for _, r := range resp.Status.Runners {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -98,6 +99,57 @@ func TestReloadRejectsWholeCandidateAtomically(t *testing.T) {
 	}
 	if m.Store.View().Generation == before {
 		t.Fatal("valid candidate was not committed")
+	}
+}
+
+func TestWaitStoppedScopesLiveAndOfflineStateToPool(t *testing.T) {
+	for _, online := range []bool{false, true} {
+		for _, tc := range []struct {
+			name, pool                    string
+			localCleaned, oldActive, done bool
+		}{
+			{"target drained", "linux", true, false, true},
+			{"unrelated active", "other", true, false, false},
+			{"global drain", "", true, false, false},
+			{"local cleanup pending", "linux", false, false, false},
+			{"old generation active", "linux", true, true, false},
+		} {
+			t.Run(fmt.Sprintf("online=%t/%s", online, tc.name), func(t *testing.T) {
+				m, c, _, _, pool := testManager(t)
+				id := seedRunner(t, m, pool, Cleaning)
+				if err := m.Store.Update(func(s *Snapshot) error {
+					s.Runners[id].Terminated = true
+					s.Runners[id].LocalCleaned = tc.localCleaned
+					s.Pools["other"] = &PoolState{ID: "other", Spec: Pool{Name: "other"}, Phase: Ready}
+					s.Runners["other-job"] = &Runner{ID: "other-job", PoolID: "other", Phase: Busy}
+					if tc.oldActive {
+						s.Pools["old"] = &PoolState{ID: "old", Spec: Pool{Name: "linux"}, Phase: Draining}
+						s.Runners["old-job"] = &Runner{ID: "old-job", PoolID: "old", Phase: Busy}
+					}
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+				if online {
+					server, err := m.ServeControl()
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer server.Close()
+				} else if err := m.Store.Close(); err != nil {
+					t.Fatal(err)
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+				defer cancel()
+				err := waitStopped(ctx, c, tc.pool)
+				if tc.done && err != nil {
+					t.Fatal("drained pool waited for unrelated work", err)
+				}
+				if !tc.done {
+					requireCode(t, err, ErrControl)
+				}
+			})
+		}
 	}
 }
 func TestDrainedBackupRelocationAndActiveRejection(t *testing.T) {
