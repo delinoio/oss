@@ -229,6 +229,9 @@ func TestPowerFailureRemainsWarningAndJobsKeepRunning(t *testing.T) {
 }
 
 func TestImageMutationsRequireManagerBeforeOfflineSideEffects(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix control socket contract")
+	}
 	for _, action := range []string{"create", "open", "seal", "remove"} {
 		t.Run(action, func(t *testing.T) {
 			c := fixtureConfig(t)
