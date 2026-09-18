@@ -44,7 +44,7 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 
 ### Tart images and jobs
 
-- Image mutations require a running manager; the CLI never executes them offline. The manager retains sleep inhibition for open setup/validation revisions after the request returns. Offline image listing remains available. Initial setup accepts explicit host budgets with no pools/connections; add the Tart pool and reload after sealing.
+- Image mutations require a running manager; the CLI never executes them offline. The manager retains sleep inhibition for open setup/validation revisions after the request returns. Whole-manager stop, including force-stop and service stop/uninstall, waits for open setup and pending image removal; pool-scoped waits do not. Shutdown rejects new image operations but permits sealing an already open revision and retrying pending removal. Close the setup VM normally or seal it before expecting stop to finish. Offline image listing remains available. Initial setup accepts explicit host budgets with no pools/connections; add the Tart pool and reload after sealing.
 
 - Initial compatibility pins: Tart 2.37.0, Guest Agent 0.14.2, macOS 14+ arm64. Require functional Guest Agent RPC and an exact runner version in the prepared non-root guest account.
 - `image create --name NAME --cpu N --memory-mib N` accepts exactly one `--ipsw PATH` or `--from SOURCE`. Sources are a stopped local Tart name (optional `--source-home`), absolute `.tvm`, sealed Runmoor revision UUID, or `oci://` input resolved to a digest. Imports never modify the operator's source image.

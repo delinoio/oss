@@ -127,7 +127,7 @@ func (m *Manager) Run(ctx context.Context, c Config) error {
 			return e
 		}
 		s := m.Store.View()
-		if s.Stopping && allTerminated(s) {
+		if m.readyToStop() {
 			m.Log.Info("manager_stopped", "pending_cleanup", pendingCleanup(s))
 			return nil
 		}
@@ -153,12 +153,27 @@ func (m *Manager) Run(ctx context.Context, c Config) error {
 	}
 }
 func allTerminated(s Snapshot) bool {
+	for _, im := range s.Images {
+		if im.Phase == ImageOpen || im.Phase == ImageRemoving {
+			return false
+		}
+	}
 	for _, r := range s.Runners {
 		if r.Phase != Completed && (!r.Terminated || !r.LocalCleaned) {
 			return false
 		}
 	}
 	return true
+}
+func (m *Manager) readyToStop() bool {
+	// An image operation may still be publishing its durable reservation or
+	// finishing cleanup. Keep lifetime ownership until it leaves this boundary.
+	if !m.imageMu.TryLock() {
+		return false
+	}
+	defer m.imageMu.Unlock()
+	s := m.Store.View()
+	return s.Stopping && allTerminated(s)
 }
 func pendingCleanup(s Snapshot) int {
 	n := 0
@@ -898,6 +913,10 @@ func (m *Manager) Stop(force bool) error {
 		}
 		m.Log.Info("manager_stop_requested", "force", force)
 	}
+	// Serialize the response with image operations without delaying forced job
+	// cancellation. Waiters must not miss an operation still recording intent.
+	m.imageMu.Lock()
+	m.imageMu.Unlock()
 	return err
 }
 func (m *Manager) StopPool(name string, force bool) error {

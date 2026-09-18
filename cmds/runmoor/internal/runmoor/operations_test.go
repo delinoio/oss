@@ -303,12 +303,74 @@ func TestImageOnlyManagerKeepsOpenSetupInhibitedAfterCLIReturns(t *testing.T) {
 	if !power.active || s.View().Images[id].Phase != ImageOpen {
 		t.Fatal("setup lifetime lost its sleep inhibitor when the CLI returned")
 	}
+	if err = m.Stop(true); err != nil {
+		t.Fatal(err)
+	}
+	if err = m.step(); err != nil {
+		t.Fatal(err)
+	}
+	if m.readyToStop() || !power.active {
+		t.Fatal("stop released lifetime ownership of open setup")
+	}
+	for _, action := range []string{"create", "open"} {
+		_, err = SendControl(context.Background(), c, ControlRequest{Action: "image", Image: &ImageRequest{Action: action, ID: id}})
+		requireCode(t, err, ErrControl)
+	}
 	cli("seal", "--id", id, "--runner-version", "2.337.0")
 	if err = m.step(); err != nil {
 		t.Fatal(err)
 	}
 	if power.active {
 		t.Fatal("sealed, stopped image retained its sleep inhibitor")
+	}
+	if !m.readyToStop() {
+		t.Fatal("finished setup blocked shutdown")
+	}
+	m.imageMu.Lock()
+	ready := m.readyToStop()
+	m.imageMu.Unlock()
+	if ready {
+		t.Fatal("shutdown raced an in-flight image operation")
+	}
+}
+
+func TestShutdownWaitsForImagesThroughLiveAndOfflineState(t *testing.T) {
+	for _, online := range []bool{false, true} {
+		for _, phase := range []ImagePhase{ImagePreparing, ImageOpen, ImageSealed, ImageRemoving} {
+			t.Run(fmt.Sprintf("online=%t/%s", online, phase), func(t *testing.T) {
+				m, c, _, _, _ := testManager(t)
+				if err := m.Store.Update(func(s *Snapshot) error {
+					s.Stopping = true
+					s.Images["setup"] = &Image{ID: "setup", Phase: phase}
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+				pending := phase == ImageOpen || phase == ImageRemoving
+				if m.readyToStop() == pending {
+					t.Fatal("incorrect image shutdown boundary")
+				}
+				if online {
+					server, err := m.ServeControl()
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer server.Close()
+				} else if err := m.Store.Close(); err != nil {
+					t.Fatal(err)
+				}
+				for _, pool := range []string{"", "linux"} {
+					ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+					err := waitStopped(ctx, c, pool)
+					cancel()
+					if pending && pool == "" {
+						requireCode(t, err, ErrControl)
+					} else if err != nil {
+						t.Fatal(err)
+					}
+				}
+			})
+		}
 	}
 }
 

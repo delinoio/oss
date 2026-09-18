@@ -159,7 +159,16 @@ func (m *Manager) Control(ctx context.Context, req ControlRequest) ControlRespon
 		}
 		m.imageMu.Lock()
 		defer m.imageMu.Unlock()
-		resp.Image, err = m.Images.Operate(ctx, m.Store.View().Config, *req.Image)
+		s := m.Store.View()
+		if s.Stopping {
+			im := s.Images[req.Image.ID]
+			// Only finishing existing work may cross the shutdown boundary.
+			if im == nil || !((req.Image.Action == "seal" && im.Phase == ImageOpen) || (req.Image.Action == "remove" && im.Phase == ImageRemoving)) {
+				err = problem(ErrControl, "The manager is stopping and cannot begin another image operation.", "Finish open image setup or pending removal, then restart the manager for new image work.")
+				break
+			}
+		}
+		resp.Image, err = m.Images.Operate(ctx, s.Config, *req.Image)
 	case "images":
 		for _, im := range m.Store.View().Images {
 			resp.Images = append(resp.Images, im)

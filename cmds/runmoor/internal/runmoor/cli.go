@@ -303,6 +303,13 @@ func waitStopped(ctx context.Context, c Config, pool string) error {
 			store.Close()
 		}
 		active := false
+		if pool == "" {
+			for _, im := range resp.Status.Images {
+				if im.Phase == ImageOpen || im.Phase == ImageRemoving {
+					active = true
+				}
+			}
+		}
 		for _, r := range resp.Status.Runners {
 			if r.Terminated && r.LocalCleaned {
 				continue
@@ -321,7 +328,7 @@ func waitStopped(ctx context.Context, c Config, pool string) error {
 			return nil
 		}
 		if !waitContext(ctx, time.Second) {
-			return problem(ErrControl, "Waiting for drain was interrupted; the manager keeps draining.", "Inspect status; use stop --force only when termination is intended.")
+			return problem(ErrControl, "Waiting for drain was interrupted; the manager keeps draining.", "Inspect status; finish open image setup or pending removal. Use stop --force only when job termination is intended.")
 		}
 	}
 }
