@@ -21,6 +21,7 @@ type Manager struct {
 	mu            sync.Mutex
 	workers       map[string]context.CancelFunc
 	poolLoops     map[string]context.CancelFunc
+	poolLocks     map[string]*sync.Mutex
 	remotes       map[string]Remote
 	wg            sync.WaitGroup
 	imageMu       sync.Mutex
@@ -31,7 +32,15 @@ type Manager struct {
 
 func NewManager(store *Store, path string, l *slog.Logger) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Manager{Store: store, ConfigPath: path, Log: l, RemoteFactory: NewGitHub, Drivers: defaultDriver, Images: &ImageManager{Store: store, Tart: &TartDriver{Exec: OSCommand{}}}, Power: &PowerManager{}, workers: map[string]context.CancelFunc{}, poolLoops: map[string]context.CancelFunc{}, remotes: map[string]Remote{}, ctx: ctx, cancel: cancel}
+	return &Manager{Store: store, ConfigPath: path, Log: l, RemoteFactory: NewGitHub, Drivers: defaultDriver, Images: &ImageManager{Store: store, Tart: &TartDriver{Exec: OSCommand{}}}, Power: &PowerManager{}, workers: map[string]context.CancelFunc{}, poolLoops: map[string]context.CancelFunc{}, poolLocks: map[string]*sync.Mutex{}, remotes: map[string]Remote{}, ctx: ctx, cancel: cancel}
+}
+func (m *Manager) poolLock(id string) *sync.Mutex {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.poolLocks[id] == nil {
+		m.poolLocks[id] = &sync.Mutex{}
+	}
+	return m.poolLocks[id]
 }
 func (m *Manager) remote(p PoolState) (Remote, error) {
 	m.mu.Lock()
@@ -359,7 +368,7 @@ func (m *Manager) poolProblem(id string, err error, suspend bool) {
 	p := classify(err, ErrRetry, "Pool dependency is unavailable.", "Inspect status and retry after restoring the dependency.")
 	_ = m.Store.Update(func(s *Snapshot) error {
 		v := s.Pools[id]
-		if v == nil {
+		if v == nil || v.Phase == Retired {
 			return nil
 		}
 		p.Pool = v.Spec.Name
@@ -404,19 +413,10 @@ func (m *Manager) poolLoop(ctx context.Context, id string) {
 		}
 		if e == nil {
 			probe, cancel := context.WithTimeout(ctx, 60*time.Second)
-			var scaleID int
-			scaleID, e = remote.Ensure(probe, *p, func() error {
-				return m.Store.Update(func(v *Snapshot) error { v.Pools[id].CreatePending = true; return nil })
-			})
+			p, e = m.ensureScaleSet(probe, id, remote)
 			cancel()
-			if e == nil {
-				e = m.Store.Update(func(v *Snapshot) error {
-					v.Pools[id].ScaleSetID = scaleID
-					v.Pools[id].CreatePending = false
-					v.Pools[id].Problem = nil
-					return nil
-				})
-				p = m.Store.View().Pools[id]
+			if e == nil && (p == nil || p.ScaleSetID == 0) {
+				return
 			}
 		}
 		if e != nil {
@@ -473,6 +473,48 @@ func (m *Manager) poolLoop(ctx context.Context, id string) {
 			attempt++
 		}
 	}
+}
+func (m *Manager) ensureScaleSet(ctx context.Context, id string, remote Remote) (*PoolState, error) {
+	lock := m.poolLock(id)
+	lock.Lock()
+	defer lock.Unlock()
+	return m.ensureScaleSetLocked(ctx, id, remote)
+}
+
+// Initialization and retirement share this lock through both the remote call
+// and its durable publication. Reload can still drain immediately; the intent
+// transaction below rechecks that phase before allowing a new remote creation.
+func (m *Manager) ensureScaleSetLocked(ctx context.Context, id string, remote Remote) (*PoolState, error) {
+	p := m.Store.View().Pools[id]
+	if p == nil || p.Phase == Retired || p.Phase == Suspended {
+		return nil, nil
+	}
+	if p.Phase == Draining && p.ScaleSetID == 0 && !p.CreatePending {
+		return p, nil
+	}
+	scaleID, err := remote.Ensure(ctx, *p, func() error {
+		return m.Store.Update(func(s *Snapshot) error {
+			p := s.Pools[id]
+			if s.Stopping || p == nil || (p.Phase != Ready && p.Phase != Paused) {
+				return problem(ErrRetry, "Pool initialization was interrupted by drain or stop.", "Wait for the previous pool generation to finish cleanup.")
+			}
+			p.CreatePending = true
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err = m.Store.Update(func(s *Snapshot) error {
+		p := s.Pools[id]
+		p.ScaleSetID = scaleID
+		p.CreatePending = false
+		p.Problem = nil
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return m.Store.View().Pools[id], nil
 }
 func (m *Manager) listen(ctx context.Context, id string, session RemoteSession) error {
 	for ctx.Err() == nil {
@@ -877,14 +919,23 @@ func (m *Manager) cleanup(ctx context.Context, id string) {
 	m.Log.Info("runner_cleaned", "pool", p.Spec.Name, "runner", id)
 }
 func (m *Manager) retirePool(ctx context.Context, id string) {
+	lock := m.poolLock(id)
+	lock.Lock()
+	defer lock.Unlock()
 	s := m.Store.View()
 	p := s.Pools[id]
 	if p == nil || p.Phase != Draining {
 		return
 	}
-	if p.ScaleSetID != 0 {
+	if p.ScaleSetID != 0 || p.CreatePending {
 		remote, e := m.remote(*p)
-		if e == nil {
+		if e == nil && p.CreatePending {
+			// Recover an interrupted creation by lookup only. An absent result
+			// clears the intent; a verified owned result must be deleted before
+			// retirement can release this remote identity to a new generation.
+			p, e = m.ensureScaleSetLocked(ctx, id, remote)
+		}
+		if e == nil && p.ScaleSetID != 0 {
 			e = remote.DeletePool(ctx, *p)
 		}
 		if e != nil {

@@ -186,6 +186,11 @@ func (g *GitHub) Ensure(ctx context.Context, p PoolState, markCreate func() erro
 		}
 		return existing.ID, nil
 	}
+	if p.Phase == Draining || p.Phase == Retired {
+		// A draining generation may resolve a journaled creation outcome, but
+		// must never create a replacement when the authoritative lookup is empty.
+		return 0, nil
+	}
 	if p.ScaleSetID != 0 {
 		return 0, problem(ErrOwnership, "The recorded GitHub scale set is missing.", "Drain this pool and configure a new scale-set identity; do not reuse lost ownership records.")
 	}

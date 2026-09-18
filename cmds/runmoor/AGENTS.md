@@ -3,7 +3,7 @@
 - Follow `docs/project-runmoor.md` and `docs/cmds-runmoor-foundation.md`; issue #893 is the product contract.
 - Keep CLI, TOML v1, SQLite v1, and versioned JSON contracts synchronized with the English README and public `/runmoor` documentation.
 - Use the official pinned `actions/scaleset` client. Persist message effects before acknowledgement; derive demand from statistics, never event counts.
-- Preserve installation ownership, per-runner resource reservations, original configuration generations, and cleanup progress across crashes. Never adopt resources based only on their names.
+- Preserve installation ownership, per-runner resource reservations, original configuration generations, and cleanup progress across crashes. Never adopt resources based only on their names. Serialize each pool's scale-set initialization/publication with retirement; draining pools may resolve pending creation by lookup but cannot begin a new creation or retire while that outcome is unresolved.
 - GitHub management credentials stay on the host. Do not persist JIT credentials or copy raw workflow output, upstream response bodies, or subprocess stderr into diagnostics.
 - Scale down through GitHub's busy-aware removal before terminating an idle execution. Preserve an assignment that wins the race.
 - Docker jobs never receive the host socket, personal bind mounts, credential environment, or manager state. Each DinD daemon and all of its storage belong to exactly one execution. Disable log retention both on outer containers and by default inside the nested daemon. A bootstrap marker is not readiness: require the runner container to survive a startup observation before clearing preparation failures.

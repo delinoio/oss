@@ -123,6 +123,24 @@ func TestOfficialClientRepositoryOrganizationAppPAT(t *testing.T) {
 				p.OwnerLabel = "runmoor-owner-foreign"
 				_, e = g.Ensure(context.Background(), p, func() error { return nil })
 				requireCode(t, e, ErrOwnership)
+				mu.Lock()
+				p.OwnerLabel = created.Labels[1].Name
+				mu.Unlock()
+				p.Phase, p.ScaleSetID, p.CreatePending = Draining, 0, true
+				noCreate := func() error { t.Error("draining recovery attempted creation"); return nil }
+				if id, e = g.Ensure(context.Background(), p, noCreate); e != nil || id != 17 {
+					t.Fatal("draining creation recovery did not find its owned set", e)
+				}
+				p.CreatePending = false
+				_, e = g.Ensure(context.Background(), p, noCreate)
+				requireCode(t, e, ErrOwnership)
+				p.CreatePending = true
+				mu.Lock()
+				created = nil
+				mu.Unlock()
+				if id, e = g.Ensure(context.Background(), p, noCreate); e != nil || id != 0 {
+					t.Fatal("draining generation recreated an absent scale set", e)
+				}
 			})
 		}
 	}
