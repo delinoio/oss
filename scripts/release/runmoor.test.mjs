@@ -3,7 +3,6 @@ import { mkdtempSync, readFileSync, writeFileSync, readdirSync, rmSync } from "n
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import yaml from "js-yaml";
 import { archive, archiveNames, checkPublication, checksums, inspectArchive, releasePlan, verify } from "./runmoor.mjs";
 
 const revision = "1".repeat(40);
@@ -72,28 +71,7 @@ test("Signed verification invokes an injected verifier with exact artifact and i
     assert.equal(invoked, false);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
-test("Workflow keeps credentials, OIDC and actual signing out of every dry-run job", () => {
-  const workflow = yaml.load(readFileSync(new URL("../../.github/workflows/release-runmoor.yml", import.meta.url), "utf8"));
-  assert.deepEqual(workflow.permissions, { contents: "read" });
-  assert.equal(workflow.on.workflow_dispatch.inputs.dry_run.default, true);
-  assert.deepEqual(workflow.on.push.tags, ["runmoor@v*"]);
-  for (const [name, job] of Object.entries(workflow.jobs)) {
-    if (name === "publish") continue;
-    assert.equal(job.permissions?.["id-token"], undefined);
-    assert.doesNotMatch(JSON.stringify(job), /secrets\.|cosign|sign-blob|action-gh-release/u);
-  }
-  const publish = workflow.jobs.publish;
-  assert.equal(publish.if, "needs.plan.outputs.mode == 'publish'");
-  assert.deepEqual(publish.permissions, { contents: "write", "id-token": "write" });
-  const sign = publish.steps.find((step) => step.name === "Sign exact artifacts with Sigstore").run;
-  assert.match(sign, /--signed true --identity "https:\/\/github.com\/\$\{GITHUB_WORKFLOW_REF\}"/u);
-  const verifier = readFileSync(new URL("./runmoor.mjs", import.meta.url), "utf8");
-  assert.match(verifier, /"verify-blob", "--bundle"/u);
-  assert.match(verifier, /"--certificate-oidc-issuer", "https:\/\/token.actions.githubusercontent.com"/u);
-  const release = publish.steps.find((step) => step.uses?.startsWith("softprops/"));
-  assert.equal(release.with.prerelease, true);
-  assert.equal(release.with.overwrite_files, false);
-});
+
 
 test("Publication refuses conflicting tags, existing releases and uncertain API results", async () => {
   const plan = releasePlan({ version: "0.1.0", revision, ref: "refs/heads/main", mode: "publish" });

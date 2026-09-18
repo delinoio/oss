@@ -429,4 +429,5 @@ Release automation baseline:
 - Follow `docs/project-runmoor.md`, `docs/cmds-runmoor-foundation.md`, and `cmds/runmoor/AGENTS.md` for issue #893. Runmoor owns local ephemeral GitHub Actions runners through Docker and Tart, with host-only credentials, durable ownership, fair resource budgets, and single-job disposable environments.
 - Initial Runmoor binaries are preview prereleases for darwin-arm64, linux-amd64, and linux-arm64 under `runmoor@v<MAJOR.MINOR.PATCH>`; publication dry runs are credential-free and non-publishing. No Homebrew distribution is added.
 
+- Runmoor release fixtures must run with Node built-ins and no workspace dependency installation; YAML workflow assertions belong to `scripts/ci/` under `pnpm ci:contracts`.
 - Runmoor release dry runs are secret-free and non-publishing. Only the guarded publication job can obtain OIDC/signing and release-write authority; preview releases use the exact `runmoor@v<MAJOR.MINOR.PATCH>` source identity and three documented platform archives.

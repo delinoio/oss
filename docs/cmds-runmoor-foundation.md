@@ -83,6 +83,7 @@ Use `log/slog` text or JSON for lifecycle transitions, preparation duration, ret
 - Preserve root Ubuntu/macOS/Windows Go CI. Generate ignored administrator assets with `pnpm --filter devhud-admin build:embedded` before root Go tests/vet. Public docs changes run `pnpm test` in `apps/public-docs`.
 - `scripts/release/runmoor.mjs` builds deterministic `runmoor-darwin-arm64.tar.gz`, `runmoor-linux-amd64.tar.gz`, and `runmoor-linux-arm64.tar.gz`, each containing the executable, English README, and license. SHA256SUMS covers exactly those three archives. Publication signs each archive and the checksum file with separate Sigstore bundles and verifies the exact executing workflow identity before upload.
 - `.github/workflows/runmoor.yml` adds read-only opt-in-path Docker integration without altering existing CI jobs or development ports. `.github/workflows/release-runmoor.yml` supports `runmoor@v<MAJOR.MINOR.PATCH>` tags and manual dispatch. Dry-run stages contain no signing or publication authority; initial releases are prereleases.
+- Release fixtures run without installed workspace packages; YAML workflow assertions run under the dependency-installed `pnpm ci:contracts` suite in `scripts/ci/runmoor-release.test.mjs`.
 - Release validation builds three architectures and verify archive inventory/checksums, strict tag parsing, prerelease marking, secret-free dry run and publication isolation. Real keyless signing occurs only in publication jobs with job-scoped permissions.
 
 ### Implementation validation (2026-09-18)
