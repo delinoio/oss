@@ -68,6 +68,7 @@ func OpenStore(c Config) (*Store, error) {
 		return failed(problem(ErrState, "Cannot initialize durable SQLite storage.", "Check the filesystem and available disk space."))
 	}
 	s := &Store{db: db, lock: lock}
+	relocated := false
 	if version == 0 {
 		s.state = Snapshot{SchemaVersion: 1, Installation: newID(), Pools: map[string]*PoolState{}, Runners: map[string]*Runner{}, Images: map[string]*Image{}, Generations: map[string]Config{}, Config: c}
 		b, _ := json.Marshal(s.state)
@@ -95,7 +96,17 @@ func OpenStore(c Config) (*Store, error) {
 			return failed(problem(ErrState, "State snapshot is invalid.", "Preserve the database for diagnosis and restore a compatible backup."))
 		}
 		if s.state.Config.Storage != c.Storage {
-			return failed(problem(ErrConfig, "State and data locations differ from this installation's stored locations.", "Restore the original storage settings; relocation requires a drained, complete state/data backup."))
+			for _, r := range s.state.Runners {
+				if r.Phase != Completed {
+					return failed(problem(ErrConfig, "Storage relocation requires completed execution cleanup.", "Restore the original storage locations and drain before moving the complete backup."))
+				}
+			}
+			for _, im := range s.state.Images {
+				if im.Phase == ImageOpen || im.Phase == ImageRemoving {
+					return failed(problem(ErrConfig, "Storage relocation requires closed images and completed removal.", "Finish image operations at the original storage locations first."))
+				}
+			}
+			relocated = true
 		}
 	}
 	for _, suffix := range []string{"", "-wal", "-shm"} {
@@ -103,6 +114,19 @@ func OpenStore(c Config) (*Store, error) {
 			if e = os.Chmod(path+suffix, 0600); e != nil {
 				return failed(problem(ErrPermission, "Cannot restrict SQLite files.", "Use an owner-controlled state directory."))
 			}
+		}
+	}
+	if relocated {
+		if err := s.Update(func(v *Snapshot) error {
+			v.Config.Storage = c.Storage
+			for id, generation := range v.Generations {
+				generation.Storage = c.Storage
+				v.Generations[id] = generation
+			}
+			return nil
+		}); err != nil {
+			db.Close()
+			return fail(err)
 		}
 	}
 	return s, nil

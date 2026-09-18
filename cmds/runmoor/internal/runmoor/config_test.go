@@ -13,18 +13,20 @@ import (
 
 func fixtureConfig(t *testing.T) Config {
 	t.Helper()
-	base := t.TempDir()
+	tmp := os.TempDir()
 	if runtime.GOOS != "windows" {
-		tmp, e := filepath.EvalSymlinks(os.TempDir())
-		if e != nil {
-			t.Fatal(e)
+		var err error
+		tmp, err = filepath.EvalSymlinks(tmp)
+		if err != nil {
+			t.Fatal(err)
 		}
-		base, e = os.MkdirTemp(tmp, "rm-")
-		if e != nil {
-			t.Fatal(e)
-		}
-		t.Cleanup(func() { os.RemoveAll(base) })
 	}
+	base, err := os.MkdirTemp(tmp, "rm-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(base) })
+
 	c := Config{SchemaVersion: 1, Storage: Storage{State: filepath.Join(base, "s"), Data: filepath.Join(base, "d")}, Host: Budget{MaxRunners: 4, CPU: 8, MemoryMiB: 8192, MinFreeDiskMiB: 1}, Connections: []Connection{{Name: "test", Target: "https://github.com/example/repo", Auth: PAT, Credential: SecretRef{Env: "RUNMOOR_TEST_CREDENTIAL"}}}, Pools: []Pool{{Name: "linux", Connection: "test", ScaleSet: "test-linux", Labels: []string{"test-linux"}, Backend: Docker, Mode: Plain, Arch: runtime.GOARCH, Image: "example/runner@sha256:" + strings.Repeat("a", 64), RunnerVersion: "2.337.0", Resources: Resources{CPU: 1, MemoryMiB: 128}, MaxRunners: 4}}}
 	c, e := NormalizeConfig(c)
 	if e != nil {

@@ -122,9 +122,10 @@ func newGitHub(conn Connection, httpClient *retryablehttp.Client) (*GitHub, erro
 	if err != nil {
 		return nil, problem(ErrAuth, "GitHub credentials could not initialize the client.", "Correct the selected credential reference and resume the pool.")
 	}
+	transportTemplate := httpClient.HTTPClient.Transport.(*http.Transport).Clone()
 	return &GitHub{client: c, sessionHTTP: func() *retryablehttp.Client {
 		copyClient := newHTTPClient()
-		copyClient.HTTPClient.Transport = httpClient.HTTPClient.Transport.(*http.Transport).Clone()
+		copyClient.HTTPClient.Transport = transportTemplate.Clone()
 		return copyClient
 	}}, nil
 }
@@ -342,7 +343,11 @@ func retryDelay(attempt int, err error) time.Duration {
 	if d > 60*time.Second {
 		d = 60 * time.Second
 	}
-	d = d/2 + time.Duration(rand.Int64N(int64(d/2)+1))
+	lower := d / 2
+	if lower < time.Second {
+		lower = time.Second
+	}
+	d = lower + time.Duration(rand.Int64N(int64(d-lower)+1))
 	if p, ok := err.(*Problem); ok && !p.RetryAt.IsZero() {
 		if wait := time.Until(p.RetryAt); wait > d {
 			d = wait

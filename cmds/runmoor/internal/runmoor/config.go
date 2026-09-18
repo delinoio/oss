@@ -82,6 +82,12 @@ var safeName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$`)
 var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 var targetPattern = regexp.MustCompile(`^https://github\.com/[A-Za-z0-9][A-Za-z0-9_.-]*(/[A-Za-z0-9][A-Za-z0-9_.-]*)?$`)
 var imagePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]*@sha256:[0-9a-f]{64}$`)
+var localImagePattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+
+func immutableDockerImage(ref string) bool {
+	return imagePattern.MatchString(ref) || localImagePattern.MatchString(ref)
+}
+
 var versionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 
 func xdg(name, suffix string) string {
@@ -250,14 +256,14 @@ func NormalizeConfig(c Config) (Config, error) {
 		if !versionPattern.MatchString(p.RunnerVersion) {
 			return fail("Every pool must pin an exact runner_version.")
 		}
-		if p.Backend == Docker && !imagePattern.MatchString(p.Image) {
+		if p.Backend == Docker && !immutableDockerImage(p.Image) {
 			return fail("Docker images require immutable sha256 digests.")
 		}
 		if p.Backend == Tart && !validID(p.Image) {
 			return fail("Tart pools require a sealed image revision UUID-v7.")
 		}
 		if p.Mode == DinD {
-			if !imagePattern.MatchString(p.DaemonImage) || !validResources(p.DaemonResources) {
+			if !immutableDockerImage(p.DaemonImage) || !validResources(p.DaemonResources) {
 				return fail("Docker-in-Docker requires a digest-pinned daemon image and explicit daemon resources.")
 			}
 		} else if p.DaemonImage != "" || p.DaemonResources != (Resources{}) {

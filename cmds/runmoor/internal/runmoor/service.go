@@ -123,6 +123,9 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 			return e
 		}
 		if runtime.GOOS == "darwin" {
+			if _, e := exec.Run(ctx, "launchctl", []string{"print", domain + "/" + serviceLabel}, minimalEnv(), nil); e == nil {
+				return run("launchctl", "kickstart", domain+"/"+serviceLabel)
+			}
 			return run("launchctl", "bootstrap", domain, unit)
 		}
 		return run("systemctl", "--user", "enable", "--now", "runmoor.service")

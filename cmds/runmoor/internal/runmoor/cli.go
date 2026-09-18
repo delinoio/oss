@@ -6,11 +6,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -27,7 +27,7 @@ Usage: runmoor [--config PATH] COMMAND [OPTIONS]
   pause [--pool NAME]        Stop accepting work; preserve busy runners
   resume [--pool NAME]       Revalidate and resume paused or suspended pools
   drain [--pool NAME]        Pause and wait for owned jobs and local cleanup
-  stop [--force]             Drain and exit; force terminates owned jobs
+  stop [--pool NAME] [--force] Drain a pool, or drain and exit the manager
   service install|start|stop|uninstall
   image create|open|seal|list|remove
   version
@@ -99,6 +99,29 @@ func Execute(args []string, out, errOut io.Writer) int {
 	if *force && command != "stop" {
 		return printFailure(errOut, *jsonOutput, problem(ErrConfig, "--force is accepted only by stop.", "Use 'runmoor stop --force' to terminate owned work."))
 	}
+	invalidFlag := false
+	fs.Visit(func(f *flag.Flag) {
+		allowed := f.Name == "config" || f.Name == "no-color"
+		switch f.Name {
+		case "json":
+			allowed = command == "status" || command == "doctor" || (command == "image" && sub == "list")
+		case "pool":
+			allowed = command == "pause" || command == "resume" || command == "drain" || command == "stop"
+		case "force":
+			allowed = command == "stop"
+		case "id":
+			allowed = command == "image" && (sub == "open" || sub == "seal" || sub == "remove")
+		case "name", "ipsw", "from", "source-home", "cpu", "memory-mib":
+			allowed = command == "image" && sub == "create"
+		case "runner-path", "runner-version":
+			allowed = command == "image" && sub == "seal"
+		}
+		invalidFlag = invalidFlag || !allowed
+	})
+	if invalidFlag {
+		return printFailure(errOut, *jsonOutput, problem(ErrConfig, "Flag is not supported by this command.", "Run the command with --help."))
+	}
+
 	abs, e := filepath.Abs(path)
 	if e != nil {
 		return printFailure(errOut, *jsonOutput, problem(ErrConfig, "Invalid configuration path.", "Use a valid --config path."))
@@ -120,7 +143,7 @@ func Execute(args []string, out, errOut io.Writer) int {
 		return printFailure(errOut, *jsonOutput, e)
 	}
 	c.Logging.NoColor = c.Logging.NoColor || noColor
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	switch command {
 	case "config":
@@ -138,6 +161,18 @@ func Execute(args []string, out, errOut io.Writer) int {
 			fmt.Fprintf(out, "User service %s completed.\n", sub)
 		}
 	case "status", "image", "doctor":
+		if command == "doctor" {
+			probe, cancel := context.WithTimeout(ctx, 90*time.Second)
+			resp, err := SendControl(probe, c, ControlRequest{Action: "doctor"})
+			cancel()
+			if err == nil && resp.Doctor != nil {
+				printDoctor(out, *resp.Doctor, *jsonOutput)
+				return doctorExit(*resp.Doctor)
+			}
+			if q, ok := err.(*Problem); err != nil && (!ok || q.Code != ErrControl) {
+				return printFailure(errOut, *jsonOutput, err)
+			}
+		}
 		if command == "image" && sub != "list" {
 			ctx, cancel := context.WithTimeout(ctx, 2*time.Hour)
 			defer cancel()
@@ -364,5 +399,3 @@ func doctorExit(r DoctorReport) int {
 	}
 	return 0
 }
-
-var _ = slog.LevelInfo

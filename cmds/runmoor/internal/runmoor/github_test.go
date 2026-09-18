@@ -162,3 +162,88 @@ func TestAssignmentRaceClassifiedWithoutDeletion(t *testing.T) {
 	e := remoteCall(context.Background(), func(context.Context) error { return scaleset.JobStillRunningError })
 	requireCode(t, e, ErrBusy)
 }
+
+func TestOfficialSessionRefreshesExpiredTokensAndHandlesRevocation(t *testing.T) {
+	t.Setenv("RUNMOOR_TEST_CREDENTIAL", "fixture-pat")
+	admin, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"exp": time.Now().Add(time.Hour).Unix()}).SignedString([]byte("fixture"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionID := newID()
+	var mu sync.Mutex
+	refreshed, polls, acks := 0, 0, 0
+	revoked := false
+	client := mockGitHubHTTP(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/actions/runners/registration-token"):
+			w.WriteHeader(201)
+			json.NewEncoder(w).Encode(map[string]any{"token": "registration"})
+		case r.URL.Path == "/actions/runner-registration":
+			json.NewEncoder(w).Encode(map[string]any{"url": "https://api.github.com", "token": admin})
+		case strings.Contains(r.URL.Path, "/sessions") && (r.Method == "POST" || r.Method == "PATCH"):
+			if r.Method == "PATCH" {
+				if revoked {
+					w.WriteHeader(403)
+					return
+				}
+				refreshed++
+			}
+			json.NewEncoder(w).Encode(map[string]any{"sessionId": sessionID, "messageQueueUrl": "https://api.github.com/fixture-queue", "messageQueueAccessToken": "queue-secret", "statistics": map[string]any{"totalAssignedJobs": 2}})
+		case r.URL.Path == "/fixture-queue" && r.Method == "GET":
+			polls++
+			if polls == 1 || revoked {
+				w.WriteHeader(401)
+				return
+			}
+			if r.Header.Get(scaleset.HeaderScaleSetMaxCapacity) != "3" {
+				t.Error("capacity missing from poll")
+			}
+			json.NewEncoder(w).Encode(map[string]any{"messageId": 7, "messageType": "RunnerScaleSetJobMessages", "statistics": map[string]any{"totalAssignedJobs": 2}, "body": "[]"})
+		case r.URL.Path == "/fixture-queue/7" && r.Method == "DELETE":
+			acks++
+			if acks == 1 {
+				w.WriteHeader(401)
+				return
+			}
+			w.WriteHeader(204)
+		case strings.Contains(r.URL.Path, "/sessions/") && r.Method == "DELETE":
+			w.WriteHeader(204)
+		default:
+			t.Errorf("unexpected session request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(404)
+		}
+	}))
+	g, err := newGitHub(Connection{Target: "https://github.com/example/repo", Auth: PAT, Credential: SecretRef{Env: "RUNMOOR_TEST_CREDENTIAL"}}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := g.Session(context.Background(), PoolState{ScaleSetID: 17}, "fixture-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close(context.Background())
+	if session.InitialDemand() != 2 || session.ID() != sessionID {
+		t.Fatal("session statistics or identity lost")
+	}
+	message, err := session.Poll(context.Background(), 0, 3)
+	if err != nil || message.MessageID != 7 {
+		t.Fatal("poll did not recover expired token", err)
+	}
+	if err = session.Ack(context.Background(), 7); err != nil {
+		t.Fatal("ack did not recover expired token", err)
+	}
+	mu.Lock()
+	if refreshed != 2 || acks != 2 {
+		t.Error("SDK refresh paths not exercised")
+	}
+	revoked = true
+	mu.Unlock()
+	_, err = session.Poll(context.Background(), 7, 3)
+	requireCode(t, err, ErrAuth)
+	if strings.Contains(err.Error(), "queue-secret") {
+		t.Fatal("queue token leaked")
+	}
+}

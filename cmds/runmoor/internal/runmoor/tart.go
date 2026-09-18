@@ -47,7 +47,10 @@ func (OSCommand) Start(name string, args, env []string) (int, error) {
 	return cmd.Process.Pid, nil
 }
 
-type TartDriver struct{ Exec CommandExecutor }
+type TartDriver struct {
+	Exec      CommandExecutor
+	HostCheck func(context.Context) error
+}
 
 func tartEnv(c Config) []string {
 	return append(minimalEnv(), "TART_HOME="+filepath.Join(c.Storage.Data, "tart"), "TART_NO_AUTO_PRUNE=1")
@@ -60,22 +63,28 @@ func (t *TartDriver) run(ctx context.Context, c Config, args []string, in io.Rea
 	return b, nil
 }
 func (t *TartDriver) check(ctx context.Context, c Config) error {
-	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
-		return problem(ErrPlatform, "Tart requires an Apple Silicon Mac.", "Use macOS 14 or later on arm64.")
+	if t.HostCheck != nil {
+		if e := t.HostCheck(ctx); e != nil {
+			return e
+		}
+	} else {
+		if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
+			return problem(ErrPlatform, "Tart requires an Apple Silicon Mac.", "Use macOS 14 or later on arm64.")
+		}
+		b, e := t.Exec.Run(ctx, "/usr/bin/sw_vers", []string{"-productVersion"}, minimalEnv(), nil)
+		if e != nil {
+			return problem(ErrPlatform, "Cannot determine macOS version.", "Use macOS 14 or later.")
+		}
+		major, _ := strconv.Atoi(strings.Split(strings.TrimSpace(string(b)), ".")[0])
+		if major < 14 {
+			return problem(ErrPlatform, "Tart execution requires macOS 14 or later.", "Upgrade macOS before enabling Tart pools.")
+		}
 	}
-	b, e := t.Exec.Run(ctx, "/usr/bin/sw_vers", []string{"-productVersion"}, minimalEnv(), nil)
-	if e != nil {
-		return problem(ErrPlatform, "Cannot determine macOS version.", "Use macOS 14 or later.")
-	}
-	major, _ := strconv.Atoi(strings.Split(strings.TrimSpace(string(b)), ".")[0])
-	if major < 14 {
-		return problem(ErrPlatform, "Tart execution requires macOS 14 or later.", "Upgrade macOS before enabling Tart pools.")
-	}
-	b, e = t.run(ctx, c, []string{"--version"}, nil)
+	b, e := t.run(ctx, c, []string{"--version"}, nil)
 	if e != nil {
 		return e
 	}
-	if !strings.Contains(string(b), TartVersion) {
+	if strings.TrimSpace(string(b)) != TartVersion {
 		return problem(ErrDependency, "This preview requires Tart 2.37.0.", "Install the documented Tart version yourself; Runmoor does not bundle it.")
 	}
 	return nil
@@ -231,9 +240,10 @@ func (t *TartDriver) guestReady(ctx context.Context, c Config, vm, path, version
 
 const guestValidateScript = `set -eu
 [ "$(id -u)" != 0 ] || exit 78
-case "$(tart-guest-agent --version)" in *"$3"*) ;; *) exit 78;; esac
+agent_version=$(tart-guest-agent --version | awk '{print $NF}')
+case "$agent_version" in "$3"|"$3"-*) ;; *) exit 78;; esac
 cd "$1"
-[ "$(./bin/Runner.Listener --version)" = "$2" ] || exit 78
+[ "$(RUNNER_LOG_TO_STDOUT=0 ./bin/Runner.Listener --version 2>/dev/null | sed -n '/^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$/p')" = "$2" ] || exit 78
 for file in .runner .credentials .credentials_rsaparams; do [ ! -e "$file" ] || exit 78; done
 [ ! -d _work ] || [ -z "$(ls -A _work)" ] || exit 78
 printf 'RUNMOOR_READY\n'

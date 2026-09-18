@@ -37,13 +37,28 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 	if im == nil {
 		return nil, problem(ErrImage, "Image revision does not exist.", "Use 'runmoor image list' to select an existing revision.")
 	}
+	uncreated := false
 	if e := verifyVMOwner(c, im.VM, s.Installation, im.ID); e != nil {
-		return nil, e
+		_, vmErr := os.Lstat(vmPath(c, im.VM))
+		_, ownerErr := os.Lstat(vmOwnerPath(c, im.VM))
+		uncreated = req.Action == "remove" && im.Phase != ImageOpen && os.IsNotExist(vmErr) && os.IsNotExist(ownerErr)
+		if !uncreated {
+			return nil, e
+		}
 	}
 	switch req.Action {
 	case "open":
 		if im.Phase == ImageSealed || im.Phase == ImageRemoving {
 			return nil, problem(ErrImage, "A sealed or removing revision cannot be opened for setup.", "Create a new revision with --from pointing at the sealed revision UUID.")
+		}
+		if im.Phase == ImageOpen {
+			v, e := m.Tart.vm(ctx, c, im.VM)
+			if e != nil {
+				return nil, e
+			}
+			if v.Running {
+				return im, nil
+			}
 		}
 		if e := m.reserve(c, im.ID); e != nil {
 			return nil, e
@@ -118,8 +133,10 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 		}); e != nil {
 			return nil, e
 		}
-		if e := m.Tart.Cleanup(ctx, c, Runner{ID: im.ID, Handle: Handle{VM: im.VM}}, s); e != nil {
-			return nil, m.imageFailure(im.ID, e)
+		if !uncreated {
+			if e := m.Tart.Cleanup(ctx, c, Runner{ID: im.ID, Handle: Handle{VM: im.VM}}, s); e != nil {
+				return nil, m.imageFailure(im.ID, e)
+			}
 		}
 		if e := m.Store.Update(func(v *Snapshot) error { delete(v.Images, im.ID); return nil }); e != nil {
 			return nil, e
@@ -153,6 +170,11 @@ func (m *ImageManager) imageFailure(id string, err error) error {
 	_ = m.Store.Update(func(s *Snapshot) error {
 		if i := s.Images[id]; i != nil {
 			i.Problem = p
+			// A failed, reaped create command with no VM consumed no capacity.
+			// Unknown outcomes after a crash retain their reservation for recovery.
+			if _, err := os.Lstat(vmPath(s.Config, i.VM)); os.IsNotExist(err) && i.Phase == ImageOpen {
+				i.Phase = ImagePreparing
+			}
 		}
 		return nil
 	})

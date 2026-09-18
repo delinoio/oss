@@ -305,3 +305,36 @@ func TestManagerRunsAndDrainsWithoutGitHub(t *testing.T) {
 		t.Fatal("manager exited with live resources")
 	}
 }
+
+func TestMessageCrashBoundaryNeverAcknowledgesUncommittedEffects(t *testing.T) {
+	m, c, remote, _, pool := testManager(t)
+	id := seedRunner(t, m, pool, Idle)
+	runner := m.Store.View().Runners[id]
+	msg := &scaleset.RunnerScaleSetMessage{MessageID: 8, Statistics: &scaleset.RunnerScaleSetStatistic{TotalAssignedJobs: 1}, JobStartedMessages: []*scaleset.JobStarted{{RunnerID: 1, RunnerName: runner.Name}}}
+	remote.session.messages <- msg
+	remote.session.ack = func(int) error { return errors.New("simulated crash after durable commit, before acknowledgment") }
+	if err := m.listen(context.Background(), pool, remote.session); err == nil {
+		t.Fatal("expected interrupted acknowledgment")
+	}
+	deadline := m.Store.View().Runners[id].Deadline
+	m.Store.Close()
+	reopened, err := OpenStore(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	m.Store = reopened
+	if err = reopened.Update(func(s *Snapshot) error { return applyMessage(s, pool, remote.session.ID(), msg) }); err != nil {
+		t.Fatal(err)
+	}
+	if reopened.View().Runners[id].Deadline != deadline {
+		t.Fatal("redelivery reset the original deadline")
+	}
+	reopened.Close()
+	called := false
+	remote.session.ack = func(int) error { called = true; return nil }
+	remote.session.messages <- msg
+	if err = m.listen(context.Background(), pool, remote.session); err == nil || called {
+		t.Fatal("acknowledged after durable storage failed")
+	}
+}

@@ -44,7 +44,9 @@ func NewLogger(c Config, out io.Writer) (*slog.Logger, error) {
 func (w *LogWriter) Write(b []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if err := PruneDiagnostics(w.dir, time.Now(), int64(len(b))); err != nil {
+	diagnosticMu.Lock()
+	defer diagnosticMu.Unlock()
+	if err := pruneDiagnostics(w.dir, time.Now(), int64(len(b))); err != nil {
 		return 0, err
 	}
 	path := filepath.Join(w.dir, time.Now().UTC().Format("20060102")+".log")
@@ -92,7 +94,11 @@ func pruneDiagnostics(dir string, now time.Time, reserve int64) error {
 		if er != nil {
 			return problem(ErrState, "Cannot inspect a diagnostic file.", "Check filesystem permissions.")
 		}
-		if now.Sub(info.ModTime()) > 7*24*time.Hour {
+		oldest := info.ModTime()
+		if bucket, e := time.Parse("20060102.log", info.Name()); e == nil {
+			oldest = bucket
+		}
+		if now.Sub(oldest) > 7*24*time.Hour {
 			if er = os.Remove(filepath.Join(dir, e.Name())); er != nil {
 				return problem(ErrState, "Expired diagnostic removal failed.", "Check permissions and free disk space.")
 			}

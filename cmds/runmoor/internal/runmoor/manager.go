@@ -158,7 +158,7 @@ func allTerminated(s Snapshot) bool {
 func pendingCleanup(s Snapshot) int {
 	n := 0
 	for _, r := range s.Runners {
-		if r.Phase != Completed {
+		if r.Phase == Cleaning || r.Phase == Quarantined || (r.Terminated && r.Phase != Completed) {
 			n++
 		}
 	}
@@ -507,7 +507,7 @@ func applyMessage(s *Snapshot, poolID, session string, msg *scaleset.RunnerScale
 		return nil
 	}
 	for _, job := range msg.JobStartedMessages {
-		if r := match(job.RunnerName, job.RunnerID); r != nil && r.Phase != Completed && !r.RemoteRemoved {
+		if r := match(job.RunnerName, job.RunnerID); r != nil && r.Phase != Completed && !r.CompletedJob && !r.Forced && !r.RemoteRemoved && r.Phase != Quarantined {
 			r.GitHubID = job.RunnerID
 			if r.StartedAt.IsZero() {
 				r.StartedAt = nowUTC()
@@ -623,7 +623,7 @@ func (m *Manager) inspect(ctx context.Context, id string) {
 	p := s.Pools[r.PoolID]
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	if r.Forced || time.Now().After(r.Deadline) {
+	if r.Forced || (r.Phase != Idle && time.Now().After(r.Deadline)) {
 		_ = m.Store.Update(func(s *Snapshot) error {
 			r := s.Runners[id]
 			r.Forced = true
@@ -661,6 +661,34 @@ func (m *Manager) inspect(ctx context.Context, id string) {
 	}
 	if !exists {
 		m.runnerProblem(id, problem(ErrOwnership, "A live execution has no matching GitHub registration.", "Inspect the job and explicitly force-stop only after confirming it is owned."), true)
+		return
+	}
+	if r.Phase == Preparing {
+		er := remote.Remove(ctx, *p, *r)
+		if er == nil {
+			_ = m.Store.Update(func(v *Snapshot) error {
+				rr := v.Runners[id]
+				rr.Handle = obs.Handle
+				rr.RemoteRemoved = true
+				rr.Phase = Cleaning
+				return nil
+			})
+			return
+		}
+		if q, ok := er.(*Problem); !ok || q.Code != ErrBusy {
+			m.runnerProblem(id, er, false)
+			return
+		}
+		_ = m.Store.Update(func(v *Snapshot) error {
+			rr := v.Runners[id]
+			rr.Handle = obs.Handle
+			rr.Phase = Busy
+			if rr.StartedAt.IsZero() {
+				rr.StartedAt = rr.CreatedAt
+				rr.Deadline = rr.CreatedAt.Add(c.JobTimeout())
+			}
+			return nil
+		})
 		return
 	}
 	_ = m.Store.Update(func(v *Snapshot) error {
@@ -840,6 +868,32 @@ func (m *Manager) Stop(force bool) error {
 	}
 	return err
 }
+func (m *Manager) StopPool(name string, force bool) error {
+	return m.Store.Update(func(s *Snapshot) error {
+		found := false
+		for _, p := range s.Pools {
+			if p.Spec.Name != name || p.Phase == Retired {
+				continue
+			}
+			found = true
+			if p.Phase != Draining {
+				p.Phase = Paused
+			}
+			if force {
+				for _, r := range s.Runners {
+					if r.PoolID == p.ID && r.Phase != Completed {
+						r.Forced = true
+						r.Phase = Cleaning
+					}
+				}
+			}
+		}
+		if !found {
+			return problem(ErrConfig, "No active pool has that name.", "Choose a pool shown by status.")
+		}
+		return nil
+	})
+}
 func (m *Manager) Pause(name string) error {
 	return m.Store.Update(func(s *Snapshot) error {
 		if name == "" {
@@ -878,14 +932,25 @@ func (m *Manager) Resume(ctx context.Context, name string) error {
 	m.mu.Lock()
 	for _, id := range ids {
 		delete(m.remotes, id)
+		if cancel := m.poolLoops[id]; cancel != nil {
+			cancel()
+		}
 	}
 	m.mu.Unlock()
 	return m.Store.Update(func(s *Snapshot) error {
 		if name == "" {
 			s.Paused = false
+		} else if s.Paused {
+			s.Paused = false
+			for _, p := range s.Pools {
+				if p.Phase == Ready {
+					p.Phase = Paused
+				}
+			}
 		}
 		for _, id := range ids {
 			s.Pools[id].Phase = Ready
+			s.Pools[id].Session = ""
 			s.Pools[id].PreparationFailures = 0
 			s.Pools[id].Problem = nil
 		}

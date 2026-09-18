@@ -1,0 +1,143 @@
+name: Release Runmoor preview
+
+on:
+  push:
+    tags: ["runmoor@v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact source MAJOR.MINOR.PATCH version
+        required: true
+        type: string
+      dry_run:
+        description: Build and verify only; no credentials, signing or publication
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-runmoor
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      mode: ${{ steps.plan.outputs.mode }}
+      tag: ${{ steps.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - name: Validate release identity
+        id: plan
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          node --input-type=module <<'JS'
+          import { appendFileSync } from 'node:fs';
+          import { main } from './scripts/release/runmoor.mjs';
+          const version = process.env.GITHUB_EVENT_NAME === 'push' ? process.env.GITHUB_REF_NAME.replace(/^runmoor@v/u, '') : process.env.REQUESTED_VERSION;
+          const mode = process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' && process.env.DRY_RUN === 'true' ? 'dry-run' : 'publish';
+          const plan = main(['plan', '--version', version, '--revision', process.env.GITHUB_SHA, '--ref', process.env.GITHUB_REF, '--mode', mode, '--output', 'runmoor-release-plan.json']);
+          appendFileSync(process.env.GITHUB_OUTPUT, `version=${plan.version}\nmode=${plan.mode}\ntag=${plan.tag}\n`);
+          JS
+      - uses: actions/upload-artifact@v7
+        with:
+          name: runmoor-release-plan
+          path: runmoor-release-plan.json
+
+  build:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [darwin-arm64, linux-amd64, linux-arm64]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - name: Test command contracts
+        run: go test ./cmds/runmoor/...
+      - name: Build archive
+        env:
+          RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+          RELEASE_MODE: ${{ needs.plan.outputs.mode }}
+          RELEASE_PLATFORM: ${{ matrix.platform }}
+        run: node scripts/release/runmoor.mjs build --version "$RELEASE_VERSION" --revision "$GITHUB_SHA" --ref "$GITHUB_REF" --mode "$RELEASE_MODE" --platform "$RELEASE_PLATFORM" --output dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: runmoor-archive-${{ matrix.platform }}
+          path: dist/*.tar.gz
+
+  package:
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: runmoor-archive-*
+          merge-multiple: true
+          path: dist
+      - name: Generate and verify unsigned checksums
+        run: |
+          node scripts/release/runmoor.mjs checksums --output dist
+          node scripts/release/runmoor.mjs verify --output dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: runmoor-unsigned-archives
+          path: dist/*
+
+  publish:
+    if: needs.plan.outputs.mode == 'publish'
+    needs: [plan, package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v8
+        with:
+          name: runmoor-unsigned-archives
+          path: dist
+      - uses: sigstore/cosign-installer@v4.1.1
+      - name: Sign exact artifacts with Sigstore
+        run: |
+          node scripts/release/runmoor.mjs verify --output dist
+          for artifact in dist/*.tar.gz dist/SHA256SUMS; do
+            cosign sign-blob --yes --bundle "${artifact}.sigstore.json" "$artifact"
+          done
+          node scripts/release/runmoor.mjs verify --output dist --signed true --identity "https://github.com/${GITHUB_WORKFLOW_REF}"
+      - name: Publish preview release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.plan.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          prerelease: true
+          overwrite_files: false
+          fail_on_unmatched_files: true
+          files: dist/*
+          body: |
+            Runmoor preview for macOS 14+ arm64 and Ubuntu 22.04+ amd64/arm64.
+            Live GitHub repository/organization and App/PAT compatibility and real Tart execution have not been certified.
+            Verify SHA256SUMS and the accompanying Sigstore bundles before installation.
+            Updates are manual. Docker/Tart are operator-installed; macOS/Xcode images are not included.

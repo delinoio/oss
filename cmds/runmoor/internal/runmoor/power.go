@@ -44,6 +44,10 @@ func (p *PowerManager) Set(active bool) *Problem {
 	if p.cmd != nil {
 		select {
 		case <-p.done:
+			if p.input != nil {
+				p.input.Close()
+				p.input = nil
+			}
 			p.cmd = nil
 			p.failure = problem(ErrPower, "The OS sleep inhibitor exited.", "Check user-session power permissions; jobs continue without guaranteed sleep inhibition.")
 			p.retry = time.Now().Add(time.Minute)
@@ -75,7 +79,8 @@ func (p *PowerManager) Set(active bool) *Problem {
 	p.cmd = cmd
 	p.input = pipe
 	p.done = make(chan error, 1)
-	go func() { p.done <- cmd.Wait() }()
+	done := p.done
+	go func() { done <- cmd.Wait() }()
 	p.failure = nil
 	return nil
 }

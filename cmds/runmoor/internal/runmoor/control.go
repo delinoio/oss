@@ -20,11 +20,12 @@ type ControlRequest struct {
 	Image  *ImageRequest `json:"image,omitempty"`
 }
 type ControlResponse struct {
-	SchemaVersion int      `json:"schema_version"`
-	Status        *Status  `json:"status,omitempty"`
-	Image         *Image   `json:"image,omitempty"`
-	Images        []*Image `json:"images,omitempty"`
-	Problem       *Problem `json:"error,omitempty"`
+	SchemaVersion int           `json:"schema_version"`
+	Status        *Status       `json:"status,omitempty"`
+	Image         *Image        `json:"image,omitempty"`
+	Images        []*Image      `json:"images,omitempty"`
+	Problem       *Problem      `json:"error,omitempty"`
+	Doctor        *DoctorReport `json:"doctor,omitempty"`
 }
 type Status struct {
 	SchemaVersion  int          `json:"schema_version"`
@@ -120,7 +121,15 @@ func (m *Manager) ServeControl() (*http.Server, error) {
 func (m *Manager) Control(ctx context.Context, req ControlRequest) ControlResponse {
 	resp := ControlResponse{SchemaVersion: 1}
 	var err error
+	if req.Force && req.Action != "stop" {
+		resp.Problem = problem(ErrConfig, "Force is supported only for stop.", "Use stop with an optional pool.")
+		return resp
+	}
 	switch req.Action {
+	case "doctor":
+		s := m.Store.View()
+		r := Doctor(ctx, s.Config, s, m.RemoteFactory, m.Drivers)
+		resp.Doctor = &r
 	case "status":
 		resp.Status = statusOf(m.Store.View(), true)
 	case "reload":
@@ -131,7 +140,7 @@ func (m *Manager) Control(ctx context.Context, req ControlRequest) ControlRespon
 		err = m.Resume(ctx, req.Pool)
 	case "stop":
 		if req.Pool != "" {
-			err = problem(ErrConfig, "stop applies to the manager, not one pool.", "Use drain --pool to stop accepting work in a single pool.")
+			err = m.StopPool(req.Pool, req.Force)
 		} else {
 			err = m.Stop(req.Force)
 		}

@@ -258,7 +258,8 @@ func (d *DockerDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, 
 }
 
 const dockerRunnerScript = `set -eu
-cd "$1"+[ "$(./bin/Runner.Listener --version)" = "$2" ] || exit 78
+cd "$1"
+[ "$(RUNNER_LOG_TO_STDOUT=0 ./bin/Runner.Listener --version 2>/dev/null | sed -n '/^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$/p')" = "$2" ] || exit 78
 if [ "$3" = dind ]; then
   until docker info >/dev/null 2>&1; do sleep 1; done
 fi

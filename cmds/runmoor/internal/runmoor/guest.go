@@ -1,11 +1,13 @@
 package runmoor
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -25,7 +27,13 @@ type GuestStatus struct {
 }
 
 func guestStatePath(id string) string {
-	return filepath.Join(os.TempDir(), "runmoor", id, "status.json")
+	// macOS exposes /tmp and /var through system symlinks; resolve that OS
+	// prefix before enforcing no-symlink ownership on our private children.
+	temp, err := filepath.EvalSymlinks(os.TempDir())
+	if err != nil {
+		temp = os.TempDir()
+	}
+	return filepath.Join(temp, "runmoor", id, "status.json")
 }
 func guestWrite(v GuestStatus) error {
 	path := guestStatePath(v.ID)
@@ -55,6 +63,26 @@ func guestExecute(command string, args []string, out io.Writer) int {
 		b, e := readPrivate(guestStatePath(args[0]), 4096)
 		if e != nil {
 			return 1
+		}
+		var status GuestStatus
+		if json.Unmarshal(b, &status) != nil || status.ID != args[0] {
+			return 1
+		}
+		if !status.Finished {
+			// A persisted running record is not proof after guest reboot.
+			// Match the supervisor command, not merely a potentially reused PID.
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			process := exec.CommandContext(ctx, "/bin/ps", "-p", strconv.Itoa(status.PID), "-o", "command=")
+			process.Env = minimalEnv()
+			command, err := process.Output()
+			exe, _ := os.Executable()
+			expected, _ := filepath.EvalSymlinks(exe)
+			actual := strings.TrimSuffix(strings.TrimSpace(string(command)), " __guest-runner")
+			actual, _ = filepath.EvalSymlinks(actual)
+			if err != nil || expected == "" || actual != expected || !strings.HasSuffix(strings.TrimSpace(string(command)), " __guest-runner") {
+				return 1
+			}
 		}
 		_, e = out.Write(b)
 		if e != nil {
