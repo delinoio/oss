@@ -261,14 +261,22 @@ func (t *TartDriver) guestReady(ctx context.Context, c Config, vm, path, version
 	}
 }
 
+// A reachable guest returns a bounded validation result with a successful RPC.
+// Nonzero Tart exec results remain transport failures, which may recover while
+// the VM boots. Do not conflate a rejected image with an unavailable agent.
 const guestValidateScript = `set -eu
-[ "$(id -u)" != 0 ] || exit 78
+invalid() { printf 'RUNMOOR_INVALID\n'; exit 0; }
+uid=$(id -u) || invalid
+case "$uid" in ''|0) invalid;; esac
 agent_version=$(tart-guest-agent --version | awk '{print $NF}')
-case "$agent_version" in "$3"|"$3"-*) ;; *) exit 78;; esac
-cd "$1"
-[ "$(RUNNER_LOG_TO_STDOUT=0 ./bin/Runner.Listener --version 2>/dev/null | sed -n '/^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$/p')" = "$2" ] || exit 78
-for file in .runner .credentials .credentials_rsaparams; do [ ! -e "$file" ] || exit 78; done
-[ ! -d _work ] || [ -z "$(ls -A _work)" ] || exit 78
+case "$agent_version" in "$3"|"$3"-*) ;; *) invalid;; esac
+cd "$1" || invalid
+[ "$(RUNNER_LOG_TO_STDOUT=0 ./bin/Runner.Listener --version 2>/dev/null | sed -n '/^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$/p')" = "$2" ] || invalid
+for file in .runner .credentials .credentials_rsaparams; do [ ! -e "$file" ] || invalid; done
+if [ -d _work ]; then
+  work=$(ls -A _work) || invalid
+  [ -z "$work" ] || invalid
+fi
 printf 'RUNMOOR_READY\n'
 `
 
