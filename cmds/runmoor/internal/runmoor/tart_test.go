@@ -169,6 +169,53 @@ func TestTartRefusesUnownedVMAndImageDeletionInUse(t *testing.T) {
 	_, e := (&ImageManager{Store: s, Tart: driver}).Operate(context.Background(), c, ImageRequest{Action: "remove", ID: imID})
 	requireCode(t, e, ErrImageInUse)
 }
+
+func TestTartRejectsChangedSealedBaseBeforeCloning(t *testing.T) {
+	for _, damaged := range []string{"config.json", "nvram.bin", "disk.img", "missing-file", "missing-digest"} {
+		t.Run(damaged, func(t *testing.T) {
+			c, s := fixtureStore(t)
+			driver, fixture := fakeTart(c)
+			images := &ImageManager{Store: s, Tart: driver}
+			ctx := context.Background()
+			im, err := images.Operate(ctx, c, ImageRequest{Action: "create", Name: "base", IPSW: "/operator/local.ipsw", Resources: Resources{1, 512}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			im, err = images.Operate(ctx, c, ImageRequest{Action: "seal", ID: im.ID, RunnerVersion: "2.337.0"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch damaged {
+			case "missing-file":
+				err = os.Remove(filepath.Join(vmPath(c, im.VM), "disk.img"))
+			case "missing-digest":
+				err = s.Update(func(v *Snapshot) error { v.Images[im.ID].Digest = ""; return nil })
+			default:
+				err = os.WriteFile(filepath.Join(vmPath(c, im.VM), damaged), []byte("changed-after-sealing"), 0600)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			p := c.Pools[0]
+			p.Backend, p.Image, p.RunnerPath, p.RunnerVersion = Tart, im.ID, im.RunnerPath, im.RunnerVersion
+			r := Runner{ID: newID(), Backend: Tart, Image: im.ID}
+			published := false
+			err = driver.Prepare(ctx, c, p, r, s.View(), "unused-jit", func(Handle) error { published = true; return nil })
+			requireCode(t, err, ErrImage)
+			if published {
+				t.Fatal("altered base reached job provisioning")
+			}
+			_, err = images.Operate(ctx, c, ImageRequest{Action: "create", Name: "replacement", From: im.ID, Resources: Resources{1, 512}})
+			requireCode(t, err, ErrImage)
+			for _, args := range fixture.commands {
+				if args[0] == "clone" {
+					t.Fatal("altered sealed base was cloned")
+				}
+			}
+		})
+	}
+}
+
 func TestSetupReservationsShareHostBudget(t *testing.T) {
 	c, s := fixtureStore(t)
 	c.Host.MaxRunners = 2

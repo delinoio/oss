@@ -209,6 +209,9 @@ func (m *ImageManager) create(ctx context.Context, c Config, req ImageRequest) (
 	if req.IPSW != "" {
 		args = []string{"create", "--from-ipsw", req.IPSW, im.VM}
 	} else if source := s.Images[req.From]; source != nil && source.Phase == ImageSealed {
+		if e := m.Tart.validateSealed(ctx, c, source, s.Installation); e != nil {
+			return nil, m.imageFailure(id, e)
+		}
 		args = []string{"clone", source.VM, im.VM}
 	} else if strings.HasPrefix(req.From, "oci://") {
 		ref := strings.TrimPrefix(req.From, "oci://")

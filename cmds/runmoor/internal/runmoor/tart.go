@@ -106,7 +106,11 @@ func (t *TartDriver) Validate(ctx context.Context, c Config, p Pool, s Snapshot)
 	if im == nil || im.Phase != ImageSealed || im.RunnerVersion != p.RunnerVersion || im.RunnerPath != p.RunnerPath {
 		return problem(ErrImage, "Pool image is not a compatible sealed revision.", "Seal a clean image with the configured runner version and path, then update the pool.")
 	}
-	if e := verifyVMOwner(c, im.VM, s.Installation, im.ID); e != nil {
+	return t.validateSealed(ctx, c, im, s.Installation)
+}
+
+func (t *TartDriver) validateSealed(ctx context.Context, c Config, im *Image, installation string) error {
+	if e := verifyVMOwner(c, im.VM, installation, im.ID); e != nil {
 		return e
 	}
 	v, e := t.vm(ctx, c, im.VM)
@@ -115,6 +119,13 @@ func (t *TartDriver) Validate(ctx context.Context, c Config, p Pool, s Snapshot)
 	}
 	if v.Running || v.State == "suspended" {
 		return problem(ErrImage, "A sealed base image must remain stopped.", "Stop external access to the base and prepare a new clean revision.")
+	}
+	digest, e := imageDigest(c, im.VM)
+	if e != nil {
+		return e
+	}
+	if im.Digest == "" || digest != im.Digest {
+		return problem(ErrImage, "Sealed image contents no longer match their recorded digest.", "Restore the matching base from backup or prepare and seal a new revision; do not reuse the altered base.")
 	}
 	return nil
 }
