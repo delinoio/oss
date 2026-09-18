@@ -410,7 +410,7 @@ func TestGuestStateUsesCanonicalPrivateTemporaryDirectory(t *testing.T) {
 		t.Skip("Unix guest helper")
 	}
 	parent := filepath.Dir(filepath.Dir(filepath.Dir(guestStatePath(newID()))))
-	resolved, err := filepath.EvalSymlinks(os.TempDir())
+	resolved, err := filepath.EvalSymlinks("/tmp")
 	if err != nil || parent != resolved {
 		t.Fatal("guest private state crosses an OS symlink")
 	}

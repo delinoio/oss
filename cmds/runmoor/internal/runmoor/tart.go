@@ -244,7 +244,10 @@ func (t *TartDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, s 
 	}
 	b, _ := json.Marshal(GuestInput{ID: r.ID, RunnerPath: p.RunnerPath, RunnerVersion: p.RunnerVersion, JIT: jit})
 	_, e = t.run(ctx, c, []string{"exec", "-i", name, "/tmp/runmoor/helper", "__guest-bootstrap"}, strings.NewReader(string(b)))
-	return e
+	if e != nil {
+		return problem(ErrPreparation, "Guest runner bootstrap did not confirm a live runner.", "Check that run.sh is executable and starts the pinned runner successfully, then resume the pool.")
+	}
+	return nil
 }
 func (t *TartDriver) guestReady(ctx context.Context, c Config, vm, path, version string) error {
 	for {
@@ -315,6 +318,8 @@ func (t *TartDriver) Inspect(ctx context.Context, c Config, r Runner, s Snapshot
 	if g.Finished {
 		out.Running = false
 		out.ExitCode = &g.ExitCode
+	} else if !g.Ready {
+		return Observation{}, problem(ErrRetry, "Guest runner startup has not completed.", "Wait for bootstrap or the original preparation deadline; the VM and reservation are preserved.")
 	}
 	return out, nil
 }

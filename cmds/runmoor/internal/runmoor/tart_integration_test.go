@@ -73,12 +73,19 @@ func TestTartIntegration(t *testing.T) {
 			t.Error(e)
 		}
 	}()
-	if e = driver.Prepare(ctx, c, p, r, s.View(), "invalid-fixture-jit", func(h Handle) error { r.Handle = h; return nil }); e != nil {
-		t.Fatal(e)
+	prepareErr := driver.Prepare(ctx, c, p, r, s.View(), "invalid-fixture-jit", func(h Handle) error { r.Handle = h; return nil })
+	if prepareErr != nil {
+		// Invalid fixture JIT may exit within the startup observation window.
+		// That is a preparation failure, not evidence of a healthy idle runner.
+		requireCode(t, prepareErr, ErrPreparation)
 	}
 	other := &TartDriver{Exec: OSCommand{}}
-	if _, e = other.Inspect(ctx, c, r, s.View()); e != nil {
+	observed, e := other.Inspect(ctx, c, r, s.View())
+	if e != nil {
 		t.Fatal("manager-restart inspection failed", e)
+	}
+	if prepareErr != nil && observed.ExitCode == nil {
+		t.Fatal("preparation failed without confirming the expected invalid-JIT guest exit", prepareErr)
 	}
 	if e = other.Stop(ctx, c, r, s.View()); e != nil {
 		t.Fatal(e)
