@@ -214,7 +214,8 @@ func (d *DockerDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, 
 	if p.Mode == DinD {
 		env = append(env, "DOCKER_HOST=unix:///run/runmoor-docker/docker.sock")
 	}
-	runner, e := cli.ContainerCreate(ctx, &container.Config{Image: p.Image, User: "runner", Entrypoint: []string{"/bin/sh", "-c", dockerRunnerScript, "runmoor", p.RunnerPath, p.RunnerVersion, string(p.Mode)}, Env: env, OpenStdin: true, StdinOnce: true, AttachStdin: true, Labels: dockerLabels(s, r, "runner")}, &container.HostConfig{NetworkMode: mode, Resources: limits(p.Resources), Mounts: mountsFor(p, r), CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges"}, LogConfig: container.LogConfig{Type: "none"}}, nil, nil, r.Name)
+	marker := "/tmp/runmoor-started-" + r.ID
+	runner, e := cli.ContainerCreate(ctx, &container.Config{Image: p.Image, User: "runner", Entrypoint: []string{"/bin/sh", "-c", dockerRunnerScript, "runmoor", p.RunnerPath, p.RunnerVersion, string(p.Mode), marker}, Env: env, OpenStdin: true, StdinOnce: true, AttachStdin: true, Labels: dockerLabels(s, r, "runner")}, &container.HostConfig{NetworkMode: mode, Resources: limits(p.Resources), Mounts: mountsFor(p, r), CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges"}, LogConfig: container.LogConfig{Type: "none"}}, nil, nil, r.Name)
 	if e != nil {
 		return dockerProblem()
 	}
@@ -237,9 +238,10 @@ func (d *DockerDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, 
 	if e = attached.CloseWrite(); e != nil {
 		return dockerProblem()
 	}
+	var started time.Time
 	for {
-		if e = execDocker(ctx, cli, runner.ID, []string{"test", "-f", "/tmp/runmoor-ready"}); e == nil {
-			return nil
+		if started.IsZero() && execDocker(ctx, cli, runner.ID, []string{"test", "-f", marker}) == nil {
+			started = time.Now()
 		}
 		v, er := cli.ContainerInspect(ctx, runner.ID)
 		if er != nil {
@@ -250,6 +252,12 @@ func (d *DockerDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, 
 				return problem(ErrRunnerVersion, "The image runner does not match runner_version.", "Prepare an image with the exact pinned version, then resume.")
 			}
 			return problem(ErrPreparation, "Runner bootstrap exited before becoming ready.", "Check the compatible image contract and Docker-in-Docker capabilities.")
+		}
+		// The marker proves only that bootstrap reached exec. Observe the
+		// container after a full startup interval before resetting preparation
+		// failures, while keeping run.sh as PID 1 for normal signal handling.
+		if !started.IsZero() && time.Since(started) >= time.Second && v.State != nil && v.State.Running {
+			return nil
 		}
 		if !waitContext(ctx, 250*time.Millisecond) {
 			return problem(ErrPreparation, "Docker runner preparation timed out.", "Check image compatibility and Docker resources, then resume.")
@@ -265,7 +273,7 @@ if [ "$3" = dind ]; then
 fi
 IFS= read -r jit
 [ -n "$jit" ] || exit 78
-touch /tmp/runmoor-ready
+touch "$4"
 exec ./run.sh --jitconfig "$jit" >/dev/null 2>&1
 `
 

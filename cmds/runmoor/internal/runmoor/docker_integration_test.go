@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
@@ -169,6 +170,38 @@ func TestDockerIntegration(t *testing.T) {
 			}
 		})
 	}
+	t.Run("early runner exits suspend the pool", func(t *testing.T) {
+		c.Pools[0].Image = imageID
+		c.Pools[0].RunnerPath = "/home/runner/failing"
+		c.Pools[0].Resources = Resources{CPU: 1, MemoryMiB: 512}
+		m := NewManager(s, "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+		defer m.cancel()
+		m.RemoteFactory = func(Connection) (Remote, error) { return &fakeRemote{}, nil }
+		if err := m.activate(c); err != nil {
+			t.Fatal(err)
+		}
+		var pool string
+		for id := range s.View().Pools {
+			pool = id
+		}
+		for attempt := 1; attempt <= 3; attempt++ {
+			id := seedRunner(t, m, pool, Preparing)
+			defer m.cleanup(context.Background(), id)
+			m.prepare(ctx, id)
+			snap := s.View()
+			if snap.Runners[id].Phase != Cleaning || snap.Pools[pool].PreparationFailures != attempt {
+				t.Fatal("early exit reset the preparation failure counter")
+			}
+			requireCode(t, snap.Runners[id].Problem, ErrPreparation)
+			m.cleanup(ctx, id)
+			if s.View().Runners[id].Phase != Completed {
+				t.Fatal("failed startup leaked owned Docker resources")
+			}
+		}
+		if s.View().Pools[pool].Phase != Suspended {
+			t.Fatal("broken custom image bypassed pool suspension")
+		}
+	})
 }
 func integrationExec(ctx context.Context, cli *client.Client, id, script string) error {
 	v, e := cli.ContainerExecCreate(ctx, id, container.ExecOptions{Cmd: []string{"/bin/sh", "-c", script}, AttachStdout: true, AttachStderr: true})
