@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { createServer } from "node:http";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const desktopTauriFeatures = ["--features", "desktop-cef"];
@@ -65,22 +66,6 @@ function appImageSharunAsset(architecture, sharunPin = cefPins.appImage.sharun) 
   };
 }
 
-function listen(server) {
-  return new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      server.off("error", reject);
-      resolve();
-    });
-  });
-}
-
-function close(server) {
-  return new Promise((resolve, reject) => {
-    server.close((error) => (error ? reject(error) : resolve()));
-  });
-}
-
 export async function prepareVerifiedAppImageSharun(
   architecture = process.arch,
   fetchAsset = globalThis.fetch,
@@ -99,27 +84,22 @@ export async function prepareVerifiedAppImageSharun(
     );
   }
 
-  const server = createServer((request, response_) => {
-    if (!["GET", "HEAD"].includes(request.method) || request.url !== "/sharun") {
-      response_.writeHead(404).end();
-      return;
-    }
-    response_.writeHead(200, {
-      "Content-Length": bytes.byteLength,
-      "Content-Type": "application/octet-stream",
-    });
-    response_.end(request.method === "HEAD" ? undefined : bytes);
-  });
-  await listen(server);
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    await close(server);
-    throw new Error("AppImage launcher loopback server did not expose a TCP address");
+  // The upstream packager now downloads a tar containing helper libraries.
+  // Keep our immutable launcher separate: Tauri copies custom AppImage files
+  // before quick-sharun runs, and that tool preserves an existing executable.
+  // This also leaves the helper archive's own integrity checks enabled.
+  const directory = mkdtempSync(join(tmpdir(), "devhud-verified-sharun-"));
+  const launcher = join(directory, "sharun");
+  try {
+    writeFileSync(launcher, bytes, { mode: 0o755, flag: "wx" });
+    return {
+      config: { bundle: { linux: { appimage: { files: { sharun: launcher } } } } },
+      close: () => rmSync(directory, { recursive: true, force: true }),
+    };
+  } catch (error) {
+    rmSync(directory, { recursive: true, force: true });
+    throw error;
   }
-  return {
-    close: () => close(server),
-    url: `http://127.0.0.1:${address.port}/sharun`,
-  };
 }
 export function repositoryAppleSigningEnvironment(
   command,
@@ -208,7 +188,7 @@ export function desktopTauriEnvironment(
       `DEVHUD_PACKAGE_KIND ${environment.DEVHUD_PACKAGE_KIND} does not match the selected ${bundle} bundle`,
     );
   }
-  return {
+  const result = {
     ...environment,
     DEVHUD_PACKAGE_KIND: packageKind,
     ...(bundle === "appimage"
@@ -219,4 +199,11 @@ export function desktopTauriEnvironment(
         }
       : {}),
   };
+  if (bundle === "appimage") {
+    // A launcher override is not a helper-library archive. Do not let ambient
+    // overrides misroute that download or bypass its checksum verification.
+    delete result.SHARUN_LINK;
+    delete result.SKIP_INTEGRITY_CHECKS;
+  }
+  return result;
 }
