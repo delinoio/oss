@@ -37,8 +37,16 @@ func (OSCommand) Run(ctx context.Context, name string, args, env []string, in io
 func (OSCommand) Start(name string, args, env []string) (int, error) {
 	cmd := exec.Command(name, args...)
 	cmd.Env = env
-	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
+	// A detached process must inherit real null descriptors. io.Discard makes
+	// os/exec create parent-owned pipes that close on manager exit and can
+	// terminate a surviving VM with SIGPIPE when it next writes a diagnostic.
+	null, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		return 0, err
+	}
+	defer null.Close()
+	cmd.Stdout = null
+	cmd.Stderr = null
 	detach(cmd)
 	if err := cmd.Start(); err != nil {
 		return 0, err
@@ -48,8 +56,9 @@ func (OSCommand) Start(name string, args, env []string) (int, error) {
 }
 
 type TartDriver struct {
-	Exec      CommandExecutor
-	HostCheck func(context.Context) error
+	Exec            CommandExecutor
+	HostCheck       func(context.Context) error
+	GuestExecutable string
 }
 
 func tartEnv(c Config) []string {
@@ -204,7 +213,10 @@ func (t *TartDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, s 
 	if e = t.guestReady(ctx, c, name, p.RunnerPath, p.RunnerVersion); e != nil {
 		return e
 	}
-	exe, e := os.Executable()
+	exe := t.GuestExecutable
+	if exe == "" {
+		exe, e = os.Executable()
+	}
 	if e != nil {
 		return problem(ErrPreparation, "Cannot locate the Runmoor guest helper.", "Run an installed release binary.")
 	}

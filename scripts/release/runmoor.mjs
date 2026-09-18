@@ -28,6 +28,26 @@ export function releasePlan({ version, revision, ref, mode = "dry-run" }) {
   };
 }
 
+export async function checkPublication(plan, request) {
+  if (plan.mode !== "publish") throw new Error("Remote publication checks are unavailable in dry-run mode");
+  const prefix = "/repos/delinoio/oss";
+  const tag = await request(`${prefix}/git/ref/tags/${encodeURIComponent(plan.tag)}`);
+  if (tag.status !== 404) {
+    if (tag.status !== 200) throw new Error("Cannot establish remote tag ownership");
+    let object = tag.body.object;
+    for (let depth = 0; object?.type === "tag" && depth < 4; depth++) {
+      if (!/^[0-9a-f]{40}$/u.test(object.sha ?? "")) throw new Error("Invalid annotated tag identity");
+      const annotated = await request(`${prefix}/git/tags/${object.sha}`);
+      if (annotated.status !== 200) throw new Error("Cannot resolve annotated release tag");
+      object = annotated.body.object;
+    }
+    if (object?.type !== "commit" || object.sha !== plan.revision) throw new Error("Existing release tag belongs to a different source revision");
+  }
+  const release = await request(`${prefix}/releases/tags/${encodeURIComponent(plan.tag)}`);
+  if (release.status === 200) throw new Error("A public release already exists; immutable artifacts cannot be overwritten");
+  if (release.status !== 404) throw new Error("Cannot establish whether a release already exists");
+}
+
 // A small, fixed-name ustar writer avoids platform-specific GNU/BSD tar flags
 // and produces identical metadata on macOS and Linux. Payloads are controlled
 // release files, never user-supplied archive paths.

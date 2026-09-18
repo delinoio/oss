@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import yaml from "js-yaml";
-import { archive, archiveNames, checksums, inspectArchive, releasePlan, verify } from "./runmoor.mjs";
+import { archive, archiveNames, checkPublication, checksums, inspectArchive, releasePlan, verify } from "./runmoor.mjs";
 
 const revision = "1".repeat(40);
 const entries = [
@@ -93,4 +93,18 @@ test("Workflow keeps credentials, OIDC and actual signing out of every dry-run j
   const release = publish.steps.find((step) => step.uses?.startsWith("softprops/"));
   assert.equal(release.with.prerelease, true);
   assert.equal(release.with.overwrite_files, false);
+});
+
+test("Publication refuses conflicting tags, existing releases and uncertain API results", async () => {
+  const plan = releasePlan({ version: "0.1.0", revision, ref: "refs/heads/main", mode: "publish" });
+  await checkPublication(plan, async () => ({ status: 404, body: {} }));
+  await checkPublication(plan, async (route) => ({ status: route.includes("/git/") ? 200 : 404, body: { object: { type: "commit", sha: revision } } }));
+  for (const result of [
+    { status: 403, body: {} },
+    { status: 200, body: { object: { type: "commit", sha: "2".repeat(40) } } },
+  ]) await assert.rejects(checkPublication(plan, async () => result));
+  await assert.rejects(checkPublication(plan, async (route) => route.includes("/git/") ? { status: 404, body: {} } : { status: 200, body: {} }), /already exists/u);
+  let invoked = false;
+  await assert.rejects(checkPublication({ ...plan, mode: "dry-run" }, async () => { invoked = true; return {}; }), /dry-run/u);
+  assert.equal(invoked, false);
 });

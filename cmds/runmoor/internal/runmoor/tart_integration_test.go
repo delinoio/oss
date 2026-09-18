@@ -3,6 +3,8 @@ package runmoor
 import (
 	"context"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
@@ -27,19 +29,30 @@ func TestTartIntegration(t *testing.T) {
 	c.Host.MemoryMiB = 8192
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
-	driver := &TartDriver{Exec: OSCommand{}}
+	// os.Executable() is the Go test harness here, not the shipped CLI.
+	// Build the real helper so this opt-in test exercises the production entrypoint.
+	helper := filepath.Join(t.TempDir(), "runmoor")
+	build := exec.CommandContext(ctx, "go", "build", "-o", helper, "../..")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build guest helper: %v: %s", err, output)
+	}
+	driver := &TartDriver{Exec: OSCommand{}, GuestExecutable: helper}
+	defer func() {
+		for _, image := range s.View().Images {
+			cleanup, stop := context.WithTimeout(context.Background(), time.Minute)
+			r := Runner{ID: image.ID, Handle: Handle{VM: image.VM}}
+			_ = driver.Stop(cleanup, c, r, s.View())
+			if err := driver.Cleanup(cleanup, c, r, s.View()); err != nil {
+				t.Error(err)
+			}
+			stop()
+		}
+	}()
 	m := &ImageManager{Store: s, Tart: driver}
 	im, e := m.Operate(ctx, c, ImageRequest{Action: "create", Name: "integration", From: source, SourceHome: os.Getenv("RUNMOOR_TEST_TART_SOURCE_HOME"), Resources: Resources{2, 4096}})
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer func() {
-		cleanup, stop := context.WithTimeout(context.Background(), time.Minute)
-		defer stop()
-		r := Runner{ID: im.ID, Handle: Handle{VM: im.VM}}
-		_ = driver.Stop(cleanup, c, r, s.View())
-		_ = driver.Cleanup(cleanup, c, r, s.View())
-	}()
 	im, e = m.Operate(ctx, c, ImageRequest{Action: "seal", ID: im.ID, RunnerVersion: version, RunnerPath: os.Getenv("RUNMOOR_TEST_TART_RUNNER_PATH")})
 	if e != nil {
 		t.Fatal(e)

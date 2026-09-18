@@ -108,8 +108,13 @@ func guestExecute(command string, args []string, out io.Writer) int {
 		}
 		cmd := exec.Command(exe, "__guest-runner")
 		cmd.Env = minimalEnv()
-		cmd.Stdout = io.Discard
-		cmd.Stderr = io.Discard
+		null, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+		if err != nil {
+			return 1
+		}
+		defer null.Close()
+		cmd.Stdout = null
+		cmd.Stderr = null
 		detach(cmd)
 		pipe, e := cmd.StdinPipe()
 		if e != nil {

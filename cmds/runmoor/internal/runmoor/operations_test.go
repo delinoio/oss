@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -337,4 +338,35 @@ func TestPrivateControlSocketAndVersionedUncoloredStatus(t *testing.T) {
 	if m.Store.View().Paused {
 		t.Fatal("invalid control mutated state")
 	}
+}
+
+func TestDetachedCommandSurvivesParentExitAndOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix detached host processes")
+	}
+	if os.Getenv("RUNMOOR_DETACH_FIXTURE") == "1" {
+		_, err := (OSCommand{}).Start("/bin/sh", []string{"-c", `sleep 0.2; printf 'probe'; printf 'complete' > "$1"`, "runmoor-fixture", os.Getenv("RUNMOOR_DETACH_RESULT")}, minimalEnv())
+		if err != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+	result := filepath.Join(t.TempDir(), "completed")
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent := exec.Command(executable, "-test.run=^TestDetachedCommandSurvivesParentExitAndOutput$")
+	parent.Env = append(os.Environ(), "RUNMOOR_DETACH_FIXTURE=1", "RUNMOOR_DETACH_RESULT="+result)
+	if err := parent.Run(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if data, err := os.ReadFile(result); err == nil && string(data) == "complete" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("detached child lost its output descriptors when the parent exited")
 }
