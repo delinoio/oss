@@ -197,7 +197,7 @@ func (d *DockerDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, 
 	if p.Mode == DinD {
 		ms := mountsFor(p, r)
 		ms = append(ms, mount.Mount{Type: mount.TypeVolume, Source: r.Name + "-docker", Target: "/var/lib/docker"})
-		daemon, e := cli.ContainerCreate(ctx, &container.Config{Image: p.DaemonImage, Entrypoint: []string{"dockerd-entrypoint.sh"}, Cmd: []string{"dockerd", "--host=unix:///run/runmoor-docker/docker.sock", "--group=1001"}, Env: []string{"DOCKER_TLS_CERTDIR="}, Labels: dockerLabels(s, r, "daemon")}, &container.HostConfig{NetworkMode: mode, Privileged: true, CgroupnsMode: container.CgroupnsModePrivate, Resources: limits(p.DaemonResources), Mounts: ms, LogConfig: container.LogConfig{Type: "none"}}, nil, nil, r.Name+"-daemon")
+		daemon, e := cli.ContainerCreate(ctx, &container.Config{Image: p.DaemonImage, Entrypoint: []string{"dockerd-entrypoint.sh"}, Cmd: []string{"dockerd", "--host=unix:///run/runmoor-docker/docker.sock", "--group=1001", "--log-driver=none"}, Env: []string{"DOCKER_TLS_CERTDIR="}, Labels: dockerLabels(s, r, "daemon")}, &container.HostConfig{NetworkMode: mode, Privileged: true, CgroupnsMode: container.CgroupnsModePrivate, Resources: limits(p.DaemonResources), Mounts: ms, LogConfig: container.LogConfig{Type: "none"}}, nil, nil, r.Name+"-daemon")
 		if e != nil {
 			return dockerProblem()
 		}

@@ -198,6 +198,12 @@ func integrationExec(ctx context.Context, cli *client.Client, id, script string)
 const dindProbe = `set -eu
 cd /home/runner/_work
 docker pull busybox:1.36 >/dev/null
+# Nested action/service output must not be retained in daemon storage, even
+# when interrupted cleanup keeps that storage available for recovery.
+test "$(docker info --format '{{.LoggingDriver}}')" = none
+docker run --name runmoor-log-probe busybox:1.36 sh -c 'echo private-output; echo private-error >&2' >/dev/null 2>&1
+test "$(docker inspect --format '{{.HostConfig.LogConfig.Type}}' runmoor-log-probe)" = none
+test -z "$(docker inspect --format '{{.LogPath}}' runmoor-log-probe)"
 mkdir build-context
 printf 'FROM busybox:1.36\nRUN echo built > /proof\nCMD ["cat", "/proof"]\n' > build-context/Dockerfile
 docker build -t runmoor-local-test build-context >/dev/null
