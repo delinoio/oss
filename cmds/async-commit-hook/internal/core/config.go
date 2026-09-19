@@ -177,18 +177,18 @@ func (p *Project) Validate() error {
 		}
 		seen = map[string]bool{}
 		for _, e := range c.Environment {
-			if !envName.MatchString(e.Name) || seen[e.Name] || (e.Credential != "" && !e.Secret) {
+			key := strings.ToUpper(e.Name)
+			if !envName.MatchString(e.Name) || seen[key] || (e.Credential != "" && !e.Secret) {
 				return E("invalid-environment", name+": invalid/duplicate name or non-secret credential", 2)
 			}
 			// Environment names are case-insensitive on Windows. Enforce one
 			// secrecy classification across the portable project graph before
 			// any public input can be read into a durable run snapshot.
-			key := strings.ToUpper(e.Name)
 			if secret, exists := environmentSecrecy[key]; exists && secret != e.Secret {
 				return E("invalid-environment", "environment input "+e.Name+" has conflicting secret/public declarations", 2)
 			}
 			environmentSecrecy[key] = e.Secret
-			seen[e.Name] = true
+			seen[key] = true
 		}
 		seen = map[string]bool{}
 		for _, r := range c.Reports {

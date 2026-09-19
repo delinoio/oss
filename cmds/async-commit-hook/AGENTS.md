@@ -58,7 +58,7 @@
 - Update helpers revalidate the exact prepared journal under the lifecycle lock after waiting for their parent; a recovered or replaced journal must never be replayed from memory.
 - Repository trust requires the common-directory local UUID as well as its canonical path. Reused paths need explicit initialization; preserve historical IDs and reject source access through stale worktree registrations.
 
-- Reject conflicting secret/public classifications for an environment name across the complete project graph, using case-insensitive names for Windows portability, before reading public snapshot inputs.
+- Reject duplicate environment names within each check and conflicting secret/public classifications across the complete project graph, using case-insensitive names for Windows portability, before reading public snapshot inputs or resolving credentials.
 
 - Normalize arbitrary Git commit-subject bytes into valid UTF-8 for display/transport while preserving commit and parent object IDs.
 - Branch-list transport labels also normalize invalid Git bytes to valid UTF-8 without changing the referenced commit IDs or raw Git refs.
