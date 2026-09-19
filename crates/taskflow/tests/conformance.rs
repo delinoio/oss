@@ -4561,3 +4561,53 @@ async fn invalid_local_artifacts_fall_back_to_valid_remote_entries() {
         .validate_integrity(&artifact.key)
         .unwrap();
 }
+
+#[tokio::test]
+async fn readiness_cancellation_and_deadlines_await_probe_owners() {
+    for mode in ["cancel", "readiness-timeout", "service-timeout"] {
+        let mut service = json!({"command":command(&["sleep","service.pid"]),"input":[],"service":true,"readiness":{"type":"command","command":command(&["stubborn","probe.pid","probe-child.pid"]),"timeout":if mode == "readiness-timeout" { "3s" } else { "30s" }}});
+        if mode == "service-timeout" {
+            service["timeout"] = json!("3s");
+        }
+        let root = fixture(json!({"service":service}));
+        profile(root.path(), &["service"]);
+        let token = CancellationToken::new();
+        let stop = token.clone();
+        let directory = root.path().to_path_buf();
+        let session = tokio::spawn(async move {
+            taskflow::session::start(&directory, "default", RunOptions::default(), stop).await
+        });
+        wait_lines(&root.path().join("probe-child.pid"), "", 1).await;
+        let started = std::time::Instant::now();
+        if mode == "cancel" {
+            token.cancel();
+        }
+        let result = tokio::time::timeout(Duration::from_secs(15), session)
+            .await
+            .unwrap()
+            .unwrap();
+        if mode != "cancel" {
+            assert!(result.is_err());
+        }
+        assert!(
+            cfg!(windows) || started.elapsed() >= Duration::from_secs(2),
+            "probe cleanup was dropped: {mode}"
+        );
+        for name in ["service.pid", "probe.pid", "probe-child.pid"] {
+            let pid = std::fs::read_to_string(root.path().join(name))
+                .unwrap()
+                .parse()
+                .unwrap();
+            if name != "probe-child.pid" {
+                assert!(!pid_alive(pid), "direct child {name} survived {mode}");
+            }
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while pid_alive(pid) {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .unwrap_or_else(|_| panic!("{name} survived {mode}"));
+        }
+    }
+}

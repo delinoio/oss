@@ -48,6 +48,8 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 
 `invalid_local_artifacts_fall_back_to_valid_remote_entries` serves a valid object over loopback HTTP while the local entry has a valid envelope and corrupt file digest; the runner restores remotely and repairs its local entry without executing the task.
 
+`readiness_cancellation_and_deadlines_await_probe_owners` owns real readiness parents and children through operator cancellation, readiness timeout, and service timeout. Unix probes ignore graceful termination to prove the session waits for forced cleanup and stream completion.
+
 Additional invariants include unknown/duplicate configuration rejection, schema freshness, stale/partial CI receipt rejection, required artifact accounting, cache path traversal rejection before mutation, masked stored logs, and service failure cancelling other running checks before returning.
 
 `grouped_tasks_only_receive_their_declared_secrets` passes a CI-style credential union to a real CLI run: only the declaring task receives the credential, and persisted output remains masked.

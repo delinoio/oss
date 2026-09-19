@@ -306,8 +306,9 @@ pub async fn run_plan(
                     Err(error) => {
                         // Setup can be cancelled before there is a normal process
                         // exit. Unverified cleanup still overrides cancellation.
-                        let cancelled =
-                            token.is_cancelled() && !error.is::<crate::docker::CleanupFailure>();
+                        let cancelled = token.is_cancelled()
+                            && !error.is::<crate::docker::CleanupFailure>()
+                            && !error.is::<crate::process::CleanupFailure>();
                         // Detailed native stderr already passes through the masker;
                         // engine errors contain identifiers and stable context only.
                         let node = &graph.tasks[&id];
@@ -702,22 +703,16 @@ async fn run_task(
     tracing::info!(task = id, execution = %execution, causes = ?causes, "Task started");
     if task.service {
         if let Some(readiness) = &task.readiness {
-            let ready = wait_ready(
+            let result = wait_ready(
                 &mut process,
                 readiness,
                 task.shell.as_deref(),
                 &project.directory,
                 &values,
                 &cancel,
-            );
-            let result = if let Some(timeout) = timeout {
-                tokio::time::timeout(timeout.saturating_sub(process_started.elapsed()), ready)
-                    .await
-                    .context("service timeout elapsed before readiness")
-                    .and_then(|result| result)
-            } else {
-                ready.await
-            };
+                timeout.map(|limit| limit.saturating_sub(process_started.elapsed())),
+            )
+            .await;
             if let Err(error) = result {
                 let reaped = process.terminate().await;
                 finish_logs_and_container(stdout, stderr, cleanup_container(docker)).await?;
@@ -1048,13 +1043,15 @@ async fn wait_ready(
     directory: &Path,
     environment: &BTreeMap<String, String>,
     cancel: &CancellationToken,
+    service_remaining: Option<Duration>,
 ) -> Result<()> {
     let timeout = match readiness {
         Readiness::Tcp { timeout, .. }
         | Readiness::Http { timeout, .. }
         | Readiness::Command { timeout, .. } => config::duration(timeout)?,
     };
-    let deadline = tokio::time::Instant::now() + timeout;
+    let deadline = tokio::time::Instant::now()
+        + service_remaining.map_or(timeout, |remaining| remaining.min(timeout));
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(1))
@@ -1064,28 +1061,52 @@ async fn wait_ready(
             process.child.try_wait()?.is_none(),
             "service exited before readiness"
         );
+        let probe_cancel = cancel.child_token();
         let check = async {
             match readiness {
-                Readiness::Tcp { address, .. } => {
-                    tokio::net::TcpStream::connect(address).await.is_ok()
-                }
-                Readiness::Http { url, .. } => client
-                    .get(url)
-                    .send()
+                Readiness::Tcp { address, .. } => tokio::select! {
+                    _ = probe_cancel.cancelled() => Ok(false),
+                    result = tokio::net::TcpStream::connect(address) => Ok(result.is_ok()),
+                },
+                Readiness::Http { url, .. } => tokio::select! {
+                    _ = probe_cancel.cancelled() => Ok(false),
+                    result = client.get(url).send() => Ok(result.is_ok_and(|r| r.status().is_success())),
+                },
+                Readiness::Command { command, .. } => {
+                    crate::process::readiness_command(
+                        directory,
+                        command,
+                        shell,
+                        environment,
+                        &probe_cancel,
+                    )
                     .await
-                    .is_ok_and(|r| r.status().is_success()),
-                Readiness::Command { command, .. } => crate::process::capture_with_shell(
-                    directory,
-                    command,
-                    shell,
-                    environment,
-                    cancel,
-                )
-                .await
-                .is_ok(),
+                }
             }
         };
-        let ready = tokio::select! { _ = cancel.cancelled() => anyhow::bail!("service readiness cancelled"), result = tokio::time::timeout_at(deadline, check) => result.context("service readiness timed out")? };
+        tokio::pin!(check);
+        // Cancelling a readiness future is not cleanup: its process and pipe
+        // owners must finish before the service/session can return or restart.
+        let ready = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => {
+                probe_cancel.cancel();
+                check.await?;
+                anyhow::bail!("service readiness cancelled");
+            }
+            _ = tokio::time::sleep_until(deadline) => {
+                probe_cancel.cancel();
+                check.await?;
+                anyhow::bail!("service readiness timed out");
+            }
+            exited = process.child.wait() => {
+                probe_cancel.cancel();
+                check.await?;
+                exited?;
+                anyhow::bail!("service exited before readiness");
+            }
+            result = &mut check => result?,
+        };
         if ready {
             return Ok(());
         }

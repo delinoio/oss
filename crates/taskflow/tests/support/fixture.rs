@@ -98,10 +98,16 @@ fn main() {
             write("unit.pid", std::process::id().to_string().as_bytes());
             std::thread::sleep(Duration::from_secs(30));
         }
-        "sleep" => {
+        "sleep" | "stubborn" => {
+            #[cfg(unix)]
+            if args[1] == "stubborn" {
+                unsafe extern "C" { fn signal(sig: i32, handler: usize) -> usize; }
+                // Force the engine to await its graceful deadline and hard kill.
+                unsafe { signal(15, 1); }
+            }
             write(&args[2], std::process::id().to_string().as_bytes());
             if let Some(child_path) = args.get(3) {
-                std::process::Command::new(&args[0]).args(["sleep", child_path]).spawn().unwrap();
+                std::process::Command::new(&args[0]).args([args[1].as_str(), child_path]).spawn().unwrap();
             }
             std::thread::sleep(Duration::from_secs(30));
         }

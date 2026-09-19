@@ -259,23 +259,67 @@ async fn capture_output(
     environment: &BTreeMap<String, String>,
     cancel: &CancellationToken,
 ) -> Result<CapturedOutput> {
-    let mut child = OwnedProcess::spawn(directory, command, shell, Some(environment))?;
-    let stdout = child.child.stdout.take().unwrap();
-    let stderr = child.child.stderr.take().unwrap();
-    let out = tokio::spawn(read_bounded(stdout));
-    let err = tokio::spawn(read_bounded(stderr));
-    let status = child.wait(cancel, Some(Duration::from_secs(120))).await?;
-    let output = out.await??;
-    let errors = err.await??;
+    let (output, status) = capture_owned(directory, command, shell, environment, cancel).await?;
     ensure!(
         status.code == 0 && !status.cancelled(),
         "native command failed (exit {})",
         status.code
     );
-    Ok(CapturedOutput {
-        stdout: output,
-        stderr: errors,
-    })
+    Ok(output)
+}
+
+#[derive(Debug)]
+pub(crate) struct CleanupFailure;
+impl std::fmt::Display for CleanupFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("native command owners could not be completed")
+    }
+}
+impl std::error::Error for CleanupFailure {}
+
+pub(crate) async fn readiness_command(
+    directory: &Path,
+    command: &Command,
+    shell: Option<&[String]>,
+    environment: &BTreeMap<String, String>,
+    cancel: &CancellationToken,
+) -> Result<bool> {
+    let (_, status) = capture_owned(directory, command, shell, environment, cancel).await?;
+    Ok(status.code == 0 && !status.cancelled())
+}
+
+async fn capture_owned(
+    directory: &Path,
+    command: &Command,
+    shell: Option<&[String]>,
+    environment: &BTreeMap<String, String>,
+    cancel: &CancellationToken,
+) -> Result<(CapturedOutput, ProcessExit)> {
+    let mut child = OwnedProcess::spawn(directory, command, shell, Some(environment))?;
+    let stdout = child.child.stdout.take().unwrap();
+    let stderr = child.child.stderr.take().unwrap();
+    let out = tokio::spawn(read_bounded(stdout));
+    let err = tokio::spawn(read_bounded(stderr));
+    let status = child.wait(cancel, Some(Duration::from_secs(120))).await;
+    let cleanup = if status.is_err() {
+        child.terminate().await
+    } else {
+        Ok(())
+    };
+    // Await every owner before propagating a failure, including cancellation.
+    let output = out.await;
+    let errors = err.await;
+    cleanup.context(CleanupFailure)?;
+    let status = status.context(CleanupFailure)?;
+    let output = output.context(CleanupFailure)?.context(CleanupFailure)?;
+    let errors = errors.context(CleanupFailure)?.context(CleanupFailure)?;
+    Ok((
+        CapturedOutput {
+            stdout: output,
+            stderr: errors,
+        },
+        status,
+    ))
 }
 
 pub async fn capture_task(
