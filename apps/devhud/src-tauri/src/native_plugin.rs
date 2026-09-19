@@ -214,7 +214,7 @@ pub fn offer_auth_callback<R: Runtime>(app: &AppHandle<R>, candidate: &str) {
     if !crate::bridge::is_auth_callback(candidate) {
         return;
     }
-    let Some(auth_callback_epoch) = app
+    let Some((auth_callback_epoch, auth_callback_policy_epoch)) = app
         .try_state::<crate::bridge::NativeBridgeState>()
         .and_then(|state| state.offer_auth_callback(candidate))
     else {
@@ -222,7 +222,7 @@ pub fn offer_auth_callback<R: Runtime>(app: &AppHandle<R>, candidate: &str) {
     };
     let _ = app.emit(
         "devhud:native-event:v1",
-        serde_json::json!({ "version": 1, "kind": "auth-callback", "url": candidate, "authCallbackEpoch": auth_callback_epoch }),
+        serde_json::json!({ "version": 1, "kind": "auth-callback", "url": candidate, "authCallbackEpoch": auth_callback_epoch, "authCallbackPolicyEpoch": auth_callback_policy_epoch }),
     );
 }
 

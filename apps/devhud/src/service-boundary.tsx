@@ -914,21 +914,30 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       }
     },
     deleteAccount: async () => {
+      const operationRecoveryGeneration = recoveryGenerationRef.current;
       const response = await deleteMutation.mutateAsync({});
+      if (recoveryGenerationRef.current !== operationRecoveryGeneration) return;
       setAccount(response.account ?? null);
       setStatus("deletion-pending");
+      if (recoveryGenerationRef.current !== operationRecoveryGeneration) return;
       await cleanPendingDeletion();
     },
     restoreAccount: async () => {
+      const operationRecoveryGeneration = recoveryGenerationRef.current;
       try {
         const response = await restoreMutation.mutateAsync({});
+        if (recoveryGenerationRef.current !== operationRecoveryGeneration) return;
         setAccount(response.account ?? null);
         setDeletionCleanupFailed(false);
         setDeckAccessSuspended(false);
         const blocked = response.account?.administrativeBlockState === AdministrativeBlockState.BLOCKED;
         setStatus(blocked ? "blocked" : "authenticated");
-        if (!blocked) await settingsQuery.refetch();
+        if (!blocked) {
+          await settingsQuery.refetch();
+          if (recoveryGenerationRef.current !== operationRecoveryGeneration) return;
+        }
       } catch (reason) {
+        if (recoveryGenerationRef.current !== operationRecoveryGeneration) return;
         const mapped = mapDevHudError(reason);
         if (mapped.kind === "accountPrecondition" && mapped.detail.reason === AccountFailureReason.PURGE_CLAIMED) {
           await clearIrrecoverableAccount();

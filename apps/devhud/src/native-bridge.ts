@@ -237,7 +237,7 @@ export type NativeBridgeRequestV1 = NativeBridgeRequestV1Base
 export type NativeBridgeResponseV1 =
   | { readonly kind: "runtime"; readonly snapshot: RuntimeSnapshot }
   | { readonly kind: "session-network-policy"; readonly changed: boolean; readonly authCallbackEpoch?: number }
-  | { readonly kind: "auth-callback"; readonly url: string | null }
+  | { readonly kind: "auth-callback"; readonly url: string | null; readonly authCallbackEpoch?: number; readonly authCallbackPolicyEpoch?: number }
   | { readonly kind: "deck-link"; readonly deckId: string | null }
   | { readonly kind: "shortcut-status"; readonly platform: NativeShortcutPlatform; readonly permission: NativeShortcutPermission; readonly bindings: DesktopShortcutBindings; readonly error: ShortcutValidationCode | null }
   | { readonly kind: "secure-value"; readonly value: string | null }
@@ -259,7 +259,7 @@ export type NativeBridgeResponseV1 =
 
 export type NativeBridgeEventV1 =
   | { readonly version: typeof NativeBridgeVersion; readonly kind: "lifecycle"; readonly state: LifecycleState }
-  | { readonly version: typeof NativeBridgeVersion; readonly kind: "auth-callback"; readonly url: string; readonly authCallbackEpoch?: number }
+  | { readonly version: typeof NativeBridgeVersion; readonly kind: "auth-callback"; readonly url: string; readonly authCallbackEpoch?: number; readonly authCallbackPolicyEpoch?: number }
   | { readonly version: typeof NativeBridgeVersion; readonly kind: "deck-link"; readonly deckId: string }
   | { readonly version: typeof NativeBridgeVersion; readonly kind: "shortcut-triggered"; readonly action: ShortcutActionId }
   | { readonly version: typeof NativeBridgeVersion; readonly kind: "shortcut-status"; readonly platform: NativeShortcutPlatform; readonly permission: NativeShortcutPermission; readonly bindings: DesktopShortcutBindings; readonly error: ShortcutValidationCode | null }

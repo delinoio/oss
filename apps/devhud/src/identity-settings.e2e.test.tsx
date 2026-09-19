@@ -134,6 +134,7 @@ function IdentityStateProbe({ replacement = defaultDevHudSettings, deviceLocalRe
       data-error={identity.error ?? ""}
       data-account-error={identity.accountError?.code ?? ""}
       data-account-correlation={identity.accountError?.correlationId ?? ""}
+      data-account-name={identity.account?.displayName ?? ""}
       data-correlation={identity.settingsError?.correlationId ?? ""}
       data-query-data-count={queryClient.getQueryCache().getAll().filter((query) => query.state.data !== undefined).length}
       data-action-error={String(actionError)}
@@ -149,6 +150,8 @@ function IdentityStateProbe({ replacement = defaultDevHudSettings, deviceLocalRe
     {deviceLocalReplacement && <button type="button" onClick={() => void identity.replaceSettings(deviceLocalReplacement).catch(() => setActionError(true))}>replace probe device-local settings</button>}
     <button type="button" onClick={() => void queryClient.refetchQueries()}>refetch probe queries</button>
     <button type="button" onClick={() => { setActionError(false); void identity.logout().catch(() => setActionError(true)); }}>logout probe identity</button>
+    <button type="button" onClick={() => { setActionError(false); void identity.deleteAccount().then(() => setActionSettled((current) => current + 1), () => { setActionError(true); setActionSettled((current) => current + 1); }); }}>delete probe account</button>
+    <button type="button" onClick={() => { setActionError(false); void identity.restoreAccount().then(() => setActionSettled((current) => current + 1), () => { setActionError(true); setActionSettled((current) => current + 1); }); }}>restore probe account</button>
     <button type="button" onClick={identity.continueLocally}>continue probe locally</button>
   </>;
 }
@@ -441,6 +444,66 @@ describe("generated Connect identity/settings fixture", () => {
     await waitFor(() => expect(screen.getByTestId("identity-state").dataset.actionSettled).toBe("1"));
     expect(screen.getByTestId("identity-state").dataset.revision).not.toBe("2");
     expect(readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io")?.revision).not.toBe(2n);
+  });
+
+  it("discards account mutations that complete after identity recovery begins", async () => {
+    const recoveredAccount = { ...fixture.account, displayName: "Recovered User" };
+    const staleDeletion = { ...fixture.account, displayName: "Stale Deleted User", deletionState: "ACCOUNT_DELETION_STATE_PENDING" };
+    const staleRestore = { ...fixture.account, displayName: "Stale Restored User" };
+    let releaseDeletion!: () => void;
+    let releaseRestore!: () => void;
+    const deletionGate = new Promise<void>((resolve) => { releaseDeletion = resolve; });
+    const restoreGate = new Promise<void>((resolve) => { releaseRestore = resolve; });
+    let recovered = false;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: recovered ? recoveredAccount : fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: SettingsSchemaVersion, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.AccountService/DeleteAccount")) {
+        await deletionGate;
+        return connectResponse({ account: staleDeletion });
+      }
+      if (url.endsWith("/devhud.v1.AccountService/RestoreAccount")) {
+        await restoreGate;
+        return connectResponse({ account: staleRestore });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    const recoveryGenerationRef = { current: 0 };
+    const renderProbe = (identityRecoveryGeneration: number) => <DevHudServiceBoundary
+      apiOrigin="https://devhud.api.delino.io"
+      active
+      online
+      callbackUrl={null}
+      platform={RuntimePlatform.Desktop}
+      bridge={authenticatedBridge()}
+      onCallbackConsumed={() => {}}
+      onContinueLocally={() => {}}
+      onLoggedOut={() => {}}
+      identityRecoveryGeneration={identityRecoveryGeneration}
+      identityRecoveryGenerationRef={recoveryGenerationRef}
+    ><IdentityStateProbe /></DevHudServiceBoundary>;
+    const view = render(renderProbe(0));
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.accountName).toBe("Fixture User"));
+    fireEvent.click(screen.getByRole("button", { name: "delete probe account" }));
+    recoveryGenerationRef.current = 1;
+    recovered = true;
+    view.rerender(renderProbe(1));
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.accountName).toBe("Recovered User"));
+    act(() => { releaseDeletion(); });
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.actionSettled).toBe("1"));
+    expect(screen.getByTestId("identity-state").dataset.accountName).toBe("Recovered User");
+
+    fireEvent.click(screen.getByRole("button", { name: "restore probe account" }));
+    recoveryGenerationRef.current = 2;
+    view.rerender(renderProbe(2));
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.accountName).toBe("Recovered User"));
+    act(() => { releaseRestore(); });
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.actionSettled).toBe("2"));
+    expect(screen.getByTestId("identity-state").dataset.accountName).toBe("Recovered User");
   });
 
   it("keeps synchronized agent saves successful when authenticated cache writes fail", async () => {

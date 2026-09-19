@@ -236,7 +236,9 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
         // A native API-origin transition clears callbacks and advances this
         // epoch atomically. A delayed event from the prior boundary must never
         // be associated with the rekeyed identity session.
-        if (!apiOriginChangeInFlight.current && (event.authCallbackEpoch === undefined || authCallbackEpoch.current === null || event.authCallbackEpoch === authCallbackEpoch.current)) setAuthCallback(event.url);
+        if (!apiOriginChangeInFlight.current
+          && (event.authCallbackEpoch === undefined || event.authCallbackPolicyEpoch === undefined || event.authCallbackEpoch === event.authCallbackPolicyEpoch)
+          && (event.authCallbackEpoch === undefined || authCallbackEpoch.current === null || event.authCallbackEpoch === authCallbackEpoch.current)) setAuthCallback(event.url);
       }
       if (event.kind === "deck-link") peekPendingDeckLink();
       if (event.kind === "shortcut-triggered") {
@@ -278,7 +280,9 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       setLifecycle(response.snapshot.lifecycle);
       setRuntimeState(initialContentState);
       const pending = await bridge.request({ operation: "auth.peek-pending-callback" });
-      if (active && pending.kind === "auth-callback" && pending.url) setAuthCallback(pending.url);
+      if (active && pending.kind === "auth-callback" && pending.url
+        && (pending.authCallbackEpoch === undefined || pending.authCallbackPolicyEpoch === undefined || pending.authCallbackEpoch === pending.authCallbackPolicyEpoch)
+        && (pending.authCallbackEpoch === undefined || authCallbackEpoch.current === null || pending.authCallbackEpoch === authCallbackEpoch.current)) setAuthCallback(pending.url);
       if (window.__TAURI_INTERNALS__) peekPendingDeckLink();
     }).catch(() => {
       if (active && !initialRuntime) setRuntimeState({ kind: ContentStateKind.Error, retryable: true });
