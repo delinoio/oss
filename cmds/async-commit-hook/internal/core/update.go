@@ -391,6 +391,10 @@ func (s *Service) ApplyUpdate() error {
 	for ProcessAlive(j.Parent) {
 		time.Sleep(50 * time.Millisecond)
 	}
+	return s.applyPreparedUpdate(b)
+}
+
+func (s *Service) applyPreparedUpdate(expected []byte) error {
 	lock, e := TryLock(filepath.Join(s.Paths.Control, "lifecycle.lock"))
 	if e != nil {
 		return e
@@ -399,6 +403,20 @@ func (s *Service) ApplyUpdate() error {
 		return E("update-busy", "lifecycle owner has not stopped", 3)
 	}
 	defer lock.Close()
+	// Recovery can win while this helper waits for its parent. Never replay the
+	// previously decoded journal after recovery removed it or another update
+	// replaced it. The same lock protects this comparison through replacement.
+	current, e := os.ReadFile(filepath.Join(s.Paths.Control, "update.json"))
+	if e != nil || !bytes.Equal(current, expected) {
+		return E("update-superseded", "prepared update was recovered or changed; helper will not apply it", 3)
+	}
+	var j UpdateJournal
+	if e = json.Unmarshal(current, &j); e != nil {
+		return e
+	}
+	if j.Phase != "prepared" {
+		return E("update-journal-invalid", "helper requires a prepared update", 3)
+	}
 	// Windows cannot rename the running helper; copy the authenticated candidate to a replacement sibling.
 	if runtime.GOOS == "windows" {
 		if e = s.recordUpdateHelper(j); e != nil {

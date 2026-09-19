@@ -44,3 +44,5 @@ Update this contract, packaging AGENTS, version metadata, evidence and public up
 - [Implementation evidence](cmds-async-commit-hook-evidence.md)
 
 Windows helpers retain a separate UUID-scoped cleanup record before creating the replacement sibling. Successful installation can remove its update journal without losing the helper path, authenticated digest or process birth identity. Subsequent service opens retry cleanup under the account lifecycle lock, wait for the helper to exit, reject changed/nonregular files, and remove the cleanup record only after deleting the helper. Cleanup failure remains recorded and emits a stable warning without blocking ordinary queries.
+
+After its original parent exits, a helper acquires the account lifecycle lock and rereads the journal. Its bytes must match the prepared journal observed before waiting. Recovery can therefore win that lock and remove the journal without a delayed helper resurrecting it; a later update's different journal is equally protected. Journal comparison, helper preparation and replacement remain inside the same lock. Stale helpers exit with `update-superseded`.
