@@ -328,7 +328,7 @@ pub async fn inventory(
                 cancel,
             )
             .await?;
-            let flags = go_flags(&base[2..])?;
+            let (flags, _) = go_flags(&base[2..])?;
             for line in bytes.split(|b| *b == b'\n').filter(|l| !l.is_empty()) {
                 let event: Value = serde_json::from_slice(line)?;
                 let (Some(package), Some(output)) =
@@ -618,8 +618,9 @@ pub async fn inventory(
     Ok((inventory, commands))
 }
 
-fn go_flags(arguments: &[String]) -> Result<Vec<String>> {
+fn go_flags(arguments: &[String]) -> Result<(Vec<String>, bool)> {
     let mut flags = vec![];
+    let mut fail_fast = false;
     let mut args = arguments.iter();
     while let Some(arg) = args.next() {
         if !arg.starts_with('-') {
@@ -637,12 +638,19 @@ fn go_flags(arguments: &[String]) -> Result<Vec<String>> {
             }
             _ => bail!("unsupported Go shard flag {flag}; use generic sharding"),
         };
+        if flag == "-failfast" {
+            fail_fast = match arg.split_once('=').map(|(_, value)| value) {
+                None | Some("1" | "t" | "T" | "TRUE" | "true" | "True") => true,
+                Some("0" | "f" | "F" | "FALSE" | "false" | "False") => false,
+                _ => bail!("invalid Go -failfast boolean"),
+            };
+        }
         flags.push(arg.clone());
         if takes_value && !arg.contains('=') {
             flags.push(args.next().context("Go flag requires value")?.clone());
         }
     }
-    Ok(flags)
+    Ok((flags, fail_fast))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -726,6 +734,15 @@ pub async fn execute(
     } else {
         (0..count).collect()
     };
+    let fail_fast = if config.adapter == ShardAdapter::Go {
+        let Command::Argv(args) = &task.command else {
+            unreachable!()
+        };
+        go_flags(&args[2..])?.1
+    } else {
+        false
+    };
+    let mut stopped_after_failure = false;
     let mut all_passed = true;
     let mut termination: Option<ProcessExit> = None;
     for index in indices {
@@ -795,6 +812,14 @@ pub async fn execute(
             }
         } else {
             for test in selected {
+                if stopped_after_failure {
+                    results.push(UnitResult {
+                        id: test.clone(),
+                        status: UnitStatus::Skipped,
+                        duration_ms: 0,
+                    });
+                    continue;
+                }
                 let began = Instant::now();
                 let exit = if let Some(exit) = termination {
                     exit
@@ -819,6 +844,13 @@ pub async fn execute(
                 };
                 if exit.reason != ExitReason::Completed {
                     termination.get_or_insert(exit);
+                } else if fail_fast && exit.code != 0 {
+                    stopped_after_failure = true;
+                    tracing::info!(
+                        task = id,
+                        code = "go-failfast",
+                        "Skipping remaining units after first Go test failure"
+                    );
                 }
                 results.push(UnitResult {
                     id: test.clone(),

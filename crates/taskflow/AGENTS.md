@@ -44,7 +44,7 @@
 - Native discovery preserves typed cancellation and cleanup failures through fallbacks; only completed operator cancellation maps top-level errors to exit code 130.
 - Go discovery must disable module proxies, checksum databases, VCS, and automatic toolchain downloads; private-module proxy bypass cannot override this boundary.
 - Rust libtest metadata must honor the command's explicit manifest selection in both argv forms; parse harness declarations only for the selected compiler-artifact targets, never reject unrelated packages or unselected targets.
-- Native Go shard arguments use an explicit flag/value contract; reject unknown or selection/output flags before inventory execution.
+- Native Go -failfast stops later units across the invocation and records them as skipped without hiding the failure. Native Go shard arguments use an explicit flag/value contract; reject unknown or selection/output flags before inventory execution.
 - Maintain schema freshness and numbered issue #898 conformance scenarios. Report unavailable platform/service evidence accurately.
 - Keep `docs/crates-taskflow-conformance.md`, the native/Docker CI matrices, and their centralized `scripts/ci/job-paths.json` ownership synchronized. CI result bundles must prove complete task, artifact, and shard accounting against the exact plan; secret transport is forbidden for PR jobs.
 - Docker task commands, tool probes, and shard inventory/execution forward effective explicit CLI overrides alongside task-declared names; never forward the ambient host environment or another task's filtered secrets.

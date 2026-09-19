@@ -2502,6 +2502,39 @@ async fn go_sharding_preserves_separated_flag_values_and_package_failures() {
         .any(|r| r.id == "example.test/flags/leaf::TestFailure"
             && r.status == shard::UnitStatus::Failed));
     assert!(!shard::aggregate(&inventory, 2, &reports).unwrap());
+    for flag in ["-failfast", "-failfast=false"] {
+        let root = fixture(
+            json!({"test":{"command":["go","test",flag],"input":[],"output":[],"shard":{"adapter":"go","count":2}}}),
+        );
+        files::atomic_write(
+            &root.path().join("go.mod"),
+            b"module example.test/failfast\n\ngo 1.25.0\n",
+        )
+        .unwrap();
+        files::atomic_write(&root.path().join("suite_test.go"), b"package suite\nimport (\"testing\"; \"os\")\nfunc TestA(t *testing.T) { t.Fatal(\"expected\") }\nfunc TestB(t *testing.T) { os.WriteFile(\"second-ran\", []byte(\"ran\"), 0600) }\n").unwrap();
+        let result = run(graph(root.path()).await, &["test"]).await;
+        assert!(!result.success);
+        let receipt = &result.results["app#test"];
+        assert_eq!(receipt.exit_code, 1);
+        let (inventory, reports) =
+            shard::read_reports(&root.path().join(".taskflow/runs").join(&receipt.execution))
+                .unwrap();
+        assert!(!shard::aggregate(&inventory, 2, &reports).unwrap());
+        assert_eq!(
+            root.path().join("second-ran").exists(),
+            flag.ends_with("false")
+        );
+        assert!(reports
+            .iter()
+            .flat_map(|report| &report.results)
+            .any(|result| result.id.ends_with("TestB")
+                && result.status
+                    == if flag.ends_with("false") {
+                        shard::UnitStatus::Passed
+                    } else {
+                        shard::UnitStatus::Skipped
+                    }));
+    }
 }
 
 #[tokio::test]
