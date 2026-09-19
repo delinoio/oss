@@ -35,13 +35,16 @@ export function ApiOriginEditor({ copy, value, inputRef, autoFocus = false, onAp
   const applyTrigger = useRef<HTMLButtonElement>(null);
   const cancelChange = useRef<HTMLButtonElement>(null);
   const applyingRef = useRef(false);
+  const confirmationOpenChangeRef = useRef(onConfirmationOpenChange);
+  confirmationOpenChangeRef.current = onConfirmationOpenChange;
   useEffect(() => setDraft(value), [value]);
   const confirmationOpen = pendingOrigin !== null;
-  useEffect(() => {
-    onConfirmationOpenChange?.(confirmationOpen);
-  }, [confirmationOpen, onConfirmationOpenChange]);
-  useEffect(() => () => onConfirmationOpenChange?.(false), [onConfirmationOpenChange]);
+  useEffect(() => () => confirmationOpenChangeRef.current?.(false), []);
   const returnFocusRef = inputRef && typeof inputRef !== "function" ? inputRef : applyTrigger;
+  const closeConfirmation = () => {
+    onConfirmationOpenChange?.(false);
+    setPendingOrigin(null);
+  };
   const apply = async () => {
     if (disabled || applying || pendingOrigin !== null) return;
     const normalized = normalizeApiOrigin(draft);
@@ -49,6 +52,7 @@ export function ApiOriginEditor({ copy, value, inputRef, autoFocus = false, onAp
     setError(false);
     setDraft(normalized);
     if (normalized === normalizeApiOrigin(value)) return;
+    onConfirmationOpenChange?.(true);
     setPendingOrigin(normalized);
   };
   const confirm = () => {
@@ -59,7 +63,7 @@ export function ApiOriginEditor({ copy, value, inputRef, autoFocus = false, onAp
     void onApply(nextOrigin).finally(() => {
       applyingRef.current = false;
       setApplying(false);
-      setPendingOrigin(null);
+      closeConfirmation();
     });
   };
   return <div className="api-origin-editor" aria-busy={applying}>
@@ -68,9 +72,9 @@ export function ApiOriginEditor({ copy, value, inputRef, autoFocus = false, onAp
     </Field>
     <Button ref={applyTrigger} type="button" onClick={() => void apply()} disabled={disabled || applying || normalizeApiOrigin(draft) === normalizeApiOrigin(value)}>{copy.applyApiOrigin}</Button>
     {applyError && <p className="external-message" role="alert">{applyError}</p>}
-    <Dialog open={confirmationOpen} title={copy.apiChangeConfirmTitle} descriptionId="api-origin-change-confirmation-summary" initialFocusRef={cancelChange} returnFocusRef={returnFocusRef} onClose={() => { if (!applying) setPendingOrigin(null); }}>
+    <Dialog open={confirmationOpen} title={copy.apiChangeConfirmTitle} descriptionId="api-origin-change-confirmation-summary" initialFocusRef={cancelChange} returnFocusRef={returnFocusRef} onClose={() => { if (!applying) closeConfirmation(); }}>
       <div aria-busy={applying}><p id="api-origin-change-confirmation-summary">{copy.apiChangeConfirm}</p>
-      <div className="actions"><Button ref={cancelChange} onClick={() => setPendingOrigin(null)} disabled={applying}>{copy.cancel}</Button><Button variant="primary" onClick={confirm} disabled={applying}>{copy.applyApiOrigin}</Button></div></div>
+      <div className="actions"><Button ref={cancelChange} onClick={closeConfirmation} disabled={applying}>{copy.cancel}</Button><Button variant="primary" onClick={confirm} disabled={applying}>{copy.applyApiOrigin}</Button></div></div>
     </Dialog>
   </div>;
 }
@@ -143,20 +147,23 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin, onModa
   };
   const closeDeleteConfirmation = () => {
     setConfirmDelete(false);
+    onModalConfirmationOpenChange(apiChangeConfirmationOpen);
     restoreDeleteTriggerFocus();
+  };
+  const handleApiChangeConfirmationOpenChange = (open: boolean) => {
+    setApiChangeConfirmationOpen(open);
+    onModalConfirmationOpenChange(deleteConfirmationOpen || open);
   };
   const confirmDeleteAccount = () => {
     deletionPendingFocus.current = true;
     setConfirmDelete(false);
+    onModalConfirmationOpenChange(apiChangeConfirmationOpen);
     setActionError(false);
     void identity.deleteAccount().catch(() => {
       setActionError(true);
       restoreDeleteTriggerFocus();
     });
   };
-  useEffect(() => {
-    onModalConfirmationOpenChange(modalConfirmationOpen);
-  }, [modalConfirmationOpen, onModalConfirmationOpenChange]);
   useEffect(() => () => onModalConfirmationOpenChange(false), [onModalConfirmationOpenChange]);
   useEffect(() => {
     if (!deletionPendingFocus.current || identity.status !== "deletion-pending") return;
@@ -178,10 +185,10 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin, onModa
         {identity.status === "deletion-pending" && <StatePanel headingLevel={4} eyebrow={copy.account} tone="warning" title={copy.deletionPendingTitle} summary={copy.deletionPendingSummary} details={identity.account?.recoverableUntil ? <p>{copy.recoverableUntil}: {new Date(Number(identity.account.recoverableUntil.seconds) * 1000).toLocaleString()}</p> : undefined} actions={<><Button ref={restoreAccount} variant="primary" onClick={() => invoke(identity.restoreAccount)}>{copy.restoreAccount}</Button><Button onClick={() => invoke(identity.logout)}>{copy.logout}</Button></>} />}
         {actionError && <StatePanel headingLevel={4} eyebrow={copy.account} tone="danger" role="alert" title={copy.accountActionFailed} summary={copy.accountActionFailed} />}
       </Card>
-      <Card className="account-section" aria-label={copy.apiOrigin}><h3>{copy.apiOrigin}</h3><ApiOriginEditor copy={copy} value={apiOrigin} inputRef={inputRef} onApply={onApiOrigin} warningId="api-origin-security-warning" applyError={apiChangeError} onConfirmationOpenChange={setApiChangeConfirmationOpen} disabled={deleteConfirmationOpen} /></Card>
+      <Card className="account-section" aria-label={copy.apiOrigin}><h3>{copy.apiOrigin}</h3><ApiOriginEditor copy={copy} value={apiOrigin} inputRef={inputRef} onApply={onApiOrigin} warningId="api-origin-security-warning" applyError={apiChangeError} onConfirmationOpenChange={handleApiChangeConfirmationOpenChange} disabled={deleteConfirmationOpen} /></Card>
       <Card className="account-section account-security" aria-label={copy.security}><h3>{copy.security}</h3><p id="api-origin-security-warning" className="notice">{copy.customApiWarning}</p>{identity.status === "error" && <StatePanel headingLevel={4} eyebrow={copy.security} tone="danger" role="alert" title={copy.bootstrapFailed} summary={copy.bootstrapFailed} details={identity.identityResetAvailable ? <p>{copy.resetSignInHint}</p> : undefined} actions={<><Button onClick={identity.retryIdentity}>{copy.retry}</Button><Button onClick={identity.continueLocally}>{copy.continueLocally}</Button>{identity.identityResetAvailable && <Button onClick={() => void identity.resetIdentity().catch(() => {})}>{copy.resetSignIn}</Button>}</>} />}{identity.status === "deletion-pending" && identity.deletionCleanupFailed && <StatePanel headingLevel={4} eyebrow={copy.security} tone="danger" role="alert" title={copy.accountActionFailed} summary={copy.accountActionFailed} actions={<Button onClick={() => void identity.retryDeletionCleanup()}>{copy.retry}</Button>} />}</Card>
       <Card className="account-section" aria-label={copy.externalTools}><h3>{copy.externalTools}</h3><div className="account-external-tools"><DataRow ariaLabel={copy.githubCreateFinePat} title={copy.githubCreateFinePat} description={copy.pat} onClick={() => onOpenExternal(ExternalLinkTarget.Pat)} /><DataRow ariaLabel={copy.githubCreateClassicPat} title={copy.githubCreateClassicPat} description={copy.pat} onClick={() => onOpenExternal(ExternalLinkTarget.ClassicPat)} />{!mobile && <DataRow ariaLabel={copy.issue} title={copy.issue} description={copy.projectIssueHint} onClick={() => onOpenExternal(ExternalLinkTarget.Issue)} />}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</Card>
-      {identity.status === "authenticated" && !identity.accountError && identity.account !== null && <Card className="account-section account-danger" aria-label={copy.dangerZone}><h3>{copy.dangerZone}</h3><p>{copy.deleteAccountSummary}</p><Button ref={deleteTrigger} variant="danger" onClick={() => setConfirmDelete(true)} disabled={modalConfirmationOpen}>{copy.deleteAccount}</Button></Card>}
+      {identity.status === "authenticated" && !identity.accountError && identity.account !== null && <Card className="account-section account-danger" aria-label={copy.dangerZone}><h3>{copy.dangerZone}</h3><p>{copy.deleteAccountSummary}</p><Button ref={deleteTrigger} variant="danger" onClick={() => { setConfirmDelete(true); onModalConfirmationOpenChange(true); }} disabled={modalConfirmationOpen}>{copy.deleteAccount}</Button></Card>}
     </div>
     </div>
     <Dialog open={deleteConfirmationOpen} role="alertdialog" title={copy.deleteAccountConfirmTitle} descriptionId="delete-account-confirmation-summary" initialFocusRef={cancelDelete} returnFocusRef={deleteTrigger} restoreFocus={false} onClose={closeDeleteConfirmation}><p id="delete-account-confirmation-summary">{copy.deleteAccountConfirmSummary}</p><div className="actions"><Button ref={cancelDelete} onClick={closeDeleteConfirmation}>{copy.cancel}</Button><Button variant="danger" onClick={confirmDeleteAccount}>{copy.deleteAccount}</Button></div></Dialog>

@@ -452,6 +452,10 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     clearAuthCallbackBinding(storage);
     setAuthCallback((current) => current === url ? null : current);
   }, [storage]);
+  const abandonAuthCallback = useCallback((url: string) => {
+    clearAuthCallbackBinding(storage);
+    setAuthCallback((current) => current === url ? null : current);
+  }, [storage]);
   const markDeckLinkPolicyReady = useCallback(() => {
     setDeckLinkPolicyOrigin(preferences.apiOrigin);
   }, [preferences.apiOrigin]);
@@ -475,6 +479,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
         const discardedCallback = await bridge.request({ operation: "auth.take-pending-callback" });
         if (discardedCallback.kind !== "auth-callback") throw new Error("auth-callback-discard-failed");
       } catch {}
+      setAuthCallback(null);
       recoverIdentityAfterPolicyFailure();
       apiOriginChangeInFlight.current = false;
       setApiChangeError("cleanup");
@@ -531,7 +536,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const externalMessageIsError = externalMessage !== "opened";
 
   const NativeMessagingBoundary = nativeMessaging?.Boundary;
-  const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={preferences.apiOrigin} apiOrigin={preferences.apiOrigin} active online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onCallbackConsumed={clearConsumedAuthCallback} onAuthCallbackEpoch={acceptAuthCallbackEpoch} onDeckLinkPolicyReady={markDeckLinkPolicyReady} onContinueLocally={finishOnboarding} onLoggedOut={() => { realqaController.current?.reset(); setRequestedCapture(null); setSurface(SurfaceId.Account); }} initialAppearance={{ theme: preferences.theme, language: preferences.language }} identitySessionRef={identitySession} identityRecoveryGeneration={identityRecoveryGeneration} identityRecoveryGenerationRef={identityRecoveryGenerationRef} prepareApiOriginChangeRef={prepareApiOriginChangeRef}><UrlMappingDraftProvider><DeckPollingBoundary bridge={bridge} active={lifecycle === LifecycleState.Active} online={online} language={language}><SynchronizedAppearanceBoundary onAppearance={(appearance) => update({ theme: appearance.theme, language: appearance.language })} />{runtime.platform === RuntimePlatform.Desktop && NativeMessagingBoundary && <NativeMessagingBoundary />}{content}</DeckPollingBoundary></UrlMappingDraftProvider></DevHudServiceBoundary> : content;
+  const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={preferences.apiOrigin} apiOrigin={preferences.apiOrigin} active online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onCallbackConsumed={clearConsumedAuthCallback} onCallbackAbandoned={abandonAuthCallback} onAuthCallbackEpoch={acceptAuthCallbackEpoch} onDeckLinkPolicyReady={markDeckLinkPolicyReady} onContinueLocally={finishOnboarding} onLoggedOut={() => { realqaController.current?.reset(); setRequestedCapture(null); setSurface(SurfaceId.Account); }} initialAppearance={{ theme: preferences.theme, language: preferences.language }} identitySessionRef={identitySession} identityRecoveryGeneration={identityRecoveryGeneration} identityRecoveryGenerationRef={identityRecoveryGenerationRef} prepareApiOriginChangeRef={prepareApiOriginChangeRef}><UrlMappingDraftProvider><DeckPollingBoundary bridge={bridge} active={lifecycle === LifecycleState.Active} online={online} language={language}><SynchronizedAppearanceBoundary onAppearance={(appearance) => update({ theme: appearance.theme, language: appearance.language })} />{runtime.platform === RuntimePlatform.Desktop && NativeMessagingBoundary && <NativeMessagingBoundary />}{content}</DeckPollingBoundary></UrlMappingDraftProvider></DevHudServiceBoundary> : content;
 
   if (runtimeState.kind !== ContentStateKind.Ready) return <main className="standalone-shell" data-devhud-ready="true"><ContentStateView state={runtimeState} copy={copy} onRetry={() => location.reload()} /></main>;
 

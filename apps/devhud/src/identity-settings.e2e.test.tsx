@@ -14,7 +14,7 @@ import { deckPollingCancellationGeneration } from "./deck-polling-cancellation";
 import { DiagnosticsCorrelationsKey, DiagnosticsStorageKey, appendDiagnosticCorrelation, appendDiagnosticEvent, captureDiagnosticEvent } from "./diagnostics";
 import type { GitHubProvider } from "./github-provider";
 import * as identityClient from "./identity-client";
-import { recordAuthCallbackBinding, sessionProfileId, type IdentitySession } from "./identity-client";
+import { hasAuthCallbackBinding, recordAuthCallbackBinding, sessionProfileId, type IdentitySession } from "./identity-client";
 import { SynchronizedSettingsBoundary } from "./identity-ui";
 import { messages } from "./localization";
 import { assertDeviceLocalSettingsPersistable, DeviceLocalSettingsMaximumBytes, hasGuestSettings, readAuthenticatedSettingsCache, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
@@ -1995,6 +1995,48 @@ describe("generated Connect identity/settings fixture", () => {
     await waitFor(() => expect(handleCallback).toHaveBeenCalledTimes(2));
     expect(pendingCallback).toBeNull();
     expect(await screen.findByText("Fixture User")).toBeTruthy();
+  });
+
+  it("abandons a failed callback when the user continues locally", async () => {
+    const callbackUrl = "devhud://auth/callback?code=opaque&state=opaque";
+    expect(recordAuthCallbackBinding(localStorage, "https://devhud.api.delino.io")).toBe(true);
+    let receive!: (event: NativeBridgeEventV1) => void;
+    let pendingCallback: string | null = callbackUrl;
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      client: {},
+      storage: {},
+      getAccessToken: async () => "fixture-access-token",
+      isAuthenticated: async () => false,
+      signIn: async () => {},
+      handleCallback: async () => { throw new Error("expired-state"); },
+      clear: async () => {},
+    } as unknown as IdentitySession);
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      throw new Error(`unexpected request ${String(input)}`);
+    }));
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "auth.take-pending-callback") {
+          const url = pendingCallback;
+          pendingCallback = null;
+          return { kind: "auth-callback", url };
+        }
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen(listener) { receive = listener; return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    await waitFor(() => expect(receive).toBeTypeOf("function"));
+    act(() => receive({ version: 1, kind: "auth-callback", url: callbackUrl }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: messages.en.continueLocally }));
+
+    await waitFor(() => expect(pendingCallback).toBeNull());
+    expect(hasAuthCallbackBinding(localStorage)).toBe(false);
   });
 
   it.each([

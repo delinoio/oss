@@ -95,6 +95,7 @@ interface BoundaryProps extends PropsWithChildren {
   readonly platform: RuntimePlatform;
   readonly bridge: NativeBridgeV1;
   readonly onCallbackConsumed: (url: string) => void;
+  readonly onCallbackAbandoned?: (url: string) => void;
   readonly onAuthCallbackEpoch?: (epoch: number) => void;
   readonly onDeckLinkPolicyReady?: () => void;
   readonly onContinueLocally: () => void;
@@ -144,7 +145,7 @@ export function DevHudServiceBoundary(props: BoundaryProps) {
   </QueryClientProvider></TransportProvider>;
 }
 
-function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onCallbackConsumed, onAuthCallbackEpoch, onDeckLinkPolicyReady, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset, identityRecoveryGeneration = 0, identityRecoveryGenerationRef, prepareApiOriginChangeRef }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
+function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onCallbackConsumed, onCallbackAbandoned, onAuthCallbackEpoch, onDeckLinkPolicyReady, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset, identityRecoveryGeneration = 0, identityRecoveryGenerationRef, prepareApiOriginChangeRef }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
   const storage = getLocalStorage();
   const queryClient = useQueryClient();
   const transport = useTransport();
@@ -182,6 +183,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [logoutCleanupPending, setLogoutCleanupPending] = useState(false);
   const signInPendingRef = useRef(false);
   const callbackHandled = useRef<string | null>(null);
+  const failedCallback = useRef<string | null>(null);
+  const callbackAbandonment = useRef<Promise<void> | null>(null);
   const invalidSessionCleanupRef = useRef<Promise<void> | null>(null);
   const pendingDeletionCleanupRef = useRef<Promise<void> | null>(null);
   const irrecoverableCleanupPendingRef = useRef(false);
@@ -459,11 +462,13 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       if (pending.kind !== "auth-callback" || pending.url !== callbackUrl) throw new Error("auth-callback-unavailable");
       if (recoveryGenerationRef.current !== operationRecoveryGeneration) return;
       onCallbackConsumed(callbackUrl);
+      failedCallback.current = null;
       setStatus("authenticated");
       setError(null);
     })().catch((reason) => {
       if (recoveryGenerationRef.current !== operationRecoveryGeneration) return;
       callbackHandled.current = null;
+      failedCallback.current = callbackUrl;
       setStatus("error");
       setError(safeError(reason));
     });
@@ -707,7 +712,28 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     retryIdentity();
   }, [identityRecoveryGeneration]);
 
+  async function abandonFailedCallback(): Promise<void> {
+    const url = failedCallback.current;
+    if (url === null) return;
+    if (callbackAbandonment.current !== null) {
+      await callbackAbandonment.current;
+      return;
+    }
+    failedCallback.current = null;
+    callbackHandled.current = null;
+    const abandonment = bridge.request({ operation: "auth.take-pending-callback" }).catch(() => {}).then(() => {
+      onCallbackAbandoned?.(url);
+    });
+    callbackAbandonment.current = abandonment;
+    try {
+      await abandonment;
+    } finally {
+      if (callbackAbandonment.current === abandonment) callbackAbandonment.current = null;
+    }
+  }
+
   async function resetIdentity(): Promise<void> {
+    await abandonFailedCallback();
     clearAuthenticatedSettingsCache(storage, apiOrigin);
     setStatus("starting");
     setError(null);
@@ -854,6 +880,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       if (signInPendingRef.current) return;
       continueLocallyRef.current = false;
       setContinuedLocally(false);
+      if (failedCallback.current !== null) await abandonFailedCallback();
       const current = sessionRef.current;
       if (current === null) throw new Error("bootstrap-not-ready");
       signInPendingRef.current = true;
@@ -877,6 +904,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       await settingsQuery.refetch();
     },
     continueLocally: () => {
+      void abandonFailedCallback();
       continueLocallyRef.current = true;
       setContinuedLocally(true);
       setDeckAccessSuspended(false);
