@@ -2,6 +2,8 @@
 
 The complete [issue requirements](cmds-async-commit-hook-requirements.md) remain intact. This matrix was created before runtime implementation and maps them to the delivered source and executable evidence. Verification below was performed on September 19, 2026.
 
+The initial product version is `0.1.0` across the executable, app/client packages, installers and release metadata. Configuration, state, CLI JSON and API schema versions remain `1`. The `0.1.0` artifacts passed the full Go suite, frontend tests/build, release/workflow checks and all six target builds; native `ach version --json` reports `0.1.0`.
+
 ## Completion boundary
 
 The owner approved exactly two changes to the original acceptance criteria: the real-machine campaign across all six targets is excluded, and public release/site deployment is prepared but not executed. Cross-builds, local automated integration and a nonpublishing release dry run remain required and passed. These amendments do not imply native Windows/Linux runtime qualification.
@@ -62,7 +64,7 @@ node --test scripts/release/async-commit-hook.test.mjs
 python3 scripts/release/build-async-commit-hook.py --output <empty-temporary-directory>
 ```
 
-The local release dry run used `/tmp/ach-release-897-final`, outside the repository. It produced four `.tar.gz` and two `.zip` archives plus checksums, installers, formula and compatibility metadata. It does not contain newly published Sigstore signatures: signing is the explicitly unexecuted protected release path, while verification is covered with existing signed fixtures and tampering tests.
+The local release dry run used `/tmp/ach-release-897-0.1.0`, outside the repository. It produced four `.tar.gz` and two `.zip` archives plus checksums, installers, formula and compatibility metadata. It does not contain newly published Sigstore signatures: signing is the explicitly unexecuted protected release path, while verification is covered with existing signed fixtures and tampering tests.
 
 ## Observed local compatibility
 

@@ -6,7 +6,7 @@ on:
         description: Exact committed MAJOR.MINOR.PATCH
         type: string
         required: true
-        default: '1.0.0'
+        default: '0.1.0'
       dry_run:
         description: Build and validate without signing or publication
         type: boolean

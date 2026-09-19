@@ -138,7 +138,7 @@ func TestPostCommitDetachedModesAndWaitExpiry(t *testing.T) {
 				t.Fatalf("source/config isolation failed %+v", r)
 			}
 			if mode == "daemon" {
-				if _, exit = invoke(t, config, repo, "self-update", "--version", "1.0.0"); exit != 2 {
+				if _, exit = invoke(t, config, repo, "self-update", "--version", "0.1.0"); exit != 2 {
 					t.Fatalf("active update not refused: %d", exit)
 				}
 			}
@@ -404,7 +404,7 @@ func TestPrePushRunAndWaitCreatesMissingAttempt(t *testing.T) {
 
 func TestHomebrewOwnedExecutableRejectsSelfUpdate(t *testing.T) {
 	config, _ := setup(t, "on-demand")
-	cellar := filepath.Join(t.TempDir(), "Cellar", "async-commit-hook", "1.0.0", "bin")
+	cellar := filepath.Join(t.TempDir(), "Cellar", "async-commit-hook", "0.1.0", "bin")
 	if err := os.MkdirAll(cellar, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -416,7 +416,7 @@ func TestHomebrewOwnedExecutableRejectsSelfUpdate(t *testing.T) {
 	if err = os.WriteFile(installed, data, 0700); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(installed, "self-update", "--version", "1.0.0", "--config", config, "--json")
+	cmd := exec.Command(installed, "self-update", "--version", "0.1.0", "--config", config, "--json")
 	cmd.Env = append(os.Environ(), "HOME="+filepath.Join(filepath.Dir(config), "home"))
 	b, err := cmd.CombinedOutput()
 	if err == nil || !strings.Contains(string(b), "homebrew-owned") || !strings.Contains(string(b), "brew upgrade") {

@@ -37,7 +37,7 @@
         </p>
         <pre>
 curl -fsSLo install-ach.sh https://ach.delino.io/install.sh
-sh install-ach.sh --version 1.0.0
+sh install-ach.sh --version 0.1.0
 
 # macOS and Linux, using the Homebrew tap:
 brew install delinoio/tap/async-commit-hook</pre
@@ -45,7 +45,7 @@ brew install delinoio/tap/async-commit-hook</pre
         <pre>
 # PowerShell:
 Invoke-WebRequest https://ach.delino.io/install.ps1 -OutFile install-ach.ps1
-./install-ach.ps1 -Version 1.0.0</pre
+./install-ach.ps1 -Version 0.1.0</pre
         >
         <p>
           Download the platform archive, SHA256SUMS and Sigstore bundles from
@@ -470,7 +470,7 @@ ach prune --dry-run --max-bytes 1073741824</pre
         <pre>
 ach daemon stop
 # Stop viewer/MCP processes and finish or cancel checks, then:
-ach self-update --version 1.0.0
+ach self-update --version 0.1.0
 ach self-update --recover
 # Homebrew installations:
 brew upgrade async-commit-hook</pre

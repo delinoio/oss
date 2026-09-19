@@ -1,7 +1,7 @@
 # async-commit-hook release contract
 
 ## Scope
-The command release boundary owns six `ach` archives, shell/PowerShell installers, a Homebrew formula, artifact verification and explicit self-update. The static app and public `/docs` ship through the same manually dispatched release workflow. The initial version is `1.0.0`.
+The command release boundary owns six `ach` archives, shell/PowerShell installers, a Homebrew formula, artifact verification and explicit self-update. The static app and public `/docs` ship through the same manually dispatched release workflow. The initial version is `0.1.0`.
 
 ## Runtime and Language
 The Go binary uses CGO-free builds for darwin/linux/windows and amd64/arm64. Python assembles and inspects archives; GitHub Actions orchestrates validation, Sigstore signing, publication and Cloudflare Pages. A release archive contains exactly one regular `ach` or `ach.exe`, with no executable alias.

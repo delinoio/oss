@@ -203,7 +203,7 @@ func TestUpdateRecoveryAndActiveRefusal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.SelfUpdate(context.Background(), "1.0.0"); err == nil {
+	if _, err = s.SelfUpdate(context.Background(), "0.1.0"); err == nil {
 		t.Fatal("update allowed active process")
 	}
 	leave()

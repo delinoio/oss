@@ -1,7 +1,7 @@
 #!/bin/sh
 # Download, verify, then install. Requires Git, curl, tar, and cosign v3+.
 set -eu
-version=${ACH_VERSION:-1.0.0}
+version=${ACH_VERSION:-0.1.0}
 case "$version" in *[!0-9.]*|'') echo 'ACH_VERSION must be MAJOR.MINOR.PATCH' >&2; exit 2;; esac
 printf '%s\n' "$version" | awk '/^[0-9]+\.[0-9]+\.[0-9]+$/ {ok=1} END {exit !ok}' || exit 2
 for tool in curl tar cosign git; do command -v "$tool" >/dev/null || { echo "Required tool missing: $tool" >&2; exit 2; }; done

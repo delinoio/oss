@@ -49,7 +49,7 @@ for windows in [True,False]:
  names=a.namelist() if windows else a.getnames()
  assert names==[name],names
 hashes={f'ach-{o}-{a}.tar.gz':'a'*64 for o in ['darwin','linux'] for a in ['amd64','arm64']}
-f=m.formula('1.0.0',hashes)
+f=m.formula('0.1.0',hashes)
 assert f.count('sha256')==4 and 'bin.install "ach"' in f
 `;
  const result=spawnSync('python3',['-c',code],{cwd:root,encoding:'utf8'});
