@@ -6,6 +6,7 @@
 - Unknown graph coverage expands affected selection conservatively, but unresolved prerequisite selection fails closed.
 - Never collapse direct/input/schedule causes into a prerequisite cause. Cancellation and invalidation prohibit cache publication.
 - Output restoration must validate the complete entry and containment before mutation. Secrets must be masked before persistence.
+- Cache link validation follows archive link chains and existing filesystem ancestors before processing parent components; lexical containment alone cannot authorize restoration.
 - Local cache readers, writers, and cleaning share a process-safe cache lock outside the removable cache tree; never hold it during commands or network operations.
 - Every child belongs to a process-tree/container owner; replacement waits for reaping. Tests must assert actual cleanup.
 - Watch invalidation consumes filesystem mutations, never access notifications from metadata discovery or input hashing.

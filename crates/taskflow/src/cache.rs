@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet, VecDeque},
     path::{Component, Path, PathBuf},
 };
 
@@ -226,13 +226,6 @@ impl Artifact {
                 }
                 Content::Link { target } => {
                     ensure!(!Path::new(target).is_absolute(), "absolute cache link");
-                    let effective = files::normalize(
-                        &project.directory.join(path.parent().unwrap()).join(target),
-                    );
-                    ensure!(
-                        effective.starts_with(&project.directory),
-                        "cache link escapes project"
-                    );
                     links.push(path);
                 }
                 Content::Directory => {}
@@ -244,6 +237,22 @@ impl Artifact {
                     && Path::new(&entry.path).starts_with(link)),
                 "cache file traverses a symlink"
             );
+        }
+        let contents: BTreeMap<_, _> = self
+            .files
+            .iter()
+            .map(|entry| (Path::new(&entry.path), &entry.content))
+            .collect();
+        for link in &links {
+            let Content::Link { target } = contents[link] else {
+                unreachable!()
+            };
+            validate_link_target(
+                project,
+                &roots,
+                &contents,
+                &link.parent().unwrap().join(target),
+            )?;
         }
         for root in roots {
             ensure!(
@@ -350,6 +359,61 @@ impl Artifact {
         Ok(())
     }
 }
+
+fn link_components(path: &Path) -> Result<VecDeque<PathBuf>> {
+    path.components()
+        .filter(|part| !matches!(part, Component::CurDir))
+        .map(|part| match part {
+            Component::Normal(name) => Ok(PathBuf::from(name)),
+            Component::ParentDir => Ok(PathBuf::from("..")),
+            _ => bail!("cache link must have a relative target"),
+        })
+        .collect()
+}
+
+fn validate_link_target(
+    project: &Project,
+    roots: &[PathBuf],
+    contents: &BTreeMap<&Path, &Content>,
+    target: &Path,
+) -> Result<()> {
+    let mut pending = link_components(target)?;
+    let mut resolved = PathBuf::new();
+    let mut followed = 0;
+    while let Some(part) = pending.pop_front() {
+        if part == Path::new("..") {
+            ensure!(resolved.pop(), "cache link escapes project");
+            continue;
+        }
+        let candidate = resolved.join(part);
+        if let Some(Content::Link { target }) = contents.get(candidate.as_path()) {
+            followed += 1;
+            ensure!(followed <= 40, "cache link cycle or excessive link depth");
+            let mut expansion = link_components(Path::new(target))?;
+            expansion.append(&mut pending);
+            pending = expansion;
+        } else if roots.iter().any(|root| candidate.starts_with(root)) {
+            // These paths will be replaced by the archive, so follow the new
+            // records instead of stale links in the current output tree.
+            resolved = candidate;
+        } else {
+            let disk = project.directory.join(&candidate);
+            if disk.exists() || disk.is_symlink() {
+                // Resolve each existing prefix before processing `..`; lexical
+                // normalization first would hide escapes through directory links.
+                let canonical = disk.canonicalize()?;
+                resolved = canonical
+                    .strip_prefix(&project.directory)
+                    .context("cache link resolves outside project")?
+                    .to_path_buf();
+            } else {
+                resolved = candidate;
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn remove_path(path: &Path) -> Result<()> {
     if path.is_symlink() || path.is_file() {
         std::fs::remove_file(path)?;

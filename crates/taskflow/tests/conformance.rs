@@ -1461,6 +1461,93 @@ async fn server_readiness_failure_reaps_concurrent_work_before_returning() {
 }
 
 #[tokio::test]
+#[cfg(unix)]
+async fn cache_rejects_links_through_external_ancestors_before_mutation() {
+    let directory = fixture(json!({"build":{"command":command(&["version"]),"output":["out/**"]}}));
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("file"), "external").unwrap();
+    std::fs::create_dir(directory.path().join("out")).unwrap();
+    std::fs::write(directory.path().join("out/keep"), "preserved").unwrap();
+    std::os::unix::fs::symlink(outside.path(), directory.path().join("shared")).unwrap();
+    let g = graph(directory.path()).await;
+    let project = &g.workspace.projects["app"];
+    let task = &g.tasks["app#build"].task;
+    let mut artifact =
+        cache::Artifact::capture(files::digest(b"links"), "app#build".into(), project, task)
+            .unwrap();
+    for target in ["../shared/file", "../shared/../file", "alias/file", "cycle"] {
+        artifact.files = vec![
+            cache::FileRecord {
+                path: "out".into(),
+                content: cache::Content::Directory,
+            },
+            cache::FileRecord {
+                path: "out/result".into(),
+                content: cache::Content::Link {
+                    target: target.into(),
+                },
+            },
+        ];
+        if target == "alias/file" {
+            artifact.files.push(cache::FileRecord {
+                path: "out/alias".into(),
+                content: cache::Content::Link {
+                    target: "../shared".into(),
+                },
+            });
+        } else if target == "cycle" {
+            artifact.files.push(cache::FileRecord {
+                path: "out/cycle".into(),
+                content: cache::Content::Link {
+                    target: "cycle".into(),
+                },
+            });
+        }
+        artifact.output_digest = cache::output_digest(&artifact.files).unwrap();
+        assert!(
+            artifact
+                .restore(&artifact.key, "app#build", project, task)
+                .is_err(),
+            "{target}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join("out/keep")).unwrap(),
+            "preserved"
+        );
+    }
+    std::fs::remove_file(directory.path().join("shared")).unwrap();
+    std::fs::create_dir(directory.path().join("inside")).unwrap();
+    std::fs::write(directory.path().join("inside/file"), "internal").unwrap();
+    std::os::unix::fs::symlink("inside", directory.path().join("shared")).unwrap();
+    artifact.files = vec![
+        cache::FileRecord {
+            path: "out".into(),
+            content: cache::Content::Directory,
+        },
+        cache::FileRecord {
+            path: "out/alias".into(),
+            content: cache::Content::Link {
+                target: "../shared".into(),
+            },
+        },
+        cache::FileRecord {
+            path: "out/result".into(),
+            content: cache::Content::Link {
+                target: "alias/file".into(),
+            },
+        },
+    ];
+    artifact.output_digest = cache::output_digest(&artifact.files).unwrap();
+    artifact
+        .restore(&artifact.key, "app#build", project, task)
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(directory.path().join("out/result")).unwrap(),
+        "internal"
+    );
+}
+
+#[tokio::test]
 async fn cache_clean_serializes_with_readers_and_writers() {
     let directory = fixture(json!({"build":{"command":command(&["version"]),"output":["output"]}}));
     std::fs::write(directory.path().join("output"), "content").unwrap();

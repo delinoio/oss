@@ -44,6 +44,8 @@ Additional invariants include unknown/duplicate configuration rejection, schema 
 
 `cache_clean_serializes_with_readers_and_writers` blocks a separate CLI cleaner behind a read lock, then races local stores, reads, and cleaning. The lock survives removal of the cache tree and covers the complete object/entry publication transaction.
 
+`cache_rejects_links_through_external_ancestors_before_mutation` covers external directory links, parent components following links, archived link chains, cycles, and a valid internal chain. Validation follows the effective target before changing any existing output.
+
 `reading_session_files_does_not_cancel_or_requeue_work` verifies that metadata/input reads cannot cancel or repeat a live task. Linux access notifications from discovery and hashing must not be treated as mutations.
 
 `session_normalizes_watch_paths_for_existing_and_deleted_inputs` exercises a lexical root alias, deletion, and recreation. Notification paths use the same canonical root as discovery, including Windows verbatim prefixes; removed leaves are normalized through their existing ancestors.
