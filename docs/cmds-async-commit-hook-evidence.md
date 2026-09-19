@@ -10,7 +10,7 @@ The owner approved exactly two changes to the original acceptance criteria: the 
 
 One requested validation remains pending: desktop Edge could not be launched because it is not installed/available through this environment's browser tools. The owner was asked whether to connect Edge or explicitly exclude that validation. No answer or additional exclusion is assumed. Chrome and automated accessibility tests passed. Accordingly, this document does not claim every original validation step is complete.
 
-The third PR repair pass also confirmed an unresolved product defect: a Unix descendant that daemonizes and reparents before the first ownership sample can survive successful reconciliation. Full descendant-safe cancellation/replacement is therefore incomplete. This is not an owner-approved exclusion; review thread `PRRT_kwDORRAKg86j9n3x` remains open.
+The third PR repair pass confirmed a Unix daemonization-before-sampling defect. The fourth pass replaces sampled ownership with kernel-backed per-check supervision and verifies detached descendants across normal exit, cancellation, replacement and recovery. The original requirement was retained; this was never an owner-approved exclusion. See the fourth-pass evidence and recovery limits below.
 
 ## Requirement-to-evidence matrix
 
@@ -23,7 +23,7 @@ Paths in the implementation column are relative to `cmds/async-commit-hook/inter
 | Trust registration, worktrees and clones | `store.go`, `git.go`, `service.go` | `TestWorktreeIdentityAndSeparateClone`; common-dir identity and per-worktree IDs, separate clones remain separate | Passed |
 | Safe hooks and durable receipts | `hooks.go`, CLI submission, `Start` | `TestPostCommitDetachedModesAndWaitExpiry` proves Git returns before a barrier-controlled command in both modes; dedup/idempotency and atomic concurrent initialization tests; native/custom/Lefthook ownership tests | Passed |
 | Source isolation, unsupported sources, recursive-hook prevention | `git.go` raw-blob materialization, managed hooks/flag | Committed source survives dirty worktree and branch switching; `TestSourceRefusesSubmoduleAndLFSBeforeCommands`, `TestRawCheckoutDoesNotInvokeSourceFilters`; workspace cleanup assertions | Passed |
-| Group parallel/queue/replace and descendants | `runner.go`, process adapters, transactional check claims | FIFO, named groups, observed-child replacement and PID birth checks pass; the third repair pass reproduced an unobserved daemonized descendant surviving reconciliation | Incomplete: Unix daemonization ownership remains unresolved; all adapters cross-built |
+| Group parallel/queue/replace and descendants | `runner.go`, process adapters, transactional check claims | FIFO, named groups, detached/reparented-child replacement, durable start barrier, kernel emptiness proof, lost-worker recovery and unrelated-check isolation | Passed on local macOS and Linux container; real six-target qualification excluded |
 | Daemon/on-demand parity, startup, drain/force, viewer isolation | `lifecycle.go`, `api.go`, `Work` | Six concurrent starts converge to one daemon; `TestDrainAndForcedStop`, `TestTemporaryViewerExitLeavesWorkerAndHistory`; query-only MCP starts no daemon | Passed |
 | Recovery, no replay, storage failures | `RunOne`, process identity snapshots, lifecycle locks | `TestRecoveryInterruptsWithoutReplayAndPIDReuse`, `TestStorageFailureReapsOwnedCommands`; pending requests recover through worker startup | Passed |
 | SQLite records, evidence, retention and unavailable source | `store.go`, `query.go`, owned artifact files | `TestPruneCannotResurrectSuccess`, active inherited-evidence retention, dry-run and expired tombstones; source availability is exposed separately from history | Passed |
@@ -114,7 +114,7 @@ The two owner-approved completion amendments and the pending Edge validation abo
 
 ## Third PR #901 repair pass
 
-The incoming head `3d71383e` had no merge conflicts or failing hosted checks; the prior Windows, release-fixture and OCI failures passed in CI run `35425813089`. Twelve new bot findings were inspected. Eleven were repaired in separate commits; the Unix process-ownership finding remains unresolved as recorded above.
+The incoming head `3d71383e` had no merge conflicts or failing hosted checks; the prior Windows, release-fixture and OCI failures passed in CI run `35425813089`. Twelve new bot findings were inspected. Eleven were repaired in separate commits; Unix process ownership was still unresolved at the end of that pass. The fourth pass below supersedes that status.
 
 | Repaired finding | Regression evidence |
 | --- | --- |
@@ -133,3 +133,24 @@ The incoming head `3d71383e` had no merge conflicts or failing hosted checks; th
 Passed: `go test ./cmds/async-commit-hook/...`, `go test -race ./cmds/async-commit-hook/...`, `go test -p 1 ./...`, `go vet ./...`, package-local frontend `pnpm test` (14 component tests plus typecheck/build/static checks), root `pnpm test` (all 12 selected Turbo tasks), protocol lint/breaking/freshness, 30 CI contracts, workflow lint and six unsigned `0.1.0` release archive builds under `/tmp/ach-pr901-repair3-release`. Generated repository-owned `dist` output is removed before delivery. No signing, release, tap update or deployment was performed.
 
 The separate temporary Unix daemonization reproduction intentionally failed with `daemonized descendant survived successful ownership reconciliation`. It ran through a Go overlay without adding a passing or skipped test that would imply this defect is fixed, and explicitly killed the reproduced child on cleanup. Passing committed tests above therefore do not establish the missing Unix lifetime guarantee. The next required work is a supported process-ownership backend and proof of descendant termination across reparenting, cancellation, replacement and recovery, including macOS 13; the supported OS range and original requirement were not relaxed. Edge verification remains pending as before.
+
+
+## Fourth PR #901 repair pass
+
+The only incoming unresolved bot thread was `PRRT_kwDORRAKg86j9n3x`. The replacement runs each Unix check inside a same-binary supervisor whose ownership is established before the command can run. Linux uses subreaper adoption and an `ECHILD` emptiness proof. macOS uses a temporary background launchd job, a dedicated resource coalition, and kernel active-task accounting. The initial coalition experiment explicitly showed that `bootout` alone leaves a double-forked child alive; production cleanup therefore also drains and verifies the coalition.
+
+Regression evidence:
+
+- `TestScopeReapsDaemonizedDescendants`: same-binary fixtures create multiple process generations, new sessions, cleared environments and a changed working directory. No ownership sample is taken. Normal root exit, cancellation, worker socket loss and explicit recovery all remove the detached leaf.
+- `TestReplaceReapsDaemonizedDescendantsBeforeNextStarts`: the next exclusive attempt cannot start while the prior detached leaf remains alive.
+- `TestScopeCancellationDoesNotTouchAnotherCheck`: cancelling one scope preserves the other scope's detached leaf.
+- `TestScopeStartBarrierAndOutput`: the start barrier, output transport and original nonzero command exit status remain observable.
+- `TestScopeJournalNeverStoresResolvedEnvironment`: neither launchd plist nor ownership journal contains a resolved credential fixture.
+- `TestScopeMissingJournalCannotConfirmCompletion` and `TestLegacyScopeCannotClaimUnknownDescendantsExited`: unavailable ownership proof cannot release a scheduling claim.
+- `TestScopeRecoveryAfterSupervisorDeath` (macOS): recovery kills the supervisor's surviving descendants and verifies zero active coalition tasks.
+- `TestScopeLostSubreaperFailsClosedUntilBootChanges` (Linux): a dead/reused supervisor identity without completion proof blocks recovery; a different kernel boot ID proves the old processes cannot remain.
+- Existing FIFO, storage-failure cleanup and check-persistence-failure tests pass. Saving the preparing scope never returns a claimed check to queued state or replays it after a failed running-state write.
+
+Executed successfully: `go test -p 1 ./...`, `go vet ./...`, the async-commit-hook Go suite and full race suite, focused lifecycle race tests, app-directory `pnpm test` (14 component tests, typecheck and production/static checks), and focused native Linux arm64 tests in a network-disabled `node:24-bookworm` container. The macOS supervisor-death regression passed on the local macOS 26.6.2 arm64 host. Six unsigned `0.1.0` target archives also built. These are local/container/build evidence, not macOS 13 or six-machine qualification. No elevated daemon, Endpoint Security entitlement, signing or publication was introduced. Edge validation remains pending as before.
+
+A Linux supervisor that is itself forcibly killed before recording completion loses subreaper ownership. This case deliberately retains the group claim and requires a host reboot before recovery can independently prove the old tasks are gone; it never reports successful cancellation from an empty PID sample. Legacy unfinished sampled records similarly require explicit reconciliation. Normal worker death retains the independent supervisor, which drains descendants and allows interrupted recovery.

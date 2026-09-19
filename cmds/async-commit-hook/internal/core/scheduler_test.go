@@ -94,7 +94,18 @@ func TestRecoveryInterruptsWithoutReplayAndPIDReuse(t *testing.T) {
 	s.Store.SaveRun(r)
 	c := r.Checks[0]
 	c.State = Running
-	c.Process = Process{PID: os.Getpid(), Birth: "different-incarnation", Group: os.Getpid()}
+	c.Process = Process{PID: os.Getpid(), Birth: "different-incarnation", Group: os.Getpid(), ScopeDir: filepath.Join(t.TempDir(), "scope")}
+	boot, err := bootIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := processScope{Version: 1, Boot: boot, Owner: c.Process, Complete: true}
+	if err = prepareScope(&scope, c.Process.ScopeDir); err != nil {
+		t.Fatal(err)
+	}
+	if err = saveScope(c.Process.ScopeDir, scope); err != nil {
+		t.Fatal(err)
+	}
 	s.Store.SaveCheck(c)
 	if err := s.RunOne(r.ID); err != nil {
 		t.Fatal(err)

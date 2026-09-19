@@ -110,8 +110,17 @@ func (s *Service) execute(ctx context.Context, r Run, c Check, workspace string)
 		_ = redactor.Close()
 		return s.finishCheck(c, cancel, "", "")
 	}
-	p, err := startProcess(cmd)
+	scopeDir := filepath.Join(s.Store.Root, "evidence", r.ID, "processes", c.ID)
+	if runtime.GOOS != "windows" {
+		c.State = Preparing
+		c.Process.ScopeDir = scopeDir
+		if err = s.Store.SaveCheck(c); err != nil {
+			return err
+		}
+	}
+	p, err := startProcess(cmd, scopeDir)
 	if err != nil {
+		s.Log.Error("process.owner_start_failed", "run_id", r.ID, "check_id", c.ID, "platform", runtime.GOOS, "error", err.Error())
 		_ = redactor.Close()
 		return s.finishCheck(c, Failed, "command-start-failed", "cannot start selected shell; run ach doctor")
 	}
@@ -121,13 +130,19 @@ func (s *Service) execute(ctx context.Context, r Run, c Check, workspace string)
 	t := time.Now().UTC()
 	c.StartedAt = &t
 	if err = s.Store.SaveCheck(c); err != nil {
-		_ = p.terminate()
-		_ = cmd.Wait()
+		if terminationErr := p.terminate(); terminationErr != nil {
+			return terminationErr
+		}
+		_ = p.wait()
 		return err
 	}
 	s.Log.Info("check.started", "run_id", r.ID, "check_id", c.ID, "check", c.Name)
 	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	if err = p.resume(); err != nil {
+		_ = p.terminate()
+		return err
+	}
+	go func() { done <- p.wait() }()
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	var waitErr error
@@ -196,7 +211,7 @@ loop:
 	exit := 0
 	if waitErr != nil {
 		exit = -1
-		if ee, ok := waitErr.(*exec.ExitError); ok {
+		if ee, ok := waitErr.(interface{ ExitCode() int }); ok {
 			exit = ee.ExitCode()
 		}
 	}

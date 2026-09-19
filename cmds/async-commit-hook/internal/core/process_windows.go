@@ -41,7 +41,7 @@ func ProcessAlive(p Process) bool {
 	v, e := windows.WaitForSingleObject(h, 0)
 	return e == nil && v == uint32(windows.WAIT_TIMEOUT)
 }
-func startProcess(c *exec.Cmd) (*managedProcess, error) {
+func startProcess(c *exec.Cmd, _ string) (*managedProcess, error) {
 	job, e := windows.CreateJobObject(nil, nil)
 	if e != nil {
 		return nil, e
@@ -117,3 +117,6 @@ func Detached(c *exec.Cmd) {
 }
 
 func (p *managedProcess) snapshot() Process { return p.identity }
+
+func (p *managedProcess) resume() error { return nil }
+func (p *managedProcess) wait() error   { return p.cmd.Wait() }

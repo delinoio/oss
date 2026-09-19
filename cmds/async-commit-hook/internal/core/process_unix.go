@@ -3,20 +3,13 @@
 package core
 
 import (
-	"fmt"
 	"golang.org/x/sys/unix"
 	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 )
 
-type managedProcess struct {
-	cmd      *exec.Cmd
-	identity Process
-	tracked  map[int]Process
-}
 type processRow struct {
 	pid, ppid, group int
 	birth, state     string
@@ -64,112 +57,15 @@ func ProcessAlive(p Process) bool {
 	current, e := ProcessIdentity(p.PID)
 	return e == nil && current.Birth == p.Birth
 }
-func startProcess(c *exec.Cmd) (*managedProcess, error) {
-	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if e := c.Start(); e != nil {
-		return nil, e
-	}
-	p, e := ProcessIdentity(c.Process.Pid)
-	if e != nil {
-		p = Process{PID: c.Process.Pid, Group: c.Process.Pid}
-	}
-	return &managedProcess{cmd: c, identity: p, tracked: map[int]Process{p.PID: p}}, nil
-}
-func (p *managedProcess) sample() error {
-	rows, e := processRows()
-	if e != nil {
-		return e
-	}
-	for changed := true; changed; {
-		changed = false
-		for _, r := range rows {
-			parentRecord, parent := p.tracked[r.ppid]
-			if parent {
-				parent = false
-				for _, row := range rows {
-					if row.pid == parentRecord.PID && row.birth == parentRecord.Birth {
-						parent = true
-						break
-					}
-				}
-			}
-			if r.group == p.identity.Group || parent {
-				if _, ok := p.tracked[r.pid]; !ok {
-					p.tracked[r.pid] = Process{PID: r.pid, Birth: r.birth, Group: r.group}
-					changed = true
-				}
-			}
-		}
-	}
-	return nil
-}
-func (p *managedProcess) terminate() error {
-	if e := p.sample(); e != nil {
-		return E("process-reconciliation-failed", "cannot inspect owned process descendants", 3)
-	}
-	// The original leader's group is exclusive to this check. Birth matching avoids killing a reused PID.
-	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGKILL} {
-		for _, v := range p.tracked {
-			if ProcessAlive(v) {
-				_ = syscall.Kill(v.PID, sig)
-			}
-		}
-		deadline := time.Now().Add(time.Second)
-		for time.Now().Before(deadline) {
-			rows, e := processRows()
-			if e != nil {
-				return e
-			}
-			active := false
-			for _, r := range rows {
-				v, ok := p.tracked[r.pid]
-				if ok && v.Birth == r.birth && !strings.HasPrefix(r.state, "Z") {
-					active = true
-				}
-			}
-			if !active {
-				return nil
-			}
-			_ = p.sample()
-			time.Sleep(30 * time.Millisecond)
-		}
-	}
-	return E("process-reconciliation-failed", fmt.Sprintf("owned process group %d remains active; exclusive replacement is blocked", p.identity.Group), 3)
-}
-func (p *managedProcess) snapshot() Process {
-	result := p.identity
-	result.Members = nil
-	for _, member := range p.tracked {
-		member.Members = nil
-		result.Members = append(result.Members, member)
-	}
-	return result
-}
-func (p *managedProcess) close() {}
 func ReconcileProcess(p Process) error {
+	if p.ScopeDir != "" {
+		return reconcileScope(p.ScopeDir, p.PID != 0)
+	}
 	if p.PID <= 0 {
 		return nil
 	}
-	current, e := ProcessIdentity(p.PID)
-	if e == nil && p.Birth != "" && current.Birth != p.Birth {
-		// A reused leader/group is never owned by this attempt. Reconcile only
-		// descendants whose independent persisted birth identities still match.
-		for _, member := range p.Members {
-			if ProcessAlive(member) {
-				_ = syscall.Kill(member.PID, syscall.SIGKILL)
-			}
-		}
-		for _, member := range p.Members {
-			if ProcessAlive(member) {
-				return E("process-reconciliation-failed", "an owned descendant remains active", 3)
-			}
-		}
-		return nil
-	}
-	m := &managedProcess{identity: p, tracked: map[int]Process{}}
-	for _, member := range p.Members {
-		m.tracked[member.PID] = member
-	}
-	return m.terminate()
+	// Legacy sampled ownership cannot exclude an already-reparented descendant.
+	// Keep the claim instead of converting absence of known PIDs into proof.
+	return E("process-reconciliation-failed", "legacy process ownership cannot prove all descendants exited; manual reconciliation is required for this pre-upgrade attempt", 3)
 }
 func Detached(c *exec.Cmd) { c.SysProcAttr = &syscall.SysProcAttr{Setsid: true} }

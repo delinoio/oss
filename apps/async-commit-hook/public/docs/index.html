@@ -444,9 +444,12 @@ ach rerun --run &lt;interrupted-id&gt; --failed</pre
           Normal stop drains active work; force cancels owned checks. No
           OS-login service is installed. Unstarted requests recover on the next
           worker/daemon startup. Interrupted commands are recorded and never
-          automatically replayed. Cancellation reconciles tracked descendants;
-          the known Unix daemonization limitation below still applies. Do not
-          kill unrelated processes based only on an old PID.
+          automatically replayed. Cancellation confirms that owned descendants have
+          exited before releasing a replacement, including children that detach
+          from their parent. If ownership cannot be verified, cancellation stays
+          incomplete. Preserve local state, restore access and retry recovery.
+          If a Linux ownership supervisor was forcibly killed, reboot the host
+          before retrying. Do not kill unrelated processes based only on an old PID.
         </p>
         <h3>Port, storage and source failures</h3>
         <p>
@@ -506,10 +509,12 @@ brew upgrade async-commit-hook</pre
       <section id="compatibility">
         <h2>Compatibility and validation evidence</h2>
         <p>
-          Known Unix limitation: self-daemonizing child processes can outlive
-          a completed check or cancellation, allowing a replacement to overlap
-          with an earlier child. Full descendant-lifetime guarantees remain
-          incomplete. Avoid self-daemonizing checks until this is fixed.
+          Unix descendant cleanup is verified with detached, reparented processes
+          on the local macOS host and in a Linux container. macOS checks require
+          the account’s background launchd domain; unavailable ownership services
+          prevent command startup. Finish active runs before upgrading, and keep
+          ownership state intact until completion. These checks do not replace
+          qualification on every minimum supported OS version.
         </p>
         <p>
           Configuration, state, CLI JSON and local API start at version 1. The
