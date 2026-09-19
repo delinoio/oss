@@ -1606,7 +1606,7 @@ jobs:
         env:
           TFLOW_ACTIONLINT: ${{ runner.temp }}/taskflow-actionlint.exe
         run: |
-          cargo test --locked -p taskflow --test conformance -- --include-ignored --skip scenario_10_local_docker --skip scenario_22_real_s3
+          cargo test --locked -p taskflow --lib --test conformance -- --include-ignored --skip scenario_10_local_docker --skip scenario_22_real_s3
           cargo clippy --locked -p taskflow --all-targets -- -D warnings
 
   taskflow-docker:

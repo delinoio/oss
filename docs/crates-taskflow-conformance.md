@@ -146,7 +146,7 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 
 `cache_verify_rejects_misdirected_and_inconsistent_artifacts` gives the CLI valid object envelopes containing a mismatched entry key, invalid version, output/file digest corruption, malformed content encoding, duplicate paths, and traversal paths. Only the intact entry remains valid, verification fails, and task outputs remain untouched.
 
-`notification_paths_survive_concurrent_file_removal` repeatedly removes and recreates a file while normalizing its notification path. Missing ancestors are retried at the next parent without hiding broken links or permission errors. Session barrier assertions surface early session failures directly instead of waiting for a record timeout.
+`notification_paths_survive_concurrent_file_removal` repeatedly removes and recreates a file while normalizing its notification path. Missing ancestors are retried at the next parent without hiding broken links or permission errors. On Windows, path resolution and deletion-state inspection share one handle so NTFS deletion-storage paths are treated as missing ancestors. `deleted_handle_does_not_resolve_to_ntfs_storage` verifies an open deleted handle even after a replacement reuses its name; native conformance CI also runs library tests. Session barrier assertions surface early session failures directly instead of waiting for a record timeout.
 
 `docker_context_cannot_override_a_validated_local_host` injects a remote selected context alongside a local `DOCKER_HOST` and verifies rejection before container launch. Endpoint validation delegates precedence to Docker using the exact launch environment.
 

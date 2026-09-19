@@ -46,6 +46,9 @@ pub fn within(root: &Path, path: &Path) -> Result<PathBuf> {
     }
     Ok(path)
 }
+#[cfg(windows)]
+mod windows;
+
 pub fn canonical_path(path: &Path) -> Result<PathBuf> {
     let mut ancestors = path.ancestors();
     if path.is_symlink() {
@@ -53,7 +56,11 @@ pub fn canonical_path(path: &Path) -> Result<PathBuf> {
         ancestors.next();
     }
     for ancestor in ancestors {
-        match ancestor.canonicalize() {
+        #[cfg(windows)]
+        let canonical = windows::canonicalize(ancestor);
+        #[cfg(not(windows))]
+        let canonical = ancestor.canonicalize();
+        match canonical {
             Ok(canonical) => {
                 let suffix = path.strip_prefix(ancestor)?;
                 return Ok(if suffix.as_os_str().is_empty() {
