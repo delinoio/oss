@@ -4979,3 +4979,51 @@ async fn dangling_input_links_track_target_deletion_and_recreation() {
         assert!(snapshot().is_err(), "cycles are not missing targets");
     }
 }
+
+#[tokio::test]
+async fn ready_service_identity_invalidates_cached_consumers() {
+    let root = fixture(json!({
+        "server":{"command":command(&["sleep","server.pid"]),"service":true,"input":["service-source"],"readiness":{"type":"command","command":command(&["version"]),"timeout":"10s"}},
+        "check":{"command":command(&["record","events","check"]),"dependsOn":[{"task":"server","waitFor":"ready"}],"input":[],"output":[],"cache":true,"tools":{"fixture":command(&["version"])}}
+    }));
+    let mut keys = Vec::new();
+    for (input, expected) in [
+        ("first", Outcome::Executed),
+        ("first", Outcome::LocalCache),
+        ("second", Outcome::Executed),
+        ("second", Outcome::LocalCache),
+    ] {
+        std::fs::write(root.path().join("service-source"), input).unwrap();
+        let g = graph(root.path()).await;
+        let plan = Plan::create(&g, &["check".into()], &[], false).unwrap();
+        let (events, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        let services = Arc::new(runner::Services {
+            controls: Default::default(),
+            events,
+            joins: Default::default(),
+        });
+        let result = runner::run_plan(
+            g,
+            plan,
+            RunOptions {
+                services: Some(services.clone()),
+                quiet: true,
+                ..Default::default()
+            },
+            CancellationToken::new(),
+        )
+        .await;
+        services.shutdown().await.unwrap();
+        let result = result.unwrap();
+        assert!(result.success, "{result:?}");
+        assert_eq!(result.results["app#check"].outcome, expected);
+        assert_eq!(
+            result.results["app#server"].output,
+            result.results["app#server"].key
+        );
+        keys.push(result.results["app#check"].key.clone());
+    }
+    assert_eq!(keys[0], keys[1]);
+    assert_ne!(keys[1], keys[2]);
+    assert_eq!(keys[2], keys[3]);
+}

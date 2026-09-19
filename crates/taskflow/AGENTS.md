@@ -32,7 +32,7 @@
 - Readiness cancellation, readiness deadlines, service deadlines, and early service exit must cancel and await the active probe plus both output drains; no outer timeout may drop that ownership future.
 - Validate TCP readiness host/port syntax and HTTP(S) URL shape without DNS or network probes before service startup.
 - Every child belongs to a process-tree/container owner; replacement waits for reaping. Tests must assert actual cleanup. Service shutdown must await all owners and propagate every unverified process/container cleanup as failure.
-- Session waves reuse finite prerequisite receipts only while current output digests match; missing or modified outputs return to normal restore/execution before consumers run.
+- Ready service receipts expose their semantic task key to dependent cache keys. Session waves reuse finite prerequisite receipts only while current output digests match; missing or modified outputs return to normal restore/execution before consumers run.
 - Apply overlap policies to per-task execution ownership, not to membership in an unfinished wave.
 - Reject absolute, rooted, and Windows drive-relative input and output patterns during configuration validation on every host, including negative patterns.
 - Explicit positive input globs may traverse otherwise ignored trees; prune only using conservative literal directory prefixes, never directory-name substrings. Reserved .git, .taskflow, and .taskflow-restore-* trees remain excluded.
