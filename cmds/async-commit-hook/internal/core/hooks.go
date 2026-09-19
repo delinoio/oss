@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -107,7 +108,7 @@ func (s *Service) Hook(ctx context.Context, repo string, prePush, remove bool) (
 			if os.IsNotExist(readErr) {
 				continue
 			}
-			if ownedErr != nil || Hash(old) != owned.Hash {
+			if ownedErr != nil || !ownsHookContents(owned, old) {
 				return out, E("hook-conflict", "hook changed or is not product-owned; preserve it and remove the ach integration manually: "+path, 2)
 			}
 			if e = os.Remove(path); e != nil {
@@ -120,19 +121,19 @@ func (s *Service) Hook(ctx context.Context, repo string, prePush, remove bool) (
 			out = append(out, InstallResult{Path: path})
 			continue
 		}
+		body := hookBody(executable, s.Paths.Config, kind)
 		if readErr == nil {
-			if ownedErr == nil && Hash(old) == owned.Hash {
-				out = append(out, InstallResult{Installed: true, Path: path})
+			if ownedErr == nil && ownsHookContents(owned, old) {
+				result, err := s.refreshHook(owned, old, body)
+				if err != nil {
+					return out, err
+				}
+				out = append(out, result)
 				continue
 			}
 			out = append(out, InstallResult{Path: path, Manual: command + " (add this to your existing " + kind + " hook or hook manager; preserve stdin for pre-push)", Example: hookExample(kind, command)})
 			continue
 		}
-		args := "run --repo . --commit HEAD --automatic"
-		if kind == "pre-push" {
-			args = "pre-push \"$@\""
-		}
-		body := []byte("#!/bin/sh\n# ach-owned v1: remove with ach hooks uninstall\nexec " + quoteSh(executable) + " " + args + " --config " + quoteSh(s.Paths.Config) + "\n")
 		if e = os.MkdirAll(filepath.Dir(path), 0755); e != nil {
 			return out, e
 		}
@@ -189,4 +190,84 @@ func hookExample(kind, command string) string {
 		stdin = "      # If another command consumes stdin, use one wrapper that saves and replays it.\n      use_stdin: true\n"
 	}
 	return "# Existing shell hook: add this command without deleting other commands.\n" + command + "\n\n# Lefthook configuration: merge this named command into the existing hook.\n" + kind + ":\n  commands:\n    async-commit-hook:\n" + stdin + "      run: |\n        " + command + "\n"
+}
+
+func hookBody(executable, config, kind string) []byte {
+	args := "run --repo . --commit HEAD --automatic"
+	if kind == "pre-push" {
+		args = "pre-push \"$@\""
+	}
+	return []byte("#!/bin/sh\n# ach-owned v1: remove with ach hooks uninstall\nexec " + quoteSh(executable) + " " + args + " --config " + quoteSh(config) + "\n")
+}
+
+func ownsHookContents(owned Installation, body []byte) bool {
+	// A refresh records both exact versions before publication. If interrupted,
+	// the next install/uninstall recognizes either side of that atomic rename.
+	return Hash(body) == owned.Hash || len(owned.Original) != 0 && bytes.Equal(body, owned.Original)
+}
+
+func (s *Service) refreshHook(owned Installation, old, body []byte) (InstallResult, error) {
+	result := InstallResult{Path: owned.Path}
+	info, err := os.Lstat(owned.Path)
+	if err != nil {
+		return result, err
+	}
+	if !info.Mode().IsRegular() {
+		return result, E("hook-conflict", "owned hook is no longer a regular file: "+owned.Path, 2)
+	}
+	if !bytes.Equal(old, body) {
+		result.Backup = filepath.Join(s.Store.Root, "backups", ID()+"-hook")
+		if err = AtomicWrite(result.Backup, old, 0600); err != nil {
+			return result, err
+		}
+		owned.Hash = Hash(body)
+		owned.Original = old
+		if err = s.saveInstallation(owned); err != nil {
+			return result, err
+		}
+		if err = replaceOwnedHook(owned.Path, info, old, body); err != nil {
+			return result, err
+		}
+	}
+	if len(owned.Original) != 0 {
+		owned.Hash = Hash(body)
+		owned.Original = nil
+		if err = s.saveInstallation(owned); err != nil {
+			return result, err
+		}
+	}
+	result.Installed = true
+	return result, nil
+}
+
+func replaceOwnedHook(path string, previous os.FileInfo, old, body []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), ".ach-hook-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if err = f.Chmod(0755); err == nil {
+		_, err = f.Write(body)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	current, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if !current.Mode().IsRegular() || !os.SameFile(previous, current) || !bytes.Equal(old, contents) {
+		return E("hook-conflict", "hook changed during refresh; preserve it and inspect manually: "+path, 2)
+	}
+	return replaceFile(f.Name(), path)
 }
