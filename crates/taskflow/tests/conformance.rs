@@ -2075,3 +2075,54 @@ async fn cache_restores_directory_links_outside_output_roots() {
         artifact.output_digest
     );
 }
+
+#[tokio::test]
+async fn unrelated_native_metadata_does_not_block_resolved_selectors() {
+    let directory = fixture(json!({}));
+    let path = directory.path().join("taskflow.yml");
+    let mut config: Value = serde_yaml::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    config["workspace"] = json!({"manifests":["complete/Cargo.toml","incomplete/Cargo.toml"]});
+    std::fs::write(path, serde_yaml::to_string(&config).unwrap()).unwrap();
+    files::atomic_write(
+        &directory.path().join("complete/Cargo.toml"),
+        b"[workspace]\nmembers=['a','b']\nresolver='2'\n",
+    )
+    .unwrap();
+    for (path, name) in [
+        ("complete/a", "a"),
+        ("complete/b", "b"),
+        ("incomplete", "c"),
+    ] {
+        let manifest = format!(
+            "[package]\nname='{name}'\nversion='0.1.0'\nedition='2021'\n{}",
+            if name == "a" {
+                "[dependencies]\nb={path='../b'}\n"
+            } else {
+                ""
+            }
+        );
+        files::atomic_write(
+            &directory.path().join(path).join("Cargo.toml"),
+            manifest.as_bytes(),
+        )
+        .unwrap();
+        files::atomic_write(
+            &directory.path().join(path).join("src/lib.rs"),
+            b"pub fn sample() {}\n",
+        )
+        .unwrap();
+        files::atomic_write(&directory.path().join(path).join("taskflow.yml"), serde_yaml::to_string(&json!({"version":1,"project":name,"tasks":{"build":{"input":[],"command":command(&["version"]),"dependsOn":[{"task":"build","from":"dependencies"}]}}})).unwrap().as_bytes()).unwrap();
+    }
+    taskflow::discover::output_tool(
+        &directory.path().join("complete"),
+        &["cargo", "generate-lockfile", "--offline"],
+        &[],
+    )
+    .await
+    .unwrap();
+    let g = graph(directory.path()).await;
+    assert!(!g.workspace.complete());
+    assert_eq!(g.unresolved, BTreeSet::from(["c#build".into()]));
+    assert_eq!(g.prerequisites("a#build"), ["b#build"]);
+    assert!(run(g, &["a#build"]).await.success);
+}

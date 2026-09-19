@@ -30,6 +30,7 @@ pub struct ProjectEdge {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Coverage {
     pub adapter: String,
+    pub projects: BTreeSet<String>,
     pub complete: bool,
     pub message: String,
 }
@@ -328,8 +329,15 @@ impl Workspace {
                 (members, false)
             }
         };
+        let mut projects = BTreeSet::new();
+        for item in &items {
+            if let Some(path) = item.get("path").and_then(Value::as_str) {
+                projects.insert(self.add_project(Path::new(path), "pnpm")?);
+            }
+        }
         self.coverage.push(Coverage {
             adapter: "pnpm".into(),
+            projects,
             complete,
             message: if complete {
                 "Resolved lockfile project identities"
@@ -338,11 +346,6 @@ impl Workspace {
             }
             .into(),
         });
-        for item in &items {
-            if let Some(path) = item.get("path").and_then(Value::as_str) {
-                self.add_project(Path::new(path), "pnpm")?;
-            }
-        }
         if !complete {
             return Ok(());
         }
@@ -558,6 +561,7 @@ impl Workspace {
         }
         self.coverage.push(Coverage {
             adapter: "cargo".into(),
+            projects: native_ids.values().cloned().collect(),
             complete,
             message: if complete {
                 "Cargo format-v1 resolved features and target conditions"
@@ -607,6 +611,7 @@ impl Workspace {
             declarations.push((path, data));
         }
         let mut complete = true;
+        let mut projects: BTreeSet<_> = modules.values().cloned().collect();
         for (path, declaration) in declarations {
             let source = modules[declaration["Module"]["Path"].as_str().unwrap()].clone();
             let args = ["go", "list", "-mod=readonly", "-m", "-json", "all"];
@@ -628,7 +633,9 @@ impl Workspace {
                 if let Some(dir) = effective.get("Dir").and_then(Value::as_str) {
                     let dir = crate::files::canonical_path(Path::new(dir))?;
                     if dir.starts_with(&self.root) && dir.join("go.mod").is_file() {
-                        targets.insert(name, self.add_project(&dir, "go")?);
+                        let id = self.add_project(&dir, "go")?;
+                        projects.insert(id.clone());
+                        targets.insert(name, id);
                     }
                 }
             }
@@ -658,6 +665,7 @@ impl Workspace {
         }
         self.coverage.push(Coverage {
             adapter: "go".into(),
+            projects,
             complete,
             message: if complete {
                 "Go module identities and resolved local replacements"
@@ -667,6 +675,13 @@ impl Workspace {
             .into(),
         });
         Ok(())
+    }
+
+    pub fn project_complete(&self, project: &str) -> bool {
+        self.coverage
+            .iter()
+            .filter(|coverage| coverage.projects.contains(project))
+            .all(|coverage| coverage.complete)
     }
 
     pub fn complete(&self) -> bool {

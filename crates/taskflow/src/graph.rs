@@ -86,7 +86,7 @@ impl Graph {
                     Dependency::Selector(selector) => {
                         wait_for = selector.wait_for;
                         if let Some(kinds) = &selector.from {
-                            if !graph.workspace.complete() {
+                            if !graph.workspace.project_complete(&node.project) {
                                 graph.unresolved.insert(node.id.clone());
                             }
                             ensure!(
