@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { decodeHTML } from "entities";
 import { createPublicContentValidator, resourceTargets } from "./public-content.mjs";
+import { containsAffirmativeReleaseClaim } from "./release-claims.mjs";
 
 const requiredHeadings = new Map([
   ["/", ["Runmoor", "Guides"]],
@@ -78,6 +79,12 @@ for (const [file, contents] of contentsByFile) {
     // Never echo the rejected content or URL into public CI logs.
     failures.push(`${relativeFile} contains prohibited public content`);
     continue;
+  }
+  const renderedText = decodeHTML(contents
+    .replace(/<(?:script|style)\b[^>]*>[\s\S]*?<\/(?:script|style)>/giu, " ")
+    .replace(/<[^>]*>/gu, " ")).replace(/\s+/gu, " ");
+  if (containsAffirmativeReleaseClaim(renderedText)) {
+    failures.push(`${relativeFile} contains an unsupported release claim`);
   }
   if (/^runmoor(?:\/|\.html$)/u.test(relativeFile)) {
     failures.push(`${relativeFile} retains a legacy route artifact`);

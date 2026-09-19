@@ -43,6 +43,40 @@ for (const href of [
   });
 }
 
+const releaseAvailabilityFixtures = [
+  ["partial GA is not prohibited", true],
+  ["staged availability is never forbidden", true],
+  ["partial GA is not available", false],
+  ["partial GA is prohibited", false],
+  ["beta channel is available", true],
+  ["phased rollout is supported", true],
+  ["fractional rollout is permitted", true],
+  ["early-access channel is allowed", true],
+  ["early announcement is available", true],
+  ["beta channel is not available", false],
+  ["beta channel is unsupported", false],
+  ["beta channel is unavailable", false],
+  ["beta channel isn't available", false],
+  ["early announcement is not available", false],
+];
+
+for (const [claim, prohibited] of releaseAvailabilityFixtures) {
+  test(`release claims classify: ${claim}`, () => {
+    const result = validateFixture(`<p>${claim}</p>`);
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, prohibited ? 1 : 0, result.stderr);
+    if (prohibited) assert.match(result.stderr, /index\.html contains an unsupported release claim/u);
+  });
+}
+
+test("release claims inspect rendered text while preserving preview disclosures", () => {
+  const rejected = validateFixture("<p><strong>beta</strong> channel is available.</p>");
+  assert.equal(rejected.status, 1);
+  assert.match(rejected.stderr, /index\.html contains an unsupported release claim/u);
+  const accepted = validateFixture("<p>Runmoor is a preview prerelease. No beta channel is available. Early-access channel is not supported.</p>");
+  assert.equal(accepted.status, 0, accepted.stderr);
+});
+
 const forbidden = [
   ["classic PAT", "<p>ghp_fixture1234567890</p>"],
   ["fine-grained PAT", "<p>github_pat_fixture1234567890</p>"],
