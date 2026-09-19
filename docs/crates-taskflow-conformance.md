@@ -241,3 +241,5 @@ The real Go flag suite also compares `-failfast` and `-failfast=false` across tw
 `ready_service_identity_invalidates_cached_consumers` restarts a real service with identical and changed inputs and verifies dependent cache reuse only for the identical service identity.
 
 `shard_partitions_reuse_unsharded_prerequisite_cache_keys` runs separate suite partitions and proves their shared ordinary prerequisite executes only once, while suite cache identities remain partitioned.
+
+`mixed_subscriptions_preserve_trigger_defaults_and_explicit_overrides` injects a file change followed by a timer tick during an active execution, checking preserved queued causes and explicit queue/skip/restart overrides.

@@ -366,7 +366,18 @@ fn enqueue(
     // overlap applies only while this task itself still owns an execution.
     let running = options.task_cancellations.lock().unwrap().get(id).cloned();
     if let Some(token) = running {
-        match graph.tasks[id].task.overlap() {
+        // A mixed subscription keeps each trigger's default: a timer tick
+        // cannot discard an input change just because the task has a schedule.
+        let overlap =
+            graph.tasks[id]
+                .task
+                .overlap
+                .unwrap_or(if matches!(&cause, Cause::Schedule) {
+                    Overlap::Skip
+                } else {
+                    Overlap::Queue
+                });
+        match overlap {
             Overlap::Skip => return,
             Overlap::Restart => {
                 token.cancel();
@@ -380,4 +391,69 @@ fn enqueue(
     });
     pending.causes.insert(cause);
     pending.due = due;
+}
+
+#[cfg(test)]
+mod overlap_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn mixed_subscriptions_preserve_trigger_defaults_and_explicit_overrides() {
+        for (policy, watch_queued, tick_queued, restarted) in [
+            (None, true, false, false),
+            (Some("queue"), true, true, false),
+            (Some("skip"), false, false, false),
+            (Some("restart"), true, true, true),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let mut task = serde_json::json!({"command":["unused"],"input":["source"],"watch":{},"schedule":{"every":"1s"}});
+            if let Some(policy) = policy {
+                task["overlap"] = policy.into();
+            }
+            std::fs::write(
+                root.path().join("taskflow.yml"),
+                serde_yaml::to_string(
+                    &serde_json::json!({"version":1,"project":"app","tasks":{"check":task}}),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            let graph = Graph::build(Workspace::discover(root.path()).await.unwrap()).unwrap();
+            let options = RunOptions::default();
+            let running = CancellationToken::new();
+            options
+                .task_cancellations
+                .lock()
+                .unwrap()
+                .insert("app#check".into(), running.clone());
+            let mut pending = BTreeMap::new();
+            let input = Cause::Input {
+                path: "source".into(),
+            };
+            enqueue(
+                &graph,
+                &options,
+                &mut pending,
+                "app#check",
+                input.clone(),
+                Instant::now(),
+            );
+            assert_eq!(pending.contains_key("app#check"), watch_queued);
+            enqueue(
+                &graph,
+                &options,
+                &mut pending,
+                "app#check",
+                Cause::Schedule,
+                Instant::now(),
+            );
+            let causes = pending
+                .get("app#check")
+                .map(|pending| pending.causes.clone())
+                .unwrap_or_default();
+            assert_eq!(causes.contains(&input), watch_queued);
+            assert_eq!(causes.contains(&Cause::Schedule), tick_queued);
+            assert_eq!(running.is_cancelled(), restarted);
+        }
+    }
 }

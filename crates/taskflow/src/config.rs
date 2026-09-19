@@ -563,14 +563,6 @@ impl Task {
         crate::shard::validate_task(self)?;
         Ok(())
     }
-
-    pub fn overlap(&self) -> Overlap {
-        self.overlap.unwrap_or(if self.schedule.is_some() {
-            Overlap::Skip
-        } else {
-            Overlap::Queue
-        })
-    }
 }
 pub fn validate_command(command: &Command) -> Result<()> {
     match command {
