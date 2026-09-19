@@ -91,10 +91,8 @@ impl Redactor {
                 if hide {
                     return "[redacted]".into();
                 }
-                if sensitive {
-                    if let Some((key, _)) = arg.split_once('=') {
-                        return format!("{}=[redacted]", self.text(key));
-                    }
+                if sensitive && let Some((key, _)) = arg.split_once('=') {
+                    return format!("{}=[redacted]", self.text(key));
                 }
                 self.text(arg)
             })
