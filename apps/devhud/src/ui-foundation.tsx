@@ -126,6 +126,9 @@ function ModalSurface({ open, title, titleId, className, role = "dialog", descri
     if (!open) return;
     capturedOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const animation = requestAnimationFrame(() => {
+      // A sibling confirmation may make this surface inert after the effect
+      // scheduled focus. Read the current DOM state, not the opening render.
+      if (surface.current?.hasAttribute("inert")) return;
       const activeElement = document.activeElement;
       // A nested confirmation can deliberately move focus inside this surface before its deferred
       // default focus runs. Preserve that transfer, but still claim focus after a closing sibling

@@ -609,21 +609,23 @@ function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, seco
   const dialog = useRef<HTMLElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const restoreFocus = useRef<HTMLElement | null>(null);
-  const close = () => {
-    setOpen(false);
-    requestAnimationFrame(() => restoreFocus.current?.focus());
-  };
-  const choose = (action: () => void) => {
-    action();
-    requestAnimationFrame(() => restoreFocus.current?.focus());
-  };
+  const close = () => setOpen(false);
   useEffect(() => {
     if (!open) return;
     restoreFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeButton.current?.focus();
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
     addEventListener("keydown", closeOnEscape);
-    return () => removeEventListener("keydown", closeOnEscape);
+    return () => {
+      removeEventListener("keydown", closeOnEscape);
+      // Selection can replace this dialog with a conflict before the next frame.
+      // Restore only after dismissal, and never steal focus from its successor.
+      const opener = restoreFocus.current;
+      requestAnimationFrame(() => {
+        if (document.querySelector('[aria-modal="true"]')) return;
+        if (opener?.isConnected) opener.focus();
+      });
+    };
   }, [open]);
   useEffect(() => {
     onOpenChange?.(open);
@@ -637,7 +639,7 @@ function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, seco
     <button ref={closeButton} type="button" onClick={close}>{copy.close}</button>
     <h4 id={titleId}>{title}</h4><p>{summary}</p>
     <table><caption>{copy.completeSnapshotDiff}</caption><thead><tr><th scope="col">{copy.settingPath}</th><th scope="col">{copy.localValue}</th><th scope="col">{copy.serverValue}</th></tr></thead><tbody>{entries.length === 0 ? <tr><td colSpan={3}>{copy.noDifferences}</td></tr> : entries.map((entry) => <tr key={`${entry.path}:${entry.kind}`}><th scope="row">{entry.path}</th><td><code>{printValue(entry.local)}</code></td><td><code>{printValue(entry.server)}</code></td></tr>)}</tbody></table>
-    <div className="actions"><button onClick={() => choose(onPrimary)}>{primary}</button><button onClick={() => choose(onSecondary)}>{secondary}</button></div>
+    <div className="actions"><button onClick={onPrimary}>{primary}</button><button onClick={onSecondary}>{secondary}</button></div>
   </section>;
 }
 

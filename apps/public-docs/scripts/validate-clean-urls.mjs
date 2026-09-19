@@ -15,6 +15,13 @@ const stableRouteIds = [
   "/devhud/support",
   "/devhud/admin",
   "/devhud/releases",
+  "/runmoor",
+  "/runmoor/install",
+  "/runmoor/configuration",
+  "/runmoor/commands",
+  "/runmoor/docker",
+  "/runmoor/tart",
+  "/runmoor/operations",
   "/cargo-mono",
   "/derun",
   "/with-watch",
@@ -77,6 +84,14 @@ function attributeValue(match) {
 }
 
 const requiredHeadings = new Map([
+  ["/runmoor", ["Runmoor", "Guides"]],
+  ["/runmoor/install", ["Install and Verify Runmoor"]],
+  ["/runmoor/configuration", ["Runmoor Configuration"]],
+  ["/runmoor/commands", ["Runmoor Commands and Routing"]],
+  ["/runmoor/docker", ["Runmoor Docker Execution"]],
+  ["/runmoor/tart", ["Runmoor Tart Images"]],
+  ["/runmoor/operations", ["Runmoor Operations"]],
+
   ["/devhud", ["DevHud"]],
   ["/devhud/install", ["Install and Verify DevHud", "Desktop", "Mobile stores", "Chrome extension"]],
   ["/devhud/guide", ["Using DevHud", "First run and identity", "Settings and PAT profiles", "Capture, drafts, and browser context", "Decks and widgets"]],
@@ -87,6 +102,7 @@ const requiredHeadings = new Map([
   ["/devhud/releases", ["DevHud Releases"]],
 ]);
 const requiredLinks = new Map([
+  ["/runmoor", ["/runmoor/install", "/runmoor/configuration", "/runmoor/commands", "/runmoor/docker", "/runmoor/tart", "/runmoor/operations"]],
   ["/devhud", ["/devhud/install", "/devhud/privacy", "/devhud/security", "/devhud/support"]],
   ["/devhud/install", ["/devhud/releases", "/devhud/security", "/devhud/support"]],
   ["/devhud/guide", ["/devhud/privacy", "/devhud/security", "/devhud/support"]],

@@ -48,6 +48,10 @@ Each project must have one project index document and one or more domain contrac
 - `docs/project-with-watch.md`
 - `docs/crates-with-watch-foundation.md`
 
+### runmoor
+- `docs/project-runmoor.md`
+- `docs/cmds-runmoor-foundation.md`
+
 ### derun
 - `docs/project-derun.md`
 - `docs/cmds-derun-foundation.md`

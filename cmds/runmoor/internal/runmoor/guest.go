@@ -1,0 +1,206 @@
+package runmoor
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+)
+
+type GuestInput struct {
+	ID            string `json:"id"`
+	RunnerPath    string `json:"runner_path"`
+	RunnerVersion string `json:"runner_version"`
+	JIT           string `json:"jit"`
+}
+type GuestStatus struct {
+	ID        string    `json:"id"`
+	PID       int       `json:"pid"`
+	Ready     bool      `json:"ready"`
+	Finished  bool      `json:"finished"`
+	ExitCode  int       `json:"exit_code"`
+	StartedAt time.Time `json:"started_at"`
+}
+
+func guestStatePath(id string) string {
+	// Use the same root as the uploaded helper, independently of RPC TMPDIR:
+	// the detached supervisor intentionally inherits only minimalEnv(). Resolve
+	// macOS's OS-owned /tmp symlink before validating our private children.
+	temp, err := filepath.EvalSymlinks("/tmp")
+	if err != nil {
+		temp = "/tmp"
+	}
+	return filepath.Join(temp, "runmoor", id, "status.json")
+}
+func guestWrite(v GuestStatus) error {
+	path := guestStatePath(v.ID)
+	if e := privateDir(filepath.Dir(path)); e != nil {
+		return e
+	}
+	b, _ := json.Marshal(v)
+	f, e := openPrivate(path+".new", os.O_CREATE|os.O_TRUNC|os.O_WRONLY)
+	if e != nil {
+		return e
+	}
+	_, e = f.Write(b)
+	if e == nil {
+		e = f.Sync()
+	}
+	f.Close()
+	if e != nil {
+		return e
+	}
+	return os.Rename(path+".new", path)
+}
+func guestExecute(command string, args []string, out io.Writer) int {
+	if command == "__guest-status" {
+		if len(args) != 1 || !validID(args[0]) {
+			return 2
+		}
+		b, e := readPrivate(guestStatePath(args[0]), 4096)
+		if e != nil {
+			return 1
+		}
+		var status GuestStatus
+		if json.Unmarshal(b, &status) != nil || status.ID != args[0] {
+			return 1
+		}
+		if !status.Finished {
+			// A persisted running record is not proof after guest reboot.
+			// Match the supervisor command, not merely a potentially reused PID.
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			process := exec.CommandContext(ctx, "/bin/ps", "-p", strconv.Itoa(status.PID), "-o", "command=")
+			process.Env = minimalEnv()
+			command, err := process.Output()
+			exe, _ := os.Executable()
+			expected, _ := filepath.EvalSymlinks(exe)
+			actual := strings.TrimSuffix(strings.TrimSpace(string(command)), " __guest-runner")
+			actual, _ = filepath.EvalSymlinks(actual)
+			if err != nil || expected == "" || actual != expected || !strings.HasSuffix(strings.TrimSpace(string(command)), " __guest-runner") {
+				return 1
+			}
+		}
+		_, e = out.Write(b)
+		if e != nil {
+			return 1
+		}
+		return 0
+	}
+	b, e := io.ReadAll(io.LimitReader(os.Stdin, 1<<20))
+	if e != nil {
+		return 1
+	}
+	var in GuestInput
+	if json.Unmarshal(b, &in) != nil || !validID(in.ID) || !filepath.IsAbs(in.RunnerPath) || !versionPattern.MatchString(in.RunnerVersion) || in.JIT == "" || strings.ContainsAny(in.JIT, "\x00\n\r") {
+		return 2
+	}
+	if command == "__guest-bootstrap" {
+		if _, e = os.Stat(guestStatePath(in.ID)); e == nil {
+			return 1
+		}
+		exe, e := os.Executable()
+		if e != nil {
+			return 1
+		}
+		cmd := exec.Command(exe, "__guest-runner")
+		cmd.Env = minimalEnv()
+		null, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+		if err != nil {
+			return 1
+		}
+		defer null.Close()
+		cmd.Stdout = null
+		cmd.Stderr = null
+		detach(cmd)
+		pipe, e := cmd.StdinPipe()
+		if e != nil {
+			return 1
+		}
+		if e = cmd.Start(); e != nil {
+			return 1
+		}
+		done := make(chan error, 1)
+		go func() { done <- cmd.Wait() }()
+		defer pipe.Close()
+		if _, e = pipe.Write(b); e != nil {
+			return 1
+		}
+		pipe.Close()
+		for i := 0; i < 100; i++ {
+			select {
+			case <-done:
+				return 1
+			default:
+			}
+			if b, err := readPrivate(guestStatePath(in.ID), 4096); err == nil {
+				var status GuestStatus
+				if json.Unmarshal(b, &status) != nil || status.ID != in.ID || status.PID != cmd.Process.Pid || status.Finished {
+					return 1
+				}
+				if status.Ready {
+					return 0
+				}
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		return 1
+	}
+	if command != "__guest-runner" {
+		return 2
+	}
+	v := GuestStatus{ID: in.ID, PID: os.Getpid(), StartedAt: nowUTC()}
+	if guestWrite(v) != nil {
+		return 1
+	}
+	cmd := exec.Command(filepath.Join(in.RunnerPath, "run.sh"), "--jitconfig", in.JIT)
+	cmd.Dir = in.RunnerPath
+	cmd.Env = append(minimalEnv(), "RUNNER_MANUALLY_TRAP_SIG=1")
+	null, e := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if e != nil {
+		return 1
+	}
+	defer null.Close()
+	cmd.Stdout = null
+	cmd.Stderr = null
+	if e = cmd.Start(); e == nil {
+		done := make(chan error, 1)
+		go func() { done <- cmd.Wait() }()
+		// Starting the supervisor is not runner readiness. Reject launch errors
+		// and immediate exits before acknowledging bootstrap, so preparation's
+		// failure circuit breaker cannot be reset by a broken run.sh.
+		timer := time.NewTimer(time.Second)
+		defer timer.Stop()
+		select {
+		case e = <-done:
+		case <-timer.C:
+			select {
+			case e = <-done:
+			default:
+				v.Ready = true
+				if guestWrite(v) != nil {
+					_ = cmd.Process.Kill()
+					<-done
+					return 1
+				}
+				e = <-done
+			}
+		}
+	}
+	v.Finished = true
+	if e != nil {
+		v.ExitCode = 1
+		if exit, ok := e.(*exec.ExitError); ok {
+			v.ExitCode = exit.ExitCode()
+		}
+	}
+	if guestWrite(v) != nil {
+		return 1
+	}
+	return 0
+}
