@@ -5,7 +5,7 @@ import { uuidV7 } from "./diagnostics.ts";
 import type { Copy } from "./localization.ts";
 import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, issueMarker, readGitHubCredential, type GitHubProvider, type GitHubRepositoryRef } from "./github-provider.ts";
 import { LocalAgentMode, NativeBridgeError, NativeBridgeErrorCode, type CaptureDraft, type NativeBridgeV1 } from "./native-bridge.ts";
-import { localAgentExecutablePath, localAgentHasConsent } from "./local-agent-settings-ui.tsx";
+import { localAgentExecutablePath, localAgentHasConsent } from "./local-agent-preferences.ts";
 import { useIdentitySettings } from "./service-boundary.tsx";
 import { composeIssueBody, decodeSha256Hex, editableBrowserDiagnostics, IssueBodyTooLargeError, IssueTitleInvalidError, parseEditableBrowserDiagnostics, sanitizeIssueTitle, stripFinalSubmissionMarker } from "./realqa-submission.ts";
 import { projectedOfficialImageUrls, projectedR2ImageUrls, uploadOfficialImages, uploadR2Images } from "./realqa-upload.ts";

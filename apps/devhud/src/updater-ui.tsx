@@ -167,7 +167,7 @@ export function DesktopUpdaterPanel({ bridge, language, onApprovalOpenChange }: 
   const confirmationText = approval === "download" ? copy.confirmDownload : approval === "installation" ? copy.confirmInstall : installationUncertain ? copy.confirmRecoveryRestart : status?.kind === "restart-required" ? copy.confirmRetryRestart : copy.confirmRestart;
 
   return <section ref={updaterPanel} className="desktop-updater" aria-labelledby="desktop-updater-title" tabIndex={-1}>
-    <h3 id="desktop-updater-title">{copy.title}</h3>
+    <h3 id="desktop-updater-title" tabIndex={-1}>{copy.title}</h3>
     <p>{copy.summary}</p>
     <dl><dt>{status?.kind === "restart-required" ? copy.running : copy.installed}</dt><dd>{status?.installedVersion ?? "—"}</dd></dl>
     <p className="updater-status" role={status && ["failed", "restart-required"].includes(status.kind) ? "alert" : "status"} aria-live="polite">{status ? updaterStatusText(status, language, copy) : availability === "unsupported" ? updaterDiagnosticCopy[language].unsupported : ""}</p>
