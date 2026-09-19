@@ -429,6 +429,10 @@ Cancellation handlers are installed before owned child work. Native cancellation
 fixtures synchronize on actual child readiness rather than assuming startup time.
 
 Offline checks never pass a report with no target execution.
+Imported baseline executions use the `baseline` role for evidence-reference
+closure. Their historical operational failures affect comparison certainty but
+never become errors or cleanup recipients of the current invocation. Current
+target and preparation outcomes determine its operational exit status.
 Clean/repeat verdicts combine policy and comparison results with failed taking
 precedence over inconclusive, which takes precedence over passed; incomplete
 baseline evidence cannot erase a definite policy violation.

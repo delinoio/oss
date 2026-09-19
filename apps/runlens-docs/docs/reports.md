@@ -18,6 +18,9 @@ HTML is self-contained and works offline. Its semantic headings, table captions,
 One JSON report format covers `run`, `clean`, and `repeat`. It includes:
 
 - `schema_version`, report `kind`, and UUID-v7 execution identifiers.
+- Execution roles distinguish `target`, `preparation`, and historical `baseline`
+  evidence. Baseline errors affect comparison certainty, not the current command's
+  operational exit status.
 - Sanitized command identity and argv, working directory, environment names, available source metadata, OS/architecture, Runlens version, tracing-engine revision, and a passively computed executable SHA-256 when readable.
 - Declared snapshot scope, exclusions, input/output patterns, and coverage status.
 - Separate `accesses`, `before`, `after`, and `changes` maps.

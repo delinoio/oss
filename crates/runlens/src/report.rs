@@ -271,7 +271,7 @@ pub fn validate(report: &Report) -> Result<()> {
         ));
     }
     if report.verification == Some(Verdict::Passed)
-        && report.executions.iter().any(|e| !e.outcome.success())
+        && report.current_executions().any(|e| !e.outcome.success())
     {
         return Err(Error::input(
             "failed or incomplete execution cannot pass verification",

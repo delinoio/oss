@@ -477,7 +477,7 @@ fn finish_execution(value: &Report, save: Option<&std::path::Path>) -> Result<i3
         report::save(path, value, false)?;
     }
     let mut code = 0;
-    for execution in &value.executions {
+    for execution in value.current_executions() {
         eprintln!(
             "Execution {}: child={:?}, collection={}, accesses={}, changes={}, errors={:?}",
             execution.id,

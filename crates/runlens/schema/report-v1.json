@@ -433,7 +433,8 @@
     "Role": {
       "enum": [
         "target",
-        "preparation"
+        "preparation",
+        "baseline"
       ],
       "type": "string"
     },

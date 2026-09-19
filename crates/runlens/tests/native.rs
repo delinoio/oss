@@ -492,6 +492,69 @@ fn clean_policy_failures_survive_inconclusive_baselines() {
     }
 }
 #[test]
+fn historical_baseline_errors_do_not_become_current_exit_codes() {
+    let root = repository("read");
+    assert!(
+        invoke(
+            root.path(),
+            &["verify", "clean", "build", "--save", "baseline.json"]
+        )
+        .status
+        .success()
+    );
+    let original = parse(root.path(), "baseline.json");
+    for (index, error) in ["timeout", "cancelled", "cleanup-failed"]
+        .iter()
+        .enumerate()
+    {
+        let mut baseline = original.clone();
+        baseline["verification"] = "inconclusive".into();
+        baseline["executions"][0]["outcome"]["collection_complete"] = false.into();
+        baseline["executions"][0]["outcome"]["errors"] = serde_json::json!([error]);
+        let input = format!("historical-{index}.json");
+        let output = format!("current-{index}.json");
+        fs::write(
+            root.path().join(&input),
+            serde_json::to_vec(&baseline).unwrap(),
+        )
+        .unwrap();
+        let result = invoke(
+            root.path(),
+            &[
+                "verify",
+                "clean",
+                "build",
+                "--baseline",
+                &input,
+                "--save",
+                &output,
+            ],
+        );
+        assert_eq!(
+            result.status.code(),
+            Some(4),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let saved = runlens::report::read(&root.path().join(output)).unwrap();
+        assert_eq!(
+            saved.verification,
+            Some(runlens::model::Verdict::Inconclusive)
+        );
+        assert!(saved.current_executions().all(|e| e.outcome.success()));
+        let historical = saved
+            .executions
+            .iter()
+            .find(|e| e.role == runlens::model::Role::Baseline)
+            .unwrap();
+        assert_eq!(
+            historical.id.to_string(),
+            baseline["executions"][0]["id"].as_str().unwrap()
+        );
+        assert_eq!(historical.outcome.errors.len(), 1);
+    }
+}
+#[test]
 #[cfg(unix)]
 fn non_unicode_environment_entries_do_not_abort_observation() {
     use std::{ffi::OsString, os::unix::ffi::OsStringExt};

@@ -17,6 +17,7 @@ pub enum ReportKind {
 pub enum Role {
     Target,
     Preparation,
+    Baseline,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -276,6 +277,12 @@ impl Report {
         self.executions
             .iter()
             .filter(|execution| execution.role == Role::Target)
+    }
+
+    pub fn current_executions(&self) -> impl Iterator<Item = &Execution> {
+        self.executions
+            .iter()
+            .filter(|execution| execution.role != Role::Baseline)
     }
 }
 

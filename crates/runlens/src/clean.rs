@@ -516,7 +516,12 @@ pub async fn verify(
     match (result, cleanup) {
         (Ok(mut report), Err(_)) => {
             report.verification = Some(Verdict::Inconclusive);
-            if let Some(last) = report.executions.last_mut() {
+            if let Some(last) = report
+                .executions
+                .iter_mut()
+                .rev()
+                .find(|execution| execution.role != Role::Baseline)
+            {
                 last.outcome.errors.push(ErrorCode::CleanupFailed);
                 last.outcome.collection_complete = false;
             }
@@ -695,7 +700,7 @@ async fn verify_in(
             for execution in &baseline.executions {
                 if !report.executions.iter().any(|e| e.id == execution.id) {
                     let mut execution = execution.clone();
-                    execution.role = Role::Preparation;
+                    execution.role = Role::Baseline;
                     report.executions.push(execution);
                 }
             }
