@@ -53,7 +53,9 @@ files and internal links never use their `.html` suffixes.
 
 `.github/workflows/runlens-docs.yml` provides a manual, default-dry-run deployment
 pipeline. Validation produces a private short-lived artifact without credentials.
-Only the explicitly selected deploy job enters `runlens-docs-production` and
+Only an explicit non-dry-run dispatch on `refs/heads/main` may deploy; feature
+branches and tags remain validation-only even when dry run is disabled.
+The guarded deploy job enters `runlens-docs-production` and
 receives the Cloudflare token/account configuration. The Pages project is
 `runlens-docs`; operators configure its custom domain as `runlens.delino.io`.
 No site is deployed as part of implementing or validating the PR.

@@ -156,6 +156,8 @@
 
 ### Runlens Documentation Rules
 
+- Production Runlens documentation deployment requires an explicit non-dry-run dispatch on `refs/heads/main` and the protected production environment; other refs may only validate.
+
 - Follow docs/apps-runlens-docs-foundation.md; use Rspress and Cloudflare Pages at https://runlens.delino.io.
 - Bind dev to 127.0.0.1:46310 and preview to 127.0.0.1:46272 using the shared strict wrapper. Root pnpm dev:runlens-docs delegates to the package.
 - Preserve every contracted route and all nine capabilities. Publish supported behavior and evidence limitations; internal architecture stays in docs.

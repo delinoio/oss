@@ -7,6 +7,14 @@ const root = fileURLToPath(new URL("../../", import.meta.url));
 const read = (path) => readFileSync(`${root}/${path}`, "utf8");
 const native = load(read(".github/workflows/runlens.yml"));
 const release = load(read(".github/workflows/release-runlens.yml"));
+test("Runlens production documentation requires an explicit main-branch dispatch", () => {
+  const docs = load(read(".github/workflows/runlens-docs.yml"));
+  assert.equal(docs.on.workflow_dispatch.inputs.dry_run.default, true);
+  assert.equal(docs.jobs.deploy.if, "${{ !inputs.dry_run && github.ref == 'refs/heads/main' }}");
+  assert.equal(docs.jobs.deploy.environment, "runlens-docs-production");
+  assert.equal(docs.jobs.deploy.needs, "build");
+  assert.doesNotMatch(JSON.stringify(docs.jobs.build), /secrets\.|pages deploy/u);
+});
 test("Runlens uses native six-platform execution and separate minimum OS evidence", () => {
   assert.equal(native.jobs.native.strategy.matrix.include.length, 6);
   assert.equal(new Set(native.jobs.native.strategy.matrix.include.map((row) => row.target)).size, 6);
