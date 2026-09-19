@@ -2,10 +2,10 @@ name: Runlens native validation
 
 on:
   pull_request:
-    paths: ['crates/runlens/**', 'scripts/install/runlens*', 'scripts/release/runlens*', 'packaging/runlens/**', '.github/workflows/runlens.yml', '.github/workflows/release-runlens.yml']
+    paths: ['crates/runlens/**', 'scripts/install/runlens*', 'scripts/release/runlens*', 'packaging/runlens/**', 'packaging/homebrew/templates/runlens.rb.tmpl', 'scripts/release/update-homebrew.sh', '.github/workflows/runlens.yml', '.github/workflows/release-runlens.yml']
   push:
     branches: [main]
-    paths: ['crates/runlens/**', 'scripts/install/runlens*', 'scripts/release/runlens*', 'packaging/runlens/**', '.github/workflows/runlens.yml', '.github/workflows/release-runlens.yml']
+    paths: ['crates/runlens/**', 'scripts/install/runlens*', 'scripts/release/runlens*', 'packaging/runlens/**', 'packaging/homebrew/templates/runlens.rb.tmpl', 'scripts/release/update-homebrew.sh', '.github/workflows/runlens.yml', '.github/workflows/release-runlens.yml']
   workflow_dispatch:
     inputs:
       minimum_os:

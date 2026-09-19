@@ -23,6 +23,13 @@ test("Runlens uses native six-platform execution and separate minimum OS evidenc
   assert.deepEqual(native.permissions, { contents: "read" });
   assert.doesNotMatch(commands, /secrets\.|sign-blob|gh release/u);
 });
+test("Runlens native validation watches its prebuilt Homebrew release inputs", () => {
+  for (const event of ["pull_request", "push"]) {
+    for (const path of ["packaging/homebrew/templates/runlens.rb.tmpl", "scripts/release/update-homebrew.sh"]) {
+      assert.ok(native.on[event].paths.includes(path), `${event}: ${path}`);
+    }
+  }
+});
 test("Runlens dry run cannot reach publication credentials or OIDC", () => {
   assert.deepEqual(release.permissions, { contents: "read" });
   assert.equal(release.on.workflow_dispatch.inputs.dry_run.default, true);

@@ -62,6 +62,9 @@ counts as platform evidence. Dedicated `runlens-macos-13`,
 `runlens-windows-10-22h2`, and `runlens-ubuntu-22.04` self-hosted labels, paired with
 X64 or ARM64, select the minimum-OS dispatch matrix. The workflow records actual
 OS identity and never substitutes a runner label for evidence.
+Both PR and main-push path filters include the prebuilt formula template
+`packaging/homebrew/templates/runlens.rb.tmpl` and its shared renderer
+`scripts/release/update-homebrew.sh`, as well as Runlens source and release inputs.
 
 `scripts/release/runlens.py` owns the six-archive inventory, reproducible archive
 headers, license aggregation, SHA256 manifest, native evidence, and prebuilt tap
