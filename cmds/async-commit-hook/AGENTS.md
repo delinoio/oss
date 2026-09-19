@@ -17,6 +17,7 @@
 - Pruning is idempotent for expired records; resume incomplete owned-file cleanup without growing tombstone diagnostics.
 - Use synchronization barriers, not elapsed-time assertions, to prove asynchronous behavior in integration tests. Run `go test -race ./cmds/async-commit-hook/...` for lifecycle changes, and the root Go suite after generating administrator assets.
 - Agent integration tests use isolated settings and preserve unrelated entries and comments. Keep the object-form MCP output schema compatible with supported clients.
+- Worker-correctness fixtures must distinguish injected failures from deadlock watchdog expiry; allow native shell cold startup under CI load instead of imposing an undocumented command-startup SLA.
 - Shared runner security tests must use syntax for the selected native shell, retaining Windows PowerShell coverage rather than running POSIX fixtures under PowerShell.
 - Project agent installation and removal resolve any supplied subdirectory to its registered Git worktree root; linked worktrees retain independent integration paths.
 - Repository listings resolve the current checkout branch, including detached HEAD, without rewriting historical run branches.

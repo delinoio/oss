@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -20,10 +21,13 @@ func TestCheckPersistenceFailureReleasesWorkerForReconciliation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			// This is a deadlock watchdog, not a command-startup SLA. Native
+			// PowerShell cold starts exceeded 15 seconds on loaded Windows CI
+			// runners before the injected collecting/passed write was reached.
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
 			err = s.runOne(ctx, receipt.RunID)
-			if err == nil || ctx.Err() != nil {
+			if err == nil || ctx.Err() != nil || !strings.Contains(err.Error(), "injected write failure") {
 				t.Fatalf("worker did not return its persistence error: %v", err)
 			}
 			lock, err := TryLock(filepath.Join(s.Store.Root, "locks", receipt.RunID+".lock"))
