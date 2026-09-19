@@ -5,7 +5,7 @@ import {
   FailureSchema,
 } from "@delinoio/async-commit-hook-api-client";
 import { expect, it, vi } from "vitest";
-import { Confirm, FailureList, Status } from "./App";
+import { Confirm, ErrorNotice, FailureList, Status } from "./App";
 import { readConnection, describeError } from "./connection";
 it("renders hostile report content as inert text", () => {
   const failure = create(FailureSchema, {
@@ -60,4 +60,19 @@ it("supports dialog cancellation and restores focus", () => {
   unmount();
   expect(document.activeElement).toBe(prior);
   prior.remove();
+});
+it("distinguishes local network permission denial from an offline service", async () => {
+  const permissions = Object.getOwnPropertyDescriptor(navigator, "permissions");
+  Object.defineProperty(navigator, "permissions", {
+    configurable: true,
+    value: { query: vi.fn().mockResolvedValue({ state: "denied", onchange: null }) },
+  });
+  try {
+    const { unmount } = render(<ErrorNotice error={new Error("fetch failed")} />);
+    expect(await screen.findByText(/Local network permission is denied/)).toBeTruthy();
+    unmount();
+  } finally {
+    if (permissions) Object.defineProperty(navigator, "permissions", permissions);
+    else Reflect.deleteProperty(navigator, "permissions");
+  }
 });

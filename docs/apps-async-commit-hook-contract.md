@@ -15,6 +15,8 @@ Repository/worktree and branch navigation; Changes, Commits, Checks, Inbox; run 
 Pairing receives a single-use five-minute code through a URL fragment or user entry. Remove the fragment after reading. Persist browser authorization per local installation; show revocation, network permission denial, unpaired/disconnected and version errors. Missing data, empty/loading, queued/running, failed/cancelled/interrupted states have actionable next steps. Keyboard, focus, screen-reader and non-color status behavior are required.
 
 ## Storage
+
+Detail navigation focuses the commit heading, returning to results restores the selected row, and polling never steals focus. Cancellation uses a native modal dialog with Escape and prior-focus restoration. Browsers exposing the local-network-access Permissions API receive a distinct denied-permission recovery message; older browser APIs retain ordinary connection guidance.
 Browser authorization and local connection preferences only; result cache is in memory. Durable results belong to the CLI's local state. Public docs cover configuration, installation, CLI/MCP/skills, privacy, validation meaning, compatibility and recovery.
 
 ## Security

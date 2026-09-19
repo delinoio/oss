@@ -515,10 +515,72 @@ brew upgrade async-commit-hook</pre
           latency/throughput SLA.
         </p>
         <p>
+          Local validation on September 19, 2026 used macOS 26.6.2 arm64,
+          sh (GNU bash 3.2.57), Chrome 153.0.8010.48, Codex CLI 0.145.0,
+          Claude Code 2.1.126 and OpenCode 1.1.53. Agent settings were isolated;
+          MCP connection and the supplied skill installation were checked with
+          each client. The shared MCP workflow also passed automated protocol
+          tests. Edge execution was unavailable in that environment and has
+          not been recorded as validated. Windows and Linux archives passed
+          cross-build checks; that does not certify runtime integration on
+          those systems or on the minimum OS versions.
+        </p>
+        <p>
           No Safari/Firefox/mobile UI, multi-account system daemon, remote
           results, feature flags, GitHub Actions execution, act/Runmoor
           integration, plugin ABI, automatic command retry or background
           automatic update is provided.
+        </p>
+      </section>
+
+      <section id="existing-hooks">
+        <h2>Existing hooks and hook managers</h2>
+        <p>
+          ach never overwrites another hook. If installation reports a conflict,
+          use the exact command and configuration example it prints. With a
+          custom <code>core.hooksPath</code>, merge that command into the
+          effective hook. After moving ach or changing its personal
+          configuration path, reinstall the integration.
+        </p>
+        <p>
+          For Lefthook, merge this command into your existing configuration:
+        </p>
+        <pre>
+post-commit:
+  commands:
+    async-commit-hook:
+      run: ach run --repo . --commit HEAD --automatic
+pre-push:
+  commands:
+    async-commit-hook:
+      use_stdin: true
+      run: ach pre-push</pre
+        >
+        <p>
+          The pre-push entry is optional.
+          <a href="https://lefthook.dev/configuration/use_stdin/"
+            >Lefthook forwards stdin to one consumer</a
+          >; if another check needs push refs too, use one wrapper to save stdin
+          to a private temporary file and replay it for each consumer. Do not
+          let the ach gate receive empty input after another command consumes
+          the refs.
+        </p>
+        <pre>
+#!/bin/sh
+set -eu
+refs=$(mktemp)
+trap 'rm -f "$refs"' EXIT HUP INT TERM
+cat &gt; "$refs"
+# Replace existing-pre-push with your current stdin-consuming command.
+existing-pre-push "$@" &lt; "$refs"
+ach pre-push "$@" &lt; "$refs"</pre
+        >
+        <p>
+          Put this wrapper behind the hook manager's single
+          <code>use_stdin: true</code> entry. Keep your current failure handling
+          and commands. Uninstall removes only unchanged ach-owned files or
+          configuration entries; conflicts remain available for manual
+          reconciliation.
         </p>
       </section>
     </main>

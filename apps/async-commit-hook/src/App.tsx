@@ -56,10 +56,35 @@ export function ErrorNotice({
   error: unknown;
   retry?: () => void;
 }) {
+  const [networkDenied, setNetworkDenied] = useState(false);
+  useEffect(() => {
+    let disposed = false;
+    let permission: PermissionStatus | undefined;
+    // Older browsers do not expose this permission name. In that case retain
+    // the ordinary connection error instead of misclassifying an offline API.
+    void navigator.permissions
+      ?.query({ name: "local-network-access" as PermissionName })
+      .then((value) => {
+        if (disposed) return;
+        permission = value;
+        const update = () => setNetworkDenied(value.state === "denied");
+        value.onchange = update;
+        update();
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      if (permission) permission.onchange = null;
+    };
+  }, []);
   return (
     <div className="notice error" role="alert">
       <strong>Something needs attention</strong>
-      <p>{describeError(error)}</p>
+      <p>
+        {networkDenied
+          ? "Local network permission is denied. Open this site’s browser permissions, allow local network access, then try again."
+          : describeError(error)}
+      </p>
       {retry && <button onClick={retry}>Try again</button>}
     </div>
   );
@@ -249,6 +274,13 @@ function Workspace({
   const [branch, setBranch] = useState("");
   const [tab, setTab] = useState<Tab>("checks");
   const [run, setRun] = useState(initialRun);
+  const [runCursor, setRunCursor] = useState("");
+  useEffect(() => setRunCursor(""), [worktree, branch, tab]);
+  const lastOpenedRun = useRef(initialRun);
+  const selectRun = (id: string) => {
+    lastOpenedRun.current = id;
+    setRun(id);
+  };
   const currentRepo = repos.data?.repositories.find((r) =>
     r.worktrees.some((w) => w.id === worktree),
   );
@@ -375,14 +407,22 @@ function Workspace({
           ))}
         </nav>
         {run ? (
-          <RunDetail id={run} onBack={() => setRun("")} onSelect={setRun} />
+          <RunDetail
+            key={run}
+            id={run}
+            onBack={() => setRun("")}
+            onSelect={selectRun}
+          />
         ) : tab === "checks" || tab === "inbox" ? (
           <RunList
             repository={currentRepo?.id || ""}
             worktree={worktree}
             branch={tab === "checks" ? branch : ""}
             inbox={tab === "inbox"}
-            onSelect={setRun}
+            onSelect={selectRun}
+            focusRun={lastOpenedRun.current}
+            cursor={runCursor}
+            setCursor={setRunCursor}
           />
         ) : tab === "changes" ? (
           <Changes worktree={worktree} branch={branch} />
@@ -400,15 +440,21 @@ function RunList({
   branch,
   inbox,
   onSelect,
+  focusRun,
+  cursor,
+  setCursor,
 }: {
   repository: string;
   worktree: string;
   branch: string;
   inbox: boolean;
   onSelect: (id: string) => void;
+  focusRun: string;
+  cursor: string;
+  setCursor: (cursor: string) => void;
 }) {
-  const [cursor, setCursor] = useState("");
-  useEffect(() => setCursor(""), [repository, worktree, branch, inbox]);
+  const list = useRef<HTMLElement>(null);
+  const restoredFocus = useRef(false);
   const runs = useQuery(
     LocalQuery.listRuns,
     {
@@ -421,6 +467,15 @@ function RunList({
     },
     { refetchInterval: 2000 },
   );
+  useEffect(() => {
+    if (!runs.data || restoredFocus.current) return;
+    restoredFocus.current = true;
+    // Restore the row after detail unmounts, without stealing focus on polling.
+    const row = Array.from(
+      list.current?.querySelectorAll<HTMLButtonElement>("[data-run-id]") || [],
+    ).find((element) => element.dataset.runId === focusRun);
+    row?.focus();
+  }, [runs.data, focusRun]);
   if (runs.isPending)
     return (
       <p role="status" className="empty">
@@ -438,7 +493,7 @@ function RunList({
     );
   const items = runs.data?.runs || [];
   return (
-    <section>
+    <section ref={list}>
       <div className="section-heading">
         <h2>{inbox ? "Waiting for your review" : "Committed executions"}</h2>
         <span>{items.length} on this page</span>
@@ -462,6 +517,7 @@ function RunList({
             <button
               className="run-row"
               key={r.id}
+              data-run-id={r.id}
               onClick={() => onSelect(r.id)}
             >
               <Status state={r.state} />
