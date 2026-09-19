@@ -815,6 +815,9 @@ async fn run_task(
         exit_code: status.code,
         diagnostic: (status.reason == ExitReason::TimedOut).then(|| "task timeout elapsed".into()),
     };
+    if receipt.outcome == Outcome::Cancelled {
+        receipt.exit_code = 130;
+    }
     if receipt.success() {
         let unchanged = if result_file.exists() {
             let report: TaskReport = serde_json::from_slice(&std::fs::read(&result_file)?)?;
@@ -855,6 +858,7 @@ async fn publish(
     let valid = |receipt: &mut Receipt| -> Result<bool> {
         if cancel.is_cancelled() {
             receipt.outcome = Outcome::Cancelled;
+            receipt.exit_code = 130;
         } else if (!task.install || task.cache)
             && files::input_state(&graph.workspace, project, task)? != *inputs
         {
@@ -1123,6 +1127,44 @@ mod output_cleanup_tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use super::*;
+
+    #[tokio::test]
+    async fn publication_cancellation_replaces_success_exit_code() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(
+            directory.path().join("taskflow.yml"),
+            "version: 1\nproject: app\ntasks:\n  check:\n    command: [unused]\n    input: []\n",
+        )
+        .unwrap();
+        let graph = Graph::build(
+            crate::discover::Workspace::discover(directory.path())
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        let mut receipt = Receipt::skipped(
+            "app#check",
+            Outcome::Executed,
+            BTreeSet::from([Cause::Direct]),
+        );
+        // The command has already succeeded; cancellation arrives at publication.
+        receipt.exit_code = 0;
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        publish(
+            &graph,
+            "app#check",
+            &mut receipt,
+            &BTreeMap::new(),
+            None,
+            &cancel,
+        )
+        .await
+        .unwrap();
+        assert_eq!(receipt.outcome, Outcome::Cancelled);
+        assert_eq!(receipt.exit_code, 130);
+        assert!(previous(directory.path(), "app#check").is_none());
+    }
 
     #[tokio::test]
     async fn log_write_failure_awaits_both_streams_and_cleanup() {
