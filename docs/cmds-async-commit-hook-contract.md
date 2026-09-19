@@ -50,6 +50,8 @@ An unexpected storage/worker failure reaps its owned commands even if the databa
 ## Build and Test
 `go test ./cmds/async-commit-hook/...`, race tests, six-target CGO-free builds, generated protocol checks, installer/update and lifecycle integration tests. Repository-wide Go compilation first generates the DevHud administrator embed. Real six-target machine validation is explicitly excluded by the owner.
 
+Shared environment/redaction integration fixtures select native POSIX or PowerShell syntax while asserting the same environment exclusion, log masking and report failure behavior. Windows cross-compilation is recorded separately from executing these tests on Windows.
+
 ## Dependencies and Integrations
 SQLite modernc, UUID v7, Connect, official MCP Go SDK, Git, OS process APIs, TOML, Sigstore verification. Direct updates require stopped checks/servers, a consistent state backup, authenticated artifacts and recoverable replacement; Homebrew installs are never replaced by self-update.
 

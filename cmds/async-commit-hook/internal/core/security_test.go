@@ -3,9 +3,11 @@ package core
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -87,9 +89,13 @@ func TestOwnedReadsRejectEscapeAndSymlink(t *testing.T) {
 func TestDeclaredEnvironmentAndRedactedReport(t *testing.T) {
 	t.Setenv("ACH_TEST_SECRET", "never-record-this-value")
 	t.Setenv("ACH_UNDECLARED", "inherited-value")
-	s, repo := fixture(t, `version=1
+	command := `test -z "$ACH_UNDECLARED" || exit 9; printf "%s" "$ACH_TEST_SECRET"; printf "<testsuite><testcase name=\"bad\"><failure>%s</failure></testcase></testsuite>" "$ACH_TEST_SECRET" > report.xml`
+	if runtime.GOOS == "windows" {
+		command = `if (Test-Path Env:ACH_UNDECLARED) { exit 9 }; [Console]::Out.Write($env:ACH_TEST_SECRET); [IO.File]::WriteAllText((Join-Path (Get-Location) 'report.xml'), '<testsuite><testcase name="bad"><failure>' + $env:ACH_TEST_SECRET + '</failure></testcase></testsuite>')`
+	}
+	s, repo := fixture(t, fmt.Sprintf(`version=1
 [checks.test]
-command='test -z "$ACH_UNDECLARED"; printf "%s" "$ACH_TEST_SECRET"; printf "<testsuite><testcase name=\"bad\"><failure>%s</failure></testcase></testsuite>" "$ACH_TEST_SECRET" > report.xml'
+command=%q
 [[checks.test.environment]]
 name="ACH_TEST_SECRET"
 secret=true
@@ -97,7 +103,7 @@ required=true
 [[checks.test.reports]]
 kind="junit"
 path="report.xml"
-`)
+`, command))
 	r := runFixture(t, s, repo)
 	if r.State != Failed {
 		t.Fatalf("report did not fail: %+v", r)
@@ -113,7 +119,7 @@ path="report.xml"
 	if log.Text != "[REDACTED]" {
 		t.Fatalf("unsafe log %q", log.Text)
 	}
-	if r.Checks[0].Failures[0].Message != "[REDACTED]" {
+	if len(r.Checks[0].Failures) != 1 || r.Checks[0].Failures[0].Message != "[REDACTED]" {
 		t.Fatal("unsafe failure")
 	}
 }
