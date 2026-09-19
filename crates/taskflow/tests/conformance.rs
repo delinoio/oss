@@ -1110,6 +1110,36 @@ fn schema_is_fresh_and_cli_queries_mask_designated_values() {
 }
 
 #[tokio::test]
+async fn unchanged_prerequisites_cannot_suppress_corrupt_outputs() {
+    for cached in [false, true] {
+        let directory = fixture(json!({
+            "a": {"command":command(&["unchanged","events","a"]),"input":[]},
+            "b": {"command":command(&["copy","source","middle"]),"dependsOn":["a"],
+                "input":["source"],"output":["middle"],"cache":cached,"tools":{"fixture":command(&["version"])}},
+            "c": {"command":command(&["copy","middle","consumed"]),"dependsOn":["b"],"input":["middle"],"output":["consumed"]}
+        }));
+        std::fs::write(directory.path().join("source"), "correct").unwrap();
+        let g = graph(directory.path()).await;
+        assert!(run(g.clone(), &["c"]).await.success);
+        std::fs::write(directory.path().join("middle"), "corrupt").unwrap();
+        let result = run(g, &["c"]).await;
+        assert!(result.success, "{result:?}");
+        assert_eq!(
+            result.results["app#b"].outcome,
+            if cached {
+                Outcome::Restored
+            } else {
+                Outcome::Executed
+            }
+        );
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join("consumed")).unwrap(),
+            "correct"
+        );
+    }
+}
+
+#[tokio::test]
 async fn cached_shards_retain_complete_accounting_evidence() {
     let directory = fixture(
         json!({"suite":{"command":command(&["version"]),"input":[],"output":[],"cache":true,"tools":{"fixture":command(&["version"])},"shard":{"adapter":"generic","count":4,"list":command(&["inventory"]),"run":command(&["shard"])}}}),

@@ -38,6 +38,8 @@ Additional invariants include unknown/duplicate configuration rejection, schema 
 
 `check_rejects_invalid_readiness_before_starting_processes` rejects empty readiness commands and malformed readiness timeouts at configuration validation, before service startup.
 
+`unchanged_prerequisites_cannot_suppress_corrupt_outputs` checks a three-task chain with both cached and uncached middle tasks: existing but modified outputs must be restored or rebuilt before a directly requested consumer can read them. Suppression requires the current output digest to match a previous successful receipt.
+
 `reading_session_files_does_not_cancel_or_requeue_work` verifies that metadata/input reads cannot cancel or repeat a live task. Linux access notifications from discovery and hashing must not be treated as mutations.
 
 `session_normalizes_watch_paths_for_existing_and_deleted_inputs` exercises a lexical root alias, deletion, and recreation. Notification paths use the same canonical root as discovery, including Windows verbatim prefixes; removed leaves are normalized through their existing ancestors.

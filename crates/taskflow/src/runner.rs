@@ -215,22 +215,27 @@ pub async fn run_plan(
                 continue;
             }
             let causes = &plan.causes[&id];
-            let own_outputs_missing = !graph.tasks[&id]
+            let previous = previous(&graph.workspace.root, &id);
+            let own_outputs_invalid = !graph.tasks[&id]
                 .task
                 .output
                 .as_ref()
                 .is_none_or(Vec::is_empty)
-                && cache::output_state(
+                && !cache::output_state(
                     &graph.workspace.projects[&graph.tasks[&id].project],
                     &graph.tasks[&id].task,
                 )
-                .is_err();
+                .is_ok_and(|digest| {
+                    previous
+                        .as_ref()
+                        .is_some_and(|r| r.success() && r.output == digest)
+                });
             if !causes.iter().any(Cause::independent)
                 && !prerequisites.values().any(|r| r.changed)
-                && !own_outputs_missing
+                && !own_outputs_invalid
             {
                 let mut receipt = Receipt::skipped(&id, Outcome::Suppressed, causes.clone());
-                if let Some(previous) = previous(&graph.workspace.root, &id) {
+                if let Some(previous) = previous {
                     receipt.key = previous.key;
                     receipt.output = previous.output;
                 }
