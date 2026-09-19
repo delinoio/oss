@@ -1,0 +1,721 @@
+{
+  "$defs": {
+    "Arch": {
+      "enum": [
+        "x64",
+        "arm64"
+      ],
+      "type": "string"
+    },
+    "AutoInput": {
+      "additionalProperties": false,
+      "properties": {
+        "auto": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "auto"
+      ],
+      "type": "object"
+    },
+    "CiConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "go": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "node": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pnpm": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revision": {
+          "description": "Immutable source SHA from which to build the TaskFlow CLI.",
+          "type": "string"
+        },
+        "runners": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "rust": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "revision",
+        "rust",
+        "runners"
+      ],
+      "type": "object"
+    },
+    "Command": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "Dependency": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/Selector"
+        }
+      ]
+    },
+    "DependencyKind": {
+      "enum": [
+        "dependencies",
+        "devDependencies",
+        "buildDependencies",
+        "peerDependencies",
+        "optionalDependencies"
+      ],
+      "type": "string"
+    },
+    "Effect": {
+      "enum": [
+        "local",
+        "external"
+      ],
+      "type": "string"
+    },
+    "Executor": {
+      "enum": [
+        "host",
+        "docker"
+      ],
+      "type": "string"
+    },
+    "Input": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/AutoInput"
+        }
+      ]
+    },
+    "Kinds": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DependencyKind"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/DependencyKind"
+          },
+          "type": "array"
+        }
+      ]
+    },
+    "Os": {
+      "enum": [
+        "macos",
+        "linux",
+        "windows"
+      ],
+      "type": "string"
+    },
+    "Overlap": {
+      "enum": [
+        "queue",
+        "skip",
+        "restart"
+      ],
+      "type": "string"
+    },
+    "Platform": {
+      "additionalProperties": false,
+      "properties": {
+        "arch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Arch"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "executor": {
+          "$ref": "#/$defs/Executor",
+          "default": "host"
+        },
+        "image": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "os": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Os"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ports": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "Readiness": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "address": {
+              "type": "string"
+            },
+            "timeout": {
+              "type": "string"
+            },
+            "type": {
+              "const": "tcp",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "address",
+            "timeout"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "timeout": {
+              "type": "string"
+            },
+            "type": {
+              "const": "http",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "url",
+            "timeout"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "$ref": "#/$defs/Command"
+            },
+            "timeout": {
+              "type": "string"
+            },
+            "type": {
+              "const": "command",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "command",
+            "timeout"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "RemoteConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "accessKeyEnv": {
+          "type": "string"
+        },
+        "bucket": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/RemoteMode",
+          "default": "read-only"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "region": {
+          "default": "auto",
+          "type": "string"
+        },
+        "secretKeyEnv": {
+          "type": "string"
+        },
+        "sessionTokenEnv": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "endpoint",
+        "bucket",
+        "namespace",
+        "accessKeyEnv",
+        "secretKeyEnv"
+      ],
+      "type": "object"
+    },
+    "RemoteMode": {
+      "enum": [
+        "read-only",
+        "read-write",
+        "off"
+      ],
+      "type": "string"
+    },
+    "Schedule": {
+      "additionalProperties": false,
+      "properties": {
+        "cron": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "every": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "initial": {
+          "default": false,
+          "type": "boolean"
+        },
+        "timezone": {
+          "default": "UTC",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Selector": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Kinds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task": {
+          "type": "string"
+        },
+        "waitFor": {
+          "$ref": "#/$defs/WaitFor",
+          "default": "success"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "type": "object"
+    },
+    "ShardAdapter": {
+      "enum": [
+        "go",
+        "libtest",
+        "vitest",
+        "jest",
+        "generic"
+      ],
+      "type": "string"
+    },
+    "ShardConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter": {
+          "$ref": "#/$defs/ShardAdapter"
+        },
+        "count": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "list": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Command"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Command"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "adapter",
+        "count"
+      ],
+      "type": "object"
+    },
+    "Task": {
+      "additionalProperties": false,
+      "properties": {
+        "cache": {
+          "default": false,
+          "type": "boolean"
+        },
+        "command": {
+          "$ref": "#/$defs/Command"
+        },
+        "dependsOn": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Dependency"
+          },
+          "type": "array"
+        },
+        "dotenv": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "effect": {
+          "$ref": "#/$defs/Effect",
+          "default": "local"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "envInputs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "input": {
+          "default": null,
+          "description": "None distinguishes an undeclared input/output contract from an empty\none.",
+          "items": {
+            "$ref": "#/$defs/Input"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "install": {
+          "default": false,
+          "type": "boolean"
+        },
+        "output": {
+          "default": null,
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "overlap": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Overlap"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "platform": {
+          "$ref": "#/$defs/Platform",
+          "default": {
+            "arch": null,
+            "executor": "host",
+            "image": null,
+            "os": null,
+            "ports": []
+          }
+        },
+        "readiness": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Readiness"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "resources": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "schedule": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Schedule"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "secrets": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "service": {
+          "default": false,
+          "type": "boolean"
+        },
+        "shard": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShardConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "shell": {
+          "default": null,
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "timeout": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tools": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Command"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "watch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Watch"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "with": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "type": "object"
+    },
+    "WaitFor": {
+      "enum": [
+        "success",
+        "ready"
+      ],
+      "type": "string"
+    },
+    "Watch": {
+      "additionalProperties": false,
+      "properties": {
+        "debounce": {
+          "default": "200ms",
+          "type": "string"
+        },
+        "initial": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "WorkspaceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "cargoFeatures": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "cargoNoDefaultFeatures": {
+          "default": false,
+          "type": "boolean"
+        },
+        "cargoTarget": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "manifests": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "ci": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CiConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "dotenv": {
+      "default": true,
+      "type": "boolean"
+    },
+    "project": {
+      "type": "string"
+    },
+    "remote": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RemoteConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "start": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "tasks": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Task"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "version": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "workspace": {
+      "$ref": "#/$defs/WorkspaceConfig",
+      "default": {
+        "cargoFeatures": [],
+        "cargoNoDefaultFeatures": false,
+        "cargoTarget": null,
+        "manifests": []
+      }
+    }
+  },
+  "required": [
+    "version",
+    "project"
+  ],
+  "title": "Config",
+  "type": "object"
+}

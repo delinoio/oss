@@ -1,0 +1,47 @@
+[package]
+name = "taskflow"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+description = "Graph-driven native command and development orchestration"
+
+[[bin]]
+name = "tflow"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.102"
+base64 = "0.22.1"
+chrono = { version = "0.4.44", features = ["serde"] }
+chrono-tz = "0.10"
+clap = { version = "4.5.60", features = ["derive"] }
+cron = "0.15"
+dotenvy = "0.15"
+futures = "0.3.32"
+globset = "0.4.18"
+hmac = "0.12.1"
+notify = "8.2.0"
+reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls", "json"] }
+schemars = "1.2.1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+serde_yaml = "0.9.34"
+sha2 = "0.10.9"
+tempfile = "3"
+tokio = { version = "1.49.0", features = ["full"] }
+tokio-util = "0.7"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+uuid = { version = "1.23.0", features = ["v7", "serde"] }
+walkdir = "2.5.0"
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31.2", features = ["signal", "process"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Console"] }
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"

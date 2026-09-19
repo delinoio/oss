@@ -1,0 +1,375 @@
+use std::{
+    collections::BTreeSet,
+    path::{Component, Path, PathBuf},
+};
+
+use anyhow::{bail, ensure, Context, Result};
+use base64::Engine;
+use serde::{Deserialize, Serialize};
+
+use crate::{config::Task, discover::Project, files};
+
+pub const MAX_CACHE_BYTES: usize = 512 * 1024 * 1024;
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Artifact {
+    pub version: u32,
+    pub key: String,
+    pub task: String,
+    pub output_digest: String,
+    pub files: Vec<FileRecord>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileRecord {
+    pub path: String,
+    pub content: Content,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum Content {
+    File {
+        data: String,
+        digest: String,
+        executable: bool,
+    },
+    Directory,
+    Link {
+        target: String,
+    },
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Entry {
+    version: u32,
+    object: String,
+}
+
+pub fn anchors(task: &Task) -> Result<Vec<PathBuf>> {
+    let mut values: Vec<PathBuf> = vec![];
+    for pattern in task.output.iter().flatten() {
+        let anchor = files::output_anchor(pattern);
+        ensure!(
+            !anchor.as_os_str().is_empty() && anchor != Path::new("."),
+            "output requires a literal owned root"
+        );
+        // Restoring a partially-owned directory could erase undeclared neighbors.
+        // Cache contracts therefore own exact files/directories or complete trees.
+        if task.cache && pattern.contains(['*', '?', '[', '{']) {
+            ensure!(
+                pattern.ends_with("/**")
+                    && !pattern[..pattern.len() - 3].contains(['*', '?', '[', '{']),
+                "cache outputs must be exact paths or complete directory/** trees"
+            );
+        }
+        if !values.iter().any(|v| anchor.starts_with(v)) {
+            values.retain(|v| !v.starts_with(&anchor));
+            values.push(anchor);
+        }
+    }
+    values.sort();
+    Ok(values)
+}
+
+pub fn snapshot(project: &Project, task: &Task) -> Result<Vec<FileRecord>> {
+    let mut entries = vec![];
+    let mut total = 0;
+    for anchor in anchors(task)? {
+        let path = files::within(&project.directory, &project.directory.join(&anchor))?;
+        ensure!(
+            path.exists() || path.is_symlink(),
+            "required output is missing: {}",
+            anchor.display()
+        );
+        for entry in walkdir::WalkDir::new(&path).follow_links(false) {
+            let entry = entry?;
+            let path = entry.path();
+            files::within(&project.directory, path)?;
+            let relative = files::slash(path.strip_prefix(&project.directory)?);
+            let content = if entry.file_type().is_symlink() {
+                let target = std::fs::read_link(path)?;
+                ensure!(!target.is_absolute(), "cache output links must be relative");
+                Content::Link {
+                    target: files::slash(&target),
+                }
+            } else if entry.file_type().is_dir() {
+                Content::Directory
+            } else if entry.file_type().is_file() {
+                let bytes = std::fs::read(path)?;
+                total += bytes.len();
+                ensure!(
+                    total <= MAX_CACHE_BYTES,
+                    "task outputs exceed cache size limit"
+                );
+                #[cfg(unix)]
+                let executable = {
+                    use std::os::unix::fs::PermissionsExt;
+                    entry.metadata()?.permissions().mode() & 0o111 != 0
+                };
+                #[cfg(not(unix))]
+                let executable = false;
+                Content::File {
+                    digest: files::digest(&bytes),
+                    data: base64::engine::general_purpose::STANDARD.encode(bytes),
+                    executable,
+                }
+            } else {
+                bail!("unsupported special output file");
+            };
+            entries.push(FileRecord {
+                path: relative,
+                content,
+            });
+        }
+    }
+    entries.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(entries)
+}
+pub fn output_digest(entries: &[FileRecord]) -> Result<String> {
+    Ok(files::digest(&serde_json::to_vec(entries)?))
+}
+pub fn output_state(project: &Project, task: &Task) -> Result<String> {
+    output_digest(&snapshot(project, task)?)
+}
+
+impl Artifact {
+    pub fn capture(key: String, id: String, project: &Project, task: &Task) -> Result<Self> {
+        let files = snapshot(project, task)?;
+        Ok(Self {
+            version: 1,
+            key,
+            task: id,
+            output_digest: output_digest(&files)?,
+            files,
+        })
+    }
+
+    pub fn validate(&self, key: &str, id: &str, project: &Project, task: &Task) -> Result<()> {
+        ensure!(
+            self.version == 1 && self.key == key && self.task == id,
+            "cache identity mismatch"
+        );
+        ensure!(
+            self.output_digest == output_digest(&self.files)?,
+            "cache output digest mismatch"
+        );
+        let roots = anchors(task)?;
+        let mut seen = BTreeSet::new();
+        let mut links = vec![];
+        let mut total = 0;
+        for entry in &self.files {
+            let path = Path::new(&entry.path);
+            ensure!(
+                !entry.path.is_empty()
+                    && path.components().all(|c| matches!(c, Component::Normal(_))),
+                "unsafe cache entry path"
+            );
+            ensure!(
+                seen.insert(entry.path.clone()),
+                "duplicate cache entry path"
+            );
+            ensure!(
+                roots.iter().any(|r| path.starts_with(r)),
+                "cache entry outside declared outputs"
+            );
+            match &entry.content {
+                Content::File { data, digest, .. } => {
+                    let bytes = base64::engine::general_purpose::STANDARD.decode(data)?;
+                    total += bytes.len();
+                    ensure!(
+                        total <= MAX_CACHE_BYTES && files::digest(&bytes) == *digest,
+                        "invalid cache file content"
+                    );
+                }
+                Content::Link { target } => {
+                    ensure!(!Path::new(target).is_absolute(), "absolute cache link");
+                    let effective = files::normalize(
+                        &project.directory.join(path.parent().unwrap()).join(target),
+                    );
+                    ensure!(
+                        effective.starts_with(&project.directory),
+                        "cache link escapes project"
+                    );
+                    links.push(path);
+                }
+                Content::Directory => {}
+            }
+        }
+        for entry in &self.files {
+            ensure!(
+                !links.iter().any(|link| Path::new(&entry.path) != *link
+                    && Path::new(&entry.path).starts_with(link)),
+                "cache file traverses a symlink"
+            );
+        }
+        for root in roots {
+            ensure!(
+                seen.contains(&files::slash(&root)),
+                "cache is missing a required output root"
+            );
+        }
+        Ok(())
+    }
+
+    pub fn restore(&self, key: &str, id: &str, project: &Project, task: &Task) -> Result<()> {
+        self.validate(key, id, project, task)?;
+        let roots = anchors(task)?;
+        for root in &roots {
+            files::within(&project.directory, &project.directory.join(root))?;
+        }
+        // Stage on the same filesystem, then retain every old root until the
+        // complete multi-root transaction succeeds so failures can be rolled back.
+        let staging = tempfile::Builder::new()
+            .prefix(".taskflow-restore-")
+            .tempdir_in(&project.directory)?;
+        let staged = staging.path().join("new");
+        let backup = staging.path().join("old");
+        std::fs::create_dir_all(&staged)?;
+        std::fs::create_dir_all(&backup)?;
+        for entry in &self.files {
+            let path = staged.join(&entry.path);
+            std::fs::create_dir_all(path.parent().unwrap())?;
+            match &entry.content {
+                Content::Directory => std::fs::create_dir_all(&path)?,
+                Content::File {
+                    data, executable, ..
+                } => {
+                    std::fs::write(
+                        &path,
+                        base64::engine::general_purpose::STANDARD.decode(data)?,
+                    )?;
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        std::fs::set_permissions(
+                            &path,
+                            std::fs::Permissions::from_mode(if *executable {
+                                0o755
+                            } else {
+                                0o644
+                            }),
+                        )?;
+                    }
+                    let _ = executable;
+                }
+                Content::Link { .. } => {}
+            }
+        }
+        for entry in &self.files {
+            if let Content::Link { target } = &entry.content {
+                let path = staged.join(&entry.path);
+                #[cfg(unix)]
+                std::os::unix::fs::symlink(target, &path)?;
+                #[cfg(windows)]
+                if path.parent().unwrap().join(target).is_dir() {
+                    std::os::windows::fs::symlink_dir(target, &path)?;
+                } else {
+                    std::os::windows::fs::symlink_file(target, &path)?;
+                }
+            }
+        }
+        let mut moved: Vec<(PathBuf, bool)> = vec![];
+        let result: Result<()> = (|| {
+            for root in &roots {
+                let destination = project.directory.join(root);
+                let previous = backup.join(root);
+                std::fs::create_dir_all(previous.parent().unwrap())?;
+                std::fs::create_dir_all(destination.parent().unwrap())?;
+                let existed = destination.exists() || destination.is_symlink();
+                if existed {
+                    std::fs::rename(&destination, &previous)?;
+                }
+                moved.push((root.clone(), existed));
+                std::fs::rename(staged.join(root), destination)?;
+            }
+            Ok(())
+        })();
+        if let Err(error) = result {
+            let mut rollback_failed = false;
+            for (root, existed) in moved.iter().rev() {
+                let destination = project.directory.join(root);
+                if remove_path(&destination).is_err() {
+                    rollback_failed = true;
+                }
+                if *existed && std::fs::rename(backup.join(root), destination).is_err() {
+                    rollback_failed = true;
+                }
+            }
+            if rollback_failed {
+                let recovery = staging.keep();
+                bail!(
+                    "output restore and rollback failed; retained recovery directory {}: {error}",
+                    recovery.display()
+                );
+            }
+            return Err(error.context("output restoration rolled back"));
+        }
+        Ok(())
+    }
+}
+pub fn remove_path(path: &Path) -> Result<()> {
+    if path.is_symlink() || path.is_file() {
+        std::fs::remove_file(path)?;
+    } else if path.is_dir() {
+        std::fs::remove_dir_all(path)?;
+    }
+    Ok(())
+}
+pub fn entry_path(root: &Path, key: &str) -> PathBuf {
+    root.join(".taskflow/cache/entries")
+        .join(format!("{key}.json"))
+}
+pub fn encode(artifact: &Artifact) -> Result<Vec<u8>> {
+    let bytes = serde_json::to_vec(artifact)?;
+    ensure!(
+        bytes.len() <= MAX_CACHE_BYTES,
+        "encoded cache artifact exceeds size limit"
+    );
+    Ok(bytes)
+}
+pub fn store(root: &Path, artifact: &Artifact) -> Result<Vec<u8>> {
+    let bytes = encode(artifact)?;
+    let object = files::digest(&bytes);
+    files::atomic_write(
+        &root
+            .join(".taskflow/cache/objects")
+            .join(format!("{object}.json")),
+        &bytes,
+    )?;
+    files::atomic_write(
+        &entry_path(root, &artifact.key),
+        &serde_json::to_vec(&Entry { version: 1, object })?,
+    )?;
+    Ok(bytes)
+}
+pub fn load(root: &Path, key: &str) -> Result<Option<Artifact>> {
+    let path = entry_path(root, key);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let entry: Entry = serde_json::from_slice(&std::fs::read(path)?)?;
+    ensure!(
+        entry.version == 1 && valid_hash(&entry.object),
+        "invalid cache manifest"
+    );
+    let file = root
+        .join(".taskflow/cache/objects")
+        .join(format!("{}.json", entry.object));
+    ensure!(
+        std::fs::metadata(&file)?.len() <= MAX_CACHE_BYTES as u64,
+        "cache object too large"
+    );
+    let bytes = std::fs::read(file)?;
+    ensure!(
+        files::digest(&bytes) == entry.object,
+        "cache object digest mismatch"
+    );
+    Ok(Some(
+        serde_json::from_slice(&bytes).context("invalid cache object")?,
+    ))
+}
+pub fn valid_hash(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+}
