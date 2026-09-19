@@ -386,7 +386,11 @@ threshold, including repeat rounds; private index cleanup failures are surfaced.
 Cancellation handlers are installed before owned child work. Native cancellation
 fixtures synchronize on actual child readiness rather than assuming startup time.
 
-Offline checks never pass a report with no target execution. The schema parser
+Offline checks never pass a report with no target execution.
+Clean/repeat verdicts combine policy and comparison results with failed taking
+precedence over inconclusive, which takes precedence over passed; incomplete
+baseline evidence cannot erase a definite policy violation.
+The schema parser
 requires the full derived change map, consistent knowledge/scope flags, valid
 executable digests, and a 1 MiB aggregate non-evidence string envelope on both read
 and save. Git working-tree inclusion diffs against the initially selected commit,

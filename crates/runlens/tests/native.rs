@@ -375,6 +375,65 @@ fn clean_baselines_require_matching_source_selection() {
     assert!(!root.path().join("out").exists());
 }
 #[test]
+fn clean_policy_failures_survive_inconclusive_baselines() {
+    let root = repository("read");
+    assert!(
+        invoke(
+            root.path(),
+            &["verify", "clean", "build", "--save", "baseline.json"]
+        )
+        .status
+        .success()
+    );
+    let baseline = parse(root.path(), "baseline.json");
+    let mut incompatible = baseline.clone();
+    incompatible["executions"][0]["environment"]["architecture"] = "different-architecture".into();
+    let mut incomplete = baseline;
+    incomplete["executions"][0]["outcome"]["collection_complete"] = false.into();
+    incomplete["verification"] = "inconclusive".into();
+    let config_path = root.path().join("runlens.toml");
+    let config = fs::read_to_string(&config_path).unwrap();
+    fs::write(
+        &config_path,
+        format!("{config}\n[policy]\ndeny_reads = [\"input.txt\"]\n"),
+    )
+    .unwrap();
+    for (index, baseline) in [incompatible, incomplete].into_iter().enumerate() {
+        let baseline_name = format!("baseline-{index}.json");
+        fs::write(
+            root.path().join(&baseline_name),
+            serde_json::to_vec(&baseline).unwrap(),
+        )
+        .unwrap();
+        let result_name = format!("result-{index}.json");
+        let output = invoke(
+            root.path(),
+            &[
+                "verify",
+                "clean",
+                "build",
+                "--baseline",
+                &baseline_name,
+                "--save",
+                &result_name,
+            ],
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(5),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let result = runlens::report::read(&root.path().join(result_name)).unwrap();
+        assert_eq!(result.verification, Some(runlens::model::Verdict::Failed));
+        assert!(result.findings.iter().any(|entry| {
+            let (_, finding) = entry.unwrap();
+            finding.code == runlens::model::FindingCode::ReadBoundary
+                && finding.classification == runlens::model::Classification::Violation
+        }));
+    }
+}
+#[test]
 fn cache_policy_and_overflow_fail_closed() {
     let root = repository("read-write");
     let recorded = run(root.path(), "report.json", "read-write");

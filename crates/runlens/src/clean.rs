@@ -680,9 +680,7 @@ async fn verify_in(
         if runs > 1 {
             let comparison = analysis::repeated_outputs(&report, &command.outputs)?;
             merge_findings(&mut report, &comparison)?;
-            if comparison.verdict != Some(Verdict::Passed) {
-                report.verification = comparison.verdict;
-            }
+            report.verification = merge_verdict(report.verification, comparison.verdict);
         } else if let Some(baseline) = baseline {
             let comparison = analysis::compare(baseline, &report, &[])?;
             // Baseline findings can refer to the explicitly supplied baseline;
@@ -695,11 +693,16 @@ async fn verify_in(
                 }
             }
             merge_findings(&mut report, &comparison)?;
-            if comparison.verdict != Some(Verdict::Passed) {
-                report.verification = Some(Verdict::Inconclusive);
+            let verdict = if comparison.verdict == Some(Verdict::Failed) {
+                Verdict::Failed
+            } else if comparison.verdict != Some(Verdict::Passed) {
+                Verdict::Inconclusive
             } else if !comparison.differences.is_empty() || !comparison.findings.is_empty() {
-                report.verification = Some(Verdict::Failed);
-            }
+                Verdict::Failed
+            } else {
+                Verdict::Passed
+            };
+            report.verification = merge_verdict(report.verification, Some(verdict));
         } else {
             report.limitations.push(
                 "No baseline was supplied; successful clean execution does not establish \
@@ -711,6 +714,16 @@ async fn verify_in(
         report.verification = Some(Verdict::Inconclusive);
     }
     Ok(report)
+}
+fn merge_verdict(left: Option<Verdict>, right: Option<Verdict>) -> Option<Verdict> {
+    match (left, right) {
+        (Some(Verdict::Failed), _) | (_, Some(Verdict::Failed)) => Some(Verdict::Failed),
+        (Some(Verdict::Inconclusive), _) | (_, Some(Verdict::Inconclusive)) => {
+            Some(Verdict::Inconclusive)
+        }
+        (Some(Verdict::Passed), _) | (_, Some(Verdict::Passed)) => Some(Verdict::Passed),
+        (None, None) => None,
+    }
 }
 fn merge_findings(report: &mut Report, analysis: &analysis::Analysis) -> Result<()> {
     for item in analysis.findings.iter() {

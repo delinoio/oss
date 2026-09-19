@@ -17,6 +17,7 @@ Configure preparation steps explicitly. Every step must succeed before the targe
 Without a baseline, success means clean execution and applicable configured checks passed. It does **not** establish equivalence to your current worktree.
 
 A baseline must use the same source revision and working-tree inclusion policy as the clean run. Different source selections make the comparison inconclusive, even when observed file contents match.
+If the current run violates a policy, verification remains failed (exit 5) even when its baseline comparison is inconclusive. Without a definite failure, inconclusive evidence returns exit 4.
 
 ## Repeated outputs
 
