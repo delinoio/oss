@@ -19,6 +19,7 @@ type PowerController interface {
 }
 
 type PowerManager struct {
+	command func() (string, []string)
 	mu      sync.Mutex
 	cmd     *exec.Cmd
 	input   io.WriteCloser
@@ -39,6 +40,7 @@ func (p *PowerManager) Set(active bool) *Problem {
 	if !active {
 		p.release()
 		p.failure = nil
+		p.retry = time.Time{}
 		return nil
 	}
 	if p.cmd != nil {
@@ -58,7 +60,11 @@ func (p *PowerManager) Set(active bool) *Problem {
 	if time.Now().Before(p.retry) {
 		return p.failure
 	}
-	name, args := powerCommand()
+	command := p.command
+	if command == nil {
+		command = powerCommand
+	}
+	name, args := command()
 	cmd := exec.Command(name, args...)
 	cmd.Env = minimalEnv()
 	cmd.Stdout = io.Discard

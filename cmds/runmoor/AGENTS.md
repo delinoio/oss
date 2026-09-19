@@ -18,6 +18,7 @@
 - Status/doctor must expose capacity waits and image recovery. Force-stop immediately cancels preparation, and reload must not undo a concurrent stop or accept a concurrently removed image.
 - Forced preparation cancellation neither increments nor resets image preparation failure counters and must not suspend the pool.
 - Preparation workers recheck the durable unforced Preparing state immediately before backend preparation, after journaling the JIT registration result. Preserve returned registration IDs and concurrent lifecycle transitions even when context cancellation has not arrived; skipped preparation must not change failure counters. Check cancellation before remote/backend side effects.
+- Becoming idle clears the sleep-inhibitor failure and retry deadline together. New runner/image activity must attempt acquisition again; backoff during uninterrupted activity must keep reporting its failure.
 - Pending image removal retains sleep inhibition until cleanup is durably complete.
 - Temporary Tart exports are owned by the image UUID journaled before export. Clean them after import, during restart reconciliation, and before image removal; persist cleanup failures and never sweep unjournaled archives or follow unexpected symlinks.
 - Quarantined executions retain sleep inhibition while their termination remains unconfirmed.
