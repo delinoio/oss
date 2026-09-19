@@ -66,7 +66,7 @@ def licenses():
             candidates.append(directory / package['license_file'])
         texts = [file.read_text(errors='replace') for file in candidates if file.is_file()]
         sections.append(f"{package['name']} {package['version']} ({package.get('license') or 'see notices'})\n" + '\n'.join(texts))
-    for name in ['UPSTREAM-LICENSE', 'vendor/fspy_detours_sys/Detours/LICENSE.md']:
+    for name in ['UPSTREAM-LICENSE', 'vendor/fspy_detours_sys/detours/LICENSE.md']:
         file = SOURCE / name
         if file.exists():
             sections.append(file.read_text())
@@ -133,6 +133,8 @@ def inventory(directory, release_version):
             with zipfile.ZipFile(file) as archive:
                 if sorted(archive.namelist()) != ['LICENSES.txt', binary]:
                     raise ValueError('invalid ZIP inventory')
+                if any(entry.is_dir() or (entry.external_attr >> 16) & 0o170000 == 0o120000 for entry in archive.infolist()):
+                    raise ValueError('ZIP entries must be regular files')
         else:
             with tarfile.open(file, 'r:gz') as archive:
                 entries = archive.getmembers()

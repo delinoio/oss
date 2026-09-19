@@ -383,6 +383,95 @@ fn protected_program_is_rejected_before_side_effects() {
     assert_eq!(result.status.code(), Some(3));
     assert!(!root.path().join("forbidden").exists());
 }
+#[cfg(target_os = "macos")]
+#[test]
+fn unsupported_child_continues_and_preserves_incomplete_evidence() {
+    let root = tempfile::tempdir().unwrap();
+    let output = run(root.path(), "partial.json", "protected-child");
+    assert_eq!(
+        output.status.code(),
+        Some(4),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(root.path().join("protected-child-result")).unwrap(),
+        "original"
+    );
+    let value = parse(root.path(), "partial.json");
+    assert_eq!(value["executions"][0]["outcome"]["child_exit_code"], 0);
+    assert_eq!(
+        value["executions"][0]["outcome"]["collection_complete"],
+        false
+    );
+    assert!(
+        value["executions"][0]["accesses"]
+            .as_object()
+            .unwrap()
+            .values()
+            .any(|access| access["unsupported"] == true)
+    );
+}
+
+#[test]
+fn unicode_argv_and_directory_conflicts_keep_concrete_evidence() {
+    let root = tempfile::Builder::new()
+        .prefix("runlens space 한국어-")
+        .tempdir()
+        .unwrap();
+    let output = invoke(
+        root.path(),
+        &[
+            "run",
+            "--save",
+            "writer.json",
+            "--",
+            fixture(),
+            "read-write",
+            "argument with spaces and 日本語",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(root.path().join("out/result.txt")).unwrap(),
+        "argument with spaces and 日本語"
+    );
+    assert!(run(root.path(), "reader.json", "list").status.success());
+    let output = invoke(
+        root.path(),
+        &[
+            "conflicts",
+            "--report",
+            "writer.json",
+            "--report",
+            "reader.json",
+            "--json",
+        ],
+    );
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        value["findings"]
+            .as_object()
+            .unwrap()
+            .values()
+            .any(|finding| finding["code"] == "potential-read-write-conflict"
+                && finding["evidence"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|reference| reference["source"] != "outcome")
+                && finding["evidence"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|reference| reference["path"] == "${workspace}/out"))
+    );
+}
 #[cfg(unix)]
 #[test]
 fn cancellation_is_reaped_and_saved_as_incomplete() {

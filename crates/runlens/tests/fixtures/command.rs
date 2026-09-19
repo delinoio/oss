@@ -20,6 +20,17 @@ fn main() {
         "read" => {
             let _ = fs::read(args.get(1).map(String::as_str).unwrap_or("input.txt"));
         }
+        "list" => {
+            let _ = fs::read_dir("out");
+        }
+        #[cfg(target_os = "macos")]
+        "protected-child" => {
+            let status = Command::new("/bin/sh")
+                .args(["-c", "printf original > protected-child-result"])
+                .status()
+                .unwrap();
+            std::process::exit(status.code().unwrap_or(1));
+        }
         "child" => {
             let status = Command::new(std::env::current_exe().unwrap())
                 .arg("read-write")

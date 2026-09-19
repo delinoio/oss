@@ -391,3 +391,52 @@ executable digests, and a 1 MiB aggregate non-evidence string envelope on both r
 and save. Git working-tree inclusion diffs against the initially selected commit,
 and copies check cancellation between entries. Windows Git source locators omit
 verbatim filesystem prefixes while native filesystem operations retain them.
+
+Conflict findings identify concrete write/access/snapshot evidence, including
+ancestor directory reads, while retaining candidate status. Inconclusive
+comparisons return exit 4. Uploaded release assets must match both size and
+GitHub's SHA-256 digest before a new draft can become public. Vendoring imports
+require an explicit empty review destination and cannot overwrite product source.
+
+## Issue acceptance scenario coverage
+
+The numbered scenarios below preserve issue #907's acceptance order. Tests live
+in the independent workspace unless otherwise stated; native tests use real
+injection and child execution rather than mocked access collections.
+
+| # | Scenario | Executable verification |
+| --- | --- | --- |
+| 1 | Direct/configured argv, spaces, Unicode, failure, stdin | Native receipt, Unicode argv, finite stdin and failed-command tests |
+| 2 | Native platform/architecture, static Linux, protected targets | Six native CI jobs; static C fixture; macOS protected/hardened image tests; minimum-OS release gate |
+| 3 | File/type/permission/link/directory/ignored/excluded changes | Core snapshot regression and native receipt/directory conflict tests |
+| 4 | Attempts versus changes; unreadable/unstable/unknown | Snapshot knowledge tests, native missing reads and partial collection tests |
+| 5 | Cache declarations, boundaries, baseline | Native cache/policy fixture plus conservative coverage and comparison checks |
+| 6 | Multi-report producers/consumers/conflicts | Native offline queries and concrete directory-conflict evidence |
+| 7 | Clean HEAD/included edits, preparation, original preservation | Native clean/repeat test and ordered failed-preparation test |
+| 8 | Fresh repeat environments and output contents/sets/modes | Native environment canary and three output-difference fixtures |
+| 9 | Environment and mapped comparison limits | Passive executable identity, mapping collision checks and incompatible evidence outcomes |
+| 10 | Unsupported, collection overflow, timeout, cancel, descendants | Native protected child continuation, bounded overflow, timeout, cancellation, nested/lingering children |
+| 11 | No implicit retention, atomic collisions | Native no-report/collision test and private index cleanup regression |
+| 12 | Arguments, environment, contents, stdout canaries | Core argv redaction and native receipt/stdin/environment fixtures |
+| 13 | Hostile/large reports, escaping and output separation | Native hostile envelope/forged changes/HTML/JSON tests, schema drift test |
+| 14 | Release inventory, checksums, signatures, install/rollback | Python release fixtures, native installer authentication doubles, actual signed-install gate before publication |
+| 15 | Public docs, accessibility, fixed ports | Both changed docs apps' pnpm test, route validator regressions, occupied fixed-port checks |
+| 16 | Repeatable scans/overhead/spill/limits | Deterministic benchmark driver plus bounded-map and native overflow regressions |
+
+This table maps implementation evidence, not blanket certification. Minimum OS
+validation and authentic signed installer runs remain mandatory release conditions.
+No real release, Homebrew publication, or docs deployment occurs in this task.
+
+## Reproducing local benchmark evidence
+
+Build the native fixture and CLI with `cargo build --features test-support` from
+`crates/runlens`. From the repository root, invoke
+`python3 crates/runlens/scripts/benchmark.py --runlens crates/runlens/target/debug/runlens --fixture crates/runlens/target/debug/runlens-test-command --sizes 1000,10000 --samples 5`.
+Use `.exe` suffixes on Windows. Run measurements sequentially on an otherwise idle
+host. Repeat with `--memory-bytes 65536` for spill pressure and with
+`--total-bytes 8192 --expect-incomplete` for a deliberately exhausted collection.
+The JSON includes tool digest, native host, deterministic bytes/counts, every
+wall-clock sample, and exit codes. These debug-build warm-cache measurements are
+procedural evidence, not a performance SLA or release benchmark. Use OS resource
+tools for peak RSS and disk accounting; metadata limits do not bound the child
+process's memory or output files.

@@ -3,6 +3,7 @@
 Maintainers run this only into an empty vendor directory; never overwrite local
 correctness patches. Sources are obtained via the authenticated GitHub CLI.
 """
+import argparse
 import hashlib
 import json
 import pathlib
@@ -14,9 +15,12 @@ import tomllib
 
 REVISION = '13aa80a0dac698023ce68ba16497b16e5330600b'
 DETOURS_REVISION = '9764cebcb1a75940e68fa83d6730ffaf0f669401'
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-if (ROOT / 'vendor').exists():
-    raise SystemExit('Refusing to overwrite vendored patches')
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--destination', required=True, type=pathlib.Path, help='New empty review directory; never the product checkout')
+ROOT = parser.parse_args().destination.resolve()
+if ROOT.exists() and any(ROOT.iterdir()):
+    raise SystemExit('Refusing to overwrite existing source or vendored patches')
+ROOT.mkdir(parents=True, exist_ok=True)
 with tempfile.TemporaryDirectory(prefix='runlens-upstream-') as directory:
     stage = pathlib.Path(directory)
     archive = stage / 'source.tar.gz'

@@ -195,6 +195,7 @@ jobs:
         with:
           script: |
             const fs = require('node:fs');
+            const crypto = require('node:crypto');
             const tag = process.env.RELEASE_TAG;
             try { await github.rest.repos.getReleaseByTag({...context.repo, tag}); throw Error('Release already exists'); }
             catch (error) { if (error.status !== 404) throw error; }
@@ -203,7 +204,7 @@ jobs:
             const {data: release} = await github.rest.repos.createRelease({...context.repo, tag_name: tag, draft: true, generate_release_notes: true});
             for (const name of files) await github.rest.repos.uploadReleaseAsset({...context.repo, release_id: release.id, name, data: fs.readFileSync(`runlens-artifacts/${name}`)});
             const {data: assets} = await github.rest.repos.listReleaseAssets({...context.repo, release_id: release.id});
-            if (assets.length !== 14 || assets.some(asset => asset.size !== fs.statSync(`runlens-artifacts/${asset.name}`).size)) throw Error('Incomplete uploaded assets; draft retained for inspection');
+            if (assets.length !== 14 || assets.some(asset => !files.includes(asset.name) || asset.size !== fs.statSync(`runlens-artifacts/${asset.name}`).size || asset.digest !== `sha256:${crypto.createHash('sha256').update(fs.readFileSync(`runlens-artifacts/${asset.name}`)).digest('hex')}`)) throw Error('Incomplete or mismatched uploaded assets; draft retained for inspection');
             await github.rest.repos.updateRelease({...context.repo, release_id: release.id, draft: false});
       - name: Update the prebuilt Homebrew formula
         env:

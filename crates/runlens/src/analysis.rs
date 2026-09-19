@@ -747,9 +747,24 @@ pub fn conflicts(reports: &[Report]) -> Result<Analysis> {
                             || b.changes
                                 .get(&path)?
                                 .is_some_and(|c| c != ChangeKind::Unknown);
-                        let ar = aa.as_ref().is_some_and(|a| a.read || a.read_directory);
-                        let br = ba.as_ref().is_some_and(|a| a.read || a.read_directory);
+                        let a_read = read_reference(a, &path)?;
+                        let b_read = read_reference(b, &path)?;
+                        let ar = a_read.is_some();
+                        let br = b_read.is_some();
                         if aw && bw || aw && br || bw && ar {
+                            let references = if aw && bw {
+                                vec![write_reference(a, &path)?, write_reference(b, &path)?]
+                            } else if aw {
+                                vec![
+                                    write_reference(a, &path)?,
+                                    b_read.expect("read relationship checked"),
+                                ]
+                            } else {
+                                vec![
+                                    a_read.expect("read relationship checked"),
+                                    write_reference(b, &path)?,
+                                ]
+                            };
                             result.finding(
                                 if aw && bw {
                                     FindingCode::PotentialWriteConflict
@@ -757,10 +772,7 @@ pub fn conflicts(reports: &[Report]) -> Result<Analysis> {
                                     FindingCode::PotentialReadWriteConflict
                                 },
                                 Classification::Candidate,
-                                vec![
-                                    evidence(a, None, EvidenceSource::Outcome),
-                                    evidence(b, None, EvidenceSource::Outcome),
-                                ],
+                                references,
                             )?;
                             result.usages.insert(
                                 format!("{}:{path}", a.id),
@@ -791,6 +803,41 @@ pub fn conflicts(reports: &[Report]) -> Result<Analysis> {
         }
     }
     Ok(result)
+}
+fn read_reference(execution: &Execution, path: &str) -> Result<Option<Evidence>> {
+    let mut current = Some(path);
+    while let Some(candidate) = current {
+        if execution
+            .accesses
+            .get(candidate)?
+            .is_some_and(|access| access.read_directory || candidate == path && access.read)
+        {
+            return Ok(Some(evidence(
+                execution,
+                Some(candidate),
+                EvidenceSource::Access,
+            )));
+        }
+        current = candidate
+            .rsplit_once('/')
+            .map(|(parent, _)| parent)
+            .filter(|parent| !parent.is_empty());
+    }
+    Ok(None)
+}
+fn write_reference(execution: &Execution, path: &str) -> Result<Evidence> {
+    let source = if execution
+        .accesses
+        .get(path)?
+        .is_some_and(|access| access.write)
+    {
+        EvidenceSource::Access
+    } else if execution.after.get(path)?.is_some() {
+        EvidenceSource::After
+    } else {
+        EvidenceSource::Before
+    };
+    Ok(evidence(execution, Some(path), source))
 }
 pub fn repeated_outputs(report: &Report, outputs: &[String]) -> Result<Analysis> {
     if outputs.is_empty() {
