@@ -22,6 +22,8 @@ Dependencies share a run workspace. Failed prerequisites block dependents. Group
 
 Gate identity is repository, exact commit and configuration/execution fingerprint, including OS, architecture, shell and public declared inputs. The highest accepted sequence wins, including incomplete and pruned attempts. Optional failures are visible but do not fail the required gate. No applicable checks is incomplete. Exit status and required report evidence must agree; missing/malformed reports never pass. Failed reruns select failed/blocked checks plus prerequisite closure and explicitly reference inherited successful evidence.
 
+Declared report output paths have a single owner across the graph (case-insensitively for portability). Before each check starts, its previous report files are removed with root-confined operations; committed or prerequisite-generated files cannot satisfy that check's required evidence. Unsafe output cleanup fails the check before command execution. Commands sharing a workspace must respect each other's declared output ownership; the workspace is not a sandbox against deliberately interfering commands.
+
 Pre-push parses every actual branch-update object ID from stdin, ignores tags/deletions, and applies block (default), wait or run-and-wait. Hook/agent installation preserves unrelated data, records ownership, backs up edits and refuses conflicts.
 
 `run-and-wait` submits a fresh attempt when the latest compatible result is terminal but nonpassing, including expired or missing evidence. It waits for an existing unfinished attempt without duplicating it; `wait` never submits work.

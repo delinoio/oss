@@ -240,6 +240,38 @@ func (s *Service) SaveEvidence(run, name string, b []byte) (Evidence, error) {
 	}
 	return Evidence{ID: id, Name: name, SHA256: Hash(b), Size: int64(len(b))}, nil
 }
+
+// Declared report paths are outputs owned by one check, never committed or
+// prerequisite evidence. Remove old files before the command can create them.
+func clearReportOutputs(workspace string, reports []Report) error {
+	if len(reports) == 0 {
+		return nil
+	}
+	root, err := os.OpenRoot(workspace)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	for _, report := range reports {
+		if !SafeRelative(report.Path) {
+			return E("unsafe-path", "invalid report output", 2)
+		}
+		info, err := root.Lstat(report.Path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
+			return E("unsafe-file", "report output is not a file", 2)
+		}
+		if err = root.Remove(report.Path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 func (s *Service) ValidateEvidence(run string, c Check) error {
 	if c.InheritedFrom != "" {
 		run = c.InheritedFrom

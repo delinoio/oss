@@ -136,6 +136,7 @@ func (p *Project) Validate() error {
 	if p.PrePush != PushBlock && p.PrePush != PushWait && p.PrePush != PushRun {
 		return E("invalid-config", "pre_push must be block, wait, or run-and-wait", 2)
 	}
+	reportOwners := map[string]string{}
 	for name, c := range p.Checks {
 		if !checkName.MatchString(name) || strings.TrimSpace(c.Command) == "" || strings.ContainsRune(c.Command, 0) {
 			return E("invalid-check", "invalid name or empty/NUL command: "+name, 2)
@@ -178,6 +179,11 @@ func (p *Project) Validate() error {
 			if (r.Kind != JUnit && r.Kind != GoTest) || !SafeRelative(r.Path) || seen[r.Path] {
 				return E("invalid-report", name+": reports require unique workspace-relative file paths and supported kinds", 2)
 			}
+			key := strings.ToLower(r.Path)
+			if owner, exists := reportOwners[key]; exists {
+				return E("invalid-report", name+": report output is already owned by check "+owner, 2)
+			}
+			reportOwners[key] = name
 			seen[r.Path] = true
 		}
 		p.Checks[name] = c

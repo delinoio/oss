@@ -83,6 +83,10 @@ func (s *Service) execute(ctx context.Context, r Run, c Check, workspace string)
 		_ = s.finishCheck(c, Failed, "environment-unavailable", err.Error())
 		return
 	}
+	if err = clearReportOutputs(workspace, command.Reports); err != nil {
+		_ = s.finishCheck(c, Failed, "report-preparation-failed", "declared report outputs could not be cleared safely")
+		return
+	}
 	c.Log = Evidence{ID: ID(), Name: "combined.log"}
 	logPath, _ := s.Store.EvidencePath(r.ID, c.Log.ID)
 	if err = PrivateDir(filepath.Dir(logPath)); err != nil {

@@ -136,7 +136,9 @@ required = true</pre
           <code>powershell</code> and <code>pwsh</code>; defaults are sh on
           macOS/Linux and PowerShell on Windows. OS values are darwin, linux and
           windows. Each report has kind <code>junit</code> or
-          <code>go-test-json</code> and a unique workspace-relative file path.
+          <code>go-test-json</code> and a workspace-relative output path owned by
+          exactly one check (case-insensitively). Previous files at that path are
+          removed before the check starts, so its command must create fresh reports.
           Shells and tools must be installed by the user.
         </p>
         <p>

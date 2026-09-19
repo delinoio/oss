@@ -7,6 +7,7 @@
 - Persist the receipt before starting any worker. Queue order uses accepted sequence; cancellation/replacement cannot release a group before owned processes are reconciled by birth identity or a Windows Job Object.
 - Report and log reads use owned artifact IDs and bounded, root-confined reads. Keep known-secret redaction before persistence, including streamed chunk boundaries and structured failures.
 - Evidence text responses must be valid UTF-8 while pagination and integrity continue to use the original stored bytes.
+- Each declared report path has one check owner across the graph. Clear its previous file through the owned workspace root before starting that check; stale committed or prerequisite reports must never satisfy validation.
 - Pruning is idempotent for expired records; resume incomplete owned-file cleanup without growing tombstone diagnostics.
 - Use synchronization barriers, not elapsed-time assertions, to prove asynchronous behavior in integration tests. Run `go test -race ./cmds/async-commit-hook/...` for lifecycle changes, and the root Go suite after generating administrator assets.
 - Agent integration tests use isolated settings and preserve unrelated entries and comments. Keep the object-form MCP output schema compatible with supported clients.
