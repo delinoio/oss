@@ -3940,3 +3940,79 @@ fn check_rejects_absolute_input_patterns_on_every_host() {
     let task: config::Task = serde_json::from_value(json!({"command":["unused"],"input":["../sibling/**","!../sibling/generated/**","./source"]})).unwrap();
     task.validate().unwrap();
 }
+
+#[tokio::test]
+async fn libtest_rejects_custom_harnesses_only_for_selected_targets() {
+    let tasks: serde_json::Map<String, Value> = [
+        ("library", vec!["--lib"]),
+        ("normal", vec!["--test", "normal"]),
+        ("custom", vec!["--test", "custom"]),
+    ]
+    .into_iter()
+    .map(|(name, selector)| {
+        let args: Vec<_> = ["cargo", "test", "--offline", "-p", "selected-app"]
+            .into_iter()
+            .chain(selector)
+            .collect();
+        (
+            name.into(),
+            json!({"command":args,"input":[],"output":[],"shard":{"adapter":"libtest","count":2}}),
+        )
+    })
+    .collect();
+    let root = fixture(json!(tasks));
+    files::atomic_write(
+        &root.path().join("Cargo.toml"),
+        b"[workspace]\nmembers=['app','other']\nresolver='2'\n",
+    )
+    .unwrap();
+    files::atomic_write(&root.path().join("app/Cargo.toml"), b"[package]\nname='selected-app'\nversion='0.1.0'\nedition='2021'\n[[test]]\nname='custom'\n'harness' = false # only this target uses a custom runner\n").unwrap();
+    files::atomic_write(
+        &root.path().join("other/Cargo.toml"),
+        b"[package]\nname='other'\nversion='0.1.0'\nedition='2021'\n[lib]\nharness=false\n",
+    )
+    .unwrap();
+    files::atomic_write(
+        &root.path().join("app/src/lib.rs"),
+        b"#[test] fn library() {}\n",
+    )
+    .unwrap();
+    files::atomic_write(&root.path().join("other/src/lib.rs"), b"fn main() {}\n").unwrap();
+    files::atomic_write(
+        &root.path().join("app/tests/normal.rs"),
+        b"#[test] fn normal() {}\n",
+    )
+    .unwrap();
+    files::atomic_write(
+        &root.path().join("app/tests/custom.rs"),
+        b"fn main() { std::fs::write(\"custom-started\", b\"unexpected\").unwrap(); }\n",
+    )
+    .unwrap();
+    taskflow::discover::output_tool(
+        root.path(),
+        &["cargo", "generate-lockfile", "--offline"],
+        &[],
+    )
+    .await
+    .unwrap();
+    let g = graph(root.path()).await;
+    for task in ["library", "normal"] {
+        let result = run(g.clone(), &[task]).await;
+        assert!(result.success, "{result:?}");
+        let receipt = &result.results[&format!("app#{task}")];
+        let (inventory, reports) =
+            shard::read_reports(&root.path().join(".taskflow/runs").join(&receipt.execution))
+                .unwrap();
+        assert_eq!(inventory.tests.len(), 1);
+        assert!(shard::aggregate(&inventory, 2, &reports).unwrap());
+    }
+    let result = run(g, &["custom"]).await;
+    assert!(!result.success);
+    assert!(result.results["app#custom"]
+        .diagnostic
+        .as_ref()
+        .unwrap()
+        .contains("custom Rust harness"));
+    assert!(!root.path().join("custom-started").exists());
+    assert!(!root.path().join("app/custom-started").exists());
+}

@@ -183,3 +183,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `check_rejects_absolute_input_patterns_on_every_host` rejects absolute inputs even inside the checkout, along with Windows drive/UNC/rooted forms and negative variants. Project-relative sibling inputs remain supported.
 
 The distributed artifact fixture also corrupts terminal-unit file digests, paths, and matching receipt/artifact digest claims. Final aggregation must reject each unusable bundle without relying on downstream restoration.
+
+`libtest_rejects_custom_harnesses_only_for_selected_targets` selects standard library and integration tests beside unselected custom harnesses in both the same and another package. A selected custom harness with a quoted TOML key is rejected before invocation. Harness scope follows [Cargo target declarations](https://doc.rust-lang.org/cargo/reference/cargo-targets.html#the-harness-field).

@@ -390,30 +390,6 @@ pub async fn inventory(
             )
             .await?;
             let metadata: Value = serde_json::from_slice(&metadata)?;
-            for package in metadata["packages"].as_array().into_iter().flatten() {
-                if let Some(path) = package["manifest_path"].as_str() {
-                    let path = if task.platform.executor == crate::config::Executor::Docker {
-                        graph.workspace.root.join(
-                            path.strip_prefix("/workspace/")
-                                .context("Cargo test manifest outside container workspace")?,
-                        )
-                    } else {
-                        path.into()
-                    };
-                    let manifest = std::fs::read_to_string(path)?;
-                    ensure!(
-                        !manifest.lines().any(|line| line
-                            .split('#')
-                            .next()
-                            .unwrap_or("")
-                            .chars()
-                            .filter(|c| !c.is_whitespace())
-                            .collect::<String>()
-                            == "harness=false"),
-                        "custom Rust harness requires generic sharding"
-                    );
-                }
-            }
             build.extend(["--no-run".into(), "--message-format=json".into()]);
             let bytes = process::capture_task(
                 &graph.workspace.root,
@@ -453,6 +429,47 @@ pub async fn inventory(
                     .pointer("/target/kind")
                     .and_then(Value::as_array)
                     .context("test target kind missing")?;
+                let manifest_path = package["manifest_path"]
+                    .as_str()
+                    .context("Cargo manifest path missing")?;
+                let manifest_path = if task.platform.executor == crate::config::Executor::Docker {
+                    graph.workspace.root.join(
+                        manifest_path
+                            .strip_prefix("/workspace/")
+                            .context("Cargo test manifest outside container workspace")?,
+                    )
+                } else {
+                    manifest_path.into()
+                };
+                let manifest: toml::Value =
+                    toml::from_str(&std::fs::read_to_string(manifest_path)?)?;
+                // Cargo has already selected packages, features and targets.
+                // Check only this executable's target before invoking --list;
+                // unrelated harness declarations must not reject the suite.
+                let section = kinds
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .find(|kind| matches!(*kind, "bin" | "test" | "example" | "bench"))
+                    .unwrap_or("lib");
+                let declaration = if section == "lib" {
+                    manifest.get("lib")
+                } else {
+                    manifest
+                        .get(section)
+                        .and_then(toml::Value::as_array)
+                        .and_then(|targets| {
+                            targets.iter().find(|entry| {
+                                entry.get("name").and_then(toml::Value::as_str) == Some(target)
+                            })
+                        })
+                };
+                ensure!(
+                    declaration
+                        .and_then(|entry| entry.get("harness"))
+                        .and_then(toml::Value::as_bool)
+                        != Some(false),
+                    "custom Rust harness requires generic sharding: {package_name}:{target}"
+                );
                 has_library |= kinds
                     .iter()
                     .any(|v| matches!(v.as_str(), Some("lib" | "rlib")));
