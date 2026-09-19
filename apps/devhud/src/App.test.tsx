@@ -388,12 +388,75 @@ describe("native App state", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
     fireEvent.click(within(await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).getByRole("button", { name: messages.en.applyApiOrigin }));
 
-    await waitFor(() => expect(within(document.querySelector(".api-origin-editor") as HTMLElement).getByRole("alert").textContent).toBe(messages.en.apiChangeFailed));
+    await waitFor(() => expect(within(document.querySelector(".api-origin-editor") as HTMLElement).getByRole("alert").textContent).toBe(messages.en.apiChangePolicyFailed));
     expect(screen.queryByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBeNull();
     expect(JSON.parse(localStorage.getItem("devhud.shell.preferences.v1") ?? "null").apiOrigin).toBe("https://devhud.api.delino.io");
     expect(screen.queryByText(messages.en.externalFailed)).toBeNull();
     await waitFor(() => expect(identityClient.createIdentitySession).toHaveBeenCalledTimes(2));
     expect(screen.getByRole("button", { name: messages.en.signIn })).toBeTruthy();
+  });
+
+  it("quarantines callbacks received while changing the API origin policy", async () => {
+    const listeners: Array<(event: NativeBridgeEventV1) => void> = [];
+    const handleCallback = vi.fn(async () => {});
+    const session = {
+      getAccessToken: async () => "fixture-access-token",
+      isAuthenticated: async () => false,
+      signIn: async () => {},
+      handleCallback,
+      clear: async () => {},
+    } as unknown as IdentitySession;
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue(session);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      projectId: "PROJECT_ID_DEVHUD",
+      protocolSchemaVersion: 2,
+      apiVersion: "0.1.0-dev",
+      logtoIssuer: "https://identity.example/oidc",
+      logtoAudience: "https://api.example/api",
+      publicAssetBaseUrl: "https://images.example/devhud",
+      logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
+      logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
+    }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
+    let pendingCallback: string | null = null;
+    let completePolicy: (() => void) | undefined;
+    let switchPolicyPending = true;
+    const bridge: NativeBridgeV1 = {
+      async request(value) {
+        if (value.operation === "session.configure-origins") {
+          if (value.apiOrigin === "https://custom.example" && switchPolicyPending) {
+            switchPolicyPending = false;
+            return new Promise((resolve) => { completePolicy = () => resolve({ kind: "session-network-policy", changed: false }); });
+          }
+          return { kind: "session-network-policy", changed: false };
+        }
+        if (value.operation === "auth.take-pending-callback") {
+          const url = pendingCallback;
+          pendingCallback = null;
+          return { kind: "auth-callback", url };
+        }
+        if (value.operation === "secure.purge") return { kind: "ok" };
+        throw new Error(`unexpected operation ${value.operation}`);
+      },
+      async listen(listener) { listeners.push(listener); return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={mobileRuntime} />);
+    await waitFor(() => expect(identityClient.createIdentitySession).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(listeners).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).getByRole("button", { name: messages.en.applyApiOrigin }));
+    await waitFor(() => expect(completePolicy).toBeTypeOf("function"));
+
+    pendingCallback = "devhud://auth/callback?code=old&state=old";
+    act(() => listeners[0]({ version: 1, kind: "auth-callback", url: pendingCallback as string }));
+    await act(async () => { completePolicy?.(); });
+
+    await waitFor(() => expect(JSON.parse(localStorage.getItem("devhud.shell.preferences.v1") ?? "null").apiOrigin).toBe("https://custom.example"));
+    await waitFor(() => expect(identityClient.createIdentitySession).toHaveBeenCalledTimes(2));
+    expect(pendingCallback).toBeNull();
+    expect(handleCallback).not.toHaveBeenCalled();
   });
 
   it("loads the default content state once", async () => {

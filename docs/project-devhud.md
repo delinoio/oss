@@ -178,7 +178,7 @@ Chrome capture rechecks the configured origin's Chrome-valid scheme-and-host opt
 
 - Native widget result publication requires exact string `node_id`, string `title`, string `repository_url`, and integer `number` values for every search item; malformed fields retain the previous successful results under the general error state. Android widget enablement durably clears stale Deck state before returning `not-configured` for an absent selected PAT or API-origin scope marker, and it durably removes or blocks the copied widget credential when the authoritative PAT is unreadable; cleanup, secure-storage, and unrecovered widget-store initialization failures retain their distinct storage classification. The exported Android configuration activity exposes Deck names only after validating the configure action, provider-bound widget ID, expected configuration component, and a caller that is the resolved launcher or holds `BIND_APPWIDGET`.
 
-- If a new API-origin policy rejects after the previous identity is cleared, the renderer restarts the identity boundary against the unchanged origin before reporting the failed change, so stale authenticated state cannot remain available.
+- During an API-origin policy transition, native authentication callbacks remain quarantined and the pending callback is drained immediately before the service-boundary switch. If the new policy rejects after the previous identity is cleared, the renderer restarts the identity boundary against the unchanged origin and reports that cleanup succeeded but policy configuration failed, so stale authenticated state cannot remain available.
 
 ## Deck Workspace Responsive Layout
 
