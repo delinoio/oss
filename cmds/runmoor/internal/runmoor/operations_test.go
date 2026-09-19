@@ -610,6 +610,56 @@ func TestForceCancelledPreparationsDoNotChangeFailureCircuit(t *testing.T) {
 	}
 }
 
+type preparationCountingRemote struct {
+	*fakeRemote
+	jitCalls int
+}
+
+func (r *preparationCountingRemote) JIT(ctx context.Context, p PoolState, v Runner) (int, string, error) {
+	r.mu.Lock()
+	r.jitCalls++
+	r.mu.Unlock()
+	return r.fakeRemote.JIT(ctx, p, v)
+}
+
+func TestPreparationRechecksStateAfterSchedulingBeforeSideEffects(t *testing.T) {
+	for _, boundary := range []string{"before worker registration", "after worker registration", "already cleaning"} {
+		t.Run(boundary, func(t *testing.T) {
+			m, _, baseRemote, driver, pool := testManager(t)
+			remote := &preparationCountingRemote{fakeRemote: baseRemote}
+			m.RemoteFactory = func(Connection) (Remote, error) { return remote, nil }
+			id := seedRunner(t, m, pool, Preparing)
+			release := make(chan struct{})
+			start := func() { m.startWork(id, func(ctx context.Context) { <-release; m.prepare(ctx, id) }) }
+			if boundary == "after worker registration" {
+				start()
+			}
+			if boundary == "already cleaning" {
+				if err := m.Store.Update(func(s *Snapshot) error { s.Runners[id].Phase = Cleaning; return nil }); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := m.Stop(true); err != nil {
+				t.Fatal(err)
+			}
+			if boundary != "after worker registration" {
+				start()
+			}
+			close(release)
+			m.wg.Wait()
+			remote.mu.Lock()
+			calls := remote.jitCalls
+			remote.mu.Unlock()
+			driver.mu.Lock()
+			live := len(driver.live)
+			driver.mu.Unlock()
+			s := m.Store.View()
+			if calls != 0 || live != 0 || s.Runners[id].Phase != Cleaning || s.Pools[pool].PreparationFailures != 0 {
+				t.Fatal("stale scheduled preparation reached external side effects")
+			}
+		})
+	}
+}
+
 func TestConfigurationAcceptancePreservesConcurrentStop(t *testing.T) {
 	m, c, _, _, _ := testManager(t)
 	if err := m.Stop(false); err != nil {

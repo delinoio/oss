@@ -616,7 +616,10 @@ func applyMessage(s *Snapshot, poolID, session string, msg *scaleset.RunnerScale
 func (m *Manager) prepare(ctx context.Context, id string) {
 	s := m.Store.View()
 	r := s.Runners[id]
-	if r == nil {
+	// Scheduling records intent before registering the worker. A force-stop
+	// can commit in that gap, so a new worker must validate the durable phase
+	// even if its newly created context has never received cancellation.
+	if r == nil || r.Forced || r.Phase != Preparing || ctx.Err() != nil {
 		return
 	}
 	p := s.Pools[r.PoolID]
@@ -627,11 +630,17 @@ func (m *Manager) prepare(ctx context.Context, id string) {
 	remote, e := m.remote(*p)
 	var jit string
 	var gitID int
+	if e == nil && ctx.Err() != nil {
+		e = ctx.Err()
+	}
 	if e == nil {
 		gitID, jit, e = remote.JIT(ctx, *p, *r)
 	}
 	if e == nil {
 		e = m.Store.Update(func(s *Snapshot) error { s.Runners[id].GitHubID = gitID; return nil })
+	}
+	if e == nil && ctx.Err() != nil {
+		e = ctx.Err()
 	}
 	if e == nil {
 		driver, er := m.Drivers(r.Backend)
