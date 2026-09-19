@@ -4064,3 +4064,43 @@ async fn libtest_rejects_custom_harnesses_only_for_selected_targets() {
     assert!(!root.path().join("custom-started").exists());
     assert!(!root.path().join("app/custom-started").exists());
 }
+
+#[tokio::test]
+async fn pending_cancellation_uses_operator_exit_code() {
+    for before_start in [true, false] {
+        let directory = fixture(json!({
+            "a": {"command":command(&["sleep", "active.pid"]), "input":[]},
+            "b": {"command":command(&["write", "unexpected", "ran"]), "input":[]},
+            "c": {"command":command(&["version"]), "dependsOn":["a"], "input":[]}
+        }));
+        let g = graph(directory.path()).await;
+        let plan = Plan::create(&g, &["a".into(), "b".into(), "c".into()], &[], false).unwrap();
+        let cancel = CancellationToken::new();
+        if before_start {
+            cancel.cancel();
+        }
+        let stop = cancel.clone();
+        let execution = tokio::spawn(runner::run_plan(
+            g,
+            plan,
+            RunOptions {
+                jobs: 1,
+                quiet: true,
+                ..Default::default()
+            },
+            stop,
+        ));
+        if !before_start {
+            wait_lines(&directory.path().join("active.pid"), "", 1).await;
+            cancel.cancel();
+        }
+        let result = execution.await.unwrap().unwrap();
+        assert!(!result.success);
+        assert_eq!(result.results.len(), 3);
+        for receipt in result.results.values() {
+            assert_eq!(receipt.outcome, Outcome::Cancelled, "{receipt:?}");
+            assert_eq!(receipt.exit_code, 130);
+        }
+        assert!(!directory.path().join("unexpected").exists());
+    }
+}

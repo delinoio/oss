@@ -76,10 +76,10 @@ impl Receipt {
             output: String::new(),
             causes,
             duration_ms: 0,
-            exit_code: if matches!(outcome, Outcome::Suppressed | Outcome::Ready) {
-                0
-            } else {
-                1
+            exit_code: match outcome {
+                Outcome::Suppressed | Outcome::Ready => 0,
+                Outcome::Cancelled => 130,
+                _ => 1,
             },
             diagnostic: None,
         }
