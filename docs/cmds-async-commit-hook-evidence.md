@@ -175,3 +175,5 @@ After lifecycle integration, the full async-commit-hook race suite, `go test -p 
 Four additional incoming-head reviews were first visible in the final inventory. They are handled without another status poll. `TestEnvironmentSecrecyConflictsRejectedBeforeAcceptance` rejects cross-check secret/public conflicts, including case variants, preserves consistent shared declarations and proves no run is accepted into SQLite.
 
 `TestCommitSubjectsNormalizeDisplayWithoutChangingObjectIDs` writes a real Git commit with invalid UTF-8, verifies raw Git still returns those bytes, and marshals the actual ListCommits protobuf/JSON response while preserving both object IDs and valid Korean/emoji text.
+
+`TestGoReportLargeRepeatedOutputUsesBoundedTailAllocations` parses 50,000 output events for one test, verifies its exact chronological tail, and rejects allocation growth above a generous 256 MiB budget (the old implementation copies multiple GiB). `TestReportOutputTailWrapAndOversizedEvents` covers oversized chunks, wraparound, Unicode bytes and the 64 KiB allocation bound.

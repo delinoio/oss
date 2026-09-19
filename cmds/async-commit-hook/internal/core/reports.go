@@ -189,7 +189,7 @@ func parseGoTest(b []byte, check, command, logID string) ([]Failure, error) {
 	out := []Failure{}
 	seen := false
 	terminal := false
-	output := map[string]string{}
+	output := map[string]*reportOutputTail{}
 	tests := map[string]bool{}
 	for scanner.Scan() {
 		if len(bytes.TrimSpace(scanner.Bytes())) == 0 {
@@ -203,18 +203,19 @@ func parseGoTest(b []byte, check, command, logID string) ([]Failure, error) {
 		key := event.Package + "/" + event.Test
 		switch event.Action {
 		case "output":
-			output[key] += event.Output
-			if len(output[key]) > 65536 {
-				output[key] = output[key][len(output[key])-65536:]
+			if output[key] == nil {
+				output[key] = &reportOutputTail{}
 			}
+			output[key].append(event.Output)
 		case "run", "start":
 			tests[key] = false
 		case "pass", "skip", "fail":
 			terminal = true
 			tests[key] = true
 			if event.Action == "fail" {
-				out = append(out, Failure{ID: Hash([]byte(check + "/go/" + key)), Check: check, Test: key, Command: command, Message: strings.TrimSpace(output[key]), LogID: logID})
+				out = append(out, Failure{ID: Hash([]byte(check + "/go/" + key)), Check: check, Test: key, Command: command, Message: strings.TrimSpace(output[key].String()), LogID: logID})
 			}
+			delete(output, key)
 		case "pause", "cont", "bench":
 		default:
 			return nil, E("report-malformed", "unknown Go test JSON action", 1)
