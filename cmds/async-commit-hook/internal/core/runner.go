@@ -235,7 +235,9 @@ loop:
 			c.Diagnostics = append(c.Diagnostics, Diagnostic{Code: "report-missing", Message: "declared report unavailable: " + report.Path})
 			continue
 		}
-		b = Redact(b, secrets)
+		// Report syntax is not user text: a secret may itself be a quote or an
+		// XML token. Parse only in memory, then redact extracted text and the
+		// evidence copy before either reaches persistent storage.
 		failures, e := ParseReport(report.Kind, b, c.Name, command.Command, c.Log.ID)
 		if e != nil {
 			c.Diagnostics = append(c.Diagnostics, Diagnostic{Code: "report-malformed", Message: "declared report invalid: " + report.Path})
@@ -248,6 +250,7 @@ loop:
 			failures[i].Command = string(Redact([]byte(failures[i].Command), secrets))
 		}
 		c.Failures = append(c.Failures, failures...)
+		b = Redact(b, secrets)
 		ev, e := s.SaveEvidence(r.ID, report.Path, b)
 		if e != nil {
 			c.Diagnostics = append(c.Diagnostics, Diagnostic{Code: "report-collection-failed", Message: "report could not be persisted"})

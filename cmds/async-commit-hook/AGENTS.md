@@ -15,6 +15,7 @@
 - Independent supervisors retain an account lifecycle lease after worker death. Reclaim it only with backend completion/emptiness or changed-boot proof, and clear completed stale leases before pruning ownership journals. Mode/state/port changes and updates must reject active or unproven leases.
 - Cancellation may finalize an unstarted queued run only while holding its worker ownership lock, with check and run transitions committed together. Owned or previously started work still requires worker reconciliation.
 - Report and log reads use owned artifact IDs and bounded, root-confined reads. Keep known-secret redaction before persistence, including streamed chunk boundaries and structured failures.
+- Parse bounded original report bytes only in memory before redacting report evidence and extracted text for persistence; secret values overlapping XML/JSON syntax must not alter validation outcomes.
 - Evidence text responses must be valid UTF-8 while pagination and integrity continue to use the original stored bytes.
 - Preserve complete UTF-8 runes across page boundaries and defer incomplete live tails; never replace valid split characters merely because a page budget ends.
 - Normalize Git diff text for protobuf only after applying its raw-byte truncation limit.

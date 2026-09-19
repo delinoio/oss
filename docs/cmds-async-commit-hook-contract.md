@@ -48,6 +48,8 @@ SQLite WAL with foreign keys, transactional claims and durable accepted ordering
 Repeated pruning skips reclaimed expired records without appending diagnostics. If a crash leaves owned files after the expiry commit, pruning resumes their cleanup without adding another expiry diagnostic.
 
 ## Security
+Reports are parsed from the bounded original in-memory bytes. Extracted test/message/file/command text and the separate persisted report copy are redacted before storage. A secret matching XML/JSON syntax therefore cannot corrupt validation; the redacted evidence copy may no longer be syntactically parseable and is displayed as inert text, never used to rederive outcomes.
+
 Allowlisted system context plus declared inputs only. Credential references resolve locally; raw credentials/full environments never enter metadata. Streaming redaction covers chunk boundaries and report fields. Local state is account-restricted. Cancellation verifies process identity; cleanup is confined to owned paths. API security is specified in the protocol contract. A workspace isolates source, not hostile commands.
 
 ## Logging
