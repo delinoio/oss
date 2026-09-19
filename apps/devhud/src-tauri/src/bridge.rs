@@ -1756,8 +1756,13 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         }
         let mut response = crate::native_plugin::request(&app, &request)?;
         #[cfg(target_os = "android")]
-        if matches!(operation, "auth.peek-pending-callback" | "auth.take-pending-callback")
-            && response.get("authCallbackEpoch").and_then(Value::as_u64).is_some()
+        if matches!(
+            operation,
+            "auth.peek-pending-callback" | "auth.take-pending-callback"
+        ) && response
+            .get("authCallbackEpoch")
+            .and_then(Value::as_u64)
+            .is_some()
         {
             response["authCallbackPolicyEpoch"] = json!(state.auth_callback_policy_epoch());
         }
