@@ -3,6 +3,7 @@ package core
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -85,8 +86,8 @@ type PruneResult struct {
 
 func (s *Service) Prune(dry bool, age int, maxBytes int64) (PruneResult, error) {
 	out := PruneResult{DryRun: dry, RunIDs: []string{}, Diagnostics: []Diagnostic{}}
-	if age < 0 || maxBytes < 0 {
-		return out, E("invalid-retention", "retention limits must be nonnegative", 2)
+	if age < 0 || age > maxRetentionAgeDays || maxBytes < 0 {
+		return out, E("invalid-retention", fmt.Sprintf("retention age must be 0..%d days and bytes nonnegative", maxRetentionAgeDays), 2)
 	}
 	lock, e := TryLock(filepath.Join(s.Store.Root, "locks", "retention.lock"))
 	if e != nil {

@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -45,6 +46,10 @@ type Credential struct {
 	Env  string `toml:"env" json:"env,omitempty"`
 	File string `toml:"file" json:"file,omitempty"`
 }
+
+// Keep day-to-duration conversion within the signed nanosecond range.
+const maxRetentionAgeDays = int((1<<63 - 1) / int64(24*time.Hour))
+
 type Retention struct {
 	MaxAgeDays int   `toml:"max_age_days" json:"max_age_days"`
 	MaxBytes   int64 `toml:"max_bytes" json:"max_bytes"`
@@ -89,8 +94,8 @@ func ReadPersonal(paths Paths) (Personal, error) {
 			return p, E("invalid-config", err.Error(), 2)
 		}
 	}
-	if p.Version != 1 || (p.Mode != Daemon && p.Mode != OnDemand) || p.APIPort < 1024 || p.APIPort > 65535 || p.Retention.MaxAgeDays < 0 || p.Retention.MaxBytes < 0 {
-		return p, E("invalid-config", "version must be 1, mode daemon/on-demand, port 1024..65535, retention nonnegative", 2)
+	if p.Version != 1 || (p.Mode != Daemon && p.Mode != OnDemand) || p.APIPort < 1024 || p.APIPort > 65535 || p.Retention.MaxAgeDays < 0 || p.Retention.MaxAgeDays > maxRetentionAgeDays || p.Retention.MaxBytes < 0 {
+		return p, E("invalid-config", fmt.Sprintf("version must be 1, mode daemon/on-demand, port 1024..65535, retention age 0..%d days and bytes nonnegative", maxRetentionAgeDays), 2)
 	}
 	if strings.HasPrefix(p.StateDir, "~/") {
 		home, _ := os.UserHomeDir()
