@@ -432,6 +432,10 @@ Cancellation handlers are installed before owned child work. Native cancellation
 fixtures synchronize on actual child readiness rather than assuming startup time.
 
 Offline checks never pass a report with no target execution.
+An excluded directory excludes all descendants from snapshot, membership, and
+access coverage, even if the accessed path is missing after execution. A read of
+an excluded pre-existing output path remains unknown rather than an inferred
+newly generated output.
 Symlink targets changed by secret or custom-pattern masking are unknown with
 `redacted`, set the redacted-path scope flag, and make collection incomplete.
 Identical masking placeholders cannot establish an unchanged symlink target.

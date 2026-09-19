@@ -29,7 +29,9 @@ pub fn excluded(
     let relative = path.strip_prefix(root).unwrap_or(path);
     relative.components().any(|part| part.as_os_str() == ".git")
         || temporary.iter().any(|p| path.starts_with(p))
-        || exclusions.is_match(relative)
+        // WalkDir prunes an excluded directory's entire subtree. Apply the
+        // same boundary to accesses and membership, even after paths disappear.
+        || relative.ancestors().any(|ancestor| exclusions.is_match(ancestor))
 }
 pub fn take(
     root: &Path,

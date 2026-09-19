@@ -635,6 +635,68 @@ fn offline_policy_and_cache_follow_windows_case_rules() {
     }
 }
 #[test]
+fn excluded_descendant_reads_cannot_look_like_new_outputs() {
+    let root = repository("read");
+    fs::create_dir(root.path().join("generated")).unwrap();
+    fs::write(root.path().join("generated/input"), "pre-existing input").unwrap();
+    let tool = fixture().replace('\\', "/");
+    fs::write(
+        root.path().join("runlens.toml"),
+        format!(
+            r#"schema_version = 1
+exclusions = ["generated"]
+[commands.build]
+argv = [{tool:?}, "read", "generated/input"]
+outputs = ["generated/**"]
+"#
+        ),
+    )
+    .unwrap();
+    let result = invoke(
+        root.path(),
+        &[
+            "run",
+            "--save",
+            "excluded.json",
+            "--",
+            fixture(),
+            "read",
+            "generated/input",
+        ],
+    );
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let report = runlens::report::read(&root.path().join("excluded.json")).unwrap();
+    let target = report.targets().next().unwrap();
+    let key = "${workspace}/generated/input";
+    assert!(target.before.get(key).unwrap().is_none());
+    assert!(!target.accesses.get(key).unwrap().unwrap().in_scope);
+    let checked = invoke(
+        root.path(),
+        &[
+            "cache",
+            "check",
+            "excluded.json",
+            "--command",
+            "build",
+            "--json",
+        ],
+    );
+    assert!(matches!(checked.status.code(), Some(4 | 5)));
+    let value: Value = serde_json::from_slice(&checked.stdout).unwrap();
+    assert!(value["findings"].as_object().unwrap().values().any(|f| {
+        f["code"] == "unknown-evidence"
+            && f["evidence"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["path"] == key)
+    }));
+}
+#[test]
 fn preparation_obeys_global_policy_boundaries_in_clean_and_repeat() {
     let root = repository("read");
     fs::write(root.path().join("private.txt"), "private").unwrap();

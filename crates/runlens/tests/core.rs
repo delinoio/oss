@@ -54,6 +54,25 @@ fn spill_preserves_sorted_records_and_roundtrip() {
     assert!(serde_json::from_str::<Entries<u32>>(r#"{"a":1,"a":2}"#).is_err());
 }
 #[test]
+fn directory_exclusions_cover_existing_and_missing_descendants() {
+    let root = tempfile::tempdir().unwrap();
+    let matcher = config::patterns(&["generated".into()]).unwrap();
+    for name in ["generated", "generated/input", "generated/nested/missing"] {
+        assert!(snapshot::excluded(
+            &root.path().join(name),
+            root.path(),
+            &matcher,
+            &[]
+        ));
+    }
+    assert!(!snapshot::excluded(
+        &root.path().join("generated-other/input"),
+        root.path(),
+        &matcher,
+        &[]
+    ));
+}
+#[test]
 #[cfg(unix)]
 fn masked_symlink_targets_preserve_unknown_changes_without_secret_values() {
     use std::os::unix::fs::symlink;
