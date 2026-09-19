@@ -233,3 +233,5 @@ Windows native opens explicitly request `FILE_READ_ATTRIBUTES`, the metadata per
 `remote_publication_cannot_retract_completed_receipts` cancels real HTTP object staging and manifest commits, including a lost response after the entry reaches the server. Only pre-completion cancellation produces a cancelled receipt; remote entry visibility follows durable local completion.
 
 The real Go flag suite also compares `-failfast` and `-failfast=false` across two shard partitions: a later test is skipped only when requested, all results are accounted for, and the suite remains failed.
+
+`input_digest_uses_bounded_reads_and_preserves_sha256_identity` checks the input reader buffer bound, reference digest parity, and regular/file-link identities.

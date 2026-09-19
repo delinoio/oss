@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    io::Read,
     path::{Component, Path, PathBuf},
 };
 
@@ -13,6 +14,18 @@ use crate::{
 
 pub fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
+}
+fn digest_reader(mut reader: impl Read) -> std::io::Result<String> {
+    let mut hash = Sha256::new();
+    let mut buffer = [0; 64 * 1024];
+    loop {
+        let count = reader.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        hash.update(&buffer[..count]);
+    }
+    Ok(format!("{:x}", hash.finalize()))
 }
 pub fn slash(path: &Path) -> Result<String> {
     let path = path
@@ -221,11 +234,11 @@ pub fn file_state(path: &Path) -> Result<String> {
         return Ok(format!(
             "link:{}:{}",
             slash(&target)?,
-            digest(&std::fs::read(path)?)
+            digest_reader(std::fs::File::open(path)?)?
         ));
     }
     if path.is_file() {
-        Ok(digest(&std::fs::read(path)?))
+        Ok(digest_reader(std::fs::File::open(path)?)?)
     } else {
         Ok("missing".into())
     }
@@ -325,4 +338,36 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     file.as_file().sync_all()?;
     file.persist(path).map_err(|e| e.error)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod hashing_tests {
+    use super::*;
+
+    #[test]
+    fn input_digest_uses_bounded_reads_and_preserves_sha256_identity() {
+        struct BoundedReader(std::io::Cursor<Vec<u8>>);
+        impl Read for BoundedReader {
+            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+                assert!(buffer.len() <= 64 * 1024);
+                self.0.read(buffer)
+            }
+        }
+        let bytes = vec![42; 1024 * 1024 + 7];
+        let expected = digest(&bytes);
+        assert_eq!(
+            digest_reader(BoundedReader(std::io::Cursor::new(bytes.clone()))).unwrap(),
+            expected
+        );
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("input");
+        std::fs::write(&file, &bytes).unwrap();
+        assert_eq!(file_state(&file).unwrap(), expected);
+        #[cfg(unix)]
+        {
+            let link = root.path().join("link");
+            std::os::unix::fs::symlink("input", &link).unwrap();
+            assert_eq!(file_state(&link).unwrap(), format!("link:input:{expected}"));
+        }
+    }
 }
