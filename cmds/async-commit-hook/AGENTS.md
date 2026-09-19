@@ -42,6 +42,7 @@
 - Shared runner security tests must use syntax for the selected native shell, retaining Windows PowerShell coverage rather than running POSIX fixtures under PowerShell.
 - Project agent installation and removal resolve any supplied subdirectory to its registered Git worktree root; linked worktrees retain independent integration paths.
 - Working-tree configuration validation resolves `--repo` through Git discovery, including nested directories and linked worktrees, before reading the selected root's uncommitted file.
+- Initial project configuration discovery, staging and atomic no-replace publication use the selected worktree's root-confined handle; symlink escapes must fail before repository trust registration or external filesystem writes.
 - Repository listings resolve the current checkout branch, including detached HEAD, without rewriting historical run branches.
 - Workspace-preparation failure must not finalize a run until every affected check outcome is persisted; return a check-save error so the run remains recoverable.
 - Propagate every check state persistence failure to the run worker; never discard an execution error and leave a claimed check unscheduled.

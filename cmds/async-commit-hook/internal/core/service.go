@@ -45,9 +45,13 @@ func (s *Service) Init(ctx context.Context, path string) (Repository, Worktree, 
 	if managed, _ := Git(ctx, root, "config", "--local", "--get", "ach.managed"); managed == "true" {
 		return Repository{}, Worktree{}, E("managed-workspace", "managed workspaces cannot be registered", 2)
 	}
-	file := filepath.Join(root, ProjectFile)
-	if _, e = os.Stat(file); os.IsNotExist(e) {
-		if e = AtomicCreate(file, []byte(DefaultProject), 0600); e != nil && !os.IsExist(e) {
+	owned, e := os.OpenRoot(root)
+	if e != nil {
+		return Repository{}, Worktree{}, e
+	}
+	defer owned.Close()
+	if _, e = owned.Stat(ProjectFile); os.IsNotExist(e) {
+		if e = AtomicCreateOwned(owned, ProjectFile, []byte(DefaultProject), 0600); e != nil && !os.IsExist(e) {
 			return Repository{}, Worktree{}, e
 		}
 	} else if e != nil {
