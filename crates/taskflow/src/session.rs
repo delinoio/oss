@@ -148,7 +148,15 @@ pub async fn start(
                         let plan = Plan::for_tasks(&graph, seeds.clone())?;
                         let selected: BTreeSet<_> = plan.order.iter().cloned().collect();
                         let mut wave_options = options.clone();
-                        wave_options.provided = results.iter().filter(|(id, r)| r.success() && !seeds.contains_key(*id)).map(|(id, r)| (id.clone(), r.clone())).collect();
+                        wave_options.provided = results.iter().filter(|(id, receipt)| {
+                            if !selected.contains(*id) || seeds.contains_key(*id) || !receipt.success() { return false; }
+                            let node = &graph.tasks[*id];
+                            // A live service is shared by its owners; finite artifacts
+                            // must still match before bypassing the normal executor.
+                            let valid = node.task.service || crate::cache::output_state(&graph.workspace.projects[&node.project], &node.task).is_ok_and(|output| output == receipt.output);
+                            if !valid { tracing::info!(task = *id, code = "session-output-invalid", "Revalidating prerequisite before the next session wave"); }
+                            valid
+                        }).map(|(id, r)| (id.clone(), r.clone())).collect();
                         active_tasks.extend(selected.clone());
                         let graph = graph.clone();
                         let token = generation_cancel.child_token();

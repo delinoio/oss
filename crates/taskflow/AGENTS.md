@@ -23,6 +23,7 @@
 - Output-drain failures must still await both stream owners and container removal/absence verification before returning; unverified cleanup takes precedence over log errors.
 - Preserve completed, cancelled, and timed-out process reasons separately; finite deadlines produce failed receipts with code 124, while operator cancellation remains code 130.
 - Every child belongs to a process-tree/container owner; replacement waits for reaping. Tests must assert actual cleanup. Service shutdown must await all owners and propagate every unverified process/container cleanup as failure.
+- Session waves reuse finite prerequisite receipts only while current output digests match; missing or modified outputs return to normal restore/execution before consumers run.
 - Apply overlap policies to per-task execution ownership, not to membership in an unfinished wave.
 - Explicit positive input globs may traverse otherwise ignored trees; prune only using conservative literal directory prefixes, never directory-name substrings. Reserved .git, .taskflow, and .taskflow-restore-* trees remain excluded.
 - Watch invalidation consumes filesystem mutations, never access notifications from metadata discovery or input hashing. Metadata notifications must confirm a changed or invalid graph before cancelling the active generation; identical rewrites preserve live work.

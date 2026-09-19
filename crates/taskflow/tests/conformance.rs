@@ -3616,3 +3616,55 @@ async fn libtest_inventory_honors_explicit_manifest_selection() {
         assert!(shard::aggregate(&inventory, 2, &reports).unwrap());
     }
 }
+
+#[tokio::test]
+async fn session_revalidates_provided_prerequisite_outputs() {
+    for cached in [false, true] {
+        let directory = fixture(json!({
+            "producer":{"command":command(&["copy","source","middle"]),"input":["source"],"output":["middle"],"cache":cached,"tools":{"fixture":command(&["version"])}},
+            "consumer":{"command":command(&["copy","middle","consumed"]),"dependsOn":["producer"],"input":["middle"],"output":["consumed"],"watch":{}}
+        }));
+        std::fs::write(directory.path().join("source"), "correct").unwrap();
+        profile(directory.path(), &["consumer"]);
+        let root = directory.path().to_path_buf();
+        let token = CancellationToken::new();
+        let stop = token.clone();
+        let session = tokio::spawn(async move {
+            taskflow::session::start(&root, "default", RunOptions::default(), stop).await
+        });
+        for mutation in ["initial", "corrupt", "delete"] {
+            let previous = runner::previous(directory.path(), "app#consumer").map(|r| r.execution);
+            match mutation {
+                "corrupt" => std::fs::write(directory.path().join("middle"), "corrupt").unwrap(),
+                "delete" => std::fs::remove_file(directory.path().join("middle")).unwrap(),
+                _ => {}
+            }
+            tokio::time::timeout(Duration::from_secs(60), async {
+                loop {
+                    assert!(!session.is_finished(), "session exited before {mutation}");
+                    if runner::previous(directory.path(), "app#consumer")
+                        .is_some_and(|r| Some(r.execution) != previous)
+                    {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .unwrap();
+            assert!(runner::previous(directory.path(), "app#consumer")
+                .unwrap()
+                .success());
+            assert_eq!(
+                std::fs::read_to_string(directory.path().join("consumed")).unwrap(),
+                "correct"
+            );
+            assert_eq!(
+                std::fs::read_to_string(directory.path().join("middle")).unwrap(),
+                "correct"
+            );
+        }
+        token.cancel();
+        session.await.unwrap().unwrap();
+    }
+}

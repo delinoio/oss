@@ -169,3 +169,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `explicit_wildcard_inputs_include_ignored_directories_in_cache_and_watch` exercises star, globstar, character-class, and brace patterns against `dist/manifest.json`. Each form participates in snapshots, cache invalidation, and live watch reruns, while internal restore trees remain excluded from both snapshots and event matching.
 
 `libtest_inventory_honors_explicit_manifest_selection` runs a Cargo-excluded standalone package with split and equals-form manifest arguments, including a task directory without its own Cargo manifest. Inventory and complete shard results identify only the selected package.
+
+`session_revalidates_provided_prerequisite_outputs` modifies and deletes a watched consumer's prerequisite output across live session waves, covering both uncached rebuild and cached restoration before consumption.
