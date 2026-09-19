@@ -690,12 +690,9 @@ async fn run_task(
                 ready.await
             };
             if let Err(error) = result {
-                process.terminate().await?;
-                stdout.await??;
-                stderr.await??;
-                if let Some(mut docker) = docker {
-                    docker.cleanup().await?;
-                }
+                let reaped = process.terminate().await;
+                finish_logs_and_container(stdout, stderr, cleanup_container(docker)).await?;
+                reaped?;
                 return Err(error);
             }
         }
@@ -743,10 +740,10 @@ async fn run_task(
                 };
             }
             let _ = events.send((event_id, result));
+            cleanup?;
             waited?;
             stdout??;
             stderr??;
-            cleanup?;
             Ok(())
         });
         services.joins.lock().unwrap().push(join);
@@ -764,20 +761,15 @@ async fn run_task(
             diagnostic: None,
         });
     }
-    let status = process
-        .wait(
-            &cancel,
-            task.timeout
-                .as_ref()
-                .map(|s| config::duration(s))
-                .transpose()?,
-        )
-        .await?;
-    stdout.await??;
-    stderr.await??;
-    if let Some(mut docker) = docker {
-        docker.cleanup().await?;
-    }
+    let waited = process.wait(&cancel, timeout).await;
+    let reaped = if waited.is_err() {
+        process.terminate().await
+    } else {
+        Ok(())
+    };
+    finish_logs_and_container(stdout, stderr, cleanup_container(docker)).await?;
+    reaped?;
+    let status = waited?;
     let stable = (task.install && !task.cache)
         || files::input_state(&graph.workspace, project, task)? == inputs;
     let mut receipt = Receipt {
@@ -968,6 +960,36 @@ pub async fn acquire_locks(
     Ok(held)
 }
 
+pub(crate) async fn cleanup_container(docker: Option<crate::docker::Container>) -> Result<()> {
+    if let Some(mut docker) = docker {
+        docker.cleanup().await?;
+    }
+    Ok(())
+}
+
+pub(crate) async fn finish_logs_and_container(
+    stdout: tokio::task::JoinHandle<Result<()>>,
+    stderr: tokio::task::JoinHandle<Result<()>>,
+    cleanup: impl std::future::Future<Output = Result<()>>,
+) -> Result<()> {
+    // Collect every owner before returning an output error. A failed logger
+    // must never replace awaited daemon verification with best-effort Drop.
+    let stdout = stdout.await.context("task stdout owner failed");
+    let stderr = stderr.await.context("task stderr owner failed");
+    cleanup.await?;
+    if stdout.as_ref().map_or(true, |result| result.is_err())
+        || stderr.as_ref().map_or(true, |result| result.is_err())
+    {
+        tracing::error!(
+            code = "task-output-drain-failed",
+            "Task output failed after completing owned container cleanup"
+        );
+    }
+    stdout??;
+    stderr??;
+    Ok(())
+}
+
 pub async fn stream_log(
     mut reader: impl AsyncRead + Unpin,
     file: Arc<Mutex<File>>,
@@ -1045,5 +1067,47 @@ async fn wait_ready(
             "service readiness timed out"
         );
         tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+#[cfg(test)]
+mod output_cleanup_tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn log_write_failure_awaits_both_streams_and_cleanup() {
+        for cleanup_fails in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("output.log");
+            std::fs::write(&path, "retained").unwrap();
+            let log = Arc::new(Mutex::new(File::open(&path).unwrap()));
+            let stdout = tokio::spawn(stream_log(&b"output"[..], log, vec![], false, true));
+            let sibling_finished = Arc::new(AtomicBool::new(false));
+            let sibling = sibling_finished.clone();
+            let stderr = tokio::spawn(async move {
+                tokio::task::yield_now().await;
+                sibling.store(true, Ordering::SeqCst);
+                Ok(())
+            });
+            let cleaned = AtomicBool::new(false);
+            let cleanup = async {
+                assert!(sibling_finished.load(Ordering::SeqCst));
+                tokio::task::yield_now().await;
+                cleaned.store(true, Ordering::SeqCst);
+                if cleanup_fails {
+                    Err(anyhow::Error::new(crate::docker::CleanupFailure))
+                } else {
+                    Ok(())
+                }
+            };
+            let error = finish_logs_and_container(stdout, stderr, cleanup)
+                .await
+                .unwrap_err();
+            assert!(cleaned.load(Ordering::SeqCst));
+            assert_eq!(error.is::<crate::docker::CleanupFailure>(), cleanup_fails);
+            assert_eq!(std::fs::read(&path).unwrap(), b"retained");
+        }
     }
 }

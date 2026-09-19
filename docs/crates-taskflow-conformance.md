@@ -161,3 +161,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `ci_bundle_limits_apply_to_each_artifact_independently` uses scaled limits with the production JSON codec to accept multiple individually valid artifacts whose combined size exceeds one artifact limit, while rejecting an oversized artifact, metadata, or input file. The writer uses the same size validator.
 
 `cache_restore_rejects_filesystem_aliases_before_replacing_outputs` checks case and Unicode equivalence for both files and directory prefixes on the actual restore filesystem. Aliases preserve the existing outputs; distinct names restore with the declared digest, and every temporary probe is removed.
+
+`log_write_failure_awaits_both_streams_and_cleanup` gives the real output drainer a read-only log descriptor and delays its sibling stream. Both owners settle before the awaited cleanup future runs; an unverified removal takes precedence over the log error. Finite tasks, shard commands, and failed readiness use this same completion path.

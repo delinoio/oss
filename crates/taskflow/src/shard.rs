@@ -839,7 +839,7 @@ async fn run_unit(
         options.show_secrets,
         options.quiet,
     ));
-    let status = child
+    let waited = child
         .wait(
             cancel,
             task.timeout
@@ -847,12 +847,20 @@ async fn run_unit(
                 .map(crate::config::duration)
                 .transpose()?,
         )
-        .await?;
-    stdout.await??;
-    stderr.await??;
-    if let Some(mut container) = container {
-        container.cleanup().await?;
-    }
+        .await;
+    let reaped = if waited.is_err() {
+        child.terminate().await
+    } else {
+        Ok(())
+    };
+    crate::runner::finish_logs_and_container(
+        stdout,
+        stderr,
+        crate::runner::cleanup_container(container),
+    )
+    .await?;
+    reaped?;
+    let status = waited?;
     Ok(if status.cancelled {
         UnitStatus::Cancelled
     } else if status.code == 0 {
