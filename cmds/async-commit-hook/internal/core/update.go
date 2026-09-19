@@ -401,6 +401,9 @@ func (s *Service) ApplyUpdate() error {
 	defer lock.Close()
 	// Windows cannot rename the running helper; copy the authenticated candidate to a replacement sibling.
 	if runtime.GOOS == "windows" {
+		if e = s.recordUpdateHelper(j); e != nil {
+			return e
+		}
 		candidate, e := os.ReadFile(j.Candidate)
 		if e != nil || Hash(candidate) != j.SHA256 {
 			return E("update-candidate-invalid", "helper candidate changed", 3)

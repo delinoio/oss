@@ -30,7 +30,11 @@ func Open(paths Paths) (*Service, error) {
 	if e != nil {
 		return nil, e
 	}
-	return &Service{Store: s, Personal: p, Paths: paths, Log: slog.New(slog.NewJSONHandler(os.Stderr, nil))}, nil
+	service := &Service{Store: s, Personal: p, Paths: paths, Log: slog.New(slog.NewJSONHandler(os.Stderr, nil))}
+	if err := service.cleanupUpdateHelpers(); err != nil {
+		service.Log.Warn("update.helper_cleanup_pending", "code", "update-helper-cleanup-pending")
+	}
+	return service, nil
 }
 func (s *Service) Close() error { return s.Store.Close() }
 func (s *Service) Init(ctx context.Context, path string) (Repository, Worktree, error) {
