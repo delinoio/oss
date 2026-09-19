@@ -180,6 +180,8 @@ Chrome capture rechecks the configured origin's Chrome-valid scheme-and-host opt
 
 - During an API-origin policy transition, native authentication callbacks remain quarantined and the pending callback is drained immediately before the service-boundary switch. If old-origin cleanup fails, the renderer drains callbacks quarantined during that cleanup before re-enabling callback delivery. If the new policy rejects after the previous identity is cleared, the renderer restarts the identity boundary against the unchanged origin and reports that cleanup succeeded but policy configuration failed, so stale authenticated state cannot remain available.
 
+- Browser authentication launch persists a non-secret binding to the active API origin before it opens. On callback startup, the renderer admits only a callback with that matching origin binding and consumes/discards an unbound or stale callback before it can reach the current identity session; API-origin cleanup and successful callback consumption clear the binding.
+
 ## Deck Workspace Responsive Layout
 
 - Desktop Deck configuration remains sticky in a viewport-bounded vertical scroll area, so short windows retain access to editor, widget, save, and delete controls. Result-row status badges respond to the available workspace track and move below details before constrained sidebars or enlarged text can clip them.

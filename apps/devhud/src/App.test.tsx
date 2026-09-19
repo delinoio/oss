@@ -8,7 +8,7 @@ import { App } from "./App";
 import { deckPollingCancellationGeneration } from "./deck-polling-cancellation";
 import { DiagnosticsCorrelationsKey, DiagnosticsStorageKey } from "./diagnostics";
 import * as identityClient from "./identity-client";
-import type { IdentitySession } from "./identity-client";
+import { recordAuthCallbackBinding, type IdentitySession } from "./identity-client";
 import { messages } from "./localization";
 import { LifecycleState, NativeBridgeError, NativeBridgeErrorCode, NotificationPermission, RuntimePlatform, type DesktopUpdaterStatus, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { desktopNativeMessagingIntegration } from "./native-messaging-ui";
@@ -589,6 +589,7 @@ describe("native App state", () => {
 
   it("accepts an initial-epoch callback before native policy hydration completes", async () => {
     const callbackUrl = "devhud://auth/callback?code=opaque&state=opaque";
+    expect(recordAuthCallbackBinding(localStorage, "https://devhud.api.delino.io")).toBe(true);
     const listeners: Array<(event: NativeBridgeEventV1) => void> = [];
     const handleCallback = vi.fn(async () => {});
     vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
@@ -829,6 +830,7 @@ describe("native App state", () => {
   });
 
   it("drains a cold-start callback after the identity session becomes ready", async () => {
+    expect(recordAuthCallbackBinding(localStorage, "https://devhud.api.delino.io")).toBe(true);
     let authenticated = false;
     const handleCallback = vi.fn(async () => { authenticated = true; });
     vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
@@ -864,6 +866,7 @@ describe("native App state", () => {
 
   it("keeps a cold-start callback queued across an issuer-policy reload", async () => {
     const callbackUrl = "devhud://auth/callback?code=opaque&state=opaque";
+    expect(recordAuthCallbackBinding(localStorage, "https://devhud.api.delino.io")).toBe(true);
     let pendingCallback: string | null = callbackUrl;
     let issuerConfigured = false;
     let authenticated = false;
@@ -932,6 +935,7 @@ describe("native App state", () => {
   });
 
   it("leaves a foreground callback queued until the identity session is ready", async () => {
+    expect(recordAuthCallbackBinding(localStorage, "https://devhud.api.delino.io")).toBe(true);
     let receive!: (event: NativeBridgeEventV1) => void;
     const request = vi.fn(async (): Promise<NativeBridgeResponseV1> => ({ kind: "auth-callback", url: null }));
     const bridge: NativeBridgeV1 = {
@@ -944,6 +948,22 @@ describe("native App state", () => {
     receive({ version: 1, kind: "auth-callback", url: "devhud://auth/callback?state=opaque" });
 
     await waitFor(() => expect(request).not.toHaveBeenCalledWith({ operation: "auth.take-pending-callback" }));
+  });
+
+  it("discards an unbound foreground callback before it reaches a restarted origin", async () => {
+    let receive!: (event: NativeBridgeEventV1) => void;
+    const request = vi.fn(async (): Promise<NativeBridgeResponseV1> => ({ kind: "auth-callback", url: "devhud://auth/callback?state=origin-a" }));
+    const bridge: NativeBridgeV1 = {
+      request,
+      async listen(listener) { receive = listener; return () => {}; },
+    };
+    expect(recordAuthCallbackBinding(localStorage, "https://origin-a.example")).toBe(true);
+
+    render(<App bridge={bridge} initialRuntime={mobileRuntime} />);
+    await waitFor(() => expect(receive).toBeTypeOf("function"));
+    receive({ version: 1, kind: "auth-callback", url: "devhud://auth/callback?state=origin-a" });
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "auth.take-pending-callback" }));
   });
 
   it("reads and localizes notification permission and diagnostic labels", async () => {

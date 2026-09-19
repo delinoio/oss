@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ProjectId, StaticCapability, type GetBootstrapResponse } from "@delinoio/devhud-api-client";
 import { LogtoClientError, LogtoRequestError } from "@logto/client";
-import { BootstrapContractError, isTerminalAccessTokenError, SecureLogtoStorage, sessionProfileId, validateBootstrap } from "./identity-client";
+import { authCallbackBindingMatches, BootstrapContractError, clearAuthCallbackBinding, isTerminalAccessTokenError, recordAuthCallbackBinding, SecureLogtoStorage, sessionProfileId, validateBootstrap } from "./identity-client";
 import { logtoEndpointFromIssuer } from "./identity-contract";
 import { LifecycleState, RuntimePlatform, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1 } from "./native-bridge";
 
@@ -94,6 +94,14 @@ describe("identity client boundary", () => {
     expect(first).toBe(await sessionProfileId("https://api.example"));
     expect(first).not.toBe(await sessionProfileId("https://other.example"));
     expect(first).toMatch(/^origin\.[A-Za-z0-9_-]{43}$/u);
+  });
+
+  it("retains a browser callback binding only for its originating API", () => {
+    expect(recordAuthCallbackBinding(localStorage, "https://origin-a.example")).toBe(true);
+    expect(authCallbackBindingMatches(localStorage, "https://origin-a.example")).toBe(true);
+    expect(authCallbackBindingMatches(localStorage, "https://origin-b.example")).toBe(false);
+    clearAuthCallbackBinding(localStorage);
+    expect(authCallbackBindingMatches(localStorage, "https://origin-a.example")).toBe(false);
   });
 
   it("fails closed when the secure store fails", async () => {

@@ -14,7 +14,7 @@ import { deckPollingCancellationGeneration } from "./deck-polling-cancellation";
 import { DiagnosticsCorrelationsKey, DiagnosticsStorageKey, appendDiagnosticCorrelation, appendDiagnosticEvent, captureDiagnosticEvent } from "./diagnostics";
 import type { GitHubProvider } from "./github-provider";
 import * as identityClient from "./identity-client";
-import { sessionProfileId, type IdentitySession } from "./identity-client";
+import { recordAuthCallbackBinding, sessionProfileId, type IdentitySession } from "./identity-client";
 import { SynchronizedSettingsBoundary } from "./identity-ui";
 import { messages } from "./localization";
 import { assertDeviceLocalSettingsPersistable, DeviceLocalSettingsMaximumBytes, hasGuestSettings, readAuthenticatedSettingsCache, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
@@ -1893,6 +1893,7 @@ describe("generated Connect identity/settings fixture", () => {
 
   it("does not reuse a consumed callback after logout resets identity", async () => {
     const callbackUrl = "devhud://auth/callback?code=opaque&state=opaque";
+    expect(recordAuthCallbackBinding(localStorage, "https://devhud.api.delino.io")).toBe(true);
     let receive!: (event: NativeBridgeEventV1) => void;
     let pendingCallback: string | null = callbackUrl;
     let authenticated = false;
@@ -1945,6 +1946,7 @@ describe("generated Connect identity/settings fixture", () => {
 
   it("retains a callback until a transient Logto exchange failure is retried", async () => {
     const callbackUrl = "devhud://auth/callback?code=opaque&state=opaque";
+    expect(recordAuthCallbackBinding(localStorage, "https://devhud.api.delino.io")).toBe(true);
     let receive!: (event: NativeBridgeEventV1) => void;
     let pendingCallback: string | null = callbackUrl;
     let authenticated = false;

@@ -15,7 +15,7 @@ import {
   type DevHudClientError,
 } from "@delinoio/devhud-api-client";
 import { createContext, use, useEffect, useMemo, useRef, useState, type MutableRefObject, type PropsWithChildren, type RefObject } from "react";
-import { createIdentitySession, isTerminalAccessTokenError, sessionProfileId, validateBootstrap, type IdentitySession, type ValidatedBootstrap } from "./identity-client";
+import { clearAuthCallbackBinding, createIdentitySession, isTerminalAccessTokenError, sessionProfileId, validateBootstrap, type IdentitySession, type ValidatedBootstrap } from "./identity-client";
 import { clearDeckCaches } from "./deck.ts";
 import { invalidateDeckPolling } from "./deck-polling-cancellation.ts";
 import { assertDeviceLocalSettingsPersistable, clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, deviceLocalSettingsEqual, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
@@ -1026,6 +1026,7 @@ export async function clearIdentityForApiChange(
 ): Promise<void> {
   const session = sessionRef?.current ?? null;
   if (sessionRef) sessionRef.current = null;
+  clearAuthCallbackBinding(storage);
   const discardedCallback = await bridge.request({ operation: "auth.take-pending-callback" });
   if (discardedCallback.kind !== "auth-callback") throw new Error("auth-callback-discard-failed");
   await session?.clear();

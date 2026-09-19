@@ -4,7 +4,7 @@ import { messages, type Copy } from "./localization";
 import { appendDiagnosticEvent, captureDiagnosticEvent, readDiagnosticCorrelations, readDiagnosticEvents, recentDiagnosticCorrelationIds } from "./diagnostics";
 import { DiagnosticsPanel } from "./diagnostics-ui";
 import { DiagnosticComponent, DiagnosticSeverity } from "@delinoio/devhud-api-client";
-import type { IdentitySession } from "./identity-client";
+import { authCallbackBindingMatches, clearAuthCallbackBinding, type IdentitySession } from "./identity-client";
 import { AccountIdentity, FirstRunIdentity, ShortcutPaletteTrigger, SynchronizedAppearanceBoundary, SynchronizedSettingsBoundary, SynchronizedShortcutBoundary, UrlMappingDraftProvider } from "./identity-ui";
 import { LifecycleState, NativeBridgeError, NotificationPermission, RuntimePlatform, nativeBridge, type CaptureDraft, type NativeBridgeEventV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { clearIdentityForApiChange, DevHudServiceBoundary } from "./service-boundary";
@@ -226,6 +226,17 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   useEffect(() => {
     let active = true;
     let unlisten: (() => void) | undefined;
+    const discardUnboundCallback = (url: string) => {
+      void bridge.request({ operation: "auth.take-pending-callback" }).then((pending) => {
+        if (!active || pending.kind !== "auth-callback") return;
+        if (pending.url === url) clearAuthCallbackBinding(storage);
+        else if (pending.url && authCallbackBindingMatches(storage, preferences.apiOrigin)) setAuthCallback(pending.url);
+      }).catch(() => {});
+    };
+    const acceptCallback = (url: string) => {
+      if (authCallbackBindingMatches(storage, preferences.apiOrigin)) setAuthCallback(url);
+      else discardUnboundCallback(url);
+    };
     const peekPendingDeckLink = () => {
       void bridge.request({ operation: "deck.peek-pending-link" }).then((pendingDeck) => {
         if (active && pendingDeck.kind === "deck-link" && pendingDeck.deckId) setDeckLinkPending(true);
@@ -240,7 +251,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
         // be associated with the rekeyed identity session.
         if (!apiOriginChangeInFlight.current
           && (event.authCallbackEpoch === undefined || event.authCallbackPolicyEpoch === undefined || event.authCallbackEpoch === event.authCallbackPolicyEpoch)
-          && (event.authCallbackEpoch === undefined || authCallbackEpoch.current === null || event.authCallbackEpoch === authCallbackEpoch.current)) setAuthCallback(event.url);
+          && (event.authCallbackEpoch === undefined || authCallbackEpoch.current === null || event.authCallbackEpoch === authCallbackEpoch.current)) acceptCallback(event.url);
       }
       if (event.kind === "deck-link") peekPendingDeckLink();
       if (event.kind === "shortcut-triggered") {
@@ -284,7 +295,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       const pending = await bridge.request({ operation: "auth.peek-pending-callback" });
       if (active && pending.kind === "auth-callback" && pending.url
         && (pending.authCallbackEpoch === undefined || pending.authCallbackPolicyEpoch === undefined || pending.authCallbackEpoch === pending.authCallbackPolicyEpoch)
-        && (pending.authCallbackEpoch === undefined || authCallbackEpoch.current === null || pending.authCallbackEpoch === authCallbackEpoch.current)) setAuthCallback(pending.url);
+        && (pending.authCallbackEpoch === undefined || authCallbackEpoch.current === null || pending.authCallbackEpoch === authCallbackEpoch.current)) acceptCallback(pending.url);
       if (window.__TAURI_INTERNALS__) peekPendingDeckLink();
     }).catch(() => {
       if (active && !initialRuntime) setRuntimeState({ kind: ContentStateKind.Error, retryable: true });
@@ -293,7 +304,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       active = false;
       unlisten?.();
     };
-  }, [bridge, initialContentState, initialRuntime]);
+  }, [bridge, initialContentState, initialRuntime, preferences.apiOrigin, storage]);
   useEffect(() => {
     if (onboarding || updaterApprovalOpen || screenModalConfirmationOpen || !deckLinkPending || consumedDeckLink !== null || deckLinkPolicyOrigin !== preferences.apiOrigin || deckLinkTakeInFlight.current) return;
     deckLinkTakeInFlight.current = true;
@@ -438,8 +449,9 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     setSurface(SurfaceId.Home);
   };
   const clearConsumedAuthCallback = useCallback((url: string) => {
+    clearAuthCallbackBinding(storage);
     setAuthCallback((current) => current === url ? null : current);
-  }, []);
+  }, [storage]);
   const markDeckLinkPolicyReady = useCallback(() => {
     setDeckLinkPolicyOrigin(preferences.apiOrigin);
   }, [preferences.apiOrigin]);
