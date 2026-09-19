@@ -9,6 +9,7 @@
 - Cancellation may finalize an unstarted queued run only while holding its worker ownership lock, with check and run transitions committed together. Owned or previously started work still requires worker reconciliation.
 - Report and log reads use owned artifact IDs and bounded, root-confined reads. Keep known-secret redaction before persistence, including streamed chunk boundaries and structured failures.
 - Evidence text responses must be valid UTF-8 while pagination and integrity continue to use the original stored bytes.
+- Preserve complete UTF-8 runes across page boundaries and defer incomplete live tails; never replace valid split characters merely because a page budget ends.
 - Each declared report path has one check owner across the graph. Clear its previous file through the owned workspace root before starting that check; stale committed or prerequisite reports must never satisfy validation.
 - Pruning is idempotent for expired records; resume incomplete owned-file cleanup without growing tombstone diagnostics.
 - Use synchronization barriers, not elapsed-time assertions, to prove asynchronous behavior in integration tests. Run `go test -race ./cmds/async-commit-hook/...` for lifecycle changes, and the root Go suite after generating administrator assets.

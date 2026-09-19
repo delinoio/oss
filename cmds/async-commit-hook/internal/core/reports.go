@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
 
 // Redactor holds enough suffix bytes to recognize a secret split between writes.
@@ -376,7 +377,19 @@ func (s *Service) evidencePage(run, id string, offset int64, limit int, terminal
 	if _, e = f.Seek(offset, io.SeekStart); e != nil {
 		return LogPage{}, e
 	}
-	b, e := io.ReadAll(io.LimitReader(f, int64(limit)))
+	// Read ahead by at most one rune so a valid character crossing the byte
+	// budget is emitted once, in full. A live stream may not have written the
+	// rest of its final rune yet; leave those bytes for the next request.
+	b, e := io.ReadAll(io.LimitReader(f, int64(limit)+utf8.UTFMax-1))
+	n := 0
+	for n < len(b) && n < limit {
+		if !utf8.FullRune(b[n:]) && !terminal {
+			break
+		}
+		_, size := utf8.DecodeRune(b[n:])
+		n += size
+	}
+	b = b[:n]
 	// Text transports require UTF-8; cursor positions and stored evidence remain raw bytes.
 	return LogPage{Text: strings.ToValidUTF8(string(b), "\uFFFD"), NextOffset: offset + int64(len(b)), Complete: terminal && offset+int64(len(b)) >= info.Size()}, e
 }
