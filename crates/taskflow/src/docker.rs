@@ -194,7 +194,7 @@ pub async fn prepare(
         "--mount".into(),
         format!("type=bind,source={},target=/workspace", root.display()),
         "--workdir".into(),
-        format!("/workspace/{}", crate::files::slash(relative)),
+        format!("/workspace/{}", crate::files::slash(relative)?),
     ];
     for key in task
         .env
@@ -221,7 +221,7 @@ pub async fn prepare(
                 .context("shard exchange file outside workspace")?;
             args.extend([
                 "--env".into(),
-                format!("{key}=/workspace/{}", crate::files::slash(relative)),
+                format!("{key}=/workspace/{}", crate::files::slash(relative)?),
             ]);
         }
     }

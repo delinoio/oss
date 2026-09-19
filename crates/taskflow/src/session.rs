@@ -193,7 +193,7 @@ pub async fn start(
                                             let snapshot = files::input_state(&graph.workspace, &graph.workspace.projects[&node.project], &node.task)?;
                                             if observed.get(id) != Some(&snapshot) {
                                                 observed.insert(id.clone(), snapshot);
-                                                enqueue(&graph, &options, &mut pending, id, Cause::Input { path: files::relative_to(root, &path) }, Instant::now() + config::duration(&watch.debounce)?);
+                                                enqueue(&graph, &options, &mut pending, id, Cause::Input { path: files::relative_to(root, &path)? }, Instant::now() + config::duration(&watch.debounce)?);
                                             }
                                         }
                                     }

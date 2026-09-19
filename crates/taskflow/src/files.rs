@@ -14,8 +14,11 @@ use crate::{
 pub fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
-pub fn slash(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
+pub fn slash(path: &Path) -> Result<String> {
+    Ok(path
+        .to_str()
+        .context("TaskFlow paths must be valid UTF-8")?
+        .replace('\\', "/"))
 }
 pub fn normalize(path: &Path) -> PathBuf {
     let mut result = PathBuf::new();
@@ -50,6 +53,7 @@ pub fn within(root: &Path, path: &Path) -> Result<PathBuf> {
 mod windows;
 
 pub fn canonical_path(path: &Path) -> Result<PathBuf> {
+    slash(path)?;
     let mut ancestors = path.ancestors();
     if path.is_symlink() {
         // Preserve a link leaf for ownership validation against its parent.
@@ -62,6 +66,7 @@ pub fn canonical_path(path: &Path) -> Result<PathBuf> {
         let canonical = ancestor.canonicalize();
         match canonical {
             Ok(canonical) => {
+                slash(&canonical)?;
                 let suffix = path.strip_prefix(ancestor)?;
                 return Ok(if suffix.as_os_str().is_empty() {
                     canonical
@@ -111,8 +116,13 @@ pub fn matches_patterns(patterns: &[String], path: &str) -> Result<bool> {
     }
     Ok(matched)
 }
-pub fn relative_to(project: &Path, path: &Path) -> String {
-    let common = project.ancestors().find(|p| path.starts_with(p)).unwrap();
+pub fn relative_to(project: &Path, path: &Path) -> Result<String> {
+    slash(project)?;
+    slash(path)?;
+    let common = project
+        .ancestors()
+        .find(|p| path.starts_with(p))
+        .context("paths have no common ancestor")?;
     let mut relative = PathBuf::new();
     for _ in project.strip_prefix(common).unwrap().components() {
         relative.push("..");
@@ -154,7 +164,7 @@ pub fn input_matches(project: &Project, task: &crate::config::Task, path: &Path)
     {
         return Ok(false);
     }
-    let relative = relative_to(&project.directory, path);
+    let relative = relative_to(&project.directory, path)?;
     let mut matched = task.input.is_none() && path.starts_with(&project.directory);
     for input in task.input.iter().flatten() {
         match input {
@@ -203,7 +213,7 @@ pub fn file_state(path: &Path) -> Result<String> {
         );
         return Ok(format!(
             "link:{}:{}",
-            slash(&target),
+            slash(&target)?,
             digest(&std::fs::read(path)?)
         ));
     }
@@ -259,13 +269,16 @@ pub fn input_state(
         if input_matches(project, task, entry.path())? {
             within(&ws.root, entry.path())?;
             result.insert(
-                slash(entry.path().strip_prefix(&ws.root)?),
+                slash(entry.path().strip_prefix(&ws.root)?)?,
                 input_file_state(entry.path())?,
             );
         }
     }
     for path in &ws.metadata_files {
-        result.insert(slash(path.strip_prefix(&ws.root)?), input_file_state(path)?);
+        result.insert(
+            slash(path.strip_prefix(&ws.root)?)?,
+            input_file_state(path)?,
+        );
     }
     Ok(result)
 }

@@ -56,6 +56,8 @@ The library regression `invalidation_at_each_publication_boundary_preserves_prev
 
 `cli_metadata_cancellation_returns_130_without_fallback` sends SIGINT to the real CLI while its Cargo metadata child is running, checks code 130 and child reaping, and proves no membership fallback starts.
 
+`non_utf8_paths_never_collapse_into_cache_identities` creates two Unix filenames with distinct invalid bytes, invalid output/root names, and a valid Japanese filename; identities fail explicitly instead of collapsing distinct paths.
+
 Additional invariants include unknown/duplicate configuration rejection, schema freshness, stale/partial CI receipt rejection, required artifact accounting, cache path traversal rejection before mutation, masked stored logs, and service failure cancelling other running checks before returning.
 
 `grouped_tasks_only_receive_their_declared_secrets` passes a CI-style credential union to a real CLI run: only the declaring task receives the credential, and persisted output remains masked.

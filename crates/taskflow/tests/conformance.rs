@@ -4657,3 +4657,53 @@ async fn cli_metadata_cancellation_returns_130_without_fallback() {
         .unwrap();
     assert!(!pid_alive(pid));
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn non_utf8_paths_never_collapse_into_cache_identities() {
+    use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+    let root = fixture(
+        json!({"build":{"command":command(&["version"]),"input":["src/**"],"output":["out"]}}),
+    );
+    let g = graph(root.path()).await;
+    let project = &g.workspace.projects["app"];
+    let task = &g.tasks["app#build"].task;
+    for byte in [0x80, 0x81] {
+        let name = OsString::from_vec(vec![b'f', byte]);
+        let path = root.path().join("src").join(&name);
+        // APFS rejects malformed UTF-8 names itself; Linux additionally proves
+        // rejection when distinct byte names are present on the filesystem.
+        if cfg!(target_os = "linux") {
+            files::atomic_write(&path, b"input").unwrap();
+        }
+        assert!(files::input_matches(project, task, &path).is_err());
+        assert!(files::slash(&path)
+            .unwrap_err()
+            .to_string()
+            .contains("UTF-8"));
+    }
+    if cfg!(target_os = "linux") {
+        let error = files::input_state(&g.workspace, project, task).unwrap_err();
+        assert!(error.to_string().contains("UTF-8"));
+        let output = root.path().join("out").join(OsString::from_vec(vec![0x82]));
+        files::atomic_write(&output, b"output").unwrap();
+        assert!(cache::snapshot(project, task)
+            .unwrap_err()
+            .to_string()
+            .contains("UTF-8"));
+        assert!(cache::output_state(project, task).is_err());
+        std::fs::remove_dir_all(root.path().join("src")).unwrap();
+        std::fs::remove_dir_all(root.path().join("out")).unwrap();
+    }
+    let bad_root = root.path().join(OsString::from_vec(vec![0x83]));
+
+    assert!(Workspace::discover(&bad_root)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("UTF-8"));
+    files::atomic_write(&root.path().join("src/日本語.rs"), b"valid").unwrap();
+    assert!(files::input_state(&g.workspace, project, task)
+        .unwrap()
+        .contains_key("src/日本語.rs"));
+}

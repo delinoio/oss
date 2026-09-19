@@ -69,7 +69,7 @@ impl Plan {
                 owners.extend(graph.owners(&path));
                 for task in graph.inputs(&path)? {
                     causes.entry(task).or_default().insert(Cause::Input {
-                        path: files::slash(path.strip_prefix(&graph.workspace.root)?),
+                        path: files::slash(path.strip_prefix(&graph.workspace.root)?)?,
                     });
                 }
                 if graph.workspace.metadata_files.contains(&path)
@@ -94,7 +94,7 @@ impl Plan {
                             .entry(task.clone())
                             .or_default()
                             .insert(Cause::Input {
-                                path: files::slash(path.strip_prefix(&graph.workspace.root)?),
+                                path: files::slash(path.strip_prefix(&graph.workspace.root)?)?,
                             });
                     }
                 }

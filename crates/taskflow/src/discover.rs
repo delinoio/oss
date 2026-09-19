@@ -173,9 +173,11 @@ impl Workspace {
     }
 
     pub async fn discover(root: &Path) -> Result<Self> {
+        crate::files::slash(root)?;
         let root = root
             .canonicalize()
             .context("workspace root does not exist")?;
+        crate::files::slash(&root)?;
         let config_path = root.join("taskflow.yml");
         let root_config = if config_path.exists() {
             config::load(&config_path)?
@@ -254,7 +256,7 @@ impl Workspace {
             .iter()
             .map(|path| {
                 Ok((
-                    crate::files::relative_to(&ws.root, path),
+                    crate::files::relative_to(&ws.root, path)?,
                     crate::files::file_state(path)?,
                 ))
             })
@@ -289,16 +291,15 @@ impl Workspace {
         }
         let path = directory.join("taskflow.yml");
         let config = path.is_file().then(|| config::load(&path)).transpose()?;
-        let id = config
-            .as_ref()
-            .map(|c| c.project.clone())
-            .unwrap_or_else(|| {
-                format!(
-                    "path:{}",
-                    crate::files::slash(directory.strip_prefix(&self.root).unwrap())
-                        .trim_end_matches('/')
-                )
-            });
+        crate::files::slash(&directory)?;
+        let id = if let Some(config) = &config {
+            config.project.clone()
+        } else {
+            format!(
+                "path:{}",
+                crate::files::slash(directory.strip_prefix(&self.root)?)?.trim_end_matches('/')
+            )
+        };
         ensure!(
             !self.projects.contains_key(&id),
             "duplicate explicit project ID: {id}"
@@ -364,7 +365,7 @@ impl Workspace {
                                 continue;
                             }
                             let parent = entry.path().parent().unwrap();
-                            let relative = crate::files::slash(parent.strip_prefix(directory)?);
+                            let relative = crate::files::slash(parent.strip_prefix(directory)?)?;
                             if crate::files::matches_patterns(&patterns, &relative)? {
                                 members.push(serde_json::json!({"path": parent}));
                             }

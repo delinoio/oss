@@ -135,12 +135,12 @@ fn snapshot_inner(project: &Project, task: &Task, capture: bool) -> Result<Vec<F
             let entry = entry?;
             let path = entry.path();
             files::within(&project.directory, path)?;
-            let relative = files::slash(path.strip_prefix(&project.directory)?);
+            let relative = files::slash(path.strip_prefix(&project.directory)?)?;
             let content = if entry.file_type().is_symlink() {
                 let target = std::fs::read_link(path)?;
                 ensure!(!target.is_absolute(), "cache output links must be relative");
                 Content::Link {
-                    target: files::slash(&target),
+                    target: files::slash(&target)?,
                     directory: link_is_directory(path)?,
                 }
             } else if entry.file_type().is_dir() {
@@ -384,7 +384,7 @@ impl Artifact {
         }
         for root in roots {
             ensure!(
-                seen.contains(files::slash(&root).as_str()),
+                seen.contains(files::slash(&root)?.as_str()),
                 "cache is missing a required output root"
             );
         }
@@ -513,7 +513,7 @@ impl Artifact {
                         format!(
                             "cache path aliases another path or is unsupported on the restore \
                              filesystem: {}",
-                            files::slash(&prefix)
+                            prefix.display()
                         )
                     })?;
                 }

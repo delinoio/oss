@@ -70,6 +70,10 @@ missing references are errors.
 
 ## Inputs and outputs
 
+Workspace roots, project paths, input/output filenames, and symbolic-link targets
+must be valid UTF-8. TaskFlow rejects invalid filename bytes instead of treating
+different paths as the same input or output.
+
 Paths and ordered positive/negative globs are relative to the configuration
 directory. Inputs can refer to other projects inside the workspace. `auto: true`
 excludes generated directories such as `node_modules`, `target`, and `dist`.

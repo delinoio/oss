@@ -62,7 +62,7 @@ pub fn manifest_state(graph: &Graph) -> Result<BTreeMap<String, String>> {
         .iter()
         .map(|p| {
             Ok((
-                files::relative_to(&graph.workspace.root, p),
+                files::relative_to(&graph.workspace.root, p)?,
                 files::file_state(p)?,
             ))
         })
@@ -285,7 +285,7 @@ impl Blueprint {
             .iter()
             .map(|p| {
                 Ok((
-                    files::relative_to(&workspace.root, p),
+                    files::relative_to(&workspace.root, p)?,
                     files::file_state(p)?,
                 ))
             })
@@ -331,7 +331,7 @@ pub fn export(graph: &Graph, targets: Vec<String>, output: &Path) -> Result<()> 
             .root
             .join(output.with_extension("taskflow.json")),
     )?;
-    let blueprint_relative = files::relative_to(&graph.workspace.root, &blueprint_path);
+    let blueprint_relative = files::relative_to(&graph.workspace.root, &blueprint_path)?;
     let binary = ".taskflow/tools/source/target/release/tflow";
     let mut jobs = serde_json::Map::new();
     let runner = ci

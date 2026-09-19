@@ -587,7 +587,7 @@ pub async fn inventory(
                     absolute.is_file(),
                     "test runner inventory returned a non-file"
                 );
-                let id = files::relative_to(directory, &absolute);
+                let id = files::relative_to(directory, &absolute)?;
                 let mut run = base.clone();
                 if shard.adapter == ShardAdapter::Jest {
                     run.push("--runTestsByPath".into());
