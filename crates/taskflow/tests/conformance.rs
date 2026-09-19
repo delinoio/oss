@@ -2643,3 +2643,79 @@ fn go_metadata_queries_do_not_contact_module_proxies() {
             Some("mod" | "zip" | "info")
         )));
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn docker_service_cleanup_failure_survives_session_cancellation() {
+    let directory = fixture(
+        json!({"server":{"command":["unused"],"input":[],"service":true,"platform":{"executor":"docker","os":"linux","arch":config::host_arch(),"image":"fixture@sha256:0000000000000000000000000000000000000000000000000000000000000000"}}}),
+    );
+    profile(directory.path(), &["server"]);
+    let tools = tempfile::tempdir().unwrap();
+    std::fs::copy(helper(), tools.path().join("docker")).unwrap();
+    let paths = std::iter::once(tools.path().to_path_buf())
+        .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap()))
+        .collect::<Vec<_>>();
+    let child = tokio::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+        .current_dir(directory.path())
+        .args(["--json", "start"])
+        .env("PATH", std::env::join_paths(paths).unwrap())
+        .env_remove("DOCKER_HOST")
+        .env_remove("DOCKER_CONTEXT")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(60), async {
+        while !directory.path().join("docker-start").exists() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(child.id().unwrap() as i32),
+        nix::sys::signal::Signal::SIGINT,
+    )
+    .unwrap();
+    let output = tokio::time::timeout(Duration::from_secs(10), child.wait_with_output())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!output.status.success());
+    let diagnostic = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        diagnostic.contains("could not confirm cleanup"),
+        "{diagnostic}"
+    );
+    let pid: u32 = std::fs::read_to_string(directory.path().join("docker-start"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(!pid_alive(pid));
+}
+
+#[tokio::test]
+async fn service_cleanup_failures_still_await_all_owners() {
+    let (events, _) = tokio::sync::mpsc::unbounded_channel();
+    let stop = CancellationToken::new();
+    let owner_stop = stop.clone();
+    let complete = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let completed = complete.clone();
+    let services = runner::Services {
+        controls: std::sync::Mutex::new(BTreeMap::from([("second".into(), stop)])),
+        events,
+        joins: std::sync::Mutex::new(vec![
+            tokio::spawn(async { anyhow::bail!("injected cleanup failure") }),
+            tokio::spawn(async move {
+                owner_stop.cancelled().await;
+                completed.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            }),
+        ]),
+    };
+    assert!(services.shutdown().await.is_err());
+    assert!(complete.load(std::sync::atomic::Ordering::SeqCst));
+    assert!(services.controls.lock().unwrap().is_empty());
+}

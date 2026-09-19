@@ -95,18 +95,30 @@ pub struct RunResult {
 pub struct Services {
     pub controls: Mutex<BTreeMap<String, CancellationToken>>,
     pub events: tokio::sync::mpsc::UnboundedSender<(String, ProcessExit)>,
-    pub joins: Mutex<Vec<tokio::task::JoinHandle<()>>>,
+    pub joins: Mutex<Vec<tokio::task::JoinHandle<Result<()>>>>,
 }
 impl Services {
-    pub async fn shutdown(&self) {
+    pub async fn shutdown(&self) -> Result<()> {
         for token in self.controls.lock().unwrap().values() {
             token.cancel();
         }
         let joins = std::mem::take(&mut *self.joins.lock().unwrap());
+        let mut failures = 0;
         for join in joins {
-            let _ = join.await;
+            if !matches!(join.await, Ok(Ok(()))) {
+                failures += 1;
+                tracing::error!(
+                    code = "service-cleanup-failed",
+                    "Service owner could not confirm cleanup"
+                );
+            }
         }
         self.controls.lock().unwrap().clear();
+        ensure!(
+            failures == 0,
+            "{failures} service owner(s) could not confirm cleanup"
+        );
+        Ok(())
     }
 }
 #[derive(Clone)]
@@ -675,7 +687,8 @@ async fn run_task(
             let _locks = locks;
             let remaining =
                 timeout.map(|duration| duration.saturating_sub(process_started.elapsed()));
-            let mut result = process.wait(&stop, remaining).await.unwrap_or(ProcessExit {
+            let waited = process.wait(&stop, remaining).await;
+            let mut result = waited.as_ref().copied().unwrap_or(ProcessExit {
                 code: 1,
                 cancelled: false,
             });
@@ -686,12 +699,28 @@ async fn run_task(
                     cancelled: false,
                 };
             }
-            let _ = stdout.await;
-            let _ = stderr.await;
-            if let Some(mut docker) = docker {
-                let _ = docker.cleanup().await;
+            // Reap every owner before propagating any failure. In particular,
+            // cancellation is not successful cleanup without daemon verification.
+            let stdout = stdout.await.context("service stdout owner failed");
+            let stderr = stderr.await.context("service stderr owner failed");
+            let cleanup = if let Some(mut docker) = docker {
+                docker.cleanup().await
+            } else {
+                Ok(())
+            };
+            if cleanup.is_err() {
+                tracing::error!(task = %event_id, code = "service-container-cleanup-failed", "Failed to confirm container removal");
+                result = ProcessExit {
+                    code: 1,
+                    cancelled: false,
+                };
             }
             let _ = events.send((event_id, result));
+            waited?;
+            stdout??;
+            stderr??;
+            cleanup?;
+            Ok(())
         });
         services.joins.lock().unwrap().push(join);
         return Ok(Receipt {

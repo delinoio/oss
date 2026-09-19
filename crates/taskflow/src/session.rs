@@ -107,7 +107,7 @@ pub async fn start(
                 match next {
                     Ok(next) => {
                         if next.workspace.generation != graph.workspace.generation || invalid {
-                            services.shutdown().await;
+                            services.shutdown().await?;
                             // Consume expected service exits from the replaced generation.
                             while service_receiver.try_recv().is_ok() {}
                             graph = Arc::new(next);
@@ -234,8 +234,9 @@ pub async fn start(
         token.cancel();
     }
     while waves.join_next().await.is_some() {}
-    services.shutdown().await;
+    let cleanup = services.shutdown().await;
     drop(watcher);
+    cleanup?;
     result
 }
 

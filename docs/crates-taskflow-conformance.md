@@ -131,3 +131,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `completed_tasks_keep_edits_while_an_independent_wave_task_runs` gates an independent slow task after a watched task has fully exited. Both skip and restart policies must retain the completed task's input change until its reserved wave is available; wave membership alone is not an executing task.
 
 `go_metadata_queries_do_not_contact_module_proxies` runs real CLI queries with a cold isolated module cache and a recording loopback proxy, including an inherited private-module bypass. Missing dependencies yield incomplete coverage without requests or downloaded module metadata.
+
+`docker_service_cleanup_failure_survives_session_cancellation` injects Docker removal and absence-check failures through an isolated CLI fixture. Ctrl+C must still reap its real child and return a cleanup failure instead of a successful session. No real daemon is interrupted.

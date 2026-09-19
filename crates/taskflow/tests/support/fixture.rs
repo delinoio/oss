@@ -7,6 +7,19 @@ fn write(path: &str, content: &[u8]) {
 }
 fn main() {
     let mut args: Vec<_> = std::env::args().collect();
+    if Path::new(&args[0]).file_stem().unwrap() == "docker" {
+        // Fault injection owns a CLI process, never a real Docker daemon.
+        match args[1].as_str() {
+            "context" => println!("\"unix:///taskflow-fixture\""),
+            "run" => {
+                write("docker-start", std::process::id().to_string().as_bytes());
+                std::thread::sleep(Duration::from_secs(30));
+            }
+            "rm" | "ps" => std::process::exit(7),
+            _ => panic!("unexpected Docker fixture command"),
+        }
+        return;
+    }
     if args[1] == "shell" {
         // A portable test interpreter: neither OS default shell understands
         // these inventory/run expressions without the explicit shell setting.
