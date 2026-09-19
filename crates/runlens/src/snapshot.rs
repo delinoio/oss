@@ -155,7 +155,12 @@ fn inspect_inner(
         let Some(target) = target.to_str() else {
             return Ok(FileState::unknown(ObservationIssue::NonUnicode));
         };
-        state.link_target = Some(redactor.text(target));
+        let target = redactor.text(target);
+        if target.contains("[redacted]") {
+            redactor.path_redacted.store(true, Ordering::Relaxed);
+            return Ok(FileState::unknown(ObservationIssue::Redacted));
+        }
+        state.link_target = Some(target);
     } else if before.is_file() {
         state.kind = Some(FileKind::File);
         state.size = Some(before.len());

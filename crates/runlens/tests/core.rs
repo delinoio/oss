@@ -54,6 +54,53 @@ fn spill_preserves_sorted_records_and_roundtrip() {
     assert!(serde_json::from_str::<Entries<u32>>(r#"{"a":1,"a":2}"#).is_err());
 }
 #[test]
+#[cfg(unix)]
+fn masked_symlink_targets_preserve_unknown_changes_without_secret_values() {
+    use std::os::unix::fs::symlink;
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path().canonicalize().unwrap();
+    let redactor = Redactor::new(
+        &root,
+        &[],
+        &config::Redaction {
+            patterns: vec!["canary-[a-z]+".into()],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let mut snapshots = Vec::new();
+    for target in ["canary-first", "canary-second"] {
+        let _ = std::fs::remove_file(root.join("link"));
+        symlink(target, root.join("link")).unwrap();
+        let snapshot = snapshot::take(
+            &root,
+            &[],
+            &[],
+            &redactor,
+            &config::Limits::default(),
+            &cancel,
+        )
+        .unwrap();
+        assert!(!snapshot.complete);
+        let encoded = serde_json::to_string(&snapshot.entries).unwrap();
+        assert!(!encoded.contains("canary-"));
+        let link = snapshot.entries.get("${workspace}/link").unwrap().unwrap();
+        assert_eq!(link.knowledge, Knowledge::Unknown);
+        assert_eq!(link.reason, Some(ObservationIssue::Redacted));
+        snapshots.push(link);
+    }
+    assert!(
+        redactor
+            .path_redacted
+            .load(std::sync::atomic::Ordering::Relaxed)
+    );
+    assert_eq!(
+        snapshot::difference(&snapshots[0], &snapshots[1]),
+        Some(ChangeKind::Unknown)
+    );
+}
+#[test]
 fn path_patterns_use_the_observed_platform_case_rules() {
     let patterns = vec!["private/**".into(), "output.bin".into()];
     for os in ["windows", "linux", "macos"] {

@@ -432,6 +432,9 @@ Cancellation handlers are installed before owned child work. Native cancellation
 fixtures synchronize on actual child readiness rather than assuming startup time.
 
 Offline checks never pass a report with no target execution.
+Symlink targets changed by secret or custom-pattern masking are unknown with
+`redacted`, set the redacted-path scope flag, and make collection incomplete.
+Identical masking placeholders cannot establish an unchanged symlink target.
 Input/output, exclusion, and boundary globs use case-insensitive Windows matching,
 including the directory itself for `directory/**`. Offline analysis selects case
 semantics from each execution's OS, including when read on a different platform.

@@ -156,6 +156,7 @@
 - Do not inject unused tracing environment markers or overwrite the caller's `FSPY` value; retain only required backend coordination mutations.
 - Collection budgets apply inside the tracing/snapshot layers, not only after materialization. Use typed incomplete outcomes and retain available evidence.
 - Charge each snapshot record and directory member before retaining it; an over-budget final entry must remain incomplete even when no subsequent entry is walked.
+- Redacted symlink targets are unknown evidence and mark collection incomplete; identical masking placeholders must never prove that two targets are equal.
 - Deserialize evidence under the shared process memory budget before spilling; do not force every small report map to allocate its own file handles.
 - Preflight conflict analysis against the aggregate limit of 65,536 cross-report target pairs before inspecting paths or creating findings; preparation executions do not count.
 - Comparison compatibility includes source revision and working-tree inclusion policy; identical observed bytes cannot make different source selections comparable.
