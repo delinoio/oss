@@ -255,6 +255,10 @@ test("OCI validation is multi-architecture, non-root, migration-bearing, and loc
   assert.doesNotMatch(source, /(?:docker|skopeo) push/iu);
   assert.doesNotMatch(source, /docker-daemon:/u);
   assert.match(apiDockerfileSource, /^FROM --platform=\$BUILDPLATFORM golang:/mu);
+  const moduleGoVersion = readFileSync(`${root}/go.mod`, "utf8").match(/^go (\S+)$/mu)?.[1];
+  const imageGoVersion = apiDockerfileSource.match(/^FROM --platform=\$BUILDPLATFORM golang:([\d.]+)-bookworm AS build$/mu)?.[1];
+  assert.ok(moduleGoVersion);
+  assert.equal(imageGoVersion, moduleGoVersion, "OCI builder must match the module toolchain floor");
 });
 
 test("Debian desktop validation installs, launches, unregisters, and removes the package", () => {
