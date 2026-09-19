@@ -54,6 +54,35 @@ fn spill_preserves_sorted_records_and_roundtrip() {
     assert!(serde_json::from_str::<Entries<u32>>(r#"{"a":1,"a":2}"#).is_err());
 }
 #[test]
+fn final_snapshot_record_and_directory_member_obey_byte_budget() {
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path().canonicalize().unwrap();
+    for index in 0..7 {
+        std::fs::write(root.join(format!("{index}{}", "a".repeat(199))), "content").unwrap();
+    }
+    let redactor = Redactor::new(&root, &[], &config::Redaction::default()).unwrap();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let mut limits = config::Limits::default();
+    let complete = snapshot::take(&root, &[], &[], &redactor, &limits, &cancel).unwrap();
+    assert!(complete.complete);
+    // One byte below the complete charge means only the final walked record
+    // overruns, regardless of filesystem directory ordering.
+    limits.total_bytes = (complete.bytes - 1) * 3;
+    limits.validate().unwrap();
+    let limited = snapshot::take(&root, &[], &[], &redactor, &limits, &cancel).unwrap();
+    assert!(!limited.complete);
+    assert!(limited.bytes <= limits.total_bytes / 3);
+    assert_eq!(limited.entries.len() + 1, complete.entries.len());
+
+    // Seven 200-byte names exceed 4096/3 only at the last directory member.
+    limits.total_bytes = 4096;
+    let limited = snapshot::take(&root, &[], &[], &redactor, &limits, &cancel).unwrap();
+    assert!(!limited.complete);
+    let directory = limited.entries.get("${workspace}").unwrap().unwrap();
+    assert_eq!(directory.knowledge, Knowledge::Unknown);
+    assert_eq!(directory.reason, Some(ObservationIssue::CollectionLimit));
+}
+#[test]
 fn clean_environment_reserves_git_controls_with_platform_case_rules() {
     let root = tempfile::tempdir().unwrap();
     for (index, name) in [

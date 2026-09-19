@@ -75,10 +75,16 @@ pub fn take(
         let key = redactor.path(path);
         let state = inspect(path, root, &matcher, temporary, redactor, limits, cancelled);
         result.complete &= state.knowledge != Knowledge::Unknown;
-        result.bytes += key.len() as u64
+        let charged = result.bytes
+            + key.len() as u64
             + serde_json::to_vec(&state)
                 .map_err(|_| Error::storage())?
                 .len() as u64;
+        if charged > limits.total_bytes / 3 {
+            result.complete = false;
+            break;
+        }
+        result.bytes = charged;
         if result.entries.get(&key)?.is_some() {
             result.complete = false;
             result
@@ -201,9 +207,6 @@ fn inspect_inner(
             if cancelled.is_cancelled() {
                 return Ok(FileState::unknown(ObservationIssue::Cancelled));
             }
-            if names.len() >= limits.max_paths || bytes >= limits.total_bytes / 3 {
-                return Ok(FileState::unknown(ObservationIssue::CollectionLimit));
-            }
             let entry = entry?;
             if excluded(&entry.path(), root, exclusions, temporary) {
                 continue;
@@ -212,6 +215,9 @@ fn inspect_inner(
                 return Ok(FileState::unknown(ObservationIssue::NonUnicode));
             };
             bytes += name.len() as u64;
+            if names.len() >= limits.max_paths || bytes > limits.total_bytes / 3 {
+                return Ok(FileState::unknown(ObservationIssue::CollectionLimit));
+            }
             names
                 .insert(name, true)
                 .map_err(|_| std::io::Error::other("directory observation failed"))?;

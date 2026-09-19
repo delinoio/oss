@@ -432,6 +432,10 @@ Cancellation handlers are installed before owned child work. Native cancellation
 fixtures synchronize on actual child readiness rather than assuming startup time.
 
 Offline checks never pass a report with no target execution.
+Snapshot records and directory names are charged before insertion, including the
+last walked record. An entry exceeding its collection budget is not retained as
+known evidence: the snapshot is incomplete, and overflowing directory membership
+is unknown with `collection-limit`.
 Global allow/deny read/write boundaries cover both current preparation and target
 executions, including snapshot-proven writes. Target input/output coverage and
 baseline new-access comparisons remain target-scoped; imported historical
