@@ -3,7 +3,7 @@
 - The common application service owns scheduling, final validation, acknowledgement, retention and comparison. CLI, Connect and MCP adapters must not implement competing decisions.
 - Aggregate check outcomes independently of names/order: interrupted, cancelled, replaced, expired, failed, blocked, then passed. Optional failed/blocked outcomes do not fail the run; lifecycle loss remains visible, and no applicable checks is failed.
 - Pre-push `run-and-wait` renews terminal nonpassing attempts and waits for existing unfinished attempts; `wait` never submits work.
-- Pre-push latest-attempt selection, gate evaluation and replacement insertion share one immediate SQLite transaction, so concurrent push clients reuse one pending attempt for the same repository, commit and context.
+- Pre-push hashes terminal evidence outside SQLite transactions, then reselects the latest attempt and compares its full metadata snapshot in a short immediate transaction before reuse or replacement insertion. Concurrent clients reuse one pending attempt without blocking unrelated workers during file I/O.
 - Acknowledgement is idempotent and accepts terminal runs only; check terminal state and persist the timestamp in one transaction.
 - Account lifecycle control remains in the canonical home configuration directory even when `--config` or `state_dir` changes. Tests must use isolated homes or explicit injected `Paths`; never touch developer credentials or real account state.
 - Committed source is streamed through one validated raw Git blob batch per workspace, with bounded buffers. Never enable original hooks, filters, submodules or LFS implicitly. Hook installation discovery must not use the execution helper's disabled-hooks override.
