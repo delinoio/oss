@@ -9,9 +9,11 @@ fn main() {
     let mut args: Vec<_> = std::env::args().collect();
     if Path::new(&args[0]).file_stem().unwrap() == "cargo" {
         assert_eq!(args[1], "metadata");
-        write("metadata.pid", std::process::id().to_string().as_bytes());
         let mut log = fs::OpenOptions::new().create(true).append(true).open("metadata-calls").unwrap();
         writeln!(log, "metadata").unwrap();
+        // Publish readiness only after the call is recorded; the test may
+        // terminate this process immediately after observing the PID file.
+        write("metadata.pid", std::process::id().to_string().as_bytes());
         std::thread::sleep(Duration::from_secs(30));
         return;
     }
