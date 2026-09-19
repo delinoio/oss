@@ -49,7 +49,7 @@ test("Runlens keeps the verified release private until the Homebrew update succe
   const tap = steps.findIndex((step) => step.run?.includes("runlens.py homebrew"));
   const publish = steps.findIndex((step) => step.with?.script?.includes("updateRelease"));
   assert.ok(draft >= 0 && draft < tap && tap < publish);
-  assert.match(steps[draft].with.script, /draft: true/u);
+  assert.match(steps[draft].with.script, /prepareDraft/u);
   assert.match(steps[draft].with.script, /core.setOutput\('release_id', release.id\)/u);
   assert.doesNotMatch(steps[draft].with.script, /updateRelease|draft: false/u);
   for (const step of [steps[tap], steps[publish]]) {
@@ -57,7 +57,7 @@ test("Runlens keeps the verified release private until the Homebrew update succe
     assert.equal(step["continue-on-error"], undefined);
   }
   assert.equal(steps[publish].env.RELEASE_ID, "${{ steps.draft.outputs.release_id }}");
-  assert.match(steps[publish].with.script, /!release.draft \|\| release.tag_name !== process.env.RELEASE_TAG/u);
+  assert.match(steps[publish].with.script, /assertMatchingDraft\(release, process.env.RELEASE_TAG, context.sha\)/u);
 });
 test("production installers require version-bound authenticated checksums and archives", () => {
   for (const file of ["runlens.sh", "runlens.ps1"]) {

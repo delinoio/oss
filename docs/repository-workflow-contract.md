@@ -83,13 +83,17 @@ Only the signing job receives OIDC write permission. Its keyless Sigstore identi
 is the release workflow at the exact tag; checksum manifests and each archive are
 signed separately. All six minimum-OS runners then install authenticated archives
 with the production installers. Only after those jobs pass does the publication
-job receive contents-write permission and the tap credential. It creates a new
-draft, uploads the complete signed inventory, verifies uploaded sizes, and then
+job receive contents-write permission and the tap credential. It creates or resumes
+a draft bound to the exact release tag and commit, fills missing assets without
+replacing existing ones, verifies uploaded sizes and SHA-256 digests, and then
 updates the Homebrew tap before making the verified draft public. Tap failures
 leave the release private; the final publication step requires successful tap
-completion and rechecks the draft's identity. Any existing release, including an
-incomplete draft, is refused. Operator recovery must inspect and intentionally
-handle an incomplete draft and any tap update that preceded a publication failure.
+completion and rechecks the draft's identity. Published releases, drafts for other
+commits, unexpected assets, and mismatched payloads are refused. A retry authenticates
+retained Sigstore bundles against the exact payload and tag, preserving valid
+original signatures even when a new signing attempt produces different bundle bytes.
+It resumes interrupted uploads and idempotently repeats a completed tap update
+after a final-publication failure; invalid retained assets require operator inspection.
 Homebrew uses the existing `delinoio/homebrew-tap` prebuilt formula path.
 
 The six native installer fixtures deliberately replace only cosign authentication

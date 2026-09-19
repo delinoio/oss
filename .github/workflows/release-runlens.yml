@@ -63,8 +63,8 @@ jobs:
             const {data: run} = await github.rest.actions.getWorkflowRun({...context.repo, run_id: Number(runId)});
             if (run.path !== '.github/workflows/runlens.yml' || run.event !== 'workflow_dispatch' || run.conclusion !== 'success' || run.head_sha !== context.sha) throw Error('Native evidence must be successful at the exact release commit');
             try {
-              await github.rest.repos.getReleaseByTag({...context.repo, tag});
-              throw Error('Existing releases must never be overwritten');
+              const {data: release} = await github.rest.repos.getReleaseByTag({...context.repo, tag});
+              require('./scripts/release/runlens-draft.cjs').assertMatchingDraft(release, tag, context.sha);
             } catch (error) { if (error.status !== 404) throw error; }
       - uses: actions/download-artifact@v8
         if: inputs.dry_run
@@ -191,24 +191,16 @@ jobs:
         with:
           name: runlens-signed
           path: runlens-artifacts
-      - name: Prepare and verify a new draft without overwriting
+      - uses: sigstore/cosign-installer@v4.1.1
+      - name: Prepare or resume a verified draft without overwriting
         id: draft
         uses: actions/github-script@v8
         env:
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
         with:
           script: |
-            const fs = require('node:fs');
-            const crypto = require('node:crypto');
-            const tag = process.env.RELEASE_TAG;
-            try { await github.rest.repos.getReleaseByTag({...context.repo, tag}); throw Error('Release already exists'); }
-            catch (error) { if (error.status !== 404) throw error; }
-            const files = fs.readdirSync('runlens-artifacts').filter(name => /^(runlens-(darwin|linux|windows)-(amd64|arm64)\.(tar\.gz|zip)|SHA256SUMS)(\.sigstore\.json)?$/.test(name));
-            if (files.length !== 14) throw Error('Incomplete signed inventory');
-            const {data: release} = await github.rest.repos.createRelease({...context.repo, tag_name: tag, draft: true, generate_release_notes: true});
-            for (const name of files) await github.rest.repos.uploadReleaseAsset({...context.repo, release_id: release.id, name, data: fs.readFileSync(`runlens-artifacts/${name}`)});
-            const {data: assets} = await github.rest.repos.listReleaseAssets({...context.repo, release_id: release.id});
-            if (assets.length !== 14 || assets.some(asset => !files.includes(asset.name) || asset.size !== fs.statSync(`runlens-artifacts/${asset.name}`).size || asset.digest !== `sha256:${crypto.createHash('sha256').update(fs.readFileSync(`runlens-artifacts/${asset.name}`)).digest('hex')}`)) throw Error('Incomplete or mismatched uploaded assets; draft retained for inspection');
+            const {prepareDraft} = require('./scripts/release/runlens-draft.cjs');
+            const release = await prepareDraft({github, context, tag: process.env.RELEASE_TAG, directory: 'runlens-artifacts'});
             core.setOutput('release_id', release.id);
       - name: Update the prebuilt Homebrew formula
         env:
@@ -225,5 +217,5 @@ jobs:
             const releaseId = Number(process.env.RELEASE_ID);
             if (!Number.isSafeInteger(releaseId) || releaseId <= 0) throw Error('Missing draft release identity');
             const {data: release} = await github.rest.repos.getRelease({...context.repo, release_id: releaseId});
-            if (!release.draft || release.tag_name !== process.env.RELEASE_TAG) throw Error('Draft identity changed; refusing publication');
+            require('./scripts/release/runlens-draft.cjs').assertMatchingDraft(release, process.env.RELEASE_TAG, context.sha);
             await github.rest.repos.updateRelease({...context.repo, release_id: releaseId, draft: false});
