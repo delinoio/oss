@@ -553,6 +553,63 @@ func TestForceStopCancelsInFlightPreparationImmediately(t *testing.T) {
 	}
 }
 
+type cancelledPreparationDriver struct {
+	Driver
+	started  chan string
+	succeeds bool
+}
+
+func (d *cancelledPreparationDriver) Prepare(ctx context.Context, _ Config, _ Pool, r Runner, _ Snapshot, _ string, _ func(Handle) error) error {
+	d.started <- r.ID
+	<-ctx.Done()
+	if d.succeeds {
+		return nil
+	}
+	return ctx.Err()
+}
+
+func TestForceCancelledPreparationsDoNotChangeFailureCircuit(t *testing.T) {
+	for _, succeeds := range []bool{false, true} {
+		for _, failures := range []int{0, 2} {
+			t.Run(fmt.Sprintf("success=%t/prior=%d", succeeds, failures), func(t *testing.T) {
+				m, c, _, base, pool := testManager(t)
+				driver := &cancelledPreparationDriver{Driver: base, started: make(chan string, 3), succeeds: succeeds}
+				m.Drivers = func(Backend) (Driver, error) { return driver, nil }
+				if err := m.Store.Update(func(s *Snapshot) error { s.Pools[pool].PreparationFailures = failures; return nil }); err != nil {
+					t.Fatal(err)
+				}
+				for i := 0; i < 3; i++ {
+					id := seedRunner(t, m, pool, Preparing)
+					m.startWork(id, func(ctx context.Context) { m.prepare(ctx, id) })
+				}
+				for i := 0; i < 3; i++ {
+					select {
+					case <-driver.started:
+					case <-time.After(5 * time.Second):
+						t.Fatal("preparation did not start")
+					}
+				}
+				if err := m.Stop(true); err != nil {
+					t.Fatal(err)
+				}
+				m.wg.Wait()
+				if err := m.activate(c); err != nil {
+					t.Fatal(err)
+				}
+				s := m.Store.View()
+				if s.Pools[pool].Phase != Ready || s.Pools[pool].PreparationFailures != failures || s.Pools[pool].Problem != nil {
+					t.Fatal("force cancellation changed the failure circuit across restart")
+				}
+				for _, r := range s.Runners {
+					if r.Phase != Cleaning || r.Problem != nil {
+						t.Fatal("cancelled preparation was reported as image failure or readiness")
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestConfigurationAcceptancePreservesConcurrentStop(t *testing.T) {
 	m, c, _, _, _ := testManager(t)
 	if err := m.Stop(false); err != nil {

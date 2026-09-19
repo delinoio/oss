@@ -646,8 +646,13 @@ func (m *Manager) prepare(ctx context.Context, id string) {
 		m.failPreparation(id, e)
 		return
 	}
+	cancelled := false
 	if e = m.Store.Update(func(s *Snapshot) error {
 		r := s.Runners[id]
+		if r.Forced {
+			cancelled = true
+			return nil
+		}
 		if r.Phase == Preparing {
 			r.Phase = Idle
 			r.Deadline = r.CreatedAt.Add(c.JobTimeout())
@@ -658,14 +663,26 @@ func (m *Manager) prepare(ctx context.Context, id string) {
 		m.runnerProblem(id, e, false)
 		return
 	}
-	m.Log.Info("runner_prepared", "pool", p.Spec.Name, "runner", id, "duration_ms", time.Since(r.CreatedAt).Milliseconds())
+	if cancelled {
+		m.Log.Info("runner_preparation_cancelled", "pool", p.Spec.Name, "runner", id)
+	} else {
+		m.Log.Info("runner_prepared", "pool", p.Spec.Name, "runner", id, "duration_ms", time.Since(r.CreatedAt).Milliseconds())
+	}
 }
 func (m *Manager) failPreparation(id string, err error) {
 	p := classify(err, ErrPreparation, "Runner preparation failed.", "Inspect doctor and image compatibility, then resume the pool.")
+	cancelled := false
 	_ = m.Store.Update(func(s *Snapshot) error {
 		r := s.Runners[id]
 		p.Runner = id
 		p.Pool = s.Pools[r.PoolID].Spec.Name
+		if r.Forced {
+			// Cancellation is an operator/deadline decision, not evidence that
+			// the pool image is broken. Preserve any existing timeout diagnostic.
+			r.Phase = Cleaning
+			cancelled = true
+			return nil
+		}
 		r.Problem = p
 		if r.Phase != Busy || r.Forced {
 			r.Phase = Cleaning
@@ -678,7 +695,11 @@ func (m *Manager) failPreparation(id string, err error) {
 		}
 		return nil
 	})
-	logProblem(m.Log, "runner_preparation_failed", p)
+	if cancelled {
+		m.Log.Info("runner_preparation_cancelled", "pool", p.Pool, "runner", id)
+	} else {
+		logProblem(m.Log, "runner_preparation_failed", p)
+	}
 }
 func (m *Manager) runnerProblem(id string, err error, quarantine bool) {
 	p := classify(err, ErrRetry, "Runner reconciliation failed.", "Restore the dependency and retry cleanup.")
