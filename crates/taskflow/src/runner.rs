@@ -434,7 +434,7 @@ async fn run_task(
     let inputs = files::input_state(&graph.workspace, project, task)?;
     let mut tools = BTreeMap::new();
     for (name, command) in &task.tools {
-        let bytes = crate::process::capture_task(
+        let identity = crate::process::tool_identity(
             &graph.workspace.root,
             &project.directory,
             task,
@@ -443,7 +443,7 @@ async fn run_task(
             &cancel,
         )
         .await?;
-        tools.insert(name, files::digest(&bytes));
+        tools.insert(name, identity);
     }
     let prerequisite_outputs: BTreeMap<_, _> = prerequisites
         .iter()

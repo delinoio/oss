@@ -3275,3 +3275,51 @@ async fn ci_export_rejects_symlink_destinations_before_writing_either_file() {
         .join("new/nested/ci.taskflow.json")
         .is_file());
 }
+
+#[tokio::test]
+async fn tool_identity_includes_stderr_without_contaminating_metadata() {
+    let directory = fixture(
+        json!({"build":{"command":command(&["write","out","built"]),"input":[],"output":["out"],"cache":true,"tools":{"fixture":command(&["version-streams","version.stdout","version.stderr"])}}}),
+    );
+    std::fs::write(directory.path().join("version.stdout"), "").unwrap();
+    std::fs::write(directory.path().join("version.stderr"), "tool-v1").unwrap();
+    let g = graph(directory.path()).await;
+    assert_eq!(
+        run(g.clone(), &["build"]).await.results["app#build"].outcome,
+        Outcome::Executed
+    );
+    assert_eq!(
+        run(g.clone(), &["build"]).await.results["app#build"].outcome,
+        Outcome::LocalCache
+    );
+    std::fs::write(directory.path().join("version.stderr"), "tool-v2").unwrap();
+    assert_eq!(
+        run(g.clone(), &["build"]).await.results["app#build"].outcome,
+        Outcome::Executed
+    );
+    std::fs::write(directory.path().join("version.stderr"), "").unwrap();
+    std::fs::write(directory.path().join("version.stdout"), "tool-v2").unwrap();
+    assert_eq!(
+        run(g, &["build"]).await.results["app#build"].outcome,
+        Outcome::Executed
+    );
+    std::fs::write(
+        directory.path().join("version.stdout"),
+        r#"{"metadata":true}"#,
+    )
+    .unwrap();
+    std::fs::write(directory.path().join("version.stderr"), "diagnostic").unwrap();
+    let command: config::Command = serde_json::from_value(command(&[
+        "version-streams",
+        "version.stdout",
+        "version.stderr",
+    ]))
+    .unwrap();
+    let bytes = taskflow::process::capture(directory.path(), &command, &[])
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&bytes).unwrap(),
+        json!({"metadata":true})
+    );
+}

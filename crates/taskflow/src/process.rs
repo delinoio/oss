@@ -224,6 +224,25 @@ pub(crate) async fn capture_with_shell(
     environment: &BTreeMap<String, String>,
     cancel: &CancellationToken,
 ) -> Result<Vec<u8>> {
+    Ok(
+        capture_output(directory, command, shell, environment, cancel)
+            .await?
+            .stdout,
+    )
+}
+
+struct CapturedOutput {
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+async fn capture_output(
+    directory: &Path,
+    command: &Command,
+    shell: Option<&[String]>,
+    environment: &BTreeMap<String, String>,
+    cancel: &CancellationToken,
+) -> Result<CapturedOutput> {
     let mut child = OwnedProcess::spawn(directory, command, shell, Some(environment))?;
     let stdout = child.child.stdout.take().unwrap();
     let stderr = child.child.stderr.take().unwrap();
@@ -231,13 +250,16 @@ pub(crate) async fn capture_with_shell(
     let err = tokio::spawn(read_bounded(stderr));
     let status = child.wait(cancel, Some(Duration::from_secs(120))).await?;
     let output = out.await??;
-    let _ = err.await??;
+    let errors = err.await??;
     ensure!(
         status.code == 0 && !status.cancelled,
         "native command failed (exit {})",
         status.code
     );
-    Ok(output)
+    Ok(CapturedOutput {
+        stdout: output,
+        stderr: errors,
+    })
 }
 
 pub async fn capture_task(
@@ -248,8 +270,41 @@ pub async fn capture_task(
     environment: &BTreeMap<String, String>,
     cancel: &CancellationToken,
 ) -> Result<Vec<u8>> {
+    Ok(
+        capture_task_output(root, directory, task, command, environment, cancel)
+            .await?
+            .stdout,
+    )
+}
+
+pub(crate) async fn tool_identity(
+    root: &Path,
+    directory: &Path,
+    task: &crate::config::Task,
+    command: &Command,
+    environment: &BTreeMap<String, String>,
+    cancel: &CancellationToken,
+) -> Result<String> {
+    let output = capture_task_output(root, directory, task, command, environment, cancel).await?;
+    // Hash separately before framing: moving bytes between stdout and stderr
+    // must not produce the same identity. Metadata consumers still receive only
+    // stdout.
+    Ok(crate::files::digest(&serde_json::to_vec(&(
+        crate::files::digest(&output.stdout),
+        crate::files::digest(&output.stderr),
+    ))?))
+}
+
+async fn capture_task_output(
+    root: &Path,
+    directory: &Path,
+    task: &crate::config::Task,
+    command: &Command,
+    environment: &BTreeMap<String, String>,
+    cancel: &CancellationToken,
+) -> Result<CapturedOutput> {
     if task.platform.executor == crate::config::Executor::Host {
-        return capture_with_shell(
+        return capture_output(
             directory,
             command,
             task.shell.as_deref(),
@@ -271,7 +326,7 @@ pub async fn capture_task(
         cancel,
     )
     .await?;
-    let result = capture_with_env(directory, &command, &environment, cancel).await;
+    let result = capture_output(directory, &command, None, &environment, cancel).await;
     container.cleanup().await?;
     result
 }

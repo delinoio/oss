@@ -153,3 +153,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `check_rejects_remote_credentials_in_every_project_task` exercises CLI preflight across unselected child tasks, all three environment declaration forms, all transport credential references, and host-specific name casing, including remote mode `off`.
 
 `ci_export_rejects_symlink_destinations_before_writing_either_file` rejects external parent, workflow-leaf, and blueprint-leaf links without creating or replacing either output; an ordinary missing nested destination remains supported.
+
+`tool_identity_includes_stderr_without_contaminating_metadata` upgrades a tool reporting only on stderr, then moves identical bytes between streams. Both changes invalidate cached success while JSON metadata queries retain stdout-only parsing.

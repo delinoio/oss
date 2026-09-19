@@ -35,6 +35,10 @@ fn main() {
     }
     match args[1].as_str() {
         "version" => println!("taskflow-fixture-1"),
+        "version-streams" => {
+            print!("{}", fs::read_to_string(&args[2]).unwrap());
+            eprint!("{}", fs::read_to_string(&args[3]).unwrap());
+        }
         "copy" => { write(&args[3], &fs::read(&args[2]).unwrap()); }
         "write" => write(&args[2], args[3].as_bytes()),
         "record" | "unchanged" => {
