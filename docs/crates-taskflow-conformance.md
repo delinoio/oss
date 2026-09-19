@@ -50,6 +50,8 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 
 `readiness_cancellation_and_deadlines_await_probe_owners` owns real readiness parents and children through operator cancellation, readiness timeout, and service timeout. Unix probes ignore graceful termination to prove the session waits for forced cleanup and stream completion.
 
+`pending_cancellation_uses_operator_exit_code`, `check_rejects_nul_in_every_shell_argument`, and `docker_host_environment_preserves_resolved_precedence` cover pre-start/pending cancellation, malformed shell prefixes, and isolated inherited/task/CLI environment precedence. Scenario 25 also exercises session input and schedule propagation after unchanged prerequisites.
+
 Additional invariants include unknown/duplicate configuration rejection, schema freshness, stale/partial CI receipt rejection, required artifact accounting, cache path traversal rejection before mutation, masked stored logs, and service failure cancelling other running checks before returning.
 
 `grouped_tasks_only_receive_their_declared_secrets` passes a CI-style credential union to a real CLI run: only the declaring task receives the credential, and persisted output remains masked.
@@ -108,6 +110,8 @@ The `taskflow-conformance` CI job covers macOS/Linux/Windows x64/arm64 and exclu
 
 ## Validation evidence and limits
 The implementation session exercised real macOS arm64 host execution, Linux arm64 containers through Docker, loopback MinIO, pnpm/Cargo/Go discovery, all four native shard adapters, source-build CLI/schema, generated-workflow actionlint, root Rust tests, and public-docs build/route checks. Committed CI definitions are not evidence that remote platform jobs have already executed. Windows and other host architectures require their conformance results before a release support claim. Registry/service availability failures must be reported as failed or unavailable validation, never counted as passes.
+
+Before this repair, GitHub Actions for PR #906 revision `d2bff705` reported success for all six native platform jobs and both Linux Docker/S3 jobs. That establishes prior-revision native evidence, including Windows; the new repairs still require their own matrix results. Local repair validation covers all 88 conformance cases and two library regressions on macOS arm64, including six external suites, and 82 conformance cases plus two library regressions in Linux arm64 containers.
 
 A local full Windows GNU cross-check was unavailable because the host lacks the MinGW C compiler required by the TLS dependency. The Windows process-owner source was type-checked separately for the Windows target; this is not a substitute for native execution evidence.
 
