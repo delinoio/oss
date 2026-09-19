@@ -137,6 +137,7 @@ func (p *Project) Validate() error {
 		return E("invalid-config", "pre_push must be block, wait, or run-and-wait", 2)
 	}
 	reportOwners := map[string]string{}
+	environmentSecrecy := map[string]bool{}
 	for name, c := range p.Checks {
 		if !checkName.MatchString(name) || strings.TrimSpace(c.Command) == "" || strings.ContainsRune(c.Command, 0) {
 			return E("invalid-check", "invalid name or empty/NUL command: "+name, 2)
@@ -172,6 +173,14 @@ func (p *Project) Validate() error {
 			if !envName.MatchString(e.Name) || seen[e.Name] || (e.Credential != "" && !e.Secret) {
 				return E("invalid-environment", name+": invalid/duplicate name or non-secret credential", 2)
 			}
+			// Environment names are case-insensitive on Windows. Enforce one
+			// secrecy classification across the portable project graph before
+			// any public input can be read into a durable run snapshot.
+			key := strings.ToUpper(e.Name)
+			if secret, exists := environmentSecrecy[key]; exists && secret != e.Secret {
+				return E("invalid-environment", "environment input "+e.Name+" has conflicting secret/public declarations", 2)
+			}
+			environmentSecrecy[key] = e.Secret
 			seen[e.Name] = true
 		}
 		seen = map[string]bool{}

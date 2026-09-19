@@ -89,3 +89,5 @@ Pre-upgrade sampled process records cannot prove that unobserved descendants exi
 ### Review provenance
 
 PR #901 thread `PRRT_kwDORRAKg86j9n3x` correctly identified the old sampling race. The third repair pass reproduced successful reconciliation leaving a double-forked, reparented child alive. Faster polling and environment markers were rejected because neither proves ownership. XNU rejects the historic kqueue child-tracking flags, and a full Endpoint Security client would introduce an entitlement contract. The fourth pass instead validated inherited resource coalitions and Linux subreapers, including cancellation, normal exit, worker disconnection, recovery and exclusive replacement. See the evidence document for exact executed checks and their platform limits.
+
+Environment secrecy is project-wide: declarations for the same case-insensitive environment name must agree on `secret`, including across checks and OS filters. Reject conflicts before collecting public inputs, fingerprinting or accepting a run.

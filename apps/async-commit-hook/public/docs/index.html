@@ -188,7 +188,10 @@ max_bytes = 0</pre
         <p>
           Only necessary system/tool context and explicitly declared inputs
           reach commands. Public declared environment values participate in
-          compatibility; secret values do not. Prefer local secret-file
+          compatibility; secret values do not. All checks must agree whether an
+          environment name is secret; names are compared case-insensitively for
+          portability. Conflicting declarations are rejected before acceptance.
+          Prefer local secret-file
           references for queued work and daemon restarts. An environment-backed
           secret must be available to the worker/server process; start/restart
           ach from the environment that supplies it.
