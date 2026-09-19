@@ -4,6 +4,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { load } from "js-yaml";
+import { jobPaths } from "./plan.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const workflowSource = readFileSync(`${root}/.github/workflows/CI.yml`, "utf8");
@@ -32,6 +33,7 @@ const devhudJobs = [
   "devhud-mobile-contracts", "devhud-ios-simulator", "devhud-android-emulator", "devhud-protocol", "devhud-admin",
   "devhud-api", "devhud-oci", "devhud-supply-chain", "devhud-release-contracts",
 ];
+const achJobs = ["async-commit-hook"];
 
 function step(job, id) {
   return job.steps.find((candidate) => candidate.id === id);
@@ -41,106 +43,120 @@ function namedStep(job, name) {
   return job.steps.find((candidate) => candidate.name === name);
 }
 
+test("async-commit-hook retains runner, interface, protocol and unsigned archive validation", () => {
+  const commands = workflow.jobs["async-commit-hook"].steps.map(({ run }) => run ?? "").join("\n");
+  for (const command of [
+    "go test -race ./cmds/async-commit-hook/...", "pnpm --filter async-commit-hook test",
+    "pnpm --filter @delinoio/async-commit-hook-api-client test", "pnpm proto:check",
+    "node --test scripts/release/async-commit-hook.test.mjs",
+    'python3 scripts/release/build-async-commit-hook.py --output "$RUNNER_TEMP/ach-release"',
+  ]) assert.ok(commands.includes(command), command);
+  assert.equal(commands.match(/pnpm install --frozen-lockfile --ignore-scripts/gu)?.length, 1);
+});
+
 test("CI keeps every legacy check and aggregates every required job", () => {
   const jobs = Object.keys(workflow.jobs);
-  for (const id of ["ci-contracts", ...legacyJobs, ...devhudJobs, "ci-result"]) assert.ok(jobs.includes(id), id);
+  for (const id of ["ci-contracts", ...legacyJobs, ...devhudJobs, ...achJobs, "ci-result"]) assert.ok(jobs.includes(id), id);
   const required = jobs.filter((id) => id !== "ci-result").sort();
   assert.deepEqual([...workflow.jobs["ci-result"].needs].sort(), required);
   assert.equal(workflow.jobs["ci-result"].if, "always()");
-  const resultCondition = JSON.stringify(workflow.jobs["ci-result"].steps);
-  assert.match(resultCondition, /failure/u);
-  assert.match(resultCondition, /cancelled/u);
+  const result = namedStep(workflow.jobs["ci-result"], "Validate every planned result");
+  assert.equal(result.run, "node scripts/ci/result.mjs");
+  assert.equal(result.env.CI_NEEDS, "${{ toJSON(needs) }}");
 });
 
-test("DevHud jobs self-gate and the path contract covers every implemented boundary", () => {
-  for (const id of devhudJobs) {
+test("one change plan gates every domain job before runner allocation", () => {
+  assert.equal(workflow.jobs.changes.steps.find(({ id }) => id === "plan").run, "node scripts/ci/plan.mjs");
+  assert.deepEqual(Object.keys(jobPaths).sort(), [...legacyJobs, ...devhudJobs, ...achJobs].sort());
+  for (const id of [...legacyJobs, ...devhudJobs, ...achJobs]) {
     const job = workflow.jobs[id];
-    assert.equal(job.if, undefined, `${id} must not be skipped at job level`);
-    assert.ok(step(job, "filter"), `${id} filter`);
-    assert.ok(step(job, "gate"), `${id} gate`);
+    assert.equal(job.needs, "changes", id);
+    assert.equal(job.if, "${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['" + id + "'] }}", id);
+    assert.equal(step(job, "filter"), undefined, id);
+    assert.equal(step(job, "gate"), undefined, id);
   }
+  const filters = JSON.stringify(jobPaths);
   for (const path of [
     "servers/**", "protos/**", "packages/**", "apps/devhud/**", "apps/devhud-admin/**",
     "apps/devhud-chrome-extension/**", "crates/devhud-native-messaging-host/**", "packaging/devhud/**",
     "apps/public-docs/**", ".github/workflows/package-devhud-private.yml", ".github/workflows/release-devhud.yml",
-    ".github/workflows/devhud-cef-security-review.yml",
-  ]) assert.ok(workflowSource.includes(`- ${path}`), path);
-  const apiFilter = JSON.stringify(step(workflow.jobs["devhud-api"], "filter"));
-  for (const path of ["pnpm-workspace.yaml", "scripts/ci/check-go-format.mjs"]) {
-    assert.ok(apiFilter.includes(path), `devhud-api: ${path}`);
-  }
-  const ociFilter = JSON.stringify(step(workflow.jobs["devhud-oci"], "filter"));
-  for (const path of [".dockerignore", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"]) {
-    assert.ok(ociFilter.includes(path), `devhud-oci: ${path}`);
-  }
-  assert.ok(JSON.stringify(step(workflow.jobs["devhud-admin"], "filter")).includes(".nvmrc"));
-  assert.ok(JSON.stringify(step(workflow.jobs["devhud-protocol"], "filter")).includes("turbo.json"));
-  for (const id of ["devhud-frontend", "devhud-extension", "devhud-rust-conformance"]) {
-    const filter = JSON.stringify(step(workflow.jobs[id], "filter"));
-    assert.ok(filter.includes(".nvmrc"), `${id}: .nvmrc`);
-  }
-  const securityFilter = JSON.stringify(step(workflow.jobs["devhud-security"], "filter"));
-  for (const path of [".nvmrc", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "turbo.json"]) {
-    assert.ok(securityFilter.includes(path), `devhud-security: ${path}`);
-  }
-  for (const id of ["devhud-supply-chain", "devhud-release-contracts"]) {
-    const filter = JSON.stringify(step(workflow.jobs[id], "filter"));
-    assert.ok(filter.includes(".nvmrc"), `${id}: .nvmrc`);
-  }
-  const releaseFilter = JSON.stringify(step(workflow.jobs["devhud-release-contracts"], "filter"));
-  for (const path of ["AGENTS.md", "docs/README.md"]) {
-    assert.ok(releaseFilter.includes(path), `devhud-release-contracts: ${path}`);
+    ".github/workflows/devhud-cef-security-review.yml", "scripts/ci/check-go-format.mjs", ".dockerignore",
+  ]) assert.ok(filters.includes(path), path);
+  for (const id of ["devhud-frontend", "devhud-extension", "devhud-security", "devhud-admin", "devhud-api", "devhud-protocol", "repository-environment"]) {
+    for (const path of [".nvmrc", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "turbo.json"]) {
+      assert.ok(jobPaths[id].paths.includes(path), `${id}: ${path}`);
+    }
   }
 });
 
-test("Node jobs use the committed Turbo binary with frozen installs and affected no-ops", () => {
+test("Node jobs use one frozen install and the planner's exact comparison through committed Turbo", () => {
   assert.doesNotMatch(workflowSource, /pnpm\s+dlx\s+turbo/iu);
-  assert.match(workflowSource, /pnpm install --frozen-lockfile --ignore-scripts/u);
-  assert.match(workflowSource, /pnpm exec turbo run test --affected --filter/u);
-  assert.match(workflowSource, /--dry=json/u);
   assert.match(packages["package.json"].scripts["ci:affected"], /^turbo run$/u);
-  const affectedLegacyJobs = new Map([
-    ["node-mpapp-test", "Run mpapp tests"],
-    ["node-mpapp-lint", "Run mpapp lint"],
-    ["node-binpm-docs-test", "Run binpm-docs tests"],
-    ["node-nodeup-docs-test", "Run nodeup-docs tests"],
-    ["node-public-docs-test", "Run public-docs tests"],
-  ]);
-  for (const [id, runStepName] of affectedLegacyJobs) {
+  for (const [id, rule] of Object.entries(jobPaths).filter(([, rule]) => rule.workspace)) {
     const job = workflow.jobs[id];
-    for (const candidate of [step(job, "gate"), namedStep(job, runStepName)]) {
-      const source = JSON.stringify(candidate);
-      for (const expected of ["github.event.before", "github.sha", "TURBO_SCM_BASE", "TURBO_SCM_HEAD"]) {
-        assert.ok(source.includes(expected), `${id} push range: ${expected}`);
+    const run = job.steps.find(({ run }) => run?.includes("scripts/ci/run-affected.mjs"));
+    assert.equal(run.env.TURBO_SCM_BASE, "${{ needs.changes.outputs.base }}");
+    assert.equal(run.env.TURBO_SCM_HEAD, "${{ needs.changes.outputs.head }}");
+    assert.equal(run.env.FORCE_RUN, "${{ fromJSON(needs.changes.outputs.forced)['" + id + "'] }}");
+    assert.ok(run.run.includes(rule.workspace));
+    assert.equal(job.steps.filter(({ run }) => run?.includes("pnpm install")).length, 1, id);
+  }
+  for (const job of Object.values(workflow.jobs)) {
+    for (const { run } of job.steps) {
+      if (run?.includes("pnpm install")) assert.doesNotMatch(run, /pnpm install --frozen-lockfile(?! --ignore-scripts)/u);
+    }
+  }
+  const frontend = workflow.jobs["devhud-frontend"];
+  assert.equal(namedStep(frontend, "Run affected frontend contracts").run, "node scripts/ci/run-affected.mjs devhud test");
+  assert.match(namedStep(frontend, "Verify immutable desktop and mobile pins").run, /verify:pins/u);
+  const testScript = packages["apps/devhud/package.json"].scripts.test;
+  for (const fixture of ["verify-frontend-output.mjs", "run-tauri.test.mjs", "run-mobile.test.mjs", "verify-pins-policy.test.mjs", "mobile:check"]) assert.ok(testScript.includes(fixture), fixture);
+});
+
+test("caches restore on PRs and save only after successful main validation", () => {
+  for (const path of ["CI.yml", "runmoor.yml"]) {
+    const { jobs } = load(readFileSync(`${root}/.github/workflows/${path}`, "utf8"));
+    for (const [id, job] of Object.entries(jobs)) {
+      for (const kind of ["node", "go"]) {
+        const setup = job.steps.find(({ uses }) => uses === `./.github/actions/setup-ci-${kind}`);
+        if (!setup) continue;
+        const save = job.steps.find(({ with: inputs, uses }) => uses === "actions/cache/save@v5" && inputs.key.includes(`ci-${kind}`));
+        assert.ok(save, `${id}: ${kind}`);
+        assert.match(save.if, /success\(\) && github.ref == 'refs\/heads\/main'/u);
+        assert.ok(job.steps.indexOf(save) > job.steps.indexOf(setup));
+      }
+      for (const candidate of job.steps.filter(({ uses }) => uses === "Swatinem/rust-cache@v2")) {
+        assert.equal(candidate.with["save-if"], "${{ github.ref == 'refs/heads/main' }}");
+        assert.equal(candidate.with["cache-on-failure"], false);
       }
     }
   }
-  const frontend = JSON.stringify(workflow.jobs["devhud-frontend"]);
-  for (const expected of ["github.event.before", "TURBO_SCM_BASE", "TURBO_SCM_HEAD"]) {
-    assert.ok(frontend.includes(expected), `devhud-frontend push range: ${expected}`);
+  assert.ok(!workflow.jobs["rust-fmt"].steps.some(({ uses }) => uses?.includes("cache")));
+  for (const kind of ["node", "go"]) {
+    const action = load(readFileSync(`${root}/.github/actions/setup-ci-${kind}/action.yml`, "utf8"));
+    assert.ok(!action.runs.steps.some(({ uses }) => uses === "actions/cache/save@v5"));
+    const cache = action.runs.steps.find(({ uses }) => uses === "actions/cache/restore@v5");
+    for (const marker of ["runner.os", "runner.arch", "hashFiles", kind === "node" ? "node-version" : "go-version"]) assert.ok(cache.with.key.includes(marker), marker);
+    const setup = action.runs.steps.find(({ uses }) => uses?.startsWith(`actions/setup-${kind}@`));
+    assert.equal(setup.with[kind === "node" ? "package-manager-cache" : "cache"], false);
   }
-  const frontendFilter = step(workflow.jobs["devhud-frontend"], "filter").with.filters;
-  assert.match(frontendFilter, /node_runtime:\n\s+- \.nvmrc/u);
-  const frontendRun = namedStep(workflow.jobs["devhud-frontend"], "Run affected frontend contracts");
-  assert.match(frontendRun.env.FORCE_RUN, /steps\.filter\.outputs\.node_runtime == 'true'/u);
 });
 
-test("DevHud API PostgreSQL starts only after its path gate", () => {
+test("DevHud API PostgreSQL runs only inside its selected domain job", () => {
   const job = workflow.jobs["devhud-api"];
   assert.equal(job.services, undefined);
-  const gateIndex = job.steps.findIndex((candidate) => candidate.id === "gate");
   const startIndex = job.steps.findIndex((candidate) => candidate.name === "Start PostgreSQL");
   const integrationIndex = job.steps.findIndex((candidate) => candidate.name === "Run PostgreSQL migration and integration tests");
   const stopIndex = job.steps.findIndex((candidate) => candidate.name === "Stop PostgreSQL");
-  assert.ok(gateIndex >= 0 && gateIndex < startIndex && startIndex < integrationIndex && integrationIndex < stopIndex);
+  assert.ok(startIndex >= 0 && startIndex < integrationIndex && integrationIndex < stopIndex);
   const startPostgreSQL = job.steps[startIndex];
-  assert.equal(startPostgreSQL.if, "${{ steps.gate.outputs.run == 'true' }}");
+  assert.equal(startPostgreSQL.if, undefined);
   for (const expected of [
     "docker run --detach", "postgres:15-bookworm", "--publish 5432:5432", "pg_isready",
     "docker inspect", "State.Health.Status", "docker logs devhud-postgres",
   ]) assert.ok(startPostgreSQL.run.includes(expected), expected);
   const stopPostgreSQL = job.steps[stopIndex];
-  assert.equal(stopPostgreSQL.if, "${{ always() && steps.gate.outputs.run == 'true' }}");
+  assert.equal(stopPostgreSQL.if, "${{ always() }}");
   assert.match(stopPostgreSQL.run, /docker rm --force devhud-postgres/u);
 });
 
@@ -177,7 +193,7 @@ test("implemented DevHud conformance commands are wired to their owning jobs", (
     ["devhud-protocol", ["proto:check", "go test ./protos/", "@delinoio/devhud-api-client"]],
     ["devhud-api", ["ci:format", "ci:vet", "ci:build", "ci:unit", "ci:migrations", "ci:integration", "ci:api", "ci:sweeper"]],
     ["devhud-rust-conformance", ["test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:native:updater"]],
-    ["devhud-frontend", ["typecheck", "lint", "test:unit", "test:components", "test:accessibility", "build:frontend"]],
+    ["devhud-frontend", ["run-affected.mjs devhud test", "verify:pins"]],
     ["devhud-admin", ["devhud-admin --fail-if-no-match test"]],
     ["devhud-extension", ["test:unit", "test:components", "test:accessibility", "test:package", "devhud-chrome-web-store.zip", "devhud-chrome-github-validation.zip"]],
     ["devhud-security", ["test:security", "test:adapters", "diagnostics-policy.test.mjs", "native-bridge.test.mjs", "mobile-policy.test.mjs"]],
@@ -213,25 +229,23 @@ test("OCI validation is multi-architecture, non-root, migration-bearing, and loc
   ]) assert.ok(source.includes(expected), expected);
   assert.equal(job.services, undefined);
   const startPostgreSQL = namedStep(job, "Start PostgreSQL");
-  assert.equal(startPostgreSQL.if, "${{ steps.gate.outputs.run == 'true' }}");
+  assert.equal(startPostgreSQL.if, undefined);
   for (const expected of [
     "docker run --detach", "postgres:15-bookworm", "--publish 5432:5432", "pg_isready",
     "docker inspect", "State.Health.Status", "docker logs devhud-postgres",
   ]) assert.ok(startPostgreSQL.run.includes(expected), expected);
-  const sweeperAssetCondition = "${{ steps.gate.outputs.run == 'true' && matrix.target == 'sweeper' }}";
-  const setupPNPM = namedStep(job, "Setup pnpm");
+  const sweeperAssetCondition = "${{ matrix.target == 'sweeper' }}";
   const setupNode = namedStep(job, "Setup Node.js");
   const generateAssets = namedStep(job, "Generate and verify embedded administrator assets");
-  for (const step of [setupPNPM, setupNode, generateAssets]) assert.equal(step.if, sweeperAssetCondition);
-  assert.equal(setupPNPM.with.version, "10.26.2");
-  assert.equal(setupNode.with["node-version-file"], ".nvmrc");
+  for (const step of [setupNode, generateAssets]) assert.equal(step.if, sweeperAssetCondition);
+  assert.equal(setupNode.uses, "./.github/actions/setup-ci-node");
   assert.match(generateAssets.run, /pnpm install --frozen-lockfile --ignore-scripts/u);
   assert.match(generateAssets.run, /pnpm --filter devhud-admin build:embedded/u);
   const generateAssetsIndex = job.steps.indexOf(generateAssets);
   const buildAndInspectIndex = job.steps.findIndex(({ name }) => name === "Build and inspect amd64/arm64 OCI layout");
   assert.ok(generateAssetsIndex >= 0 && generateAssetsIndex < buildAndInspectIndex);
   const stopPostgreSQL = namedStep(job, "Stop PostgreSQL");
-  assert.equal(stopPostgreSQL.if, "${{ always() && steps.gate.outputs.run == 'true' }}");
+  assert.equal(stopPostgreSQL.if, "${{ always() }}");
   assert.match(stopPostgreSQL.run, /docker rm --force devhud-postgres/u);
   const buildAndInspect = namedStep(job, "Build and inspect amd64/arm64 OCI layout").run;
   assert.match(
@@ -338,7 +352,7 @@ test("package-local CI commands and deterministic cache boundaries are explicit"
   const nativeTurbo = JSON.parse(readFileSync(`${root}/apps/devhud/turbo.json`, "utf8"));
   for (const task of ["test:unit", "test:components", "test:security", "test:adapters"]) assert.deepEqual(nativeTurbo.tasks[task].dependsOn, ["^build"], task);
   for (const task of [
-    "build", "test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:native:updater",
+    "test", "build", "test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:native:updater",
     "mobile:generate", "build:ios", "build:android", "smoke:platform",
   ]) assert.equal(nativeTurbo.tasks[task].cache, false, task);
 

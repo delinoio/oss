@@ -1,0 +1,34 @@
+name: Setup CI Node dependencies
+description: Restore the pnpm store without creating pull-request-scoped caches
+outputs:
+  cache-key:
+    description: Exact cache key for a successful main job to save
+    value: ${{ steps.restore.outputs.cache-primary-key }}
+  cache-hit:
+    description: Whether the exact cache key was restored
+    value: ${{ steps.restore.outputs.cache-hit }}
+  cache-path:
+    description: pnpm content-addressed store
+    value: ${{ steps.store.outputs.path }}
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v5
+      with:
+        version: 10.26.2
+    - uses: actions/setup-node@v6
+      id: node
+      with:
+        node-version-file: .nvmrc
+        package-manager-cache: false
+    - name: Locate pnpm store
+      id: store
+      shell: bash
+      run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache/restore@v5
+      id: restore
+      with:
+        path: ${{ steps.store.outputs.path }}
+        key: ci-pnpm-v1-${{ runner.os }}-${{ runner.arch }}-node${{ steps.node.outputs.node-version }}-pnpm10.26.2-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
+        restore-keys: |
+          ci-pnpm-v1-${{ runner.os }}-${{ runner.arch }}-node${{ steps.node.outputs.node-version }}-pnpm10.26.2-

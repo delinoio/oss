@@ -32,7 +32,7 @@
   "pnpm": {
     "overrides": {
       "@expo/cli>tar": "7.5.22",
-      "@expo/cli>undici": "7.29.0",
+      "@expo/cli>undici": "7.29.1",
       "@expo/plist>@xmldom/xmldom": "0.8.13",
       "@stoplight/spectral-core>minimatch": "3.1.5",
       "@xmldom/xmldom": "0.8.13",
@@ -53,7 +53,7 @@
       "js-yaml": "4.3.1",
       "lodash": "4.18.1",
       "path-to-regexp": "0.1.13",
-      "postcss": "8.5.26",
+      "postcss": "8.5.28",
       "qs": "6.15.3",
       "shell-quote": "1.9.0",
       "uuid": "11.1.1",

@@ -7,6 +7,8 @@
 
 ### Scope in This Domain
 
+- `cmds/runmoor`: local ephemeral GitHub Actions runner manager; follow its scoped AGENTS and `docs/cmds-runmoor-foundation.md`.
+
 - `cmds/derun`: Go tool for AI coding-agent workflow orchestration.
 - `cmds/ttlc`: TTL compiler CLI for `.ttl` parsing/type-checking, Go code generation, `run` task execution, and cache-aware task execution contracts.
 

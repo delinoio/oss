@@ -42,6 +42,27 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); cleanup(); });
 
 describe("identity UI", () => {
+
+  it("keeps focus inside a replacement snapshot dialog after deferred restoration", async () => {
+    vi.useFakeTimers();
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+    identity = identityWith({ status: "authenticated", importDiff: [] });
+    const view = render(<SynchronizedSettingsBoundary copy={messages.en} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.uploadLocal }));
+
+    // The server can return a conflict before the previous choice's next frame.
+    identity = identityWith({ status: "authenticated", conflict: { diff: [], local: defaultDevHudSettings, server: defaultDevHudSettings, currentRevision: 4n, currentContentSHA256: new Uint8Array(32) } });
+    view.rerender(<SynchronizedSettingsBoundary copy={messages.en} />);
+    const replacement = screen.getByRole("dialog", { name: messages.en.conflictTitle });
+    const close = within(replacement).getByRole("button", { name: messages.en.close });
+    expect(document.activeElement).toBe(close);
+    await act(async () => { await vi.advanceTimersByTimeAsync(32); });
+    expect(document.activeElement).toBe(close);
+    opener.remove();
+  });
+
   it("retries a failed Native Messaging configuration publication", async () => {
     vi.useFakeTimers();
     nativeMessagingMock.configure.mockRejectedValueOnce(new Error("temporary bridge failure")).mockResolvedValue(undefined);
