@@ -113,3 +113,25 @@ it("opens an accepted rerun directly when startup succeeds", async () => {
   expect(screen.queryByText("Rerun accepted; startup needs attention")).toBeNull();
   unmount(); client.clear();
 });
+
+it.each([false, true])("displays bounded run summaries and opens details (inbox=%s)", async (inbox) => {
+  const onSelect = vi.fn();
+  const transport = createRouterTransport((router) => router.service(LocalService, {
+    listRuns: () => ({ runs: [
+      create(RunSchema, { id: "large", commit: "abcdef", state: ExecutionState.FAILED, checkCount: 4000 }),
+      create(RunSchema, { id: "empty", commit: "empty", state: ExecutionState.FAILED, checkCount: 0 }),
+      create(RunSchema, { id: "legacy", commit: "legacy", state: ExecutionState.FAILED, checks: [{ id: "old-check" }] }),
+    ] }),
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const { unmount } = render(<QueryClientProvider client={client}><TransportProvider transport={transport}>
+    <RunList repository="repo" worktree="worktree" branch="main" inbox={inbox} onSelect={onSelect} focusRun="" cursor="" setCursor={() => {}} />
+  </TransportProvider></QueryClientProvider>);
+  try {
+    const row = await screen.findByRole("button", { name: /abcdef.*4000 checks/ });
+    expect(screen.getByRole("button", { name: /empty.*0 checks/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /legacy.*1 checks/ })).toBeTruthy();
+    fireEvent.click(row);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith("large");
+  } finally { unmount(); client.clear(); }
+});

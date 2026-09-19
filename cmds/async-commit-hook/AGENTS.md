@@ -72,3 +72,5 @@
 - Bound CLI wait timeouts to 0..9223372036 seconds before conversion to time.Duration; zero expires the query immediately and never cancels work. Check context expiration before loading a run and again before accepting the read result, including already-terminal runs.
 
 - Bound retention ages to 0..106751 days in both personal configuration and the shared prune service before converting days to time.Duration or mutating evidence; zero remains indefinite retention.
+
+- Connect list projections omit check arrays and diagnostics and include total check_count; preserve complete check detail for GetRun and CLI/MCP so list size never multiplies by the graph size.

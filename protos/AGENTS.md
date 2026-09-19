@@ -24,3 +24,5 @@
 - `protos/async_commit_hook/v1` owns package `async_commit_hook.v1`; follow `docs/protos-async-commit-hook-v1-contract.md`. Generate Go bindings and the isolated ach TypeScript client reproducibly. No arbitrary command or filesystem endpoint.
 - RerunResponse carries the accepted run_id even when startup fails, with an optional startup_diagnostic; pre-acceptance errors remain Connect errors.
 - Its run-list detached filter must distinguish an empty stored branch from omitted filtering and participate in cursor scope.
+
+- async-commit-hook run lists carry optional check_count totals and omit check arrays/diagnostics; GetRun retains complete detail. Preserve older-response count fallback in clients.

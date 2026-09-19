@@ -45,3 +45,5 @@ Evidence text pages replace invalid UTF-8 sequences with U+FFFD before serializa
 Changes diff text is normalized to valid UTF-8 after applying its 2 MiB raw-byte limit. Invalid path/content bytes and a final cut rune become U+FFFD; normalization never changes the truncation decision.
 
 Failure summary fields are bounded to 4 KiB and summaries share a 1 MiB JSON budget per run, below the 8 MiB Connect response limit. Truncation has a stable diagnostic; complete report bodies remain paginated evidence.
+
+`Run.check_count` is an additive optional uint32 field set on list and detail responses. `ListRuns` returns execution metadata and that total without check arrays or diagnostics; check commands, states, reports and diagnostics belong to `GetRun`. Thus a page does not grow with the number of checks. Older responses without the field remain readable by clients using the legacy checks-array length.

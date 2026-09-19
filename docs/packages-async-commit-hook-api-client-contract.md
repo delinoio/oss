@@ -36,3 +36,5 @@ Update project/protocol/app contracts with generated API changes.
 ## References
 - [Project](project-async-commit-hook.md)
 - [Repository defaults](repository-defaults.md)
+
+Run messages retain optional `check_count` presence, including explicit zero, through binary serialization. New list responses omit check arrays; consumers display the count, falling back to the array length only for older responses without it.

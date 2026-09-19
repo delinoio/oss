@@ -254,13 +254,18 @@ func (a *API) run(r Run, detail bool) *pb.Run {
 	if detail {
 		g = a.s.GateRun(r)
 	}
-	out := &pb.Run{Id: r.ID, Sequence: uint64(r.Sequence), RepositoryId: r.RepositoryID, WorktreeId: r.WorktreeID, Branch: r.Branch, Commit: r.Commit, State: wireState(r.State), Os: r.OS, Arch: r.Arch, CreatedAt: r.CreatedAt.Format(time.RFC3339Nano), ParentId: r.ParentID, Diagnostics: diagnostics(r.Diagnostics), GatePassed: g.Passed, GateReason: g.Reason}
+	count := uint32(len(r.Checks))
+	out := &pb.Run{Id: r.ID, Sequence: uint64(r.Sequence), RepositoryId: r.RepositoryID, WorktreeId: r.WorktreeID, Branch: r.Branch, Commit: r.Commit, State: wireState(r.State), Os: r.OS, Arch: r.Arch, CreatedAt: r.CreatedAt.Format(time.RFC3339Nano), ParentId: r.ParentID, GatePassed: g.Passed, GateReason: g.Reason, CheckCount: &count}
 	if r.FinishedAt != nil {
 		out.FinishedAt = r.FinishedAt.Format(time.RFC3339Nano)
 	}
 	if r.AcknowledgedAt != nil {
 		out.AcknowledgedAt = r.AcknowledgedAt.Format(time.RFC3339Nano)
 	}
+	if !detail {
+		return out
+	}
+	out.Diagnostics = diagnostics(r.Diagnostics)
 	for _, c := range r.Checks {
 		v := &pb.Check{Id: c.ID, Name: c.Name, State: wireState(c.State), Optional: c.Optional, Shell: string(c.Shell), InheritedFrom: c.InheritedFrom, Diagnostics: diagnostics(c.Diagnostics), Failures: wireFailures(c.Failures), Command: r.Config.Checks[c.Name].Command}
 		if c.ExitCode != nil {
@@ -269,12 +274,6 @@ func (a *API) run(r Run, detail bool) *pb.Run {
 		}
 		for _, report := range c.Reports {
 			v.Reports = append(v.Reports, &pb.Report{Id: report.ID, Name: report.Name, Size: uint64(report.Size)})
-		}
-		if !detail {
-			v.Diagnostics = nil
-			v.Failures = nil
-			v.Reports = nil
-			v.Command = ""
 		}
 		out.Checks = append(out.Checks, v)
 	}

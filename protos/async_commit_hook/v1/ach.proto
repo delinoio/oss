@@ -89,6 +89,8 @@ message Run {
   repeated Diagnostic diagnostics = 15;
   bool gate_passed = 16;
   string gate_reason = 17;
+  // Total checks; ListRuns omits checks and diagnostics. Optional for older servers.
+  optional uint32 check_count = 18;
 }
 message Worktree {
   string id = 1;

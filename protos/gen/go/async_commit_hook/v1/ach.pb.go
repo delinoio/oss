@@ -463,8 +463,10 @@ type Run struct {
 	Diagnostics    []*Diagnostic          `protobuf:"bytes,15,rep,name=diagnostics,proto3" json:"diagnostics,omitempty"`
 	GatePassed     bool                   `protobuf:"varint,16,opt,name=gate_passed,json=gatePassed,proto3" json:"gate_passed,omitempty"`
 	GateReason     string                 `protobuf:"bytes,17,opt,name=gate_reason,json=gateReason,proto3" json:"gate_reason,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Total checks; ListRuns omits checks and diagnostics. Optional for older servers.
+	CheckCount    *uint32 `protobuf:"varint,18,opt,name=check_count,json=checkCount,proto3,oneof" json:"check_count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Run) Reset() {
@@ -614,6 +616,13 @@ func (x *Run) GetGateReason() string {
 		return x.GateReason
 	}
 	return ""
+}
+
+func (x *Run) GetCheckCount() uint32 {
+	if x != nil && x.CheckCount != nil {
+		return *x.CheckCount
+	}
+	return 0
 }
 
 type Worktree struct {
@@ -2479,7 +2488,7 @@ const file_async_commit_hook_v1_ach_proto_rawDesc = "" +
 	"\x06Report\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
-	"\x04size\x18\x03 \x01(\x04R\x04size\"\xc8\x04\n" +
+	"\x04size\x18\x03 \x01(\x04R\x04size\"\xfe\x04\n" +
 	"\x03Run\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\bsequence\x18\x02 \x01(\x04R\bsequence\x12#\n" +
@@ -2503,7 +2512,10 @@ const file_async_commit_hook_v1_ach_proto_rawDesc = "" +
 	"\vgate_passed\x18\x10 \x01(\bR\n" +
 	"gatePassed\x12\x1f\n" +
 	"\vgate_reason\x18\x11 \x01(\tR\n" +
-	"gateReason\"d\n" +
+	"gateReason\x12$\n" +
+	"\vcheck_count\x18\x12 \x01(\rH\x00R\n" +
+	"checkCount\x88\x01\x01B\x0e\n" +
+	"\f_check_count\"d\n" +
 	"\bWorktree\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x16\n" +
@@ -2779,6 +2791,7 @@ func file_async_commit_hook_v1_ach_proto_init() {
 		return
 	}
 	file_async_commit_hook_v1_ach_proto_msgTypes[2].OneofWrappers = []any{}
+	file_async_commit_hook_v1_ach_proto_msgTypes[4].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

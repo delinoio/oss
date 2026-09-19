@@ -15,3 +15,12 @@ it("preserves a rerun receipt and its optional startup diagnostic", () => {
   const legacy = create(RerunResponseSchema, { runId: "accepted" });
   expect(fromBinary(RerunResponseSchema, toBinary(RerunResponseSchema, legacy)).startupDiagnostic).toBeUndefined();
 });
+
+it("retains optional summary counts without requiring detail arrays", () => {
+  for (const checkCount of [undefined, 0, 4000]) {
+    const run = create(RunSchema, { id: "summary", checkCount });
+    const decoded = fromBinary(RunSchema, toBinary(RunSchema, run));
+    expect(decoded.checkCount).toBe(checkCount);
+    expect(decoded.checks).toEqual([]);
+  }
+});

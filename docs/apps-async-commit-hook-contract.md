@@ -47,3 +47,5 @@ Update project/protocol/client contracts, app AGENTS and public docs alongside u
 - [Repository defaults](repository-defaults.md)
 
 Execution-detail queries poll every 1.5 seconds only while queued, preparing, running or collecting. Polling stops after a terminal response so integrity verification does not continuously rehash immutable evidence. Explicit query invalidation, mutations and navigation can still refresh completed data.
+
+Checks and Inbox rows display the server-provided total check count without requiring per-check list payloads. Fall back to the check-array length only when an older response omits that count. Row selection still loads complete execution details.

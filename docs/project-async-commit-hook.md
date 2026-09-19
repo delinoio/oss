@@ -40,3 +40,5 @@ Update the owning domain contract, evidence matrix and relevant AGENTS.md alongs
 - https://github.com/delinoio/oss/issues/897
 - [Repository defaults](repository-defaults.md)
 - [Project template](project-template.md)
+
+Run-list transport carries total check counts without repeating check arrays across a page; detail navigation retrieves complete checks. The generated client preserves optional count presence for older-response compatibility.

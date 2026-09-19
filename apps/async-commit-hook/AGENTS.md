@@ -16,3 +16,5 @@
 - Keep shell installer `--version` behavior aligned with the public guide, validate all arguments before downloads, and preserve signature/checksum verification for every selected version.
 - Public recovery guidance must distinguish confirmed descendant cleanup from lost ownership proof: incomplete cancellation blocks replacement, and a forcibly killed Linux supervisor requires host-reboot recovery. Do not claim actual minimum-OS machine qualification from local tests or cross-builds.
 - Run `pnpm test` from this directory after frontend changes. Generated `dist` is untracked and must be removed from the final worktree.
+
+- Run-list rows use the optional server check count, falling back to checks.length only for older responses; opening a row retrieves complete execution details.

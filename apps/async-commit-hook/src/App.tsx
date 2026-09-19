@@ -535,7 +535,7 @@ export function RunList({
                 </small>
               </span>
               <span className="run-meta">
-                {r.checks.length} checks
+                {r.checkCount ?? r.checks.length} checks
                 <small>{r.acknowledgedAt ? "Reviewed" : "Needs review"}</small>
               </span>
               <time dateTime={r.createdAt}>

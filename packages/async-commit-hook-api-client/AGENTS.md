@@ -5,3 +5,5 @@
 - Preserve optional rerun startup diagnostics alongside the accepted run ID, including compatibility with responses that omit the diagnostic.
 - Regenerate, test bigint/status wire behavior, build, and check root protocol freshness after schema changes.
 - Generated `dist` is not tracked and must be removed from the final worktree.
+
+- Preserve optional Run.check_count presence, including explicit zero; list consumers must not infer totals from the omitted detail array.
