@@ -101,7 +101,7 @@ func (s *Service) Submit(ctx context.Context, path, commit string, automatic boo
 	}
 	auto := ""
 	if automatic {
-		auto = r.WorktreeID + ":" + r.Commit
+		auto = r.WorktreeID + ":" + r.Commit + ":" + r.Fingerprint
 	}
 	id, e := s.Store.InsertRun(&r, auto)
 	if e != nil {
