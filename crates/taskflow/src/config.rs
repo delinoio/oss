@@ -485,6 +485,12 @@ impl Task {
                 );
             }
         }
+        for input in self.input.iter().flatten() {
+            if let Input::Pattern(pattern) = input {
+                let pattern = pattern.strip_prefix('!').unwrap_or(pattern);
+                globset::Glob::new(pattern).context("invalid input glob")?;
+            }
+        }
         for output in self.output.iter().flatten() {
             ensure!(
                 !output.is_empty() && !output.starts_with('!'),

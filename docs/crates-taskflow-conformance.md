@@ -137,3 +137,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `partial_outputs_cannot_be_exported_or_restored_as_artifacts` retains local uncached partial output support while rejecting CI export, artifact capture, and restoration before undeclared neighboring inputs can be transferred or replaced.
 
 `readiness_commands_use_the_configured_shell` releases a readiness-dependent check only after the service's explicit interpreter runs its probe, then verifies the server process is reaped on cancellation.
+
+`check_rejects_malformed_positive_and_negative_input_globs` exercises the public CLI's preflight diagnostics for malformed inclusion/exclusion patterns while retaining valid ordered globs and automatic inputs.

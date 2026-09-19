@@ -2798,3 +2798,24 @@ async fn readiness_commands_use_the_configured_shell() {
         .unwrap();
     assert!(!pid_alive(pid));
 }
+
+#[test]
+fn check_rejects_malformed_positive_and_negative_input_globs() {
+    for input in [json!(["["]), json!(["!["]), json!(["{unfinished"])] {
+        let directory = fixture(json!({"check":{"command":command(&["version"]),"input":input}}));
+        let error = config::load(&directory.path().join("taskflow.yml")).unwrap_err();
+        assert!(format!("{error:#}").contains("invalid input glob"));
+        let result = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .current_dir(directory.path())
+            .args(["--json", "check"])
+            .output()
+            .unwrap();
+        assert!(!result.status.success());
+        let error = String::from_utf8_lossy(&result.stderr);
+        assert!(error.contains("app#check"), "{error}");
+    }
+    let directory = fixture(
+        json!({"check":{"command":command(&["version"]),"input":[{"auto":true},"**/*.rs","!generated/**"]}}),
+    );
+    assert!(config::load(&directory.path().join("taskflow.yml")).is_ok());
+}
