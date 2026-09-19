@@ -394,7 +394,7 @@ describe("native App state", () => {
     expect(screen.queryByText(messages.en.externalFailed)).toBeNull();
     await waitFor(() => expect(identityClient.createIdentitySession).toHaveBeenCalledTimes(2));
     expect(screen.getByRole("button", { name: messages.en.signIn })).toBeTruthy();
-    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: messages.en.apiOrigin }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: messages.en.apiOrigin })));
   });
 
   it("preserves policy-failure copy during first-run API-origin changes", async () => {
