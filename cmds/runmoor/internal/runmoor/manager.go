@@ -754,10 +754,18 @@ func (m *Manager) runnerProblem(id string, err error, quarantine bool) {
 	})
 	logProblem(m.Log, "runner_reconciliation_failed", p)
 }
+
+func runnerInspectionPending(r *Runner) bool {
+	return r != nil && !r.CompletedJob && !r.RemoteRemoved && !r.Terminated &&
+		(r.Phase == Preparing || r.Phase == Idle || r.Phase == Busy)
+}
+
 func (m *Manager) inspect(ctx context.Context, id string) {
 	s := m.Store.View()
 	r := s.Runners[id]
-	if r == nil {
+	// Work selected by step may already have yielded to completion or cleanup
+	// before its worker starts. Forced active work still takes the path below.
+	if !runnerInspectionPending(r) {
 		return
 	}
 	c := s.Generations[r.Generation]
@@ -806,7 +814,28 @@ func (m *Manager) inspect(ctx context.Context, id string) {
 		return
 	}
 	if !exists {
-		m.runnerProblem(id, problem(ErrOwnership, "A live execution has no matching GitHub registration.", "Inspect the job and explicitly force-stop only after confirming it is owned."), true)
+		q := problem(ErrOwnership, "A live execution has no matching GitHub registration.", "Inspect the job and explicitly force-stop only after confirming it is owned.")
+		q.Runner, q.Pool = id, p.Spec.Name
+		applied := false
+		err := m.Store.Update(func(s *Snapshot) error {
+			r := s.Runners[id]
+			// Ephemeral registration can disappear during completion. Check in
+			// the same commit as quarantine so a stale absence cannot undo cleanup.
+			// Actual identity errors still use runnerProblem above and quarantine.
+			if !runnerInspectionPending(r) || r.Forced {
+				return nil
+			}
+			r.Problem, r.Phase = q, Quarantined
+			applied = true
+			return nil
+		})
+		if err != nil {
+			q = classify(err, ErrState, "Cannot persist runner inspection.", "Restore state storage and retry reconciliation.")
+			q.Runner, q.Pool = id, p.Spec.Name
+			logProblem(m.Log, "runner_reconciliation_failed", q)
+		} else if applied {
+			logProblem(m.Log, "runner_reconciliation_failed", q)
+		}
 		return
 	}
 	if r.Phase == Preparing {
