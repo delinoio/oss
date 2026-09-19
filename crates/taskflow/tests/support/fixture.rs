@@ -34,6 +34,10 @@ fn main() {
             for byte in value.as_bytes() { stdout.write_all(&[*byte]).unwrap(); stdout.flush().unwrap(); std::thread::sleep(Duration::from_millis(1)); }
             if let Some(path) = args.get(3) { write(path, value.as_bytes()); }
         }
+        "gated" => {
+            write(&args[2], b"started");
+            while !Path::new(&args[3]).exists() { std::thread::sleep(Duration::from_millis(10)); }
+        }
         "sleep" => {
             write(&args[2], std::process::id().to_string().as_bytes());
             if let Some(child_path) = args.get(3) {

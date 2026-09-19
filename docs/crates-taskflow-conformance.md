@@ -127,3 +127,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `generic_shard_inventory_and_execution_use_the_configured_shell` runs a portable explicit interpreter that the OS default shell cannot substitute. Both inventory collection and every generic shard execution must use the task's shell setting.
 
 `cargo_member_commands_discover_the_implicit_workspace_root` launches the CLI from a Cargo member, verifies the root development profile and native prerequisite tasks, and checks that Cargo-excluded standalone packages remain independent. Root location uses Cargo's offline workspace lookup without dependency resolution.
+
+`completed_tasks_keep_edits_while_an_independent_wave_task_runs` gates an independent slow task after a watched task has fully exited. Both skip and restart policies must retain the completed task's input change until its reserved wave is available; wave membership alone is not an executing task.

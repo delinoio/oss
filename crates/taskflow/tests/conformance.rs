@@ -2522,3 +2522,48 @@ async fn cargo_member_commands_discover_the_implicit_workspace_root() {
         standalone.canonicalize().unwrap()
     );
 }
+
+#[tokio::test]
+async fn completed_tasks_keep_edits_while_an_independent_wave_task_runs() {
+    for overlap in ["skip", "restart"] {
+        let directory = fixture(json!({
+            "fast":{"command":command(&["record","events","run"]),"input":["source"],"watch":{"debounce":"20ms"},"overlap":overlap},
+            "slow":{"command":command(&["gated","slow-start","release"]),"input":[]}
+        }));
+        profile(directory.path(), &["fast", "slow"]);
+        std::fs::write(directory.path().join("source"), "initial").unwrap();
+        let options = RunOptions {
+            jobs: 2,
+            ..RunOptions::default()
+        };
+        let running = options.task_cancellations.clone();
+        let root = directory.path().to_path_buf();
+        let token = CancellationToken::new();
+        let stop = token.clone();
+        let session =
+            tokio::spawn(
+                async move { taskflow::session::start(&root, "default", options, stop).await },
+            );
+        tokio::time::timeout(Duration::from_secs(60), async {
+            loop {
+                if runner::previous(directory.path(), "app#fast").is_some_and(|r| r.success())
+                    && directory.path().join("slow-start").exists()
+                {
+                    let states = running.lock().unwrap();
+                    if !states.contains_key("app#fast") && states.contains_key("app#slow") {
+                        break;
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
+        std::fs::write(directory.path().join("source"), "changed").unwrap();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        std::fs::write(directory.path().join("release"), "release").unwrap();
+        wait_lines(&directory.path().join("events"), "run", 2).await;
+        token.cancel();
+        session.await.unwrap().unwrap();
+    }
+}

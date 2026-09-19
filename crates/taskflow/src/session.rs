@@ -130,7 +130,7 @@ pub async fn start(
                     let tick = if let Some(interval) = &mut timer.interval {
                         interval.tick(now)
                     } else { timer.cron.as_mut().is_some_and(|c| c.tick(chrono::Utc::now())) };
-                    if tick { enqueue(&graph, &options, &mut pending, &active_tasks, id, Cause::Schedule, now); }
+                    if tick { enqueue(&graph, &options, &mut pending, id, Cause::Schedule, now); }
                 }
                 let due: BTreeSet<_> = pending.iter().filter(|(id, p)| p.due <= now && !active_tasks.contains(*id)).map(|(id, _)| id.clone()).collect();
                 if !due.is_empty() {
@@ -185,7 +185,7 @@ pub async fn start(
                                             let snapshot = files::input_state(&graph.workspace, &graph.workspace.projects[&node.project], &node.task)?;
                                             if observed.get(id) != Some(&snapshot) {
                                                 observed.insert(id.clone(), snapshot);
-                                                enqueue(&graph, &options, &mut pending, &active_tasks, id, Cause::Input { path: files::relative_to(root, &path) }, Instant::now() + config::duration(&watch.debounce)?);
+                                                enqueue(&graph, &options, &mut pending, id, Cause::Input { path: files::relative_to(root, &path) }, Instant::now() + config::duration(&watch.debounce)?);
                                             }
                                         }
                                     }
@@ -193,7 +193,7 @@ pub async fn start(
                             }
                             Err(_) => {
                                 // Overflow or lost events require a full conservative rescan.
-                                for id in &active_set { if graph.tasks[id].task.watch.is_some() { enqueue(&graph, &options, &mut pending, &active_tasks, id, Cause::IncompleteGraph, Instant::now()); } }
+                                for id in &active_set { if graph.tasks[id].task.watch.is_some() { enqueue(&graph, &options, &mut pending, id, Cause::IncompleteGraph, Instant::now()); } }
                                 reload = true;
                             }
                         }
@@ -349,18 +349,18 @@ fn enqueue(
     graph: &Graph,
     options: &RunOptions,
     pending: &mut BTreeMap<String, Pending>,
-    active: &BTreeSet<String>,
     id: &str,
     cause: Cause,
     due: Instant,
 ) {
-    if active.contains(id) {
+    // Wave membership reserves planned prerequisites until the wave completes;
+    // overlap applies only while this task itself still owns an execution.
+    let running = options.task_cancellations.lock().unwrap().get(id).cloned();
+    if let Some(token) = running {
         match graph.tasks[id].task.overlap() {
             Overlap::Skip => return,
             Overlap::Restart => {
-                if let Some(token) = options.task_cancellations.lock().unwrap().get(id) {
-                    token.cancel();
-                }
+                token.cancel();
             }
             Overlap::Queue => {}
         }
