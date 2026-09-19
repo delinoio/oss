@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 type tartFixture struct {
@@ -86,6 +87,67 @@ func (f *tartFixture) Start(_ string, args, env []string) (int, error) {
 func fakeTart(c Config) (*TartDriver, *tartFixture) {
 	f := &tartFixture{c: c, running: map[string]bool{}}
 	return &TartDriver{Exec: f, HostCheck: func(context.Context) error { return nil }}, f
+}
+
+type startingTartCommand struct {
+	*tartFixture
+	started           bool
+	polls, readyAfter int
+}
+
+func (f *startingTartCommand) Start(string, []string, []string) (int, error) {
+	f.started = true
+	return 123, nil
+}
+func (f *startingTartCommand) Run(ctx context.Context, name string, args, env []string, in io.Reader) ([]byte, error) {
+	if f.started && args[0] == "get" {
+		f.polls++
+		if f.readyAfter > 0 && f.polls >= f.readyAfter {
+			f.mu.Lock()
+			f.running[args[1]] = true
+			f.mu.Unlock()
+		}
+	}
+	return f.tartFixture.Run(ctx, name, args, env, in)
+}
+
+func TestImageOpenWaitsForConfirmedVMStartup(t *testing.T) {
+	for _, readyAfter := range []int{0, 2} {
+		t.Run(map[int]string{0: "detached process exited without booting", 2: "delayed boot"}[readyAfter], func(t *testing.T) {
+			c, s := fixtureStore(t)
+			driver, fixture := fakeTart(c)
+			command := &startingTartCommand{tartFixture: fixture, readyAfter: readyAfter}
+			driver.Exec = command
+			images := &ImageManager{Store: s, Tart: driver}
+			im, err := images.Operate(context.Background(), c, ImageRequest{Action: "create", Name: "setup", IPSW: "/fixture.ipsw", Resources: Resources{1, 512}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			timeout := time.Second
+			if readyAfter == 0 {
+				timeout = 50 * time.Millisecond
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+			_, err = images.Operate(ctx, c, ImageRequest{Action: "open", ID: im.ID})
+			if readyAfter > 0 {
+				if err != nil || command.polls < readyAfter {
+					t.Fatal("image open acknowledged an unconfirmed VM", err)
+				}
+				return
+			}
+			requireCode(t, err, ErrPreparation)
+			if s.View().Images[im.ID].Problem == nil || s.View().Images[im.ID].Phase != ImageOpen {
+				t.Fatal("failed startup lost its diagnostic or uncertain reservation")
+			}
+			if err = images.Reconcile(context.Background(), c); err != nil {
+				t.Fatal(err)
+			}
+			if s.View().Images[im.ID].Phase != ImagePreparing || s.View().Images[im.ID].Problem == nil {
+				t.Fatal("confirmed stop discarded the startup diagnostic")
+			}
+		})
+	}
 }
 func TestTartImageLifecycleAndCredentialBoundary(t *testing.T) {
 	c, s := fixtureStore(t)

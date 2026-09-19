@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type ImageRequest struct {
@@ -48,6 +49,8 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 	}
 	switch req.Action {
 	case "open":
+		ctx, cancel := context.WithTimeout(ctx, c.Preparation(Tart))
+		defer cancel()
 		if im.Phase == ImageSealed || im.Phase == ImageRemoving {
 			return nil, problem(ErrImage, "A sealed or removing revision cannot be opened for setup.", "Create a new revision with --from pointing at the sealed revision UUID.")
 		}
@@ -65,6 +68,17 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 		}
 		if _, e := m.Tart.Exec.Start(c.TartExecutable, []string{"run", "--no-audio", im.VM}, tartEnv(c)); e != nil {
 			return nil, m.imageFailure(im.ID, problem(ErrPreparation, "Cannot open the setup VM.", "Inspect Tart and close unused setup VMs before retrying."))
+		}
+		// A detached process is not proof of boot. Keep its reservation until
+		// Tart confirms the VM running or reports an actionable startup failure.
+		for {
+			v, e := m.Tart.vm(ctx, c, im.VM)
+			if e == nil && v.Running {
+				break
+			}
+			if !waitContext(ctx, 250*time.Millisecond) {
+				return nil, m.imageFailure(im.ID, problem(ErrPreparation, "Setup VM startup was not confirmed before the preparation deadline.", "Inspect Tart boot compatibility and image list. The reservation remains until the VM is confirmed stopped; retry image open after correcting the failure."))
+			}
 		}
 	case "seal":
 		ctx, cancel := context.WithTimeout(ctx, c.Preparation(Tart))
