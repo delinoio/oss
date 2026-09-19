@@ -165,43 +165,8 @@ func (s *Store) Prepare(ctx context.Context, r Run) (string, error) {
 		return dir, err
 	}
 	defer owned.Close()
-	// Materialize raw blobs, bypassing smudge filters, export-ignore and line-ending rewriting.
-	for _, e := range entries {
-		if ctx.Err() != nil {
-			return dir, ctx.Err()
-		}
-		c := gitCommand(ctx, dir, "cat-file", "blob", e.OID)
-		data, err := c.Output()
-		if err != nil {
-			return dir, E("git-object-unavailable", "cannot materialize committed object", 3)
-		}
-		if bytes.HasPrefix(data, []byte("version https://git-lfs.github.com/spec/v1\n")) {
-			return dir, E("lfs-unsupported", "Git LFS pointer source is unsupported", 2)
-		}
-		path := filepath.FromSlash(e.Path)
-		if err = owned.MkdirAll(filepath.Dir(path), 0700); err != nil {
-			return dir, err
-		}
-		if e.Mode == "120000" {
-			err = owned.Symlink(string(data), path)
-		} else {
-			mode := os.FileMode(0600)
-			if e.Mode == "100755" {
-				mode = 0700
-			}
-			var file *os.File
-			file, err = owned.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
-			if err == nil {
-				_, err = file.Write(data)
-				closeErr := file.Close()
-				if err == nil {
-					err = closeErr
-				}
-			}
-		}
-		if err != nil {
-			return dir, Wrap("workspace-write", err)
-		}
+	if err := materializeBlobs(ctx, dir, owned, entries); err != nil {
+		return dir, err
 	}
 	return dir, nil
 }
