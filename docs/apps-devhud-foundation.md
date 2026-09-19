@@ -163,3 +163,7 @@ Update `docs/project-devhud.md`, related domain contracts, `apps/AGENTS.md`, and
 - [API contract](servers-devhud-api-contract.md)
 - [Repository environment contract](repository-environment-contract.md)
 - [Repository defaults](repository-defaults.md)
+
+## CI execution boundary
+
+PR validation executes the full frontend test command, native-script fixtures, clean desktop/mobile output verification, static mobile/widget checks, and CEF pins. The aggregate frontend `test` task is non-cacheable because it checks consecutive clean builds and external contracts. The shared repository change plan schedules all existing desktop and mobile packaging entries on related main changes or full manual dispatch, preserving their architecture and installer coverage. `CI Result` accepts only explicitly planned skips; consult `docs/repository-workflow-contract.md` for comparison ranges and cache ownership.

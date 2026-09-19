@@ -1,0 +1,36 @@
+name: Setup CI Go dependencies
+description: Restore Go modules and build cache without saving before validation
+outputs:
+  cache-key:
+    description: Exact cache key for a successful main job to save
+    value: ${{ steps.restore.outputs.cache-primary-key }}
+  cache-hit:
+    description: Whether the exact cache key was restored
+    value: ${{ steps.restore.outputs.cache-hit }}
+  cache-path:
+    description: Go module and build cache directories
+    value: ${{ steps.paths.outputs.paths }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v6
+      id: go
+      with:
+        go-version-file: go.mod
+        cache: false
+    - name: Locate Go caches
+      id: paths
+      shell: bash
+      run: |
+        {
+          echo 'paths<<CI_GO_CACHE_PATHS'
+          go env GOMODCACHE GOCACHE
+          echo 'CI_GO_CACHE_PATHS'
+        } >> "$GITHUB_OUTPUT"
+    - uses: actions/cache/restore@v4
+      id: restore
+      with:
+        path: ${{ steps.paths.outputs.paths }}
+        key: ci-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.mod', 'go.sum') }}
+        restore-keys: |
+          ci-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-
