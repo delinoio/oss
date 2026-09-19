@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	_ "embed"
 	"errors"
@@ -36,8 +37,12 @@ func (s *Service) Agent(client, scope, repo string, remove bool) (InstallResult,
 	}
 	base := home
 	if scope == "project" {
-		base, e = filepath.Abs(repo)
+		var common string
+		common, base, _, e = Discover(context.Background(), repo)
 		if e != nil {
+			return InstallResult{}, e
+		}
+		if _, _, e = s.Store.Registered(common, base); e != nil {
 			return InstallResult{}, e
 		}
 	}

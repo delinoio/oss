@@ -28,6 +28,8 @@ Declared report output paths have a single owner across the graph (case-insensit
 
 Pre-push parses every actual branch-update object ID from stdin, ignores tags/deletions, and applies block (default), wait or run-and-wait. Hook/agent installation preserves unrelated data, records ownership, backs up edits and refuses conflicts.
 
+Project-scoped agent install/uninstall resolves `--repo` to the registered worktree root, including when invoked from a nested directory or linked worktree. User-scoped integration paths remain independent of the current repository.
+
 `run-and-wait` submits a fresh attempt when the latest compatible result is terminal but nonpassing, including expired or missing evidence. It waits for an existing unfinished attempt without duplicating it; `wait` never submits work.
 
 Cancellation of an unstarted queued run acquires its worker ownership lock and atomically completes the run and unfinished checks without launching a worker. If a worker owns the run or any process may have started, cancellation remains a request until that owner reconciles descendants.
