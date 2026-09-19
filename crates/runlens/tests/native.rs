@@ -997,6 +997,65 @@ fn many_execution_reports_remain_readable_with_few_file_descriptors() {
     );
 }
 #[test]
+fn conflict_analysis_bounds_aggregate_target_pairs() {
+    use runlens::{analysis, error::ErrorCode, model::Role, report};
+
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("input.txt"), "input").unwrap();
+    assert!(run(root.path(), "original.json", "read").status.success());
+    let original = report::read(&root.path().join("original.json")).unwrap();
+    let repeated = |count| {
+        let mut report = original.clone();
+        report.executions = (0..count)
+            .map(|_| {
+                let mut execution = original.executions[0].clone();
+                execution.id = uuid::Uuid::now_v7();
+                execution
+            })
+            .collect();
+        report::validate(&report).unwrap();
+        report
+    };
+    let mut left = repeated(1056);
+    for execution in &mut left.executions[256..] {
+        execution.role = Role::Preparation;
+    }
+    // 256 * 256 is accepted; preparation executions consume no target-pair work.
+    assert!(analysis::conflicts(&[left.clone(), repeated(256)]).is_ok());
+    let right = repeated(257);
+    assert_eq!(
+        analysis::conflicts(&[left.clone(), right.clone()])
+            .unwrap_err()
+            .code,
+        ErrorCode::InvalidInput
+    );
+    // Every individual report pair is small, but their aggregate exceeds the cap.
+    let many = (0..64).map(|_| repeated(6)).collect::<Vec<_>>();
+    assert_eq!(
+        analysis::conflicts(&many).unwrap_err().code,
+        ErrorCode::InvalidInput
+    );
+    report::save(&root.path().join("left.json"), &left, false).unwrap();
+    report::save(&root.path().join("right.json"), &right, false).unwrap();
+    let output = invoke(
+        root.path(),
+        &[
+            "conflicts",
+            "--report",
+            "left.json",
+            "--report",
+            "right.json",
+            "--json",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        output.stdout.is_empty(),
+        "rejected analysis must not emit a partial result"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("65,536 target pairs"));
+}
+#[test]
 fn hostile_envelopes_and_forged_changes_are_rejected() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("input.txt"), "input").unwrap();

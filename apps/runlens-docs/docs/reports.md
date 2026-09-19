@@ -58,3 +58,7 @@ evidence references, filesystem-state consistency, and verification outcomes.
 The non-evidence string envelope is limited to 1 MiB. Arrays and individual
 records are bounded while parsing; an analysis accepting multiple reports allows
 at most 64 inputs totaling 1 GiB. Oversized metadata is rejected before analysis.
+Conflict analysis additionally limits the combined number of target-execution
+pairs across different reports to 65,536. Preparation executions do not count.
+Exceeding that limit returns invalid input (exit 2) before analysis produces any
+results. Select fewer reports or reports containing fewer target executions.

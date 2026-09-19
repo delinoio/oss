@@ -380,6 +380,10 @@ Index and early-return directory cleanup failures remain visible through the
 stable cleanup-failed exit classification. Report parsing bounds arrays during
 deserialization and limits the non-evidence string envelope to 1 MiB; querying up
 to 64 explicit reports additionally caps their combined input bytes at 1 GiB.
+Conflict analysis permits at most 65,536 target-execution pairs across distinct
+supplied reports. It counts the aggregate cross product before path traversal or
+finding generation, excludes preparation executions, and rejects excess work as
+invalid input (exit 2) without partial output.
 
 ## Passive identity and failure boundaries
 

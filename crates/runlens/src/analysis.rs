@@ -712,7 +712,27 @@ pub fn explain(path: &str, reports: &[Report]) -> Result<Analysis> {
     }
     Ok(result)
 }
+pub const MAX_CONFLICT_TARGET_PAIRS: usize = 65_536;
+
 pub fn conflicts(reports: &[Report]) -> Result<Analysis> {
+    // Bound aggregate cross-report work before examining paths or generating
+    // findings. Individually bounded reports can still have a huge cross product.
+    let mut previous_targets = 0usize;
+    let mut pairs = 0usize;
+    for report in reports {
+        let targets = report.targets().count();
+        pairs = targets
+            .checked_mul(previous_targets)
+            .and_then(|additional| pairs.checked_add(additional))
+            .filter(|total| *total <= MAX_CONFLICT_TARGET_PAIRS)
+            .ok_or_else(|| {
+                Error::input(
+                    "conflict analysis exceeds 65,536 target pairs; select fewer reports or \
+                     target executions",
+                )
+            })?;
+        previous_targets = previous_targets.saturating_add(targets);
+    }
     let mut result = Analysis::new(AnalysisKind::Conflicts);
     for (index, left) in reports.iter().enumerate() {
         for right in &reports[index + 1..] {
