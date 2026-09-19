@@ -14,8 +14,12 @@ func Failures(r Run) []Failure {
 	out := []Failure{}
 	for _, c := range r.Checks {
 		out = append(out, c.Failures...)
+		occurrences := map[string]int{}
 		for _, d := range c.Diagnostics {
-			out = append(out, Failure{ID: Hash([]byte(c.Name + "/diagnostic/" + d.Code)), Check: c.Name, Command: r.Config.Checks[c.Name].Command, Message: d.Message, LogID: c.Log.ID})
+			identity := Hash(Encode([]string{c.Name, "diagnostic", d.Code, d.Message}))
+			occurrences[identity]++
+			id := Hash(Encode([]any{identity, occurrences[identity]}))
+			out = append(out, Failure{ID: id, Check: c.Name, Command: r.Config.Checks[c.Name].Command, Message: d.Message, LogID: c.Log.ID})
 		}
 	}
 	// Diagnostics are synthesized on read and therefore do not pass through
