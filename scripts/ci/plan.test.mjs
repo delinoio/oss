@@ -71,6 +71,7 @@ test("async-commit-hook source and shared validation inputs select its complete 
       "apps/async-commit-hook/public/install.ps1", "packages/async-commit-hook-api-client/src/client.ts",
       "protos/async_commit_hook/v1/service.proto", "packaging/async-commit-hook/release-metadata.json",
       "scripts/release/build-async-commit-hook.py", "scripts/release/async-commit-hook.test.mjs",
+      "scripts/release/publish-async-commit-hook.py", "scripts/release/async-commit-hook-publish-fixtures.py",
       ".github/workflows/release-async-commit-hook.yml", "docs/project-async-commit-hook.md",
       "buf.yaml", "buf.gen.yaml", "go.mod", "go.sum", "package.json", "pnpm-lock.yaml",
       "pnpm-workspace.yaml", ".nvmrc", ".npmrc", "turbo.json",

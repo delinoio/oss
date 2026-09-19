@@ -105,10 +105,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
         run: |
-          tag="async-commit-hook@v$VERSION"
-          if gh release view "$tag" >/dev/null 2>&1; then echo 'Release already exists; assets are immutable' >&2; exit 1; fi
-          python3 scripts/release/build-async-commit-hook.py --verify-tag "$GITHUB_SHA"
-          gh release create "$tag" release/* --target "$GITHUB_SHA" --title "async-commit-hook $VERSION" --notes "Signed ach archives for six targets. See compatibility.json for validation scope and https://ach.delino.io/docs/ for installation and recovery."
+          python3 scripts/release/publish-async-commit-hook.py --assets release --version "$VERSION" --revision "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID"
   homebrew:
     if: ${{ !inputs.dry_run }}
     needs: publish

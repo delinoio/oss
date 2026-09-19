@@ -168,3 +168,8 @@ for windows in [False, True]:
  const result=spawnSync('python3',['-c',code],{cwd:root,encoding:'utf8'});
  assert.equal(result.status,0,result.stderr);
 });
+
+test('publication resumes owned incomplete drafts and protects immutable releases offline', () => {
+ const result=spawnSync('python3',['scripts/release/async-commit-hook-publish-fixtures.py','-v'],{cwd:root,encoding:'utf8'});
+ assert.equal(result.status,0,result.stdout+'\n'+result.stderr);
+});

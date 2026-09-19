@@ -56,5 +56,8 @@ test('release tag identity is checked before signing and again before creation',
  assert.ok(check>=0 && check<sign,'tag verification must precede all artifact signing');
  assert.equal(steps[check].run,command);
  const publish=steps.find((step)=>step.name==='Publish exact version').run;
- assert.ok(publish.indexOf(command)>=0 && publish.indexOf(command)<publish.indexOf('gh release create'));
+ assert.equal(publish.trim(),'python3 scripts/release/publish-async-commit-hook.py --assets release --version "$VERSION" --revision "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID"');
+ const publisher=readFileSync(new URL('scripts/release/publish-async-commit-hook.py',root),'utf8');
+ assert.ok(publisher.lastIndexOf('build.verify_tag(version, revision)')<publisher.indexOf('published = api(endpoint, {"draft": False})'));
+ assert.doesNotMatch(JSON.stringify(workflow.jobs.validate),/publish-async-commit-hook\.py --assets/);
 });
