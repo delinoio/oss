@@ -213,36 +213,6 @@ fn linux_os_identity(text: &str) -> Option<String> {
     known_linux_identity(&identity).then_some(identity)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn linux_identity_requires_distribution_and_version_without_shell_evaluation() {
-        assert_eq!(
-            linux_os_identity("ID=ubuntu\nVERSION_ID=\"22.04\"\n").as_deref(),
-            Some("ubuntu:22.04")
-        );
-        assert_eq!(
-            linux_os_identity("ID='pop'\nVERSION_ID='22.04'\n").as_deref(),
-            Some("pop:22.04")
-        );
-        for input in [
-            "VERSION_ID=22.04",
-            "ID=ubuntu",
-            "ID=\nVERSION_ID=22.04",
-            "ID=ubuntu\nVERSION_ID=",
-            "ID=ubuntu\nID=pop\nVERSION_ID=22.04",
-            "ID=ubuntu\nVERSION_ID=$(echo 22.04)",
-            "ID=ubuntu\nVERSION_ID=\"22.04",
-            "ID=evil:ubuntu\nVERSION_ID=22.04",
-        ] {
-            assert!(linux_os_identity(input).is_none(), "{input}");
-        }
-        assert!(linux_os_identity(&" ".repeat(65537)).is_none());
-        assert!(!known_linux_identity("22.04"));
-    }
-}
 pub fn resolve(program: &str, env: &[(OsString, OsString)], cwd: &Path) -> Result<PathBuf> {
     let path = env
         .iter()
@@ -438,4 +408,35 @@ pub fn executable_identity(
         metadata: after,
         sha256: hex::encode(hash.finalize()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn linux_identity_requires_distribution_and_version_without_shell_evaluation() {
+        assert_eq!(
+            linux_os_identity("ID=ubuntu\nVERSION_ID=\"22.04\"\n").as_deref(),
+            Some("ubuntu:22.04")
+        );
+        assert_eq!(
+            linux_os_identity("ID='pop'\nVERSION_ID='22.04'\n").as_deref(),
+            Some("pop:22.04")
+        );
+        for input in [
+            "VERSION_ID=22.04",
+            "ID=ubuntu",
+            "ID=\nVERSION_ID=22.04",
+            "ID=ubuntu\nVERSION_ID=",
+            "ID=ubuntu\nID=pop\nVERSION_ID=22.04",
+            "ID=ubuntu\nVERSION_ID=$(echo 22.04)",
+            "ID=ubuntu\nVERSION_ID=\"22.04",
+            "ID=evil:ubuntu\nVERSION_ID=22.04",
+        ] {
+            assert!(linux_os_identity(input).is_none(), "{input}");
+        }
+        assert!(linux_os_identity(&" ".repeat(65537)).is_none());
+        assert!(!known_linux_identity("22.04"));
+    }
 }
