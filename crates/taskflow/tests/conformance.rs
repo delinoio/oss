@@ -4921,10 +4921,10 @@ async fn captured_output_link_chains_never_leave_the_project() {
 async fn shard_deadline_includes_inventory_and_all_units() {
     for slow_inventory in [true, false] {
         let root = fixture(
-            json!({"suite":{"command":command(&["version"]),"input":[],"output":[],"timeout":"600ms","shard":{"adapter":"generic","count":3,"list":command(&["delay",if slow_inventory {"3000"} else {"200"},"inventory"]),"run":command(&["delay","250","shard"])}}}),
+            json!({"suite":{"command":command(&["version"]),"input":[],"output":[],"timeout":"3s","shard":{"adapter":"generic","count":3,"list":command(&["delay",if slow_inventory {"10000"} else {"400"},"inventory"]),"run":command(&["delay","1100","shard"])}}}),
         );
         let g = graph(root.path()).await;
-        let result = tokio::time::timeout(Duration::from_secs(5), run(g, &["suite"]))
+        let result = tokio::time::timeout(Duration::from_secs(8), run(g, &["suite"]))
             .await
             .unwrap();
         let receipt = &result.results["app#suite"];
