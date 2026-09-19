@@ -97,6 +97,70 @@ func TestCappedDemandDoesNotChurnWarmRunners(t *testing.T) {
 		}
 	}
 }
+func TestVMCappedDemandPreservesUnrelatedWarmCapacity(t *testing.T) {
+	for _, occupied := range []string{"busy", "preparing", "quarantined", "setup"} {
+		t.Run(occupied, func(t *testing.T) {
+			s := schedulingState(t)
+			s.Pools["a"].Spec.MinIdle = 1
+			s.Pools["b"].Spec.Backend = Tart
+			s.Pools["b"].Demand = 1
+			s.Runners["warm"] = &Runner{ID: "warm", PoolID: "a", Phase: Idle, Backend: Docker}
+			for _, id := range []string{"vm1", "vm2"} {
+				if occupied == "setup" {
+					s.Images[id] = &Image{Phase: ImageOpen}
+				} else {
+					phase := Busy
+					if occupied == "preparing" {
+						phase = Preparing
+					} else if occupied == "quarantined" {
+						phase = Quarantined
+					}
+					s.Runners[id] = &Runner{ID: id, PoolID: "c", Phase: phase, Backend: Tart}
+				}
+			}
+			for tick := 0; tick < 3; tick++ {
+				if got := retirementCandidates(s); len(got) != 0 {
+					t.Fatalf("VM-capped demand evicted warm Docker runner: %v", got)
+				}
+				if got := Schedule(s); len(got) != 0 {
+					t.Fatalf("VM-capped demand admitted: %v", got)
+				}
+				s.Cursor++
+			}
+			delete(s.Images, "vm2")
+			delete(s.Runners, "vm2")
+			if got := retirementCandidates(s); len(got) != 1 || got[0] != "warm" {
+				t.Fatalf("admissible Tart demand did not displace warm capacity: %v", got)
+			}
+		})
+	}
+}
+
+func TestVMCappedDemandCanRetireWarmVM(t *testing.T) {
+	s := schedulingState(t)
+	s.Pools["a"].Spec.MinIdle = 1
+	s.Pools["b"].Spec.Backend = Tart
+	s.Pools["b"].Demand = 1
+	s.Pools["c"].Spec.Backend = Tart
+	s.Pools["c"].Spec.MinIdle = 1
+	s.Runners["docker"] = &Runner{ID: "docker", PoolID: "a", Phase: Idle, Backend: Docker}
+	s.Runners["tart"] = &Runner{ID: "tart", PoolID: "c", Phase: Idle, Backend: Tart}
+	s.Images["setup"] = &Image{Phase: ImageOpen}
+	if got := retirementCandidates(s); len(got) != 1 || got[0] != "tart" {
+		t.Fatalf("only a warm VM can release the required slot: %v", got)
+	}
+	delete(s.Runners, "tart")
+	if got := Schedule(s); len(got) != 1 || got[0] != "b" {
+		t.Fatalf("released VM slot did not satisfy demand: %v", got)
+	}
+	// Docker demand can still displace warm Docker capacity at the VM ceiling.
+	s.Images["setup2"] = &Image{Phase: ImageOpen}
+	s.Pools["b"].Spec.Backend = Docker
+	if got := retirementCandidates(s); len(got) != 1 || got[0] != "docker" {
+		t.Fatalf("VM ceiling blocked Docker demand retirement: %v", got)
+	}
+}
+
 func TestImagePreparationSharesTwoVMLimit(t *testing.T) {
 	s := schedulingState(t)
 	s.Pools["a"].Spec.Backend = Tart

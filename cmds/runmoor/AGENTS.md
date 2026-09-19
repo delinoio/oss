@@ -8,7 +8,7 @@
 - GitHub management credentials stay on the host. Do not persist JIT credentials or copy raw workflow output, upstream response bodies, or subprocess stderr into diagnostics.
 - Scale down through GitHub's busy-aware removal before terminating an idle execution. Preserve an assignment that wins the race.
 - Expired preparation recovery also requires busy-aware removal; only explicit force-stop or an established busy-job deadline permits forced cleanup. Recover an unknown job start conservatively from the persisted creation time.
-- Demand at the logical pool's cross-generation runner cap must not evict another pool's minimum-idle capacity.
+- Demand at the logical pool's cross-generation runner cap must not evict another pool's minimum-idle capacity. At the two-VM ceiling, Tart demand may displace a warm Tart VM but must preserve warm Docker capacity that cannot release a VM slot.
 - DinD inspection requires its owned daemon to be running as well as the runner; missing/stopped daemons enter busy-aware cleanup, while changed ownership quarantines without deleting unrelated resources.
 - Paused or restarting runner containers are unavailable capacity and require busy-aware cleanup without claiming termination.
 - Docker jobs never receive the host socket, personal bind mounts, credential environment, or manager state. Each DinD daemon and all of its storage belong to exactly one execution. Disable log retention both on outer containers and by default inside the nested daemon. A bootstrap marker is not readiness: require the runner container to survive a startup observation before clearing preparation failures.

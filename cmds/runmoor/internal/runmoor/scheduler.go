@@ -115,11 +115,16 @@ func Schedule(s Snapshot) []string {
 	return result
 }
 func retirementCandidates(s Snapshot) []string {
-	needDemand := false
+	_, _, vms := usage(s)
+	needDocker, needTart := false, false
 	for id, p := range s.Pools {
 		n, _ := liveCount(s, id)
 		if eligible(s, p) && n < p.Demand && logicalCount(s, p.Spec.Name) < p.Spec.MaxRunners {
-			needDemand = true
+			if p.Spec.Backend == Tart {
+				needTart = true
+			} else {
+				needDocker = true
+			}
 		}
 	}
 	ids := []string{}
@@ -138,6 +143,12 @@ func retirementCandidates(s Snapshot) []string {
 			continue
 		}
 		count, busy := liveCount(s, p.ID)
+		// Retiring Docker capacity cannot release a slot at the Tart VM ceiling.
+		remainingVMs := vms
+		if r.Backend == Tart && !r.Terminated {
+			remainingVMs--
+		}
+		needDemand := needDocker || (needTart && remainingVMs < 2)
 		target := p.Demand
 		if !needDemand && busy+p.Spec.MinIdle > target {
 			target = busy + p.Spec.MinIdle
