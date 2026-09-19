@@ -40,6 +40,8 @@ Additional invariants include unknown/duplicate configuration rejection, schema 
 
 `session_normalizes_watch_paths_for_existing_and_deleted_inputs` exercises a lexical root alias, deletion, and recreation. Notification paths use the same canonical root as discovery, including Windows verbatim prefixes; removed leaves are normalized through their existing ancestors.
 
+The native JS sharding fixture executes files under a directory containing spaces, compares recorded file executions against the unsharded run, and prints masked task logs on failure. Validated file selectors are project-relative so Windows canonical path prefixes do not become JS filename filters.
+
 ## Storage
 Fixtures use temporary directories and containers with UUID-v7 names. They do not replace repository credentials or identity material. Generated `dist` and `.taskflow` content is ignored and not committed.
 

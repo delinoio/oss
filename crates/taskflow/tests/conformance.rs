@@ -439,16 +439,24 @@ async fn scenario_09_native_go_rust_vitest_and_jest_sharding() {
             vec!["pnpm", "exec", adapter, "--runInBand"]
         };
         let js = fixture(
-            json!({"test":{"command":command,"input":["*.test.js"],"output":[],"shard":{"adapter":adapter,"count":3}}}),
+            json!({"test":{"command":command,"input":["**/*.test.js"],"output":[],"shard":{"adapter":adapter,"count":3}}}),
         );
         std::fs::write(js.path().join("package.json"),serde_json::to_vec(&json!({"name":"taskflow-shard-fixture","private":true,"packageManager":"pnpm@10.26.2","devDependencies":{adapter:version}})).unwrap()).unwrap();
+        std::fs::create_dir(js.path().join("test cases")).unwrap();
         for name in ["one", "two"] {
             std::fs::write(
-                js.path().join(format!("{name}.test.js")),
+                js.path().join(format!("test cases/{name}.test.js")),
                 if adapter == "vitest" {
-                    "import {test,expect} from 'vitest';test('works',()=>expect(1).toBe(1));"
+                    format!(
+                        "import {{test,expect}} from 'vitest';import {{appendFileSync}} from \
+                         'node:fs';test('works',()=>{{appendFileSync('executed.log','{name}\\n');\
+                         expect(1).toBe(1);}});"
+                    )
                 } else {
-                    "test('works',()=>expect(1).toBe(1));"
+                    format!(
+                        "const {{appendFileSync}}=require('node:fs');test('works',\
+                         ()=>{{appendFileSync('executed.log','{name}\\n');expect(1).toBe(1);}});"
+                    )
                 },
             )
             .unwrap();
@@ -468,10 +476,40 @@ async fn scenario_09_native_go_rust_vitest_and_jest_sharding() {
         .await
         .unwrap();
         let result = run(graph(js.path()).await, &["test"]).await;
-        assert!(result.success, "{adapter}: {result:?}");
+        let output = js
+            .path()
+            .join(".taskflow/runs")
+            .join(&result.results["app#test"].execution)
+            .join("output.log");
+        assert!(
+            result.success,
+            "{adapter}: {result:?}\n{}",
+            std::fs::read_to_string(output).unwrap_or_default()
+        );
+        let executed = || {
+            let mut names: Vec<_> = std::fs::read_to_string(js.path().join("executed.log"))
+                .unwrap()
+                .lines()
+                .map(str::to_owned)
+                .collect();
+            names.sort();
+            names
+        };
+        let sharded = executed();
+        assert_eq!(
+            sharded,
+            ["one", "two"],
+            "every selected file executes exactly once"
+        );
+        std::fs::remove_file(js.path().join("executed.log")).unwrap();
         taskflow::discover::output_tool(js.path(), &command, &[])
             .await
             .unwrap();
+        assert_eq!(
+            executed(),
+            sharded,
+            "sharded and unsharded inventories agree"
+        );
         let (inventory, reports) = shard::read_reports(
             &js.path()
                 .join(".taskflow/runs")

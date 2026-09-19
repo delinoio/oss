@@ -557,16 +557,11 @@ pub async fn inventory(
                 } else if !run.iter().any(|v| v == "run" || v == "--run") {
                     run.insert(position + 1, "run".into());
                 }
-                run.push(
-                    if task.platform.executor == crate::config::Executor::Docker {
-                        format!(
-                            "/workspace/{}",
-                            files::slash(absolute.strip_prefix(&graph.workspace.root)?)
-                        )
-                    } else {
-                        absolute.to_string_lossy().into_owned()
-                    },
-                );
+                // JS runners normalize their inventories to ordinary paths.
+                // Passing Rust's Windows verbatim canonical prefix as a filter
+                // matches no files. Execute the validated project-relative ID,
+                // which also stays valid inside the project's Docker workdir.
+                run.push(format!("./{id}"));
                 commands.insert(id, Command::Argv(run));
             }
         }
