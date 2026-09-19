@@ -2324,3 +2324,65 @@ async fn unchanged_metadata_notifications_do_not_cancel_live_work() {
         "{records}"
     );
 }
+
+#[test]
+fn go_shard_flags_fail_closed_for_unknown_and_selection_options() {
+    for flag in [
+        "-unknown",
+        "-unknown=value",
+        "-run=TestA",
+        "-test.run=TestA",
+        "-coverprofile=out",
+        "-c",
+        "--",
+    ] {
+        let task: config::Task = serde_json::from_value(
+            json!({"command":["go","test",flag],"shard":{"adapter":"go","count":2}}),
+        )
+        .unwrap();
+        assert!(shard::validate_task(&task).is_err(), "{flag}");
+    }
+    let task: config::Task = serde_json::from_value(
+        json!({"command":["go","test","-coverpkg"],"shard":{"adapter":"go","count":2}}),
+    )
+    .unwrap();
+    assert!(shard::validate_task(&task).is_err());
+}
+
+#[tokio::test]
+#[ignore = "requires Go"]
+async fn go_sharding_preserves_separated_flag_values_and_package_failures() {
+    let directory = fixture(
+        json!({"test":{"command":["go","test","-coverpkg","./...","-covermode","atomic","-shuffle","1","-vet","off","./..."],"input":[],"output":[],"shard":{"adapter":"go","count":2}}}),
+    );
+    files::atomic_write(
+        &directory.path().join("go.mod"),
+        b"module example.test/flags\n\ngo 1.25.0\n",
+    )
+    .unwrap();
+    files::atomic_write(
+        &directory.path().join("root_test.go"),
+        b"package flags\nimport \"testing\"\nfunc TestRoot(t *testing.T) {}\n",
+    )
+    .unwrap();
+    files::atomic_write(&directory.path().join("leaf/leaf_test.go"), b"package leaf\nimport \"testing\"\nfunc TestFailure(t *testing.T) { t.Fatal(\"expected failure\") }\n").unwrap();
+    let result = run(graph(directory.path()).await, &["test"]).await;
+    assert!(
+        !result.success,
+        "a failing inventoried package must not become a false pass"
+    );
+    let (inventory, reports) = shard::read_reports(
+        &directory
+            .path()
+            .join(".taskflow/runs")
+            .join(&result.results["app#test"].execution),
+    )
+    .unwrap();
+    assert_eq!(inventory.tests.len(), 2);
+    assert!(reports
+        .iter()
+        .flat_map(|r| &r.results)
+        .any(|r| r.id == "example.test/flags/leaf::TestFailure"
+            && r.status == shard::UnitStatus::Failed));
+    assert!(!shard::aggregate(&inventory, 2, &reports).unwrap());
+}

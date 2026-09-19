@@ -598,29 +598,20 @@ fn go_flags(arguments: &[String]) -> Result<Vec<String>> {
         if !arg.starts_with('-') {
             continue;
         }
-        ensure!(
-            !matches!(
-                arg.split('=').next(),
-                Some(
-                    "-run"
-                        | "-skip"
-                        | "-list"
-                        | "-json"
-                        | "-args"
-                        | "-fuzz"
-                        | "-bench"
-                        | "-coverprofile"
-                )
-            ),
-            "Go selection/output overrides require generic sharding"
-        );
+        let flag = arg.split('=').next().unwrap();
+        let takes_value = match flag {
+            "-tags" | "-timeout" | "-count" | "-parallel" | "-p" | "-cpu" | "-mod" | "-modfile"
+            | "-coverpkg" | "-covermode" | "-shuffle" | "-vet" | "-asmflags" | "-gcflags"
+            | "-ldflags" | "-gccgoflags" | "-buildmode" | "-compiler" | "-pkgdir" | "-overlay"
+            | "-toolexec" | "-installsuffix" | "-buildvcs" => true,
+            "-a" | "-n" | "-race" | "-msan" | "-asan" | "-v" | "-work" | "-x" | "-trimpath"
+            | "-linkshared" | "-cover" | "-short" | "-failfast" | "-fullpath" | "-benchmem" => {
+                false
+            }
+            _ => bail!("unsupported Go shard flag {flag}; use generic sharding"),
+        };
         flags.push(arg.clone());
-        if !arg.contains('=')
-            && matches!(
-                arg.as_str(),
-                "-tags" | "-timeout" | "-count" | "-parallel" | "-p" | "-cpu" | "-mod" | "-modfile"
-            )
-        {
+        if takes_value && !arg.contains('=') {
             flags.push(args.next().context("Go flag requires value")?.clone());
         }
     }
