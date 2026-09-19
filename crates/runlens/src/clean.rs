@@ -109,13 +109,14 @@ async fn managed_git(
 ) -> Result<Vec<u8>> {
     use tokio::io::AsyncReadExt;
     let mut command = tokio::process::Command::from(command);
-    command.stderr(Stdio::null());
+    command.stderr(Stdio::piped());
     if capture {
         command.stdout(Stdio::piped());
     }
     let mut child = fspy::lifecycle::OwnedChild::spawn(command)
         .map_err(|_| Error::input("Git preparation could not be started"))?;
     let stdout = child.child.stdout.take();
+    let stderr = child.child.stderr.take();
     let local_cancel = cancel.child_token();
     let read_cancel = local_cancel.clone();
     let operation = async {
@@ -134,11 +135,34 @@ async fn managed_git(
             }
             Ok(bytes)
         };
-        tokio::join!(child.wait(local_cancel.clone()), read)
+        let diagnostics = async {
+            let mut bytes = Vec::new();
+            if let Some(mut stderr) = stderr {
+                let _ = (&mut stderr).take(8192).read_to_end(&mut bytes).await;
+                let _ = tokio::io::copy(&mut stderr, &mut tokio::io::sink()).await;
+            }
+            // Only a bounded classification escapes this scope. Git text can
+            // contain local paths and never enters logs or saved reports.
+            let text = String::from_utf8_lossy(&bytes);
+            if text.contains("dubious ownership") || text.contains("unsafe repository") {
+                GitFailure::Ownership
+            } else if text.contains("not a git repository") {
+                GitFailure::Repository
+            } else if text.contains("config") {
+                GitFailure::Configuration
+            } else if text.contains("revision") {
+                GitFailure::Revision
+            } else if text.contains("chdir") || text.contains("directory") {
+                GitFailure::Directory
+            } else {
+                GitFailure::Other
+            }
+        };
+        tokio::join!(child.wait(local_cancel.clone()), read, diagnostics)
     };
     tokio::pin!(operation);
     let mut timed_out = false;
-    let (status, output) = tokio::select! {
+    let (status, output, reason) = tokio::select! {
         result = &mut operation => result,
         () = tokio::time::sleep(std::time::Duration::from_secs(120)) => {
             timed_out = true;
@@ -168,6 +192,7 @@ async fn managed_git(
         tracing::warn!(
             stage = "source-preparation",
             child_exit_code = status.code(),
+            reason = ?reason,
             "Git source operation failed"
         );
         return Err(Error::input(
@@ -175,6 +200,15 @@ async fn managed_git(
         ));
     }
     Ok(output)
+}
+#[derive(Debug)]
+enum GitFailure {
+    Ownership,
+    Repository,
+    Configuration,
+    Revision,
+    Directory,
+    Other,
 }
 async fn git_output(
     root: &Path,

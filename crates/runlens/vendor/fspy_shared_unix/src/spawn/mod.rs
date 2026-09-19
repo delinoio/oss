@@ -42,8 +42,10 @@ pub fn handle_exec(
         if path.is_absolute() {
             on_path_access(mode, path);
         } else {
-            let path = std::path::absolute(path).expect("Failed to get cwd");
-            on_path_access(mode, &path);
+            match std::path::absolute(path) {
+                Ok(path) => on_path_access(mode, &path),
+                Err(_) => on_path_access(AccessMode::UNSUPPORTED, Path::new("/")),
+            }
         }
     };
 

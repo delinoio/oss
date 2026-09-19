@@ -42,6 +42,15 @@ fn main() {
             let status = Command::new(&args[1]).arg("read-write").status().unwrap();
             std::process::exit(status.code().unwrap_or(1));
         }
+        #[cfg(unix)]
+        "invalid-payload-child" => {
+            let status = Command::new(std::env::current_exe().unwrap())
+                .env("FSPY_PAYLOAD", "invalid")
+                .arg("read-write")
+                .status()
+                .unwrap();
+            std::process::exit(status.code().unwrap_or(1));
+        }
         "linger" => {
             #[allow(
                 clippy::zombie_processes,
@@ -53,7 +62,76 @@ fn main() {
                 .spawn()
                 .unwrap();
         }
+        #[cfg(unix)]
+        "execl-many" => {
+            use std::os::unix::ffi::OsStrExt;
+            let executable =
+                std::ffi::CString::new(std::env::current_exe().unwrap().as_os_str().as_bytes())
+                    .unwrap();
+            unsafe {
+                libc::execl(
+                    executable.as_ptr(),
+                    executable.as_ptr(),
+                    c"check-argv".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"x".as_ptr(),
+                    c"last".as_ptr(),
+                    std::ptr::null::<libc::c_char>(),
+                );
+            }
+            panic!("execl should replace the fixture");
+        }
+        "check-argv" => {
+            assert_eq!(args.len(), 34);
+            assert_eq!(args.last().unwrap(), "last");
+            let _ = fs::read("input.txt");
+        }
         "sleep" => std::thread::sleep(Duration::from_secs(60)),
+        #[cfg(unix)]
+        "removed-cwd" => {
+            let root = std::env::current_dir().unwrap();
+            let nested = root.join("removed-cwd");
+            fs::create_dir(&nested).unwrap();
+            std::env::set_current_dir(&nested).unwrap();
+            fs::remove_dir(&nested).unwrap();
+            assert!(fs::read("missing").is_err());
+            fs::write(
+                root.join("continued"),
+                "collection failure did not abort execution",
+            )
+            .unwrap();
+            std::env::set_current_dir(root).unwrap();
+        }
         "ready-sleep" => {
             fs::write("child-ready", "ready").unwrap();
             std::thread::sleep(Duration::from_secs(60));

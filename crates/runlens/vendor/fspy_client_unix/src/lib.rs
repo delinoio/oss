@@ -51,16 +51,13 @@ impl<'a> Client<'a> {
     /// with no further ceremony — and the client never retains the
     /// allocator itself (see the `Send + Sync` assertion above).
     ///
-    /// # Panics
-    ///
-    /// Panics when the payload is missing, malformed, or cannot be decoded,
-    /// and when the channel is there but cannot be attached to (see
-    /// [`ChannelConf::sender`](fspy_shared::ipc::channel::ChannelConf::sender)).
+    /// Missing or invalid collection configuration disables this client without
+    /// aborting the host. Root attachment absence is reported by the supervisor.
     pub fn from_env(
         envs: impl Iterator<Item = fspy_nostd::env::Entry>,
         allocator: impl Allocator + Clone + 'a,
-    ) -> Self {
-        let encoded_payload = decode_payload_from_env(envs, allocator.clone()).unwrap();
+    ) -> Option<Self> {
+        let encoded_payload = decode_payload_from_env(envs, allocator.clone()).ok()?;
 
         // `None` when the channel is already over, which happens when this
         // process starts after the root target exited. Nothing is said
@@ -71,7 +68,11 @@ impl<'a> Client<'a> {
         if let Some(sender) = &ipc_sender {
             sender.send(&PathAccess { mode: fspy_shared::ipc::AccessMode::ATTACHED, path: Path::new("/").into() });
         }
-        Self { encoded_payload, ipc_sender }
+        Some(Self { encoded_payload, ipc_sender })
+    }
+
+    pub fn report_failure(&self) {
+        self.send(fspy_shared::ipc::AccessMode::UNSUPPORTED, Path::new("/"));
     }
 
     fn send(&self, mode: fspy_shared::ipc::AccessMode, path: &Path) {
@@ -112,9 +113,15 @@ impl<'a> Client<'a> {
         // SAFETY: raw_exec contains valid pointers to C strings and
         // null-terminated arrays, as provided by the caller.
         let mut exec = unsafe { raw_exec.to_exec() };
-        let pre_exec = handle_exec(&mut exec, config, &self.encoded_payload, |mode, path| {
+        let pre_exec = match handle_exec(&mut exec, config, &self.encoded_payload, |mode, path| {
             self.send(mode, path);
-        })?;
+        }) {
+            Ok(pre_exec) => pre_exec,
+            Err(_) => {
+                self.report_failure();
+                return f(raw_exec, None);
+            }
+        };
         RawExec::from_exec(exec, allocator, |raw_command| f(raw_command, pre_exec))
     }
 

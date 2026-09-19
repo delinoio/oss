@@ -448,3 +448,10 @@ Unreadable native fixtures verify unknown content rather than an empty digest.
 A single bounded Mach-O parser covers both root preflight and intercepted child
 execution: hardened descendants proceed unchanged with incomplete coverage.
 Initialization failure fixtures assert that no target side effect occurs.
+
+Unix collector failures cannot panic an intercepted host call. Optional client
+initialization, invalid payloads, removed cwd, and exec preparation failures
+preserve execution with typed incomplete evidence when observable. Unsupported
+macOS children retain the original executable and user preloads while dropping
+only the Runlens-owned DYLD library, including the arm64/arm64e boundary. Git
+preparation failures log only a bounded enum classification and exit status.

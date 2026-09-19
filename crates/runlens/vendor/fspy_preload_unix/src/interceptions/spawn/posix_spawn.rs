@@ -39,8 +39,9 @@ unsafe fn handle_posix_spawn(
     // SAFETY: the raw pointers captured inside T are valid for the duration of the thread::scope call, so sending them to the scoped thread is safe
     unsafe impl<T> Send for AssertSend<T> {}
 
-    let client = global_client()
-        .expect("posix_spawn(p) unexpectedly called before client initialized in ctor");
+    let Some(client) = global_client() else {
+        return unsafe { original(pid, file, file_actions, attrp, argv, envp) };
+    };
 
     // SAFETY: file, argv, and envp are valid pointers forwarded from the interposed posix_spawn(p) function
     let result = unsafe {
@@ -64,12 +65,12 @@ unsafe fn handle_posix_spawn(
                         let call_original = AssertSend(call_original);
                         s.spawn(move || {
                             let call_original = call_original;
-                            pre_exec.run()?;
+                            if pre_exec.run().is_err() { client.report_failure(); }
 
                             nix::Result::Ok((call_original.0)())
                         })
                         .join()
-                        .unwrap()
+                        .unwrap_or_else(|_| { client.report_failure(); Err(nix::Error::EIO) })
                     })
                 } else {
                     Ok(call_original())

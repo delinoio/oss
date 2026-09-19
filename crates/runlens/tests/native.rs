@@ -809,6 +809,42 @@ fn hostile_envelopes_and_forged_changes_are_rejected() {
             Some(2)
         );
     }
+    let mut cross_environment = report.clone();
+    cross_environment["executions"][0]["environment"]["architecture"] =
+        "different-architecture".into();
+    fs::write(
+        root.path().join("cross.json"),
+        serde_json::to_vec(&cross_environment).unwrap(),
+    )
+    .unwrap();
+    let comparison = invoke(
+        root.path(),
+        &["compare", "original.json", "cross.json", "--json"],
+    );
+    assert_eq!(comparison.status.code(), Some(4));
+    let comparison: Value = serde_json::from_slice(&comparison.stdout).unwrap();
+    assert_eq!(comparison["verdict"], "inconclusive");
+    assert!(
+        !comparison["environment_differences"]
+            .as_object()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        invoke(
+            root.path(),
+            &[
+                "compare",
+                "original.json",
+                "original.json",
+                "--map",
+                "${workspace}/out=${workspace}"
+            ]
+        )
+        .status
+        .code(),
+        Some(2)
+    );
     let oversized = fs::File::create(root.path().join("oversized.json")).unwrap();
     oversized
         .set_len(runlens::report::MAX_REPORT_BYTES + 1)
@@ -818,5 +854,48 @@ fn hostile_envelopes_and_forged_changes_are_rejected() {
             .status
             .code(),
         Some(2)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn unix_collection_failure_and_large_variadic_exec_preserve_child_semantics() {
+    let root = tempfile::tempdir().unwrap();
+    let output = run(root.path(), "cwd.json", "removed-cwd");
+    // Darwin can still resolve a removed cwd through its open directory vnode;
+    // Linux reports lost scope. Both must preserve the child's syscall result.
+    assert!(
+        matches!(output.status.code(), Some(0 | 4)),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(root.path().join("continued").exists());
+    assert_eq!(
+        parse(root.path(), "cwd.json")["executions"][0]["outcome"]["child_exit_code"],
+        0
+    );
+    let output = run(root.path(), "payload.json", "invalid-payload-child");
+    assert_eq!(
+        output.status.code(),
+        Some(4),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        parse(root.path(), "payload.json")["executions"][0]["outcome"]["child_exit_code"],
+        0
+    );
+    assert!(root.path().join("out/result.txt").exists());
+    fs::write(root.path().join("input.txt"), "input").unwrap();
+    let output = run(root.path(), "exec.json", "execl-many");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        parse(root.path(), "exec.json")["executions"][0]["accesses"]["${workspace}/input.txt"]
+            ["read"],
+        true
     );
 }

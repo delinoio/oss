@@ -21,7 +21,9 @@ pub unsafe fn handle_open(path: impl ToAbsolutePath, mode: impl ToAccessMode) {
         let allocator = fspy_nostd_alloc::pooled_bump();
         // SAFETY: path and mode contain valid pointers/values forwarded
         // from the interposed function's caller.
-        unsafe { client.try_handle_open(path, mode, allocator) }.unwrap();
+        if unsafe { client.try_handle_open(path, mode, allocator) }.is_err() {
+            client.report_failure();
+        }
     }
 }
 
@@ -30,7 +32,7 @@ pub unsafe fn handle_open(path: impl ToAbsolutePath, mode: impl ToAccessMode) {
 fn init_client() {
     // SAFETY: the ctor only reads the process environment while constructing
     // the client and does not retain borrowed environment views.
-    let current = unsafe { fspy_nostd::env::current() }.unwrap();
+    let Ok(current) = (unsafe { fspy_nostd::env::current() }) else { return; };
     // The attach's storage: one page-backed bump housed in a static, so
     // its borrow is 'static by construction and the client comes out as
     // Client<'static> with no lifetime promotion anywhere. The bump is not
@@ -39,6 +41,7 @@ fn init_client() {
     static BUMP: static_cell::StaticCell<fspy_nostd_alloc::PageBump> =
         static_cell::StaticCell::new();
     let bump: &'static fspy_nostd_alloc::PageBump = BUMP.init(fspy_nostd_alloc::page_bump());
-    let client = Client::from_env(current.envs(), bump);
-    CLIENT.set(client).unwrap();
+    if let Some(client) = Client::from_env(current.envs(), bump) {
+        let _ = CLIENT.set(client);
+    }
 }

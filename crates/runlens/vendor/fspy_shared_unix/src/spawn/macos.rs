@@ -20,7 +20,20 @@ pub fn handle_exec(command: &mut Exec, payload: &EncodedPayload) -> nix::Result<
     let path = Path::new(OsStr::from_bytes(&command.program));
     if unsupported(path) {
         // The caller records UNSUPPORTED before this child executes unchanged.
-        // Do not remove user-supplied injection configuration or substitute a tool.
+        // Remove only our inherited preload: leaving an arm64 collector in an
+        // arm64e system child's DYLD list aborts that otherwise valid child.
+        // Preserve every user-supplied library and the requested executable.
+        let owned = payload.payload.preload_path.as_os_str().as_bytes();
+        command.envs.retain_mut(|(name, value)| {
+            if name.as_slice() == b"DYLD_INSERT_LIBRARIES" {
+                if let Some(value) = value {
+                    let remaining = value.split(|byte| *byte == b':').filter(|entry| *entry != owned).collect::<Vec<_>>().join(&b':');
+                    if remaining.is_empty() { return false; }
+                    *value = remaining.into();
+                }
+            }
+            true
+        });
         return Ok(None);
     }
     append_path_env(&mut command.envs, &b"DYLD_INSERT_LIBRARIES"[..], payload.payload.preload_path.as_os_str().as_bytes());

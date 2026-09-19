@@ -32,8 +32,9 @@ fn handle_exec(
     argv: *const *const libc::c_char,
     envp: *const *const libc::c_char,
 ) -> libc::c_int {
-    let client =
-        global_client().expect("exec unexpectedly called before client initialized in ctor");
+    let Some(client) = global_client() else {
+        return unsafe { execve::original()(prog, argv, envp) };
+    };
     // SAFETY: prog, argv, and envp are valid pointers to C strings/arrays forwarded from the interposed exec function
     let result = unsafe {
         client.handle_exec(
@@ -42,7 +43,7 @@ fn handle_exec(
             allocator,
             |raw_command, pre_exec| {
                 if let Some(pre_exec) = pre_exec {
-                    pre_exec.run()?;
+                    if pre_exec.run().is_err() { client.report_failure(); }
                 }
                 Ok(execve::original()(raw_command.prog, raw_command.argv, raw_command.envp))
             },

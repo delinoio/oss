@@ -62,6 +62,11 @@ pub fn protected(file: &mut (impl Read + Seek), machine: u32) -> io::Result<bool
     if word(&header, 0, false)? != 0xfeedfacf || word(&header, 4, false)? != machine {
         return Err(invalid());
     }
+    // arm64e uses pointer-authenticated ABI and cannot load our ordinary arm64
+    // collector, even though its CPU type is shared with arm64.
+    if machine == 0x0100_000c && word(&header, 8, false)? & 0x00ff_ffff == 2 {
+        return Ok(true);
+    }
     let count = word(&header, 16, false)? as usize;
     let bytes = word(&header, 20, false)? as usize;
     if count > 16384 {

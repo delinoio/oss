@@ -51,3 +51,15 @@ unchanged and emits unsupported coverage, even outside SIP system directories.
 The native hardened-image fixture checks both preflight rejection and successful
 child execution with an incomplete receipt. Remove this patch when upstream
 provides equivalent passive protection classification without executable substitution.
+
+Unix collector initialization and path/exec adaptation failures now preserve the
+host call and set typed incomplete evidence when the channel is available. Native
+removed-cwd and invalid-payload-child fixtures verify continued execution; the
+root supervisor rejects missing attachment. Variadic execl allocates its trailing
+NULL slot and exposes only initialized pointers; a 35-argument native fixture
+checks this boundary. Unsupported macOS descendants lose only Runlens's inherited
+DYLD entry, retaining user preloads: an ordinary arm64 dylib cannot load in an
+arm64e system child on macOS 14. Native protected-child tests cover continued
+execution on both macOS architectures. Remove these patches when upstream provides
+fallible initialization, non-aborting collection, correct argv allocation, and
+owned-preload removal at the unsupported-child boundary.
