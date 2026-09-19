@@ -143,3 +143,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `environment_names_follow_host_precedence_and_security_rules` checks host-specific casing across dotenv/task/CLI precedence, secret scoping (including Unicode), environment fingerprints, lookup context, and remote credentials. The grouped-task subprocess fixture injects mixed-case inherited credentials on Windows and verifies both absence from siblings and masked stored logs.
 
 `setup_cancellation_preserves_receipts_and_service_events` cancels finite tasks and services while waiting for a resource and while probing a real tool process. Receipts and service events retain cancellation, commands never start, and probe children are reaped. Unverified Docker cleanup remains a failure even when cancellation is active.
+
+`cache_verify_rejects_misdirected_and_inconsistent_artifacts` gives the CLI valid object envelopes containing a mismatched entry key, invalid version, output/file digest corruption, malformed content encoding, duplicate paths, and traversal paths. Only the intact entry remains valid, verification fails, and task outputs remain untouched.

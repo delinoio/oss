@@ -334,7 +334,10 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
                         .to_string_lossy()
                         .into_owned();
                     let valid = if matches!(action, CacheAction::Verify) {
-                        Some(crate::cache::load(&root, &key).is_ok())
+                        Some(crate::cache::load(&root, &key).is_ok_and(|artifact| {
+                            artifact
+                                .is_some_and(|artifact| artifact.validate_integrity(&key).is_ok())
+                        }))
                     } else {
                         None
                     };

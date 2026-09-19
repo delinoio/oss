@@ -33,6 +33,8 @@ The ignored `.taskflow` directory contains local cache objects, receipts, locks,
 and masked execution logs. Add it to your ignore rules. `tflow cache list` shows
 entries, `tflow cache verify` checks their integrity, and `tflow cache clean`
 removes task-cache entries while preserving task outputs and native caches.
+Verification checks each entry's identity, artifact and file digests, and shard
+records. Restoration also checks compatibility with the current output ownership.
 
 Artifacts are bounded to 512 MiB per encoded object. Paths, ownership, digests,
 and relative links are validated before staged restoration. Cancelled or invalidated

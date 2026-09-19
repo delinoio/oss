@@ -206,10 +206,17 @@ impl Artifact {
         })
     }
 
-    pub fn validate(&self, key: &str, id: &str, project: &Project, task: &Task) -> Result<()> {
-        validate_artifact_outputs(task)?;
+    /// Check the immutable artifact without requiring the current project
+    /// config.
+    pub fn validate_integrity(&self, key: &str) -> Result<()> {
         ensure!(
-            self.version == 1 && self.key == key && self.task == id,
+            self.version == 1
+                && self.key == key
+                && self
+                    .task
+                    .split_once('#')
+                    .is_some_and(|(project, task)| crate::config::identifier(project)
+                        && crate::config::identifier(task)),
             "cache identity mismatch"
         );
         ensure!(
@@ -217,14 +224,16 @@ impl Artifact {
             "cache output digest mismatch"
         );
         if let Some((inventory, reports)) = &self.shards {
-            let count = task
-                .shard
-                .as_ref()
-                .context("unexpected cached shard results")?
+            let count = reports
+                .first()
+                .context("missing cached shard results")?
                 .count;
-            crate::shard::validate_reports(inventory, count, reports)?;
+            ensure!((1..=256).contains(&count), "invalid cached shard count");
+            ensure!(
+                crate::shard::validate_reports(inventory, count, reports)?,
+                "cached shard results contain failure"
+            );
         }
-        let roots = anchors(task)?;
         let mut seen = BTreeSet::new();
         let mut links = vec![];
         let mut total = 0;
@@ -238,10 +247,6 @@ impl Artifact {
             ensure!(
                 seen.insert(entry.path.clone()),
                 "duplicate cache entry path"
-            );
-            ensure!(
-                roots.iter().any(|r| path.starts_with(r)),
-                "cache entry outside declared outputs"
             );
             match &entry.content {
                 Content::File { data, digest, .. } => {
@@ -266,6 +271,37 @@ impl Artifact {
                 "cache file traverses a symlink"
             );
         }
+        Ok(())
+    }
+
+    pub fn validate(&self, key: &str, id: &str, project: &Project, task: &Task) -> Result<()> {
+        validate_artifact_outputs(task)?;
+        self.validate_integrity(key)?;
+        ensure!(self.task == id, "cache task identity mismatch");
+        if let Some((inventory, reports)) = &self.shards {
+            let count = task
+                .shard
+                .as_ref()
+                .context("unexpected cached shard results")?
+                .count;
+            crate::shard::validate_reports(inventory, count, reports)?;
+        }
+        let roots = anchors(task)?;
+        for entry in &self.files {
+            ensure!(
+                roots
+                    .iter()
+                    .any(|root| Path::new(&entry.path).starts_with(root)),
+                "cache entry outside declared outputs"
+            );
+        }
+        let links: Vec<_> = self
+            .files
+            .iter()
+            .filter(|entry| matches!(entry.content, Content::Link { .. }))
+            .map(|entry| Path::new(&entry.path))
+            .collect();
+        let seen: BTreeSet<_> = self.files.iter().map(|entry| entry.path.as_str()).collect();
         let contents: BTreeMap<_, _> = self
             .files
             .iter()
@@ -284,7 +320,7 @@ impl Artifact {
         }
         for root in roots {
             ensure!(
-                seen.contains(&files::slash(&root)),
+                seen.contains(files::slash(&root).as_str()),
                 "cache is missing a required output root"
             );
         }

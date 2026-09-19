@@ -57,6 +57,8 @@ Ignored workspace-local `.taskflow` contains execution records, content-addresse
 
 R2/S3 stores the same validated cache format. Configure endpoint, bucket, namespace, access mode, and environment references for credentials. Cache transport failure falls back to execution with diagnostics. Restore validates digests, paths, ownership, and link containment before replacing outputs. Native incremental caches are separate shared resources, not implicitly exported artifacts.
 
+`cache verify` checks entry/object binding, artifact version and key/task identity, output and file digests, intrinsic path structure, and shard accounting without requiring the historical task configuration. Current ownership and filesystem link containment remain additional restoration checks.
+
 ## Security
 Default dotenv precedence: CLI > task > inherited > project dotenv > root dotenv. Loading can be disabled. Cacheable commands use a declared environment. Cache transport credentials never enter task environments. Secrets disable caching and are masked in live, persisted, and replayed logs, including across byte chunks. Explicit `--show-secrets` affects current live output only; stored output remains masked. Remote entries require trusted writers; untrusted CI cannot read or write the namespace.
 

@@ -2983,3 +2983,81 @@ async fn setup_cancellation_preserves_receipts_and_service_events() {
         }
     }
 }
+
+#[tokio::test]
+async fn cache_verify_rejects_misdirected_and_inconsistent_artifacts() {
+    let directory =
+        fixture(json!({"build":{"command":command(&["version"]),"input":[],"output":["output"]}}));
+    std::fs::write(directory.path().join("output"), "retained").unwrap();
+    let g = graph(directory.path()).await;
+    let original = cache::Artifact::capture(
+        files::digest(b"valid"),
+        "app#build".into(),
+        &g.workspace.projects["app"],
+        &g.tasks["app#build"].task,
+    )
+    .unwrap();
+    cache::store(directory.path(), &original).unwrap();
+    let verify = || {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .current_dir(directory.path())
+            .args(["--json", "cache", "verify"])
+            .output()
+            .unwrap();
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        (output.status.success(), report)
+    };
+    assert!(verify().0);
+    let wrong_key = files::digest(b"misdirected");
+    std::fs::copy(
+        cache::entry_path(directory.path(), &original.key),
+        cache::entry_path(directory.path(), &wrong_key),
+    )
+    .unwrap();
+    for corruption in [
+        "version",
+        "output-digest",
+        "file-digest",
+        "base64",
+        "duplicate-path",
+        "unsafe-path",
+    ] {
+        let mut artifact = original.clone();
+        artifact.key = files::digest(corruption.as_bytes());
+        match corruption {
+            "version" => artifact.version = 99,
+            "output-digest" => artifact.output_digest = files::digest(b"incorrect"),
+            "file-digest" => {
+                let cache::Content::File { digest, .. } = &mut artifact.files[0].content else {
+                    panic!("expected file");
+                };
+                *digest = files::digest(b"incorrect");
+            }
+            "base64" => {
+                let cache::Content::File { data, .. } = &mut artifact.files[0].content else {
+                    panic!("expected file");
+                };
+                *data = "!invalid-base64!".into();
+            }
+            "duplicate-path" => artifact.files.push(artifact.files[0].clone()),
+            "unsafe-path" => artifact.files[0].path = "../outside".into(),
+            _ => unreachable!(),
+        }
+        if corruption != "output-digest" {
+            artifact.output_digest = cache::output_digest(&artifact.files).unwrap();
+        }
+        // The object envelope is valid: verification must inspect its payload.
+        cache::store(directory.path(), &artifact).unwrap();
+    }
+    let (success, report) = verify();
+    assert!(!success);
+    let entries = report["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 8);
+    for entry in entries {
+        assert_eq!(entry["valid"], entry["key"] == original.key);
+    }
+    assert_eq!(
+        std::fs::read_to_string(directory.path().join("output")).unwrap(),
+        "retained"
+    );
+}
