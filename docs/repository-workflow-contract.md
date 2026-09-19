@@ -31,6 +31,8 @@ Changes to DevHud workflows or these contracts must update `docs/apps-devhud-ope
 
 ## Runmoor preview validation and release
 
+`CI.yml` validates `apps/runmoor-docs` in `node-runmoor-docs-test`, using the standard frozen-install and Turbo affected-workspace gate. The job is required by `ci-result` and only builds and validates documentation; it never deploys. Public Runmoor routes are owned by the standalone app, while `public-docs` validates their removal and links to `https://runmoor.delino.io`.
+
 `.github/workflows/runmoor.yml` is a separate read-only `contents: read` validation workflow, gated to Runmoor source, release scripts/workflows, and shared Go module changes. It runs race tests and explicitly enabled local Docker integration without GitHub credentials or job assignment. Real Tart integration remains operator opt-in. Existing CI aggregation, application development commands and fixed ports are unchanged.
 
 `.github/workflows/release-runmoor.yml` accepts exact `runmoor@v<MAJOR.MINOR.PATCH>` tags and manual version/dry-run dispatch. Source version and revision must match the release plan; publication permits main or the exact tag only. Plan, build and package jobs use read-only contents authority and produce the three native platform archives plus SHA256SUMS. Dry runs cannot request OIDC, sign, create tags/releases, or upload public assets. Only the explicitly guarded publish job obtains `contents: write` and `id-token: write`, rejects conflicting existing tags or existing public releases, signs the exact archives/checksum file, verifies the exact workflow certificate identity and issuer, and publishes a prerelease with overwrite disabled. No macOS/Xcode images or placeholder signatures are shipped.

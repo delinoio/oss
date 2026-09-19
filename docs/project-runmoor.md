@@ -11,16 +11,18 @@ Runmoor manages disposable, single-job GitHub Actions runners on one developer o
 ## Domain Ownership Map
 
 - Commands: `cmds/runmoor`, using the repository Go module.
-- Public documentation: the `/runmoor` section of `apps/public-docs`.
+- Public documentation: `apps/runmoor-docs` at `https://runmoor.delino.io`.
 - Release integration: `.github/workflows/release-runmoor.yml` and Runmoor-specific assets under `scripts/release`.
 
 ## Domain Contract Documents
 
 - [Command foundation](cmds-runmoor-foundation.md).
-- [Public documentation app](apps-public-docs-foundation.md).
+- [Runmoor documentation app](apps-runmoor-docs-foundation.md).
 
 ## Cross-Domain Invariants
 
+- Runmoor public guides are owned by the standalone Rspress app and deployed as Cloudflare Pages static output. Stable routes are `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, and `/operations`. The old public-docs `/runmoor` routes are removed without redirects or compatibility pages.
+- Package-local `pnpm dev` and root `pnpm dev:runmoor-docs` bind to `127.0.0.1:46309`; preview binds to `127.0.0.1:46271`. Both enforce the fixed address and fail on conflicts. The root entry point does not require the DevHud team environment.
 - Platforms: macOS 14+ Apple Silicon; Ubuntu 22.04+ amd64/arm64. Host and execution CPU architectures must match. Windows, Intel Macs, emulation, GHES, Kubernetes, cloud/remote Docker, and multi-computer management are excluded.
 - The manager runs on the host. No host job execution, reusable completed runners, public webhook server, dashboard, remote control API, telemetry, Prometheus, plugin API, or automatic update service exists.
 - UUID-v7 identities, TOML schema 1, SQLite schema 1, and JSON schema 1 are shared contracts. Credentials are environment/file references, never literal TOML values, SQLite values, or guest management credentials.

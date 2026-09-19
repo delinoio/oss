@@ -218,4 +218,4 @@ Jobs retain timeout accounting across restart/sleep. Active work requests OS sle
 
 Diagnostics are local, sanitized structured metadata bounded by **seven days and 256 MiB**. Completed execution history expires after seven days; unresolved ownership/cleanup remains until reconciliation. Credentials, JIT configuration, workflow secrets and raw job output are excluded. Sealed images remain until explicit deletion. There is no telemetry or Prometheus endpoint.
 
-Report reproducible issues through [GitHub Issues](https://github.com/delinoio/oss/issues). Include version, platform, safe error code and relevant sanitized status. Do not include credentials, JIT data, raw workflow logs, or private VM contents. The public documentation site also provides a Runmoor section with the same supported workflows.
+Report reproducible issues through [GitHub Issues](https://github.com/delinoio/oss/issues). Include version, platform, safe error code and relevant sanitized status. Do not include credentials, JIT data, raw workflow logs, or private VM contents. The [Runmoor documentation site](https://runmoor.delino.io) covers the same supported workflows.

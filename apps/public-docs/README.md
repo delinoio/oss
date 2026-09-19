@@ -43,12 +43,13 @@ store identifiers into every generated text asset before publication.
 - `docs/nodeup.md`: Compatibility handoff page for legacy `/nodeup` links.
 - `docs/devhud/`: Stable DevHud installation, usage, privacy, security, support, administration, and release guidance routes.
 
-Cargo Mono, Derun, and With Watch remain in-site product documentation. Nodeup
-and binpm are external top-level links to their standalone documentation apps:
+Cargo Mono, Derun, and With Watch remain in-site product documentation. Nodeup,
+binpm, and Runmoor are external top-level links to their standalone documentation apps:
 
 - Nodeup documentation is owned by `apps/nodeup-docs` and published at `https://nodeup.delino.io`.
 - binpm documentation is owned by `apps/binpm-docs` and published at `https://binpm.delino.io`.
+- Runmoor documentation is owned by `apps/runmoor-docs` and published at `https://runmoor.delino.io`. Its former `/runmoor` and six child routes are removed without redirects or handoff pages.
 
 The legacy `/nodeup` route is kept as a lightweight handoff to
 `https://nodeup.delino.io` for existing external links. Do not add in-site
-Nodeup or binpm guide routes under `apps/public-docs`.
+Nodeup, binpm, or Runmoor guide routes under `apps/public-docs`.

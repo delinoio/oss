@@ -25,7 +25,7 @@ const devhudTauri = JSON.parse(readFileSync(`${root}/apps/devhud/src-tauri/tauri
 
 const legacyJobs = [
   "go-quality", "go-test", "repository-environment", "rust-fmt", "rust-clippy", "rust-test",
-  "node-mpapp-test", "node-mpapp-lint", "node-binpm-docs-test", "node-nodeup-docs-test", "node-public-docs-test",
+  "node-mpapp-test", "node-mpapp-lint", "node-binpm-docs-test", "node-runmoor-docs-test", "node-nodeup-docs-test", "node-public-docs-test",
 ];
 const devhudJobs = [
   "devhud-frontend", "devhud-extension", "devhud-rust-conformance", "devhud-security", "devhud-desktop",
@@ -103,6 +103,7 @@ test("Node jobs use the committed Turbo binary with frozen installs and affected
     ["node-mpapp-test", "Run mpapp tests"],
     ["node-mpapp-lint", "Run mpapp lint"],
     ["node-binpm-docs-test", "Run binpm-docs tests"],
+    ["node-runmoor-docs-test", "Run runmoor-docs tests"],
     ["node-nodeup-docs-test", "Run nodeup-docs tests"],
     ["node-public-docs-test", "Run public-docs tests"],
   ]);

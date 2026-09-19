@@ -15,13 +15,6 @@ const stableRouteIds = [
   "/devhud/support",
   "/devhud/admin",
   "/devhud/releases",
-  "/runmoor",
-  "/runmoor/install",
-  "/runmoor/configuration",
-  "/runmoor/commands",
-  "/runmoor/docker",
-  "/runmoor/tart",
-  "/runmoor/operations",
   "/cargo-mono",
   "/derun",
   "/with-watch",
@@ -79,19 +72,19 @@ async function collectHtmlFiles(directory) {
 const htmlFiles = await collectHtmlFiles(outputDir);
 const failures = [];
 
+// These routes were intentionally removed, without redirects or handoff pages.
+// Reject stale output as well as navigation that would recreate the old surface.
+for (const oldOutput of ["runmoor.html", "runmoor"]) {
+  if (await pathExists(path.join(outputDir, oldOutput))) {
+    failures.push(`${oldOutput} retains a removed Runmoor route`);
+  }
+}
+
 function attributeValue(match) {
   return match[1] ?? match[2] ?? match[3] ?? "";
 }
 
 const requiredHeadings = new Map([
-  ["/runmoor", ["Runmoor", "Guides"]],
-  ["/runmoor/install", ["Install and Verify Runmoor"]],
-  ["/runmoor/configuration", ["Runmoor Configuration"]],
-  ["/runmoor/commands", ["Runmoor Commands and Routing"]],
-  ["/runmoor/docker", ["Runmoor Docker Execution"]],
-  ["/runmoor/tart", ["Runmoor Tart Images"]],
-  ["/runmoor/operations", ["Runmoor Operations"]],
-
   ["/devhud", ["DevHud"]],
   ["/devhud/install", ["Install and Verify DevHud", "Desktop", "Mobile stores", "Chrome extension"]],
   ["/devhud/guide", ["Using DevHud", "First run and identity", "Settings and PAT profiles", "Capture, drafts, and browser context", "Decks and widgets"]],
@@ -102,7 +95,8 @@ const requiredHeadings = new Map([
   ["/devhud/releases", ["DevHud Releases"]],
 ]);
 const requiredLinks = new Map([
-  ["/runmoor", ["/runmoor/install", "/runmoor/configuration", "/runmoor/commands", "/runmoor/docker", "/runmoor/tart", "/runmoor/operations"]],
+  ["/", ["https://runmoor.delino.io"]],
+  ["/projects-overview", ["https://runmoor.delino.io"]],
   ["/devhud", ["/devhud/install", "/devhud/privacy", "/devhud/security", "/devhud/support"]],
   ["/devhud/install", ["/devhud/releases", "/devhud/security", "/devhud/support"]],
   ["/devhud/guide", ["/devhud/privacy", "/devhud/security", "/devhud/support"]],
@@ -430,6 +424,21 @@ for (const htmlFile of htmlFiles) {
   const contents = await readFile(htmlFile, "utf8");
   const renderedText = visibleText(contents);
   const commentText = htmlComments(contents);
+  const pageUrl = new URL(`/${path.relative(outputDir, htmlFile).split(path.sep).join("/")}`, validatorOrigin);
+  for (const match of contents.matchAll(urlAttributePattern)) {
+    let target;
+    try {
+      target = new URL(decodeHTML(attributeValue(match)), pageUrl);
+    } catch {
+      continue;
+    }
+    if (target.origin === validatorOrigin && /^\/runmoor(?:\/|(?:\.html)?$)/u.test(target.pathname)) {
+      failures.push(`${path.relative(outputDir, htmlFile)} links to removed Runmoor route ${target.pathname}`);
+    }
+  }
+  if (!contents.includes('href="https://runmoor.delino.io"')) {
+    failures.push(`${path.relative(outputDir, htmlFile)} is missing the Runmoor navigation link`);
+  }
 
   for (const htmlRoute of findHtmlRouteLinks(contents, htmlFile)) {
     failures.push(`${path.relative(outputDir, htmlFile)} links to ${htmlRoute}`);

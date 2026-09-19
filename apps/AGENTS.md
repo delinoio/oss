@@ -3,12 +3,12 @@
 - Follow root `AGENTS.md` and project-specific docs before adding or changing app code.
 - Keep app-specific contracts synchronized in the project index doc (`docs/project-*.md`) and relevant app-domain contract docs (`docs/apps-*.md`) in the same change.
 - Keep repository and domain rules in the appropriate `AGENTS.md` files.
-- Public documentation app content must not expose repository-internal implementation details. Use `docs/` as the internal source of truth, then curate `apps/public-docs`, `apps/binpm-docs`, and `apps/nodeup-docs` around user-facing behavior, supported workflows, stable public interfaces, and explicitly contracted maintainer-facing paths.
+- Public documentation app content must not expose repository-internal implementation details. Use `docs/` as the internal source of truth, then curate `apps/public-docs`, `apps/binpm-docs`, `apps/nodeup-docs`, and `apps/runmoor-docs` around user-facing behavior, supported workflows, stable public interfaces, and explicitly contracted maintainer-facing paths.
 - Write all source and comments in English.
 - Follow Toss Design Guidelines for frontend UX/UI decisions across web and mobile apps.
 - For new static sites under `apps/`, default to Rsbuild/Rspress-style toolchains and Cloudflare Pages deployment unless a project contract documents a different platform.
 - Prefer Rspack-family build tools for app build pipelines when they fit the runtime and deployment target.
-- Root development uses `pnpm dev:public-docs`, `pnpm dev:nodeup-docs`, and `pnpm dev:binpm-docs`; package-local development uses `pnpm dev`. Both entry points use fixed loopback ports: public-docs `46302`, nodeup-docs `46303`, and binpm-docs `46304`. Development wrappers must prevent CLI address overrides, forward termination signals to their child server, wait for it to exit, and fail with an actionable conflict message instead of searching for or incrementing to another port.
+- Root development uses `pnpm dev:public-docs`, `pnpm dev:nodeup-docs`, `pnpm dev:binpm-docs`, and `pnpm dev:runmoor-docs`; package-local development uses `pnpm dev`. Both entry points use fixed loopback ports: public-docs `46302`, nodeup-docs `46303`, binpm-docs `46304`, and runmoor-docs `46309`. Development wrappers must prevent CLI address overrides, forward termination signals to their child server, wait for it to exit, and fail with an actionable conflict message instead of searching for or incrementing to another port.
 - DevHud frontend and administrator development use fixed ports `46305` and `46306`. Their package wrappers receive only the validated `DEVHUD_LOGTO_ISSUER` from the administrator configuration path, reject every other team-injected name, and never pass configuration through the root Turbo process. The frontend reduces that issuer to its origin for the exact development CSP required by pinned CEF. In team mode both launch issuers must match the private preflight comparison pin; in OSS mode they must exactly match the API wrapper's package-local value so Bootstrap and both browser policies agree. Follow `docs/repository-environment-contract.md`.
 - DevHud GitHub PATs and BYO R2 credentials remain in app-owned secure storage, never in the team development secret manager. `apps/mpapp/.env.example` public `EXPO_PUBLIC_*` configuration also remains package-local.
 - App file upload/download flows should default to Cloudflare R2 plus signed URLs unless the app contract documents a different storage or access pattern.
@@ -20,6 +20,7 @@
 - `apps/mpapp`: Expo React Native mobile app.
 - `apps/binpm-docs`: Rspress static documentation app for `binpm`.
 - `apps/nodeup-docs`: Rspress static documentation app for `nodeup`.
+- `apps/runmoor-docs`: Rspress static documentation app for `runmoor`.
 - `apps/public-docs`: Rspress static public documentation app.
 - `apps/devhud`: implemented deterministic bilingual React/TypeScript shell, complete guest/Logto identity, synchronized Settings and opt-in diagnostics boundaries, direct-client GitHub.com provider/setup and issue submission, desktop RealQA capture/editor/encrypted drafts/direct official and BYO R2 uploads, populated Deck surface, desktop Native Messaging integration, target-isolated Rust/Tauri desktop CEF plus iOS/Android system-webview hosts, and production WidgetKit/AppWidgetProvider Deck widgets; other populated product surfaces remain planned.
 - `apps/devhud-chrome-extension`: implemented deterministic bilingual Chrome Manifest V3 DevHud context-picker extension.
@@ -102,14 +103,22 @@
 - `public-docs` must remain Rspress-based and use Cloudflare Pages static output unless its project contract documents a replacement.
 - Rspress routes, navigation, and sidebar in `apps/public-docs/rspress.config.ts` must stay aligned with `docs/apps-public-docs-foundation.md`.
 - `public-docs` must use clean URLs, write production output to `apps/public-docs/doc_build`, and validate stable route artifacts plus generated internal `.html` links through `pnpm --filter public-docs test`.
-- Current public-docs in-site top-level product page IDs are `devhud`, `cargo-mono`, `derun`, `with-watch`, and `runmoor`.
-- Runmoor public routes must document all supported CLI/configuration and image/service workflows, manual verification/update/rollback, external licenses, and the unverified live GitHub/Tart preview boundary. Document that image changes require a running manager, including initial preparation without pools or connections. Keep internal scheduling/storage implementation in `docs/`.
+- Current public-docs in-site top-level product page IDs are `devhud`, `cargo-mono`, `derun`, and `with-watch`.
 - The stable `/devhud` page documents public product availability and the coordinated all-channels GA rule without exposing release credentials, private workflow details, or deployment internals.
-- Nodeup and binpm are major public projects exposed from `apps/public-docs` through external top-level navigation links: Nodeup points to `https://nodeup.delino.io` and binpm points to `https://binpm.delino.io`.
+- Nodeup, binpm, and Runmoor are exposed from `apps/public-docs` through external top-level navigation links to `https://nodeup.delino.io`, `https://binpm.delino.io`, and `https://runmoor.delino.io`. Runmoor discovery links on the home and project catalog must also use its standalone site; the former `/runmoor` and child routes are removed without compatibility pages or redirects.
 - The legacy `/nodeup` public-docs route must remain a lightweight handoff page to `https://nodeup.delino.io` for compatibility with previously shared URLs.
-- Do not add or restore in-site `nodeup` or `binpm` guide routes under `apps/public-docs`; the lightweight legacy `/nodeup` handoff is the sole in-site Nodeup route, and their public documentation is owned by `apps/nodeup-docs` and `apps/binpm-docs`.
+- Do not add or restore in-site `nodeup`, `binpm`, or `runmoor` guide routes under `apps/public-docs`; the lightweight legacy `/nodeup` handoff is the sole in-site Nodeup route, and their public documentation is owned by `apps/nodeup-docs`, `apps/binpm-docs`, and `apps/runmoor-docs`.
 - `public-docs` must curate repository contracts into public guidance and must not document repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 - When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
+
+### runmoor-docs Rules
+
+- Follow `docs/project-runmoor.md`, `docs/cmds-runmoor-foundation.md`, and `docs/apps-runmoor-docs-foundation.md` for public content, routes, validation, and deployment.
+- `apps/runmoor-docs` owns the Runmoor public guides at `https://runmoor.delino.io`, using Rspress, Cloudflare Pages, and ignored `doc_build` output. Keep every stable route in navigation and the sidebar, with visible GitHub repository links in the social navigation and footer.
+- Stable clean routes are `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, and `/operations`; validate output artifacts, article headings and links, main landmarks, and absence of legacy `/runmoor` links.
+- Development uses `127.0.0.1:46309` and preview uses `127.0.0.1:46271`, through the shared fixed-port wrapper without address overrides or automatic remapping.
+- Preserve all supported CLI/configuration and image/service workflows, manual verification/update/rollback, external licenses, and the unverified live GitHub/Tart preview boundary. Document that image changes require a running manager, including initial preparation without pools or connections. Keep internal scheduling/storage implementation in `docs/`.
+- The old public-docs `/runmoor` routes must remain removed, without redirects or handoff pages. The CLI release README remains in place and links to the standalone site.
 
 ### nodeup-docs Rules
 

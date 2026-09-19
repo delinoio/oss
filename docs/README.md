@@ -51,6 +51,7 @@ Each project must have one project index document and one or more domain contrac
 ### runmoor
 - `docs/project-runmoor.md`
 - `docs/cmds-runmoor-foundation.md`
+- `docs/apps-runmoor-docs-foundation.md` (`apps/runmoor-docs`, production URL `https://runmoor.delino.io`, routes: `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, `/operations`)
 
 ### derun
 - `docs/project-derun.md`
