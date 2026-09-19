@@ -35,3 +35,5 @@ Update project, command, app and client contracts with all wire changes.
 - [Repository defaults](repository-defaults.md)
 
 Run pages apply repository, worktree and branch filters before cursor pagination. Cursor scope includes all selected filters. Report reads require an artifact ID listed on a check belonging to the selected execution; report and log pages are bounded and root-confined.
+
+Evidence text pages replace invalid UTF-8 sequences with U+FFFD before serialization. Offsets and limits count original stored bytes, including sequences split at page boundaries; rendering never rewrites the stored evidence or its integrity digest.

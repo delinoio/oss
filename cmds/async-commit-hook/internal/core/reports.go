@@ -345,5 +345,6 @@ func (s *Service) evidencePage(run, id string, offset int64, limit int, terminal
 		return LogPage{}, e
 	}
 	b, e := io.ReadAll(io.LimitReader(f, int64(limit)))
-	return LogPage{Text: string(b), NextOffset: offset + int64(len(b)), Complete: terminal && offset+int64(len(b)) >= info.Size()}, e
+	// Text transports require UTF-8; cursor positions and stored evidence remain raw bytes.
+	return LogPage{Text: strings.ToValidUTF8(string(b), "\uFFFD"), NextOffset: offset + int64(len(b)), Complete: terminal && offset+int64(len(b)) >= info.Size()}, e
 }
