@@ -29,6 +29,7 @@
 - Repository listings resolve the current checkout branch, including detached HEAD, without rewriting historical run branches.
 - Propagate every check state persistence failure to the run worker; never discard an execution error and leave a claimed check unscheduled.
 - Unexpected storage/worker exits must cancel and reap owned commands even when SQLite can no longer record a cancellation. A normal daemon stop still drains.
+- Retain pending-run failures with per-run exponential retry delays from one second to one minute; never hot-loop reconciliation or release an unproven scheduling claim. On-demand workers wait for pending retry work and stop promptly on shutdown.
 - Resume interrupted preparation only when every local check is provably unclaimed and unstarted under the run lock; remove its partial workspace first. A claimed check remains interruption recovery, never an automatic replay.
 - Release verification and replacement follow `docs/cmds-async-commit-hook-release-contract.md`; never weaken the pinned workflow identity or package-manager ownership checks.
 - Bound structured failure fields and the aggregate per-run summaries before persistence and on legacy reads; disclose truncation and preserve complete paginated report evidence.

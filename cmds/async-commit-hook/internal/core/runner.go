@@ -484,10 +484,16 @@ func (s *Service) Work(ctx context.Context, persistent bool, component string) e
 	owned, cancelOwned := context.WithCancel(context.Background())
 	defer func() { cancelOwned(); wg.Wait() }()
 	active := map[string]bool{}
-	done := make(chan string, 1024)
+	retries := map[string]workerRetry{}
+	type completion struct {
+		id  string
+		err error
+	}
+	done := make(chan completion, 1024)
 	stopping := false
 	force := false
 	for {
+		pending := false
 		if component != "" {
 			var stop string
 			_ = s.Store.DB.QueryRow("SELECT stop FROM components WHERE id=?", component).Scan(&stop)
@@ -510,27 +516,44 @@ func (s *Service) Work(ctx context.Context, persistent bool, component string) e
 			if e != nil {
 				return e
 			}
+			pending = len(ids) > 0
+			present := map[string]bool{}
 			for _, id := range ids {
-				if active[id] {
+				present[id] = true
+			}
+			for id := range retries {
+				if !present[id] {
+					delete(retries, id)
+				}
+			}
+			for _, id := range ids {
+				if active[id] || !retries[id].ready(time.Now()) {
 					continue
 				}
 				active[id] = true
 				wg.Add(1)
 				go func(id string) {
 					defer wg.Done()
-					if e := s.runOne(owned, id); e != nil {
-						s.Log.Error("run.worker_failed", "run_id", id, "code", "runner-error")
-					}
-					done <- id
+					done <- completion{id, s.runOne(owned, id)}
 				}(id)
 			}
 		}
-		if len(active) == 0 && (stopping || !persistent) {
+		if len(active) == 0 && (stopping || (!persistent && !pending)) {
 			break
 		}
 		select {
-		case id := <-done:
-			delete(active, id)
+		case result := <-done:
+			delete(active, result.id)
+			retry := retries[result.id]
+			if result.err != nil {
+				retry.fail(time.Now())
+				s.Log.Error("run.worker_failed", "run_id", result.id, "code", "runner-error", "retry_after_ms", retry.delay.Milliseconds())
+			} else {
+				// Another worker may own this pending run and return without work.
+				// Avoid a hot lock-probing loop even in that successful case.
+				retry = workerRetry{next: time.Now().Add(200 * time.Millisecond)}
+			}
+			retries[result.id] = retry
 			if s.Personal.Retention.MaxAgeDays > 0 || s.Personal.Retention.MaxBytes > 0 {
 				if _, err := s.Prune(false, s.Personal.Retention.MaxAgeDays, s.Personal.Retention.MaxBytes); err != nil {
 					s.Log.Error("retention.failed", "code", "retention-failed")
@@ -546,6 +569,21 @@ func (s *Service) Work(ctx context.Context, persistent bool, component string) e
 		}
 	}
 	return nil
+}
+
+type workerRetry struct {
+	next  time.Time
+	delay time.Duration
+}
+
+func (r workerRetry) ready(now time.Time) bool { return !now.Before(r.next) }
+func (r *workerRetry) fail(now time.Time) {
+	if r.delay == 0 {
+		r.delay = time.Second
+	} else {
+		r.delay = min(2*r.delay, time.Minute)
+	}
+	r.next = now.Add(r.delay)
 }
 
 func SupportedTarget() bool {

@@ -49,6 +49,8 @@ Repeated pruning skips reclaimed expired records without appending diagnostics. 
 Allowlisted system context plus declared inputs only. Credential references resolve locally; raw credentials/full environments never enter metadata. Streaming redaction covers chunk boundaries and report fields. Local state is account-restricted. Cancellation verifies process identity; cleanup is confined to owned paths. API security is specified in the protocol contract. A workspace isolates source, not hostile commands.
 
 ## Logging
+Pending-run reconciliation/storage failures retry after 1, 2, 4, 8, 16, 32 and then at most one attempt per 60 seconds per run, with structured `retry_after_ms` diagnostics. Scheduling claims remain intact and other runs remain eligible. On-demand workers retain pending retries until shutdown or completion; this is a retry delay, not a command timeout. A run owned by another worker is probed no more often than every 200 ms.
+
 Structured log/slog lifecycle events contain run/check IDs, outcomes and stable diagnostic codes. Never log credentials, pairing codes or complete environments. CLI colors honor NO_COLOR and nonterminal output.
 
 An unexpected storage/worker failure reaps its owned commands even if the database can no longer persist cancellation. Restart reconciliation retains interruption instead of replaying commands. MCP preserves the same typed error codes, including `wait-expired`, as the CLI.
