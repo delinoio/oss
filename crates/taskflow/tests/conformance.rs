@@ -3323,3 +3323,81 @@ async fn tool_identity_includes_stderr_without_contaminating_metadata() {
         json!({"metadata":true})
     );
 }
+
+#[tokio::test]
+async fn cache_restore_rejects_filesystem_aliases_before_replacing_outputs() {
+    for (first, second) in [("A", "a"), ("é", "e\u{301}")] {
+        for directory_alias in [false, true] {
+            let root =
+                fixture(json!({"build":{"command":command(&["version"]),"output":["out/**"]}}));
+            let probe = tempfile::tempdir_in(root.path()).unwrap();
+            std::fs::create_dir(probe.path().join(first)).unwrap();
+            let aliases = match std::fs::create_dir(probe.path().join(second)) {
+                Ok(()) => false,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => true,
+                Err(error) => panic!("filesystem probe failed: {error}"),
+            };
+            files::atomic_write(&root.path().join("out/keep"), b"preserved").unwrap();
+            let g = graph(root.path()).await;
+            let project = &g.workspace.projects["app"];
+            let task = &g.tasks["app#build"].task;
+            let mut artifact =
+                cache::Artifact::capture("key".into(), "app#build".into(), project, task).unwrap();
+            let content = artifact
+                .files
+                .iter()
+                .find(|entry| entry.path == "out/keep")
+                .unwrap()
+                .content
+                .clone();
+            artifact.files.retain(|entry| entry.path == "out");
+            for (index, name) in [first, second].iter().enumerate() {
+                let path = if directory_alias {
+                    artifact.files.push(cache::FileRecord {
+                        path: format!("out/{name}"),
+                        content: cache::Content::Directory,
+                    });
+                    format!("out/{name}/file{index}")
+                } else {
+                    format!("out/{name}")
+                };
+                artifact.files.push(cache::FileRecord {
+                    path,
+                    content: content.clone(),
+                });
+            }
+            artifact
+                .files
+                .sort_by(|left, right| left.path.cmp(&right.path));
+            artifact.output_digest = cache::output_digest(&artifact.files).unwrap();
+            // Portable integrity is independent of the producer's filename rules.
+            artifact.validate_integrity("key").unwrap();
+            let result = artifact.restore("key", "app#build", project, task);
+            if aliases {
+                assert!(result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("aliases another path"));
+                assert_eq!(
+                    std::fs::read(root.path().join("out/keep")).unwrap(),
+                    b"preserved"
+                );
+                assert_eq!(
+                    std::fs::read_dir(root.path().join("out")).unwrap().count(),
+                    1
+                );
+            } else {
+                result.unwrap();
+                assert_eq!(
+                    cache::output_state(project, task).unwrap(),
+                    artifact.output_digest
+                );
+            }
+            assert!(!std::fs::read_dir(root.path()).unwrap().any(|entry| entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".taskflow-restore-")));
+        }
+    }
+}

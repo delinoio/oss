@@ -338,6 +338,7 @@ impl Artifact {
         let staging = tempfile::Builder::new()
             .prefix(".taskflow-restore-")
             .tempdir_in(&project.directory)?;
+        self.validate_destination_paths(staging.path())?;
         let staged = staging.path().join("new");
         let backup = staging.path().join("old");
         std::fs::create_dir_all(&staged)?;
@@ -426,6 +427,33 @@ impl Artifact {
                 );
             }
             return Err(error.context("output restoration rolled back"));
+        }
+        Ok(())
+    }
+
+    fn validate_destination_paths(&self, staging: &Path) -> Result<()> {
+        // Probe names on the actual restore filesystem, without writing any
+        // artifact payload or touching existing outputs. Case sensitivity and
+        // Unicode equivalence can vary by volume/directory, not just by OS.
+        // Include every prefix so aliased directories with different children
+        // cannot silently merge even when no complete file names collide.
+        let names = staging.join("names");
+        std::fs::create_dir(&names)?;
+        let mut seen = BTreeSet::new();
+        for entry in &self.files {
+            let mut prefix = PathBuf::new();
+            for component in Path::new(&entry.path).components() {
+                prefix.push(component);
+                if seen.insert(prefix.clone()) {
+                    std::fs::create_dir(names.join(&prefix)).with_context(|| {
+                        format!(
+                            "cache path aliases another path or is unsupported on the restore \
+                             filesystem: {}",
+                            files::slash(&prefix)
+                        )
+                    })?;
+                }
+            }
         }
         Ok(())
     }

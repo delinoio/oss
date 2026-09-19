@@ -159,3 +159,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `tool_identity_includes_stderr_without_contaminating_metadata` upgrades a tool reporting only on stderr, then moves identical bytes between streams. Both changes invalidate cached success while JSON metadata queries retain stdout-only parsing.
 
 `ci_bundle_limits_apply_to_each_artifact_independently` uses scaled limits with the production JSON codec to accept multiple individually valid artifacts whose combined size exceeds one artifact limit, while rejecting an oversized artifact, metadata, or input file. The writer uses the same size validator.
+
+`cache_restore_rejects_filesystem_aliases_before_replacing_outputs` checks case and Unicode equivalence for both files and directory prefixes on the actual restore filesystem. Aliases preserve the existing outputs; distinct names restore with the declared digest, and every temporary probe is removed.
