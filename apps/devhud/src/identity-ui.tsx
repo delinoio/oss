@@ -131,13 +131,39 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin, onModa
   const [actionError, setActionError] = useState(false);
   const deleteTrigger = useRef<HTMLButtonElement>(null);
   const cancelDelete = useRef<HTMLButtonElement>(null);
+  const restoreAccount = useRef<HTMLButtonElement>(null);
+  const deletionPendingFocus = useRef(false);
   const deleteConfirmationOpen = confirmDelete && identity.status === "authenticated" && !identity.accountError && identity.account !== null;
   const modalConfirmationOpen = deleteConfirmationOpen || apiChangeConfirmationOpen;
   const invoke = (action: () => Promise<void>) => { setActionError(false); void action().catch(() => setActionError(true)); };
+  const restoreDeleteTriggerFocus = () => {
+    requestAnimationFrame(() => {
+      if (deleteTrigger.current?.isConnected) deleteTrigger.current.focus();
+    });
+  };
+  const closeDeleteConfirmation = () => {
+    setConfirmDelete(false);
+    restoreDeleteTriggerFocus();
+  };
+  const confirmDeleteAccount = () => {
+    deletionPendingFocus.current = true;
+    setConfirmDelete(false);
+    setActionError(false);
+    void identity.deleteAccount().catch(() => {
+      setActionError(true);
+      restoreDeleteTriggerFocus();
+    });
+  };
   useEffect(() => {
     onModalConfirmationOpenChange(modalConfirmationOpen);
   }, [modalConfirmationOpen, onModalConfirmationOpenChange]);
   useEffect(() => () => onModalConfirmationOpenChange(false), [onModalConfirmationOpenChange]);
+  useEffect(() => {
+    if (!deletionPendingFocus.current || identity.status !== "deletion-pending") return;
+    deletionPendingFocus.current = false;
+    const animation = requestAnimationFrame(() => restoreAccount.current?.focus());
+    return () => cancelAnimationFrame(animation);
+  }, [identity.status]);
   return <>
     <div className="account-content" inert={modalConfirmationOpen}>
     <PageHeader eyebrow={copy.account} title={copy.accountTitle} summary={copy.accountSummary} />
@@ -149,7 +175,7 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin, onModa
         {identity.status === "authenticated" && !identity.accountError && identity.account === null && <StatePanel headingLevel={4} eyebrow={copy.account} title={copy.loadingAccount} summary={copy.accountSummary} progress />}
         {identity.status === "authenticated" && !identity.accountError && identity.account !== null && <><DataRow title={identity.account.displayName || identity.account.email || copy.signedIn} description={identity.account.displayName && identity.account.email ? identity.account.email : undefined} trailing={<StatusBadge tone="success">{copy.signedIn}</StatusBadge>} /><div className="actions"><Button onClick={() => invoke(identity.logout)}>{copy.logout}</Button></div></>}
         {identity.status === "blocked" && <StatePanel headingLevel={4} eyebrow={copy.blocked} tone="warning" title={copy.blockedTitle} summary={copy.blockedSummary} details={<p>{copy.blockedLocalHint}</p>} actions={<Button onClick={() => invoke(identity.logout)}>{copy.logout}</Button>} />}
-        {identity.status === "deletion-pending" && <StatePanel headingLevel={4} eyebrow={copy.account} tone="warning" title={copy.deletionPendingTitle} summary={copy.deletionPendingSummary} details={identity.account?.recoverableUntil ? <p>{copy.recoverableUntil}: {new Date(Number(identity.account.recoverableUntil.seconds) * 1000).toLocaleString()}</p> : undefined} actions={<><Button variant="primary" onClick={() => invoke(identity.restoreAccount)}>{copy.restoreAccount}</Button><Button onClick={() => invoke(identity.logout)}>{copy.logout}</Button></>} />}
+        {identity.status === "deletion-pending" && <StatePanel headingLevel={4} eyebrow={copy.account} tone="warning" title={copy.deletionPendingTitle} summary={copy.deletionPendingSummary} details={identity.account?.recoverableUntil ? <p>{copy.recoverableUntil}: {new Date(Number(identity.account.recoverableUntil.seconds) * 1000).toLocaleString()}</p> : undefined} actions={<><Button ref={restoreAccount} variant="primary" onClick={() => invoke(identity.restoreAccount)}>{copy.restoreAccount}</Button><Button onClick={() => invoke(identity.logout)}>{copy.logout}</Button></>} />}
         {actionError && <StatePanel headingLevel={4} eyebrow={copy.account} tone="danger" role="alert" title={copy.accountActionFailed} summary={copy.accountActionFailed} />}
       </Card>
       <Card className="account-section" aria-label={copy.apiOrigin}><h3>{copy.apiOrigin}</h3><ApiOriginEditor copy={copy} value={apiOrigin} inputRef={inputRef} onApply={onApiOrigin} warningId="api-origin-security-warning" applyError={apiChangeError} onConfirmationOpenChange={setApiChangeConfirmationOpen} disabled={deleteConfirmationOpen} /></Card>
@@ -158,7 +184,7 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin, onModa
       {identity.status === "authenticated" && !identity.accountError && identity.account !== null && <Card className="account-section account-danger" aria-label={copy.dangerZone}><h3>{copy.dangerZone}</h3><p>{copy.deleteAccountSummary}</p><Button ref={deleteTrigger} variant="danger" onClick={() => setConfirmDelete(true)} disabled={modalConfirmationOpen}>{copy.deleteAccount}</Button></Card>}
     </div>
     </div>
-    <Dialog open={deleteConfirmationOpen} role="alertdialog" title={copy.deleteAccountConfirmTitle} descriptionId="delete-account-confirmation-summary" initialFocusRef={cancelDelete} returnFocusRef={deleteTrigger} onClose={() => setConfirmDelete(false)}><p id="delete-account-confirmation-summary">{copy.deleteAccountConfirmSummary}</p><div className="actions"><Button ref={cancelDelete} onClick={() => setConfirmDelete(false)}>{copy.cancel}</Button><Button variant="danger" onClick={() => { setConfirmDelete(false); invoke(identity.deleteAccount); }}>{copy.deleteAccount}</Button></div></Dialog>
+    <Dialog open={deleteConfirmationOpen} role="alertdialog" title={copy.deleteAccountConfirmTitle} descriptionId="delete-account-confirmation-summary" initialFocusRef={cancelDelete} returnFocusRef={deleteTrigger} restoreFocus={false} onClose={closeDeleteConfirmation}><p id="delete-account-confirmation-summary">{copy.deleteAccountConfirmSummary}</p><div className="actions"><Button ref={cancelDelete} onClick={closeDeleteConfirmation}>{copy.cancel}</Button><Button variant="danger" onClick={confirmDeleteAccount}>{copy.deleteAccount}</Button></div></Dialog>
   </>;
 }
 

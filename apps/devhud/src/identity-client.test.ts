@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ProjectId, StaticCapability, type GetBootstrapResponse } from "@delinoio/devhud-api-client";
 import { LogtoClientError, LogtoRequestError } from "@logto/client";
-import { authCallbackBindingMatches, BootstrapContractError, clearAuthCallbackBinding, isTerminalAccessTokenError, recordAuthCallbackBinding, SecureLogtoStorage, sessionProfileId, validateBootstrap } from "./identity-client";
+import { authCallbackBindingMatches, BootstrapContractError, clearAuthCallbackBinding, createIdentitySession, isTerminalAccessTokenError, recordAuthCallbackBinding, SecureLogtoStorage, sessionProfileId, validateBootstrap } from "./identity-client";
 import { logtoEndpointFromIssuer } from "./identity-contract";
 import { LifecycleState, RuntimePlatform, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1 } from "./native-bridge";
 
@@ -98,10 +98,33 @@ describe("identity client boundary", () => {
 
   it("retains a browser callback binding only for its originating API", () => {
     expect(recordAuthCallbackBinding(localStorage, "https://origin-a.example")).toBe(true);
+    expect(recordAuthCallbackBinding(localStorage, "https://origin-b.example")).toBe(false);
     expect(authCallbackBindingMatches(localStorage, "https://origin-a.example")).toBe(true);
     expect(authCallbackBindingMatches(localStorage, "https://origin-b.example")).toBe(false);
     clearAuthCallbackBinding(localStorage);
     expect(authCallbackBindingMatches(localStorage, "https://origin-a.example")).toBe(false);
+  });
+
+  it("does not start a second browser transaction while a callback is outstanding", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      authorization_endpoint: "https://identity.example/oidc/auth",
+      token_endpoint: "https://identity.example/oidc/token",
+      userinfo_endpoint: "https://identity.example/oidc/userinfo",
+      end_session_endpoint: "https://identity.example/oidc/session/end",
+      revocation_endpoint: "https://identity.example/oidc/revoke",
+      jwks_uri: "https://identity.example/oidc/jwks",
+      issuer: "https://identity.example/oidc",
+    }), { headers: { "Content-Type": "application/json" } })));
+    const bridge = memoryBridge();
+    try {
+      const session = await createIdentitySession(validateBootstrap(bootstrap, RuntimePlatform.Desktop), "https://api.example", bridge);
+      await session.signIn();
+      await expect(session.signIn()).rejects.toThrow("auth-callback-pending");
+      expect(bridge.requests.filter((request) => request.operation === "auth.open-system-browser")).toHaveLength(1);
+    } finally {
+      clearAuthCallbackBinding(localStorage);
+      vi.unstubAllGlobals();
+    }
   });
 
   it("fails closed when the secure store fails", async () => {

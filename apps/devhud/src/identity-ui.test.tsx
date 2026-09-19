@@ -255,6 +255,21 @@ describe("identity UI", () => {
     await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 
+  it("moves focus to Restore after confirmed account deletion", async () => {
+    const deletedAccount = { displayName: "Fixture User", email: "fixture@example.com" } as never;
+    let view: ReturnType<typeof render>;
+    const deleteAccount = vi.fn(async () => {
+      identity = identityWith({ status: "deletion-pending", account: deletedAccount, deleteAccount });
+      view.rerender(<AccountIdentity {...accountProps()} />);
+    });
+    identity = identityWith({ status: "authenticated", account: deletedAccount, deleteAccount });
+    view = render(<AccountIdentity {...accountProps()} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deleteAccount }));
+    fireEvent.click(within(await screen.findByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle })).getByRole("button", { name: messages.en.deleteAccount }));
+    const restore = await screen.findByRole("button", { name: messages.en.restoreAccount });
+    await waitFor(() => expect(document.activeElement).toBe(restore));
+  });
+
   it("keeps Account confirmation triggers mutually exclusive", async () => {
     identity = identityWith({ status: "authenticated", account: { displayName: "Fixture User", email: "fixture@example.com" } as never });
     render(<AccountIdentity {...accountProps()} />);

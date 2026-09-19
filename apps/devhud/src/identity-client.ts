@@ -25,8 +25,13 @@ function parsedAuthCallbackBinding(storage: Pick<Storage, "getItem">): AuthCallb
   }
 }
 
+export function hasAuthCallbackBinding(storage: Pick<Storage, "getItem">): boolean {
+  return parsedAuthCallbackBinding(storage) !== null;
+}
+
 /** Records the API-origin owner before a browser callback can outlive this process. */
 export function recordAuthCallbackBinding(storage: Storage, apiOrigin: string): boolean {
+  if (hasAuthCallbackBinding(storage)) return false;
   const binding = JSON.stringify({ version: 1, apiOrigin } satisfies AuthCallbackBinding);
   try {
     storage.setItem(AuthCallbackBindingKey, binding);
@@ -204,7 +209,10 @@ export async function createIdentitySession(bootstrap: ValidatedBootstrap, apiOr
       return currentAccessToken;
     },
     isAuthenticated: () => client.isAuthenticated(),
-    signIn: () => client.signIn({ redirectUri: bootstrap.redirectUri }),
+    signIn: async () => {
+      if (hasAuthCallbackBinding(getLocalStorage())) throw new Error("auth-callback-pending");
+      await client.signIn({ redirectUri: bootstrap.redirectUri });
+    },
     handleCallback: (url) => client.handleSignInCallback(url),
     clear: async () => {
       const accessToken = currentAccessToken;
