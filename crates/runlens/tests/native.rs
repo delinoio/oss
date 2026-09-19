@@ -593,6 +593,58 @@ fn consecutive_sensitive_flags_stay_redacted_in_saved_and_exported_reports() {
     );
 }
 #[test]
+fn tracing_preserves_unset_and_selected_fspy_values_in_children() {
+    let root = tempfile::tempdir().unwrap();
+    for present in [false, true] {
+        let label = if present { "present" } else { "absent" };
+        for traced in [false, true] {
+            let mut command = Command::new(if traced { binary() } else { fixture() });
+            if traced {
+                command.args(["run", "--", fixture()]);
+            }
+            command
+                .args(["fspy-environment-child", label])
+                .env_remove("FSPY")
+                .current_dir(root.path());
+            if present {
+                command.env("FSPY", "caller-selected");
+            }
+            let output = command.output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+    let root = repository("read");
+    let tool = fixture().replace('\\', "/");
+    fs::write(
+        root.path().join("runlens.toml"),
+        format!(
+            r#"schema_version = 1
+[commands.build]
+argv = [{tool:?}, "fspy-environment-child", "present"]
+env = ["FSPY"]
+"#
+        ),
+    )
+    .unwrap();
+    git(root.path(), &["add", "runlens.toml"]);
+    git(root.path(), &["commit", "-qm", "select FSPY explicitly"]);
+    let output = Command::new(binary())
+        .args(["verify", "clean", "build"])
+        .env("FSPY", "caller-selected")
+        .current_dir(root.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+#[test]
 fn cache_policy_and_overflow_fail_closed() {
     let root = repository("read-write");
     let recorded = run(root.path(), "report.json", "read-write");

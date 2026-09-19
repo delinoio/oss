@@ -20,6 +20,22 @@ fn main() {
         "read" => {
             let _ = fs::read(args.get(1).map(String::as_str).unwrap_or("input.txt"));
         }
+        "fspy-environment" | "fspy-environment-child" => {
+            let expected = if args[1] == "present" {
+                Some(std::ffi::OsString::from("caller-selected"))
+            } else {
+                None
+            };
+            assert_eq!(std::env::var_os("FSPY"), expected);
+            let _ = fs::read("input.txt");
+            if args[0] == "fspy-environment-child" {
+                let status = Command::new(std::env::current_exe().unwrap())
+                    .args(["fspy-environment", &args[1]])
+                    .status()
+                    .unwrap();
+                std::process::exit(status.code().unwrap_or(1));
+            }
+        }
         "list" => {
             let _ = fs::read_dir("out");
         }

@@ -153,6 +153,7 @@
 
 - Follow docs/project-runlens.md and docs/crates-runlens-foundation.md. Run independent tests/fmt/Clippy with nightly-2026-08-02 in addition to root cargo test.
 - Keep fspy and dependency notices, immutable provenance, and a tested patch ledger. Do not reformat unrelated vendored sources or add root dependency patches.
+- Do not inject unused tracing environment markers or overwrite the caller's `FSPY` value; retain only required backend coordination mutations.
 - Collection budgets apply inside the tracing/snapshot layers, not only after materialization. Use typed incomplete outcomes and retain available evidence.
 - Deserialize evidence under the shared process memory budget before spilling; do not force every small report map to allocate its own file handles.
 - Preflight conflict analysis against the aggregate limit of 65,536 cross-report target pairs before inspecting paths or creating findings; preparation executions do not count.

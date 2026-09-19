@@ -79,14 +79,13 @@ impl SpyImpl {
 
     fn spawn_inner(
         &self,
-        mut command: Command,
+        command: Command,
         directory: &Path,
         capacity: usize,
         max_paths: usize,
         cancellation_token: CancellationToken,
     ) -> Result<TrackedChild, SpawnError> {
         let ansi_dll_path_with_nul = Arc::clone(&self.ansi_dll_path_with_nul);
-        command.env("FSPY", "1");
         let mut command = command.into_tokio_command();
 
         command.creation_flags(CREATE_SUSPENDED | 0x00000200);

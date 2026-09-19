@@ -356,6 +356,10 @@ Unix privacy regressions include non-Unicode environment keys and values in dire
 and clean execution. Ambient redaction enumerates OS strings without panicking and
 retains textual secret masking for Unicode entries; environment values are never
 serialized.
+The tracing launchers do not inject the unused `FSPY` marker. An absent variable
+stays absent, and supplied values survive in targets and nested children; clean
+execution still requires explicit selection. Required tracing coordination is
+unchanged and documented separately in the vendored patch ledger.
 Sensitive-flag scanning continues through already hidden argv entries, including
 consecutive flags and explicitly redacted argument indices. Canary regression
 tests cover saved reports and both JSON and HTML exports.

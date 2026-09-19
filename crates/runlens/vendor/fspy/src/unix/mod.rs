@@ -39,7 +39,6 @@ impl SpyImpl {
         }).map_err(|e|SpawnError::Injection(e.into()))?;
         let uses_seccomp=pre_exec.is_some();
         command.set_exec(exec);
-        command.env("FSPY","1");
         let mut native=command.into_tokio_command();
         native.process_group(0).kill_on_drop(true);
         // SAFETY: only upstream async-signal-safe seccomp installation runs
