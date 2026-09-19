@@ -360,28 +360,31 @@ pub async fn inventory(
                     && !base.iter().any(|v| v == "--"),
                 "libtest adapter requires cargo test without harness arguments"
             );
-            let manifest = std::fs::read_to_string(directory.join("Cargo.toml"))?;
-            ensure!(
-                !manifest.lines().any(|line| line
-                    .split('#')
-                    .next()
-                    .unwrap_or("")
-                    .replace(' ', "")
-                    .trim()
-                    == "harness=false"),
-                "custom Rust harness requires the generic adapter"
-            );
             let mut build = base.clone();
+            let mut metadata_command = vec![
+                "cargo".into(),
+                "metadata".into(),
+                "--no-deps".into(),
+                "--format-version=1".into(),
+            ];
+            // Inventory must identify the package selected by the build, which
+            // may be excluded from the task directory's native workspace.
+            let mut args = base[2..].iter();
+            while let Some(arg) = args.next() {
+                if arg == "--manifest-path" {
+                    metadata_command.extend([
+                        arg.clone(),
+                        args.next().context("Cargo manifest path missing")?.clone(),
+                    ]);
+                } else if arg.starts_with("--manifest-path=") {
+                    metadata_command.push(arg.clone());
+                }
+            }
             let metadata = process::capture_task(
                 &graph.workspace.root,
                 directory,
                 task,
-                &Command::Argv(vec![
-                    "cargo".into(),
-                    "metadata".into(),
-                    "--no-deps".into(),
-                    "--format-version=1".into(),
-                ]),
+                &Command::Argv(metadata_command),
                 env,
                 cancel,
             )

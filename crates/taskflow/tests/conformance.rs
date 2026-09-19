@@ -3535,3 +3535,75 @@ async fn explicit_wildcard_inputs_include_ignored_directories_in_cache_and_watch
         changed.unwrap();
     }
 }
+
+#[tokio::test]
+async fn libtest_inventory_honors_explicit_manifest_selection() {
+    for nested in [false, true] {
+        let prefix = if nested { "native/" } else { "" };
+        let manifest = format!("{prefix}standalone/Cargo.toml");
+        let selection = if nested {
+            vec![format!("--manifest-path={manifest}")]
+        } else {
+            vec!["--manifest-path".into(), manifest.clone()]
+        };
+        let args: Vec<String> = ["cargo", "test", "--tests", "--offline"]
+            .into_iter()
+            .map(str::to_owned)
+            .chain(selection)
+            .collect();
+        let root = fixture(
+            json!({"suite":{"command":args,"input":[],"output":[],"shard":{"adapter":"libtest","count":2}}}),
+        );
+        if nested {
+            let path = root.path().join("taskflow.yml");
+            let mut cfg: Value = serde_yaml::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            cfg["workspace"] = json!({"manifests":["native/Cargo.toml"]});
+            std::fs::write(path, serde_yaml::to_string(&cfg).unwrap()).unwrap();
+        }
+        files::atomic_write(
+            &root.path().join(format!("{prefix}Cargo.toml")),
+            b"[workspace]\nmembers=['member']\nexclude=['standalone']\nresolver='2'\n",
+        )
+        .unwrap();
+        for name in ["member", "standalone"] {
+            files::atomic_write(
+                &root.path().join(format!("{prefix}{name}/Cargo.toml")),
+                format!("[package]\nname='{name}'\nversion='0.1.0'\nedition='2021'\n").as_bytes(),
+            )
+            .unwrap();
+            files::atomic_write(
+                &root.path().join(format!("{prefix}{name}/tests/shared.rs")),
+                b"#[test] fn selected() {}\n",
+            )
+            .unwrap();
+        }
+        taskflow::discover::output_tool(
+            root.path(),
+            &[
+                "cargo",
+                "generate-lockfile",
+                "--offline",
+                "--manifest-path",
+                &format!("{prefix}Cargo.toml"),
+            ],
+            &[],
+        )
+        .await
+        .unwrap();
+        let result = run(graph(root.path()).await, &["suite"]).await;
+        assert!(result.success, "{result:?}");
+        let (inventory, reports) = shard::read_reports(
+            &root
+                .path()
+                .join(".taskflow/runs")
+                .join(&result.results["app#suite"].execution),
+        )
+        .unwrap();
+        assert_eq!(inventory.tests.len(), 1);
+        assert_eq!(
+            inventory.tests[0].id,
+            "standalone@0.1.0:test:shared::selected"
+        );
+        assert!(shard::aggregate(&inventory, 2, &reports).unwrap());
+    }
+}
