@@ -583,10 +583,19 @@ async fn run_task(
                         reports,
                     )?;
                 }
-                if !cancel.is_cancelled() {
-                    cache::store(&graph.workspace.root, &artifact)?;
-                    persist(&graph.workspace.root, &receipt)?;
-                }
+                // Restoration and report writes are synchronous. Cancellation
+                // can arrive from a signal or session owner while they run.
+                ensure!(!cancel.is_cancelled(), "task cancelled during cache reuse");
+                cache::store(&graph.workspace.root, &artifact)?;
+                ensure!(
+                    !cancel.is_cancelled(),
+                    "task cancelled during cache publication"
+                );
+                persist(&graph.workspace.root, &receipt)?;
+                ensure!(
+                    !cancel.is_cancelled(),
+                    "task cancelled before returning cached result"
+                );
                 tracing::info!(task = id, outcome = ?receipt.outcome, changed = receipt.changed, "Reused task result");
                 return Ok(receipt);
             }

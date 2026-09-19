@@ -4421,3 +4421,53 @@ async fn directory_notifications_rescan_descendant_inputs() {
         &project.directory.join("src")
     ));
 }
+
+#[tokio::test]
+async fn cancellation_during_synchronous_cache_restore_returns_cancelled() {
+    use notify::Watcher;
+    let root = fixture(
+        json!({"build":{"command":command(&["version"]),"input":[],"output":["out"],"cache":true,"tools":{"fixture":command(&["version"])}}}),
+    );
+    for index in 0..1000 {
+        files::atomic_write(&root.path().join(format!("out/{index}")), b"cached").unwrap();
+    }
+    let g = graph(root.path()).await;
+    let seeded = run(g.clone(), &["build"]).await;
+    assert!(seeded.success);
+    std::fs::remove_dir_all(root.path().join("out")).unwrap();
+    let cancel = CancellationToken::new();
+    let stop = cancel.clone();
+    let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+        if event.is_ok_and(|event| {
+            event.paths.iter().any(|path| {
+                path.components().any(|part| {
+                    part.as_os_str()
+                        .to_string_lossy()
+                        .starts_with(".taskflow-restore-")
+                })
+            })
+        }) {
+            stop.cancel();
+        }
+    })
+    .unwrap();
+    watcher
+        .watch(root.path(), notify::RecursiveMode::Recursive)
+        .unwrap();
+    let plan = Plan::create(&g, &["build".into()], &[], false).unwrap();
+    let result = runner::run_plan(g, plan, RunOptions::default(), cancel.clone())
+        .await
+        .unwrap();
+    assert!(
+        cancel.is_cancelled(),
+        "restoration notification must reach the cancellation owner"
+    );
+    assert_eq!(result.results["app#build"].outcome, Outcome::Cancelled);
+    assert_eq!(result.results["app#build"].exit_code, 130);
+    assert_eq!(
+        runner::previous(root.path(), "app#build")
+            .unwrap()
+            .execution,
+        seeded.results["app#build"].execution
+    );
+}
