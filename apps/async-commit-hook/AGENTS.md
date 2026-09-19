@@ -1,6 +1,8 @@
 # async-commit-hook application ownership
 
 - The package owns development on fixed port 46308, tests and static production builds. The root entry delegates to this package.
+- Development shutdown uses the shared process-tree owner and awaits POSIX group or Windows taskkill cleanup before exiting; terminating only the package-manager parent is insufficient.
+- Include the shared process resolver and termination helper in the app test's Turbo inputs and CI path selection.
 - Use the generated Connect Query descriptors for server state. Filter lists on the server before applying their scoped cursors.
 - The detached branch selection sends an explicit detached filter; the inbox leaves branches unfiltered.
 - Disable acknowledgement until an execution is terminal; opening or waiting for a result never acknowledges it.

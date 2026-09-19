@@ -75,6 +75,7 @@ test("async-commit-hook source and shared validation inputs select its complete 
       "buf.yaml", "buf.gen.yaml", "go.mod", "go.sum", "package.json", "pnpm-lock.yaml",
       "pnpm-workspace.yaml", ".nvmrc", ".npmrc", "turbo.json",
       "scripts/check-proto-breaking.sh", "scripts/run-rsbuild-dev.mjs", "scripts/spawn-dev-server.mjs",
+      "scripts/dev-environment/process.mjs",
     ]) assert.ok(selected(event, [path]).includes("async-commit-hook"), `${event}: ${path}`);
     for (const path of ["cmds/runmoor/main.go", "apps/mpapp/App.tsx", "docs/project-with-watch.md"]) {
       assert.ok(!selected(event, [path]).includes("async-commit-hook"), `${event}: ${path}`);

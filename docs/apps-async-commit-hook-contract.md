@@ -5,6 +5,8 @@
 
 ## Runtime and Language
 React/TypeScript, Rsbuild, React Query with Connect Query, Cloudflare Pages. Fixed localhost development port 46308; conflicts and address overrides fail.
+The package development wrapper uses the shared command resolver and `spawnDevServer` with process-tree termination enabled. SIGINT/SIGTERM wait for the POSIX process group or Windows `taskkill /t` cleanup before wrapper exit, including package-manager and command-wrapper descendants. Script integration fixtures verify immediate port reuse after both signals.
+The shared resolver and process-tree helper are explicit Turbo test inputs and CI selection paths, so their changes invalidate application test evidence.
 
 ## Users and Operators
 Developers using current desktop Chrome/Edge; local results are never uploaded to hosting.

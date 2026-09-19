@@ -555,6 +555,7 @@
       "protos/**",
       "scripts/check-proto-breaking.sh",
       "scripts/release/*async-commit-hook*",
+      "scripts/dev-environment/process.mjs",
       "scripts/run-rsbuild-dev.mjs",
       "scripts/spawn-dev-server.mjs",
       "turbo.json"
