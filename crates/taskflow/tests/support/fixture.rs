@@ -20,7 +20,16 @@ fn main() {
                 write("docker-start", std::process::id().to_string().as_bytes());
                 std::thread::sleep(Duration::from_secs(30));
             }
-            "rm" | "ps" => std::process::exit(7),
+            "rm" | "ps" => {
+                if std::env::var("DOCKER_CONTEXT").as_deref() == Ok("cleanup-fixture") {
+                    assert_eq!(std::env::var("DOCKER_HOST").unwrap(), "unix:///selected.sock");
+                    let mut log = fs::OpenOptions::new().create(true).append(true)
+                        .open(Path::new(&std::env::var("DOCKER_CONFIG").unwrap()).join("cleanup-events")).unwrap();
+                    writeln!(log, "{}", args[1]).unwrap();
+                    if args[1] == "ps" { return; }
+                }
+                std::process::exit(7);
+            },
             _ => panic!("unexpected Docker fixture command"),
         }
         return;

@@ -171,3 +171,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `libtest_inventory_honors_explicit_manifest_selection` runs a Cargo-excluded standalone package with split and equals-form manifest arguments, including a task directory without its own Cargo manifest. Inventory and complete shard results identify only the selected package.
 
 `session_revalidates_provided_prerequisite_outputs` modifies and deletes a watched consumer's prerequisite output across live session waves, covering both uncached rebuild and cached restoration before consumption.
+
+`docker_cleanup_reuses_the_validated_launch_environment` isolates the Docker executable and daemon/context/configuration from the parent environment and verifies both awaited removal/absence checks and destructor cleanup, including a relative configuration path.

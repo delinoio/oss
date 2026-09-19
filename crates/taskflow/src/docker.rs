@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, path::Path};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{ensure, Context, Result};
 use tokio_util::sync::CancellationToken;
@@ -11,6 +14,8 @@ use crate::{
 pub struct Container {
     name: String,
     cleaned: bool,
+    directory: PathBuf,
+    environment: BTreeMap<String, String>,
 }
 
 #[derive(Debug)]
@@ -38,27 +43,15 @@ impl Container {
     async fn cleanup_inner(&mut self) -> Result<()> {
         // Cleanup must remain available after the task/session token is cancelled.
         let cleanup_token = CancellationToken::new();
-        let environment: BTreeMap<String, String> = [
-            "PATH",
-            "HOME",
-            "USERPROFILE",
-            "SystemRoot",
-            "DOCKER_HOST",
-            "DOCKER_CONTEXT",
-            "DOCKER_CONFIG",
-        ]
-        .into_iter()
-        .filter_map(|name| std::env::var(name).ok().map(|value| (name.into(), value)))
-        .collect();
         let result = process::capture_with_env(
-            Path::new("."),
+            &self.directory,
             &Command::Argv(vec![
                 "docker".into(),
                 "rm".into(),
                 "-f".into(),
                 self.name.clone(),
             ]),
-            &environment,
+            &self.environment,
             &cleanup_token,
         )
         .await;
@@ -67,7 +60,7 @@ impl Container {
         // acceptable only after a successful daemon query proves it is absent.
         if !self.cleaned {
             let remaining = process::capture_with_env(
-                Path::new("."),
+                &self.directory,
                 &Command::Argv(vec![
                     "docker".into(),
                     "ps".into(),
@@ -77,7 +70,7 @@ impl Container {
                     "--format".into(),
                     "{{.ID}}".into(),
                 ]),
-                &environment,
+                &self.environment,
                 &cleanup_token,
             )
             .await
@@ -99,22 +92,11 @@ impl Drop for Container {
             let mut command = std::process::Command::new("docker");
             command
                 .args(["rm", "-f", &self.name])
+                .current_dir(&self.directory)
                 .env_clear()
+                .envs(&self.environment)
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null());
-            for key in [
-                "PATH",
-                "HOME",
-                "USERPROFILE",
-                "SystemRoot",
-                "DOCKER_HOST",
-                "DOCKER_CONTEXT",
-                "DOCKER_CONFIG",
-            ] {
-                if let Some(value) = std::env::var_os(key) {
-                    command.env(key, value);
-                }
-            }
             // Destructors cannot await the async owner, but they must not hang
             // indefinitely if the local daemon has stopped responding.
             if let Ok(mut child) = command.spawn() {
@@ -264,6 +246,8 @@ pub async fn prepare(
         Container {
             name,
             cleaned: false,
+            directory: root.to_path_buf(),
+            environment: environment.clone(),
         },
     ))
 }

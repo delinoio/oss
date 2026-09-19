@@ -3668,3 +3668,51 @@ async fn session_revalidates_provided_prerequisite_outputs() {
         session.await.unwrap().unwrap();
     }
 }
+
+#[tokio::test]
+async fn docker_cleanup_reuses_the_validated_launch_environment() {
+    let directory = fixture(json!({}));
+    let tools = tempfile::tempdir().unwrap();
+    std::fs::copy(
+        helper(),
+        tools.path().join(if cfg!(windows) {
+            "docker.exe"
+        } else {
+            "docker"
+        }),
+    )
+    .unwrap();
+    let mut environment: BTreeMap<String, String> = std::env::vars().collect();
+    for (key, value) in [
+        ("PATH", tools.path().to_string_lossy().into_owned()),
+        ("DOCKER_CONTEXT", "cleanup-fixture".into()),
+        ("DOCKER_HOST", "unix:///selected.sock".into()),
+        ("DOCKER_CONFIG", ".".into()),
+    ] {
+        environment.retain(|name, _| !name.eq_ignore_ascii_case(key));
+        environment.insert(key.into(), value);
+    }
+    let task: config::Task = serde_json::from_value(json!({"command":["unused"],"platform":{"executor":"docker","os":"linux","image":"fixture@sha256:0000000000000000000000000000000000000000000000000000000000000000"}})).unwrap();
+    for explicit in [true, false] {
+        let (_, mut owner) = taskflow::docker::prepare(
+            directory.path(),
+            directory.path(),
+            &task,
+            &environment,
+            &uuid::Uuid::now_v7().to_string(),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        if explicit {
+            owner.cleanup().await.unwrap();
+        }
+        drop(owner);
+    }
+    // Both the async absence check and destructor use the selected CLI,
+    // context, daemon, relative configuration directory, and working directory.
+    assert_eq!(
+        std::fs::read_to_string(directory.path().join("cleanup-events")).unwrap(),
+        "rm\nps\nrm\n"
+    );
+}
