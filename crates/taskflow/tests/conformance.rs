@@ -1959,7 +1959,14 @@ async fn grouped_tasks_only_receive_their_declared_secrets() {
     let result = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
         .current_dir(directory.path())
         .args(["--json", "run", "sibling"])
-        .env("TFLOW_GROUP_SECRET", "grouped-credential")
+        .env(
+            if cfg!(windows) {
+                "Tflow_Group_Secret"
+            } else {
+                "TFLOW_GROUP_SECRET"
+            },
+            "grouped-credential",
+        )
         .output()
         .unwrap();
     assert!(
@@ -2818,4 +2825,74 @@ fn check_rejects_malformed_positive_and_negative_input_globs() {
         json!({"check":{"command":command(&["version"]),"input":[{"auto":true},"**/*.rs","!generated/**"]}}),
     );
     assert!(config::load(&directory.path().join("taskflow.yml")).is_ok());
+}
+
+#[tokio::test]
+async fn environment_names_follow_host_precedence_and_security_rules() {
+    use taskflow::environment::Environment;
+    let directory = fixture(json!({
+        "owner":{"command":command(&["version"]),"env":{"TFLOW_ä_SECRET":"unicode-credential"},"secrets":["TFLOW_CASE_SECRET","TFLOW_Ä_SECRET"]},
+        "sibling":{"command":command(&["version"]),"env":{"TFLOW_ä_SECRET":"unicode-credential"}},
+        "cached":{"command":command(&["version"]),"input":[],"output":[],"cache":true,"envInputs":["TFLOW_CASE_MODE"],"tools":{"fixture":command(&["version"])},"env":{"tflow_CASE_mode":"task"}}
+    }));
+    std::fs::write(
+        directory.path().join(".env"),
+        "TfLow_Case_Secret=credential\nTfLow_Case_Mode=dotenv\nTfLow_Remote_Secret=transport\n",
+    )
+    .unwrap();
+    let mut ws = Workspace::discover(directory.path()).await.unwrap();
+    ws.config.remote = Some(serde_json::from_value(json!({"endpoint":"http://127.0.0.1:9000","bucket":"fixture","namespace":"fixture","accessKeyEnv":"TFLOW_REMOTE_ACCESS","secretKeyEnv":"TFLOW_REMOTE_SECRET","mode":"off"})).unwrap());
+    let project = &ws.projects["app"];
+    let tasks = &project.config.as_ref().unwrap().tasks;
+    let build = |id: &str, overrides: &BTreeMap<String, String>| {
+        Environment::build(&ws, project, &tasks[id], overrides, false).unwrap()
+    };
+    let owner = build("owner", &BTreeMap::new());
+    let sibling = build("sibling", &BTreeMap::new());
+    if cfg!(windows) {
+        assert!(owner.secrets.contains(&b"credential".to_vec()));
+        assert!(owner.secrets.contains(&b"unicode-credential".to_vec()));
+        assert!(!sibling.values.contains_key("TfLow_Case_Secret"));
+        assert!(!sibling.values.contains_key("TFLOW_ä_SECRET"));
+        assert!(!owner.values.contains_key("TfLow_Remote_Secret"));
+    } else {
+        assert!(owner.secrets.is_empty());
+        assert_eq!(sibling.values["TfLow_Case_Secret"], "credential");
+        assert_eq!(owner.values["TfLow_Remote_Secret"], "transport");
+    }
+    let first = build("cached", &BTreeMap::new());
+    assert_eq!(
+        first.fingerprint["TFLOW_CASE_MODE"],
+        if cfg!(windows) {
+            files::digest(b"task")
+        } else {
+            "<missing>".into()
+        }
+    );
+    let overrides = BTreeMap::from([("TFLOW_CASE_MODE".into(), "cli".into())]);
+    let second = build("cached", &overrides);
+    assert_eq!(second.fingerprint["TFLOW_CASE_MODE"], files::digest(b"cli"));
+    if cfg!(windows) {
+        assert_eq!(
+            second
+                .values
+                .keys()
+                .filter(|key| key.eq_ignore_ascii_case("TFLOW_CASE_MODE"))
+                .count(),
+            1
+        );
+        for name in ["PATH", "SYSTEMROOT"] {
+            if let Ok(expected) = std::env::var(name) {
+                assert!(second
+                    .values
+                    .iter()
+                    .any(|(key, value)| key.eq_ignore_ascii_case(name) && value == &expected));
+            }
+        }
+    }
+    let overrides = BTreeMap::from([("tflow_remote_secret".into(), "forbidden".into())]);
+    assert_eq!(
+        Environment::build(&ws, project, &tasks["sibling"], &overrides, false).is_err(),
+        cfg!(windows)
+    );
 }

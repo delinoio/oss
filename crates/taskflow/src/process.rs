@@ -203,7 +203,7 @@ pub async fn capture(
 ) -> Result<Vec<u8>> {
     let mut env: BTreeMap<String, String> = std::env::vars().collect();
     for (key, value) in environment {
-        env.insert((*key).into(), (*value).into());
+        crate::environment::insert(&mut env, (*key).into(), (*value).into());
     }
     let cancel = CANCELLATION.try_with(Clone::clone).unwrap_or_default();
     capture_with_env(directory, command, &env, &cancel).await

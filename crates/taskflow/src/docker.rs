@@ -16,7 +16,7 @@ pub fn host_environment(environment: &BTreeMap<String, String>) -> BTreeMap<Stri
     let mut values = environment.clone();
     for key in ["DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"] {
         if let Ok(value) = std::env::var(key) {
-            values.insert(key.into(), value);
+            crate::environment::insert(&mut values, key.into(), value);
         }
     }
     values
@@ -216,7 +216,7 @@ pub async fn prepare(
         format!("TFLOW_BIN=/workspace/.taskflow/runs/{execution}/tflow-result"),
     ]);
     for key in ["TFLOW_SHARD_INPUT", "TFLOW_SHARD_RESULT"] {
-        if let Some(value) = environment.get(key) {
+        if let Some(value) = crate::environment::get(environment, key) {
             let relative = Path::new(value)
                 .strip_prefix(root)
                 .context("shard exchange file outside workspace")?;

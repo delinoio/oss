@@ -139,3 +139,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `readiness_commands_use_the_configured_shell` releases a readiness-dependent check only after the service's explicit interpreter runs its probe, then verifies the server process is reaped on cancellation.
 
 `check_rejects_malformed_positive_and_negative_input_globs` exercises the public CLI's preflight diagnostics for malformed inclusion/exclusion patterns while retaining valid ordered globs and automatic inputs.
+
+`environment_names_follow_host_precedence_and_security_rules` checks host-specific casing across dotenv/task/CLI precedence, secret scoping (including Unicode), environment fingerprints, lookup context, and remote credentials. The grouped-task subprocess fixture injects mixed-case inherited credentials on Windows and verifies both absence from siblings and masked stored logs.

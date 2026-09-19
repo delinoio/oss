@@ -60,6 +60,8 @@ R2/S3 stores the same validated cache format. Configure endpoint, bucket, namesp
 ## Security
 Default dotenv precedence: CLI > task > inherited > project dotenv > root dotenv. Loading can be disabled. Cacheable commands use a declared environment. Cache transport credentials never enter task environments. Secrets disable caching and are masked in live, persisted, and replayed logs, including across byte chunks. Explicit `--show-secrets` affects current live output only; stored output remains masked. Remote entries require trusted writers; untrusted CI cannot read or write the namespace.
 
+Environment names follow host semantics at every boundary: case-insensitive ordinal comparison on Windows, case-sensitive comparison on Unix. This applies to precedence, secret scope/redaction, cache fingerprints, OS lookup retention, internal execution variables, and remote credential exclusion.
+
 ## Logging
 Use `tracing` for task IDs, causes, outcomes, durations, cache decisions, and cleanup. Never log secret values or credential-bearing URLs. Preserve parseable JSON stdout and documented color opt-out. Persisted logs are always masked.
 

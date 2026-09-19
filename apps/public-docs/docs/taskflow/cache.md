@@ -45,6 +45,8 @@ Dotenv is enabled by default. Precedence, from highest to lowest, is CLI `--env`
 task `env`, inherited environment, project dotenv, then root dotenv. Set
 `dotenv: false` or use `--no-dotenv` to disable loading. Cache-enabled tasks receive
 declared environment plus the OS/tool lookup context needed to launch programs.
+Environment names are case-insensitive on Windows and case-sensitive on Unix,
+including secret declarations and remote credential references.
 
 Name sensitive variables in `secrets`; obtain their values from your environment
 or your own uncommitted dotenv file. Secret-consuming tasks are uncached. Designated

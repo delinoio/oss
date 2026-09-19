@@ -682,11 +682,13 @@ pub async fn execute(
                 &serde_json::to_vec(&serde_json::json!({"version":1,"tests":selected}))?,
             )?;
             let mut env = environment.clone();
-            env.insert(
+            crate::environment::insert(
+                &mut env,
                 "TFLOW_SHARD_INPUT".into(),
                 selected_path.to_string_lossy().into_owned(),
             );
-            env.insert(
+            crate::environment::insert(
+                &mut env,
                 "TFLOW_SHARD_RESULT".into(),
                 results_path.to_string_lossy().into_owned(),
             );

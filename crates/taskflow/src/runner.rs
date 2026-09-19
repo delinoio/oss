@@ -576,13 +576,18 @@ async fn run_task(
     std::fs::create_dir_all(&run_directory)?;
     let result_file = run_directory.join("result.json");
     let mut values = environment.values.clone();
-    values.insert(
+    crate::environment::insert(
+        &mut values,
         "TFLOW_RESULT_FILE".into(),
         result_file.to_string_lossy().into_owned(),
     );
-    values.insert("TFLOW_EXECUTION_ID".into(), execution.clone());
+    crate::environment::insert(&mut values, "TFLOW_EXECUTION_ID".into(), execution.clone());
     if let Ok(exe) = std::env::current_exe() {
-        values.insert("TFLOW_BIN".into(), exe.to_string_lossy().into_owned());
+        crate::environment::insert(
+            &mut values,
+            "TFLOW_BIN".into(),
+            exe.to_string_lossy().into_owned(),
+        );
     }
     let log = Arc::new(Mutex::new(File::create(run_directory.join("output.log"))?));
     let mut docker = None;

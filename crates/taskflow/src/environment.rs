@@ -39,9 +39,12 @@ impl Environment {
                 read_dotenv(&project.directory.join(".env"), &mut values)?;
             }
         }
-        values.extend(std::env::vars());
-        values.extend(task.env.clone());
-        values.extend(overrides.clone());
+        for (key, value) in std::env::vars()
+            .chain(task.env.clone())
+            .chain(overrides.clone())
+        {
+            insert(&mut values, key, value);
+        }
         // A CI unit can carry credentials for several tasks. Designation is
         // workspace-wide, but access remains scoped to each declaring task.
         for name in ws
@@ -52,14 +55,14 @@ impl Environment {
             .flat_map(|config| config.tasks.values())
             .flat_map(|task| &task.secrets)
         {
-            if !task.secrets.contains(name) {
-                values.remove(name);
+            if !contains_name(task.secrets.iter(), name) {
+                values.retain(|key, _| !same_name(key, name));
             }
         }
         let secrets = task
             .secrets
             .iter()
-            .filter_map(|name| values.get(name))
+            .filter_map(|name| get(&values, name))
             .filter(|v| !v.is_empty())
             .map(|v| v.as_bytes().to_vec())
             .collect();
@@ -76,8 +79,7 @@ impl Environment {
             .map(|key| {
                 (
                     key.clone(),
-                    values
-                        .get(key)
+                    get(&values, key)
                         .map_or("<missing>".into(), |v| crate::files::digest(v.as_bytes())),
                 )
             })
@@ -105,7 +107,7 @@ impl Environment {
                 .into_iter()
                 .map(str::to_owned),
             );
-            values.retain(|key, _| keys.contains(key));
+            values.retain(|key, _| contains_name(keys.iter(), key));
         }
         if let Some(remote) = &ws.config.remote {
             for key in [&remote.access_key_env, &remote.secret_key_env]
@@ -113,13 +115,13 @@ impl Environment {
                 .chain(remote.session_token_env.iter())
             {
                 ensure!(
-                    !task.env_inputs.contains(key)
-                        && !task.env.contains_key(key)
-                        && !task.secrets.contains(key)
-                        && !overrides.contains_key(key),
+                    !contains_name(task.env_inputs.iter(), key)
+                        && !contains_name(task.env.keys(), key)
+                        && !contains_name(task.secrets.iter(), key)
+                        && !contains_name(overrides.keys(), key),
                     "cache transport credentials cannot be task inputs"
                 );
-                values.remove(key);
+                values.retain(|name, _| !same_name(name, key));
             }
         }
         Ok(Self {
@@ -129,11 +131,53 @@ impl Environment {
         })
     }
 }
+
+fn same_name(left: &str, right: &str) -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Globalization::{CompareStringOrdinal, CSTR_EQUAL};
+        // Match Windows and Rust's process environment comparison, including its
+        // OS-specific Unicode casing table rather than locale-dependent folding.
+        let left: Vec<_> = left.encode_utf16().collect();
+        let right: Vec<_> = right.encode_utf16().collect();
+        let result = unsafe {
+            CompareStringOrdinal(
+                left.as_ptr(),
+                left.len().try_into().expect("environment name too long"),
+                right.as_ptr(),
+                right.len().try_into().expect("environment name too long"),
+                1,
+            )
+        };
+        assert_ne!(result, 0, "Windows environment name comparison failed");
+        result == CSTR_EQUAL
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
+}
+
+fn contains_name<'a>(names: impl IntoIterator<Item = &'a String>, key: &str) -> bool {
+    names.into_iter().any(|name| same_name(name, key))
+}
+
+pub(crate) fn insert(values: &mut BTreeMap<String, String>, key: String, value: String) {
+    values.retain(|name, _| !same_name(name, &key));
+    values.insert(key, value);
+}
+
+pub(crate) fn get<'a>(values: &'a BTreeMap<String, String>, key: &str) -> Option<&'a String> {
+    values
+        .iter()
+        .find_map(|(name, value)| same_name(name, key).then_some(value))
+}
+
 fn read_dotenv(path: &Path, values: &mut BTreeMap<String, String>) -> Result<()> {
     if path.is_file() {
         for pair in dotenvy::from_path_iter(path)? {
             let (key, value) = pair?;
-            values.insert(key, value);
+            insert(values, key, value);
         }
     }
     Ok(())
