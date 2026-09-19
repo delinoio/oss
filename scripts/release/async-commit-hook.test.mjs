@@ -95,3 +95,46 @@ test('shell installer selects the requested version and rejects invalid argument
   }
  } finally {rmSync(directory,{recursive:true,force:true});}
 });
+
+test('release tag verification peels tags and rejects wrong revisions before publication', () => {
+ const code=`import importlib.util, os, subprocess, tempfile, sys
+sys.dont_write_bytecode=True
+spec=importlib.util.spec_from_file_location('build','scripts/release/build-async-commit-hook.py')
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+with tempfile.TemporaryDirectory(prefix='ach-tags-') as directory:
+ env=dict(os.environ, HOME=directory, GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull, GIT_AUTHOR_NAME='Fixture', GIT_AUTHOR_EMAIL='fixture@example.invalid', GIT_COMMITTER_NAME='Fixture', GIT_COMMITTER_EMAIL='fixture@example.invalid')
+ os.environ.update(env)
+ def git(*args):
+  return subprocess.run(['git','-C',directory,'-c','commit.gpgsign=false','-c','tag.gpgsign=false',*args],check=True,capture_output=True,text=True,env=env).stdout.strip()
+ git('init','--bare','--quiet')
+ tree=git('mktree')
+ first=git('commit-tree',tree,'-m','first')
+ second=git('commit-tree',tree,'-m','second')
+ tag='async-commit-hook@v0.1.0'
+ assert not m.verify_tag('0.1.0',first,directory)['exists']
+ assert not git('tag','--list'), 'verification created a tag'
+ for kind in ['lightweight','annotated','nested']:
+  for revision in [first,second]:
+   if kind == 'lightweight': git('tag',tag,revision)
+   else:
+    target=revision
+    if kind == 'nested':
+     git('tag','-a','inner','-m','inner',revision)
+     target='inner'
+    git('tag','-a',tag,'-m','release',target)
+   try:
+    result=m.verify_tag('0.1.0',first,directory)
+   except ValueError:
+    assert revision != first, (kind,revision)
+   else:
+    assert revision == first and result['exists'], (kind,revision)
+   assert git('rev-parse',tag+'^{}') == revision, 'verification changed the tag'
+   git('tag','-d',tag)
+   if kind == 'nested': git('tag','-d','inner')
+ try: m.verify_tag('0.1.0',first,directory+'/missing')
+ except subprocess.CalledProcessError: pass
+ else: raise AssertionError('unavailable remote accepted')
+`;
+ const result=spawnSync('python3',['-c',code],{cwd:root,encoding:'utf8'});
+ assert.equal(result.status,0,result.stderr);
+});

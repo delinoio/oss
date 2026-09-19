@@ -85,6 +85,8 @@ jobs:
         with:
           name: ach-unsigned
           path: release
+      - name: Verify existing release tag before signing
+        run: python3 scripts/release/build-async-commit-hook.py --verify-tag "$GITHUB_SHA"
       - uses: sigstore/cosign-installer@v4
       - name: Sign every artifact and checksum manifest
         run: |
@@ -105,6 +107,7 @@ jobs:
         run: |
           tag="async-commit-hook@v$VERSION"
           if gh release view "$tag" >/dev/null 2>&1; then echo 'Release already exists; assets are immutable' >&2; exit 1; fi
+          python3 scripts/release/build-async-commit-hook.py --verify-tag "$GITHUB_SHA"
           gh release create "$tag" release/* --target "$GITHUB_SHA" --title "async-commit-hook $VERSION" --notes "Signed ach archives for six targets. See compatibility.json for validation scope and https://ach.delino.io/docs/ for installation and recovery."
   homebrew:
     if: ${{ !inputs.dry_run }}

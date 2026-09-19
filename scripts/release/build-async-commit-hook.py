@@ -31,6 +31,27 @@ def metadata():
     return m
 
 
+
+def verify_tag(version, revision, remote="origin"):
+    if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version):
+        raise ValueError("invalid release version")
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", revision):
+        raise ValueError("release revision must be a full commit ID")
+    ref = f"refs/tags/async-commit-hook@v{version}"
+    # Read the remote on every call, including immediately before publication.
+    # ls-remote peels annotated (including nested) tags to their final object.
+    result = subprocess.run(["git", "ls-remote", "--tags", remote, ref, ref + "^{}"], check=True, capture_output=True, text=True)
+    refs = {}
+    for line in result.stdout.splitlines():
+        oid, name = line.split("\t")
+        if name not in (ref, ref + "^{}") or name in refs or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", oid):
+            raise ValueError("unexpected release tag response")
+        refs[name] = oid
+    if refs and (ref not in refs or refs.get(ref + "^{}", refs[ref]) != revision):
+        raise ValueError("existing release tag does not target the validated source commit")
+    return {"event": "release.tag_verified", "tag": ref.removeprefix("refs/tags/"), "revision": revision, "exists": bool(refs)}
+
+
 def archive_bytes(binary, name, windows):
     output = io.BytesIO()
     if windows:
@@ -92,10 +113,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output")
     parser.add_argument("--validate", action="store_true")
+    parser.add_argument("--verify-tag", metavar="COMMIT")
     args = parser.parse_args()
     if args.validate:
         print(json.dumps(metadata()))
+    elif args.verify_tag:
+        print(json.dumps(verify_tag(metadata()["version"], args.verify_tag)))
     elif args.output:
         build(args.output)
     else:
-        parser.error("--output or --validate is required")
+        parser.error("--output, --validate or --verify-tag is required")

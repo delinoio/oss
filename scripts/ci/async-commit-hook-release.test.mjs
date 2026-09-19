@@ -47,3 +47,14 @@ test('downstream publication retries preserve the successful immutable GitHub re
   }
  } finally {rmSync(directory,{recursive:true,force:true});}
 });
+
+test('release tag identity is checked before signing and again before creation', () => {
+ const steps=workflow.jobs.publish.steps;
+ const check=steps.findIndex((step)=>step.name==='Verify existing release tag before signing');
+ const sign=steps.findIndex((step)=>step.name==='Sign every artifact and checksum manifest');
+ const command='python3 scripts/release/build-async-commit-hook.py --verify-tag "$GITHUB_SHA"';
+ assert.ok(check>=0 && check<sign,'tag verification must precede all artifact signing');
+ assert.equal(steps[check].run,command);
+ const publish=steps.find((step)=>step.name==='Publish exact version').run;
+ assert.ok(publish.indexOf(command)>=0 && publish.indexOf(command)<publish.indexOf('gh release create'));
+});
