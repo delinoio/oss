@@ -52,6 +52,7 @@ jobs:
           pnpm --filter @delinoio/async-commit-hook-api-client test
           pnpm proto:check
           node --test scripts/release/async-commit-hook.test.mjs
+          node --test scripts/ci/async-commit-hook-release.test.mjs
       - name: Build all six unsigned archives
         run: python3 scripts/release/build-async-commit-hook.py --output "$RUNNER_TEMP/ach-release"
       - uses: actions/upload-artifact@v7
