@@ -70,3 +70,46 @@ it("stops detail polling after completion and still supports explicit invalidati
     expect(getRun).toHaveBeenCalledTimes(3);
   } finally { unmount(); client.clear(); vi.useRealTimers(); }
 });
+
+it.each(["Rerun all checks", "Rerun failed checks"])("retains the accepted receipt when %s cannot start", async (buttonName) => {
+  const rerun = vi.fn(() => ({ runId: "accepted-run", startupDiagnostic: { code: "startup-failed", message: "The rerun was accepted, but the runner could not start.", hint: "Inspect ach doctor." } }));
+  const onSelect = vi.fn();
+  const transport = createRouterTransport((router) => router.service(LocalService, {
+    getRun: () => ({ run: create(RunSchema, { id: "original", state: ExecutionState.FAILED }) }), rerun,
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const { unmount } = render(<QueryClientProvider client={client}><TransportProvider transport={transport}>
+    <RunDetail id="original" onBack={() => {}} onSelect={onSelect} />
+  </TransportProvider></QueryClientProvider>);
+  fireEvent.click(await screen.findByRole("button", { name: buttonName }));
+  expect(await screen.findByText("Rerun accepted; startup needs attention")).toBeTruthy();
+  expect(screen.getByText("accepted-run")).toBeTruthy();
+  expect(screen.getByText("ach status --run accepted-run")).toBeTruthy();
+  expect(screen.getByText("Inspect ach doctor.")).toBeTruthy();
+  expect(onSelect).not.toHaveBeenCalled();
+  for (const name of ["Rerun all checks", "Rerun failed checks"]) {
+    const button = screen.getByRole("button", { name }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+  }
+  expect(rerun).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole("button", { name: "Open accepted execution" }));
+  expect(onSelect).toHaveBeenCalledExactlyOnceWith("accepted-run");
+  unmount(); client.clear();
+});
+
+it("opens an accepted rerun directly when startup succeeds", async () => {
+  const onSelect = vi.fn();
+  const transport = createRouterTransport((router) => router.service(LocalService, {
+    getRun: () => ({ run: create(RunSchema, { id: "original", state: ExecutionState.FAILED }) }),
+    rerun: () => ({ runId: "accepted-run" }),
+  }));
+  const client = new QueryClient();
+  const { unmount } = render(<QueryClientProvider client={client}><TransportProvider transport={transport}>
+    <RunDetail id="original" onBack={() => {}} onSelect={onSelect} />
+  </TransportProvider></QueryClientProvider>);
+  fireEvent.click(await screen.findByRole("button", { name: "Rerun all checks" }));
+  await waitFor(() => expect(onSelect).toHaveBeenCalledExactlyOnceWith("accepted-run"));
+  expect(screen.queryByText("Rerun accepted; startup needs attention")).toBeNull();
+  unmount(); client.clear();
+});

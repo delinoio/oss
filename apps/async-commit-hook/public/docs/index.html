@@ -97,7 +97,10 @@ ach ui</pre
           includes status/wait commands, MCP guidance and a browser URL (or
           <code>ach ui --run ID</code> in on-demand mode). Git can return before
           checks finish. A startup error may leave a saved request pending; a
-          failed save never produces a false queued receipt.
+          failed save never produces a false queued receipt. If a browser rerun
+          is accepted but cannot start, the page retains its execution ID and
+          shows recovery guidance with an Open accepted execution button. Inspect
+          that saved attempt instead of submitting another rerun.
         </p>
       </section>
       <section id="configuration">

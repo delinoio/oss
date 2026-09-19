@@ -18,6 +18,8 @@ Repository/worktree and branch navigation; Changes, Commits, Checks, Inbox; run 
 
 Pairing receives a single-use five-minute code through a URL fragment or user entry. Remove the fragment after reading. Persist browser authorization per local installation; show revocation, network permission denial, unpaired/disconnected and version errors. Missing data, empty/loading, queued/running, failed/cancelled/interrupted states have actionable next steps. Keyboard, focus, screen-reader and non-color status behavior are required.
 
+A rerun accepted before a startup failure shows its run ID, diagnostic, recovery hint, status command and an Open accepted execution action. Both rerun submission buttons stay disabled after acceptance to avoid accidental duplicate attempts. Successful startup navigates directly to the accepted execution.
+
 ## Storage
 
 When a fresh pairing fragment accompanies stale stored authorization, Pair again removes that authorization and clears query data while retaining the consumed fragment's in-memory code for the pairing form. Successful pairing and explicit disconnect discard the code.

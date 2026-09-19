@@ -12,6 +12,8 @@ Paired local browsers; one owning OS account.
 ## Interfaces and Contracts
 Typed v1 services expose pairing, repositories/worktrees/branches, changes/commits, runs/checks, logs/reports/failures, comparisons, inbox, acknowledgement, cancellation and existing-run reruns. Product identifiers are UUID v7. Pagination and log cursors are bounded and scope-validated. Reject unsupported API/state versions. Browser requests never carry arbitrary shell commands or unrestricted filesystem paths.
 
+`RerunResponse.run_id` is a durable acceptance receipt. Its additive optional `startup_diagnostic` reports post-acceptance runner startup failure while preserving a successful Connect response. The diagnostic uses `startup-failed`, a safe message and recovery hint. Pre-acceptance failures remain Connect errors with no receipt. Omitted diagnostics retain the existing successful-start response.
+
 ## Storage
 Browser tokens are stored hashed in SQLite, with explicit revocation. Pairing codes expire after five minutes and are consumed atomically once. All results stay on the local machine.
 

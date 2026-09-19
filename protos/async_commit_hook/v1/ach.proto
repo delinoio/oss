@@ -213,6 +213,8 @@ message RerunRequest {
 }
 message RerunResponse {
   string run_id = 1;
+  // The attempt is durably accepted even when background startup fails.
+  Diagnostic startup_diagnostic = 2;
 }
 message CancelRequest {
   string run_id = 1;

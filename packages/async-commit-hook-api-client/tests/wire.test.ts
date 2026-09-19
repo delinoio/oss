@@ -1,10 +1,17 @@
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
-import { ExecutionState, RunSchema, LocalQuery } from "../src/index.js";
+import { ExecutionState, RunSchema, RerunResponseSchema, LocalQuery } from "../src/index.js";
 describe("v1 generated wire", () => {
   it("retains exact sequence and explicit nonpassing states", () => {
     const run = create(RunSchema, { id: "01900000-0000-7000-8000-000000000001", sequence: 9007199254740993n, state: ExecutionState.INTERRUPTED });
     expect(fromBinary(RunSchema, toBinary(RunSchema, run))).toEqual(run);
     expect(LocalQuery.acknowledge.name).toBe("Acknowledge");
   });
+});
+
+it("preserves a rerun receipt and its optional startup diagnostic", () => {
+  const receipt = create(RerunResponseSchema, { runId: "accepted", startupDiagnostic: { code: "startup-failed", message: "Request remains saved", hint: "Inspect ach doctor" } });
+  expect(fromBinary(RerunResponseSchema, toBinary(RerunResponseSchema, receipt))).toEqual(receipt);
+  const legacy = create(RerunResponseSchema, { runId: "accepted" });
+  expect(fromBinary(RerunResponseSchema, toBinary(RerunResponseSchema, legacy)).startupDiagnostic).toBeUndefined();
 });

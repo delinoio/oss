@@ -5,6 +5,7 @@
 - Include the shared process resolver and termination helper in the app test's Turbo inputs and CI path selection.
 - Use the generated Connect Query descriptors for server state. Filter lists on the server before applying their scoped cursors.
 - The detached branch selection sends an explicit detached filter; the inbox leaves branches unfiltered.
+- Preserve accepted rerun IDs when startup fails: show the startup diagnostic, recovery hint and a direct execution action; disable repeated submission after acceptance.
 - Disable acknowledgement until an execution is terminal; opening or waiting for a result never acknowledges it.
 - Poll execution details only while active; terminal evidence verification must not repeat on a timer. Explicit refresh and mutation invalidation remain available.
 - Render source, logs, report data and failure diagnostics as inert text. Do not use HTML interpretation or remote telemetry.

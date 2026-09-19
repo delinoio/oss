@@ -417,10 +417,23 @@ func (a *API) Rerun(_ context.Context, r *connect.Request[pb.RerunRequest]) (*co
 	if e != nil {
 		return nil, apiError(e)
 	}
+	response := &pb.RerunResponse{RunId: v.RunID}
 	if e = a.s.Start(a.s.Personal.Mode); e != nil {
-		return nil, apiError(e)
+		// Acceptance is already committed. A transport error here would hide the
+		// receipt and encourage the browser to create another explicit attempt.
+		response.StartupDiagnostic = &pb.Diagnostic{
+			Code:    "startup-failed",
+			Message: "The rerun was accepted, but the runner could not start.",
+			Hint:    "Inspect ach doctor, fix the startup problem, then use ach daemon start to resume queued requests.",
+		}
+		code := "runner-error"
+		var typed *Error
+		if errors.As(e, &typed) {
+			code = typed.Code
+		}
+		a.s.Log.Warn("rerun.startup_failed", "run_id", v.RunID, "code", code)
 	}
-	return connect.NewResponse(&pb.RerunResponse{RunId: v.RunID}), nil
+	return connect.NewResponse(response), nil
 }
 func (a *API) Cancel(_ context.Context, r *connect.Request[pb.CancelRequest]) (*connect.Response[pb.CancelResponse], error) {
 	if e := a.s.Store.Cancel(r.Msg.RunId, Cancelled); e != nil {

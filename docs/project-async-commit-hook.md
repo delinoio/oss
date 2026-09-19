@@ -27,6 +27,8 @@ Issue #897 is normative, with two explicit owner amendments on 2026-09-19: actua
 
 Configuration, local storage, CLI JSON and API contracts start at version 1. Product IDs are UUID v7; commits retain Git object IDs. A successful commit or query is not successful validation. All clients use the same exact-commit, compatible-context, latest-accepted-attempt gate. Reading never acknowledges a run. Retention never resurrects an older success.
 
+Receipt acceptance remains distinct from runner startup across CLI, MCP and Connect. The browser retains accepted rerun IDs on startup failure and offers direct navigation instead of treating the request as unaccepted.
+
 Defaults: daemon mode, API loopback port 46309, frontend development port 46308, project configuration `.config/async-commit-hook.toml`, personal configuration `~/.config/async-commit-hook/config.toml`, state `~/.local/share/async-commit-hook`, indefinite retention. Port conflicts fail. Root `pnpm dev` remains DevHud-owned.
 
 Results, reports and credentials remain local: this deliberately overrides the repository's R2 file-storage default. Trusted host commands are not a hostile-code sandbox. No telemetry, remote result storage, login autostart, automatic update, execution timeout or global command concurrency cap.

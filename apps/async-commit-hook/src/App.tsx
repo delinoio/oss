@@ -655,7 +655,7 @@ export function RunDetail({
             <>
               <button
                 disabled={
-                  run.state === ExecutionState.EXPIRED || rerun.isPending
+                  run.state === ExecutionState.EXPIRED || rerun.isPending || Boolean(rerun.data)
                 }
                 onClick={async () => {
                   try {
@@ -663,7 +663,7 @@ export function RunDetail({
                       runId: id,
                       failedOnly: false,
                     });
-                    onSelect(result.runId);
+                    if (!result.startupDiagnostic) onSelect(result.runId);
                   } catch {}
                 }}
               >
@@ -672,7 +672,7 @@ export function RunDetail({
               <button
                 className="primary"
                 disabled={
-                  run.state === ExecutionState.EXPIRED || rerun.isPending
+                  run.state === ExecutionState.EXPIRED || rerun.isPending || Boolean(rerun.data)
                 }
                 onClick={async () => {
                   try {
@@ -680,7 +680,7 @@ export function RunDetail({
                       runId: id,
                       failedOnly: true,
                     });
-                    onSelect(r.runId);
+                    if (!r.startupDiagnostic) onSelect(r.runId);
                   } catch {}
                 }}
               >
@@ -712,6 +712,20 @@ export function RunDetail({
         </p>
       )}
       {mutationError && <ErrorNotice error={mutationError} />}
+      {rerun.data?.startupDiagnostic && (
+        <div className="notice error" role="alert">
+          <strong>Rerun accepted; startup needs attention</strong>
+          <p>{rerun.data.startupDiagnostic.message}</p>
+          <p>{rerun.data.startupDiagnostic.hint}</p>
+          <p>Accepted execution: <code>{rerun.data.runId}</code></p>
+          <code>ach status --run {rerun.data.runId}</code>
+          <p>
+            <button onClick={() => onSelect(rerun.data!.runId)}>
+              Open accepted execution
+            </button>
+          </p>
+        </div>
+      )}
       {run.diagnostics.map((d, i) => (
         <div className="notice error" role="alert" key={i}>
           <strong>{d.code}</strong>

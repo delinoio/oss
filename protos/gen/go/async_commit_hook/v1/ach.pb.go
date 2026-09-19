@@ -2182,10 +2182,12 @@ func (x *RerunRequest) GetFailedOnly() bool {
 }
 
 type RerunResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	RunId string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	// The attempt is durably accepted even when background startup fails.
+	StartupDiagnostic *Diagnostic `protobuf:"bytes,2,opt,name=startup_diagnostic,json=startupDiagnostic,proto3" json:"startup_diagnostic,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *RerunResponse) Reset() {
@@ -2223,6 +2225,13 @@ func (x *RerunResponse) GetRunId() string {
 		return x.RunId
 	}
 	return ""
+}
+
+func (x *RerunResponse) GetStartupDiagnostic() *Diagnostic {
+	if x != nil {
+		return x.StartupDiagnostic
+	}
+	return nil
 }
 
 type CancelRequest struct {
@@ -2601,9 +2610,10 @@ const file_async_commit_hook_v1_ach_proto_rawDesc = "" +
 	"\fRerunRequest\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1f\n" +
 	"\vfailed_only\x18\x02 \x01(\bR\n" +
-	"failedOnly\"&\n" +
+	"failedOnly\"w\n" +
 	"\rRerunResponse\x12\x15\n" +
-	"\x06run_id\x18\x01 \x01(\tR\x05runId\"&\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12O\n" +
+	"\x12startup_diagnostic\x18\x02 \x01(\v2 .async_commit_hook.v1.DiagnosticR\x11startupDiagnostic\"&\n" +
 	"\rCancelRequest\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\"\x10\n" +
 	"\x0eCancelResponse\"t\n" +
@@ -2725,41 +2735,42 @@ var file_async_commit_hook_v1_ach_proto_depIdxs = []int32{
 	2,  // 14: async_commit_hook.v1.CompareResponse.new_failures:type_name -> async_commit_hook.v1.Failure
 	2,  // 15: async_commit_hook.v1.CompareResponse.continuing_failures:type_name -> async_commit_hook.v1.Failure
 	2,  // 16: async_commit_hook.v1.CompareResponse.resolved_failures:type_name -> async_commit_hook.v1.Failure
-	10, // 17: async_commit_hook.v1.LocalService.GetVersion:input_type -> async_commit_hook.v1.GetVersionRequest
-	12, // 18: async_commit_hook.v1.LocalService.Pair:input_type -> async_commit_hook.v1.PairRequest
-	14, // 19: async_commit_hook.v1.LocalService.ListRepositories:input_type -> async_commit_hook.v1.ListRepositoriesRequest
-	16, // 20: async_commit_hook.v1.LocalService.ListBranches:input_type -> async_commit_hook.v1.ListBranchesRequest
-	18, // 21: async_commit_hook.v1.LocalService.ListCommits:input_type -> async_commit_hook.v1.ListCommitsRequest
-	20, // 22: async_commit_hook.v1.LocalService.GetChanges:input_type -> async_commit_hook.v1.GetChangesRequest
-	22, // 23: async_commit_hook.v1.LocalService.ListRuns:input_type -> async_commit_hook.v1.ListRunsRequest
-	24, // 24: async_commit_hook.v1.LocalService.GetRun:input_type -> async_commit_hook.v1.GetRunRequest
-	26, // 25: async_commit_hook.v1.LocalService.GetLogs:input_type -> async_commit_hook.v1.GetLogsRequest
-	38, // 26: async_commit_hook.v1.LocalService.GetReport:input_type -> async_commit_hook.v1.GetReportRequest
-	28, // 27: async_commit_hook.v1.LocalService.GetFailures:input_type -> async_commit_hook.v1.GetFailuresRequest
-	30, // 28: async_commit_hook.v1.LocalService.Compare:input_type -> async_commit_hook.v1.CompareRequest
-	32, // 29: async_commit_hook.v1.LocalService.Acknowledge:input_type -> async_commit_hook.v1.AcknowledgeRequest
-	34, // 30: async_commit_hook.v1.LocalService.Rerun:input_type -> async_commit_hook.v1.RerunRequest
-	36, // 31: async_commit_hook.v1.LocalService.Cancel:input_type -> async_commit_hook.v1.CancelRequest
-	11, // 32: async_commit_hook.v1.LocalService.GetVersion:output_type -> async_commit_hook.v1.GetVersionResponse
-	13, // 33: async_commit_hook.v1.LocalService.Pair:output_type -> async_commit_hook.v1.PairResponse
-	15, // 34: async_commit_hook.v1.LocalService.ListRepositories:output_type -> async_commit_hook.v1.ListRepositoriesResponse
-	17, // 35: async_commit_hook.v1.LocalService.ListBranches:output_type -> async_commit_hook.v1.ListBranchesResponse
-	19, // 36: async_commit_hook.v1.LocalService.ListCommits:output_type -> async_commit_hook.v1.ListCommitsResponse
-	21, // 37: async_commit_hook.v1.LocalService.GetChanges:output_type -> async_commit_hook.v1.GetChangesResponse
-	23, // 38: async_commit_hook.v1.LocalService.ListRuns:output_type -> async_commit_hook.v1.ListRunsResponse
-	25, // 39: async_commit_hook.v1.LocalService.GetRun:output_type -> async_commit_hook.v1.GetRunResponse
-	27, // 40: async_commit_hook.v1.LocalService.GetLogs:output_type -> async_commit_hook.v1.GetLogsResponse
-	39, // 41: async_commit_hook.v1.LocalService.GetReport:output_type -> async_commit_hook.v1.GetReportResponse
-	29, // 42: async_commit_hook.v1.LocalService.GetFailures:output_type -> async_commit_hook.v1.GetFailuresResponse
-	31, // 43: async_commit_hook.v1.LocalService.Compare:output_type -> async_commit_hook.v1.CompareResponse
-	33, // 44: async_commit_hook.v1.LocalService.Acknowledge:output_type -> async_commit_hook.v1.AcknowledgeResponse
-	35, // 45: async_commit_hook.v1.LocalService.Rerun:output_type -> async_commit_hook.v1.RerunResponse
-	37, // 46: async_commit_hook.v1.LocalService.Cancel:output_type -> async_commit_hook.v1.CancelResponse
-	32, // [32:47] is the sub-list for method output_type
-	17, // [17:32] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	1,  // 17: async_commit_hook.v1.RerunResponse.startup_diagnostic:type_name -> async_commit_hook.v1.Diagnostic
+	10, // 18: async_commit_hook.v1.LocalService.GetVersion:input_type -> async_commit_hook.v1.GetVersionRequest
+	12, // 19: async_commit_hook.v1.LocalService.Pair:input_type -> async_commit_hook.v1.PairRequest
+	14, // 20: async_commit_hook.v1.LocalService.ListRepositories:input_type -> async_commit_hook.v1.ListRepositoriesRequest
+	16, // 21: async_commit_hook.v1.LocalService.ListBranches:input_type -> async_commit_hook.v1.ListBranchesRequest
+	18, // 22: async_commit_hook.v1.LocalService.ListCommits:input_type -> async_commit_hook.v1.ListCommitsRequest
+	20, // 23: async_commit_hook.v1.LocalService.GetChanges:input_type -> async_commit_hook.v1.GetChangesRequest
+	22, // 24: async_commit_hook.v1.LocalService.ListRuns:input_type -> async_commit_hook.v1.ListRunsRequest
+	24, // 25: async_commit_hook.v1.LocalService.GetRun:input_type -> async_commit_hook.v1.GetRunRequest
+	26, // 26: async_commit_hook.v1.LocalService.GetLogs:input_type -> async_commit_hook.v1.GetLogsRequest
+	38, // 27: async_commit_hook.v1.LocalService.GetReport:input_type -> async_commit_hook.v1.GetReportRequest
+	28, // 28: async_commit_hook.v1.LocalService.GetFailures:input_type -> async_commit_hook.v1.GetFailuresRequest
+	30, // 29: async_commit_hook.v1.LocalService.Compare:input_type -> async_commit_hook.v1.CompareRequest
+	32, // 30: async_commit_hook.v1.LocalService.Acknowledge:input_type -> async_commit_hook.v1.AcknowledgeRequest
+	34, // 31: async_commit_hook.v1.LocalService.Rerun:input_type -> async_commit_hook.v1.RerunRequest
+	36, // 32: async_commit_hook.v1.LocalService.Cancel:input_type -> async_commit_hook.v1.CancelRequest
+	11, // 33: async_commit_hook.v1.LocalService.GetVersion:output_type -> async_commit_hook.v1.GetVersionResponse
+	13, // 34: async_commit_hook.v1.LocalService.Pair:output_type -> async_commit_hook.v1.PairResponse
+	15, // 35: async_commit_hook.v1.LocalService.ListRepositories:output_type -> async_commit_hook.v1.ListRepositoriesResponse
+	17, // 36: async_commit_hook.v1.LocalService.ListBranches:output_type -> async_commit_hook.v1.ListBranchesResponse
+	19, // 37: async_commit_hook.v1.LocalService.ListCommits:output_type -> async_commit_hook.v1.ListCommitsResponse
+	21, // 38: async_commit_hook.v1.LocalService.GetChanges:output_type -> async_commit_hook.v1.GetChangesResponse
+	23, // 39: async_commit_hook.v1.LocalService.ListRuns:output_type -> async_commit_hook.v1.ListRunsResponse
+	25, // 40: async_commit_hook.v1.LocalService.GetRun:output_type -> async_commit_hook.v1.GetRunResponse
+	27, // 41: async_commit_hook.v1.LocalService.GetLogs:output_type -> async_commit_hook.v1.GetLogsResponse
+	39, // 42: async_commit_hook.v1.LocalService.GetReport:output_type -> async_commit_hook.v1.GetReportResponse
+	29, // 43: async_commit_hook.v1.LocalService.GetFailures:output_type -> async_commit_hook.v1.GetFailuresResponse
+	31, // 44: async_commit_hook.v1.LocalService.Compare:output_type -> async_commit_hook.v1.CompareResponse
+	33, // 45: async_commit_hook.v1.LocalService.Acknowledge:output_type -> async_commit_hook.v1.AcknowledgeResponse
+	35, // 46: async_commit_hook.v1.LocalService.Rerun:output_type -> async_commit_hook.v1.RerunResponse
+	37, // 47: async_commit_hook.v1.LocalService.Cancel:output_type -> async_commit_hook.v1.CancelResponse
+	33, // [33:48] is the sub-list for method output_type
+	18, // [18:33] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_async_commit_hook_v1_ach_proto_init() }
