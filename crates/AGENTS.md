@@ -27,7 +27,7 @@
 
 ### Rust Workspace Rules
 
-- Add new crates as explicit workspace members in root `Cargo.toml`.
+- Add new crates as explicit workspace members in root `Cargo.toml`, except the documented independent `crates/runlens` workspace.
 - Keep crate naming aligned with project IDs when possible.
 - Document behavior contracts in project index docs and relevant crate-domain docs before large implementation changes.
 - Planned crate paths must not be added as workspace members until the crate skeleton exists.
@@ -148,3 +148,9 @@
 - DevHud native-host IPC and registration fixtures must remain callable from the package-local DevHud CI commands. Native binaries, installers, signing, release, and deployment tasks are non-cacheable and CI must not publish or install outside disposable layouts.
 - Keep logs sufficient for debugging install, dispatch, and runtime resolution flow.
 - Keep CLI logs colorized by default for human operators, with explicit opt-out controls.
+
+### Runlens Rules
+
+- Follow docs/project-runlens.md and docs/crates-runlens-foundation.md. Run independent tests/fmt/Clippy with nightly-2026-08-02 in addition to root cargo test.
+- Keep fspy and dependency notices, immutable provenance, and a tested patch ledger. Do not reformat unrelated vendored sources or add root dependency patches.
+- Collection budgets apply inside the tracing/snapshot layers, not only after materialization. Use typed incomplete outcomes and retain available evidence.

@@ -88,6 +88,7 @@ enum ProjectId {
   WithWatch = "with-watch",
   Derun = "derun",
   Runmoor = "runmoor",
+  Runlens = "runlens",
   Ttl = "ttl",
   Mpapp = "mpapp",
   SerdeFeather = "serde-feather",
@@ -437,3 +438,11 @@ Release automation baseline:
 
 - Runmoor release fixtures must run with Node built-ins and no workspace dependency installation; YAML workflow assertions belong to `scripts/ci/` under `pnpm ci:contracts`.
 - Runmoor release dry runs are secret-free and non-publishing. Only the guarded publication job can obtain OIDC/signing and release-write authority; preview releases use the exact `runmoor@v<MAJOR.MINOR.PATCH>` source identity and three documented platform archives.
+
+### Runlens Contract
+
+- Issue #907 and docs/project-runlens.md govern Runlens 0.1.0 and its nine capabilities.
+- Runlens owns crates/runlens and apps/runlens-docs. It is an explicit independent Rust workspace exception, pinned to nightly-2026-08-02; preserve the root toolchain and DevHud graph.
+- Do not substitute requested executables, persist implicit history, capture source/streams/environment values, or turn unknown/incomplete evidence into a verification pass.
+- Release support requires actual native evidence; CI/dry runs never publish. The current implementation scope ends at a validated PR, before public release/tap/site publication.
+- Root pnpm dev:runlens-docs delegates to the app at 127.0.0.1:46310; preview is 127.0.0.1:46272, with no port remapping.

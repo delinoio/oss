@@ -153,3 +153,10 @@
 - If `apps/nodeup-docs` changes, run `pnpm --filter nodeup-docs test` before finishing.
 - If `apps/public-docs` changes, run `pnpm --filter public-docs test` before finishing.
 - Update relevant docs in `docs/` for every behavior, structure, or interface change.
+
+### Runlens Documentation Rules
+
+- Follow docs/apps-runlens-docs-foundation.md; use Rspress and Cloudflare Pages at https://runlens.delino.io.
+- Bind dev to 127.0.0.1:46310 and preview to 127.0.0.1:46272 using the shared strict wrapper. Root pnpm dev:runlens-docs delegates to the package.
+- Preserve every contracted route and all nine capabilities. Publish supported behavior and evidence limitations; internal architecture stays in docs.
+- Run package-local pnpm test and public-docs tests when discovery links change.
