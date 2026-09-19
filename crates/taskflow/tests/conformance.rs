@@ -4707,3 +4707,34 @@ async fn non_utf8_paths_never_collapse_into_cache_identities() {
         .unwrap()
         .contains_key("src/日本語.rs"));
 }
+
+#[test]
+fn check_rejects_invalid_task_environment_before_execution() {
+    for fields in [
+        json!({"env":{"":"value"}}),
+        json!({"env":{"A=B":"value"}}),
+        json!({"env":{"A\0B":"value"}}),
+        json!({"env":{"VALID":"secret\0value"}}),
+        json!({"envInputs":["A=B"]}),
+        json!({"secrets":["A\0B"]}),
+    ] {
+        let mut task = fields;
+        task["command"] = command(&["write", "unexpected", "executed"]);
+        let directory = fixture(json!({"task":task}));
+        let error = config::load(&directory.path().join("taskflow.yml")).unwrap_err();
+        assert!(format!("{error:#}").contains("environment"));
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .current_dir(directory.path())
+            .arg("check")
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("secret"));
+        assert!(!directory.path().join("unexpected").exists());
+    }
+    let valid: config::Task = serde_json::from_value(
+        json!({"command":["unused"],"env":{"EXAMPLE":"equals=and\nUnicode: 日本語"}}),
+    )
+    .unwrap();
+    valid.validate().unwrap();
+}

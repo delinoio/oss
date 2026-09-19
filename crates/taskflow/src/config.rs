@@ -390,6 +390,16 @@ impl Config {
 impl Task {
     pub fn validate(&self) -> Result<()> {
         validate_command(&self.command)?;
+        for name in self.env.keys().chain(&self.env_inputs).chain(&self.secrets) {
+            ensure!(
+                !name.is_empty() && !name.contains(['=', '\0']),
+                "invalid task environment name"
+            );
+        }
+        ensure!(
+            self.env.values().all(|value| !value.contains('\0')),
+            "task environment values must not contain NUL"
+        );
         if let Some(shell) = &self.shell {
             ensure!(
                 !shell.is_empty() && !shell[0].is_empty(),
