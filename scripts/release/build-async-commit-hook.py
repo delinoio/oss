@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build and inspect the six release archives without publishing or signing."""
 import argparse
+import gzip
 import hashlib
 import io
 import json
@@ -61,10 +62,13 @@ def archive_bytes(binary, name, windows):
             entry.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(entry, binary)
     else:
-        with tarfile.open(fileobj=output, mode="w:gz") as archive:
-            entry = tarfile.TarInfo(name)
-            entry.size, entry.mode, entry.mtime = len(binary), 0o755, 0
-            archive.addfile(entry, io.BytesIO(binary))
+        # Fix the compression header as well as tar metadata, so retries of
+        # identical binaries reproduce the signed archive/checksum bytes.
+        with gzip.GzipFile(fileobj=output, mode="wb", filename="", mtime=0) as compressed:
+            with tarfile.open(fileobj=compressed, mode="w") as archive:
+                entry = tarfile.TarInfo(name)
+                entry.size, entry.mode, entry.mtime = len(binary), 0o755, 0
+                archive.addfile(entry, io.BytesIO(binary))
     return output.getvalue()
 
 

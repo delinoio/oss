@@ -4,7 +4,7 @@
 The command release boundary owns six `ach` archives, shell/PowerShell installers, a Homebrew formula, artifact verification and explicit self-update. The static app and public `/docs` ship through the same manually dispatched release workflow. The initial version is `0.1.0`.
 
 ## Runtime and Language
-The Go binary uses CGO-free builds for darwin/linux/windows and amd64/arm64. Python assembles and inspects archives; GitHub Actions orchestrates validation, Sigstore signing, publication and Cloudflare Pages. A release archive contains exactly one regular `ach` or `ach.exe`, with no executable alias.
+The Go binary uses CGO-free builds for darwin/linux/windows and amd64/arm64. Python assembles and inspects archives; GitHub Actions orchestrates validation, Sigstore signing, publication and Cloudflare Pages. A release archive contains exactly one regular `ach` or `ach.exe`, with no executable alias. Identical executable bytes produce identical archives: Unix tar members and gzip headers have fixed timestamps, gzip carries no filename, and ownership/mode metadata is fixed; Windows ZIP entries retain their fixed timestamp and mode. Archive checksums therefore do not depend on the time a retry runs.
 
 ## Users and Operators
 Direct-install users, Homebrew users and authorized release maintainers. The owner explicitly excluded real six-target machine qualification and actual publication/deployment from the September 2026 implementation. Cross-build results must never be described as native integration results.

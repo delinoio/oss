@@ -1,6 +1,7 @@
 # async-commit-hook release boundary
 
 - `release-metadata.json`, the Go version constant, app and client versions must match exactly.
+- Archive bytes must be reproducible for identical executable bytes: fix both tar member and gzip-header metadata, omit gzip filenames, and retain fixed ZIP entry metadata.
 - Build all six targets with CGO disabled. Every archive contains exactly one regular `ach` or `ach.exe` file.
 - Publish only through the manually dispatched `release-async-commit-hook.yml` from `main`, after validation, archive checksums and Sigstore signing. The updater pins that exact workflow identity.
 - Before signing and immediately before release creation, resolve the remote version tag (including annotated/nested tags) to the exact validated commit; reject mismatches and lookup errors without changing tags.

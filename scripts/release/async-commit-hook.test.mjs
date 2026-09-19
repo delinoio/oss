@@ -138,3 +138,33 @@ with tempfile.TemporaryDirectory(prefix='ach-tags-') as directory:
  const result=spawnSync('python3',['-c',code],{cwd:root,encoding:'utf8'});
  assert.equal(result.status,0,result.stderr);
 });
+
+test('release archive bytes and checksums ignore the wall clock', () => {
+ const code=`import importlib.util, io, hashlib, tarfile, zipfile, sys
+from unittest.mock import patch
+sys.dont_write_bytecode=True
+spec=importlib.util.spec_from_file_location('build','scripts/release/build-async-commit-hook.py')
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+payload=bytes(range(256))*1024
+for windows in [False, True]:
+ name='ach.exe' if windows else 'ach'
+ with patch('time.time',return_value=1700000000): first=m.archive_bytes(payload,name,windows)
+ with patch('time.time',return_value=1800000000): later=m.archive_bytes(payload,name,windows)
+ assert first==later, 'clock changed archive bytes'
+ assert hashlib.sha256(first).digest()==hashlib.sha256(later).digest()
+ assert first!=m.archive_bytes(payload+b'changed',name,windows)
+ if windows:
+  with zipfile.ZipFile(io.BytesIO(first)) as archive:
+   assert archive.namelist()==[name] and archive.read(name)==payload
+ else:
+  assert int.from_bytes(first[4:8],'little')==0, 'gzip mtime is not fixed'
+  assert first[3]&8==0, 'gzip filename depends on output path'
+  with tarfile.open(fileobj=io.BytesIO(first),mode='r:gz') as archive:
+   member=archive.getmembers()[0]
+   assert member.name==name and member.mtime==0 and member.mode==0o755
+   assert member.uid==member.gid==0 and member.uname==member.gname==''
+   assert archive.extractfile(member).read()==payload
+`;
+ const result=spawnSync('python3',['-c',code],{cwd:root,encoding:'utf8'});
+ assert.equal(result.status,0,result.stderr);
+});
