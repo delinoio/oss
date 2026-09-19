@@ -54,3 +54,21 @@ func boundCheckFailures(c *Check, budget int) int {
 	}
 	return used
 }
+
+// Consume the complete field so a secret crossing the retained prefix is still
+// masked, but never allocate the potentially much larger redacted output.
+func redactedFailureText(value string, secrets []string) (string, bool) {
+	w := &failurePrefix{}
+	r := NewRedactor(w, secrets)
+	_, _ = r.Write([]byte(value))
+	_ = r.Close()
+	return failureText(string(w.bytes))
+}
+
+type failurePrefix struct{ bytes []byte }
+
+func (w *failurePrefix) Write(b []byte) (int, error) {
+	n := min(len(b), failureFieldBytes+utf8.UTFMax-len(w.bytes))
+	w.bytes = append(w.bytes, b[:n]...)
+	return len(b), nil
+}

@@ -17,6 +17,10 @@ import (
 	"unicode/utf8"
 )
 
+const maxReportBytes = 64 * 1024 * 1024
+const redactionChunkBytes = 32 * 1024
+const redactionMarker = "[REDACTED]"
+
 // Redactor holds enough suffix bytes to recognize a secret split between writes.
 // Nothing from the held suffix reaches disk until it is known to be safe.
 type Redactor struct {
@@ -24,6 +28,7 @@ type Redactor struct {
 	out     io.Writer
 	secrets []string
 	pending []byte
+	safe    []byte
 	max     int
 	err     error
 }
@@ -46,45 +51,74 @@ func (r *Redactor) Write(b []byte) (int, error) {
 	if r.err != nil {
 		return 0, r.err
 	}
-	r.pending = append(r.pending, b...)
-	r.flush(false)
-	return len(b), r.err
+	n := len(b)
+	for len(b) > 0 {
+		chunk := min(len(b), redactionChunkBytes)
+		r.pending = append(r.pending, b[:chunk]...)
+		b = b[chunk:]
+		r.flush(false)
+		if r.err != nil {
+			return n - len(b), r.err
+		}
+	}
+	return n, nil
 }
 func (r *Redactor) flush(final bool) {
-	if len(r.secrets) == 0 {
-		_, r.err = r.out.Write(r.pending)
-		r.pending = nil
+	if r.err != nil {
 		return
 	}
-	var safe bytes.Buffer
-	defer func() {
-		if r.err == nil && safe.Len() > 0 {
-			_, r.err = r.out.Write(safe.Bytes())
+	write := func(b []byte) {
+		var n int
+		n, r.err = r.out.Write(b)
+		if r.err == nil && n != len(b) {
+			r.err = io.ErrShortWrite
 		}
-	}()
-	for len(r.pending) > 0 {
-		if !final && len(r.pending) < r.max {
-			return
+	}
+	if len(r.secrets) == 0 {
+		write(r.pending)
+		r.pending = r.pending[:0]
+		return
+	}
+	if r.safe == nil {
+		r.safe = make([]byte, redactionChunkBytes)
+	}
+	safe := r.safe
+	used, consumed := 0, 0
+	for consumed < len(r.pending) {
+		remaining := r.pending[consumed:]
+		if !final && len(remaining) < r.max {
+			break
 		}
 		longest := 0
 		for _, s := range r.secrets {
-			if bytes.HasPrefix(r.pending, []byte(s)) && len(s) > longest {
+			if bytes.HasPrefix(remaining, []byte(s)) && len(s) > longest {
 				longest = len(s)
 			}
 		}
-		if longest > 0 {
-			safe.WriteString("[REDACTED]")
-			r.pending = r.pending[longest:]
-		} else {
-			safe.WriteByte(r.pending[0])
-			r.pending = r.pending[1:]
+		if used+len(redactionMarker) > len(safe) {
+			write(safe[:used])
+			if r.err != nil {
+				return
+			}
+			used = 0
 		}
-		if r.err != nil {
-			return
+		if longest > 0 {
+			used += copy(safe[used:], redactionMarker)
+			consumed += longest
+		} else {
+			safe[used] = remaining[0]
+			used++
+			consumed++
 		}
 	}
+	if used > 0 {
+		write(safe[:used])
+	}
+	// Retain only the undecidable suffix, reusing its bounded backing buffer.
+	r.pending = r.pending[:copy(r.pending, r.pending[consumed:])]
 }
 func (r *Redactor) Close() error { r.mu.Lock(); defer r.mu.Unlock(); r.flush(true); return r.err }
+
 func Redact(b []byte, secrets []string) []byte {
 	var out bytes.Buffer
 	r := NewRedactor(&out, secrets)
@@ -258,15 +292,65 @@ func parseGoTest(b []byte, check, command, logID string) ([]Failure, error) {
 	return out, nil
 }
 func (s *Service) SaveEvidence(run, name string, b []byte) (Evidence, error) {
+	return s.saveRedactedEvidence(run, name, b, nil)
+}
+
+func (s *Service) saveRedactedEvidence(run, name string, b []byte, secrets []string) (Evidence, error) {
 	id := ID()
-	path, e := s.Store.EvidencePath(run, id)
-	if e != nil {
-		return Evidence{}, e
+	path, err := s.Store.EvidencePath(run, id)
+	if err != nil {
+		return Evidence{}, err
 	}
-	if e = AtomicWrite(path, b, 0600); e != nil {
-		return Evidence{}, e
+	if len(b) > maxReportBytes {
+		return Evidence{}, E("evidence-too-large", "report exceeds the input limit", 3)
 	}
-	return Evidence{ID: id, Name: name, SHA256: Hash(b), Size: int64(len(b))}, nil
+	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return Evidence{}, err
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), ".ach-report-*")
+	if err != nil {
+		return Evidence{}, err
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+	h := sha256.New()
+	// Each input byte expands to at most one marker. Preserve complete evidence
+	// while explicitly bounding disk usage without buffering the expanded copy.
+	w := &evidenceWriter{out: io.MultiWriter(f, h), remaining: maxReportBytes * len(redactionMarker)}
+	r := NewRedactor(w, secrets)
+	if _, err = r.Write(b); err == nil {
+		err = r.Close()
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	closeErr := f.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = replaceFile(f.Name(), path)
+	}
+	if err != nil {
+		return Evidence{}, err
+	}
+	return Evidence{ID: id, Name: name, SHA256: hex.EncodeToString(h.Sum(nil)), Size: w.size}, nil
+}
+
+type evidenceWriter struct {
+	out       io.Writer
+	remaining int
+	size      int64
+}
+
+func (w *evidenceWriter) Write(b []byte) (int, error) {
+	if len(b) > w.remaining {
+		return 0, E("evidence-too-large", "redacted report exceeds the storage limit", 3)
+	}
+	n, err := w.out.Write(b)
+	w.remaining -= n
+	w.size += int64(n)
+	return n, err
 }
 
 // Declared report paths are outputs owned by one check, never committed or

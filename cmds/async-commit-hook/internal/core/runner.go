@@ -230,7 +230,7 @@ loop:
 	}
 	c.ExitCode = &exit
 	for _, report := range command.Reports {
-		b, e := ReadOwned(workspace, report.Path, 64*1024*1024)
+		b, e := ReadOwned(workspace, report.Path, maxReportBytes)
 		if e != nil {
 			c.Diagnostics = append(c.Diagnostics, Diagnostic{Code: "report-missing", Message: "declared report unavailable: " + report.Path})
 			continue
@@ -242,16 +242,20 @@ loop:
 		if e != nil {
 			c.Diagnostics = append(c.Diagnostics, Diagnostic{Code: "report-malformed", Message: "declared report invalid: " + report.Path})
 		}
+		truncated := false
 		for i := range failures {
 			failures[i].ID = Hash(Encode([]string{string(report.Kind), report.Path, failures[i].ID}))
-			failures[i].Message = string(Redact([]byte(failures[i].Message), secrets))
-			failures[i].File = string(Redact([]byte(failures[i].File), secrets))
-			failures[i].Test = string(Redact([]byte(failures[i].Test), secrets))
-			failures[i].Command = string(Redact([]byte(failures[i].Command), secrets))
+			for _, field := range []*string{&failures[i].Message, &failures[i].File, &failures[i].Test, &failures[i].Command} {
+				text, cut := redactedFailureText(*field, secrets)
+				*field = text
+				truncated = truncated || cut
+			}
+		}
+		if truncated {
+			c.Diagnostics = append(c.Diagnostics, Diagnostic{Code: "failure-summaries-truncated", Message: "Structured failure summaries were truncated; inspect the paginated report evidence for full details."})
 		}
 		c.Failures = append(c.Failures, failures...)
-		b = Redact(b, secrets)
-		ev, e := s.SaveEvidence(r.ID, report.Path, b)
+		ev, e := s.saveRedactedEvidence(r.ID, report.Path, b, secrets)
 		if e != nil {
 			c.Diagnostics = append(c.Diagnostics, Diagnostic{Code: "report-collection-failed", Message: "report could not be persisted"})
 		} else {
