@@ -198,6 +198,67 @@ func TestDockerIntegration(t *testing.T) {
 			}
 		})
 	}
+	t.Run("force stop preserves foreign name replacement", func(t *testing.T) {
+		m, config, remote, _, pool := testManager(t)
+		id := seedRunner(t, m, pool, Busy)
+		snap := m.Store.View()
+		r := snap.Runners[id]
+		makeContainer := func(labels map[string]string) string {
+			t.Helper()
+			v, err := cli.ContainerCreate(ctx, &container.Config{
+				Image: imageID, Entrypoint: []string{"/bin/sh"}, Cmd: []string{"-c", "sleep 3600"}, Labels: labels,
+			}, &container.HostConfig{NetworkMode: "none", LogConfig: container.LogConfig{Type: "none"}, Resources: container.Resources{NanoCPUs: 1e9, Memory: 128 * 1024 * 1024}}, nil, nil, r.Name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = cli.ContainerRemove(context.Background(), v.ID, container.RemoveOptions{Force: true}) })
+			if err = cli.ContainerStart(ctx, v.ID, container.StartOptions{}); err != nil {
+				t.Fatal(err)
+			}
+			return v.ID
+		}
+		original := makeContainer(dockerLabels(snap, *r, "runner"))
+		config.DockerSocket = endpoint
+		if err := m.Store.Update(func(s *Snapshot) error {
+			s.Generations[r.Generation] = config
+			s.Runners[id].Handle.Container = original
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := cli.ContainerRemove(ctx, original, container.RemoveOptions{Force: true}); err != nil {
+			t.Fatal(err)
+		}
+		labels := dockerLabels(snap, *r, "runner")
+		labels[ownerKey] = newID()
+		replacement := makeContainer(labels)
+		m.Drivers = func(Backend) (Driver, error) { return &DockerDriver{}, nil }
+		if err := m.Stop(true); err != nil {
+			t.Fatal(err)
+		}
+		m.cleanup(ctx, id)
+		r = m.Store.View().Runners[id]
+		requireCode(t, r.Problem, ErrOwnership)
+		if r.Phase != Quarantined || r.Terminated || r.LocalCleaned || remote.removed != 0 {
+			t.Fatal("force stop released ambiguous execution ownership", r)
+		}
+		if _, count, _ := usage(m.Store.View()); count != 1 {
+			t.Fatal("foreign replacement released the reservation")
+		}
+		live, err := cli.ContainerInspect(ctx, replacement)
+		if err != nil || !live.State.Running {
+			t.Fatal("force stop mutated the foreign replacement", err)
+		}
+		// Only this test's creator removes the foreign container. Confirmed
+		// absence then permits the manager to finish its original cleanup.
+		if err = cli.ContainerRemove(ctx, replacement, container.RemoveOptions{Force: true}); err != nil {
+			t.Fatal(err)
+		}
+		m.cleanup(ctx, id)
+		if got := m.Store.View().Runners[id]; got.Phase != Completed || !got.LocalCleaned {
+			t.Fatal("cleanup did not recover after confirmed absence", got)
+		}
+	})
 	t.Run("early runner exits suspend the pool", func(t *testing.T) {
 		c.Pools[0].Image = imageID
 		c.Pools[0].RunnerPath = "/home/runner/failing"

@@ -368,12 +368,49 @@ func (d *DockerDriver) Inspect(ctx context.Context, c Config, r Runner, s Snapsh
 	}
 	return out, nil
 }
+
+// Label discovery alone cannot prove absence: a replacement with foreign labels
+// is omitted by that query. Check both deterministic names and persisted IDs,
+// including partial preparations, before stopping anything and before releasing
+// the execution's reservation.
+func verifyDockerContainers(ctx context.Context, cli *client.Client, r Runner, s Snapshot, stopped bool) error {
+	refs := []struct{ ref, id, role string }{
+		{r.Name, r.Handle.Container, "runner"},
+		{r.Name + "-daemon", r.Handle.Daemon, "daemon"},
+		{r.Name + "-init", "", "init"},
+		{r.Handle.Container, r.Handle.Container, "runner"},
+		{r.Handle.Daemon, r.Handle.Daemon, "daemon"},
+	}
+	for _, ref := range refs {
+		if ref.ref == "" {
+			continue
+		}
+		v, err := cli.ContainerInspect(ctx, ref.ref)
+		if errdefs.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return dockerProblem()
+		}
+		if v.Config == nil || !ownedDocker(v.Config.Labels, s, r) || v.Config.Labels[roleKey] != ref.role || (ref.id != "" && v.ID != ref.id) {
+			return problem(ErrOwnership, "Docker container ownership is ambiguous during termination.", "Keep the execution quarantined and inspect its recorded container identities and ownership labels.")
+		}
+		if stopped && (v.State == nil || v.State.Running || v.State.Restarting) {
+			return problem(ErrCleanup, "Container termination is not confirmed.", "Restore Docker access and retry cleanup; reservations remain held.")
+		}
+	}
+	return nil
+}
+
 func (d *DockerDriver) Stop(ctx context.Context, c Config, r Runner, s Snapshot) error {
 	cli, e := dockerClient(ctx, c)
 	if e != nil {
 		return e
 	}
 	defer cli.Close()
+	if e = verifyDockerContainers(ctx, cli, r, s, false); e != nil {
+		return e
+	}
 	list, e := cli.ContainerList(ctx, container.ListOptions{All: true, Filters: dockerFilter(s, r)})
 	if e != nil {
 		return dockerProblem()
@@ -394,7 +431,7 @@ func (d *DockerDriver) Stop(ctx context.Context, c Config, r Runner, s Snapshot)
 			return problem(ErrCleanup, "Container termination is not confirmed.", "Restore Docker access and retry cleanup; reservations remain held.")
 		}
 	}
-	return nil
+	return verifyDockerContainers(ctx, cli, r, s, true)
 }
 func (d *DockerDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapshot) error {
 	cli, e := dockerClient(ctx, c)
