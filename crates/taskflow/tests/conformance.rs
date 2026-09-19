@@ -1364,6 +1364,21 @@ fn check_rejects_invalid_readiness_before_starting_processes() {
         json!({"type":"command", "command":["echo"], "timeout":"invalid"}),
         json!({"type":"tcp", "address":"127.0.0.1:1234", "timeout":"invalid"}),
         json!({"type":"http", "url":"http://127.0.0.1:1234", "timeout":"invalid"}),
+        json!({"type":"tcp", "address":"", "timeout":"5s"}),
+        json!({"type":"tcp", "address":"localhost", "timeout":"5s"}),
+        json!({"type":"tcp", "address":"localhost:port", "timeout":"5s"}),
+        json!({"type":"tcp", "address":"localhost:0", "timeout":"5s"}),
+        json!({"type":"tcp", "address":"localhost:65536", "timeout":"5s"}),
+        json!({"type":"tcp", "address":"localhost/path:80", "timeout":"5s"}),
+        json!({"type":"tcp", "address":"localhost:80?x:80", "timeout":"5s"}),
+        json!({"type":"tcp", "address":"[::1:80", "timeout":"5s"}),
+        json!({"type":"tcp", "address":" localhost:80", "timeout":"5s"}),
+        json!({"type":"http", "url":"", "timeout":"5s"}),
+        json!({"type":"http", "url":"not a URL", "timeout":"5s"}),
+        json!({"type":"http", "url":"http://", "timeout":"5s"}),
+        json!({"type":"http", "url":"http://localhost:invalid", "timeout":"5s"}),
+        json!({"type":"http", "url":"file:///health", "timeout":"5s"}),
+        json!({"type":"http", "url":"ftp://localhost/health", "timeout":"5s"}),
     ] {
         let directory = fixture(json!({"server": {
             "command": command(&["write", "started", "unexpected"]),
@@ -1378,6 +1393,23 @@ fn check_rejects_invalid_readiness_before_starting_processes() {
         assert!(!output.status.success(), "{readiness}");
         assert!(!directory.path().join("started").exists());
         assert!(!String::from_utf8_lossy(&output.stderr).contains("panicked"));
+    }
+}
+#[test]
+fn readiness_endpoint_validation_does_not_require_a_running_service() {
+    for readiness in [
+        json!({"type":"tcp","address":"localhost:80","timeout":"5s"}),
+        json!({"type":"tcp","address":"127.0.0.1:65535","timeout":"5s"}),
+        json!({"type":"tcp","address":"[::1]:443","timeout":"5s"}),
+        json!({"type":"tcp","address":"offline.invalid:1234","timeout":"5s"}),
+        json!({"type":"http","url":"http://localhost/health","timeout":"5s"}),
+        json!({"type":"http","url":"https://[::1]:443/health?ready=true","timeout":"5s"}),
+    ] {
+        let task: config::Task = serde_json::from_value(
+            json!({"command":["unused"],"service":true,"readiness":readiness}),
+        )
+        .unwrap();
+        task.validate().unwrap();
     }
 }
 async fn wait_lines(path: &Path, prefix: &str, count: usize) {

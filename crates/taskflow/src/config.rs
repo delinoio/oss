@@ -424,7 +424,41 @@ impl Task {
                     validate_command(command)?;
                     timeout
                 }
-                Readiness::Tcp { timeout, .. } | Readiness::Http { timeout, .. } => timeout,
+                Readiness::Tcp { address, timeout } => {
+                    let valid_port = address.rsplit_once(':').is_some_and(|(host, port)| {
+                        !host.is_empty()
+                            && !port.is_empty()
+                            && port.bytes().all(|b| b.is_ascii_digit())
+                            && port.parse::<u16>().is_ok_and(|port| port > 0)
+                    });
+                    let endpoint = reqwest::Url::parse(&format!("http://{address}"));
+                    ensure!(
+                        valid_port
+                            && !address.chars().any(|c| c.is_whitespace() || c.is_control())
+                            && endpoint.is_ok_and(|url| url.host_str().is_some()
+                                && url.username().is_empty()
+                                && url.password().is_none()
+                                && url.path() == "/"
+                                && url.query().is_none()
+                                && url.fragment().is_none())
+                            && !address.contains(['/', '?', '#', '@']),
+                        "invalid TCP readiness address; expected host:port or [IPv6]:port"
+                    );
+                    timeout
+                }
+                Readiness::Http { url, timeout } => {
+                    ensure!(
+                        !url.chars().any(|c| c.is_whitespace() || c.is_control())
+                            && reqwest::Url::parse(url).is_ok_and(|url| matches!(
+                                url.scheme(),
+                                "http" | "https"
+                            ) && url
+                                .host_str()
+                                .is_some()),
+                        "invalid HTTP readiness URL"
+                    );
+                    timeout
+                }
             };
             duration(timeout).context("invalid readiness timeout")?;
         }

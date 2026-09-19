@@ -38,7 +38,7 @@ Additional invariants include unknown/duplicate configuration rejection, schema 
 
 `grouped_tasks_only_receive_their_declared_secrets` passes a CI-style credential union to a real CLI run: only the declaring task receives the credential, and persisted output remains masked.
 
-`check_rejects_invalid_readiness_before_starting_processes` rejects empty readiness commands and malformed readiness timeouts at configuration validation, before service startup.
+`check_rejects_invalid_readiness_before_starting_processes` rejects empty readiness commands, malformed readiness timeouts, invalid TCP host/port addresses, and malformed or non-HTTP(S) readiness URLs at configuration validation, before service startup.
 
 `unchanged_prerequisites_cannot_suppress_corrupt_outputs` checks a three-task chain with both cached and uncached middle tasks: existing but modified outputs must be restored or rebuilt before a directly requested consumer can read them. Suppression requires the current output digest to match a previous successful receipt.
 
@@ -185,3 +185,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 The distributed artifact fixture also corrupts terminal-unit file digests, paths, and matching receipt/artifact digest claims. Final aggregation must reject each unusable bundle without relying on downstream restoration.
 
 `libtest_rejects_custom_harnesses_only_for_selected_targets` selects standard library and integration tests beside unselected custom harnesses in both the same and another package. A selected custom harness with a quoted TOML key is rejected before invocation. Harness scope follows [Cargo target declarations](https://doc.rust-lang.org/cargo/reference/cargo-targets.html#the-harness-field).
+
+`readiness_endpoint_validation_does_not_require_a_running_service` accepts IPv4, bracketed IPv6, hostnames, and HTTP(S) paths without resolving or connecting during validation.
