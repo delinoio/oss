@@ -455,3 +455,26 @@ preserve execution with typed incomplete evidence when observable. Unsupported
 macOS children retain the original executable and user preloads while dropping
 only the Runlens-owned DYLD library, including the arm64/arm64e boundary. Git
 preparation failures log only a bounded enum classification and exit status.
+
+## Local benchmark observation (2026-09-19)
+
+Sequential warm-cache debug-build runs on macOS 26.6.2 arm64 used the pinned
+nightly-2026-08-02 toolchain, five samples per case, and deterministic 992-byte
+input files. Executable SHA-256: `ba33ea921014a4c0ca2aa0ac355db5f09d21c5706193a7d35aaddc8d23dacfdc`.
+No release performance claim follows from this development-host measurement.
+
+| Case | Files | Direct median (s) | Traced median (s) | Traced statuses |
+| --- | --- | --- | --- | --- |
+| default | 1000 | 0.0172 | 0.3520 | [0, 0, 0, 0, 0] |
+| default | 10000 | 0.1561 | 1.5642 | [0, 0, 0, 0, 0] |
+| spill | 1000 | 0.0180 | 0.4640 | [0, 0, 0, 0, 0] |
+| limit | 1000 | 0.0216 | 0.2040 | [4, 4, 4, 4, 4] |
+
+`spill` used a 65,536-byte memory threshold; `limit` used an 8,192-byte total
+collection budget. All limit trials returned incomplete (4). Baseline and traced
+wall-clock samples, respectively:
+
+- default/1000: [0.010558, 0.017081, 0.017191, 0.017884, 0.01732] / [0.427886, 0.352025, 0.34786, 0.342392, 0.359469].
+- default/10000: [0.107657, 0.155794, 0.185924, 0.156072, 0.158571] / [1.551664, 1.567362, 1.564183, 1.579052, 1.548858].
+- spill/1000: [0.010908, 0.018206, 0.017826, 0.01799, 0.017968] / [0.465465, 0.463071, 0.45484, 0.467986, 0.463957].
+- limit/1000: [0.01074, 0.021563, 0.022467, 0.021864, 0.021398] / [0.237434, 0.268534, 0.204042, 0.20277, 0.201333].

@@ -118,7 +118,7 @@ impl SpyImpl {
 
                 let payload = Payload {
                     channel_conf: receiver.conf(),
-                    ansi_dll_path_with_nul: ansi_dll_path_with_nul.to_bytes(),
+                    ansi_dll_path_with_nul: ansi_dll_path_with_nul.to_bytes_with_nul(),
                 };
                 let payload_bytes = wincode::serialize(&payload).unwrap();
                 // SAFETY: process_handle is valid, PAYLOAD_ID is a static GUID,

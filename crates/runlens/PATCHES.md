@@ -63,3 +63,8 @@ arm64e system child on macOS 14. Native protected-child tests cover continued
 execution on both macOS architectures. Remove these patches when upstream provides
 fallible initialization, non-aborting collection, correct argv allocation, and
 owned-preload removal at the unsupported-child boundary.
+
+Windows payload propagation retains and validates the DLL path's trailing NUL
+before constructing a native C string. Native nested-child fixtures cover payload
+propagation. Remove this fix when upstream serializes and validates the complete
+NUL-terminated slice rather than relying on bytes after its allocation.

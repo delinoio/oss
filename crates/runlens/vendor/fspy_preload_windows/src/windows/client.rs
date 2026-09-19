@@ -17,6 +17,9 @@ pub struct Client<'a> {
 impl<'a> Client<'a> {
     pub fn from_payload_bytes(payload_bytes: &'a [u8], allocator: impl Allocator) -> Option<Self> {
         let payload: Payload<'a> = wincode::deserialize_exact(payload_bytes).ok()?;
+        // The child payload includes the terminator; never construct a CStr
+        // whose native pointer could read beyond the validated payload slice.
+        CStr::from_bytes_with_nul(payload.ansi_dll_path_with_nul).ok()?;
 
         // `None` when the channel is already over, which happens when this
         // process starts after the root target exited. Nothing is said

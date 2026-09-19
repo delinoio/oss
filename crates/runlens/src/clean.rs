@@ -152,6 +152,8 @@ async fn managed_git(
                 GitFailure::Configuration
             } else if text.contains("revision") {
                 GitFailure::Revision
+            } else if text.contains("HOME") || text.contains("profile") {
+                GitFailure::Home
             } else if text.contains("chdir") || text.contains("directory") {
                 GitFailure::Directory
             } else {
@@ -207,6 +209,7 @@ enum GitFailure {
     Repository,
     Configuration,
     Revision,
+    Home,
     Directory,
     Other,
 }
@@ -227,6 +230,10 @@ pub fn workspace_root(cwd: &Path) -> PathBuf {
         .to_owned()
 }
 pub async fn revision(root: &Path, cancel: &CancellationToken) -> Option<String> {
+    // Git platform shims may need a home even for rev-parse. Supply a fresh
+    // location rather than exposing ambient user configuration or credentials.
+    let owned = crate::temporary::Directory::new("runlens-revision-").ok()?;
+    let environment = isolated_environment(owned.path(), &[]).ok()?;
     let bytes = git_output(
         root,
         &[
@@ -234,7 +241,7 @@ pub async fn revision(root: &Path, cancel: &CancellationToken) -> Option<String>
             OsStr::new("--verify"),
             OsStr::new("HEAD^{commit}"),
         ],
-        &execution_context(),
+        &environment,
         cancel,
     )
     .await;
