@@ -98,6 +98,12 @@ func tree(ctx context.Context, path, sha string) ([]treeEntry, error) {
 		if len(meta) != 3 || !SafeRelative(pair[1]) {
 			return nil, E("unsupported-source-path", "source contains an unrepresentable file path", 2)
 		}
+		for _, component := range strings.Split(pair[1], "/") {
+			folded := strings.ToLower(strings.TrimRight(component, " ."))
+			if folded == ".git" || strings.HasPrefix(folded, "git~") {
+				return nil, E("unsupported-source-path", "source path overlaps managed Git metadata", 2)
+			}
+		}
 		if meta[0] == "160000" {
 			return nil, E("submodules-unsupported", "submodule source is unsupported", 2)
 		}
@@ -154,6 +160,11 @@ func (s *Store) Prepare(ctx context.Context, r Run) (string, error) {
 	if err != nil {
 		return dir, err
 	}
+	owned, err := os.OpenRoot(dir)
+	if err != nil {
+		return dir, err
+	}
+	defer owned.Close()
 	// Materialize raw blobs, bypassing smudge filters, export-ignore and line-ending rewriting.
 	for _, e := range entries {
 		if ctx.Err() != nil {
@@ -167,19 +178,19 @@ func (s *Store) Prepare(ctx context.Context, r Run) (string, error) {
 		if bytes.HasPrefix(data, []byte("version https://git-lfs.github.com/spec/v1\n")) {
 			return dir, E("lfs-unsupported", "Git LFS pointer source is unsupported", 2)
 		}
-		path := filepath.Join(dir, filepath.FromSlash(e.Path))
-		if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		path := filepath.FromSlash(e.Path)
+		if err = owned.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			return dir, err
 		}
 		if e.Mode == "120000" {
-			err = os.Symlink(string(data), path)
+			err = owned.Symlink(string(data), path)
 		} else {
 			mode := os.FileMode(0600)
 			if e.Mode == "100755" {
 				mode = 0700
 			}
 			var file *os.File
-			file, err = os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+			file, err = owned.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
 			if err == nil {
 				_, err = file.Write(data)
 				closeErr := file.Close()

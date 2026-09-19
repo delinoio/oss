@@ -123,3 +123,29 @@ func TestPrePushAllTipsUsesExactSHA(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestNamedGroupCoordinatesAcrossRepositories(t *testing.T) {
+	s, repo := fixture(t, "version=1\n[checks.test]\ncommand=\"sleep 0.15\"\npolicy=\"queue\"\ngroup=\"shared-tool\"\n")
+	clone := filepath.Join(t.TempDir(), "other")
+	if _, err := Git(context.Background(), repo, "clone", "--no-local", repo, clone); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Init(context.Background(), clone); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := s.Submit(context.Background(), repo, "", false)
+	b, _ := s.Submit(context.Background(), clone, "", false)
+	done := make(chan error, 2)
+	go func() { done <- s.RunOne(b.RunID) }()
+	go func() { done <- s.RunOne(a.RunID) }()
+	for i := 0; i < 2; i++ {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	ar, _ := s.Store.Run(a.RunID)
+	br, _ := s.Store.Run(b.RunID)
+	if ar.RepositoryID == br.RepositoryID || ar.Checks[0].FinishedAt.After(*br.Checks[0].StartedAt) {
+		t.Fatal("named cross-repository group overlapped")
+	}
+}

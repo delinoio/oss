@@ -76,7 +76,7 @@ func (s *Service) finishCheck(c Check, state State, code, message string) error 
 	}
 	return s.Store.SaveCheck(c)
 }
-func (s *Service) execute(r Run, c Check, workspace string) {
+func (s *Service) execute(ctx context.Context, r Run, c Check, workspace string) {
 	command := r.Config.Checks[c.Name]
 	env, secrets, err := s.Personal.CommandEnvironment(command, r.Environment)
 	if err != nil {
@@ -140,6 +140,16 @@ loop:
 		select {
 		case waitErr = <-done:
 			break loop
+		case <-ctx.Done():
+			// Storage failures must not leave commands running while their owner
+			// exits. This path works even when SQLite cannot record cancellation.
+			cancel = Interrupted
+			if err = p.terminate(); err != nil {
+				s.Log.Error("process.reconciliation_failed", "run_id", r.ID, "check_id", c.ID, "code", "process-reconciliation-failed")
+				return
+			}
+			waitErr = <-done
+			break loop
 		case <-ticker.C:
 			if err = p.sample(); err != nil {
 				s.Log.Error("process.sample_failed", "run_id", r.ID, "check_id", c.ID, "code", "process-reconciliation-failed")
@@ -195,6 +205,7 @@ loop:
 			c.Diagnostics = append(c.Diagnostics, Diagnostic{Code: "report-missing", Message: "declared report unavailable: " + report.Path})
 			continue
 		}
+		b = Redact(b, secrets)
 		failures, e := ParseReport(report.Kind, b, c.Name, command.Command, c.Log.ID)
 		if e != nil {
 			c.Diagnostics = append(c.Diagnostics, Diagnostic{Code: "report-malformed", Message: "declared report invalid: " + report.Path})
@@ -206,7 +217,7 @@ loop:
 			failures[i].Command = string(Redact([]byte(failures[i].Command), secrets))
 		}
 		c.Failures = append(c.Failures, failures...)
-		ev, e := s.SaveEvidence(r.ID, report.Path, Redact(b, secrets))
+		ev, e := s.SaveEvidence(r.ID, report.Path, b)
 		if e != nil {
 			c.Diagnostics = append(c.Diagnostics, Diagnostic{Code: "report-collection-failed", Message: "report could not be persisted"})
 		} else {
@@ -245,6 +256,11 @@ func digestFile(path string, e *Evidence) error {
 	return nil
 }
 func (s *Service) RunOne(id string) error {
+	return s.runOne(context.Background(), id)
+}
+func (s *Service) runOne(ctx context.Context, id string) error {
+	ctx, cancelOwned := context.WithCancel(ctx)
+	defer cancelOwned()
 	lock, err := TryLock(filepath.Join(s.Store.Root, "locks", id+".lock"))
 	if err != nil || lock == nil {
 		return err
@@ -273,7 +289,7 @@ func (s *Service) RunOne(id string) error {
 	if err = s.Store.SaveRun(r); err != nil {
 		return err
 	}
-	workspace, err := s.Store.Prepare(context.Background(), r)
+	workspace, err := s.Store.Prepare(ctx, r)
 	if err != nil {
 		for _, c := range r.Checks {
 			if c.State == Queued {
@@ -291,8 +307,11 @@ func (s *Service) RunOne(id string) error {
 	active := map[string]bool{}
 	done := make(chan string, len(r.Checks))
 	var wg sync.WaitGroup
-	defer wg.Wait()
+	defer func() { cancelOwned(); wg.Wait() }()
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		current, e := s.Store.Run(id)
 		if e != nil {
 			return e
@@ -344,7 +363,7 @@ func (s *Service) RunOne(id string) error {
 			if claimed {
 				active[c.ID] = true
 				wg.Add(1)
-				go func(c Check) { defer wg.Done(); s.execute(r, c, workspace); done <- c.ID }(c)
+				go func(c Check) { defer wg.Done(); s.execute(ctx, r, c, workspace); done <- c.ID }(c)
 			}
 		}
 		if !remaining {
@@ -391,6 +410,10 @@ func (s *Service) finalize(r Run) error {
 }
 func (s *Service) Work(ctx context.Context, persistent bool, component string) error {
 	var wg sync.WaitGroup
+	// A graceful stop drains using its own context. An unexpected worker return
+	// still cancels every owned command before relinquishing process ownership.
+	owned, cancelOwned := context.WithCancel(context.Background())
+	defer func() { cancelOwned(); wg.Wait() }()
 	active := map[string]bool{}
 	done := make(chan string, 1024)
 	stopping := false
@@ -426,7 +449,7 @@ func (s *Service) Work(ctx context.Context, persistent bool, component string) e
 				wg.Add(1)
 				go func(id string) {
 					defer wg.Done()
-					if e := s.RunOne(id); e != nil {
+					if e := s.runOne(owned, id); e != nil {
 						s.Log.Error("run.worker_failed", "run_id", id, "code", "runner-error")
 					}
 					done <- id

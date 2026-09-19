@@ -7,3 +7,5 @@
 - Report and log reads use owned artifact IDs and bounded, root-confined reads. Keep known-secret redaction before persistence, including streamed chunk boundaries and structured failures.
 - Use synchronization barriers, not elapsed-time assertions, to prove asynchronous behavior in integration tests. Run `go test -race ./cmds/async-commit-hook/...` for lifecycle changes, and the root Go suite after generating administrator assets.
 - Agent integration tests use isolated settings and preserve unrelated entries and comments. Keep the object-form MCP output schema compatible with supported clients.
+- Unexpected storage/worker exits must cancel and reap owned commands even when SQLite can no longer record a cancellation. A normal daemon stop still drains.
+- Release verification and replacement follow `docs/cmds-async-commit-hook-release-contract.md`; never weaken the pinned workflow identity or package-manager ownership checks.

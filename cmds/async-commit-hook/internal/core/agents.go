@@ -1,7 +1,10 @@
 package core
 
 import (
+	"bytes"
+	"database/sql"
 	_ "embed"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +16,14 @@ import (
 var AgentGuide string
 
 func (s *Service) Agent(client, scope, repo string, remove bool) (InstallResult, error) {
+	lock, err := TryLock(filepath.Join(s.Paths.Control, "installations.lock"))
+	if err != nil {
+		return InstallResult{}, err
+	}
+	if lock == nil {
+		return InstallResult{}, E("installation-busy", "another integration edit is active; retry", 3)
+	}
+	defer lock.Close()
 	if scope == "" {
 		scope = "user"
 	}
@@ -44,13 +55,22 @@ func (s *Service) Agent(client, scope, repo string, remove bool) (InstallResult,
 			path = filepath.Join(home, ".claude.json")
 		}
 		skill = filepath.Join(base, ".claude", "skills", "async-commit-hook", "SKILL.md")
+		if scope == "user" && os.Getenv("CLAUDE_CONFIG_DIR") != "" {
+			dir := os.Getenv("CLAUDE_CONFIG_DIR")
+			path = filepath.Join(dir, ".claude.json")
+			skill = filepath.Join(dir, "skills", "async-commit-hook", "SKILL.md")
+		}
 		parent = "mcpServers"
 	case "opencode":
 		path = filepath.Join(base, "opencode.jsonc")
 		skill = filepath.Join(base, ".opencode", "skills", "async-commit-hook", "SKILL.md")
 		if scope == "user" {
-			path = filepath.Join(home, ".config", "opencode", "opencode.jsonc")
-			skill = filepath.Join(home, ".config", "opencode", "skills", "async-commit-hook", "SKILL.md")
+			configHome := os.Getenv("XDG_CONFIG_HOME")
+			if configHome == "" {
+				configHome = filepath.Join(home, ".config")
+			}
+			path = filepath.Join(configHome, "opencode", "opencode.jsonc")
+			skill = filepath.Join(configHome, "opencode", "skills", "async-commit-hook", "SKILL.md")
 		}
 		if _, e = os.Stat(path); os.IsNotExist(e) {
 			alternative := strings.TrimSuffix(path, "c")
@@ -73,6 +93,12 @@ func (s *Service) Agent(client, scope, repo string, remove bool) (InstallResult,
 		return InstallResult{}, skillErr
 	}
 	if remove && ownedErr != nil {
+		if !errors.Is(ownedErr, sql.ErrNoRows) {
+			return InstallResult{}, ownedErr
+		}
+		if os.IsNotExist(skillErr) && !bytes.Contains(old, []byte("async-commit-hook")) {
+			return InstallResult{Path: path}, nil
+		}
 		return InstallResult{}, E("agent-conflict", "integration is not recorded as product-owned; preserve the existing configuration", 2)
 	}
 	if skillErr == nil && (ownedErr != nil || Hash(skillOld) != owned.SkillHash) {
@@ -151,6 +177,11 @@ func (s *Service) Agent(client, scope, repo string, remove bool) (InstallResult,
 		return InstallResult{}, e
 	}
 	if !remove {
+		// Record intended ownership before publication so a crash between the
+		// settings and skill writes can be completed by a repeated install.
+		if e = s.saveInstallation(Installation{ID: id, Path: path, Hash: Hash(updated), Kind: "agent", Entry: entry, SkillPath: skill, SkillHash: Hash([]byte(AgentGuide))}); e != nil {
+			return InstallResult{}, e
+		}
 		if e = AtomicWrite(skill, []byte(AgentGuide), 0600); e != nil {
 			return InstallResult{}, e
 		}

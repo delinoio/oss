@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -182,5 +183,243 @@ func TestOfficialSDKStdioToolsAndNoDaemon(t *testing.T) {
 		if c.Kind == "daemon" {
 			t.Fatal("stdio queries started daemon")
 		}
+	}
+	call := func(name string, args map[string]any) core.Output {
+		t.Helper()
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "ach_" + name, Arguments: args})
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := json.Marshal(result.StructuredContent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out core.Output
+		if err = json.Unmarshal(b, &out); err != nil || out.SchemaVersion != 1 {
+			t.Fatalf("MCP response %s %v", b, err)
+		}
+		return out
+	}
+	decodeReceipt := func(out core.Output) core.Receipt {
+		t.Helper()
+		if out.Error != nil {
+			t.Fatalf("MCP submission %+v", out.Error)
+		}
+		b, _ := json.Marshal(out.Result)
+		var receipt core.Receipt
+		json.Unmarshal(b, &receipt)
+		if receipt.RunID == "" {
+			t.Fatal("MCP receipt missing")
+		}
+		return receipt
+	}
+	receipt := decodeReceipt(call("run", map[string]any{"repo": repo}))
+	expired := call("wait", map[string]any{"run_id": receipt.RunID, "timeout_seconds": 1})
+	if expired.Error == nil || expired.Error.Code != "wait-expired" {
+		t.Fatalf("MCP wait classification %+v", expired)
+	}
+	r, err := s.Store.Run(receipt.RunID)
+	if err != nil || r.State.Terminal() {
+		t.Fatal("MCP wait cancelled execution")
+	}
+	os.WriteFile(filepath.Join(filepath.Dir(config), "release-check"), nil, 0600)
+	if result := call("wait", map[string]any{"run_id": receipt.RunID, "timeout_seconds": 10}); result.Error != nil {
+		t.Fatal(result.Error)
+	}
+	for _, name := range []string{"logs", "failures", "compare", "ack"} {
+		if result := call(name, map[string]any{"run_id": receipt.RunID, "check": "test"}); result.Error != nil {
+			t.Fatalf("MCP %s %+v", name, result.Error)
+		}
+	}
+	r, _ = s.Store.Run(receipt.RunID)
+	if r.AcknowledgedAt == nil || !s.GateRun(r).Passed {
+		t.Fatal("MCP acknowledgement/gate diverged")
+	}
+	rerun := decodeReceipt(call("rerun", map[string]any{"run_id": receipt.RunID}))
+	if result := call("cancel", map[string]any{"run_id": rerun.RunID}); result.Error != nil {
+		t.Fatal(result.Error)
+	}
+	call("wait", map[string]any{"run_id": rerun.RunID, "timeout_seconds": 10})
+}
+
+func TestConcurrentDaemonStartConverges(t *testing.T) {
+	config, repo := setup(t, "daemon")
+	type outcome struct {
+		data []byte
+		err  error
+	}
+	done := make(chan outcome, 6)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	for i := 0; i < 6; i++ {
+		go func() {
+			cmd := exec.CommandContext(ctx, binary, "daemon", "start", "--config", config, "--json")
+			cmd.Env = append(os.Environ(), "HOME="+filepath.Join(filepath.Dir(config), "home"))
+			b, err := cmd.CombinedOutput()
+			done <- outcome{b, err}
+		}()
+	}
+	for i := 0; i < 6; i++ {
+		r := <-done
+		if r.err != nil {
+			t.Fatalf("competing startup: %s %v", r.data, r.err)
+		}
+	}
+	response, exit := invoke(t, config, repo, "daemon", "status")
+	if exit != 0 {
+		t.Fatalf("status %+v", response)
+	}
+	b, _ := json.Marshal(response.Result)
+	var components []core.Component
+	json.Unmarshal(b, &components)
+	owners := 0
+	for _, c := range components {
+		if c.Kind == "daemon" {
+			owners++
+		}
+	}
+	if owners != 1 {
+		t.Fatalf("got %d daemon owners: %s", owners, b)
+	}
+}
+
+func TestTemporaryViewerExitLeavesWorkerAndHistory(t *testing.T) {
+	config, repo := setup(t, "on-demand")
+	git(t, repo, "add", ".")
+	git(t, repo, "commit", "--quiet", "-m", "viewer")
+	status, _ := invoke(t, config, repo, "status")
+	b, _ := json.Marshal(status.Result)
+	var page core.Page
+	json.Unmarshal(b, &page)
+	id := page.Runs[0].ID
+	viewer := exec.Command(binary, "ui", "--config", config, "--run", id, "--json")
+	viewer.Env = append(os.Environ(), "HOME="+filepath.Join(filepath.Dir(config), "home"))
+	stdout, err := viewer.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = viewer.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = viewer.Process.Kill() })
+	ready := make(chan bool, 1)
+	go func() {
+		reader := bufio.NewScanner(stdout)
+		ready <- reader.Scan() && strings.Contains(reader.Text(), "viewer-active")
+	}()
+	select {
+	case ok := <-ready:
+		if !ok {
+			t.Fatal("viewer did not report readiness")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("viewer startup timed out")
+	}
+	viewer.Process.Signal(os.Interrupt)
+	if err = viewer.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	status, exit := invoke(t, config, repo, "status", "--run", id)
+	b, _ = json.Marshal(status.Result)
+	var run core.Run
+	json.Unmarshal(b, &run)
+	if exit != 0 || run.State.Terminal() {
+		t.Fatalf("viewer stopped check: %s", b)
+	}
+	os.WriteFile(filepath.Join(filepath.Dir(config), "release-check"), nil, 0600)
+	if result, exit := invoke(t, config, repo, "wait", "--run", id, "--timeout", "15"); exit != 0 {
+		t.Fatalf("worker did not finish: %+v", result)
+	}
+}
+
+func TestDrainAndForcedStop(t *testing.T) {
+	for _, force := range []bool{false, true} {
+		t.Run(fmt.Sprint(force), func(t *testing.T) {
+			config, repo := setup(t, "daemon")
+			git(t, repo, "add", ".")
+			git(t, repo, "commit", "--quiet", "-m", "stop")
+			status, _ := invoke(t, config, repo, "status")
+			b, _ := json.Marshal(status.Result)
+			var page core.Page
+			json.Unmarshal(b, &page)
+			id := page.Runs[0].ID
+			// Wait for process ownership before asking a normal stop to drain.
+			deadline := time.Now().Add(10 * time.Second)
+			for {
+				status, _ = invoke(t, config, repo, "status", "--run", id)
+				b, _ = json.Marshal(status.Result)
+				var run core.Run
+				json.Unmarshal(b, &run)
+				if len(run.Checks) > 0 && run.Checks[0].State == core.Running {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("check did not start")
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			args := []string{"daemon", "stop"}
+			if force {
+				args = append(args, "--force")
+			}
+			if result, exit := invoke(t, config, repo, args...); exit != 0 {
+				t.Fatalf("stop %+v", result)
+			}
+			if !force {
+				os.WriteFile(filepath.Join(filepath.Dir(config), "release-check"), nil, 0600)
+			}
+			result, exit := invoke(t, config, repo, "wait", "--run", id, "--timeout", "15")
+			b, _ = json.Marshal(result.Result)
+			var run core.Run
+			json.Unmarshal(b, &run)
+			want := core.Passed
+			if force {
+				want = core.Cancelled
+			}
+			if exit != 0 || run.State != want {
+				t.Fatalf("stop force=%v result %s", force, b)
+			}
+		})
+	}
+}
+
+func TestPrePushRunAndWaitCreatesMissingAttempt(t *testing.T) {
+	config, repo := setup(t, "on-demand")
+	git(t, repo, "-c", "core.hooksPath=/dev/null", "add", ".")
+	git(t, repo, "-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", "push")
+	sha := strings.TrimSpace(git(t, repo, "rev-parse", "HEAD"))
+	os.WriteFile(filepath.Join(filepath.Dir(config), "release-check"), nil, 0600)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, "pre-push", "--policy", "run-and-wait", "--config", config, "--repo", repo, "--json")
+	cmd.Env = append(os.Environ(), "HOME="+filepath.Join(filepath.Dir(config), "home"))
+	cmd.Stdin = strings.NewReader(fmt.Sprintf("refs/heads/main %s refs/heads/main %s\n", sha, strings.Repeat("0", 40)))
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("run-and-wait %v %s", err, b)
+	}
+	if result, exit := invoke(t, config, repo, "check", "--commit", sha); exit != 0 {
+		t.Fatalf("push did not validate actual tip: %+v", result)
+	}
+}
+
+func TestHomebrewOwnedExecutableRejectsSelfUpdate(t *testing.T) {
+	config, _ := setup(t, "on-demand")
+	cellar := filepath.Join(t.TempDir(), "Cellar", "async-commit-hook", "1.0.0", "bin")
+	if err := os.MkdirAll(cellar, 0700); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed := filepath.Join(cellar, "ach")
+	if err = os.WriteFile(installed, data, 0700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(installed, "self-update", "--version", "1.0.0", "--config", config, "--json")
+	cmd.Env = append(os.Environ(), "HOME="+filepath.Join(filepath.Dir(config), "home"))
+	b, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(b), "homebrew-owned") || !strings.Contains(string(b), "brew upgrade") {
+		t.Fatalf("package ownership lost: %v %s", err, b)
 	}
 }

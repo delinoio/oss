@@ -38,6 +38,9 @@ func (s *Service) Active() ([]Component, error) {
 			continue
 		}
 		b, e := os.ReadFile(filepath.Join(s.Paths.Control, entry.Name()))
+		if os.IsNotExist(e) {
+			continue
+		}
 		if e != nil {
 			return nil, e
 		}
@@ -105,6 +108,13 @@ func (s *Service) Start(mode Mode) error {
 			return E("configuration-active", "stop existing processes before changing mode, port or state_dir", 2)
 		}
 		if mode == Daemon && c.Kind == "daemon" {
+			var stop string
+			if err := s.Store.DB.QueryRow("SELECT stop FROM components WHERE id=?", c.ID).Scan(&stop); err != nil {
+				return err
+			}
+			if stop != "" {
+				return E("daemon-draining", "request is saved; start the daemon after its current drain finishes", 3)
+			}
 			return nil
 		}
 	}
@@ -130,27 +140,29 @@ func (s *Service) Start(mode Mode) error {
 	if e = cmd.Start(); e != nil {
 		return E("worker-start-failed", "request is saved but background process could not start; retry ach daemon start or ach run", 3)
 	}
-	pid := cmd.Process.Pid
 	_ = cmd.Process.Release()
-	if mode == OnDemand {
-		return nil
-	}
 	for i := 0; i < 100; i++ {
 		active, e = s.Active()
 		if e != nil {
 			return e
 		}
 		for _, c := range active {
-			if c.Kind == "daemon" && c.ConfigHash == s.configHash() {
+			if ((mode == Daemon && c.Kind == "daemon") || (mode == OnDemand && c.Kind == "worker")) && c.ConfigHash == s.configHash() {
 				return nil
 			}
 		}
-		if _, e = ProcessIdentity(pid); e != nil {
-			break
+		if mode == OnDemand {
+			pending, err := s.Store.Pending()
+			if err != nil {
+				return err
+			}
+			if len(pending) == 0 {
+				return nil
+			}
 		}
 		time.Sleep(30 * time.Millisecond)
 	}
-	return E("daemon-start-failed", "request remains saved; inspect ach doctor and local runner.log for port or startup errors", 3)
+	return E("runner-start-failed", "request remains saved; inspect ach doctor and local runner.log for port or startup errors", 3)
 }
 func (s *Service) Stop(force bool) error {
 	active, e := s.Active()

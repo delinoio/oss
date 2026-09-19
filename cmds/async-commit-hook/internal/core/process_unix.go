@@ -4,7 +4,7 @@ package core
 
 import (
 	"fmt"
-	"os"
+	"golang.org/x/sys/unix"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -47,16 +47,15 @@ func processRows() ([]processRow, error) {
 	return rows, nil
 }
 func ProcessIdentity(pid int) (Process, error) {
-	rows, e := processRows()
-	if e != nil {
-		return Process{}, e
+	birth, err := preciseBirth(pid)
+	if err != nil {
+		return Process{}, err
 	}
-	for _, r := range rows {
-		if r.pid == pid {
-			return Process{PID: pid, Birth: r.birth, Group: r.group}, nil
-		}
+	group, err := unix.Getpgid(pid)
+	if err != nil {
+		return Process{}, err
 	}
-	return Process{}, os.ErrNotExist
+	return Process{PID: pid, Birth: birth, Group: group}, nil
 }
 func ProcessAlive(p Process) bool {
 	if p.PID <= 0 || p.Birth == "" {

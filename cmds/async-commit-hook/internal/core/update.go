@@ -28,13 +28,14 @@ var releaseVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 const ReleaseIdentity = "https://github.com/delinoio/oss/.github/workflows/release-async-commit-hook.yml@refs/heads/main"
 
 type UpdateJournal struct {
-	Executable  string  `json:"executable"`
-	Candidate   string  `json:"candidate"`
-	Backup      string  `json:"backup"`
-	StateBackup string  `json:"state_backup"`
-	SHA256      string  `json:"sha256"`
-	Phase       string  `json:"phase"`
-	Parent      Process `json:"parent"`
+	Executable     string  `json:"executable"`
+	Candidate      string  `json:"candidate"`
+	Backup         string  `json:"backup"`
+	StateBackup    string  `json:"state_backup"`
+	SHA256         string  `json:"sha256"`
+	OriginalSHA256 string  `json:"original_sha256"`
+	Phase          string  `json:"phase"`
+	Parent         Process `json:"parent"`
 }
 
 func fetchRelease(ctx context.Context, address string, limit int64) ([]byte, error) {
@@ -71,17 +72,24 @@ func VerifyReleaseFile(path, bundlePath string) error {
 	if e != nil {
 		return E("signature-trust-unavailable", "cannot load authenticated Sigstore trust roots", 3)
 	}
-	verifier, e := verify.NewVerifier(trusted, verify.WithTransparencyLog(1), verify.WithIntegratedTimestamps(1))
+	return verifyReleaseWithTrust(path, bundlePath, trusted)
+}
+func releaseVerifier(trusted root.TrustedMaterial) (*verify.SignedEntityVerifier, verify.CertificateIdentity, error) {
+	identity, err := verify.NewShortCertificateIdentity("https://token.actions.githubusercontent.com", "", ReleaseIdentity, "")
+	if err != nil {
+		return nil, identity, err
+	}
+	v, err := verify.NewVerifier(trusted, verify.WithTransparencyLog(1), verify.WithIntegratedTimestamps(1))
+	return v, identity, err
+}
+func verifyReleaseWithTrust(path, bundlePath string, trusted root.TrustedMaterial) error {
+	verifier, identity, e := releaseVerifier(trusted)
 	if e != nil {
 		return e
 	}
 	b, e := bundle.LoadJSONFromPath(bundlePath)
 	if e != nil {
 		return E("signature-invalid", "cannot parse Sigstore bundle", 3)
-	}
-	identity, e := verify.NewShortCertificateIdentity("https://token.actions.githubusercontent.com", "", ReleaseIdentity, "")
-	if e != nil {
-		return e
 	}
 	f, e := os.Open(path)
 	if e != nil {
@@ -223,8 +231,8 @@ func (s *Service) SelfUpdate(ctx context.Context, version string) (map[string]st
 	if strings.Contains(filepath.ToSlash(executable), "/Cellar/") || strings.Contains(filepath.ToSlash(executable), "/Homebrew/") {
 		return nil, E("homebrew-owned", "use brew upgrade async-commit-hook; package-owned files are not replaced", 2)
 	}
-	if version == "" {
-		b, e := fetchRelease(ctx, "https://api.github.com/repos/delinoio/oss/releases?per_page=100", 8*1024*1024)
+	for page := 1; version == ""; page++ {
+		b, e := fetchRelease(ctx, fmt.Sprintf("https://api.github.com/repos/delinoio/oss/releases?per_page=100&page=%d", page), 8*1024*1024)
 		if e != nil {
 			return nil, e
 		}
@@ -241,6 +249,9 @@ func (s *Service) SelfUpdate(ctx context.Context, version string) (map[string]st
 				version = strings.TrimPrefix(r.Tag, "async-commit-hook@v")
 				break
 			}
+		}
+		if len(releases) < 100 {
+			break
 		}
 	}
 	if !releaseVersion.MatchString(version) {
@@ -305,11 +316,25 @@ func (s *Service) SelfUpdate(ctx context.Context, version string) (map[string]st
 	if e = AtomicWrite(candidate, binary, 0700); e != nil {
 		return nil, e
 	}
+	probe := exec.CommandContext(ctx, candidate, "version", "--json")
+	versionOutput, err := probe.Output()
+	var versionEnvelope struct {
+		Result struct {
+			Version string `json:"version"`
+		} `json:"result"`
+	}
+	if err != nil || json.Unmarshal(versionOutput, &versionEnvelope) != nil || versionEnvelope.Result.Version != version {
+		return nil, E("update-version-invalid", "verified candidate cannot report the selected release version", 3)
+	}
+	oldBinary, err := os.ReadFile(executable)
+	if err != nil {
+		return nil, err
+	}
 	parent, e := ProcessIdentity(os.Getpid())
 	if e != nil {
 		return nil, e
 	}
-	journal := UpdateJournal{Executable: executable, Candidate: candidate, Backup: executable + ".ach-backup-" + id, StateBackup: backup, SHA256: Hash(binary), Phase: "prepared", Parent: parent}
+	journal := UpdateJournal{Executable: executable, Candidate: candidate, Backup: executable + ".ach-backup-" + id, StateBackup: backup, SHA256: Hash(binary), OriginalSHA256: Hash(oldBinary), Phase: "prepared", Parent: parent}
 	if e = AtomicWrite(filepath.Join(s.Paths.Control, "update.json"), Encode(journal), 0600); e != nil {
 		return nil, e
 	}
@@ -426,9 +451,18 @@ func (s *Service) RecoverUpdate() (map[string]string, error) {
 			}
 		} else {
 			current, e := os.ReadFile(j.Executable)
-			if e != nil || Hash(current) != j.SHA256 {
+			if e != nil || (Hash(current) != j.SHA256 && Hash(current) != j.OriginalSHA256) {
 				return nil, E("update-recovery-required", "installed executable is uncertain; inspect the retained backup", 3)
 			}
+		}
+	}
+	if j.Phase != "prepared" && j.Phase != "original-backed-up" && j.Phase != "installed" {
+		return nil, E("update-journal-invalid", "unknown update recovery phase", 3)
+	}
+	if j.Phase == "installed" {
+		current, err := os.ReadFile(j.Executable)
+		if err != nil || Hash(current) != j.SHA256 {
+			return nil, E("update-recovery-required", "installed executable changed after replacement", 3)
 		}
 	}
 	if e = os.Remove(path); e != nil {

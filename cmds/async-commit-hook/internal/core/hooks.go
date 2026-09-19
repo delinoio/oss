@@ -25,6 +25,7 @@ type InstallResult struct {
 	Path      string `json:"path"`
 	Manual    string `json:"manual,omitempty"`
 	Backup    string `json:"backup,omitempty"`
+	Example   string `json:"example,omitempty"`
 }
 
 func (s *Service) installation(id string) (Installation, error) {
@@ -66,6 +67,14 @@ func hookPath(ctx context.Context, root, kind string) (string, error) {
 	return filepath.Join(dir, kind), nil
 }
 func (s *Service) Hook(ctx context.Context, repo string, prePush, remove bool) ([]InstallResult, error) {
+	lock, err := TryLock(filepath.Join(s.Paths.Control, "installations.lock"))
+	if err != nil {
+		return nil, err
+	}
+	if lock == nil {
+		return nil, E("installation-busy", "another hook/agent edit is active; retry", 3)
+	}
+	defer lock.Close()
 	_, root, _, e := Discover(ctx, repo)
 	if e != nil {
 		return nil, e
@@ -90,9 +99,9 @@ func (s *Service) Hook(ctx context.Context, repo string, prePush, remove bool) (
 		if readErr != nil && !os.IsNotExist(readErr) {
 			return out, readErr
 		}
-		command := "ach run --repo . --commit HEAD --automatic"
+		command := quoteSh(executable) + " run --repo . --commit HEAD --automatic --config " + quoteSh(s.Paths.Config)
 		if kind == "pre-push" {
-			command = "ach pre-push"
+			command = quoteSh(executable) + " pre-push --config " + quoteSh(s.Paths.Config)
 		}
 		if remove {
 			if os.IsNotExist(readErr) {
@@ -116,7 +125,7 @@ func (s *Service) Hook(ctx context.Context, repo string, prePush, remove bool) (
 				out = append(out, InstallResult{Installed: true, Path: path})
 				continue
 			}
-			out = append(out, InstallResult{Path: path, Manual: command + " (add this to your existing " + kind + " hook or hook manager; preserve stdin for pre-push)"})
+			out = append(out, InstallResult{Path: path, Manual: command + " (add this to your existing " + kind + " hook or hook manager; preserve stdin for pre-push)", Example: hookExample(kind, command)})
 			continue
 		}
 		args := "run --repo . --commit HEAD --automatic"
@@ -145,4 +154,12 @@ func (s *Service) Hook(ctx context.Context, repo string, prePush, remove bool) (
 		out = append(out, InstallResult{Installed: true, Path: path})
 	}
 	return out, nil
+}
+
+func hookExample(kind, command string) string {
+	stdin := ""
+	if kind == "pre-push" {
+		stdin = "      # If another command consumes stdin, use one wrapper that saves and replays it.\n      use_stdin: true\n"
+	}
+	return "# Existing shell hook: add this command without deleting other commands.\n" + command + "\n\n# Lefthook configuration: merge this named command into the existing hook.\n" + kind + ":\n  commands:\n    async-commit-hook:\n" + stdin + "      run: |\n        " + command + "\n"
 }

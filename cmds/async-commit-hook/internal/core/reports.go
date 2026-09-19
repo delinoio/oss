@@ -111,6 +111,7 @@ func parseJUnit(b []byte, check, command, logID string) ([]Failure, error) {
 	line := 0
 	sawRoot := false
 	declaredFailures := 0
+	depth := 0
 	for {
 		token, e := d.Token()
 		if errors.Is(e, io.EOF) {
@@ -122,7 +123,19 @@ func parseJUnit(b []byte, check, command, logID string) ([]Failure, error) {
 		switch t := token.(type) {
 		case xml.Directive:
 			return nil, E("report-malformed", "XML directives are not supported", 1)
+		case xml.EndElement:
+			depth--
+		case xml.CharData:
+			if depth == 0 && len(bytes.TrimSpace(t)) != 0 {
+				return nil, E("report-malformed", "text outside JUnit root", 1)
+			}
 		case xml.StartElement:
+			if depth == 0 {
+				if sawRoot || (t.Name.Local != "testsuite" && t.Name.Local != "testsuites") {
+					return nil, E("report-malformed", "expected one JUnit testsuite root", 1)
+				}
+			}
+			depth++
 			attrs := map[string]string{}
 			for _, a := range t.Attr {
 				attrs[a.Name.Local] = a.Value
@@ -134,8 +147,14 @@ func parseJUnit(b []byte, check, command, logID string) ([]Failure, error) {
 					suite = attrs["name"]
 				}
 				for _, k := range []string{"failures", "errors"} {
-					if v, err := strconv.Atoi(attrs[k]); err == nil && v > declaredFailures {
-						declaredFailures = v
+					if attrs[k] != "" {
+						v, err := strconv.Atoi(attrs[k])
+						if err != nil || v < 0 {
+							return nil, E("report-malformed", "invalid JUnit failure count", 1)
+						}
+						if v > declaredFailures {
+							declaredFailures = v
+						}
 					}
 				}
 			case "testcase":
@@ -148,6 +167,7 @@ func parseJUnit(b []byte, check, command, logID string) ([]Failure, error) {
 				if e = d.DecodeElement(&body, &t); e != nil {
 					return nil, E("report-malformed", "invalid JUnit failure", 1)
 				}
+				depth--
 				identity := suite + "/" + class + "/" + test
 				message := strings.TrimSpace(attrs["message"] + "\n" + body)
 				out = append(out, Failure{ID: Hash([]byte(check + "/junit/" + identity)), Check: check, Test: identity, Command: command, Message: message, File: file, Line: line, LogID: logID})
@@ -233,11 +253,11 @@ func (s *Service) ValidateEvidence(run string, c Check) error {
 		if e != nil {
 			return e
 		}
-		root, e := os.OpenRoot(filepath.Dir(path))
+		root, e := os.OpenRoot(s.Store.Root)
 		if e != nil {
 			return e
 		}
-		f, e := root.Open(filepath.Base(path))
+		f, e := root.Open(filepath.Join("evidence", run, filepath.Base(path)))
 		root.Close()
 		if e != nil {
 			return e
@@ -307,12 +327,12 @@ func (s *Service) evidencePage(run, id string, offset int64, limit int, terminal
 	if e != nil {
 		return LogPage{}, e
 	}
-	root, e := os.OpenRoot(filepath.Dir(path))
+	root, e := os.OpenRoot(s.Store.Root)
 	if e != nil {
 		return LogPage{}, E("evidence-missing", "log evidence is unavailable", 1)
 	}
 	defer root.Close()
-	f, e := root.Open(filepath.Base(path))
+	f, e := root.Open(filepath.Join("evidence", run, filepath.Base(path)))
 	if e != nil {
 		return LogPage{}, E("evidence-missing", "log evidence is unavailable", 1)
 	}

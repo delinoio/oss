@@ -249,8 +249,11 @@ func wireFailures(in []Failure) []*pb.Failure {
 func wireState(s State) pb.ExecutionState {
 	return pb.ExecutionState(pb.ExecutionState_value["EXECUTION_STATE_"+strings.ToUpper(string(s))])
 }
-func (a *API) run(r Run) *pb.Run {
-	g := a.s.GateRun(r)
+func (a *API) run(r Run, detail bool) *pb.Run {
+	g := Gate{Reason: "open this execution to inspect evidence"}
+	if detail {
+		g = a.s.GateRun(r)
+	}
 	out := &pb.Run{Id: r.ID, Sequence: uint64(r.Sequence), RepositoryId: r.RepositoryID, WorktreeId: r.WorktreeID, Branch: r.Branch, Commit: r.Commit, State: wireState(r.State), Os: r.OS, Arch: r.Arch, CreatedAt: r.CreatedAt.Format(time.RFC3339Nano), ParentId: r.ParentID, Diagnostics: diagnostics(r.Diagnostics), GatePassed: g.Passed, GateReason: g.Reason}
 	if r.FinishedAt != nil {
 		out.FinishedAt = r.FinishedAt.Format(time.RFC3339Nano)
@@ -266,6 +269,12 @@ func (a *API) run(r Run) *pb.Run {
 		}
 		for _, report := range c.Reports {
 			v.Reports = append(v.Reports, &pb.Report{Id: report.ID, Name: report.Name, Size: uint64(report.Size)})
+		}
+		if !detail {
+			v.Diagnostics = nil
+			v.Failures = nil
+			v.Reports = nil
+			v.Command = ""
 		}
 		out.Checks = append(out.Checks, v)
 	}
@@ -355,7 +364,7 @@ func (a *API) ListRuns(_ context.Context, r *connect.Request[pb.ListRunsRequest]
 	}
 	out := &pb.ListRunsResponse{NextCursor: page.NextCursor}
 	for _, v := range page.Runs {
-		out.Runs = append(out.Runs, a.run(v))
+		out.Runs = append(out.Runs, a.run(v, false))
 	}
 	return connect.NewResponse(out), nil
 }
@@ -364,7 +373,7 @@ func (a *API) GetRun(_ context.Context, r *connect.Request[pb.GetRunRequest]) (*
 	if e != nil {
 		return nil, apiError(e)
 	}
-	return connect.NewResponse(&pb.GetRunResponse{Run: a.run(run)}), nil
+	return connect.NewResponse(&pb.GetRunResponse{Run: a.run(run, true)}), nil
 }
 func (a *API) GetLogs(_ context.Context, r *connect.Request[pb.GetLogsRequest]) (*connect.Response[pb.GetLogsResponse], error) {
 	limit := int(r.Msg.Limit)

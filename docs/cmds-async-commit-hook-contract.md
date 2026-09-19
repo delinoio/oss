@@ -33,6 +33,8 @@ Allowlisted system context plus declared inputs only. Credential references reso
 ## Logging
 Structured log/slog lifecycle events contain run/check IDs, outcomes and stable diagnostic codes. Never log credentials, pairing codes or complete environments. CLI colors honor NO_COLOR and nonterminal output.
 
+An unexpected storage/worker failure reaps its owned commands even if the database can no longer persist cancellation. Restart reconciliation retains interruption instead of replaying commands. MCP preserves the same typed error codes, including `wait-expired`, as the CLI.
+
 ## Build and Test
 `go test ./cmds/async-commit-hook/...`, race tests, six-target CGO-free builds, generated protocol checks, installer/update and lifecycle integration tests. Repository-wide Go compilation first generates the DevHud administrator embed. Real six-target machine validation is explicitly excluded by the owner.
 

@@ -224,3 +224,82 @@ func TestUpdateRecoveryAndActiveRefusal(t *testing.T) {
 		t.Fatal("original not restored")
 	}
 }
+
+func TestAgentAllAdaptersRepeatAndPreserveConflict(t *testing.T) {
+	for _, client := range []string{"codex", "claude-code", "opencode"} {
+		t.Run(client, func(t *testing.T) {
+			s, repo := fixture(t, "version=1\n")
+			installed, err := s.Agent(client, "project", repo, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = s.Agent(client, "project", repo, false); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = s.Agent(client, "project", repo, true); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = s.Agent(client, "project", repo, true); err != nil {
+				t.Fatal("repeat removal", err)
+			}
+			if _, err = s.Agent(client, "project", repo, false); err != nil {
+				t.Fatal(err)
+			}
+			b, _ := os.ReadFile(installed.Path)
+			changed := bytes.Replace(b, []byte("--config"), []byte("--user-edit"), 1)
+			os.WriteFile(installed.Path, changed, 0600)
+			if _, err = s.Agent(client, "project", repo, true); err == nil {
+				t.Fatal("removed user-edited integration")
+			}
+			after, _ := os.ReadFile(installed.Path)
+			if !bytes.Equal(after, changed) {
+				t.Fatal("conflict overwrote user data")
+			}
+		})
+	}
+}
+func TestHooksPreserveExistingAndUninstallOnlyOwned(t *testing.T) {
+	s, repo := fixture(t, "version=1\n")
+	path := filepath.Join(repo, ".git", "hooks", "post-commit")
+	original := []byte("#!/bin/sh\n# user hook\necho user\n")
+	os.MkdirAll(filepath.Dir(path), 0700)
+	if err := os.WriteFile(path, original, 0700); err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.Hook(context.Background(), repo, false, false)
+	if err != nil || result[0].Manual == "" {
+		t.Fatalf("missing manual integration: %+v %v", result, err)
+	}
+	after, _ := os.ReadFile(path)
+	if !bytes.Equal(after, original) {
+		t.Fatal("existing hook replaced")
+	}
+	os.Remove(path)
+	if _, err = s.Hook(context.Background(), repo, true, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Hook(context.Background(), repo, true, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Hook(context.Background(), repo, true, true); err != nil {
+		t.Fatal(err)
+	}
+}
+func TestEvidenceDirectorySymlinkEscape(t *testing.T) {
+	s, repo := fixture(t, "version=1\n[checks.test]\ncommand=\"echo evidence\"\n")
+	r := runFixture(t, s, repo)
+	evidenceDir := filepath.Join(s.Store.Root, "evidence", r.ID)
+	external := filepath.Join(t.TempDir(), "outside")
+	if err := os.Rename(evidenceDir, external); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(external, evidenceDir); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	if _, err := s.Logs(r.ID, "test", 0, 1024); err == nil {
+		t.Fatal("followed evidence directory outside state")
+	}
+	if s.GateRun(r).Passed {
+		t.Fatal("accepted escaped evidence")
+	}
+}

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -114,6 +115,10 @@ func (s *Service) MCP(ctx context.Context) error {
 			out := Output{SchemaVersion: 1, Result: result}
 			if err != nil {
 				out.Error = &Diagnostic{Code: "operation-failed", Message: err.Error()}
+				var typed *Error
+				if errors.As(err, &typed) {
+					out.Error = &typed.Diagnostic
+				}
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(Encode(out))}}}, out, nil
 			}
 			return nil, out, nil
