@@ -241,6 +241,7 @@ loop:
 			c.Diagnostics = append(c.Diagnostics, Diagnostic{Code: "report-malformed", Message: "declared report invalid: " + report.Path})
 		}
 		for i := range failures {
+			failures[i].ID = Hash(Encode([]string{string(report.Kind), report.Path, failures[i].ID}))
 			failures[i].Message = string(Redact([]byte(failures[i].Message), secrets))
 			failures[i].File = string(Redact([]byte(failures[i].File), secrets))
 			failures[i].Test = string(Redact([]byte(failures[i].Test), secrets))

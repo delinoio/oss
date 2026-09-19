@@ -105,7 +105,14 @@ func ParseReport(kind ReportKind, b []byte, check, command, logID string) ([]Fai
 func parseJUnit(b []byte, check, command, logID string) ([]Failure, error) {
 	d := xml.NewDecoder(bytes.NewReader(b))
 	out := []Failure{}
-	suite := ""
+	type suiteIdentity struct {
+		Kind, Name string
+		Occurrence int
+	}
+	suites := []suiteIdentity{}
+	occurrences := map[string]int{}
+	testOccurrence := 0
+	failureOccurrences := map[string]int{}
 	test := ""
 	class := ""
 	file := ""
@@ -126,6 +133,13 @@ func parseJUnit(b []byte, check, command, logID string) ([]Failure, error) {
 			return nil, E("report-malformed", "XML directives are not supported", 1)
 		case xml.EndElement:
 			depth--
+			if (t.Name.Local == "testsuite" || t.Name.Local == "testsuites") && len(suites) > 0 {
+				suites = suites[:len(suites)-1]
+			}
+			if t.Name.Local == "testcase" {
+				test, class, file, line, testOccurrence = "", "", "", 0, 0
+				failureOccurrences = map[string]int{}
+			}
 		case xml.CharData:
 			if depth == 0 && len(bytes.TrimSpace(t)) != 0 {
 				return nil, E("report-malformed", "text outside JUnit root", 1)
@@ -144,9 +158,9 @@ func parseJUnit(b []byte, check, command, logID string) ([]Failure, error) {
 			switch t.Name.Local {
 			case "testsuites", "testsuite":
 				sawRoot = true
-				if t.Name.Local == "testsuite" {
-					suite = attrs["name"]
-				}
+				key := string(Encode([]any{suites, t.Name.Local, attrs["name"]}))
+				occurrences[key]++
+				suites = append(suites, suiteIdentity{t.Name.Local, attrs["name"], occurrences[key]})
 				for _, k := range []string{"failures", "errors"} {
 					if attrs[k] != "" {
 						v, err := strconv.Atoi(attrs[k])
@@ -163,15 +177,27 @@ func parseJUnit(b []byte, check, command, logID string) ([]Failure, error) {
 				class = attrs["classname"]
 				file = attrs["file"]
 				line, _ = strconv.Atoi(attrs["line"])
+				key := string(Encode([]any{suites, "testcase", class, test}))
+				occurrences[key]++
+				testOccurrence = occurrences[key]
+				failureOccurrences = map[string]int{}
 			case "failure", "error":
 				var body string
 				if e = d.DecodeElement(&body, &t); e != nil {
 					return nil, E("report-malformed", "invalid JUnit failure", 1)
 				}
 				depth--
-				identity := suite + "/" + class + "/" + test
+				names := []string{}
+				for _, suite := range suites {
+					if suite.Name != "" {
+						names = append(names, suite.Name)
+					}
+				}
+				identity := strings.Join(append(names, class, test), "/")
+				failureOccurrences[t.Name.Local]++
+				id := Hash(Encode([]any{check, "junit", suites, class, test, testOccurrence, t.Name.Local, failureOccurrences[t.Name.Local]}))
 				message := strings.TrimSpace(attrs["message"] + "\n" + body)
-				out = append(out, Failure{ID: Hash([]byte(check + "/junit/" + identity)), Check: check, Test: identity, Command: command, Message: message, File: file, Line: line, LogID: logID})
+				out = append(out, Failure{ID: id, Check: check, Test: identity, Command: command, Message: message, File: file, Line: line, LogID: logID})
 			}
 		}
 	}
