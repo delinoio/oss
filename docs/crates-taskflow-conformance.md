@@ -38,6 +38,8 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 
 `cache_verify_rejects_misdirected_and_inconsistent_artifacts` also rejects validly encoded file records that declare descendants beneath another regular file, without restoring any output.
 
+`uncached_output_digests_are_not_limited_by_artifact_size` executes a task with an output larger than 512 MiB, confirms successful local identity tracking, and retains the artifact capture bound. Local and captured identities share the `output-state-v2` digest domain; previous payload-based digests become safe cache misses.
+
 Additional invariants include unknown/duplicate configuration rejection, schema freshness, stale/partial CI receipt rejection, required artifact accounting, cache path traversal rejection before mutation, masked stored logs, and service failure cancelling other running checks before returning.
 
 `grouped_tasks_only_receive_their_declared_secrets` passes a CI-style credential union to a real CLI run: only the declaring task receives the credential, and persisted output remains masked.

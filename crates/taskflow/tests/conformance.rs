@@ -4234,3 +4234,32 @@ fn docker_host_environment_preserves_resolved_precedence() {
         .unwrap();
     assert!(output.status.success(), "{output:?}");
 }
+
+#[tokio::test]
+async fn uncached_output_digests_are_not_limited_by_artifact_size() {
+    let directory =
+        fixture(json!({"build":{"command":command(&["version"]),"input":[],"output":["large"]}}));
+    let large = std::fs::File::create(directory.path().join("large")).unwrap();
+    large.set_len(cache::MAX_CACHE_BYTES as u64 + 1).unwrap();
+    let g = graph(directory.path()).await;
+    let result = run(g.clone(), &["build"]).await;
+    assert!(result.success, "{result:?}");
+    assert_eq!(result.results["app#build"].outcome, Outcome::Executed);
+    assert!(!result.results["app#build"].output.is_empty());
+    let project = &g.workspace.projects["app"];
+    let task = &g.tasks["app#build"].task;
+    assert!(
+        cache::Artifact::capture(files::digest(b"large"), "app#build".into(), project, task)
+            .is_err()
+    );
+    std::fs::write(directory.path().join("large"), "small").unwrap();
+    let artifact =
+        cache::Artifact::capture(files::digest(b"small"), "app#build".into(), project, task)
+            .unwrap();
+    artifact.validate_integrity(&artifact.key).unwrap();
+    assert_eq!(
+        cache::output_state(project, task).unwrap(),
+        artifact.output_digest
+    );
+    assert_ne!(result.results["app#build"].output, artifact.output_digest);
+}

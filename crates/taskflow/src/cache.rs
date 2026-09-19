@@ -1,11 +1,13 @@
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
+    io::Read,
     path::{Component, Path, PathBuf},
 };
 
 use anyhow::{bail, ensure, Context, Result};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::{config::Task, discover::Project, files};
 
@@ -116,6 +118,10 @@ pub fn validate_artifact_outputs(task: &Task) -> Result<()> {
 }
 
 pub fn snapshot(project: &Project, task: &Task) -> Result<Vec<FileRecord>> {
+    snapshot_inner(project, task, true)
+}
+
+fn snapshot_inner(project: &Project, task: &Task, capture: bool) -> Result<Vec<FileRecord>> {
     let mut entries = vec![];
     let mut total = 0;
     for anchor in anchors(task)? {
@@ -140,12 +146,37 @@ pub fn snapshot(project: &Project, task: &Task) -> Result<Vec<FileRecord>> {
             } else if entry.file_type().is_dir() {
                 Content::Directory
             } else if entry.file_type().is_file() {
-                let bytes = std::fs::read(path)?;
-                total += bytes.len();
-                ensure!(
-                    total <= MAX_CACHE_BYTES,
-                    "task outputs exceed cache size limit"
-                );
+                let (digest, data) = if capture {
+                    ensure!(
+                        entry.metadata()?.len() <= (MAX_CACHE_BYTES - total) as u64,
+                        "task outputs exceed cache size limit"
+                    );
+                    let mut bytes = Vec::new();
+                    std::fs::File::open(path)?
+                        .take((MAX_CACHE_BYTES - total) as u64 + 1)
+                        .read_to_end(&mut bytes)?;
+                    total += bytes.len();
+                    ensure!(
+                        total <= MAX_CACHE_BYTES,
+                        "task outputs exceed cache size limit"
+                    );
+                    (
+                        files::digest(&bytes),
+                        base64::engine::general_purpose::STANDARD.encode(bytes),
+                    )
+                } else {
+                    let mut reader = std::fs::File::open(path)?;
+                    let mut hash = Sha256::new();
+                    let mut buffer = [0; 64 * 1024];
+                    loop {
+                        let count = reader.read(&mut buffer)?;
+                        if count == 0 {
+                            break;
+                        }
+                        hash.update(&buffer[..count]);
+                    }
+                    (format!("{:x}", hash.finalize()), String::new())
+                };
                 #[cfg(unix)]
                 let executable = {
                     use std::os::unix::fs::PermissionsExt;
@@ -154,8 +185,8 @@ pub fn snapshot(project: &Project, task: &Task) -> Result<Vec<FileRecord>> {
                 #[cfg(not(unix))]
                 let executable = false;
                 Content::File {
-                    digest: files::digest(&bytes),
-                    data: base64::engine::general_purpose::STANDARD.encode(bytes),
+                    digest,
+                    data,
                     executable,
                 }
             } else {
@@ -186,10 +217,42 @@ fn link_is_directory(path: &Path) -> Result<bool> {
     }
 }
 pub fn output_digest(entries: &[FileRecord]) -> Result<String> {
-    Ok(files::digest(&serde_json::to_vec(entries)?))
+    // Output identity is independent of the transfer encoding and its size
+    // limit. Version the digest domain so older payload-based identities miss
+    // safely; integrity validation separately verifies every encoded file.
+    #[derive(Serialize)]
+    #[serde(tag = "type", rename_all = "kebab-case")]
+    enum Identity<'a> {
+        File { digest: &'a str, executable: bool },
+        Directory,
+        Link { target: &'a str, directory: bool },
+    }
+    let identities: Vec<_> = entries
+        .iter()
+        .map(|entry| {
+            let identity = match &entry.content {
+                Content::File {
+                    digest, executable, ..
+                } => Identity::File {
+                    digest,
+                    executable: *executable,
+                },
+                Content::Directory => Identity::Directory,
+                Content::Link { target, directory } => Identity::Link {
+                    target,
+                    directory: *directory,
+                },
+            };
+            (&entry.path, identity)
+        })
+        .collect();
+    Ok(files::digest(&serde_json::to_vec(&(
+        "output-state-v2",
+        identities,
+    ))?))
 }
 pub fn output_state(project: &Project, task: &Task) -> Result<String> {
-    output_digest(&snapshot(project, task)?)
+    output_digest(&snapshot_inner(project, task, false)?)
 }
 
 impl Artifact {

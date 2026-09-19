@@ -9,6 +9,7 @@
 - Validate every affected-mode task filter before intersecting it with changes; a typo must fail even for an empty affected set.
 - Never collapse direct/input/schedule causes into a prerequisite cause. Cancellation and invalidation prohibit cache publication.
 - Before staging artifact contents, probe every path prefix on the destination filesystem to reject case/Unicode aliases and unsupported names without mutating outputs.
+- Local output hashing streams file content without artifact transfer limits; version its digest domain independently of encoded payloads. Capture and transport remain bounded.
 - Output restoration must validate the complete entry and containment before mutation. Secrets must be masked before persistence.
 - Validate both CI export destinations through existing filesystem ancestors before writing either workflow or blueprint.
 - CI bundle validation verifies intrinsic artifact integrity even for terminal outputs that no downstream job restores.
