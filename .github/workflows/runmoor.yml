@@ -45,7 +45,7 @@ jobs:
         run: go test -run TestDockerIntegration -v -timeout 10m ./cmds/runmoor/internal/runmoor
       - name: Save Go cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: ${{ steps.ci-go.outputs.cache-path }}
           key: ${{ steps.ci-go.outputs.cache-key }}

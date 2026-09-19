@@ -108,7 +108,7 @@ test("caches restore on PRs and save only after successful main validation", () 
       for (const kind of ["node", "go"]) {
         const setup = job.steps.find(({ uses }) => uses === `./.github/actions/setup-ci-${kind}`);
         if (!setup) continue;
-        const save = job.steps.find(({ with: inputs, uses }) => uses === "actions/cache/save@v4" && inputs.key.includes(`ci-${kind}`));
+        const save = job.steps.find(({ with: inputs, uses }) => uses === "actions/cache/save@v5" && inputs.key.includes(`ci-${kind}`));
         assert.ok(save, `${id}: ${kind}`);
         assert.match(save.if, /success\(\) && github.ref == 'refs\/heads\/main'/u);
         assert.ok(job.steps.indexOf(save) > job.steps.indexOf(setup));
@@ -122,8 +122,8 @@ test("caches restore on PRs and save only after successful main validation", () 
   assert.ok(!workflow.jobs["rust-fmt"].steps.some(({ uses }) => uses?.includes("cache")));
   for (const kind of ["node", "go"]) {
     const action = load(readFileSync(`${root}/.github/actions/setup-ci-${kind}/action.yml`, "utf8"));
-    assert.ok(!action.runs.steps.some(({ uses }) => uses === "actions/cache/save@v4"));
-    const cache = action.runs.steps.find(({ uses }) => uses === "actions/cache/restore@v4");
+    assert.ok(!action.runs.steps.some(({ uses }) => uses === "actions/cache/save@v5"));
+    const cache = action.runs.steps.find(({ uses }) => uses === "actions/cache/restore@v5");
     for (const marker of ["runner.os", "runner.arch", "hashFiles", kind === "node" ? "node-version" : "go-version"]) assert.ok(cache.with.key.includes(marker), marker);
     const setup = action.runs.steps.find(({ uses }) => uses?.startsWith(`actions/setup-${kind}@`));
     assert.equal(setup.with[kind === "node" ? "package-manager-cache" : "cache"], false);

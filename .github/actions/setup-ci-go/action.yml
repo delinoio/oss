@@ -27,7 +27,7 @@ runs:
           go env GOMODCACHE GOCACHE
           echo 'CI_GO_CACHE_PATHS'
         } >> "$GITHUB_OUTPUT"
-    - uses: actions/cache/restore@v4
+    - uses: actions/cache/restore@v5
       id: restore
       with:
         path: ${{ steps.paths.outputs.paths }}
