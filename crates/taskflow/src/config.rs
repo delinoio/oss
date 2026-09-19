@@ -580,7 +580,7 @@ pub fn validate_command(command: &Command) -> Result<()> {
 // configuration cannot change ownership when exported to a different operating
 // system.
 fn project_relative(path: &str) -> bool {
-    !path.starts_with(['/', '\\'])
-        && !(path.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
+    !(path.starts_with(['/', '\\'])
+        || path.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
             && path.as_bytes().get(1) == Some(&b':'))
 }
