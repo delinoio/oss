@@ -555,6 +555,34 @@ fn historical_baseline_errors_do_not_become_current_exit_codes() {
     }
 }
 #[test]
+fn comparison_distinguishes_linux_distributions_with_equal_versions() {
+    let root = repository("read");
+    assert!(run(root.path(), "record.json", "read").status.success());
+    let mut left = runlens::report::read(&root.path().join("record.json")).unwrap();
+    left.executions[0].environment.os = "linux".into();
+    left.executions[0].environment.os_version = Some("ubuntu:22.04".into());
+    let mut right = left.clone();
+    assert!(runlens::analysis::compatible(
+        &left.executions[0],
+        &right.executions[0]
+    ));
+    right.executions[0].environment.os_version = Some("pop:22.04".into());
+    assert_eq!(
+        runlens::analysis::compare(&left, &right, &[])
+            .unwrap()
+            .verdict,
+        Some(runlens::model::Verdict::Inconclusive)
+    );
+    for version in [Some("22.04".into()), None, Some("ubuntu:".into())] {
+        left.executions[0].environment.os_version = version.clone();
+        right.executions[0].environment.os_version = version;
+        assert!(!runlens::analysis::compatible(
+            &left.executions[0],
+            &right.executions[0]
+        ));
+    }
+}
+#[test]
 fn preparation_obeys_global_policy_boundaries_in_clean_and_repeat() {
     let root = repository("read");
     fs::write(root.path().join("private.txt"), "private").unwrap();

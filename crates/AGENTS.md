@@ -158,6 +158,7 @@
 - Deserialize evidence under the shared process memory budget before spilling; do not force every small report map to allocate its own file handles.
 - Preflight conflict analysis against the aggregate limit of 65,536 cross-report target pairs before inspecting paths or creating findings; preparation executions do not count.
 - Comparison compatibility includes source revision and working-tree inclusion policy; identical observed bytes cannot make different source selections comparable.
+- Linux OS identity includes distribution ID and VERSION_ID; legacy version-only, missing, or malformed identities cannot establish comparison compatibility.
 - Selected environment names cannot prove equality of omitted values. Keep their report comparisons inconclusive without persisting values or guessable value hashes.
 - Clean environment selection must reject reserved Git controls case-insensitively on Windows so casing cannot escape fresh checkout/configuration isolation.
 - Retain the inspected executable handle through snapshots and revalidate pathname identity at the launch boundary; a stale digest must never certify a replacement executable.

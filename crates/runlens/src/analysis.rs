@@ -461,6 +461,8 @@ pub fn compatible(left: &Execution, right: &Execution) -> bool {
         && left.environment.executable_sha256.is_some()
         && left.environment.executable_sha256 == right.environment.executable_sha256
         && left.environment.os_version.is_some()
+        && (left.environment.os != "linux"
+            || left.environment.os_version.as_deref().is_some_and(crate::platform::known_linux_identity))
         && !left
             .command
             .argv

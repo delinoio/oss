@@ -126,11 +126,13 @@ pub fn os_version() -> Option<String> {
     }
     #[cfg(target_os = "linux")]
     {
-        let text = std::fs::read_to_string("/etc/os-release").ok()?;
-        text.lines().find_map(|line| {
-            line.strip_prefix("VERSION_ID=")
-                .map(|s| s.trim_matches('"').to_owned())
-        })
+        let mut text = String::new();
+        std::fs::File::open("/etc/os-release")
+            .ok()?
+            .take(65537)
+            .read_to_string(&mut text)
+            .ok()?;
+        linux_os_identity(&text)
     }
     #[cfg(target_os = "windows")]
     {
@@ -165,6 +167,80 @@ pub fn os_version() -> Option<String> {
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         None
+    }
+}
+pub(crate) fn known_linux_identity(value: &str) -> bool {
+    value.split_once(':').is_some_and(|(id, version)| {
+        !id.is_empty()
+            && id.len() <= 128
+            && id
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b))
+            && !version.is_empty()
+            && version.len() <= 128
+            && version
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"._-~^+".contains(&b))
+    })
+}
+#[cfg(any(target_os = "linux", test))]
+fn linux_os_identity(text: &str) -> Option<String> {
+    if text.len() > 65536 {
+        return None;
+    }
+    let mut id = None;
+    let mut version = None;
+    for line in text.lines() {
+        let Some((key, raw)) = line.trim().split_once('=') else {
+            continue;
+        };
+        let slot = match key {
+            "ID" => &mut id,
+            "VERSION_ID" => &mut version,
+            _ => continue,
+        };
+        if slot.is_some() {
+            return None;
+        }
+        let value = raw
+            .strip_prefix('"')
+            .and_then(|s| s.strip_suffix('"'))
+            .or_else(|| raw.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
+            .unwrap_or(raw);
+        *slot = Some(value);
+    }
+    let identity = format!("{}:{}", id?, version?);
+    known_linux_identity(&identity).then_some(identity)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn linux_identity_requires_distribution_and_version_without_shell_evaluation() {
+        assert_eq!(
+            linux_os_identity("ID=ubuntu\nVERSION_ID=\"22.04\"\n").as_deref(),
+            Some("ubuntu:22.04")
+        );
+        assert_eq!(
+            linux_os_identity("ID='pop'\nVERSION_ID='22.04'\n").as_deref(),
+            Some("pop:22.04")
+        );
+        for input in [
+            "VERSION_ID=22.04",
+            "ID=ubuntu",
+            "ID=\nVERSION_ID=22.04",
+            "ID=ubuntu\nVERSION_ID=",
+            "ID=ubuntu\nID=pop\nVERSION_ID=22.04",
+            "ID=ubuntu\nVERSION_ID=$(echo 22.04)",
+            "ID=ubuntu\nVERSION_ID=\"22.04",
+            "ID=evil:ubuntu\nVERSION_ID=22.04",
+        ] {
+            assert!(linux_os_identity(input).is_none(), "{input}");
+        }
+        assert!(linux_os_identity(&" ".repeat(65537)).is_none());
+        assert!(!known_linux_identity("22.04"));
     }
 }
 pub fn resolve(program: &str, env: &[(OsString, OsString)], cwd: &Path) -> Result<PathBuf> {

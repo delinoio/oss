@@ -416,7 +416,10 @@ where the temporary-file persistence API cannot overwrite an open destination;
 the extra rename can be removed when that API supports open-file replacement.
 Comparison requires known matching executable identity and OS metadata,
 equal source revision metadata, and the same working-tree inclusion policy;
-redacted arguments cannot establish equivalence. Selected environment names do not
+redacted arguments cannot establish equivalence. Linux OS metadata includes
+`ID:VERSION_ID` from os-release. Missing, malformed, or legacy version-only Linux
+identities cannot establish compatibility, even when equal. OS identity parsing
+never evaluates shell expressions. Selected environment names do not
 establish equality of omitted values. Any selected names make report environment
 comparison inconclusive, including repeat-output compatibility; no environment
 value or value hash is persisted to work around this privacy boundary.

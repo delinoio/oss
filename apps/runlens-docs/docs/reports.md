@@ -27,6 +27,10 @@ One JSON report format covers `run`, `clean`, and `repeat`. It includes:
 - Separate child exit/signal information, collection status, typed errors, and elapsed time.
 - Findings with classifications and evidence references, verification outcome when applicable, and limitations.
 
+Linux `os_version` includes the distribution and version as `ID:VERSION_ID`, such
+as `ubuntu:22.04`. Missing or legacy version-only metadata makes comparisons
+inconclusive; equal version numbers alone do not establish the same environment.
+
 A path/access-mode pair records an **attempt**. It does not establish a successful read, syscall result, exact process identity, timeline, or causal dependency. A snapshot records filesystem state; comparing known states can establish a change. Missing, unreadable, unstable, excluded, or out-of-scope evidence is not an empty file.
 
 Snapshots include Git-ignored paths and exclude Git internals, execution-owned temporary material, and explicit exclusions. Outside this scope, accesses do not imply complete before/after coverage.
