@@ -16,7 +16,7 @@
 - Run `git commit` only after `git add`; once files are staged, commit without unnecessary delay so staged changes are preserved in history.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
 - Root `pnpm install` must install Lefthook in linked worktrees when the effective `core.hooksPath` resolves to Git's shared common-directory hooks path, preserve Lefthook's protective failure for unrelated custom hook paths, and skip hook installation without blocking app preparation when Git metadata is unavailable.
-- Root `pnpm dev` is the DevHud team workflow. Root documentation development uses `pnpm dev:public-docs`, `pnpm dev:nodeup-docs`, or `pnpm dev:binpm-docs`; every root and package-local development command must use the app-owned fixed ports documented in `apps/AGENTS.md` and fail on conflicts instead of automatically remapping a server.
+- Root `pnpm dev` is the DevHud team workflow. Root documentation development uses `pnpm dev:public-docs`, `pnpm dev:nodeup-docs`, `pnpm dev:binpm-docs`, or `pnpm dev:runmoor-docs`; every root and package-local development command must use the app-owned fixed ports documented in `apps/AGENTS.md` and fail on conflicts instead of automatically remapping a server.
 - `docs/repository-environment-contract.md` is the source of truth for environment ownership. Root development orchestration may pass only the bounded `DEVHUD_LOCAL_MODE` selector, optional non-secret `CARGO_HOME` and `RUSTUP_HOME` tool locations, and platform-conditional Linux X11/XWayland `DISPLAY`, `XAUTHORITY`, and per-user `XDG_RUNTIME_DIR` session/runtime context through Turbo's exact task environment allowlist; team values are injected and validated only by their owning service wrapper, whose loopback HTTP validation must reject numeric IPv4 spellings not accepted by Go and whose public asset-base validation must inspect the raw path before WHATWG normalization. Exact API/administrator issuer parity must be proved before migration and pinned through migration plus the API, administrator, and frontend Turbo launches without writing a raw value; the frontend wrapper may receive only that validated public issuer and may use only its origin in the fixed development CSP. OSS mode must never invoke Infisical. Team startup is non-interactive and exclusive while that private comparison pin exists, checkout identity material is published atomically, and every preflight, startup, or cleanup child run under installed root signal handlers must be lifecycle-tracked. Windows process-tree termination utilities receive only minimal system lookup context, never validated service configuration. Docker children may additionally inherit only `DOCKER_HOST` and `DOCKER_CONTEXT`, but OSS startup must reject effective remote daemon endpoints before Compose startup. OSS startup is exclusive per checkout through cleanup, and an idempotent one-shot database step must repair missing Logto database creation in preserved PostgreSQL volumes before Logto seeding. Environment tests must inject temporary generated state and an external temporary Infisical config directory, and must never replace checkout identity or project-binding material.
 - Keep `.infisical.json`, `.dev-environment/`, real `.env` files, user credentials, and production/release/signing credentials uncommitted. Service-local `.env.example` files contain names, validation guidance, placeholders, and safe loopback defaults only; do not add a root environment example or expose internal secret paths in public product docs.
 - After addressing pull request review comments and pushing updates, mark the corresponding review threads as resolved.
@@ -74,6 +74,7 @@
 - `docs/crates-rustia-macros-foundation.md`: Rustia macros derive contract.
 - `docs/cmds-ttl-language-contract.md`: TTL language syntax/type/invalidation/code-generation contract.
 - `docs/apps-nodeup-docs-foundation.md`: Nodeup Rspress documentation app, route, validation, and Cloudflare Pages deployment contract.
+- `docs/apps-runmoor-docs-foundation.md`: Runmoor Rspress documentation app, route migration, fixed-port validation, and Cloudflare Pages deployment contract.
 
 ### Project Identifier Contract
 
@@ -103,7 +104,7 @@ enum ProjectId {
 - `binpm` -> `crates/binpm`, `apps/binpm-docs`
 - `with-watch` -> `crates/with-watch`
 - `cargo-mono` -> `crates/cargo-mono`
-- `runmoor` -> `cmds/runmoor`, public `/runmoor` documentation in `apps/public-docs`
+- `runmoor` -> `cmds/runmoor`, `apps/runmoor-docs`
 - `derun` -> `cmds/derun`
 - `ttl` -> `cmds/ttlc`
 - `mpapp` -> `apps/mpapp`
@@ -354,6 +355,7 @@ Coverage expectations:
 - `node-mpapp-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter mpapp test`.
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter mpapp lint`.
 - `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter binpm-docs test`.
+- `node-runmoor-docs-test`: validates the standalone Runmoor routes with one frozen install using `--ignore-scripts`, the shared change plan, and its exact Turbo comparison; it participates in `ci-result` and saves caches only after successful main validation.
 - `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter nodeup-docs test`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`.
 - `ci-contracts`: validates workflow syntax and the repository CI contract with the checked-in Go `actionlint` tool and Node fixtures.
@@ -438,6 +440,8 @@ Release automation baseline:
 - Development uses frontend 46308 and local API 46309 with conflict failure; root DevHud development remains unchanged.
 
 ### Runmoor Contract
+
+- Public Runmoor documentation is owned by `apps/runmoor-docs` at `https://runmoor.delino.io`; follow `docs/apps-runmoor-docs-foundation.md`. The former `public-docs` `/runmoor` and child routes are removed without handoff pages or redirects. Keep all public discovery links pointed at the standalone site.
 
 - Follow `docs/project-runmoor.md`, `docs/cmds-runmoor-foundation.md`, and `cmds/runmoor/AGENTS.md` for issue #893. Runmoor owns local ephemeral GitHub Actions runners through Docker and Tart, with host-only credentials, durable ownership, fair resource budgets, and single-job disposable environments.
 - Initial Runmoor binaries are preview prereleases for darwin-arm64, linux-amd64, and linux-arm64 under `runmoor@v<MAJOR.MINOR.PATCH>`; publication dry runs are credential-free and non-publishing. No Homebrew distribution is added.
