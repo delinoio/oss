@@ -124,14 +124,13 @@ pub fn validate(report: &Report) -> Result<()> {
             for item in states.iter() {
                 let (path, state) = item?;
                 valid_path(&path)?;
-                if let Some(hash) = state.sha256.as_ref() {
-                    if hash.len() != 64
+                if let Some(hash) = state.sha256.as_ref()
+                    && (hash.len() != 64
                         || !hash
                             .bytes()
-                            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-                    {
-                        return Err(Error::input("invalid content digest"));
-                    }
+                            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+                {
+                    return Err(Error::input("invalid content digest"));
                 }
                 if state.knowledge == Knowledge::Known && state.kind.is_none()
                     || state.knowledge == Knowledge::Unknown && state.reason.is_none()
@@ -154,10 +153,37 @@ pub fn validate(report: &Report) -> Result<()> {
             }
         }
         for change in execution.changes.iter() {
-            let (path, _) = change?;
-            if execution.before.get(&path)?.is_none() && execution.after.get(&path)?.is_none() {
+            let (path, change) = change?;
+            let before = execution.before.get(&path)?;
+            let after = execution.after.get(&path)?;
+            if before.is_none() && after.is_none() {
                 return Err(Error::input("change refers to missing snapshot evidence"));
             }
+            let absent = |complete| {
+                if complete {
+                    FileState::missing()
+                } else {
+                    FileState::unknown(ObservationIssue::CollectionLimit)
+                }
+            };
+            let expected = crate::snapshot::difference(
+                &before.unwrap_or_else(|| absent(execution.scope.before_complete)),
+                &after.unwrap_or_else(|| absent(execution.scope.after_complete)),
+            );
+            if expected != Some(change) {
+                return Err(Error::input(
+                    "change classification contradicts its snapshots",
+                ));
+            }
+        }
+        if execution.outcome.collection_complete
+            && (!execution.scope.before_complete
+                || !execution.scope.after_complete
+                || execution.scope.redacted_paths)
+        {
+            return Err(Error::input(
+                "incomplete snapshot scope cannot have a complete outcome",
+            ));
         }
     }
     if report.targets().next().is_none() && report.verification == Some(Verdict::Passed) {
@@ -176,6 +202,16 @@ pub fn validate(report: &Report) -> Result<()> {
         let (_, finding) = item?;
         if finding.evidence.is_empty() || finding.evidence.len() > 32 {
             return Err(Error::input("finding evidence is invalid"));
+        }
+        if report.verification == Some(Verdict::Passed)
+            && matches!(
+                finding.classification,
+                Classification::Unknown | Classification::Violation
+            )
+        {
+            return Err(Error::input(
+                "unknown or violated evidence cannot pass verification",
+            ));
         }
         for reference in &finding.evidence {
             let execution = report

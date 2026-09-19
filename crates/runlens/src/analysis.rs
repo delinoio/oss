@@ -449,9 +449,21 @@ pub fn compare(left: &Report, right: &Report, mappings: &[PathMap]) -> Result<An
                 ],
             )?;
         }
-        for (label, left_states, right_states) in [
-            ("before", &left.before, &right.before),
-            ("after", &left.after, &right.after),
+        for (label, left_states, right_states, left_complete, right_complete) in [
+            (
+                "before",
+                &left.before,
+                &right.before,
+                left.scope.before_complete,
+                right.scope.before_complete,
+            ),
+            (
+                "after",
+                &left.after,
+                &right.after,
+                left.scope.after_complete,
+                right.scope.after_complete,
+            ),
         ] {
             let mut remapped = Entries::default();
             for entry in right_states.iter() {
@@ -464,7 +476,9 @@ pub fn compare(left: &Report, right: &Report, mappings: &[PathMap]) -> Result<An
             }
             for entry in left_states.iter() {
                 let (path, before) = entry?;
-                let after = remapped.get(&path)?.unwrap_or_else(FileState::missing);
+                let after = remapped
+                    .get(&path)?
+                    .unwrap_or_else(|| absent_state(right_complete));
                 if let Some(change) = snapshot::difference(&before, &after) {
                     result.differences.insert(
                         format!("{}:{label}:{path}", left.id),
@@ -480,7 +494,7 @@ pub fn compare(left: &Report, right: &Report, mappings: &[PathMap]) -> Result<An
             for entry in remapped.iter() {
                 let (path, after) = entry?;
                 if left_states.get(&path)?.is_none() {
-                    let before = FileState::missing();
+                    let before = absent_state(left_complete);
                     let change =
                         snapshot::difference(&before, &after).unwrap_or(ChangeKind::Unknown);
                     result.differences.insert(
@@ -496,8 +510,10 @@ pub fn compare(left: &Report, right: &Report, mappings: &[PathMap]) -> Result<An
             }
         }
         let mut mapped_accesses = Entries::default();
+        let mut original_paths = Entries::default();
         for item in right.accesses.iter() {
             let (path, access) = item?;
+            original_paths.insert(mapped(&path, mappings), path.clone())?;
             if !mapped_accesses.insert(mapped(&path, mappings), access)? {
                 return Err(Error::input(
                     "path mapping creates ambiguous duplicate paths",
@@ -517,10 +533,7 @@ pub fn compare(left: &Report, right: &Report, mappings: &[PathMap]) -> Result<An
         for item in mapped_accesses.iter() {
             let (path, access) = item?;
             if left.accesses.get(&path)?.as_ref() != Some(&access) {
-                let original = right.accesses.iter().find_map(|item| match item {
-                    Ok((p, _)) if mapped(&p, mappings) == path => Some(p),
-                    _ => None,
-                });
+                let original: Option<String> = original_paths.get(&path)?;
                 result.finding(
                     FindingCode::NewAccess,
                     Classification::Observed,
@@ -796,4 +809,12 @@ pub fn repeated_outputs(report: &Report, outputs: &[String]) -> Result<Analysis>
     }
     result.finish()?;
     Ok(result)
+}
+
+fn absent_state(complete: bool) -> FileState {
+    if complete {
+        FileState::missing()
+    } else {
+        FileState::unknown(ObservationIssue::CollectionLimit)
+    }
 }

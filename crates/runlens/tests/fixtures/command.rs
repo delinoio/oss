@@ -28,6 +28,11 @@ fn main() {
             std::process::exit(status.code().unwrap_or(1));
         }
         "linger" => {
+            #[allow(
+                clippy::zombie_processes,
+                reason = "the fixture deliberately leaves a child for Runlens process-group \
+                          reaping"
+            )]
             let _child = Command::new(std::env::current_exe().unwrap())
                 .arg("sleep")
                 .spawn()

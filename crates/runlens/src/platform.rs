@@ -272,7 +272,9 @@ fn inspect_executable(program: &Path, depth: usize) -> Result<()> {
         let fat = bytes.len() >= 8
             && bytes[..4] == [0xca, 0xfe, 0xba, 0xbe]
             && bytes[8..]
-                .chunks_exact(20)
+                .as_chunks::<20>()
+                .0
+                .iter()
                 .take(u32::from_be_bytes(bytes[4..8].try_into().unwrap()) as usize)
                 .any(|b| u32::from_be_bytes(b[..4].try_into().unwrap()) == machine);
         if !thin && !fat {

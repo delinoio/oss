@@ -47,7 +47,6 @@ pub fn take(
     };
     let walker = walkdir::WalkDir::new(root)
         .follow_links(false)
-        .sort_by_file_name()
         .into_iter()
         .filter_entry(|entry| !excluded(entry.path(), root, &matcher, temporary));
     for entry in walker {
@@ -74,7 +73,7 @@ pub fn take(
         }
         let path = entry.path();
         let key = redactor.path(path);
-        let state = inspect(path, root, &matcher, temporary, redactor);
+        let state = inspect(path, root, &matcher, temporary, redactor, limits, cancelled);
         result.complete &= state.knowledge != Knowledge::Unknown;
         result.bytes += key.len() as u64
             + serde_json::to_vec(&state)
@@ -108,8 +107,12 @@ fn inspect(
     exclusions: &globset::GlobSet,
     temporary: &[PathBuf],
     redactor: &Redactor,
+    limits: &Limits,
+    cancelled: &tokio_util::sync::CancellationToken,
 ) -> FileState {
-    match inspect_inner(path, root, exclusions, temporary, redactor) {
+    match inspect_inner(
+        path, root, exclusions, temporary, redactor, limits, cancelled,
+    ) {
         Ok(state) => state,
         Err(error) => FileState::unknown(if error.kind() == std::io::ErrorKind::PermissionDenied {
             ObservationIssue::PermissionDenied
@@ -124,6 +127,8 @@ fn inspect_inner(
     exclusions: &globset::GlobSet,
     temporary: &[PathBuf],
     redactor: &Redactor,
+    limits: &Limits,
+    cancelled: &tokio_util::sync::CancellationToken,
 ) -> std::io::Result<FileState> {
     let before = fs::symlink_metadata(path)?;
     if path.to_str().is_none() {
@@ -170,6 +175,9 @@ fn inspect_inner(
         let mut digest = Sha256::new();
         let mut buffer = [0u8; 65536];
         loop {
+            if cancelled.is_cancelled() {
+                return Ok(FileState::unknown(ObservationIssue::Cancelled));
+            }
             let count = file.read(&mut buffer)?;
             if count == 0 {
                 break;
@@ -183,8 +191,15 @@ fn inspect_inner(
     } else if before.is_dir() {
         state.kind = Some(FileKind::Directory);
         // Membership sorting spills through the same bounded metadata abstraction.
-        let mut names: Entries<bool> = Entries::new(1024 * 1024);
+        let mut names: Entries<bool> = Entries::new(limits.memory_bytes / 8);
+        let mut bytes = 0u64;
         for entry in fs::read_dir(path)? {
+            if cancelled.is_cancelled() {
+                return Ok(FileState::unknown(ObservationIssue::Cancelled));
+            }
+            if names.len() >= limits.max_paths || bytes >= limits.total_bytes / 3 {
+                return Ok(FileState::unknown(ObservationIssue::CollectionLimit));
+            }
             let entry = entry?;
             if excluded(&entry.path(), root, exclusions, temporary) {
                 continue;
@@ -192,6 +207,7 @@ fn inspect_inner(
             let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
                 return Ok(FileState::unknown(ObservationIssue::NonUnicode));
             };
+            bytes += name.len() as u64;
             names
                 .insert(name, true)
                 .map_err(|_| std::io::Error::other("directory observation failed"))?;

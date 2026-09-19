@@ -13,3 +13,10 @@ Base: vite-task `13aa80a0dac698023ce68ba16497b16e5330600b`, MIT (see UPSTREAM-LI
 | External path extraction | Expose an owned path using upstream Windows namespace normalization, retaining observations outside snapshot scope. | Path, external access and Windows fixtures | Upstream provides an equivalent all-path API. |
 
 These changes do not add event timelines, syscall-success claims, a PTY, a service manager, privileged tracing, or a security sandbox. A source build is not platform certification; release validation consumes actual native evidence for each exact artifact.
+
+The collection-loss close bit preserves the committed frame count with an atomic
+OR. Replacing the count with only the close flag loses partial evidence when the
+bounded buffer fills. `cache_policy_and_collection_overflow_are_fail_closed` in
+`tests/native.rs` covers continued child execution, retained accesses, and a failed
+verification outcome. Remove this patch only when the upstream reader/writer
+protocol preserves committed records on collection loss.

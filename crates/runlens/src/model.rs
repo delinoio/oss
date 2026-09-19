@@ -112,6 +112,7 @@ pub enum Classification {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Evidence {
+    #[serde(deserialize_with = "uuid_v7")]
     pub execution_id: Uuid,
     pub path: Option<String>,
     pub source: EvidenceSource,
@@ -196,6 +197,7 @@ impl Outcome {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Execution {
+    #[serde(deserialize_with = "uuid_v7")]
     pub id: Uuid,
     pub role: Role,
     pub repetition: u32,
@@ -253,4 +255,15 @@ impl Report {
             .iter()
             .filter(|execution| execution.role == Role::Target)
     }
+}
+
+fn uuid_v7<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Uuid, D::Error> {
+    let value = String::deserialize(deserializer)?;
+    let id = Uuid::parse_str(&value).map_err(serde::de::Error::custom)?;
+    if id.get_version_num() != 7 || id.to_string() != value {
+        return Err(serde::de::Error::custom(
+            "expected canonical lowercase UUID v7",
+        ));
+    }
+    Ok(id)
 }

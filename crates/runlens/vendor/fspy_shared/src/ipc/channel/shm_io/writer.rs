@@ -94,7 +94,8 @@ impl<M: AsRawSlice> ShmWriter<M> {
         // cleared count reads the gate along with it, so it gives up
         // before using a slot index.
         let report_loss = || {
-            mapped.claims().store(CLOSED, Ordering::Relaxed);
+            // Runlens retains the admitted count so committed partial evidence survives.
+            mapped.claims().fetch_or(CLOSED, Ordering::Relaxed);
             ClaimError::Capacity
         };
 

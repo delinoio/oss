@@ -233,7 +233,7 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
         after.complete,
     )?;
     let redacted_paths = redactor.path_redacted.load(Ordering::Relaxed);
-    let execution = Execution {
+    let mut execution = Execution {
         id,
         role: request.role,
         repetition: request.repetition,
@@ -283,13 +283,11 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
             elapsed_ms: started.elapsed().as_millis().min(u64::MAX as u128) as u64,
         },
     };
-    owned.close().map_err(|_| {
-        Error::new(
-            ErrorCode::CleanupFailed,
-            "execution temporary files could not be removed; inspect the runlens-prefixed \
-             directory in the OS temporary directory",
-        )
-    })?;
+    if owned.close().is_err() {
+        execution.outcome.collection_complete = false;
+        execution.outcome.errors.push(ErrorCode::CleanupFailed);
+        tracing::error!(execution_id=%id,stage="cleanup",code="cleanup-failed","private execution directory cleanup failed");
+    }
     tracing::info!(execution_id=%id,stage="complete",elapsed_ms=execution.outcome.elapsed_ms,"execution evidence ready");
     Ok(execution)
 }

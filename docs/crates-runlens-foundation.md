@@ -316,3 +316,41 @@ Runtime, report, CLI, source selection, privacy, target, or distribution changes
 - [Project](project-runlens.md)
 - [Repository defaults](repository-defaults.md)
 - [Issue #907](https://github.com/delinoio/oss/issues/907)
+
+## Implemented observation and validation boundaries
+
+The product crate owns `config`, `platform`, `execute`, `snapshot`, `entries`,
+`privacy`, `model`, `report`, `analysis`, and `clean`. The executable is an argv-only
+adapter over those modules. Read-only analysis consumes explicit schema-v1 reports
+and never resolves or invokes their recorded commands. UUID-v7 strings must use
+canonical lowercase spelling. Access evidence records attempted modes; snapshots
+and derived change classifications remain separate and the report reader checks
+that every supplied change agrees with its referenced before/after states.
+
+Snapshot enumeration includes ignored files and never follows directory symlinks.
+Ordered metadata indexes replace unbounded directory sorting. File hashing checks
+identity before and after streaming reads and observes cancellation between chunks.
+Permission errors, unstable observations, unsupported objects, exhausted collection
+budgets, and incomplete opposite snapshots preserve unknown state. Raw backend
+collection is private and bounded before target execution starts. Overflow closes
+the shared writer while retaining the committed prefix; it cannot certify success.
+Temporary execution-directory cleanup failures retain the execution evidence with
+a `cleanup-failed` outcome instead of discarding the already observed command.
+
+Local validation from the independent workspace is:
+
+```sh
+cargo fmt --package runlens --check
+cargo clippy --locked --package runlens --all-targets --features test-support --no-deps -- -D warnings
+cargo test --locked --features test-support
+```
+
+`--no-deps` restricts the product Clippy policy to product sources; upstream
+expectations and its separate lint configuration are not rewritten as product
+policy. The test-support feature builds an explicit native fixture executable,
+never an installed product command. Native integration tests exercise subprocess
+tracing, ignored output receipts, command failure, timeout, cancellation, lingering
+children, finite stdin forwarding, clean/repeat source isolation, privacy canaries,
+explicit persistence, offline analysis/export, overflow, and protected macOS tools.
+Linux native CI additionally compiles and executes a static musl child on the
+glibc host to verify seccomp coverage; cross compilation cannot satisfy that test.

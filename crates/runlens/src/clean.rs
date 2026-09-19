@@ -420,6 +420,7 @@ async fn verify_in(
         fs::create_dir(&round).map_err(|_| Error::storage())?;
         let workspace = round.join("workspace");
         copy_entry(&selected, &workspace)?;
+        let workspace = workspace.canonicalize().map_err(|_| Error::storage())?;
         let environment = isolated_environment(&round.join("environment"), &command.env)?;
         let mut prepared = true;
         for argv in &command.prepare {
@@ -477,7 +478,7 @@ async fn verify_in(
     if report.targets().count() == runs as usize
         && report.executions.iter().all(|e| e.outcome.success())
     {
-        let checks = analysis::policy(&report, &config.policy, &config.commands, None)?;
+        let checks = analysis::policy(&report, &config.policy, &config.commands, baseline)?;
         report.findings = checks.findings;
         report.verification = checks.verdict;
         if runs > 1 {

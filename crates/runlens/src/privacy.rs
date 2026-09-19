@@ -47,10 +47,11 @@ impl Redactor {
             value = value.replace(root, "${temporary}");
         }
         value = value.replace(&self.root, "${workspace}");
-        if let Some(home) = &self.home {
-            if home != "/" && !home.is_empty() {
-                value = value.replace(home, "${home}");
-            }
+        if let Some(home) = &self.home
+            && home != "/"
+            && !home.is_empty()
+        {
+            value = value.replace(home, "${home}");
         }
         // Control characters must never control the user's terminal.
         value
