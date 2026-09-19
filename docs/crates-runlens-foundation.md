@@ -372,6 +372,10 @@ deadline plus the documented termination grace. Cancellation waits for owned
 processes before checkout cleanup. Read-only report commands do not invoke Git.
 Disposable metadata indexes share a process-wide memory reservation budget so
 retaining multiple clean/repeat executions cannot multiply the 256 MiB threshold.
+Deserialized maps use that same reservation before spilling; small report maps
+do not each open a SQLite connection. Regression coverage reads the maximum
+1,056-execution report with a 128-descriptor Unix reader limit and checks that
+aggregate deserialization still spills when the shared memory limit is reached.
 Index and early-return directory cleanup failures remain visible through the
 stable cleanup-failed exit classification. Report parsing bounds arrays during
 deserialization and limits the non-evidence string envelope to 1 MiB; querying up

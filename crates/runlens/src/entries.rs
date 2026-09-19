@@ -309,7 +309,9 @@ impl<'de, T: Serialize + DeserializeOwned> Deserialize<'de> for Entries<T> {
                 self,
                 mut map: M,
             ) -> std::result::Result<Self::Value, M::Error> {
-                let mut entries = Entries::new(0);
+                // Parsed reports share the same process reservation as collected
+                // evidence. Small maps must not each consume a spill-file handle.
+                let mut entries = Entries::default();
                 while let Some((key, value)) = map.next_entry::<String, T>()? {
                     if !entries
                         .insert(key, value)
@@ -355,11 +357,17 @@ mod tests {
     #[test]
     fn retained_maps_share_one_memory_threshold() {
         set_memory_limit(256);
-        let mut first = Entries::new(1024 * 1024);
-        let mut second = Entries::new(1024 * 1024);
-        first.insert("first".into(), "a".repeat(150)).unwrap();
-        second.insert("second".into(), "b".repeat(150)).unwrap();
-        assert!(first.spilled() && second.spilled());
+        let first: Entries<String> = serde_json::from_str(r#"{"first":"a"}"#).unwrap();
+        let second: Entries<String> = serde_json::from_str(r#"{"second":"b"}"#).unwrap();
+        assert!(!first.spilled());
+        assert!(second.spilled());
+        assert_eq!(second.get("second").unwrap().as_deref(), Some("b"));
+        drop(first);
+        let third: Entries<String> = serde_json::from_str(r#"{"third":"c"}"#).unwrap();
+        assert!(
+            !third.spilled(),
+            "dropping a parsed map releases its reservation"
+        );
         set_memory_limit(DEFAULT_MEMORY_BYTES);
     }
     #[cfg(unix)]

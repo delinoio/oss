@@ -946,6 +946,57 @@ prepare = [[{tool:?}, "fail"], [{tool:?}, "read-write"]]
 }
 
 #[test]
+fn many_execution_reports_remain_readable_with_few_file_descriptors() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("input.txt"), "input").unwrap();
+    assert!(run(root.path(), "original.json", "read").status.success());
+    let mut report = parse(root.path(), "original.json");
+    let execution = report["executions"][0].clone();
+    report["executions"] = Value::Array(
+        (0..1056)
+            .map(|_| {
+                let mut execution = execution.clone();
+                execution["id"] = uuid::Uuid::now_v7().to_string().into();
+                execution
+            })
+            .collect(),
+    );
+    fs::write(
+        root.path().join("many.json"),
+        serde_json::to_vec(&report).unwrap(),
+    )
+    .unwrap();
+    let mut command = Command::new(binary());
+    command
+        .args(["receipt", "many.json", "--json"])
+        .current_dir(root.path())
+        .stdout(Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // Restrict only this disposable reader child, never the test runner.
+        unsafe {
+            command.pre_exec(|| {
+                let mut limit = std::mem::zeroed::<libc::rlimit>();
+                if libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                limit.rlim_cur = limit.rlim_cur.min(128);
+                if libc::setrlimit(libc::RLIMIT_NOFILE, &limit) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+    let output = command.output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+#[test]
 fn hostile_envelopes_and_forged_changes_are_rejected() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("input.txt"), "input").unwrap();
