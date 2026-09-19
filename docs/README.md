@@ -30,6 +30,10 @@ Each project must have one project index document and one or more domain contrac
 
 ## Project Catalog
 
+### taskflow
+- `docs/project-taskflow.md`
+- `docs/crates-taskflow-foundation.md`
+
 ### binpm
 - `docs/project-binpm.md`
 - `docs/crates-binpm-foundation.md`

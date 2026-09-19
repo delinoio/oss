@@ -7,6 +7,8 @@
 
 ### Scope in This Domain
 
+- `crates/taskflow`: Rust TaskFlow graph and command engine, CLI `tflow`, governed by `docs/crates-taskflow-foundation.md`. Do not infer command tasks, compiler actions, or native package edges from names. Preserve task causes, output ownership, masked logs, and complete process cleanup across local and CI execution.
+
 - `crates/binpm`: Rust-based Node-free binary package manager for release assets.
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
 - `crates/nodeup`: Rust-based Node.js version manager.

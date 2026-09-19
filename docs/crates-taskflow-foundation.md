@@ -1,0 +1,71 @@
+# TaskFlow engine contract
+
+## Scope
+`crates/taskflow` owns the `tflow` binary and a reusable library. The approved implementation includes discovery, graph queries, selection, scheduling, local/R2-compatible caching, development sessions, Docker, sharding, and GitHub Actions export. Existing repository workflows, compiler actions, remote execution servers, and public releases are excluded.
+
+## Runtime and Language
+Rust using the repository toolchain. Host execution targets macOS, Linux, and Windows on x64/arm64; Docker executes Linux containers. Optional external tools are required only for the corresponding adapter or executor. Do not claim validation on platforms not exercised by conformance CI.
+
+## Users and Operators
+Developers run explicit native commands locally or in managed development sessions. CI maintainers configure runner/tool mappings and a trusted cache namespace. Operators own their R2/S3 storage and credentials.
+
+## Interfaces and Contracts
+### Configuration
+- `taskflow.yml` version 1 requires an explicit project ID; unknown fields and duplicate keys are errors.
+- Preserve `command`, `dependsOn`, `input`, and `output`. Arrays execute argv directly; strings use `/bin/sh` on Unix or `cmd.exe` on Windows unless `shell` is explicit.
+- Root `workspace.manifests` references native manifests, never a duplicated member registry. Omission discovers supported root manifests. No native workspace means a single project.
+- Projects without configuration remain queryable using path-based IDs but have no inferred commands. Canonical directories merge adapter discoveries; distinct directories cannot share an explicit ID.
+- Paths are project-relative. Inputs may reference other files inside the workspace. Outputs must remain inside their owning project and cannot overlap another owner's outputs.
+- Direct task references must exist. Native dependency selectors select direct neighbors of the requested kinds, skip task-less neighbors with an explanation, and do not traverse task-less intermediates. Task cycles fail validation.
+- A service prerequisite requires explicit readiness waiting. `with` activates companions without implying readiness or completion ordering.
+- Cache is opt-in. Service, scheduled, external-side-effect, and secret-consuming tasks are uncached. Cacheable tasks explicitly declare inputs, outputs (including an explicitly empty list for checks), relevant environment, and tool identities.
+
+### Discovery and queries
+pnpm lockfile metadata, versioned Cargo metadata, and Go workspace/module metadata supply resolved identities and conditions. Preserve aliases, renames, dependency kinds, replacements, and supported target/feature conditions. Unsupported or incomplete relationships are diagnosed; affected selection is conservative and unresolved prerequisite selectors fail closed. Discovery never installs dependencies implicitly. Explicit installation prerequisites can repair unavailable metadata before replanning.
+
+Keep project relationships separate from task prerequisites and artifact relationships. Queries expose projects/tasks, forward/reverse closure, paths, file ownership, matching inputs, and explanations. Git selection includes both sides of renames and deleted files. Graph generations invalidate obsolete executions after configuration changes.
+
+### Execution
+`check`, `query`, `plan`, `run`, `start`, `result unchanged`, `cache`, and `ci export` are public commands. Machine output is versioned JSON on stdout; logs go to stderr. Direct, own-input, prerequisite, and schedule causes remain distinct. An unchanged report removes only propagation from its source. Cache reuse and output restoration are execution outcomes, not unconditional claims that dependents are unchanged.
+
+The scheduler deduplicates prerequisites, limits concurrency, coordinates named resources and output ownership, and uses observed durations for critical-path priority. A failed finite task blocks its dependents while independent tasks complete. Unix process groups, Windows Job Objects, and owned Docker containers are reaped before replacement. Cancellation or input/configuration invalidation forbids successful cache publication.
+
+Task-reported unchanged uses an execution-specific result file, not magic stdout. Accept it only for successful, current executions. External effects remain eligible after upstream unchanged results.
+
+### Development sessions
+Subscribe before activation. Default file debounce is 200ms; default overlap is `queue` for files and `skip` for schedules. Queue coalesces without losing independent causes; restart cancels and reaps first. Output changes cannot self-trigger their producer but remain visible to consumers. HMR services do not restart because companions run.
+
+Shared companions are reference-counted by live owners; prerequisite and initial companion execution are deduplicated. Finite check failures retain subscriptions; server/readiness failure ends the session. Shutdown removes subscriptions, timers, queued runs, and process trees. Invalid configuration suspends new work until corrected.
+
+Intervals use monotonic time. Cron uses five fields, IANA zones, UTC by default, no catch-up bursts, and once per repeated local wall-clock minute. `every` and `cron` are mutually exclusive. Configuration reads and one-shot runs never activate subscriptions.
+
+### Shards and CI
+Go top-level tests, Rust libtest items (plus one doctest unit), and Vitest/Jest files are supported inventories. Generic adapters exchange versioned JSON inventory, selected-ID files, and results. Assignment is deterministic and optionally duration-balanced. Missing, duplicate, failed, and cancelled units prevent a false aggregate success.
+
+CI export creates platform/dependency/shard jobs, preserves execution causes, transfers declared artifacts and receipts, provisions pinned tools and TaskFlow source, validates plan compatibility, and aggregates every result. Tasks needing a shared environment are grouped. Development subscriptions are inactive in CI. Untrusted PRs receive neither secrets nor remote cache access. External effects are not skipped merely because upstream artifacts are unchanged.
+
+## Storage
+Ignored workspace-local `.taskflow` contains execution records, content-addressed cache data, temporary staging, locks, and masked logs. SHA-256 keys include configuration, content/deletions, native metadata, declared environment/tool identities, platform/image identity, and prerequisite results. Validate required output existence and contents; restore missing outputs or execute. A lockfile never proves installed outputs exist.
+
+R2/S3 stores the same validated cache format. Configure endpoint, bucket, namespace, access mode, and environment references for credentials. Cache transport failure falls back to execution with diagnostics. Restore validates digests, paths, ownership, and link containment before replacing outputs. Native incremental caches are separate shared resources, not implicitly exported artifacts.
+
+## Security
+Default dotenv precedence: CLI > task > inherited > project dotenv > root dotenv. Loading can be disabled. Cacheable commands use a declared environment. Cache transport credentials never enter task environments. Secrets disable caching and are masked in live, persisted, and replayed logs, including across byte chunks. Explicit `--show-secrets` affects current live output only; stored output remains masked. Remote entries require trusted writers; untrusted CI cannot read or write the namespace.
+
+## Logging
+Use `tracing` for task IDs, causes, outcomes, durations, cache decisions, and cleanup. Never log secret values or credential-bearing URLs. Preserve parseable JSON stdout and documented color opt-out. Persisted logs are always masked.
+
+## Build and Test
+Run `cargo test -p taskflow`, root `cargo test`, formatting and Clippy. Run native adapter fixtures, session/process conformance, virtual-clock tests, S3 transport fixtures, and platform/Docker CI. Map all 26 issue scenarios to evidence. Validate generated workflows with actionlint and public documentation with its package-local `pnpm test`. Generate required ignored outputs before dependent builds and remove generated `dist` directories from the final worktree.
+
+## Dependencies and Integrations
+Use existing native commands as units of work. pnpm metadata requires lockfile-query support (10.23+); Cargo metadata format is version 1; Go module/workspace identities remain native. The project does not change protected DevHud dependencies or existing workflow ownership.
+
+## Change Triggers
+Configuration, result protocol, cache format, adapter coverage, lifecycle, and CI changes require synchronized schema, tests, public guidance, and appropriate AGENTS rules. Support claims follow actual compatibility evidence.
+
+## References
+- [Project index](project-taskflow.md)
+- [Repository defaults](repository-defaults.md)
+- [Domain template](domain-template.md)
+- [Issue #898](https://github.com/delinoio/oss/issues/898)

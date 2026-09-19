@@ -87,6 +87,7 @@ enum ProjectId {
   WithWatch = "with-watch",
   Derun = "derun",
   Runmoor = "runmoor",
+  Taskflow = "taskflow",
   Ttl = "ttl",
   Mpapp = "mpapp",
   SerdeFeather = "serde-feather",
@@ -97,6 +98,8 @@ enum ProjectId {
 ```
 
 ### Project Domain Ownership
+
+- `taskflow` -> `crates/taskflow`, public `/taskflow` documentation in `apps/public-docs`.
 
 - `nodeup` -> `crates/nodeup`, `apps/nodeup-docs`
 - `binpm` -> `crates/binpm`, `apps/binpm-docs`
@@ -144,6 +147,8 @@ enum ProjectId {
 - DevHud private packaging has no automatic trigger: it is manually dispatchable and reusable only by an explicit caller, and is signed-only except for the secret-free `plan-only` dry run. Its stable release identity is exactly `devhud@v<MAJOR.MINOR.PATCH>`, with `packaging/devhud/release-metadata.json` synchronized to every source version. Preserve updater Ed25519 signatures, platform/store signatures, and Sigstore bundles as separate trust domains; unsigned or incomplete output is never public-ready. The workflow may retain a short-lived private artifact only and must never push a tag/image, create a release, submit a store build, or deploy.
 
 ### Repository Default Technology Choices
+
+- TaskFlow follows `docs/project-taskflow.md` and `docs/crates-taskflow-foundation.md`. Preserve native command boundaries, distinct project/task graphs, cause-specific unchanged propagation, explicit cache/output validity, process-tree ownership, and untrusted-CI cache isolation. Its implementation does not migrate existing repository workflows or authorize publication.
 
 - Follow `docs/repository-defaults.md` when a more specific project or domain contract does not choose a different approach.
 - New persisted entities should use UUID v7 identifiers by default unless a documented compatibility, storage, protocol, or product issue requires another ID shape.
