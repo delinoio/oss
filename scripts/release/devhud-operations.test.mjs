@@ -13,6 +13,7 @@ const privateWorkflow = readFileSync(`${root}/.github/workflows/package-devhud-p
 const ciWorkflow = readFileSync(`${root}/.github/workflows/CI.yml`, "utf8");
 const fixture = JSON.parse(readFileSync(`${root}/scripts/release/fixtures/devhud-cef-security-review.json`, "utf8"));
 const pins = JSON.parse(readFileSync(`${root}/apps/devhud/cef-pins.json`, "utf8"));
+const ciPaths = JSON.parse(readFileSync(`${root}/scripts/ci/job-paths.json`, "utf8"));
 const runtimeRevisionConsumers = [
   "apps/devhud/src/diagnostics.ts",
   "packages/devhud-api-client/src/validation.ts",
@@ -28,6 +29,19 @@ const primaryArtifacts = [
   "devhud-ios-arm64-app-store.ipa", "devhud-android-arm64-armv7-google-play.aab", "devhud-chrome-web-store.zip", "devhud-chrome-github-validation.zip",
   "devhud-api-linux-amd64-arm64.oci.tar", "devhud-api-sweeper-linux-amd64-arm64.oci.tar",
 ];
+
+test("CI evidence distinguishes PR validation from full native packaging", () => {
+  for (const text of [workflowContract, operations, support]) {
+    assert.match(text, /PR/u);
+    assert.match(text, /main/u);
+    assert.match(text, /manual/u);
+    assert.match(text, /CI Result/u);
+  }
+  for (const id of ["devhud-desktop", "devhud-ios-simulator", "devhud-android-emulator"]) assert.equal(ciPaths[id].native, true);
+  assert.equal(ciPaths["devhud-mobile-contracts"].native, undefined);
+  assert.match(ciWorkflow, /node scripts\/ci\/run-affected\.mjs devhud test/u);
+  assert.match(workflowContract, /counterfactual estimate, not a measured post-change improvement/u);
+});
 
 test("operations contract names every implemented release job and artifact", () => {
   for (const name of privateJobs) assert.match(privateWorkflow, new RegExp(`\\n  ${name}:`, "u"));

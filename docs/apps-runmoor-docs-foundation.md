@@ -45,7 +45,7 @@
 - Preview: `pnpm --filter runmoor-docs preview`.
 - Validation: package-local `pnpm test` or `pnpm --filter runmoor-docs test`, building the site and validating route artifacts, required article headings and links, main landmarks, clean internal links, absence of legacy route links, and public-content restrictions. The command also runs regression fixtures against temporary copies of the real generated HTML to prove rejection of credentials and internal paths without logging their values.
 - Preparation: `prepare:app` is an explicit no-op.
-- CI: `node-runmoor-docs-test` follows the frozen-install and Turbo affected-workspace checks and participates in `ci-result`.
+- CI: `node-runmoor-docs-test` uses the shared job-level change plan, one frozen install with `--ignore-scripts`, the planner's exact Turbo comparison, and successful-main-only cache saves. App changes select both this job and repository-environment validation; changes to the shared Rspress wrapper force documentation checks even outside the workspace graph. The job participates in `ci-result`.
 
 ## Dependencies and Integrations
 - Uses the repository's existing Rspress dependency version and pnpm workspace.
