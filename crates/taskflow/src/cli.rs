@@ -316,13 +316,13 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
     if let Action::Cache { action } = cli.command {
         let directory = root.join(".taskflow/cache/entries");
         if matches!(action, CacheAction::Clean) {
-            let _locks = runner::acquire_locks(&root, "cache-maintenance", &[], &cancel).await?;
-            crate::cache::remove_path(&root.join(".taskflow/cache"))?;
+            crate::cache::clean(&root)?;
             print(
                 &json!({"version":1,"removed":"task-cache","preserved":"native caches and task outputs"}),
                 cli.json,
             )?;
         } else {
+            let _lock = crate::cache::read_lock(&root)?;
             let mut entries = vec![];
             if directory.is_dir() {
                 for entry in std::fs::read_dir(directory)? {

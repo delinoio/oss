@@ -10,6 +10,39 @@ use serde::{Deserialize, Serialize};
 use crate::{config::Task, discover::Project, files};
 
 pub const MAX_CACHE_BYTES: usize = 512 * 1024 * 1024;
+
+enum CacheLock {
+    Shared,
+    Exclusive,
+}
+
+fn lock(root: &Path, mode: CacheLock) -> Result<std::fs::File> {
+    let directory = root.join(".taskflow/locks");
+    std::fs::create_dir_all(&directory)?;
+    // The lock must survive deletion of the cache directory. Keep critical
+    // sections limited to local cache I/O, never task execution or networking.
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(directory.join("cache"))?;
+    match mode {
+        CacheLock::Shared => file.lock_shared()?,
+        CacheLock::Exclusive => file.lock()?,
+    }
+    Ok(file)
+}
+
+pub fn read_lock(root: &Path) -> Result<std::fs::File> {
+    lock(root, CacheLock::Shared)
+}
+
+pub fn clean(root: &Path) -> Result<()> {
+    let _lock = lock(root, CacheLock::Exclusive)?;
+    remove_path(&root.join(".taskflow/cache"))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Artifact {
@@ -339,6 +372,7 @@ pub fn encode(artifact: &Artifact) -> Result<Vec<u8>> {
 }
 pub fn store(root: &Path, artifact: &Artifact) -> Result<Vec<u8>> {
     let bytes = encode(artifact)?;
+    let _lock = lock(root, CacheLock::Exclusive)?;
     let object = files::digest(&bytes);
     files::atomic_write(
         &root
@@ -353,6 +387,7 @@ pub fn store(root: &Path, artifact: &Artifact) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 pub fn load(root: &Path, key: &str) -> Result<Option<Artifact>> {
+    let _lock = read_lock(root)?;
     let path = entry_path(root, key);
     if !path.exists() {
         return Ok(None);

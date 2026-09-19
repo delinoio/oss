@@ -1461,6 +1461,65 @@ async fn server_readiness_failure_reaps_concurrent_work_before_returning() {
 }
 
 #[tokio::test]
+async fn cache_clean_serializes_with_readers_and_writers() {
+    let directory = fixture(json!({"build":{"command":command(&["version"]),"output":["output"]}}));
+    std::fs::write(directory.path().join("output"), "content").unwrap();
+    let g = graph(directory.path()).await;
+    let key = files::digest(b"cache-lock-fixture");
+    let artifact = cache::Artifact::capture(
+        key.clone(),
+        "app#build".into(),
+        &g.workspace.projects["app"],
+        &g.tasks["app#build"].task,
+    )
+    .unwrap();
+    cache::store(directory.path(), &artifact).unwrap();
+    let guard = cache::read_lock(directory.path()).unwrap();
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+        .kill_on_drop(true)
+        .arg("--root")
+        .arg(directory.path())
+        .args(["cache", "clean"])
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(200), child.wait())
+            .await
+            .is_err()
+    );
+    assert!(cache::entry_path(directory.path(), &key).exists());
+    drop(guard);
+    assert!(tokio::time::timeout(Duration::from_secs(5), child.wait())
+        .await
+        .unwrap()
+        .unwrap()
+        .success());
+    let barrier = std::sync::Barrier::new(4);
+    std::thread::scope(|scope| {
+        for worker in 0..4 {
+            let (directory, artifact, key, barrier) = (directory.path(), &artifact, &key, &barrier);
+            scope.spawn(move || {
+                barrier.wait();
+                for _ in 0..50 {
+                    match worker {
+                        0 => cache::clean(directory).unwrap(),
+                        1 => {
+                            cache::load(directory, key).unwrap();
+                        }
+                        _ => {
+                            cache::store(directory, artifact).unwrap();
+                        }
+                    }
+                }
+            });
+        }
+    });
+    cache::store(directory.path(), &artifact).unwrap();
+    assert!(cache::load(directory.path(), &key).unwrap().is_some());
+}
+
+#[tokio::test]
 async fn remote_lookup_input_change_preserves_current_outputs() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
