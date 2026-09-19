@@ -105,6 +105,18 @@ jobs:
           tag="async-commit-hook@v$VERSION"
           if gh release view "$tag" >/dev/null 2>&1; then echo 'Release already exists; assets are immutable' >&2; exit 1; fi
           gh release create "$tag" release/* --target "$GITHUB_SHA" --title "async-commit-hook $VERSION" --notes "Signed ach archives for six targets. See compatibility.json for validation scope and https://ach.delino.io/docs/ for installation and recovery."
+  homebrew:
+    if: ${{ !inputs.dry_run }}
+    needs: publish
+    environment: async-commit-hook-release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ach-unsigned
+          path: release
       - name: Update Homebrew formula
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GH_TOKEN }}
@@ -118,11 +130,13 @@ jobs:
           git config user.email github-actions@users.noreply.github.com
           gh auth setup-git
           git add Formula/async-commit-hook.rb
-          git commit -m 'chore: update async-commit-hook formula'
-          git push origin HEAD:main
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore: update async-commit-hook formula'
+            git push origin HEAD:main
+          fi
   deploy:
     if: ${{ !inputs.dry_run }}
-    needs: publish
+    needs: homebrew
     environment: async-commit-hook-release
     runs-on: ubuntu-22.04
     steps:
