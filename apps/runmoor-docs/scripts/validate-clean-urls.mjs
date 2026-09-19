@@ -22,7 +22,6 @@ const requiredLinks = new Map([
 const outputDir = path.resolve("doc_build");
 const validatorOrigin = "https://runmoor.delino.io";
 const failures = [];
-const linkedRoutes = new Set();
 const containsProhibitedPublicContent = createPublicContentValidator(requiredHeadings.keys());
 
 async function collectHtmlFiles(directory) {
@@ -69,6 +68,26 @@ function articleHeadings(contents) {
       .replace(/\s+/gu, " ").trim()));
 }
 
+function classRegions(contents, tag, className) {
+  const regions = [];
+  const stack = [];
+  // Rspress nests divs and lists within its discovery regions. Balance matching
+  // tags so a descendant's closing tag cannot truncate the inspected region.
+  for (const match of contents.matchAll(new RegExp(`</?${tag}\\b[^>]*>`, "giu"))) {
+    if (match[0].startsWith("</")) {
+      const opening = stack.pop();
+      if (opening?.selected) regions.push(contents.slice(opening.start, match.index + match[0].length));
+    } else if (!match[0].endsWith("/>")) {
+      const classes = match[0].match(/\bclass\s*=\s*(?:"([^"]*)"|'([^']*)')/iu);
+      stack.push({
+        start: match.index,
+        selected: decodeHTML(classes?.[1] ?? classes?.[2] ?? "").split(/\s+/u).includes(className),
+      });
+    }
+  }
+  return regions;
+}
+
 const htmlFiles = await collectHtmlFiles(outputDir);
 const contentsByFile = new Map(await Promise.all(htmlFiles.map(async (file) => [file, await readFile(file, "utf8")])));
 
@@ -101,8 +120,6 @@ for (const [file, contents] of contentsByFile) {
     if (link.origin !== validatorOrigin) continue;
     if (!requiredHeadings.has(link.pathname)) {
       failures.push(`${relativeFile} links to unknown route ${link.pathname}`);
-    } else {
-      linkedRoutes.add(link.pathname);
     }
   }
 }
@@ -125,10 +142,22 @@ for (const [route, headings] of requiredHeadings) {
   for (const link of requiredLinks.get(route) ?? []) {
     if (!articleLinks.has(link)) failures.push(`${route} is missing article link ${link}`);
   }
-  if (!linkedRoutes.has(route)) failures.push(`${route} has no clean navigation link`);
-  if (!links(contents, new URL(route, validatorOrigin))
-    .some((link) => link.href === "https://github.com/delinoio/oss")) {
-    failures.push(`${route} is missing the repository link`);
+  const pageUrl = new URL(route, validatorOrigin);
+  const header = classRegions(contents, "header", "rp-nav").join("");
+  for (const [name, regions] of [
+    ["top navigation", classRegions(header, "ul", "rp-nav-menu")],
+    ["sidebar", classRegions(contents, "aside", "rp-doc-layout__sidebar")],
+  ]) {
+    const regionLinks = new Set(links(regions.join(""), pageUrl)
+      .filter((link) => link.origin === validatorOrigin).map((link) => link.pathname));
+    for (const destination of requiredHeadings.keys()) {
+      if (!regionLinks.has(destination)) failures.push(`${route} is missing ${name} link ${destination}`);
+    }
+  }
+  const socialRegions = classRegions(header, "div", "rp-social-links");
+  if (socialRegions.length === 0 || socialRegions.some((region) => !links(region, pageUrl)
+    .some((link) => link.href === "https://github.com/delinoio/oss"))) {
+    failures.push(`${route} is missing the social navigation repository link`);
   }
   const footer = contents.match(/<footer\b[^>]*class="delino-repository-footer"[^>]*>[\s\S]*?<\/footer>/iu)?.[0] ?? "";
   if (!links(footer, new URL(route, validatorOrigin))

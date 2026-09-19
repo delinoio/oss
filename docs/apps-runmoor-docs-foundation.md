@@ -20,6 +20,7 @@
 - The overview and six guides move from `apps/public-docs` without removing their content, examples, preview limitations, fork policies, shared-kernel boundaries, or external software licensing guidance. Internal links lose the old `/runmoor` prefix.
 - The former `/runmoor` and six child routes in `public-docs` are removed without compatibility pages or redirects. Its top navigation, home, and project catalog link to the standalone site.
 - Use the default Rspress theme with every stable route in the navigation and sidebar, plus visible GitHub repository links in the social navigation and footer.
+- Validate top-navigation, sidebar, social-link, and document-footer regions separately on every stable page. Removing a link from one region must fail even when article content or another region still links to that destination.
 - Development uses `127.0.0.1:46309`; production preview uses `127.0.0.1:46271`. Both use the shared fixed-port wrapper, reject host changes, prevent port overrides, fail on conflicts without remapping, and forward termination signals to the server.
 - Public content is curated from the Runmoor project and command contracts. User-owned configuration and guest runner paths are public interfaces; repository-internal architecture and operational details remain in `docs/`.
 - The CLI release README remains in `cmds/runmoor/README.md` with a link to the standalone documentation.

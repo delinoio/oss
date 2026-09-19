@@ -21,13 +21,48 @@ const indexFile = path.join(outputDirectory, "index.html");
 const original = readFileSync(indexFile, "utf8");
 
 function validateFixture(fixture) {
-  writeFileSync(indexFile, original.replace("</body>", `${fixture}</body>`));
+  return validatePage(original.replace("</body>", `${fixture}</body>`));
+}
+
+function validatePage(contents) {
+  writeFileSync(indexFile, contents);
   return spawnSync(process.execPath, [validator], {
     cwd: temporaryDirectory,
     encoding: "utf8",
     timeout: 10_000,
   });
 }
+
+function removeLinks(contents, className, href) {
+  return contents.replace(/<a\b[^>]*>[\s\S]*?<\/a>/giu, (anchor) => {
+    const classes = anchor.match(/\bclass="([^"]*)"/u)?.[1].split(/\s+/u) ?? [];
+    return classes.includes(className) && anchor.includes(`href="${href}"`) ? "" : anchor;
+  });
+}
+
+for (const route of ["/", "/install", "/configuration", "/commands", "/docker", "/tart", "/operations"]) {
+  for (const [region, className] of [
+    ["top navigation", "rp-nav-menu__item__container"],
+    ["sidebar", "rp-sidebar-item"],
+  ]) {
+    test(`${region} must link ${route} independently of article links`, () => {
+      const modified = removeLinks(original, className, route);
+      assert.notEqual(modified, original);
+      const result = validatePage(modified);
+      assert.equal(result.status, 1);
+      assert.ok(result.stderr.includes(`is missing ${region} link ${route}`), result.stderr);
+    });
+  }
+}
+
+test("social repository navigation cannot be satisfied by the footer", () => {
+  const modified = removeLinks(original, "rp-social-links__item", "https://github.com/delinoio/oss");
+  assert.notEqual(modified, original);
+  assert.ok(modified.includes('class="delino-repository-footer"'));
+  const result = validatePage(modified);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /is missing the social navigation repository link/u);
+});
 
 for (const href of [
   "https://reader:fixture-value@[invalid",
