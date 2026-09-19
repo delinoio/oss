@@ -435,7 +435,9 @@ ach browser revoke --browser &lt;id&gt;</pre
           output.
         </p>
         <p>
-          Submodule and Git LFS source are explicitly unsupported. Docker is not
+          Submodule and Git LFS source are explicitly unsupported. Each committed
+          <code>.gitattributes</code> file must be at most 1 MiB; larger files are
+          rejected before an execution is accepted. Docker is not
           required. Managed checks do not recursively trigger automatic checks.
           Original worktrees and unrelated processes are preserved.
         </p>

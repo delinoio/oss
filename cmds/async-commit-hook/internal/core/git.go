@@ -138,7 +138,7 @@ func ValidateSource(ctx context.Context, path, sha string) error {
 	}
 	for _, e := range entries {
 		if filepath.Base(e.Path) == ".gitattributes" {
-			b, err := Git(ctx, path, "cat-file", "blob", e.OID)
+			b, err := readAttributeBlob(ctx, path, e.OID)
 			if err != nil {
 				return err
 			}
@@ -148,6 +148,31 @@ func ValidateSource(ctx context.Context, path, sha string) error {
 		}
 	}
 	return nil
+}
+
+const maxAttributeBytes = 1024 * 1024
+
+func readAttributeBlob(ctx context.Context, path, oid string) (string, error) {
+	cmd := gitCommand(ctx, path, "cat-file", "blob", oid)
+	output, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	if err = cmd.Start(); err != nil {
+		return "", err
+	}
+	b, readErr := io.ReadAll(io.LimitReader(output, maxAttributeBytes+1))
+	if readErr != nil || len(b) > maxAttributeBytes {
+		_ = cmd.Process.Kill()
+	}
+	waitErr := cmd.Wait()
+	if len(b) > maxAttributeBytes {
+		return "", E("attributes-too-large", "committed .gitattributes exceeds the supported 1 MiB per-file limit", 2)
+	}
+	if readErr != nil || waitErr != nil {
+		return "", E("git-object-unavailable", "cannot read committed attributes", 3)
+	}
+	return string(b), nil
 }
 
 func declaresLFSFilter(attributes string) bool {
