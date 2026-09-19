@@ -487,6 +487,28 @@ async fn run_task(
         None
     };
     if task.cache && !options.force && !cancel.is_cancelled() {
+        let valid_artifact = |artifact: &cache::Artifact| {
+            let valid_shards = match (&task.shard, &artifact.shards) {
+                (None, None) => true,
+                (Some(config), Some((inventory, reports))) => {
+                    crate::shard::validate_reports(inventory, config.count, reports).is_ok_and(
+                        |passed| {
+                            passed
+                                && match options.shard {
+                                    Some((index, count)) => {
+                                        reports.len() == 1
+                                            && reports[0].index == index
+                                            && reports[0].count == count
+                                    }
+                                    None => reports.len() == config.count,
+                                }
+                        },
+                    )
+                }
+                _ => false,
+            };
+            valid_shards && artifact.validate(&key, id, project, task).is_ok()
+        };
         let mut source = Outcome::LocalCache;
         let mut artifact = match cache::load(&graph.workspace.root, &key) {
             Ok(value) => value,
@@ -499,6 +521,17 @@ async fn run_task(
                 None
             }
         };
+        artifact = artifact.filter(|artifact| {
+            let valid = valid_artifact(artifact);
+            if !valid {
+                tracing::warn!(
+                    task = id,
+                    code = "cache-invalid",
+                    "Ignoring incompatible local artifact before remote lookup"
+                );
+            }
+            valid
+        });
         if artifact.is_none() {
             if let Some(remote) = &remote {
                 let fetched = tokio::select! {
@@ -520,26 +553,7 @@ async fn run_task(
             }
         }
         if let Some(artifact) = artifact {
-            let valid_shards = match (&task.shard, &artifact.shards) {
-                (None, None) => true,
-                (Some(config), Some((inventory, reports))) => {
-                    crate::shard::validate_reports(inventory, config.count, reports).is_ok_and(
-                        |passed| {
-                            passed
-                                && match options.shard {
-                                    Some((index, count)) => {
-                                        reports.len() == 1
-                                            && reports[0].index == index
-                                            && reports[0].count == count
-                                    }
-                                    None => reports.len() == config.count,
-                                }
-                        },
-                    )
-                }
-                _ => false,
-            };
-            if valid_shards && artifact.validate(&key, id, project, task).is_ok() {
+            if source == Outcome::LocalCache || valid_artifact(&artifact) {
                 ensure!(
                     !cancel.is_cancelled(),
                     "task cancelled before cache restoration"

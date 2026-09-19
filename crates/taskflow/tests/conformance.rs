@@ -4471,3 +4471,93 @@ async fn cancellation_during_synchronous_cache_restore_returns_cancelled() {
         seeded.results["app#build"].execution
     );
 }
+
+#[tokio::test]
+async fn invalid_local_artifacts_fall_back_to_valid_remote_entries() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let directory = fixture(json!({"build": {
+        "command": command(&["copy", "source", "output"]), "input":["source"], "output":["output"],
+        "cache":true, "tools":{"fixture":command(&["version"])}
+    }}));
+    let path = directory.path().join("taskflow.yml");
+    let mut config: Value = serde_yaml::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    config["remote"] = json!({"endpoint":format!("http://{}",listener.local_addr().unwrap()),"bucket":"fixture","namespace":"fixture","accessKeyEnv":"TFLOW_TEST_ACCESS","secretKeyEnv":"TFLOW_TEST_PRIVATE","mode":"read-only"});
+    std::fs::write(path, serde_yaml::to_string(&config).unwrap()).unwrap();
+    std::fs::write(directory.path().join("source"), "original").unwrap();
+    let g = graph(directory.path()).await;
+    let plan = Plan::create(&g, &["build".into()], &[], false).unwrap();
+    let seeded = runner::run_plan(
+        g,
+        plan,
+        RunOptions {
+            force: true,
+            ..Default::default()
+        },
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert!(seeded.success);
+    let artifact = cache::load(directory.path(), &seeded.results["app#build"].key)
+        .unwrap()
+        .unwrap();
+    let bytes = cache::encode(&artifact).unwrap();
+    let manifest =
+        serde_json::to_vec(&json!({"version":1,"object":files::digest(&bytes)})).unwrap();
+    let mut corrupt = artifact.clone();
+    let cache::Content::File { digest, .. } = &mut corrupt.files[0].content else {
+        panic!("expected file");
+    };
+    *digest = files::digest(b"invalid content digest");
+    corrupt.output_digest = cache::output_digest(&corrupt.files).unwrap();
+    cache::store(directory.path(), &corrupt).unwrap();
+    std::fs::write(directory.path().join("output"), "preserve-current-output").unwrap();
+    let server = tokio::spawn(async move {
+        for body in [manifest, bytes] {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            while !request.windows(4).any(|part| part == b"\r\n\r\n") {
+                assert!(stream.read_buf(&mut request).await.unwrap() > 0);
+            }
+            let headers = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(headers.as_bytes()).await.unwrap();
+            stream.write_all(&body).await.unwrap();
+        }
+    });
+    let output = tokio::time::timeout(
+        Duration::from_secs(30),
+        tokio::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .kill_on_drop(true)
+            .arg("--root")
+            .arg(directory.path())
+            .args(["--json", "run", "build", "--quiet"])
+            .env_remove("GITHUB_EVENT_NAME")
+            .env_remove("TFLOW_UNTRUSTED_CI")
+            .env("TFLOW_TEST_ACCESS", "fixture")
+            .env("TFLOW_TEST_PRIVATE", "fixture")
+            .output(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let result: runner::RunResult = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result.results["app#build"].outcome, Outcome::Restored);
+    tokio::time::timeout(Duration::from_secs(10), server)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(directory.path().join("output")).unwrap(),
+        "original"
+    );
+    cache::load(directory.path(), &artifact.key)
+        .unwrap()
+        .unwrap()
+        .validate_integrity(&artifact.key)
+        .unwrap();
+}

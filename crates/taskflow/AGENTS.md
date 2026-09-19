@@ -22,6 +22,7 @@
 - Cache link validation follows archive link chains and existing filesystem ancestors before processing parent components; lexical containment alone cannot authorize restoration.
 - Cache link records use portable separators; Windows link creation converts targets to native separators before invoking the filesystem API.
 - Local cache readers, writers, and cleaning share a process-safe cache lock outside the removable cache tree; never hold it during commands or network operations.
+- Reject semantically invalid local entries before remote fallback selection; valid JSON alone never blocks a compatible remote artifact.
 - Cache verification checks artifact identity, content digests, paths, and shard accounting independently of current configuration, rejecting descendants of every non-directory record; restoration additionally validates project ownership and link containment.
 - Do not close the detached Unix descendant cleanup gap using process-group tests or periodic PID enumeration; require ownership evidence for setsid/setpgid and double-fork descendants on macOS and Linux.
 - Output-drain failures must still await both stream owners and container removal/absence verification before returning; unverified cleanup takes precedence over log errors.
