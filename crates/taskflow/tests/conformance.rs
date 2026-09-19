@@ -3101,6 +3101,7 @@ async fn cache_verify_rejects_misdirected_and_inconsistent_artifacts() {
         "file-digest",
         "base64",
         "duplicate-path",
+        "file-descendant",
         "unsafe-path",
     ] {
         let mut artifact = original.clone();
@@ -3121,6 +3122,11 @@ async fn cache_verify_rejects_misdirected_and_inconsistent_artifacts() {
                 *data = "!invalid-base64!".into();
             }
             "duplicate-path" => artifact.files.push(artifact.files[0].clone()),
+            "file-descendant" => {
+                let mut child = artifact.files[0].clone();
+                child.path.push_str("/child");
+                artifact.files.push(child);
+            }
             "unsafe-path" => artifact.files[0].path = "../outside".into(),
             _ => unreachable!(),
         }
@@ -3133,7 +3139,7 @@ async fn cache_verify_rejects_misdirected_and_inconsistent_artifacts() {
     let (success, report) = verify();
     assert!(!success);
     let entries = report["entries"].as_array().unwrap();
-    assert_eq!(entries.len(), 8);
+    assert_eq!(entries.len(), 9);
     for entry in entries {
         assert_eq!(entry["valid"], entry["key"] == original.key);
     }

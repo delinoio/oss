@@ -36,6 +36,8 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 
 `check_rejects_windows_rooted_outputs_on_every_host` rejects drive, UNC, rooted, and drive-relative output paths before checking or CI export on every host.
 
+`cache_verify_rejects_misdirected_and_inconsistent_artifacts` also rejects validly encoded file records that declare descendants beneath another regular file, without restoring any output.
+
 Additional invariants include unknown/duplicate configuration rejection, schema freshness, stale/partial CI receipt rejection, required artifact accounting, cache path traversal rejection before mutation, masked stored logs, and service failure cancelling other running checks before returning.
 
 `grouped_tasks_only_receive_their_declared_secrets` passes a CI-style credential union to a real CLI run: only the declaring task receives the credential, and persisted output remains masked.

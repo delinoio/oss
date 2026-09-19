@@ -235,7 +235,7 @@ impl Artifact {
             );
         }
         let mut seen = BTreeSet::new();
-        let mut links = vec![];
+        let mut leaves = vec![];
         let mut total = 0;
         for entry in &self.files {
             let path = Path::new(&entry.path);
@@ -250,6 +250,7 @@ impl Artifact {
             );
             match &entry.content {
                 Content::File { data, digest, .. } => {
+                    leaves.push(path);
                     let bytes = base64::engine::general_purpose::STANDARD.decode(data)?;
                     total += bytes.len();
                     ensure!(
@@ -259,16 +260,16 @@ impl Artifact {
                 }
                 Content::Link { target, .. } => {
                     ensure!(!Path::new(target).is_absolute(), "absolute cache link");
-                    links.push(path);
+                    leaves.push(path);
                 }
                 Content::Directory => {}
             }
         }
         for entry in &self.files {
             ensure!(
-                !links.iter().any(|link| Path::new(&entry.path) != *link
-                    && Path::new(&entry.path).starts_with(link)),
-                "cache file traverses a symlink"
+                !leaves.iter().any(|leaf| Path::new(&entry.path) != *leaf
+                    && Path::new(&entry.path).starts_with(leaf)),
+                "cache path traverses a non-directory record"
             );
         }
         Ok(())
