@@ -81,3 +81,31 @@ The local release dry run used `/tmp/ach-release-897-0.1.0`, outside the reposit
 | OpenCode | 1.1.53; isolated installation and MCP connection successful |
 
 Agent discovery used actual client executables with temporary HOME/configuration directories; no personal client configuration or credentials were edited. Full tool behavior was exercised through the official Go MCP client, without invoking paid agent-model sessions. Browser verification used a temporary registered repository and local state. No remote results, telemetry or diagnostic uploads were added.
+
+## PR #901 review and CI repair evidence
+
+The second repair pass merged `main` through `da21872e` and preserved both the Runmoor documentation and async-commit-hook CI plans. Product version remains `0.1.0`. Each review problem and independent CI root cause has its own commit.
+
+| Review requirement | Repair and regression evidence |
+| --- | --- |
+| Renew terminal nonpassing pre-push attempts | `TestPrePushRunAndWaitRepairsTerminalEvidence` covers failed, cancelled, interrupted, expired and missing evidence; queued work is reused. The public pre-push guide matches the shared gate. |
+| Idempotent pruning | `TestPruneCannotResurrectSuccess` repeats dry/live pruning without changing the expired tombstone and retries leftover artifact cleanup without restoring older success. |
+| Arbitrary log/report bytes over protobuf | `TestEvidenceTextNormalizesInvalidUTF8WithoutChangingByteOffsets` marshals actual API responses containing invalid and split UTF-8 while preserving stored bytes and byte cursors. |
+| Reports belong to the current check execution | `TestReportsMustBeProducedAfterTheirOwningCheckStarts`, `TestReportPathsCannotHaveCompetingOwners` and `TestReportPreparationCannotDeleteOutsideWorkspace` reject stale/competing evidence and protect paths outside the workspace. |
+| Acknowledge completed results only | `TestAcknowledgementIdempotencyAndAutomaticDedup` rejects active-state acknowledgement and retains a later failure in the inbox; web tests verify disabled active/already-acknowledged controls. |
+| Detached branch filtering | `TestDetachedRunFilterAndCursorScope` distinguishes detached, named and unfiltered queries through the API, including pagination and cursor scope. Web request tests cover detached checks and an unfiltered inbox. |
+| Cancellation without an active worker | `TestUnstartedCancellationCompletesWithoutWorker` atomically finalizes unowned queued runs, including empty graphs; `TestCancellationDoesNotFinalizeRunOwnedByWorker` preserves worker ownership. |
+| Project agent installation from a subdirectory | `TestProjectAgentsResolveNestedAndLinkedWorktreeRoots` covers all three adapters, nested paths, linked worktrees and repeated install/uninstall at the registered root. |
+| Retry downstream release publication | CI workflow tests require separate release, Homebrew and Pages jobs. A real temporary Git remote verifies repeated Homebrew publication preserves the existing commit. Failed jobs can be retried within the same run's artifact-retention window without recreating its successful immutable GitHub release. |
+
+CI repair evidence:
+
+- Windows environment/redaction fixtures now use native PowerShell syntax and explicitly assert undeclared environment exclusion. The regression passes locally and its Windows test binary cross-compiles; Windows execution is left to hosted CI.
+- Release fixtures use Node built-ins and run without workspace dependencies. YAML workflow checks moved to the dependency-installed CI contract suite. An isolated dependency-free fixture run passed, and all 154 release tests passed in a local Linux container with read-only source/Git mounts and networking disabled.
+- The shared API/sweeper Docker builder now uses Go `1.25.8`, matching `go.mod`; a CI contract prevents future drift. Both prior OCI failures had rejected Go `1.25.7` before compilation. The local multi-architecture OCI build was stopped during slow base-image downloads, so a completed local OCI build is not claimed.
+
+After the repairs, `go test -p 1 ./...`, async-commit-hook unit/integration race tests, the full Runmoor race suite, `go vet ./...`, frontend `pnpm test` (13 component tests plus typecheck/production/static checks), client tests, protocol lint/breaking/freshness, 30 CI contracts, workflow lint and six `0.1.0` archive cross-builds passed. The release dry run wrote only local artifacts under `/tmp/ach-pr901-review-repairs-release` and performed no publication.
+
+Initial root Go runs exposed existing Runmoor shell-startup timing failures. Its guest-validation correctness fixture now allows 15 seconds while the dedicated transport timeout remains 50 ms; focused ordinary/race tests and the final serial root suite passed. The independent runner-startup fixture also failed intermittently before that successful root run; its production startup semantics were not changed.
+
+The two owner-approved completion amendments and the pending Edge validation above remain unchanged. These local checks do not claim that the subsequent hosted CI run has completed.
