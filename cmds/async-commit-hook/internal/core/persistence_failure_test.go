@@ -2,11 +2,51 @@ package core
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestPreparationFailureCannotFinalizeAfterCheckSaveFailure(t *testing.T) {
+	s, repo := fixture(t, "version=1\n[checks.test]\ncommand='unused'\n")
+	receipt, err := s.Submit(context.Background(), repo, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Rename(repo, repo+"-unavailable"); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Store.DB.Exec("CREATE TRIGGER fail_preparation_check BEFORE UPDATE ON checks WHEN NEW.state='failed' BEGIN SELECT RAISE(FAIL,'injected preparation write failure'); END")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RunOne(receipt.RunID); err == nil || !strings.Contains(err.Error(), "injected preparation write failure") {
+		t.Fatal("check save error was discarded", err)
+	}
+	r, err := s.Store.Run(receipt.RunID)
+	if err != nil || r.State.Terminal() || r.Checks[0].State != Queued {
+		t.Fatal("inconsistent terminal run published", r, err)
+	}
+	pending, err := s.Store.Pending()
+	if err != nil || len(pending) != 1 || pending[0] != r.ID {
+		t.Fatal("recovery lost pending run", pending, err)
+	}
+	if _, err = s.Store.DB.Exec("DROP TRIGGER fail_preparation_check"); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RunOne(r.ID); err != nil {
+		t.Fatal("preparation recovery failed", err)
+	}
+	r, err = s.Store.Run(r.ID)
+	if err != nil || r.State != Failed || r.Checks[0].State != Failed {
+		t.Fatal("recovery did not finish failed preparation", r, err)
+	}
+	if len(r.Checks[0].Diagnostics) != 1 || r.Checks[0].Diagnostics[0].Code != "workspace-preparation-failed" {
+		t.Fatal("per-check diagnostic was lost", r.Checks[0])
+	}
+}
 
 func TestCheckPersistenceFailureReleasesWorkerForReconciliation(t *testing.T) {
 	for _, state := range []State{Running, Collecting, Passed} {

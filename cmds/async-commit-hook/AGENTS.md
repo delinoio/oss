@@ -34,6 +34,7 @@
 - Project agent installation and removal resolve any supplied subdirectory to its registered Git worktree root; linked worktrees retain independent integration paths.
 - Working-tree configuration validation resolves `--repo` through Git discovery, including nested directories and linked worktrees, before reading the selected root's uncommitted file.
 - Repository listings resolve the current checkout branch, including detached HEAD, without rewriting historical run branches.
+- Workspace-preparation failure must not finalize a run until every affected check outcome is persisted; return a check-save error so the run remains recoverable.
 - Propagate every check state persistence failure to the run worker; never discard an execution error and leave a claimed check unscheduled.
 - Unexpected storage/worker exits must cancel and reap owned commands even when SQLite can no longer record a cancellation. A normal daemon stop still drains.
 - Retain pending-run failures with per-run exponential retry delays from one second to one minute; never hot-loop reconciliation or release an unproven scheduling claim. On-demand workers wait for pending retry work and stop promptly on shutdown.

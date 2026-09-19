@@ -369,7 +369,9 @@ func (s *Service) runOne(ctx context.Context, id string) error {
 	if err != nil {
 		for _, c := range r.Checks {
 			if c.State == Queued {
-				_ = s.finishCheck(c, Failed, "workspace-preparation-failed", err.Error())
+				if saveErr := s.finishCheck(c, Failed, "workspace-preparation-failed", err.Error()); saveErr != nil {
+					return saveErr
+				}
 			}
 		}
 		r.State = Failed
