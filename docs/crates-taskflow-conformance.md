@@ -54,11 +54,11 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 
 The library regression `invalidation_at_each_publication_boundary_preserves_previous_entry` checks cancellation and failed input validation before object publication, before entry replacement, and after replacement under the exclusive cache lock, with and without a previous entry.
 
-`cli_metadata_cancellation_returns_130_without_fallback` sends SIGINT to the real CLI while its Cargo metadata child is running, checks code 130 and child reaping, and proves no membership fallback starts.
+`cli_metadata_cancellation_returns_130_without_fallback` sends SIGINT to the real CLI while its Cargo metadata child is running, checks code 130 and child reaping, and proves no membership fallback starts. The fixture publishes its PID barrier after recording the metadata call so cancellation cannot race that evidence.
 
 `non_utf8_paths_never_collapse_into_cache_identities` creates two Unix filenames with distinct invalid bytes, invalid output/root names, and a valid Japanese filename; identities fail explicitly instead of collapsing distinct paths.
 
-`outputless_cached_prerequisites_preserve_semantic_result_identity` covers cached checks and shards, input changes, historical cache restoration, downstream cache invalidation, unchanged suppression, and rejection of legacy empty-snapshot identities.
+`outputless_cached_prerequisites_preserve_semantic_result_identity` covers cached checks and shards, input changes, historical cache restoration, downstream cache invalidation, unchanged suppression, and rejection of legacy empty-snapshot identities. Separate shard selections retain distinct cache keys and the same tested-input result identity.
 
 Additional invariants include unknown/duplicate configuration rejection, schema freshness, stale/partial CI receipt rejection, required artifact accounting, cache path traversal rejection before mutation, masked stored logs, and service failure cancelling other running checks before returning.
 
@@ -119,7 +119,7 @@ The `taskflow-conformance` CI job covers macOS/Linux/Windows x64/arm64 and exclu
 ## Validation evidence and limits
 The implementation session exercised real macOS arm64 host execution, Linux arm64 containers through Docker, loopback MinIO, pnpm/Cargo/Go discovery, all four native shard adapters, source-build CLI/schema, generated-workflow actionlint, root Rust tests, and public-docs build/route checks. Committed CI definitions are not evidence that remote platform jobs have already executed. Windows and other host architectures require their conformance results before a release support claim. Registry/service availability failures must be reported as failed or unavailable validation, never counted as passes.
 
-Before this repair, GitHub Actions for PR #906 revision `d2bff705` reported success for all six native platform jobs and both Linux Docker/S3 jobs. That establishes prior-revision native evidence, including Windows; the new repairs still require their own matrix results. Local repair validation covers all 88 conformance cases and two library regressions on macOS arm64, including six external suites, and 82 conformance cases plus two library regressions in Linux arm64 containers.
+Before this repair, GitHub Actions for PR #906 revision `9637031d` reported success for all six native platform jobs and both Linux Docker/S3 jobs (40 successful checks, three skipped). That establishes prior-revision native evidence, including Windows; the new repairs still require their own matrix results. Local repair validation covers all 92 conformance cases, four library regressions, and one CLI unit test on macOS arm64, including six external suites, and 86 conformance cases plus the same library and CLI tests in Linux arm64 containers. Root `cargo test`, TaskFlow Clippy with warnings denied, workspace formatting, repository/generated-workflow actionlint, all 27 CI contract checks, and public-docs tests passed.
 
 A local full Windows GNU cross-check was unavailable because the host lacks the MinGW C compiler required by the TLS dependency. The Windows process-owner source was type-checked separately for the Windows target; this is not a substitute for native execution evidence.
 
