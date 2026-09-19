@@ -45,6 +45,8 @@ runlens conflicts --report build.json --report test.json --json
 
 File usage may indicate a producer or consumer candidate. Overlapping writes or read/write relationships indicate potential conflicts; they do not prove causality, event order, or a race. These commands never execute recorded commands or search hidden history.
 
+`explain` interprets paths using the operating system recorded in each execution. Windows drive paths accept `/` or `\` separators, including UNC and verbatim forms, even when you read the report on another OS. Unix backslashes remain literal filename characters. Relative queries refer to the workspace.
+
 ## Verify and share
 
 Use [clean and repeated verification](/verification) for fresh executions, [JSON and offline HTML export](/reports) to share results, and `runlens doctor --json` to inspect prerequisite availability. Read-only analysis commands accept `--json` and keep stdout free of progress messages.

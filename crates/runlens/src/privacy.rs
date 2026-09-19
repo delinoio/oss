@@ -105,12 +105,15 @@ pub fn normalized(path: &Path) -> String {
     }
     #[cfg(windows)]
     {
-        let text = path.to_string_lossy().replace('\\', "/");
-        if let Some(unc) = text.strip_prefix("//?/UNC/") {
-            format!("//{unc}")
-        } else {
-            text.strip_prefix("//?/").unwrap_or(&text).to_owned()
-        }
+        windows_path(&path.to_string_lossy())
+    }
+}
+pub(crate) fn windows_path(path: &str) -> String {
+    let text = path.replace('\\', "/");
+    if let Some(unc) = text.strip_prefix("//?/UNC/") {
+        format!("//{unc}")
+    } else {
+        text.strip_prefix("//?/").unwrap_or(&text).to_owned()
     }
 }
 fn replace_root(value: String, root: &str, placeholder: &str) -> String {

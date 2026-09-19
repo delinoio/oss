@@ -1056,6 +1056,74 @@ fn conflict_analysis_bounds_aggregate_target_pairs() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("65,536 target pairs"));
 }
 #[test]
+fn explain_uses_report_platform_path_syntax() {
+    use runlens::{entries::Entries, model::Access, report};
+    let root = tempfile::tempdir().unwrap();
+    assert!(run(root.path(), "original.json", "read").status.success());
+    let mut value = report::read(&root.path().join("original.json")).unwrap();
+    let execution = &mut value.executions[0];
+    execution.environment.os = "windows".into();
+    execution.accesses = Entries::default();
+    for path in ["C:/cache/input", "//server/share/input"] {
+        execution
+            .accesses
+            .insert(
+                path.into(),
+                Access {
+                    read: true,
+                    write: false,
+                    read_directory: false,
+                    unsupported: false,
+                    in_scope: false,
+                },
+            )
+            .unwrap();
+    }
+    report::save(&root.path().join("windows.json"), &value, false).unwrap();
+    for query in [
+        "C:/cache/input",
+        r"C:\cache\input",
+        r"\\?\C:\cache\input",
+        r"\\server\share\input",
+        r"\\?\UNC\server\share\input",
+    ] {
+        let output = invoke(
+            root.path(),
+            &["explain", query, "--report", "windows.json", "--json"],
+        );
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(result["usages"].as_object().unwrap().len(), 1, "{query}");
+    }
+    let execution = &mut value.executions[0];
+    execution.environment.os = "linux".into();
+    execution.accesses = Entries::default();
+    execution
+        .accesses
+        .insert(
+            r"${workspace}/C:\cache\input".into(),
+            Access {
+                read: true,
+                write: false,
+                read_directory: false,
+                unsupported: false,
+                in_scope: true,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        runlens::analysis::explain(r"C:\cache\input", &[value])
+            .unwrap()
+            .usages
+            .len(),
+        1
+    );
+}
+#[test]
 fn hostile_envelopes_and_forged_changes_are_rejected() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("input.txt"), "input").unwrap();

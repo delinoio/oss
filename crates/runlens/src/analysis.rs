@@ -681,14 +681,25 @@ pub fn receipt(report: &Report) -> Result<Analysis> {
     Ok(result)
 }
 pub fn explain(path: &str, reports: &[Report]) -> Result<Analysis> {
-    let path = if path.starts_with('/') || path.starts_with("${") {
-        path.to_owned()
-    } else {
-        format!("${{workspace}}/{}", path.trim_start_matches("./"))
-    };
     let mut result = Analysis::new(AnalysisKind::Explain);
     for report in reports {
         for execution in &report.executions {
+            // Interpret source-platform syntax even when querying a saved report
+            // on another OS; Unix backslashes remain literal filename bytes.
+            let windows = execution.environment.os == "windows";
+            let path = if windows {
+                crate::privacy::windows_path(path)
+            } else {
+                path.to_owned()
+            };
+            let drive_absolute = windows
+                && path.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
+                && path.as_bytes().get(1..3) == Some(b":/");
+            let path = if path.starts_with('/') || path.starts_with("${") || drive_absolute {
+                path
+            } else {
+                format!("${{workspace}}/{}", path.trim_start_matches("./"))
+            };
             let access = execution.accesses.get(&path)?;
             let change = execution.changes.get(&path)?;
             if access.is_some() || change.is_some() {

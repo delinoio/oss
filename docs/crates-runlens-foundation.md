@@ -418,6 +418,10 @@ and save. Git working-tree inclusion diffs against the initially selected commit
 and copies check cancellation between entries. Windows Git source locators omit
 verbatim filesystem prefixes while native filesystem operations retain them.
 
+Explain queries use each execution's recorded OS for path syntax: Windows drive,
+UNC, and verbatim paths normalize to recorded slash-separated keys even on a Unix
+reader. Unix literal backslashes remain filename bytes. Relative queries still
+refer to the workspace.
 Conflict findings identify concrete write/access/snapshot evidence, including
 ancestor directory reads, while retaining candidate status. Inconclusive
 comparisons return exit 4. Uploaded release assets must match both size and
