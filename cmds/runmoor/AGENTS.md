@@ -18,6 +18,7 @@
 - Forced preparation cancellation neither increments nor resets image preparation failure counters and must not suspend the pool.
 - Preparation workers recheck the durable unforced Preparing state after registration and check cancellation before remote/backend side effects.
 - Pending image removal retains sleep inhibition until cleanup is durably complete.
+- Temporary Tart exports are owned by the image UUID journaled before export. Clean them after import, during restart reconciliation, and before image removal; persist cleanup failures and never sweep unjournaled archives or follow unexpected symlinks.
 - Quarantined executions retain sleep inhibition while their termination remains unconfirmed.
 - Image open succeeds only after Tart reports the owned VM running; startup timeout retains an actionable diagnostic and the reservation until reconciliation confirms a stop.
 - Pool-scoped stop must leave other pools running. Drain waits must select the requested pool across generations equally through live control and offline state. Storage relocation requires fully completed execution cleanup and closed image operations, preserving the installation identity.

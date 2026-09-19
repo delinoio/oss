@@ -149,6 +149,9 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 		}); e != nil {
 			return nil, e
 		}
+		if e := cleanupImportArchive(c, im.ID); e != nil {
+			return nil, m.imageFailure(im.ID, e)
+		}
 		if !uncreated {
 			if e := m.Tart.Cleanup(ctx, c, Runner{ID: im.ID, Handle: Handle{VM: im.VM}}, s); e != nil {
 				return nil, m.imageFailure(im.ID, e)
@@ -196,7 +199,7 @@ func (m *ImageManager) imageFailure(id string, err error) error {
 	})
 	return p
 }
-func (m *ImageManager) create(ctx context.Context, c Config, req ImageRequest) (*Image, error) {
+func (m *ImageManager) create(ctx context.Context, c Config, req ImageRequest) (result *Image, err error) {
 	if !safeName.MatchString(req.Name) || (req.IPSW == "") == (req.From == "") || !validResources(req.Resources) {
 		return nil, problem(ErrConfig, "Image creation requires a safe name, explicit resources and exactly one --ipsw or --from source.", "See 'runmoor image create --help'.")
 	}
@@ -259,8 +262,12 @@ func (m *ImageManager) create(ctx context.Context, c Config, req ImageRequest) (
 		if !filepath.IsAbs(sourceHome) || filepath.Clean(sourceHome) == filepath.Join(c.Storage.Data, "tart") {
 			return nil, m.imageFailure(id, problem(ErrImage, "Source storage must be an external absolute Tart home.", "Use a sealed revision UUID for Runmoor-owned images."))
 		}
-		archive := filepath.Join(c.Storage.Data, "import-"+id+".tvm")
-		defer os.Remove(archive)
+		archive := importArchivePath(c, id)
+		defer func() {
+			if e := cleanupImportArchive(c, id); e != nil {
+				result, err = nil, m.imageFailure(id, e)
+			}
+		}()
 		env := append(minimalEnv(), "TART_HOME="+sourceHome, "TART_NO_AUTO_PRUNE=1")
 		b, e := m.Tart.Exec.Run(ctx, c.TartExecutable, []string{"get", req.From, "--format", "json"}, env, nil)
 		var v vmInfo
@@ -288,8 +295,47 @@ func (m *ImageManager) create(ctx context.Context, c Config, req ImageRequest) (
 	return m.Store.View().Images[id], nil
 }
 func jsonDecodeVM(b []byte, v *vmInfo) error { return json.Unmarshal(b, v) }
+
+func importArchivePath(c Config, id string) string {
+	return filepath.Join(c.Storage.Data, "import-"+id+".tvm")
+}
+
+// The image UUID is persisted before export begins. Its deterministic archive
+// path is therefore recoverable even if no post-export state update occurred.
+// Never sweep matching filenames without that durable image ownership record.
+func cleanupImportArchive(c Config, id string) error {
+	if !validID(id) {
+		return problem(ErrOwnership, "Import archive ownership is invalid.", "Preserve the image journal and restore its matching state backup.")
+	}
+	if err := privateDir(c.Storage.Data); err != nil {
+		return err
+	}
+	archive := importArchivePath(c, id)
+	info, err := os.Lstat(archive)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return problem(ErrCleanup, "Cannot inspect the temporary image export.", "Check managed data directory permissions and retry image cleanup.")
+	}
+	if !info.Mode().IsRegular() {
+		return problem(ErrOwnership, "Temporary image export is not a regular file.", "Inspect the image's managed import archive; preserve unexpected directories and symlink targets.")
+	}
+	if err = os.Remove(archive); err != nil && !os.IsNotExist(err) {
+		return problem(ErrCleanup, "Cannot remove the temporary image export.", "Check managed data directory permissions and retry image cleanup.")
+	}
+	return nil
+}
+
 func (m *ImageManager) Reconcile(ctx context.Context, c Config) error {
+	var cleanupErr error
 	for id, im := range m.Store.View().Images {
+		// Manager serialization excludes active create/import operations here.
+		// Include preparing, sealed and removing revisions, not just open VMs.
+		if err := cleanupImportArchive(c, id); err != nil {
+			cleanupErr = m.imageFailure(id, err)
+			continue
+		}
 		if im.Phase != ImageOpen {
 			continue
 		}
@@ -316,5 +362,5 @@ func (m *ImageManager) Reconcile(ctx context.Context, c Config) error {
 			}
 		}
 	}
-	return nil
+	return cleanupErr
 }
