@@ -74,7 +74,24 @@ func (s *Service) finishCheck(c Check, state State, code, message string) error 
 	if code != "" {
 		c.Diagnostics = append(c.Diagnostics, Diagnostic{Code: code, Message: message})
 	}
-	return s.Store.SaveCheck(c)
+	var runID string
+	err := s.Store.Transaction(func(tx *sql.Tx) error {
+		var reason State
+		// The worker has reconciled owned processes before reaching this point.
+		// Serialize cancellation with publication so a request committed during
+		// evidence collection cannot be overwritten by a stale successful result.
+		if err := tx.QueryRow("SELECT run_id,cancel FROM checks WHERE id=?", c.ID).Scan(&runID, &reason); err != nil {
+			return err
+		}
+		if reason != "" {
+			c.State = reason
+		}
+		return saveCheck(tx, c)
+	})
+	if err == nil {
+		s.Log.Info("check.finished", "run_id", runID, "check_id", c.ID, "state", c.State)
+	}
+	return err
 }
 func (s *Service) execute(ctx context.Context, r Run, c Check, workspace string) error {
 	command := r.Config.Checks[c.Name]
@@ -269,17 +286,10 @@ loop:
 	if exit != 0 && len(c.Failures) == 0 {
 		c.Failures = append(c.Failures, Failure{ID: Hash([]byte(c.Name + "/exit")), Check: c.Name, Command: command.Command, Message: fmt.Sprintf("command exited with status %d", exit), LogID: c.Log.ID})
 	}
-	if reason := s.Store.Cancellation(c.ID); reason != "" {
-		cancel = reason
-	}
 	if cancel != "" {
 		state = cancel
 	}
-	if err := s.finishCheck(c, state, "", ""); err != nil {
-		return err
-	}
-	s.Log.Info("check.finished", "run_id", r.ID, "check_id", c.ID, "state", state)
-	return nil
+	return s.finishCheck(c, state, "", "")
 }
 func digestFile(path string, e *Evidence) error {
 	f, err := os.Open(path)
