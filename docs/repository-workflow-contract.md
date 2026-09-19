@@ -75,6 +75,9 @@ readiness. Publication requires its exact `runlens@vX.Y.Z` tag and a successful
 manual native-validation workflow at the same commit, with every archive digest
 bound to execution and minimum-OS evidence. A missing platform or OS proof prevents
 the protected `runlens-release` signing environment from being reached.
+The validation job has only `contents: read` and `actions: read`; the latter is
+required to inspect and download evidence from the explicitly selected native
+workflow run. It has no publication, signing, or secret authority.
 
 Only the signing job receives OIDC write permission. Its keyless Sigstore identity
 is the release workflow at the exact tag; checksum manifests and each archive are

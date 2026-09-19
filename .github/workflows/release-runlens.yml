@@ -31,6 +31,9 @@ jobs:
     needs: [build]
     if: always() && (needs.build.result == 'success' || (!inputs.dry_run && needs.build.result == 'skipped'))
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      actions: read
     outputs:
       tag: ${{ steps.metadata.outputs.tag }}
     steps:

@@ -36,6 +36,7 @@ test("Runlens dry run cannot reach publication credentials or OIDC", () => {
   for (const name of ["sign", "install", "publish"]) assert.equal(release.jobs[name].if, "!inputs.dry_run", name);
   for (const name of ["build", "validate"]) assert.doesNotMatch(JSON.stringify(release.jobs[name]), /secrets\.|id-token|sign-blob/u);
   assert.deepEqual(release.jobs.sign.permissions, { contents: "read", "id-token": "write" });
+  assert.deepEqual(release.jobs.validate.permissions, { contents: "read", actions: "read" });
   assert.deepEqual(release.jobs.publish.permissions, { contents: "write" });
   assert.deepEqual(release.jobs.publish.needs, ["validate", "sign", "install"]);
   assert.equal(release.jobs.install.strategy.matrix.include.length, 6);
