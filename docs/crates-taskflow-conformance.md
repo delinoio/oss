@@ -155,3 +155,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `ci_export_rejects_symlink_destinations_before_writing_either_file` rejects external parent, workflow-leaf, and blueprint-leaf links without creating or replacing either output; an ordinary missing nested destination remains supported.
 
 `tool_identity_includes_stderr_without_contaminating_metadata` upgrades a tool reporting only on stderr, then moves identical bytes between streams. Both changes invalidate cached success while JSON metadata queries retain stdout-only parsing.
+
+`ci_bundle_limits_apply_to_each_artifact_independently` uses scaled limits with the production JSON codec to accept multiple individually valid artifacts whose combined size exceeds one artifact limit, while rejecting an oversized artifact, metadata, or input file. The writer uses the same size validator.

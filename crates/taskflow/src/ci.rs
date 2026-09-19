@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
+    io::{BufReader, Read, Write},
     path::Path,
     sync::Arc,
 };
@@ -440,19 +441,104 @@ pub async fn prepare(root: &Path, blueprint: &Blueprint, base: Option<&str>) -> 
         plan,
     })
 }
-fn read_bundles(path: &Path) -> Result<Vec<Bundle>> {
+#[derive(Clone, Copy)]
+struct BundleLimits {
+    artifacts: usize,
+    artifact_bytes: u64,
+    envelope_bytes: u64,
+}
+impl BundleLimits {
+    fn for_unit(unit: &Unit) -> Self {
+        Self {
+            artifacts: unit.outputs.len(),
+            artifact_bytes: cache::MAX_CACHE_BYTES as u64,
+            envelope_bytes: cache::MAX_CACHE_BYTES as u64,
+        }
+    }
+
+    fn maximum(self) -> Result<u64> {
+        self.artifact_bytes
+            .checked_mul(self.artifacts.try_into()?)
+            .and_then(|bytes| bytes.checked_add(self.envelope_bytes))
+            .context("CI bundle size limit overflow")
+    }
+
+    fn validate(self, bundle: &Bundle) -> Result<()> {
+        ensure!(
+            bundle.artifacts.len() <= self.artifacts,
+            "too many CI artifacts"
+        );
+        let mut artifacts = 0;
+        for artifact in bundle.artifacts.values() {
+            artifacts += serialized_size(artifact, self.artifact_bytes)
+                .context("CI artifact exceeds encoded size limit")?;
+        }
+        // Only receipts, shard accounting, and JSON framing consume the envelope
+        // allowance; combining independent artifacts cannot shrink their limits.
+        serialized_size(bundle, artifacts + self.envelope_bytes)
+            .context("CI bundle metadata exceeds size limit")?;
+        Ok(())
+    }
+}
+fn serialized_size(value: &impl Serialize, limit: u64) -> Result<u64> {
+    struct Counter {
+        bytes: u64,
+        limit: u64,
+    }
+    impl Write for Counter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if bytes.len() as u64 > self.limit - self.bytes {
+                return Err(std::io::Error::other("encoded size limit exceeded"));
+            }
+            self.bytes += bytes.len() as u64;
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut counter = Counter { bytes: 0, limit };
+    serde_json::to_writer(&mut counter, value)?;
+    Ok(counter.bytes)
+}
+fn read_bundle(path: &Path, limits: BundleLimits) -> Result<Bundle> {
+    let maximum = limits.maximum()?;
+    let file = std::fs::File::open(path)?;
+    ensure!(file.metadata()?.len() <= maximum, "CI bundle too large");
+    // Bound reads as well as metadata to handle a file growing during parsing,
+    // without retaining a second copy of the complete encoded bundle in memory.
+    let bundle = serde_json::from_reader(BufReader::new(file).take(maximum + 1))?;
+    limits.validate(&bundle)?;
+    Ok(bundle)
+}
+fn read_bundles(path: &Path, blueprint: &Blueprint) -> Result<Vec<Bundle>> {
     if !path.exists() {
         return Ok(vec![]);
     }
+    let limits = blueprint
+        .units
+        .iter()
+        .map(BundleLimits::for_unit)
+        .max_by_key(|limit| limit.artifacts)
+        .unwrap_or(BundleLimits {
+            artifacts: 0,
+            artifact_bytes: cache::MAX_CACHE_BYTES as u64,
+            envelope_bytes: cache::MAX_CACHE_BYTES as u64,
+        });
     let mut bundles = vec![];
     for entry in walkdir::WalkDir::new(path) {
         let entry = entry?;
         if entry.file_name() == "bundle.json" && entry.file_type().is_file() {
-            ensure!(
-                entry.metadata()?.len() <= cache::MAX_CACHE_BYTES as u64,
-                "CI bundle too large"
-            );
-            bundles.push(serde_json::from_slice(&std::fs::read(entry.path())?)?);
+            ensure!(bundles.len() < blueprint.units.len(), "too many CI bundles");
+            let bundle = read_bundle(entry.path(), limits)?;
+            let unit = blueprint
+                .units
+                .iter()
+                .find(|unit| unit.id == bundle.unit)
+                .context("unknown CI bundle unit")?;
+            BundleLimits::for_unit(unit).validate(&bundle)?;
+            bundles.push(bundle);
         }
     }
     Ok(bundles)
@@ -572,7 +658,7 @@ pub async fn execute(
         .find(|u| u.id == unit_id)
         .context("unknown CI unit")?;
     let mut provided = BTreeMap::new();
-    let bundles = read_bundles(input)?;
+    let bundles = read_bundles(input, blueprint)?;
     let mut seen = BTreeSet::new();
     let mut shard_reports: BTreeMap<String, (Inventory, Vec<ShardResults>)> = BTreeMap::new();
     for bundle in bundles {
@@ -683,12 +769,13 @@ pub async fn execute(
             bundle.shards.insert(id.clone(), (inventory, reports));
         }
     }
+    BundleLimits::for_unit(unit).validate(&bundle)?;
     files::atomic_write(output, &serde_json::to_vec(&bundle)?)?;
     Ok(result)
 }
 pub fn aggregate(blueprint: &Blueprint, plan: &CiPlan, input: &Path) -> Result<Value> {
     plan_digest(blueprint, plan)?;
-    let bundles = read_bundles(input)?;
+    let bundles = read_bundles(input, blueprint)?;
     let mut seen = BTreeSet::new();
     let mut success = true;
     let mut shards: BTreeMap<String, (Inventory, Vec<ShardResults>)> = BTreeMap::new();
@@ -714,4 +801,71 @@ pub fn aggregate(blueprint: &Blueprint, plan: &CiPlan, input: &Path) -> Result<V
         success &= crate::shard::aggregate(inventory, count, reports)?;
     }
     Ok(json!({"version":1,"success":success,"units":seen.len()}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ci_bundle_limits_apply_to_each_artifact_independently() {
+        let artifact = |task: &str| Artifact {
+            version: 1,
+            key: "key".into(),
+            task: task.into(),
+            output_digest: "digest".into(),
+            files: vec![cache::FileRecord {
+                path: "out".into(),
+                content: cache::Content::File {
+                    data: "a".repeat(2000),
+                    digest: "digest".into(),
+                    executable: false,
+                },
+            }],
+            shards: None,
+        };
+        let mut bundle = Bundle {
+            version: 1,
+            blueprint: "blueprint".into(),
+            plan: "plan".into(),
+            unit: "unit".into(),
+            result: RunResult {
+                version: 1,
+                success: true,
+                results: BTreeMap::new(),
+            },
+            artifacts: BTreeMap::from([("a".into(), artifact("a")), ("b".into(), artifact("b"))]),
+            shards: BTreeMap::new(),
+        };
+        // Scale only the byte limit, keeping the actual wire codec and checks.
+        let limits = BundleLimits {
+            artifacts: 2,
+            artifact_bytes: 3000,
+            envelope_bytes: 1000,
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("bundle.json");
+        let bytes = serde_json::to_vec(&bundle).unwrap();
+        assert!(bytes.len() > limits.artifact_bytes as usize);
+        std::fs::write(&path, bytes).unwrap();
+        assert_eq!(read_bundle(&path, limits).unwrap().artifacts.len(), 2);
+        bundle.artifacts.get_mut("a").unwrap().key = "a".repeat(1500);
+        std::fs::write(&path, serde_json::to_vec(&bundle).unwrap()).unwrap();
+        assert!(read_bundle(&path, limits)
+            .unwrap_err()
+            .to_string()
+            .contains("CI artifact"));
+        bundle.artifacts.clear();
+        bundle.plan = "x".repeat(1500);
+        std::fs::write(&path, serde_json::to_vec(&bundle).unwrap()).unwrap();
+        assert!(read_bundle(&path, limits)
+            .unwrap_err()
+            .to_string()
+            .contains("metadata"));
+        std::fs::write(&path, vec![b' '; limits.maximum().unwrap() as usize + 1]).unwrap();
+        assert!(read_bundle(&path, limits)
+            .unwrap_err()
+            .to_string()
+            .contains("too large"));
+    }
 }
