@@ -76,27 +76,23 @@ func (s *Service) finishCheck(c Check, state State, code, message string) error 
 	}
 	return s.Store.SaveCheck(c)
 }
-func (s *Service) execute(ctx context.Context, r Run, c Check, workspace string) {
+func (s *Service) execute(ctx context.Context, r Run, c Check, workspace string) error {
 	command := r.Config.Checks[c.Name]
 	env, secrets, err := s.Personal.CommandEnvironment(command, r.Environment)
 	if err != nil {
-		_ = s.finishCheck(c, Failed, "environment-unavailable", err.Error())
-		return
+		return s.finishCheck(c, Failed, "environment-unavailable", err.Error())
 	}
 	if err = clearReportOutputs(workspace, command.Reports); err != nil {
-		_ = s.finishCheck(c, Failed, "report-preparation-failed", "declared report outputs could not be cleared safely")
-		return
+		return s.finishCheck(c, Failed, "report-preparation-failed", "declared report outputs could not be cleared safely")
 	}
 	c.Log = Evidence{ID: ID(), Name: "combined.log"}
 	logPath, _ := s.Store.EvidencePath(r.ID, c.Log.ID)
 	if err = PrivateDir(filepath.Dir(logPath)); err != nil {
-		_ = s.finishCheck(c, Failed, "evidence-write-failed", "cannot create log directory")
-		return
+		return s.finishCheck(c, Failed, "evidence-write-failed", "cannot create log directory")
 	}
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
-		_ = s.finishCheck(c, Failed, "evidence-write-failed", "cannot open log")
-		return
+		return s.finishCheck(c, Failed, "evidence-write-failed", "cannot open log")
 	}
 	defer f.Close()
 	redactor := NewRedactor(f, secrets)
@@ -112,14 +108,12 @@ func (s *Service) execute(ctx context.Context, r Run, c Check, workspace string)
 	cmd.Stderr = redactor
 	if cancel := s.Store.Cancellation(c.ID); cancel != "" {
 		_ = redactor.Close()
-		_ = s.finishCheck(c, cancel, "", "")
-		return
+		return s.finishCheck(c, cancel, "", "")
 	}
 	p, err := startProcess(cmd)
 	if err != nil {
 		_ = redactor.Close()
-		_ = s.finishCheck(c, Failed, "command-start-failed", "cannot start selected shell; run ach doctor")
-		return
+		return s.finishCheck(c, Failed, "command-start-failed", "cannot start selected shell; run ach doctor")
 	}
 	defer p.close()
 	c.Process = p.identity
@@ -128,8 +122,8 @@ func (s *Service) execute(ctx context.Context, r Run, c Check, workspace string)
 	c.StartedAt = &t
 	if err = s.Store.SaveCheck(c); err != nil {
 		_ = p.terminate()
-		_, _ = cmd.Process.Wait()
-		return
+		_ = cmd.Wait()
+		return err
 	}
 	s.Log.Info("check.started", "run_id", r.ID, "check_id", c.ID, "check", c.Name)
 	done := make(chan error, 1)
@@ -150,7 +144,7 @@ loop:
 			cancel = Interrupted
 			if err = p.terminate(); err != nil {
 				s.Log.Error("process.reconciliation_failed", "run_id", r.ID, "check_id", c.ID, "code", "process-reconciliation-failed")
-				return
+				return err
 			}
 			waitErr = <-done
 			break loop
@@ -160,8 +154,12 @@ loop:
 			}
 			c.Process = p.snapshot()
 			if saveErr := s.Store.SaveCheck(c); saveErr != nil {
-				_ = p.terminate()
-				cancel = Interrupted
+				terminationErr := p.terminate()
+				if terminationErr != nil {
+					return terminationErr
+				}
+				<-done
+				return saveErr
 			}
 			if reason := s.Store.Cancellation(c.ID); reason != "" && !terminated {
 				cancel = reason
@@ -178,7 +176,7 @@ loop:
 	if err = p.terminate(); err != nil {
 		c.Diagnostics = append(c.Diagnostics, Diagnostic{Code: "process-reconciliation-failed", Message: "owned descendants remain active"})
 		_ = s.Store.SaveCheck(c)
-		return
+		return err
 	}
 	err = redactor.Close()
 	if err == nil {
@@ -186,14 +184,14 @@ loop:
 	}
 	_ = f.Close()
 	c.State = Collecting
-	_ = s.Store.SaveCheck(c)
+	if saveErr := s.Store.SaveCheck(c); saveErr != nil {
+		return saveErr
+	}
 	if err != nil {
-		_ = s.finishCheck(c, Failed, "evidence-write-failed", "captured output could not be persisted")
-		return
+		return s.finishCheck(c, Failed, "evidence-write-failed", "captured output could not be persisted")
 	}
 	if err = digestFile(logPath, &c.Log); err != nil {
-		_ = s.finishCheck(c, Failed, "evidence-read-failed", "captured output could not be verified")
-		return
+		return s.finishCheck(c, Failed, "evidence-read-failed", "captured output could not be verified")
 	}
 	exit := 0
 	if waitErr != nil {
@@ -241,8 +239,11 @@ loop:
 	if cancel != "" {
 		state = cancel
 	}
-	_ = s.finishCheck(c, state, "", "")
+	if err := s.finishCheck(c, state, "", ""); err != nil {
+		return err
+	}
 	s.Log.Info("check.finished", "run_id", r.ID, "check_id", c.ID, "state", state)
+	return nil
 }
 func digestFile(path string, e *Evidence) error {
 	f, err := os.Open(path)
@@ -334,7 +335,11 @@ func (s *Service) runOne(ctx context.Context, id string) error {
 		return err
 	}
 	active := map[string]bool{}
-	done := make(chan string, len(r.Checks))
+	type completion struct {
+		id  string
+		err error
+	}
+	done := make(chan completion, len(r.Checks))
 	var wg sync.WaitGroup
 	defer func() { cancelOwned(); wg.Wait() }()
 	for {
@@ -362,7 +367,9 @@ func (s *Service) runOne(ctx context.Context, id string) error {
 				if e = ReconcileProcess(c.Process); e != nil {
 					return e
 				}
-				_ = s.finishCheck(c, reason, "", "")
+				if e = s.finishCheck(c, reason, "", ""); e != nil {
+					return e
+				}
 				continue
 			}
 			if c.State != Queued {
@@ -379,7 +386,9 @@ func (s *Service) runOne(ctx context.Context, id string) error {
 				}
 			}
 			if blocked {
-				_ = s.finishCheck(c, Blocked, "dependency-failed", "a prerequisite did not pass")
+				if e = s.finishCheck(c, Blocked, "dependency-failed", "a prerequisite did not pass"); e != nil {
+					return e
+				}
 				continue
 			}
 			if !ready {
@@ -392,15 +401,18 @@ func (s *Service) runOne(ctx context.Context, id string) error {
 			if claimed {
 				active[c.ID] = true
 				wg.Add(1)
-				go func(c Check) { defer wg.Done(); s.execute(ctx, r, c, workspace); done <- c.ID }(c)
+				go func(c Check) { defer wg.Done(); done <- completion{c.ID, s.execute(ctx, r, c, workspace)} }(c)
 			}
 		}
 		if !remaining {
 			break
 		}
 		select {
-		case id := <-done:
-			delete(active, id)
+		case result := <-done:
+			if result.err != nil {
+				return result.err
+			}
+			delete(active, result.id)
 		case <-time.After(75 * time.Millisecond):
 		}
 	}
