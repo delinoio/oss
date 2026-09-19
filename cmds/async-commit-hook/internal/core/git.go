@@ -142,13 +142,52 @@ func ValidateSource(ctx context.Context, path, sha string) error {
 			if err != nil {
 				return err
 			}
-			if strings.Contains(b, "filter=lfs") {
+			if declaresLFSFilter(b) {
 				return E("lfs-unsupported", "Git LFS source is unsupported", 2)
 			}
 		}
 	}
 	return nil
 }
+
+func declaresLFSFilter(attributes string) bool {
+	for _, line := range strings.Split(strings.TrimPrefix(attributes, "\uFEFF"), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// The first field is a pattern (or macro name), not an attribute.
+		// C-quoted patterns can contain spaces and escaped quotes.
+		end := strings.IndexAny(line, " \t\r")
+		if line[0] == '"' {
+			end = -1
+			for i := 1; i < len(line); i++ {
+				if line[i] == '\\' {
+					i++
+				} else if line[i] == '"' {
+					end = i + 1
+					break
+				}
+			}
+		}
+		if end < 0 || end >= len(line) || !strings.ContainsRune(" \t\r", rune(line[end])) {
+			continue
+		}
+		filter := ""
+		for _, attribute := range strings.Fields(line[end:]) {
+			if strings.HasPrefix(attribute, "filter=") {
+				filter = strings.TrimPrefix(attribute, "filter=")
+			} else if attribute == "filter" || attribute == "-filter" || attribute == "!filter" {
+				filter = ""
+			}
+		}
+		if filter == "lfs" {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Store) Prepare(ctx context.Context, r Run) (string, error) {
 	dir := filepath.Join(s.Root, "workspaces", r.ID)
 	if _, err := os.Lstat(dir); err == nil {
