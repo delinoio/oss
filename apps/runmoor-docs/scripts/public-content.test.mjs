@@ -63,6 +63,14 @@ const forbidden = [
   ["CSS credential URL", '<style>.private { background: url("https://example.com/image?token&equals;fixture-value") }</style>'],
   ["public asset with credentials", '<img src="/assets/logo.svg#token=fixture-value">'],
 ];
+for (const key of ["code", "oauth_code"]) {
+  forbidden.push(
+    [`direct ${key} fragment`, `<a href="https://example.com/#${key}&equals;fixture-value">Callback</a>`],
+    [`routed ${key} fragment`, `<a href="https://example.com/#/callback?${key}=fixture-value">Callback</a>`],
+    [`routed encoded ${key} fragment`, `<img src="https://example.com/#/callback?${key}&equals;fixture-value">`],
+    [`routed CSS ${key} fragment`, `<style>.private { background: url("https://example.com/#/callback?${key}&equals;fixture-value") }</style>`],
+  );
+}
 for (const route of ["install", "configuration", "commands", "docker", "tart", "operations"]) {
   forbidden.push(
     [`route-prefixed ${route} resource`, `<img src="/${route}/servers/runmoor/private.png">`],
@@ -93,6 +101,7 @@ test("publication preserves public routes, assets, external references, and cred
     <a href="/install#verification">Install</a>
     <a href="/configuration?lang=en">Configuration</a>
     <a href="https://docs.example.com/guide.html">External reference</a>
+    <a href="https://docs.example.com/#/guide?section=installation">External routed reference</a>
     <img src="/assets/logo.svg">
     <img srcset="/assets/logo.svg 1x, /static/logo.svg 2x">
     <script src="/static/js/app.js"></script>

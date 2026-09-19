@@ -43,6 +43,16 @@ function hasCredentialParameters(parameters) {
   return false;
 }
 
+function hasCredentialFragment(url) {
+  const fragment = url.hash.slice(1).replace(/^\?/u, "");
+  if (hasCredentialParameters(new URLSearchParams(fragment))) return true;
+  // Hash routers put the query after a route, while OAuth can also return
+  // parameters directly in the fragment. Check both forms independently.
+  const queryStart = fragment.indexOf("?");
+  return queryStart !== -1
+    && hasCredentialParameters(new URLSearchParams(fragment.slice(queryStart + 1)));
+}
+
 export function createPublicContentValidator(routeIds) {
   const routes = [...routeIds];
   const routePattern = routes.filter((route) => route !== "/")
@@ -77,7 +87,7 @@ export function createPublicContentValidator(routeIds) {
         // Malformed URLs are not credential evidence, but still check raw paths.
       }
       if (url && (url.username || url.password || hasCredentialParameters(url.searchParams)
-        || hasCredentialParameters(new URLSearchParams(url.hash.slice(1).replace(/^\?/u, ""))))) return true;
+        || hasCredentialFragment(url))) return true;
       const sameOrigin = url?.origin === pageUrl.origin;
       if (sameOrigin && /^\/(?:assets|static)\//u.test(url.pathname)) continue;
       if (forbiddenPaths.some((pattern) => pattern.test(decoded))) return true;
