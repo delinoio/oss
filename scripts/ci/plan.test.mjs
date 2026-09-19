@@ -152,6 +152,25 @@ function results(event, paths) {
   };
 }
 
+test("TaskFlow conformance follows the central plan and rejects incomplete results", () => {
+  const ids = ["taskflow-conformance", "taskflow-docker"];
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of ["crates/taskflow/src/runner.rs", "docs/crates-taskflow-conformance.md", "Cargo.lock", ".cargo/config.toml"]) {
+      for (const id of ids) assert.ok(selected(event, [path]).includes(id), `${path}: ${id}`);
+    }
+    for (const id of ids) assert.ok(!selected(event, ["cmds/runmoor/main.go"]).includes(id), id);
+    assert.ok(selected(event, ["go.mod"]).includes("taskflow-conformance"));
+    for (const id of ids) {
+      const needs = results(event, ["crates/taskflow/src/runner.rs"]);
+      assert.equal(validateResults(needs), true);
+      for (const result of ["failure", "cancelled", "skipped"]) {
+        needs[id].result = result;
+        assert.throws(() => validateResults(needs), new RegExp(id, "u"));
+      }
+    }
+  }
+});
+
 test("aggregate accepts only success and skips explicitly authorized by the plan", () => {
   for (const event of Object.values(Event)) assert.equal(validateResults(results(event, ["apps/devhud/src/App.tsx"])), true);
   assert.equal(validateResults(results(Event.PullRequest, [])), true);

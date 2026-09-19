@@ -1555,6 +1555,87 @@ jobs:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
 
+  taskflow-conformance:
+    needs: changes
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['taskflow-conformance'] }}
+    name: TaskFlow ${{ matrix.id }} conformance
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: macos-x64
+            runner: macos-15-intel
+          - id: macos-arm64
+            runner: macos-15
+          - id: linux-x64
+            runner: ubuntu-22.04
+          - id: linux-arm64
+            runner: ubuntu-24.04-arm
+          - id: windows-x64
+            runner: windows-2022
+          - id: windows-arm64
+            runner: windows-11-arm
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.14.0
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+          run_install: false
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Prepare Rust and workflow validator
+        shell: bash
+        run: |
+          rustup toolchain install nightly-2026-01-01 --profile minimal --component clippy
+          go build -o "$RUNNER_TEMP/taskflow-actionlint.exe" github.com/rhysd/actionlint/cmd/actionlint
+      - name: Run native graph and lifecycle conformance
+        shell: bash
+        env:
+          TFLOW_ACTIONLINT: ${{ runner.temp }}/taskflow-actionlint.exe
+        run: |
+          cargo test --locked -p taskflow --lib --test conformance -- --include-ignored --skip scenario_10_local_docker --skip scenario_22_real_s3
+          cargo clippy --locked -p taskflow --all-targets -- -D warnings
+
+  taskflow-docker:
+    needs: changes
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['taskflow-docker'] }}
+    name: TaskFlow Docker and S3 ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare Rust and immutable local fixtures
+        run: |
+          rustup toolchain install nightly-2026-01-01 --profile minimal
+          docker pull node@sha256:6dac556d980b7f0e5498d08f08cee0ca67798b4ad6c23964a9214920e67758d0
+          docker pull quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+      - name: Run real container and S3 transport tests
+        run: |
+          cargo test --locked -p taskflow --test conformance scenario_10_local_docker -- --ignored
+          # This process tests trusted transport using only isolated loopback fixture credentials.
+          # Untrusted PR denial is covered separately by the default conformance suite.
+          env -u GITHUB_EVENT_NAME -u TFLOW_UNTRUSTED_CI cargo test --locked -p taskflow --test conformance scenario_22_real_s3 -- --ignored
+
   ci-result:
     name: CI Result
     runs-on: ubuntu-latest
@@ -1588,6 +1669,8 @@ jobs:
       - devhud-oci
       - devhud-supply-chain
       - devhud-release-contracts
+      - taskflow-conformance
+      - taskflow-docker
     steps:
       - uses: actions/checkout@v6
         with:

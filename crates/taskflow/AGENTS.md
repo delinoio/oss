@@ -1,0 +1,56 @@
+# TaskFlow
+
+- Follow `docs/project-taskflow.md` and `docs/crates-taskflow-foundation.md`.
+- Keep the library independently testable; CLI commands use the same planner and executor as CI and sessions.
+- Never replace native dependency resolution with package-name matching or generate compiler actions.
+- Unknown graph coverage expands affected selection conservatively, but unresolved prerequisite selection fails closed. Scope native selector completeness to the owning projects of each adapter invocation.
+- Native Cargo selectors evaluate preserved target conditions with Cargo's platform parser and rustc cfg metadata for the selected platform; explicit cargoTarget takes precedence over execution-platform defaults.
+- Unix input cache state includes permissions, including file-link target permissions; portable CI structure fingerprints remain content-based.
+- Validate every affected-mode task filter before intersecting it with changes; a typo must fail even for an empty affected set.
+- Never collapse direct/input/schedule causes into a prerequisite cause. Cancellation and invalidation prohibit cache publication.
+- Graph output ownership compares missing names using the destination filesystem's actual case/Unicode equivalence, including cross-project ancestors; probes must never mutate declared outputs.
+- Before staging artifact contents, probe every path prefix on the destination filesystem to reject case/Unicode aliases and unsupported names without mutating outputs.
+- Outputless cached tasks retain a validated semantic result identity separately from the empty file-snapshot digest, including historical cache hits and unchanged reports; sharded result identity includes the tested input version and is shared across partitions while sharded task cache keys remain partition-specific. Ordinary prerequisites never include the enclosing invocation's shard selection in their keys.
+- Input hashing streams both regular files and file-link targets through a fixed-size buffer. Internal dangling input links retain target plus missing state; validate their full chain without requiring the target to exist, and never hide permission failures or cycles. Absolute input targets may enter through a canonical alias of the workspace; validate every remaining component. Local output hashing streams file content without artifact transfer limits; version its digest domain independently of encoded payloads. Capture and transport remain bounded.
+- Output restoration must validate the complete entry and containment before mutation. Secrets must be masked before persistence.
+- Validate both CI export destinations through existing filesystem ancestors before writing either workflow or blueprint.
+- CI bundle validation verifies intrinsic artifact integrity even for terminal outputs that no downstream job restores.
+- CI bundle limits scale with declared artifacts: bound each encoded artifact independently, bound metadata separately, and validate the same limits before publication and after bounded reads.
+- CI output transfer requires exact files/directories or complete directory trees even for uncached tasks; reject partial ownership before export, capture, or restoration.
+- Strip workspace-designated secret variables from every task that does not declare them, including tasks grouped into one CI unit.
+- Graph validation rejects remote credential references in every task environment declaration before execution; runtime validation also checks CLI overrides.
+- Environment scoping, precedence, masking, fingerprints, runtime retention, and transport credential exclusion use the host's environment-name comparison; Windows names follow its ordinal case-insensitive rules.
+- Output capture, local hashing, and cache restoration validate the same link chains. Cache link validation follows archive link chains and existing filesystem ancestors before processing parent components; lexical containment alone cannot authorize restoration.
+- Cache link records use portable separators; Windows link creation converts targets to native separators before invoking the filesystem API.
+- Local cache publication rechecks cancellation and inputs under its exclusive lock before and after entry replacement; invalidation restores the previous binding before readers resume, and rollback failures remain failures.
+- Local cache readers, writers, and cleaning share a process-safe cache lock outside the removable cache tree; never hold it during commands or network operations.
+- Reject semantically invalid local entries before remote fallback selection; valid JSON alone never blocks a compatible remote artifact.
+- Cache verification checks artifact identity, content digests, paths, and shard accounting independently of current configuration, rejecting descendants of every non-directory record; restoration additionally validates project ownership and link containment.
+- Do not close the detached Unix descendant cleanup gap using process-group tests or periodic PID enumeration; require ownership evidence for setsid/setpgid and double-fork descendants on macOS and Linux.
+- Output-drain failures must still await both stream owners and container removal/absence verification before returning; unverified cleanup takes precedence over log errors.
+- Preserve completed, cancelled, and timed-out process reasons separately; finite deadlines produce failed receipts with code 124, while operator cancellation remains code 130. Sharded tasks share one deadline across inventory and all units, and metadata capture must await cleanup on expiry. Docker cleanup clears an expired task deadline and retains its own bounded removal/verification deadline. Shard aggregation retains these reasons and accounts for every remaining unit without launching replacement work.
+- Readiness cancellation, readiness deadlines, service deadlines, and early service exit must cancel and await the active probe plus both output drains; no outer timeout may drop that ownership future.
+- Validate TCP readiness host/port syntax and HTTP(S) URL shape without DNS or network probes before service startup.
+- Every child belongs to a process-tree/container owner; replacement waits for reaping. Tests must assert actual cleanup. Service shutdown must await all owners and propagate every unverified process/container cleanup as failure.
+- Ready service receipts expose their semantic task key to dependent cache keys. Session waves reuse finite prerequisite receipts only while current output digests match; missing or modified outputs return to normal restore/execution before consumers run.
+- Choose default overlap from the current trigger (input queue, schedule skip), including mixed subscriptions; explicit overlap applies to both. Apply overlap policies to per-task execution ownership, not to membership in an unfinished wave.
+- Reject absolute, rooted, and Windows drive-relative input and output patterns during configuration validation on every host, including negative patterns.
+- Explicit positive input globs may traverse otherwise ignored trees; prune only using conservative literal directory prefixes, never directory-name substrings. Reserved .git, .taskflow, and .taskflow-restore-* trees remain excluded.
+- Directory mutation notifications rescan every intersecting positive input root, even when the directory was deleted or does not itself match a glob; only a changed filtered snapshot enqueues work.
+- Watch invalidation consumes filesystem mutations, never access notifications from metadata discovery or input hashing. Metadata notifications must confirm a changed or invalid graph before cancelling the active generation; identical rewrites preserve live work.
+- Filesystem identities are fallible UTF-8 paths; reject invalid bytes in roots, native projects, inputs, outputs, and link targets before matching, hashing, or serialization. Never use lossy conversion for identity keys. Reject literal Unix backslashes before separator normalization.
+- Canonicalize watcher roots and event paths before graph matching, including deleted paths through their existing ancestors and Windows path prefixes.
+- Notification path normalization must tolerate concurrent removal while preserving broken-link and permission errors; do not separate existence checks from canonicalization. Windows native metadata opens explicitly request attribute-read access and synchronous query completion, and preserve native deletion-pending status separately from ACL denial before Win32 error translation. Windows resolution checks deletion state on the same handle after the final-path lookup, including lookup failures, so NTFS deletion-storage paths never become notification identities.
+- Native discovery preserves typed cancellation and cleanup failures through fallbacks; only completed operator cancellation maps top-level errors to exit code 130.
+- Go discovery must disable module proxies, checksum databases, VCS, and automatic toolchain downloads; private-module proxy bypass cannot override this boundary.
+- Rust libtest metadata must honor the command's explicit manifest selection in both argv forms; parse harness declarations only for the selected compiler-artifact targets, never reject unrelated packages or unselected targets.
+- Native Go -failfast stops later units across the invocation and records them as skipped without hiding the failure. Native Go shard arguments use an explicit flag/value contract; reject unknown or selection/output flags before inventory execution.
+- Maintain schema freshness and numbered issue #898 conformance scenarios. Report unavailable platform/service evidence accurately.
+- Keep `docs/crates-taskflow-conformance.md`, the native/Docker CI matrices, and their centralized `scripts/ci/job-paths.json` ownership synchronized. CI result bundles must prove complete task, artifact, and shard accounting against the exact plan; secret transport is forbidden for PR jobs.
+- Docker task commands, tool probes, and shard inventory/execution forward effective explicit CLI overrides alongside task-declared names; never forward the ambient host environment or another task's filtered secrets.
+- Retain the validated Docker launch environment and working directory for awaited removal, absence verification, and destructor fallback.
+- Validate Docker OS selection after CLI defaults are applied; explicit task components retain precedence.
+- Validate the effective Docker context endpoint with the exact launch environment; a local DOCKER_HOST cannot authorize an overriding remote context.
+- Tool identities hash bounded stdout and stderr separately; native metadata parsers consume stdout only.
+- Probe tools inside the selected Docker image. Docker result reporting must use a container-compatible helper, never the host binary. Remote publication stages content before rechecking cancellation/input state. Guarded local publication is the completion boundary; persist its successful receipt before a bounded, awaited remote manifest PUT, and never retroactively cancel that completed task even if the PUT response is lost. Session failures await all child owners before returning.
+- Existing repository workflows are not migrated and the crate remains unpublished.

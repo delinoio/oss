@@ -1,0 +1,107 @@
+# TaskFlow engine contract
+
+## Scope
+`crates/taskflow` owns the `tflow` binary and a reusable library. The approved implementation includes discovery, graph queries, selection, scheduling, local/R2-compatible caching, development sessions, Docker, sharding, and GitHub Actions export. Existing repository workflows, compiler actions, remote execution servers, and public releases are excluded.
+
+## Runtime and Language
+Rust using the repository toolchain. Host execution targets macOS, Linux, and Windows on x64/arm64; Docker executes Linux containers. Optional external tools are required only for the corresponding adapter or executor. Do not claim validation on platforms not exercised by conformance CI.
+
+## Users and Operators
+Developers run explicit native commands locally or in managed development sessions. CI maintainers configure runner/tool mappings and a trusted cache namespace. Operators own their R2/S3 storage and credentials.
+
+## Interfaces and Contracts
+### Configuration
+- `taskflow.yml` version 1 requires an explicit project ID; unknown fields and duplicate keys are errors.
+- Preserve `command`, `dependsOn`, `input`, and `output`. Arrays execute argv directly; strings use `/bin/sh` on Unix or `cmd.exe` on Windows unless `shell` is explicit.
+- Environment names must be nonempty and contain neither `=` nor NUL; task environment values cannot contain NUL. Validate these declarations before execution without including their values in diagnostics.
+- Root `workspace.manifests` references native manifests, never a duplicated member registry. Omission discovers supported root manifests. No native workspace means a single project.
+- Projects without configuration remain queryable using path-based IDs but have no inferred commands. Canonical directories merge adapter discoveries; distinct directories cannot share an explicit ID.
+- Explicit positive input globs opt matching descendants of ignored generated/dependency directories back into input snapshots and watching, including wildcard-only directory components. `.git`, `.taskflow`, and temporary `.taskflow-restore-*` trees remain reserved exclusions.
+- Filesystem identities must be valid UTF-8 and Unix names cannot contain literal backslashes; invalid root, project, input, output, and link-target bytes fail explicitly before identity matching or hashing. Paths are project-relative. Inputs may reference other files inside the workspace. Reject rooted, UNC, absolute, and Windows drive-relative input/output patterns on every host. Outputs must remain inside their owning project and cannot overlap another owner's outputs, including names that the destination filesystem treats as case/Unicode aliases before they exist.
+- Direct task references and every affected-mode task filter must exist, even when no changed file selects a task. Native dependency selectors select direct neighbors of the requested kinds, skip task-less neighbors with an explanation, and do not traverse task-less intermediates. Task cycles fail validation.
+- A service prerequisite requires explicit readiness waiting. Its ready receipt carries the service task key as its semantic result, so service configuration, environment, image, tool, and input changes invalidate cached consumers. `with` activates companions without implying readiness or completion ordering.
+- Cache is opt-in. Service, scheduled, external-side-effect, and secret-consuming tasks are uncached. Cacheable tasks explicitly declare inputs, outputs (including an explicitly empty list for checks), relevant environment, and tool identities.
+
+### Discovery and queries
+pnpm lockfile metadata, versioned Cargo metadata, and Go workspace/module metadata supply resolved identities and conditions. Preserve aliases, renames, dependency kinds, replacements, and supported target/feature conditions. Unsupported or incomplete relationships are diagnosed; affected selection is conservative and unresolved prerequisite selectors fail closed. Discovery never installs dependencies implicitly. Explicit installation prerequisites can repair unavailable metadata before replanning.
+
+Cargo target conditions remain visible on project edges but only active conditions select task prerequisites. Evaluate them with Cargo's platform parser and rustc cfg output. Explicit `workspace.cargoTarget` selects the compilation target independently of the execution host; otherwise use the matching rustc host target or the selected platform's GNU Linux, Apple Darwin, or Windows MSVC target for x64/arm64. Unavailable target cfg metadata makes selector coverage incomplete.
+
+Keep project relationships separate from task prerequisites and artifact relationships. Queries expose projects/tasks, forward/reverse closure, paths, file ownership, matching inputs, and explanations. Git selection includes both sides of renames and deleted files. Graph generations invalidate obsolete executions after configuration changes.
+
+An explicit `--head` requires `--base` or `--affected` and cannot be combined with `--changed`; comparison endpoints must never be silently ignored in favor of a direct run.
+
+### Execution
+`check`, `query`, `plan`, `run`, `start`, `result unchanged`, `cache`, and `ci export` are public commands. Machine output is versioned JSON on stdout; logs go to stderr. Direct, own-input, prerequisite, and schedule causes remain distinct. An unchanged report removes only propagation from its source. Cache reuse and output restoration are execution outcomes, not unconditional claims that dependents are unchanged.
+
+The scheduler deduplicates prerequisites, limits concurrency, coordinates named resources and output ownership, and uses observed durations for critical-path priority. A failed finite task blocks its dependents while independent tasks complete. A finite timeout is a failure with exit code 124 and a timeout diagnostic; operator cancellation remains a cancelled outcome with code 130. Both paths reap owned children and prohibit successful cache publication. Unix process groups, Windows Job Objects, and owned Docker containers are reaped before replacement. Cancellation or input/configuration invalidation forbids successful cache publication.
+
+Cancellation applies to native metadata discovery, pending tasks, synchronous cache restoration/publication, and reporting as well as active commands; every cancelled receipt uses code 130. Discovery fallbacks propagate typed cancellation and cleanup failures. Top-level cancellation errors return 130 only after owned cleanup completes; genuine setup and cleanup failures retain failure status.
+
+Task-reported unchanged uses an execution-specific result file, not magic stdout. Accept it only for successful, current executions. External effects remain eligible after upstream unchanged results.
+
+### Development sessions
+Subscribe before activation. Default file debounce is 200ms; default overlap is `queue` for files and `skip` for schedules, even when one task subscribes to both. An explicit overlap setting overrides both trigger defaults. Queue coalesces without losing independent causes; restart cancels and reaps first. Output changes cannot self-trigger their producer but remain visible to consumers. HMR services do not restart because companions run. Directory rename, move, and removal notifications conservatively rescan intersecting positive input roots; the resulting filtered snapshot determines whether work is enqueued.
+
+Shared companions are reference-counted by live owners; prerequisite and initial companion execution are deduplicated. Finite check failures retain subscriptions; server/readiness failure ends the session. Shutdown removes subscriptions, timers, queued runs, and process trees. Invalid configuration suspends new work until corrected. Readiness and service deadlines cancel and await the active readiness probe, its process owner, and both output drains before session cleanup returns; dropping a probe future does not satisfy cleanup.
+
+Intervals use monotonic time. Cron uses five fields, IANA zones, UTC by default, no catch-up bursts, and once per repeated local wall-clock minute. `every` and `cron` are mutually exclusive. Configuration reads and one-shot runs never activate subscriptions.
+
+Cron weekdays use 0 or 7 for Sunday, 1–6 for Monday–Saturday, and named weekdays. Restricted day-of-month and day-of-week fields form a union. Interval and cron decision functions accept explicit times so missed ticks and DST can be tested without sleeping.
+
+### Shards and CI
+Go top-level tests, Rust libtest items (plus one doctest unit), and Vitest/Jest files are supported inventories. Generic adapters exchange versioned JSON inventory, selected-ID files, and results. Assignment is deterministic and optionally duration-balanced. Missing, duplicate, failed, and cancelled units prevent a false aggregate success. One task deadline covers inventory and every selected unit; inventory processes also obey their shorter metadata bound, and expiry awaits owned cleanup before returning code 124.
+
+Explicit shard selection is validated before any prerequisite executes: a nonempty pending plan must include a sharded task, and all pending sharded tasks must declare the requested count. Empty affected CI units and already supplied prerequisite receipts require no shard execution.
+
+CI export creates platform/dependency/shard jobs, preserves execution causes, transfers declared artifacts and receipts, provisions pinned tools and TaskFlow source, validates plan compatibility, and aggregates every result. Tasks needing a shared environment are grouped. Development subscriptions are inactive in CI. Untrusted PRs receive neither secrets nor remote cache access. External effects are not skipped merely because upstream artifacts are unchanged.
+
+## Storage
+Ignored workspace-local `.taskflow` contains execution records, content-addressed cache data, temporary staging, locks, and masked logs. Dangling input file links record their target and a missing-target state so deletion and recreation invalidate snapshots; complete chain containment remains mandatory and permission errors or cycles fail. Input SHA-256 hashing uses bounded reads for regular files and file-link targets without changing their digest identity. SHA-256 keys include configuration, content/deletions, native metadata, declared environment/tool identities, platform/image identity, and prerequisite results. Validate required output existence and contents; restore missing outputs or execute. A lockfile never proves installed outputs exist. Local output identities stream file contents without applying the artifact transfer-size limit. Their `output-state-v2` digest domain includes paths, content hashes, executable bits, and link metadata independently of Base64 payloads; older payload-based identities safely miss. Artifact capture, encoding, and transport retain their separate bounds. Outputless cache entries carry a separate semantic result identity based on the task key, preserving a prior identity only for accepted unchanged reports. Sharded checks also identify their tested input version; partitions share this result identity while retaining separate cache keys only for sharded tasks. Ordinary prerequisites reuse the same key across all partition selections. Historical cache hits compare this identity before propagating changes; legacy empty snapshots without it are cache misses.
+
+Local publication checks cancellation and input stability while holding the exclusive cache lock, before object storage and before and after entry replacement. Failed validation restores the previous entry binding or removes the new binding before readers resume. Failure to roll back remains an execution failure even during cancellation.
+
+R2/S3 stores the same validated cache format. Configure endpoint, bucket, namespace, access mode, and environment references for credentials. Semantically invalid local entries are diagnosed and discarded before selecting remote fallback. Cache transport failure falls back to execution with diagnostics. Restore validates digests, paths, ownership, and link containment before replacing outputs. An empty-name probe on the restore filesystem rejects aliased path prefixes and unsupported names before payload staging; comparison follows the destination volume rather than an OS-wide casing assumption. Native incremental caches are separate shared resources, not implicitly exported artifacts.
+
+`cache verify` checks entry/object binding, artifact version and key/task identity, output and file digests, intrinsic path structure, and shard accounting without requiring the historical task configuration. Current ownership and filesystem link containment remain additional restoration checks.
+
+## Security
+Default dotenv precedence: CLI > task > inherited > project dotenv > root dotenv. Loading can be disabled. Cacheable commands use a declared environment. Cache transport credentials never enter task environments. Graph preflight rejects collisions in every project task declaration, including unselected tasks; execution additionally checks CLI overrides. Secrets disable caching and are masked in live, persisted, and replayed logs, including across byte chunks. Explicit `--show-secrets` affects current live output only; stored output remains masked. Remote entries require trusted writers; untrusted CI cannot read or write the namespace.
+
+Environment names follow host semantics at every boundary: case-insensitive ordinal comparison on Windows, case-sensitive comparison on Unix. This applies to precedence, secret scope/redaction, cache fingerprints, OS lookup retention, internal execution variables, and remote credential exclusion.
+
+Docker daemon lookup fills only missing host transport settings. Finite commands, tool probes, and shard inventory/execution forward effective explicit CLI overrides alongside declared task environment names; ambient host values and filtered sibling secrets do not become container inputs.
+
+## Logging
+Use `tracing` for task IDs, causes, outcomes, durations, cache decisions, and cleanup. Never log secret values or credential-bearing URLs. Preserve parseable JSON stdout and documented color opt-out. Persisted logs are always masked.
+
+## Build and Test
+Run `cargo test -p taskflow`, root `cargo test`, formatting and Clippy. Run native adapter fixtures, session/process conformance, virtual-clock tests, S3 transport fixtures, and platform/Docker CI. Map all 26 issue scenarios to evidence. Validate generated workflows with actionlint and public documentation with its package-local `pnpm test`. Generate required ignored outputs before dependent builds and remove generated `dist` directories from the final worktree.
+
+## Dependencies and Integrations
+Use existing native commands as units of work. pnpm metadata requires lockfile-query support (10.23+); Cargo metadata format is version 1; Go module/workspace identities remain native. The project does not change protected DevHud dependencies or existing workflow ownership.
+
+## Change Triggers
+Configuration, result protocol, cache format, adapter coverage, lifecycle, and CI changes require synchronized schema, tests, public guidance, and appropriate AGENTS rules. Support claims follow actual compatibility evidence.
+
+## References
+- [Project index](project-taskflow.md)
+- [Repository defaults](repository-defaults.md)
+- [Domain template](domain-template.md)
+- [Issue #898](https://github.com/delinoio/oss/issues/898)
+
+## Version 1 compatibility boundaries
+- CLI `--os` and `--arch` fill undeclared task platform components; explicit task platforms win. Docker OS validation uses this resolved selection before execution. Host execution rejects a different platform. Docker image digests and Linux architecture are explicit, and tool identities are probed inside that image. Docker tasks receive a generation-bound POSIX result helper through `TFLOW_BIN`; reporting requires `/bin/sh`, `mv`, and `rm` in the image.
+- Artifact graph edges describe conservative positive glob-prefix overlap, independently of prerequisite ordering. Exact input queries apply ordered positive/negative globs. New or deleted native manifest names conservatively invalidate selection even when no longer present in the discovered graph.
+- Cache and CI artifact output roots are exact files/directories or complete `directory/**` trees. Partial wildcard ownership remains available to local uncached tasks, but is rejected before CI export or artifact capture/restoration. Each snapshot is bounded to 512 MiB encoded transfer size. A CI unit may carry multiple such snapshots; its result envelope has a separate 512 MiB bound, and the blueprint bounds artifact and bundle counts. Writers and bounded readers enforce the same limits. Relative output symlinks and every intermediate link prefix must stay inside owned projects during local hashing, capture, and restoration; input directory symlinks require explicit underlying paths.
+- Metadata subprocesses have a 120-second deadline and 64 MiB output limit. Cargo uses locked, offline format-1 metadata before installation, with membership-only fallback. Go pins `GOWORK` to the selected native workspace, or `off` for a module, and disables module proxy, checksum database, VCS, and toolchain downloads during discovery; explicit installation owns fetching dependencies.
+- Native sharding requires argv commands. Go selection/output overrides and custom Rust harnesses require the generic protocol. Go subtests remain with their top-level parent; `-failfast` stops later units across locally owned shards after the first failure, with skipped accounting, while independent distributed jobs retain separate failfast scopes; JS inventories partition files. Rust doctests are one separate unit when selected by the Cargo command. Native flags supported by each adapter are validated; unsupported combinations fail instead of inventing coverage.
+- Cached suites retain inventory plus per-shard accounting. Local complete-suite runs can use measured duration history; independent CI shards use identical declared inventory duration values, avoiding runner-local history divergence.
+- CI source provisioning uses the exact `ci.revision` from `delinoio/oss`; it must already contain TaskFlow and be accessible to the runner. Rust is exact or date-pinned; Node, pnpm, and Go versions use exact three-component versions. Runner labels are operator-provided and validated for every selected platform.
+- Generated Actions workflows and adjacent `.taskflow.json` blueprints are both committed by the consuming project. Native manifests and configuration bytes bind exported execution structure; changing them requires regeneration. Each result bundle binds its complete plan and unit, validates all selected receipts and required artifacts, and accounts for all shard indices before success.
+- Selected task secrets and remote credential environment references map to identically named GitHub secrets only in trusted non-PR jobs. PR and `pull_request_target` execution omit those values and disable remote access. No release or deployment authority is granted by the repository conformance jobs.
+- Remote cache publication stages an unreachable content-addressed object, then rechecks inputs/cancellation before the guarded local commit completes the task. Persist the completed receipt before starting its remote manifest PUT; skip a not-yet-started PUT after cancellation, but await a started PUT with its bounded transport deadline. Later cancellation cannot retroactively reclassify the completed task, including when the server commits but its response is lost. Interrupted object uploads never become cache hits. Restore validates all contents before staging and retains rollback state if replacement recovery fails.
+- Query JSON masks designated values as well as command logs. `--show-secrets` applies only to live task output. Internal diagnostics pass through the same designation mask before persistence.
+- Public source installation (`cargo build --release --locked -p taskflow --bin tflow` in a checkout) and the standard Cargo binary output location are supported user workflows. The crate remains `publish = false`; no public binary release is implied.
+
+Service task timeouts cover process startup through readiness and continued service execution. Expiry is a service failure that tears down the session; explicit owner cancellation remains a normal shutdown.

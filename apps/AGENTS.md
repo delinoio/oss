@@ -100,10 +100,11 @@
 
 ### public-docs Rules
 
+- TaskFlow owns `/taskflow` and the `configuration`, `commands`, `cache`, and `ci` child routes. Keep source installation, unpublished status, adapter limits, and configuration/CI trust rules aligned with its engine contract.
 - `public-docs` must remain Rspress-based and use Cloudflare Pages static output unless its project contract documents a replacement.
 - Rspress routes, navigation, and sidebar in `apps/public-docs/rspress.config.ts` must stay aligned with `docs/apps-public-docs-foundation.md`.
 - `public-docs` must use clean URLs, write production output to `apps/public-docs/doc_build`, and validate stable route artifacts plus generated internal `.html` links through `pnpm --filter public-docs test`.
-- Current public-docs in-site top-level product page IDs are `devhud`, `cargo-mono`, `derun`, and `with-watch`.
+- Current public-docs in-site top-level product page IDs are `devhud`, `cargo-mono`, `derun`, `with-watch`, and `taskflow`.
 - The stable `/devhud` page documents public product availability and the coordinated all-channels GA rule without exposing release credentials, private workflow details, or deployment internals.
 - Nodeup, binpm, and Runmoor are exposed from `apps/public-docs` through external top-level navigation links to `https://nodeup.delino.io`, `https://binpm.delino.io`, and `https://runmoor.delino.io`. Runmoor discovery links on the home and project catalog must also use its standalone site; the former `/runmoor` and child routes are removed without compatibility pages or redirects.
 - The legacy `/nodeup` public-docs route must remain a lightweight handoff page to `https://nodeup.delino.io` for compatibility with previously shared URLs.

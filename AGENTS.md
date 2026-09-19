@@ -88,6 +88,7 @@ enum ProjectId {
   WithWatch = "with-watch",
   Derun = "derun",
   Runmoor = "runmoor",
+  Taskflow = "taskflow",
   Ttl = "ttl",
   Mpapp = "mpapp",
   SerdeFeather = "serde-feather",
@@ -98,6 +99,8 @@ enum ProjectId {
 ```
 
 ### Project Domain Ownership
+
+- `taskflow` -> `crates/taskflow`, public `/taskflow` documentation in `apps/public-docs`.
 
 - `nodeup` -> `crates/nodeup`, `apps/nodeup-docs`
 - `binpm` -> `crates/binpm`, `apps/binpm-docs`
@@ -145,6 +148,8 @@ enum ProjectId {
 - DevHud private packaging has no automatic trigger: it is manually dispatchable and reusable only by an explicit caller, and is signed-only except for the secret-free `plan-only` dry run. Its stable release identity is exactly `devhud@v<MAJOR.MINOR.PATCH>`, with `packaging/devhud/release-metadata.json` synchronized to every source version. Preserve updater Ed25519 signatures, platform/store signatures, and Sigstore bundles as separate trust domains; unsigned or incomplete output is never public-ready. The workflow may retain a short-lived private artifact only and must never push a tag/image, create a release, submit a store build, or deploy.
 
 ### Repository Default Technology Choices
+
+- TaskFlow follows `docs/project-taskflow.md` and `docs/crates-taskflow-foundation.md`. Preserve native command boundaries, distinct project/task graphs, cause-specific unchanged propagation, explicit cache/output validity, process-tree ownership, and untrusted-CI cache isolation. Its implementation does not migrate existing repository workflows or authorize publication.
 
 - Follow `docs/repository-defaults.md` when a more specific project or domain contract does not choose a different approach.
 - New persisted entities should use UUID v7 identifiers by default unless a documented compatibility, storage, protocol, or product issue requires another ID shape.
@@ -368,6 +373,8 @@ Coverage expectations:
 - `devhud-oci`: builds both API and sweeper OCI layouts for amd64/arm64 and validates non-root execution, embedded migrations, and SPDX SBOMs without pushing.
 - `devhud-supply-chain`: validates installer, Native Messaging host, extension ZIP, updater/key-rotation signature, SBOM, and provenance fixtures.
 - `devhud-release-contracts`: runs deterministic static/dry Node tests for the reusable private candidate, exact public release identity, configuration failure, signing/preflight failure, review retry, channel ordering, rollback, and redaction contracts without exercising publication.
+- `taskflow-conformance`: runs graph/cache/session/sharding and generated-workflow conformance plus Clippy on macOS, Linux, and Windows x64/arm64.
+- `taskflow-docker`: runs immutable local Linux container and S3-compatible cache fixtures on x64/arm64 without credentials or publication.
 - `ci-result`: retains the `CI Result` status and checks every dependency against the exact `changes` plan; failed/cancelled jobs, missing dependencies, and unexpected skips or execution fail the aggregate.
 - The DevHud release-contract job also validates the internal operations runbook, repository workflow contract, and read-only CEF review workflow through `scripts/release/devhud-operations.test.mjs`.
 
