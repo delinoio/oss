@@ -192,10 +192,16 @@ async fn main() -> ExitCode {
     // Only audited Runlens events may reach its diagnostic stream. Ambient
     // RUST_LOG must not enable upstream raw-path or environment diagnostics.
     let filter = tracing_subscriber::filter::Targets::new().with_target("runlens", level);
+    use std::io::IsTerminal;
+    let ansi = match cli.color {
+        Color::Auto => std::io::stderr().is_terminal(),
+        Color::Always => true,
+        Color::Never => false,
+    };
     let _ = tracing_subscriber::registry()
         .with(
             tracing_subscriber::fmt::layer()
-                .with_ansi(false)
+                .with_ansi(ansi)
                 .with_writer(std::io::stderr)
                 .with_filter(filter),
         )

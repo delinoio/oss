@@ -38,6 +38,7 @@ fn fixture() -> &'static str {
 }
 fn invoke(root: &Path, args: &[&str]) -> Output {
     Command::new(binary())
+        .env("RUNLENS_TEST_GIT_DIAGNOSTICS", "1")
         .args(args)
         .current_dir(root)
         .output()
