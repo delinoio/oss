@@ -73,12 +73,12 @@ const CANONICAL_APPIMAGE_SHARUN = {
   version: "3.2.1",
   assets: {
     arm64: {
-      name: "sharun+helper-libs-aarch64.tar",
-      sha256: "79787b450793b1678e8753d4ce8fc69298b429d93ec1b962fc42c217659c470b",
+      name: "sharun-aarch64",
+      sha256: "5b52dd95eccb1ce36f93473ada846fa25d2ab9ae97b48e9716a7403eb0ea05c9",
     },
     x64: {
-      name: "sharun+helper-libs-x86_64.tar",
-      sha256: "f746f070143aba3de16c62e16d31e07ecae9d999fa6795273900b38b600675a6",
+      name: "sharun-x86_64",
+      sha256: "5d9becfeada8a6ec31e841fa08358dbd23198f541629bfdf72b73f0f60c86ace",
     },
   },
 };
@@ -360,6 +360,12 @@ assert(downloadBlock, "download-cef is absent from Cargo.lock");
 assert(
   downloadBlock.includes(`checksum = "${CANONICAL_DOWNLOAD_CEF.checksum}"`),
   "download-cef lockfile checksum changed",
+);
+assert(
+  Object.values(pins.appImage?.sharun?.assets ?? {}).every(
+    (asset) => typeof asset?.name === "string" && !asset.name.endsWith(".tar"),
+  ),
+  "AppImage sharun launcher pins must reference executable assets, not helper archives",
 );
 assert(
   JSON.stringify(pins.appImage?.sharun) === JSON.stringify(CANONICAL_APPIMAGE_SHARUN),
