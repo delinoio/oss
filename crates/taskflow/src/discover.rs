@@ -551,10 +551,9 @@ impl Workspace {
                             .as_str()
                             .context("Cargo dependency alias missing")?
                             .into(),
-                        resolved: dep["pkg"]
-                            .as_str()
-                            .context("Cargo dependency identity missing")?
-                            .into(),
+                        // Cargo's local package ID embeds the checkout URL. The
+                        // resolved directory has already mapped to a stable project.
+                        resolved: format!("project:{to}"),
                     });
                 }
             }

@@ -2127,3 +2127,61 @@ async fn unrelated_native_metadata_does_not_block_resolved_selectors() {
     assert_eq!(g.prerequisites("a#build"), ["b#build"]);
     assert!(run(g, &["a#build"]).await.success);
 }
+
+#[tokio::test]
+async fn cargo_ci_blueprints_are_independent_of_checkout_paths() {
+    let mut blueprints = vec![];
+    for _ in 0..2 {
+        let directory =
+            fixture(json!({"build":{"command":command(&["version"]),"input":[],"output":[]}}));
+        let path = directory.path().join("taskflow.yml");
+        let mut config: Value = serde_yaml::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let (os, arch) = config::Platform::default().resolved();
+        config["tasks"]["build"]["platform"] = json!({"os":os,"arch":arch});
+        config["ci"] = json!({"revision":"1111111111111111111111111111111111111111","rust":"1.93.0","runners":{config::Platform::default().key():"self-hosted"}});
+        std::fs::write(path, serde_yaml::to_string(&config).unwrap()).unwrap();
+        files::atomic_write(
+            &directory.path().join("Cargo.toml"),
+            b"[workspace]\nmembers=['a','b']\nresolver='2'\n",
+        )
+        .unwrap();
+        for name in ["a", "b"] {
+            let manifest = format!(
+                "[package]\nname='{name}'\nversion='0.1.0'\nedition='2021'\n{}",
+                if name == "a" {
+                    "[dependencies]\nb={path='../b'}\n"
+                } else {
+                    ""
+                }
+            );
+            files::atomic_write(
+                &directory.path().join(name).join("Cargo.toml"),
+                manifest.as_bytes(),
+            )
+            .unwrap();
+            files::atomic_write(
+                &directory.path().join(name).join("src/lib.rs"),
+                b"pub fn sample() {}\n",
+            )
+            .unwrap();
+        }
+        taskflow::discover::output_tool(
+            directory.path(),
+            &["cargo", "generate-lockfile", "--offline"],
+            &[],
+        )
+        .await
+        .unwrap();
+        let g = graph(directory.path()).await;
+        let blueprint = taskflow::ci::Blueprint::new(&g, vec!["build".into()]).unwrap();
+        assert_eq!(
+            blueprint.edges.iter().next().unwrap().resolved,
+            "project:path:b"
+        );
+        let json = serde_json::to_string(&blueprint).unwrap();
+        assert!(!json.contains("path+file:"));
+        assert!(!json.contains(directory.path().to_str().unwrap()));
+        blueprints.push(json);
+    }
+    assert_eq!(blueprints[0], blueprints[1]);
+}
