@@ -8,6 +8,12 @@ import (
 )
 
 func AtomicWrite(path string, b []byte, mode os.FileMode) error {
+	return publishFile(path, b, mode, true)
+}
+func AtomicCreate(path string, b []byte, mode os.FileMode) error {
+	return publishFile(path, b, mode, false)
+}
+func publishFile(path string, b []byte, mode os.FileMode, replace bool) error {
 	// Existing parents may belong to a repository, agent client, or package manager.
 	// Creating a file must never chmod an unrelated directory such as /usr/local/bin.
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
@@ -32,7 +38,12 @@ func AtomicWrite(path string, b []byte, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	return replaceFile(name, path)
+	if replace {
+		return replaceFile(name, path)
+	}
+	// Hard-link publication is atomic and fails if another initializer or user
+	// created the destination after discovery. Never replace their configuration.
+	return os.Link(name, path)
 }
 func ReadOwned(root, relative string, limit int64) ([]byte, error) {
 	if !SafeRelative(relative) {

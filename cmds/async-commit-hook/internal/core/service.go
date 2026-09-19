@@ -43,7 +43,7 @@ func (s *Service) Init(ctx context.Context, path string) (Repository, Worktree, 
 	}
 	file := filepath.Join(root, ProjectFile)
 	if _, e = os.Stat(file); os.IsNotExist(e) {
-		if e = AtomicWrite(file, []byte(DefaultProject), 0600); e != nil {
+		if e = AtomicCreate(file, []byte(DefaultProject), 0600); e != nil && !os.IsExist(e) {
 			return Repository{}, Worktree{}, e
 		}
 	} else if e != nil {

@@ -83,6 +83,33 @@ path="../secret"`} {
 		}
 	}
 }
+
+func TestAtomicInitializationCannotOverwriteExistingConfiguration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	results := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		go func() { results <- AtomicCreate(path, []byte("user configuration"), 0600) }()
+	}
+	created := 0
+	for i := 0; i < 8; i++ {
+		err := <-results
+		if err == nil {
+			created++
+		} else if !os.IsExist(err) {
+			t.Fatal(err)
+		}
+	}
+	if created != 1 {
+		t.Fatalf("created %d configurations", created)
+	}
+	if err := AtomicCreate(path, []byte("replacement"), 0600); !os.IsExist(err) {
+		t.Fatal("existing configuration replaced")
+	}
+	b, _ := os.ReadFile(path)
+	if string(b) != "user configuration" {
+		t.Fatal("configuration changed")
+	}
+}
 func TestRedactionAcrossEveryBoundary(t *testing.T) {
 	input := []byte("prefix-super-secret-tail-secret-and-super-secret")
 	for size := 1; size < len(input); size++ {
