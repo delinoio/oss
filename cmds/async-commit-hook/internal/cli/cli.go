@@ -108,6 +108,20 @@ func (o options) number(k string, def int64) (int64, error) {
 	}
 	return n, nil
 }
+
+const maxWaitSeconds = int64((1<<63 - 1) / time.Second)
+
+func (o options) waitTimeout() (time.Duration, error) {
+	seconds, err := o.number("timeout", 60)
+	if err != nil {
+		return 0, err
+	}
+	if seconds > maxWaitSeconds {
+		return 0, core.E("invalid-timeout", fmt.Sprintf("--timeout must be 0..%d seconds", maxWaitSeconds), 2)
+	}
+	return time.Duration(seconds) * time.Second, nil
+}
+
 func Run(ctx context.Context, args []string, in io.Reader, out, diagnostics io.Writer) int {
 	o, e := parse(args)
 	if e != nil {
@@ -208,10 +222,10 @@ func Run(ctx context.Context, args []string, in io.Reader, out, diagnostics io.W
 			}
 		}
 	case "wait":
-		var seconds int64
-		seconds, e = o.number("timeout", 60)
+		var timeout time.Duration
+		timeout, e = o.waitTimeout()
 		if e == nil {
-			wait, cancel := context.WithTimeout(ctx, time.Duration(seconds)*time.Second)
+			wait, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 			result, e = s.Wait(wait, id)
 		}

@@ -14,7 +14,7 @@ One developer OS account, explicitly trusted repositories and linked worktrees, 
 
 Commands: init; config validate; run; status; wait; logs; check; inbox; ack; failures; plan; doctor; compare; rerun; cancel; ui; hooks install/uninstall; agent install/uninstall; agent-guide; daemon start/status/stop; browser list/revoke; mcp; pre-push; prune; self-update; version.
 
-JSON responses carry schema_version=1. Exit codes: 0 operation success (gates only when passing), 1 failed/incomplete validation, 2 invalid usage/configuration, 3 runner/storage error, 4 wait expiration. Diagnostics use stable codes on stderr. Wait expiration never cancels work.
+JSON responses carry schema_version=1. Exit codes: 0 operation success (gates only when passing), 1 failed/incomplete validation, 2 invalid usage/configuration, 3 runner/storage error, 4 wait expiration. Diagnostics use stable codes on stderr. Wait expiration never cancels work. CLI `wait --timeout` accepts integer seconds from 0 through 9223372036 (the maximum representable whole-second duration); larger values return `invalid-timeout` with exit 2 before waiting. Zero expires the query immediately.
 
 Acknowledgement accepts only terminal runs, atomically with its idempotent timestamp. Premature calls return `acknowledgement-premature` without modifying inbox visibility; queries never acknowledge results.
 
