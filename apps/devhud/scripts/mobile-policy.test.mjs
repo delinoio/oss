@@ -82,7 +82,9 @@ test("mobile policy exports the permission-protected Android widget refresh JobS
 
 test("mobile policy requires lifecycle-owned Android persistence and native platform safeguards", () => {
   const androidNativeBridge = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"), "utf8").replaceAll("\r\n", "\n");
+  const nativeBridgeHost = readFileSync(join(appRoot, "src-tauri/src/bridge.rs"), "utf8").replaceAll("\r\n", "\n");
   assert.doesNotThrow(() => assertAndroidNativeBridge(androidNativeBridge));
+  assert.match(nativeBridgeHost, /"auth\.quarantine-pending-callback", "quarantined": api_origin_changed/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("secureSettingsExecutor.shutdown()", "Unit")), /executor must stop with the plugin lifecycle/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace(".commit()", ".apply()")), /must confirm persistence/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("updateAAD", "missingAAD")), /AES-GCM AAD/u);

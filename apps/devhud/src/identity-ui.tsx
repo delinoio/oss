@@ -81,15 +81,21 @@ interface IdentityProps {
   readonly onApiOrigin: (value: string) => Promise<void>;
   readonly onComplete: () => void;
   readonly apiChangeError: string | null;
+  readonly identityRecoveryGeneration?: number;
 }
 
-export function FirstRunIdentity({ copy, apiOrigin, onApiOrigin, onComplete, apiChangeError }: IdentityProps) {
+export function FirstRunIdentity({ copy, apiOrigin, onApiOrigin, onComplete, apiChangeError, identityRecoveryGeneration = 0 }: IdentityProps) {
   const identity = useIdentitySettings();
   const [actionError, setActionError] = useState(false);
   const [apiChangeConfirmationOpen, setApiChangeConfirmationOpen] = useState(false);
+  const completedRecoveryGeneration = useRef(identityRecoveryGeneration);
+  const completingStatus = identity.status === "authenticated" || identity.status === "blocked" || identity.status === "deletion-pending";
   useEffect(() => {
-    if (!apiChangeConfirmationOpen && (identity.status === "authenticated" || identity.status === "blocked" || identity.status === "deletion-pending")) onComplete();
-  }, [apiChangeConfirmationOpen, identity.status, onComplete]);
+    if (!completingStatus) completedRecoveryGeneration.current = identityRecoveryGeneration;
+  }, [completingStatus, identityRecoveryGeneration]);
+  useEffect(() => {
+    if (!apiChangeConfirmationOpen && completingStatus && completedRecoveryGeneration.current === identityRecoveryGeneration) onComplete();
+  }, [apiChangeConfirmationOpen, completingStatus, identityRecoveryGeneration, onComplete]);
   return <Card className="onboarding-card" inert={apiChangeConfirmationOpen}>
     <PageHeader eyebrow={copy.account} title={copy.accountTitle} summary={copy.firstRunSummary} level={1} />
     <ApiOriginEditor copy={copy} value={apiOrigin} autoFocus onApply={onApiOrigin} warningId="api-origin-security-warning" applyError={apiChangeError} onConfirmationOpenChange={setApiChangeConfirmationOpen} />

@@ -14,7 +14,7 @@ import {
   type Account,
   type DevHudClientError,
 } from "@delinoio/devhud-api-client";
-import { createContext, use, useEffect, useMemo, useRef, useState, type PropsWithChildren, type RefObject } from "react";
+import { createContext, use, useEffect, useMemo, useRef, useState, type MutableRefObject, type PropsWithChildren, type RefObject } from "react";
 import { createIdentitySession, isTerminalAccessTokenError, sessionProfileId, validateBootstrap, type IdentitySession, type ValidatedBootstrap } from "./identity-client";
 import { clearDeckCaches } from "./deck.ts";
 import { invalidateDeckPolling } from "./deck-polling-cancellation.ts";
@@ -102,6 +102,7 @@ interface BoundaryProps extends PropsWithChildren {
   readonly initialAppearance?: DevHudSettingsV1["appearance"];
   readonly identitySessionRef?: RefObject<IdentitySession | null>;
   readonly identityRecoveryGeneration?: number;
+  readonly identityRecoveryGenerationRef?: MutableRefObject<number>;
 }
 
 export function DevHudServiceBoundary(props: BoundaryProps) {
@@ -142,7 +143,7 @@ export function DevHudServiceBoundary(props: BoundaryProps) {
   </QueryClientProvider></TransportProvider>;
 }
 
-function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onCallbackConsumed, onAuthCallbackEpoch, onDeckLinkPolicyReady, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset, identityRecoveryGeneration = 0 }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
+function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onCallbackConsumed, onAuthCallbackEpoch, onDeckLinkPolicyReady, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset, identityRecoveryGeneration = 0, identityRecoveryGenerationRef }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
   const storage = getLocalStorage();
   const queryClient = useQueryClient();
   const transport = useTransport();
@@ -188,6 +189,9 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const settingsWritableRef = useRef(false);
   const replaceSettingsRef = useRef<IdentitySettingsValue["replaceSettings"]>(async () => false);
   const recoveredGeneration = useRef(identityRecoveryGeneration);
+  const localRecoveryGenerationRef = useRef(identityRecoveryGeneration);
+  localRecoveryGenerationRef.current = identityRecoveryGeneration;
+  const recoveryGenerationRef = identityRecoveryGenerationRef ?? localRecoveryGenerationRef;
 
   useEffect(() => {
     if (session !== null || continuedLocally && networkReady) onDeckLinkPolicyReady?.();
@@ -570,6 +574,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
 
   async function replaceAt(local: DevHudSettingsV1, expectedRevision: bigint, expectedContentSHA256: Uint8Array = contentSHA256Ref.current): Promise<boolean> {
     if (!online) throw new Error("offline-read-only");
+    const operationRecoveryGeneration = recoveryGenerationRef.current;
     const deviceLocalSettingsGeneration = deviceLocalSettingsGenerationRef.current;
     setSettingsError(null);
     let canonicalJson: Uint8Array;
@@ -582,14 +587,17 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     }
     try {
       const response = await replaceMutation.mutateAsync({ schemaVersion: SettingsSchemaVersion, canonicalJson: Uint8Array.from(canonicalJson), expectedRevision, expectedContentSha256: expectedRevision === 0n ? new Uint8Array() : Uint8Array.from(expectedContentSHA256) });
+      if (recoveryGenerationRef.current !== operationRecoveryGeneration) return false;
       let validated: ValidatedSettingsSnapshot;
       try {
         if (!response.snapshot) throw new SettingsSnapshotError("settings response is missing its snapshot");
         validated = await validatedSettingsSnapshot(response.snapshot);
       } catch (reason) {
+        if (recoveryGenerationRef.current !== operationRecoveryGeneration) return false;
         markSettingsContractInvalid();
         throw reason;
       }
+      if (recoveryGenerationRef.current !== operationRecoveryGeneration) return false;
       const hasNewerDeviceLocalSettings = deviceLocalSettingsGenerationRef.current !== deviceLocalSettingsGeneration;
       const latestDeviceLocalSettings = hasNewerDeviceLocalSettings ? settingsRef.current : local;
       const requiresDeviceLocalPersistence = hasGuestSettings(storage) || !hasNewerDeviceLocalSettings && !deviceLocalSettingsEqual(local, settingsRef.current);
@@ -605,6 +613,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       if (requiresDeviceLocalPersistence && !persisted) throw new Error("device-local-settings-persistence-failed");
       return true;
     } catch (reason) {
+      if (recoveryGenerationRef.current !== operationRecoveryGeneration) return false;
       if (reason instanceof SettingsSnapshotError) throw reason;
       const mapped = mapDevHudError(reason);
       if (mapped.kind === "revisionConflict") {

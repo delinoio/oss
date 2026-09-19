@@ -172,6 +172,28 @@ describe("identity UI", () => {
     await waitFor(() => expect(onComplete).toHaveBeenCalledOnce());
   });
 
+  it("waits for identity recovery before completing first-run onboarding", async () => {
+    const onComplete = vi.fn();
+    const props = { copy: messages.en, apiOrigin: "https://devhud.api.delino.io", onApiOrigin: vi.fn(async () => undefined), onComplete, apiChangeError: null };
+    const view = render(<FirstRunIdentity {...props} identityRecoveryGeneration={0} />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    identity = identityWith({ status: "authenticated" });
+    view.rerender(<FirstRunIdentity {...props} identityRecoveryGeneration={0} />);
+    view.rerender(<FirstRunIdentity {...props} identityRecoveryGeneration={1} />);
+
+    fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
+    expect(onComplete).not.toHaveBeenCalled();
+
+    identity = identityWith({ status: "starting" });
+    view.rerender(<FirstRunIdentity {...props} identityRecoveryGeneration={1} />);
+    identity = identityWith({ status: "authenticated" });
+    view.rerender(<FirstRunIdentity {...props} identityRecoveryGeneration={1} />);
+    await waitFor(() => expect(onComplete).toHaveBeenCalledOnce());
+  });
+
   it("keeps the custom-origin warning and API-change failures beside the editor", () => {
     render(<AccountIdentity {...accountProps({ apiChangeError: messages.en.apiChangeFailed })} />);
     const input = screen.getByRole("textbox", { name: messages.en.apiOrigin });

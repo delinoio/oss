@@ -398,6 +398,51 @@ describe("generated Connect identity/settings fixture", () => {
     expect(cached?.settings.agents[0]?.repositoryPrompts).toEqual([prompt]);
   });
 
+  it("discards a settings replacement that completes after identity recovery begins", async () => {
+    const server = parseDevHudSettings({ ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "light" } });
+    const replacement = parseDevHudSettings({ ...server, appearance: { ...server.appearance, theme: "dark" } });
+    let releaseReplacement!: () => void;
+    const replacementGate = new Promise<void>((resolve) => { releaseReplacement = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: SettingsSchemaVersion, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        await replacementGate;
+        return connectResponse({ snapshot: { schemaVersion: SettingsSchemaVersion, revision: "2", canonicalJson: encodedSettings(replacement) } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    const recoveryGenerationRef = { current: 0 };
+    const renderProbe = (identityRecoveryGeneration: number) => <DevHudServiceBoundary
+      apiOrigin="https://devhud.api.delino.io"
+      active
+      online
+      callbackUrl={null}
+      platform={RuntimePlatform.Desktop}
+      bridge={authenticatedBridge()}
+      onCallbackConsumed={() => {}}
+      onContinueLocally={() => {}}
+      onLoggedOut={() => {}}
+      identityRecoveryGeneration={identityRecoveryGeneration}
+      identityRecoveryGenerationRef={recoveryGenerationRef}
+    ><IdentityStateProbe replacement={replacement} /></DevHudServiceBoundary>;
+    const view = render(renderProbe(0));
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.readOnly).toBe("false"));
+    fireEvent.click(screen.getByRole("button", { name: "replace probe settings" }));
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.readOnly).toBe("true"));
+    recoveryGenerationRef.current = 1;
+    view.rerender(renderProbe(1));
+    act(() => { releaseReplacement(); });
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.actionSettled).toBe("1"));
+    expect(screen.getByTestId("identity-state").dataset.revision).not.toBe("2");
+    expect(readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io")?.revision).not.toBe(2n);
+  });
+
   it("keeps synchronized agent saves successful when authenticated cache writes fail", async () => {
     const originalSetItem = Storage.prototype.setItem;
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {

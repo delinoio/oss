@@ -54,6 +54,7 @@ private class MissingWidgetCredentialException : Exception()
 )
 class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     private var pendingAuthCallback: String? = null
+    private var authCallbackQuarantined = false
     private var pendingDiagnosticsCleanup: Uri? = null
     private var diagnosticsCleanupReleaseOnly = false
     private var diagnosticsExportPickerActive = false
@@ -84,6 +85,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
                 "auth.peek-pending-callback" -> peekAuthCallback(invoke)
                 "auth.take-pending-callback" -> takeAuthCallback(invoke)
                 "auth.clear-pending-callback" -> clearAuthCallback(invoke)
+                "auth.quarantine-pending-callback" -> quarantineAuthCallback(invoke)
                 "auth.open-system-browser" -> openAuthenticationBrowser(invoke)
                 "lifecycle.open-external" -> openExternal(invoke)
                 "diagnostics.export" -> exportDiagnostics(invoke)
@@ -261,7 +263,12 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
 
     private fun captureAuthCallback(intent: Intent?) {
         val candidate = intent?.dataString ?: return
-        if (isAuthCallback(candidate)) pendingAuthCallback = candidate
+        if (!isAuthCallback(candidate)) return
+        if (authCallbackQuarantined) {
+            if (activity.intent?.dataString == candidate) activity.intent = Intent(activity.intent).setData(null)
+            return
+        }
+        pendingAuthCallback = candidate
     }
 
     private fun isAuthCallback(candidate: String): Boolean {
@@ -286,6 +293,18 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
             activity.intent = Intent(activity.intent).setData(null)
         }
         pendingAuthCallback = null
+        invoke.resolve(JSObject().put("kind", "ok"))
+    }
+
+    private fun quarantineAuthCallback(invoke: Invoke) {
+        authCallbackQuarantined = invoke.getArgs().getBoolean("quarantined")
+        if (authCallbackQuarantined) {
+            val callback = pendingAuthCallback
+            if (callback != null && activity.intent?.dataString == callback) {
+                activity.intent = Intent(activity.intent).setData(null)
+            }
+            pendingAuthCallback = null
+        }
         invoke.resolve(JSObject().put("kind", "ok"))
     }
 

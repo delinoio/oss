@@ -152,6 +152,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const selectedDesktopNavigationItem = useRef<HTMLButtonElement>(null);
   const externalAttempt = useRef(0);
   const identitySession = useRef<IdentitySession | null>(null);
+  const identityRecoveryGenerationRef = useRef(0);
   const apiOriginChangeInFlight = useRef(false);
   const authCallbackEpoch = useRef<number | null>(null);
   const acceptAuthCallbackEpoch = useCallback((epoch: number) => { authCallbackEpoch.current = epoch; }, []);
@@ -436,6 +437,10 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const markDeckLinkPolicyReady = useCallback(() => {
     setDeckLinkPolicyOrigin(preferences.apiOrigin);
   }, [preferences.apiOrigin]);
+  const recoverIdentityAfterPolicyFailure = () => {
+    identityRecoveryGenerationRef.current += 1;
+    setIdentityRecoveryGeneration(identityRecoveryGenerationRef.current);
+  };
   const applyApiOrigin = async (nextOrigin: string) => {
     const normalized = normalizeApiOrigin(nextOrigin);
     if (normalized === null || normalized === normalizeApiOrigin(preferences.apiOrigin)) return;
@@ -460,13 +465,13 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       policy = await bridge.request({ operation: "session.configure-origins", apiOrigin: normalized });
     }
     catch {
-      setIdentityRecoveryGeneration((current) => current + 1);
+      recoverIdentityAfterPolicyFailure();
       apiOriginChangeInFlight.current = false;
       setApiChangeError("policy");
       return;
     }
     if (policy.kind !== "session-network-policy") {
-      setIdentityRecoveryGeneration((current) => current + 1);
+      recoverIdentityAfterPolicyFailure();
       apiOriginChangeInFlight.current = false;
       setApiChangeError("policy");
       return;
@@ -505,11 +510,11 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const externalMessageIsError = externalMessage !== "opened";
 
   const NativeMessagingBoundary = nativeMessaging?.Boundary;
-  const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={preferences.apiOrigin} apiOrigin={preferences.apiOrigin} active online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onCallbackConsumed={clearConsumedAuthCallback} onAuthCallbackEpoch={acceptAuthCallbackEpoch} onDeckLinkPolicyReady={markDeckLinkPolicyReady} onContinueLocally={finishOnboarding} onLoggedOut={() => { realqaController.current?.reset(); setRequestedCapture(null); setSurface(SurfaceId.Account); }} initialAppearance={{ theme: preferences.theme, language: preferences.language }} identitySessionRef={identitySession} identityRecoveryGeneration={identityRecoveryGeneration}><UrlMappingDraftProvider><DeckPollingBoundary bridge={bridge} active={lifecycle === LifecycleState.Active} online={online} language={language}><SynchronizedAppearanceBoundary onAppearance={(appearance) => update({ theme: appearance.theme, language: appearance.language })} />{runtime.platform === RuntimePlatform.Desktop && NativeMessagingBoundary && <NativeMessagingBoundary />}{content}</DeckPollingBoundary></UrlMappingDraftProvider></DevHudServiceBoundary> : content;
+  const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={preferences.apiOrigin} apiOrigin={preferences.apiOrigin} active online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onCallbackConsumed={clearConsumedAuthCallback} onAuthCallbackEpoch={acceptAuthCallbackEpoch} onDeckLinkPolicyReady={markDeckLinkPolicyReady} onContinueLocally={finishOnboarding} onLoggedOut={() => { realqaController.current?.reset(); setRequestedCapture(null); setSurface(SurfaceId.Account); }} initialAppearance={{ theme: preferences.theme, language: preferences.language }} identitySessionRef={identitySession} identityRecoveryGeneration={identityRecoveryGeneration} identityRecoveryGenerationRef={identityRecoveryGenerationRef}><UrlMappingDraftProvider><DeckPollingBoundary bridge={bridge} active={lifecycle === LifecycleState.Active} online={online} language={language}><SynchronizedAppearanceBoundary onAppearance={(appearance) => update({ theme: preferences.theme, language: preferences.language })} />{runtime.platform === RuntimePlatform.Desktop && NativeMessagingBoundary && <NativeMessagingBoundary />}{content}</DeckPollingBoundary></UrlMappingDraftProvider></DevHudServiceBoundary> : content;
 
   if (runtimeState.kind !== ContentStateKind.Ready) return <main className="standalone-shell" data-devhud-ready="true"><ContentStateView state={runtimeState} copy={copy} onRetry={() => location.reload()} /></main>;
 
-  if (onboarding) return boundary(<main className="standalone-shell" data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "loading"}><FirstRunIdentity copy={copy} apiOrigin={preferences.apiOrigin} onApiOrigin={applyApiOrigin} onComplete={finishOnboarding} apiChangeError={apiChangeError === "policy" ? copy.apiChangePolicyFailed : apiChangeError === "cleanup" ? copy.apiChangeFailed : null} /></main>);
+  if (onboarding) return boundary(<main className="standalone-shell" data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "loading"}><FirstRunIdentity copy={copy} apiOrigin={preferences.apiOrigin} onApiOrigin={applyApiOrigin} onComplete={finishOnboarding} apiChangeError={apiChangeError === "policy" ? copy.apiChangePolicyFailed : apiChangeError === "cleanup" ? copy.apiChangeFailed : null} identityRecoveryGeneration={identityRecoveryGeneration} /></main>);
 
   const moreCurrent = surface === SurfaceId.Realqa || surface === SurfaceId.Diagnostics;
   const navigate = (nextSurface: SurfaceId) => {

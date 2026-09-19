@@ -1673,10 +1673,10 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         #[cfg(not(target_os = "android"))]
         let _ = api_origin_changed;
         #[cfg(target_os = "android")]
-        if api_origin_changed {
+        {
             crate::native_plugin::request(
                 &app,
-                &json!({ "operation": "auth.clear-pending-callback" }),
+                &json!({ "operation": "auth.quarantine-pending-callback", "quarantined": api_origin_changed }),
             )?;
         }
         return Ok(
