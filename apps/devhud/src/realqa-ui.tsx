@@ -681,8 +681,14 @@ function CaptureEditor({ draft, previewImage, previewRef, previewFocusFallbackRe
     else imageSelectorControls.current.get(imageId)?.focus();
   };
 
-  const enqueueRevisionOperation = (operation: (current: CaptureDraft, installDraft: (draft: CaptureDraft) => void) => Promise<void>) => {
+  const enqueueRevisionOperation = (operation: (current: CaptureDraft, installDraft: (draft: CaptureDraft) => void) => Promise<void>, preserveFocus = false) => {
     if (busy) return Promise.resolve();
+    if (preserveFocus) {
+      // A returned history or ordering revision can disable the command that
+      // started it. Keep focus on a selector that survives installation so the
+      // sheet remains the keyboard boundary in CEF.
+      focusImageSelector(draft.images, imageId);
+    }
     return actions.runDraftOperation(draft.id, async (current, installDraft) => {
       if (!editorActive.current) return;
       await operation(current, installDraft);
@@ -704,7 +710,7 @@ function CaptureEditor({ draft, previewImage, previewRef, previewFocusFallbackRe
           if (editorActive.current) setMessage(copy.editorSaved);
         }
       } catch { if (editorActive.current) { setFailed(true); setMessage(copy.editorSaveFailed); } }
-    });
+    }, command.kind === "move-image" || command.kind === "move-layer");
   };
   const history = (operation: "capture.editor.undo" | "capture.editor.redo") => {
     setFailed(false);
@@ -713,7 +719,7 @@ function CaptureEditor({ draft, previewImage, previewRef, previewFocusFallbackRe
         const response = await bridge.request({ operation, draftId: current.id, expectedRevision: current.revision });
         if (response.kind === "capture-draft") installDraft(response.draft);
       } catch { if (editorActive.current) { setFailed(true); setMessage(copy.editorSaveFailed); } }
-    });
+    }, true);
   };
   const flatten = () => {
     setFailed(false);

@@ -281,6 +281,49 @@ describe("RealQA capture and editor", () => {
     expect((await screen.findByRole("heading", { name: messages.en.realqaSaveTitle })).tagName).toBe("H3");
   });
 
+  it.each(["undo", "redo", "image move", "layer move"] as const)("keeps focus in the editor before a %s revision can disable its command", async (operation) => {
+    const initial = operation === "redo"
+      ? { ...draft, canUndo: false, canRedo: true }
+      : operation === "image move"
+        ? secondDraft
+        : draft;
+    const next = operation === "undo"
+      ? { ...initial, revision: initial.revision + 1, canUndo: false, canRedo: true }
+      : operation === "redo"
+        ? { ...initial, revision: initial.revision + 1, canUndo: true, canRedo: false }
+        : operation === "image move"
+          ? { ...initial, revision: initial.revision + 1, images: [...initial.images].reverse() }
+          : { ...initial, revision: initial.revision + 1, images: [{ ...initial.images[0], layers: [...initial.images[0].layers.slice(0, 2), initial.images[0].layers[3], initial.images[0].layers[2]] }] };
+    const { bridge, request } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [initial], unreadableDraftIds: [] };
+      if (operation === "undo" && value.operation === "capture.editor.undo") return { kind: "capture-draft", draft: next };
+      if (operation === "redo" && value.operation === "capture.editor.redo") return { kind: "capture-draft", draft: next };
+      if ((operation === "image move" || operation === "layer move") && value.operation === "capture.editor.apply") return { kind: "capture-draft", draft: next };
+      throw new Error(`unexpected operation ${value.operation}`);
+    }, async () => ({ kind: "capture-draft", draft: initial }));
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    await openEditor();
+
+    const editor = screen.getByRole("dialog", { name: messages.en.editorTitle });
+    const imageSelector = within(editor).getByRole("button", { name: `${messages.en.editorImage} 1` });
+    if (operation === "undo") fireEvent.click(within(editor).getByRole("button", { name: messages.en.editorUndo }));
+    else if (operation === "redo") fireEvent.click(within(editor).getByRole("button", { name: messages.en.editorRedo }));
+    else if (operation === "image move") {
+      const imageOrder = editor.querySelector<HTMLElement>(".editor-image-order");
+      if (!imageOrder) throw new Error("missing image order controls");
+      fireEvent.click(within(imageOrder).getAllByRole("button", { name: messages.en.editorMoveLater })[0]);
+    } else {
+      const layerSection = within(editor).getByRole("heading", { name: messages.en.editorLayers }).parentElement;
+      if (!layerSection) throw new Error("missing layer controls");
+      fireEvent.click(within(layerSection).getAllByRole("button", { name: messages.en.editorMoveLater })[2]);
+    }
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: operation === "undo" ? "capture.editor.undo" : operation === "redo" ? "capture.editor.redo" : "capture.editor.apply" })));
+    expect(document.activeElement).toBe(imageSelector);
+    expect(editor.contains(document.activeElement)).toBe(true);
+  });
+
   it.each([["en", messages.en], ["ko", messages.ko]] as const)("exposes the accessible %s editor and ordered layer controls", async (_language, copy) => {
     const { bridge, request } = bridgeWith();
     render(<RealqaSurface bridge={bridge} copy={copy} />);
