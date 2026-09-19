@@ -17,7 +17,7 @@ function attributeValue(match) {
   return match[1] ?? match[2] ?? match[3] ?? "";
 }
 
-function resourceTargets(contents) {
+export function resourceTargets(contents) {
   const targets = [];
   for (const match of contents.matchAll(urlAttributePattern)) {
     const value = attributeValue(match);

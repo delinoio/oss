@@ -77,6 +77,27 @@ const forbidden = [
   ["CSS credential URL", '<style>.private { background: url("https://example.com/image?token&equals;fixture-value") }</style>'],
   ["public asset with credentials", '<img src="/assets/logo.svg#token=fixture-value">'],
 ];
+
+for (const [name, fixture] of [
+  ["non-anchor href", '<area href="/install.html">'],
+  ["src", '<iframe src="/install.html"></iframe>'],
+  ["srcset second candidate", '<img srcset="/assets/logo.svg 1x, /install.html 2x">'],
+  ["poster", '<video poster="/install.html"></video>'],
+  ["action", '<form action="/install.html"></form>'],
+  ["formaction", '<button formaction="/operations.html">Submit</button>'],
+  ["data", '<object data="/install.html"></object>'],
+  ["relative attribute", '<form action="install.html?lang=en#verification"></form>'],
+  ["encoded attribute", '<button formaction="/install&period;html">Submit</button>'],
+  ["absolute same-origin attribute", '<form action="https://runmoor.delino.io/install.html"></form>'],
+  ["inline CSS", '<style>.link { background: url("/install.html") }</style>'],
+]) {
+  test(`clean URLs reject HTML route in ${name}`, () => {
+    const result = validateFixture(fixture);
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /index\.html links to (?:a )?non-clean route/u);
+  });
+}
 for (const key of ["code", "oauth_code"]) {
   forbidden.push(
     [`direct ${key} fragment`, `<a href="https://example.com/#${key}&equals;fixture-value">Callback</a>`],
@@ -115,6 +136,8 @@ test("publication preserves public routes, assets, external references, and cred
     <a href="/install#verification">Install</a>
     <a href="/configuration?lang=en">Configuration</a>
     <a href="https://docs.example.com/guide.html">External reference</a>
+    <form action="https://docs.example.com/install.html"></form>
+    <button formaction="/install?lang=en#verification">Install</button>
     <a href="https://docs.example.com/#/guide?section=installation">External routed reference</a>
     <img src="/assets/logo.svg">
     <img srcset="/assets/logo.svg 1x, /static/logo.svg 2x">

@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { decodeHTML } from "entities";
-import { createPublicContentValidator } from "./public-content.mjs";
+import { createPublicContentValidator, resourceTargets } from "./public-content.mjs";
 
 const requiredHeadings = new Map([
   ["/", ["Runmoor", "Guides"]],
@@ -35,9 +35,8 @@ async function collectHtmlFiles(directory) {
   return files;
 }
 
-function links(contents, pageUrl) {
-  return [...contents.matchAll(/<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu)]
-    .map((match) => decodeHTML(match[1] ?? match[2] ?? match[3]))
+function resolveLinks(targets, pageUrl) {
+  return targets.map((target) => decodeHTML(target))
     .filter((href) => !href.startsWith("#"))
     .flatMap((href) => {
       try {
@@ -48,6 +47,11 @@ function links(contents, pageUrl) {
         return [];
       }
     });
+}
+
+function links(contents, pageUrl) {
+  return resolveLinks([...contents.matchAll(/<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu)]
+    .map((match) => match[1] ?? match[2] ?? match[3]), pageUrl);
 }
 
 function articleContent(contents) {
@@ -78,13 +82,17 @@ for (const [file, contents] of contentsByFile) {
   if (/^runmoor(?:\/|\.html$)/u.test(relativeFile)) {
     failures.push(`${relativeFile} retains a legacy route artifact`);
   }
-  for (const link of links(contents, pageUrl)) {
+  for (const link of resolveLinks(resourceTargets(contents), pageUrl)) {
     if (link.origin !== validatorOrigin) continue;
     if (/^\/runmoor(?:\/|(?:\.html)?$)/u.test(link.pathname)) {
       failures.push(`${relativeFile} links to legacy route ${link.pathname}`);
     } else if (link.pathname.endsWith(".html")) {
       failures.push(`${relativeFile} links to non-clean route ${link.pathname}`);
-    } else if (!requiredHeadings.has(link.pathname)) {
+    }
+  }
+  for (const link of links(contents, pageUrl)) {
+    if (link.origin !== validatorOrigin) continue;
+    if (!requiredHeadings.has(link.pathname)) {
       failures.push(`${relativeFile} links to unknown route ${link.pathname}`);
     } else {
       linkedRoutes.add(link.pathname);

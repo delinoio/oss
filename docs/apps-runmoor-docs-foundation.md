@@ -46,6 +46,7 @@
 - Preview: `pnpm --filter runmoor-docs preview`.
 - Validation: package-local `pnpm test` or `pnpm --filter runmoor-docs test`, building the site and validating route artifacts, required article headings and links, main landmarks, clean internal links, absence of legacy route links, and public-content restrictions. The command also runs regression fixtures against temporary copies of the real generated HTML to prove rejection of credentials and internal paths without logging their values.
 - Preparation: `prepare:app` is an explicit no-op.
+- Clean URL validation covers `href`, `src`, `srcset`, `poster`, `action`, `formaction`, and `data` attributes plus CSS resource references. It resolves entity-encoded, relative, and absolute destinations before checking same-origin `.html` routes; external `.html` URLs and generated static assets remain usable.
 - CI: `node-runmoor-docs-test` uses the shared job-level change plan, one frozen install with `--ignore-scripts`, the planner's exact Turbo comparison, and successful-main-only cache saves. App changes select both this job and repository-environment validation; changes to the shared Rspress wrapper force documentation checks even outside the workspace graph. The job participates in `ci-result`.
 
 ## Dependencies and Integrations
