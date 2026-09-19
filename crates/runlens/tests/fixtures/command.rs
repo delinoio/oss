@@ -38,6 +38,10 @@ fn main() {
                 .unwrap();
             std::process::exit(status.code().unwrap_or(1));
         }
+        "native-child" => {
+            let status = Command::new(&args[1]).arg("read-write").status().unwrap();
+            std::process::exit(status.code().unwrap_or(1));
+        }
         "linger" => {
             #[allow(
                 clippy::zombie_processes,

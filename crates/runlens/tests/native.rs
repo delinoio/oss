@@ -10,6 +10,29 @@ use serde_json::Value;
 fn binary() -> &'static str {
     env!("CARGO_BIN_EXE_runlens")
 }
+
+#[tokio::test]
+async fn tracing_initialization_failure_does_not_launch_the_target() {
+    let root = tempfile::tempdir().unwrap();
+    let occupied = root.path().join("not-a-directory");
+    fs::write(&occupied, "occupied").unwrap();
+    let mut command = fspy::Command::new(fixture());
+    command
+        .args(["read-write"])
+        .current_dir(root.path())
+        .envs(std::env::vars_os());
+    let result = command
+        .spawn_in(
+            &occupied,
+            8192,
+            16,
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await;
+    assert!(result.is_err());
+    assert!(!root.path().join("out").exists());
+    assert_eq!(fs::read_to_string(occupied).unwrap(), "occupied");
+}
 fn fixture() -> &'static str {
     env!("CARGO_BIN_EXE_runlens-test-command")
 }
@@ -395,6 +418,12 @@ fn unsupported_child_continues_and_preserves_incomplete_evidence() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(
+        parse(root.path(), "partial.json")["executions"][0]["outcome"]["child_exit_code"],
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
         fs::read_to_string(root.path().join("protected-child-result")).unwrap(),
         "original"
     );
@@ -613,6 +642,29 @@ fn hardened_macos_image_is_blocked_before_execution() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(!root.path().join("out").exists());
+    let child = invoke(
+        root.path(),
+        &[
+            "run",
+            "--save",
+            "hardened-child.json",
+            "--",
+            fixture(),
+            "native-child",
+            protected.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(
+        child.status.code(),
+        Some(4),
+        "{}",
+        String::from_utf8_lossy(&child.stderr)
+    );
+    assert!(root.path().join("out/result.txt").exists());
+    assert_eq!(
+        parse(root.path(), "hardened-child.json")["executions"][0]["outcome"]["child_exit_code"],
+        0
+    );
 }
 
 #[test]

@@ -96,11 +96,18 @@ impl Redactor {
     }
 }
 pub fn normalized(path: &Path) -> String {
-    let text = path.to_string_lossy().replace('\\', "/");
-    if let Some(unc) = text.strip_prefix("//?/UNC/") {
-        format!("//{unc}")
-    } else {
-        text.strip_prefix("//?/").unwrap_or(&text).to_owned()
+    #[cfg(not(windows))]
+    {
+        path.to_string_lossy().into_owned()
+    }
+    #[cfg(windows)]
+    {
+        let text = path.to_string_lossy().replace('\\', "/");
+        if let Some(unc) = text.strip_prefix("//?/UNC/") {
+            format!("//{unc}")
+        } else {
+            text.strip_prefix("//?/").unwrap_or(&text).to_owned()
+        }
     }
 }
 fn replace_root(value: String, root: &str, placeholder: &str) -> String {

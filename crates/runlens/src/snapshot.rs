@@ -145,7 +145,11 @@ fn inspect_inner(
     };
     if before.is_symlink() {
         state.kind = Some(FileKind::Symlink);
-        state.link_target = Some(redactor.text(&fs::read_link(path)?.to_string_lossy()));
+        let target = fs::read_link(path)?;
+        let Some(target) = target.to_str() else {
+            return Ok(FileState::unknown(ObservationIssue::NonUnicode));
+        };
+        state.link_target = Some(redactor.text(target));
     } else if before.is_file() {
         state.kind = Some(FileKind::File);
         state.size = Some(before.len());
@@ -230,7 +234,7 @@ fn inspect_inner(
     }
     Ok(state)
 }
-fn same(left: &fs::Metadata, right: &fs::Metadata) -> bool {
+pub(crate) fn same(left: &fs::Metadata, right: &fs::Metadata) -> bool {
     let basic = left.file_type() == right.file_type()
         && left.len() == right.len()
         && left.modified().ok() == right.modified().ok();

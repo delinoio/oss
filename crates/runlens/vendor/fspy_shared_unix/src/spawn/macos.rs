@@ -9,7 +9,11 @@ impl PreExec { pub const fn run(&self) -> nix::Result<()> { match self.0 {} } }
 pub fn unsupported(path: &Path) -> bool {
     // Canonicalization catches aliases into SIP-protected system locations.
     let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
-    ["/bin", "/sbin", "/usr/bin", "/usr/sbin", "/System"].iter().any(|root| path.starts_with(root))
+    if ["/bin", "/sbin", "/usr/bin", "/usr/sbin", "/System"].iter().any(|root| path.starts_with(root)) { return true; }
+    let machine = if cfg!(target_arch = "aarch64") { 0x0100_000c } else { 0x0100_0007 };
+    // The same passive parser used for root preflight also covers hardened or
+    // mixed-architecture descendants. Failure preserves execution but marks loss.
+    std::fs::File::open(path).and_then(|mut file| fspy_shared::macho::protected(&mut file, machine)).unwrap_or(true)
 }
 
 pub fn handle_exec(command: &mut Exec, payload: &EncodedPayload) -> nix::Result<Option<PreExec>> {

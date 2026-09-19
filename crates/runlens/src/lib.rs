@@ -4,6 +4,8 @@ pub mod config;
 pub mod entries;
 pub mod error;
 pub mod execute;
+// One bounded parser serves both preflight and nested macOS exec interception.
+#[path = "../vendor/fspy_shared/src/macho.rs"]
 pub mod macho;
 pub mod model;
 pub mod platform;

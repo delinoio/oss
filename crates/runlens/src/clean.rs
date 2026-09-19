@@ -80,8 +80,12 @@ pub fn isolated_environment(root: &Path, names: &[String]) -> Result<Vec<(OsStri
 }
 fn git(root: &Path, environment: &[(OsString, OsString)]) -> Process {
     let mut command = Process::new("git");
+    #[cfg(windows)]
+    let directory = PathBuf::from(crate::privacy::normalized(root));
+    #[cfg(not(windows))]
+    let directory = root;
     command
-        .current_dir(root)
+        .current_dir(directory)
         .env_clear()
         .envs(environment.iter().map(|(k, v)| (k, v)))
         .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -161,6 +165,11 @@ async fn managed_git(
         ));
     }
     if !status.success() {
+        tracing::warn!(
+            stage = "source-preparation",
+            child_exit_code = status.code(),
+            "Git source operation failed"
+        );
         return Err(Error::input(
             "Git source selection failed; a readable repository and HEAD are required",
         ));
@@ -194,8 +203,14 @@ pub async fn revision(root: &Path, cancel: &CancellationToken) -> Option<String>
         &execution_context(),
         cancel,
     )
-    .await
-    .ok()?;
+    .await;
+    let bytes = match bytes {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            tracing::debug!(stage="source-revision", code=?error.code, "source revision unavailable");
+            return None;
+        }
+    };
     let value = String::from_utf8(bytes).ok()?.trim().to_owned();
     if (value.len() == 40 || value.len() == 64) && value.bytes().all(|b| b.is_ascii_hexdigit()) {
         Some(value)
@@ -248,19 +263,61 @@ fn copy_entry(source: &Path, destination: &Path, cancel: &CancellationToken) -> 
             copy_entry(&entry.path(), &destination.join(entry.file_name()), cancel)?;
         }
     } else if metadata.is_file() {
-        fs::copy(source, destination).map_err(|_| Error::storage())?;
-        fs::set_permissions(destination, metadata.permissions()).map_err(|_| Error::storage())?;
-        let after = fs::symlink_metadata(source).map_err(|_| Error::storage())?;
-        if metadata.len() != after.len() || metadata.modified().ok() != after.modified().ok() {
+        use std::io::{Read, Write};
+        let mut options = fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.custom_flags(0x00200000);
+        }
+        let mut input = options.open(source).map_err(|_| Error::storage())?;
+        if !crate::snapshot::same(&metadata, &input.metadata().map_err(|_| Error::storage())?) {
             return Err(Error::new(
                 ErrorCode::Incomplete,
-                "source changed during clean checkout preparation",
+                "source changed during preparation",
             ));
         }
+        let mut output = fs::File::create_new(destination).map_err(|_| Error::storage())?;
+        let mut buffer = [0u8; 65536];
+        loop {
+            if cancel.is_cancelled() {
+                return Err(Error::new(
+                    ErrorCode::Cancelled,
+                    "source preparation cancelled",
+                ));
+            }
+            let count = input.read(&mut buffer).map_err(|_| Error::storage())?;
+            if count == 0 {
+                break;
+            }
+            output
+                .write_all(&buffer[..count])
+                .map_err(|_| Error::storage())?;
+        }
+        if !crate::snapshot::same(&metadata, &input.metadata().map_err(|_| Error::storage())?) {
+            return Err(Error::new(
+                ErrorCode::Incomplete,
+                "source changed during preparation",
+            ));
+        }
+        fs::set_permissions(destination, metadata.permissions()).map_err(|_| Error::storage())?;
     } else {
         return Err(Error::new(
             ErrorCode::Unsupported,
             "source contains an unsupported filesystem object",
+        ));
+    }
+    let after = fs::symlink_metadata(source).map_err(|_| Error::storage())?;
+    if !crate::snapshot::same(&metadata, &after) {
+        return Err(Error::new(
+            ErrorCode::Incomplete,
+            "source changed during clean checkout preparation",
         ));
     }
     Ok(())

@@ -44,3 +44,10 @@ detach uses the LONG checker so successful teardown does not emit a false
 unsupported marker. Native Windows finite-command tests require complete
 collection after process exit. Remove this fix only when upstream uses the
 documented transaction result convention in every detach call.
+
+The shared bounded Mach-O parser checks restrictive signatures for both root
+preflight and intercepted macOS child execution. A hardened descendant continues
+unchanged and emits unsupported coverage, even outside SIP system directories.
+The native hardened-image fixture checks both preflight rejection and successful
+child execution with an incomplete receipt. Remove this patch when upstream
+provides equivalent passive protection classification without executable substitution.

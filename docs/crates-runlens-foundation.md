@@ -440,3 +440,11 @@ wall-clock sample, and exit codes. These debug-build warm-cache measurements are
 procedural evidence, not a performance SLA or release benchmark. Use OS resource
 tools for peak RSS and disk accounting; metadata limits do not bound the child
 process's memory or output files.
+
+Source copies use bounded cancellable reads, refuse last-component symlink swaps,
+and compare file/directory identity before and after copying. Unix literal
+backslashes remain filename bytes; non-Unicode symlink targets remain unknown.
+Unreadable native fixtures verify unknown content rather than an empty digest.
+A single bounded Mach-O parser covers both root preflight and intercepted child
+execution: hardened descendants proceed unchanged with incomplete coverage.
+Initialization failure fixtures assert that no target side effect occurs.

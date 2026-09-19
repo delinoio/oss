@@ -151,4 +151,63 @@ fn snapshots_cover_links_types_permissions_deletions_and_exclusions() {
         Some(ChangeKind::Modified)
     );
     assert!(changes.get("${workspace}/link").unwrap().is_none());
+    std::fs::write(root.join("literal\\name"), "literal backslash").unwrap();
+    use std::os::unix::ffi::OsStringExt;
+    symlink(
+        std::ffi::OsString::from_vec(vec![0xff]),
+        root.join("non-unicode-link"),
+    )
+    .unwrap();
+    let invalid = take();
+    assert!(!invalid.complete);
+    assert!(
+        invalid
+            .entries
+            .get("${workspace}/literal\\name")
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(
+        invalid
+            .entries
+            .get("${workspace}/non-unicode-link")
+            .unwrap()
+            .unwrap()
+            .knowledge,
+        Knowledge::Unknown
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn unreadable_files_preserve_unknown_instead_of_empty_content() {
+    use std::os::unix::fs::PermissionsExt;
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().canonicalize().unwrap();
+    let path = root.join("unreadable");
+    std::fs::write(&path, "not empty").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let redactor = Redactor::new(&root, &[], &config::Redaction::default()).unwrap();
+    let observed = snapshot::take(
+        &root,
+        &[],
+        &[],
+        &redactor,
+        &config::Limits::default(),
+        &tokio_util::sync::CancellationToken::new(),
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let state = observed
+        .entries
+        .get("${workspace}/unreadable")
+        .unwrap()
+        .unwrap();
+    assert!(!observed.complete);
+    assert_eq!(state.knowledge, Knowledge::Unknown);
+    assert_eq!(state.reason, Some(ObservationIssue::PermissionDenied));
+    assert!(state.sha256.is_none());
 }
