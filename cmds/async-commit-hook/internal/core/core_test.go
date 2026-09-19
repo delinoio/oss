@@ -13,6 +13,11 @@ import (
 
 func fixture(t *testing.T, configuration string) (*Service, string) {
 	t.Helper()
+	return fixtureWithObjectFormat(t, configuration, "sha1")
+}
+
+func fixtureWithObjectFormat(t *testing.T, configuration, format string) (*Service, string) {
+	t.Helper()
 	root := t.TempDir()
 	repo := filepath.Join(root, "repo")
 	if e := os.Mkdir(repo, 0700); e != nil {
@@ -30,7 +35,7 @@ func fixture(t *testing.T, configuration string) (*Service, string) {
 			t.Fatal(e)
 		}
 	}
-	git("init", "--quiet", "--template=")
+	git("init", "--quiet", "--template=", "--object-format="+format)
 	git("config", "user.email", "ach-test@example.invalid")
 	git("config", "user.name", "ach test")
 	if _, _, e = s.Init(context.Background(), repo); e != nil {

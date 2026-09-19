@@ -255,7 +255,14 @@ func (s *Store) Prepare(ctx context.Context, r Run) (string, error) {
 	if err := PrivateDir(dir); err != nil {
 		return "", err
 	}
-	if _, err := Git(ctx, dir, "init", "--quiet", "--template="); err != nil {
+	format, err := Git(ctx, r.Source, "rev-parse", "--show-object-format=storage")
+	if err != nil {
+		return dir, err
+	}
+	if format != "sha1" && format != "sha256" {
+		return dir, E("unsupported-object-format", "source Git object format is unsupported", 2)
+	}
+	if _, err := Git(ctx, dir, "init", "--quiet", "--template=", "--object-format="+format); err != nil {
 		return dir, err
 	}
 	if _, err := Git(ctx, dir, "config", "core.hooksPath", filepath.Join(s.Root, "disabled-hooks")); err != nil {

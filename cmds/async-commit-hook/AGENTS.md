@@ -10,6 +10,7 @@
 - Account lifecycle control remains in the canonical home configuration directory even when `--config` or `state_dir` changes. Tests must use isolated homes or explicit injected `Paths`; never touch developer credentials or real account state.
 - Stream NUL-delimited Git tree records directly into validation/materialization, retaining no full listing or entry slice; bound one record to 1 MiB and kill/reap readers on failure.
 - Committed source is streamed through one validated raw Git blob batch per workspace, with bounded buffers. Never enable original hooks, filters, submodules or LFS implicitly. Hook installation discovery must not use the execution helper's disabled-hooks override.
+- Initialize managed Git workspaces with the source repository's storage object format (`sha1` or `sha256`) before fetching the exact commit; never rely on Git's default hash algorithm.
 - Read committed project configuration through a 1 MiB plus one-byte stream limit before parsing; terminate and reap oversized Git readers rather than buffering the full blob.
 - Raw LFS detection inspects the complete candidate only below the upstream 1024-byte cutoff and requires valid version, SHA-256 OID, nonnegative size and extension syntax; header-only examples remain ordinary source.
 - LFS declaration checks ignore attribute comments and pattern text, match exact filter values, and retain independent raw-pointer rejection before commands start.
