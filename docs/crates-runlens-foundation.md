@@ -399,7 +399,11 @@ replacement. This is a launch-boundary race check, not an OS sandbox or a guaran
 against a concurrent replacement after the final check.
 Comparison requires known matching executable identity and OS metadata,
 equal source revision metadata, and the same working-tree inclusion policy;
-redacted arguments cannot establish equivalence. Known restrictive Mach-O code
+redacted arguments cannot establish equivalence. Selected environment names do not
+establish equality of omitted values. Any selected names make report environment
+comparison inconclusive, including repeat-output compatibility; no environment
+value or value hash is persisted to work around this privacy boundary.
+Known restrictive Mach-O code
 signature flags and restricted segments are rejected by a bounded parser before
 launch. Windows injection failure preserves the original child execution and
 records incomplete evidence. Retained metadata maps share one process-wide memory

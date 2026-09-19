@@ -69,6 +69,9 @@ impl Analysis {
                 "A passing check applies only to supplied observations and configured rules; it \
                  does not certify universal cache safety or determinism."
                     .into(),
+                "Selected environment values are not retained; reports with selected environment \
+                 names cannot establish environment compatibility."
+                    .into(),
             ],
         }
     }
@@ -449,6 +452,9 @@ pub fn compatible(left: &Execution, right: &Execution) -> bool {
         && left.command.argv == right.command.argv
         && left.command.cwd == right.command.cwd
         && left.environment.environment_names == right.environment.environment_names
+        // Names do not prove equality of omitted values. Do not store value
+        // hashes either: low-entropy secrets would be recoverable by guessing.
+        && left.environment.environment_names.is_empty()
         && left.scope.exclusions == right.scope.exclusions
         && !left.scope.redacted_paths
         && !right.scope.redacted_paths

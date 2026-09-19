@@ -375,6 +375,64 @@ fn clean_baselines_require_matching_source_selection() {
     assert!(!root.path().join("out").exists());
 }
 #[test]
+fn selected_environment_names_do_not_prove_baseline_compatibility() {
+    let root = repository("read");
+    let path = root.path().join("runlens.toml");
+    let config = fs::read_to_string(&path).unwrap();
+    fs::write(&path, format!("{config}\nenv = [\"RUNLENS_FLAVOR\"]\n")).unwrap();
+    git(root.path(), &["add", "runlens.toml"]);
+    git(root.path(), &["commit", "-qm", "select environment input"]);
+    let execute = |args: &[&str], flavor: &str| {
+        Command::new(binary())
+            .args(args)
+            .env("RUNLENS_FLAVOR", flavor)
+            .current_dir(root.path())
+            .output()
+            .unwrap()
+    };
+    let baseline = execute(
+        &["verify", "clean", "build", "--save", "baseline.json"],
+        "FIRST-PRIVATE-VALUE",
+    );
+    assert!(
+        baseline.status.success(),
+        "{}",
+        String::from_utf8_lossy(&baseline.stderr)
+    );
+    for (index, flavor) in ["FIRST-PRIVATE-VALUE", "SECOND-PRIVATE-VALUE"]
+        .iter()
+        .enumerate()
+    {
+        let name = format!("result-{index}.json");
+        let current = execute(
+            &[
+                "verify",
+                "clean",
+                "build",
+                "--baseline",
+                "baseline.json",
+                "--save",
+                &name,
+            ],
+            flavor,
+        );
+        assert_eq!(
+            current.status.code(),
+            Some(4),
+            "{}",
+            String::from_utf8_lossy(&current.stderr)
+        );
+        let report = fs::read_to_string(root.path().join(&name)).unwrap();
+        assert!(!report.contains("PRIVATE-VALUE"));
+        assert_eq!(parse(root.path(), &name)["verification"], "inconclusive");
+    }
+    let compared = invoke(
+        root.path(),
+        &["compare", "baseline.json", "baseline.json", "--json"],
+    );
+    assert_eq!(compared.status.code(), Some(4));
+}
+#[test]
 fn clean_policy_failures_survive_inconclusive_baselines() {
     let root = repository("read");
     assert!(
