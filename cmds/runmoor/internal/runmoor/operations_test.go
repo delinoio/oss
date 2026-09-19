@@ -256,6 +256,38 @@ func TestPowerFailureRemainsWarningAndJobsKeepRunning(t *testing.T) {
 	}
 }
 
+func TestQuarantinedExecutionKeepsSleepInhibitionUntilConfirmedTermination(t *testing.T) {
+	_, s := fixtureStore(t)
+	m := NewManager(s, "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer m.cancel()
+	power := &failingPower{}
+	m.Power = power
+	if err := s.Update(func(s *Snapshot) error {
+		s.Runners["uncertain"] = &Runner{ID: "uncertain", Phase: Quarantined, Resources: Resources{1, 128}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.step(); err != nil {
+		t.Fatal(err)
+	}
+	if !power.active || s.View().Runners["uncertain"].Forced {
+		t.Fatal("quarantine lost sleep protection or forced unverified termination")
+	}
+	if _, count, _ := usage(s.View()); count != 1 {
+		t.Fatal("uncertain execution lost its reservation")
+	}
+	if err := s.Update(func(s *Snapshot) error { s.Runners["uncertain"].Terminated = true; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.step(); err != nil {
+		t.Fatal(err)
+	}
+	if power.active {
+		t.Fatal("confirmed termination retained sleep inhibition")
+	}
+}
+
 func TestImageMutationsRequireManagerBeforeOfflineSideEffects(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix control socket contract")

@@ -197,7 +197,7 @@ func (m *Manager) step() error {
 	s := m.Store.View()
 	active := false
 	for _, r := range s.Runners {
-		if !r.Terminated && (r.Phase == Busy || r.Phase == Preparing || r.Phase == Cleaning) {
+		if !r.Terminated && (r.Phase == Busy || r.Phase == Preparing || r.Phase == Cleaning || r.Phase == Quarantined) {
 			active = true
 		}
 	}
