@@ -39,7 +39,15 @@ function links(contents, pageUrl) {
   return [...contents.matchAll(/<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu)]
     .map((match) => decodeHTML(match[1] ?? match[2] ?? match[3]))
     .filter((href) => !href.startsWith("#"))
-    .map((href) => new URL(href, pageUrl));
+    .flatMap((href) => {
+      try {
+        return [new URL(href, pageUrl)];
+      } catch {
+        // URL errors retain the original input, which can contain credentials.
+        failures.push(`${pageUrl.pathname} contains a malformed link`);
+        return [];
+      }
+    });
 }
 
 function articleContent(contents) {

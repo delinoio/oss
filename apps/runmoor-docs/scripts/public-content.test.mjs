@@ -29,6 +29,20 @@ function validateFixture(fixture) {
   });
 }
 
+for (const href of [
+  "https://reader:fixture-value@[invalid",
+  "https://reader:fixture-value@host:invalid",
+  "https://[invalid",
+]) {
+  test(`malformed anchor URLs fail without exposing their input (${href.includes("fixture-value") ? "credential" : "plain"})`, () => {
+    const result = validateFixture(`<a href="${href}">Invalid destination</a>`);
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /index\.html contains a malformed link/u);
+    assert.doesNotMatch(result.stdout + result.stderr, /fixture-value|reader|ERR_INVALID_URL|input:/u);
+  });
+}
+
 const forbidden = [
   ["classic PAT", "<p>ghp_fixture1234567890</p>"],
   ["fine-grained PAT", "<p>github_pat_fixture1234567890</p>"],

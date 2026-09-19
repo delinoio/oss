@@ -37,6 +37,7 @@
 
 ## Logging
 - Build and validation logs identify the documentation app and failing route or output file.
+- Malformed links fail with a page-level classification; URL parser exceptions and their original input must never be emitted because malformed destinations may contain credentials.
 - Development port conflicts include recovery instructions. Logs contain no credentials.
 
 ## Build and Test
