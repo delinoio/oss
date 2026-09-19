@@ -5,6 +5,11 @@ pre-commit:
       stage_fixed: true
       glob: "**/*.rs"
       run: cargo fmt --all
+    runlens-fmt:
+      stage_fixed: true
+      glob: "crates/runlens/**/*.rs"
+      root: "crates/runlens/"
+      run: cargo +nightly-2026-08-02 fmt --package runlens
     go-fmt:
       stage_fixed: true
       glob: "**/*.go"

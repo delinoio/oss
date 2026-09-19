@@ -19,3 +19,7 @@ This page provides a high-level public catalog of projects in the Delino OSS mon
 Authoritative implementation contracts are maintained in the repository's internal project documents.
 Use this public catalog for orientation, and use internal project docs for precise engineering and operational details.
 Standalone project documentation links are canonical entry points for Nodeup, binpm, and Runmoor public guidance.
+
+## Runlens
+
+[Runlens documentation](https://runlens.delino.io) covers metadata-only command diagnostics, execution comparisons, clean and repeated verification, and potential conflict analysis. See its release guide for availability and platform evidence.

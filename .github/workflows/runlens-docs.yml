@@ -1,0 +1,44 @@
+name: Runlens documentation deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Validate without deploying to Cloudflare Pages'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-ci-node
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm --filter runlens-docs test
+      - uses: actions/upload-artifact@v7
+        with:
+          name: runlens-docs
+          path: apps/runlens-docs/doc_build
+          retention-days: 7
+          if-no-files-found: error
+  deploy:
+    needs: build
+    if: ${{ !inputs.dry_run && github.ref == 'refs/heads/main' }}
+    environment: runlens-docs-production
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: runlens-docs
+          path: site
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy site --project-name runlens-docs --branch main

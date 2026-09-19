@@ -34,6 +34,7 @@ export default defineConfig({
       { text: "Nodeup", link: "https://nodeup.delino.io" },
       { text: "binpm", link: "https://binpm.delino.io" },
       { text: "Runmoor", link: "https://runmoor.delino.io" },
+      { text: "Runlens", link: "https://runlens.delino.io" },
     ],
     sidebar: {
       "/": [

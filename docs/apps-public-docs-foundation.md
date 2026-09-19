@@ -23,7 +23,7 @@
 - Top-level in-site product page IDs currently include `devhud`, `cargo-mono`, `derun`, and `with-watch`.
 - Runmoor guides have moved to `apps/runmoor-docs` at `https://runmoor.delino.io`, with their complete content and public constraints governed by `docs/apps-runmoor-docs-foundation.md`. The former `/runmoor` and six child routes are removed without redirects or compatibility pages. Build validation must reject old route artifacts and local links, and require the standalone URL in navigation, home, and project catalog.
 - `/devhud` is the public DevHud overview and coordinated-release page. Its child routes cover installation/verification, implemented usage, privacy, security, support, administrator operations, and releases. These pages describe only public behavior and supported limits; internal credentials, arbitrary paths, architecture, endpoints, workflow structure, and deployment implementation remain in repository contracts. The coordinated release injects a non-secret version-and-revision marker into the built page and verifies the exact marker through the production `/devhud` route before GA. It also injects validated non-secret App Store, Google Play, and Chrome Web Store identifiers into every generated text asset containing the compiled public docs, then verifies the exact official listing destinations in `/devhud/install` before deployment.
-- External top-level major project links include Nodeup at `https://nodeup.delino.io`, binpm at `https://binpm.delino.io`, and Runmoor at `https://runmoor.delino.io`.
+- External top-level major project links include Nodeup at `https://nodeup.delino.io`, binpm at `https://binpm.delino.io`, Runmoor at `https://runmoor.delino.io`, and Runlens at `https://runlens.delino.io`.
 - The legacy `/nodeup` public-docs route must remain a lightweight compatibility handoff page to `https://nodeup.delino.io`; it is not an in-site guide route and must not duplicate Nodeup documentation content.
 - Nodeup, binpm, and Runmoor public documentation remain owned by `apps/nodeup-docs`, `apps/binpm-docs`, and `apps/runmoor-docs`; do not add or restore in-site guide routes for those projects under `apps/public-docs`.
 - The `With Watch` tab must route to the stable page ID `with-watch` and keep the `Command Rerun Watcher` grouping unless contracts are updated together.
@@ -61,3 +61,5 @@
 - `docs/project-public-docs.md`
 - `docs/repository-defaults.md`
 - `docs/domain-template.md`
+
+- Runlens discovery is external on navigation, home, and project catalog. Its full guide ownership is `apps/runlens-docs`; public-docs must not duplicate those guides.

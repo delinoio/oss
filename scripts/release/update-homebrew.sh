@@ -8,7 +8,7 @@ Render and optionally push Homebrew formula/cask updates.
 
 Usage:
   ./scripts/release/update-homebrew.sh \
-    --project <binpm|nodeup|with-watch|derun> \
+    --project <binpm|nodeup|with-watch|derun|runlens> \
     --version <semver> \
     [--darwin-amd64-url <url>] [--darwin-amd64-sha256 <sha>] \
     [--darwin-arm64-url <url>] [--darwin-arm64-sha256 <sha>] \
@@ -152,19 +152,31 @@ rendered_file=""
 destination_path=""
 
 case "$project" in
-  binpm|nodeup|with-watch|derun)
+  binpm|nodeup|with-watch|derun|runlens)
     if [ -z "$darwin_amd64_url" ] || [ -z "$darwin_amd64_sha256" ] || [ -z "$darwin_arm64_url" ] || [ -z "$darwin_arm64_sha256" ] || [ -z "$linux_amd64_url" ] || [ -z "$linux_amd64_sha256" ]; then
       log "$project requires --darwin-amd64-url, --darwin-amd64-sha256, --darwin-arm64-url, --darwin-arm64-sha256, --linux-amd64-url, and --linux-amd64-sha256"
       exit 1
     fi
 
-    if { [ "$project" = "binpm" ] || [ "$project" = "nodeup" ] || [ "$project" = "with-watch" ]; } && { [ -z "$linux_arm64_url" ] || [ -z "$linux_arm64_sha256" ]; }; then
+    if { [ "$project" = "binpm" ] || [ "$project" = "nodeup" ] || [ "$project" = "with-watch" ] || [ "$project" = "runlens" ]; } && { [ -z "$linux_arm64_url" ] || [ -z "$linux_arm64_sha256" ]; }; then
       log "$project requires --linux-arm64-url and --linux-arm64-sha256"
       exit 1
     fi
 
     if [ "$project" = "binpm" ]; then
       validate_binpm_prebuilt_urls
+    fi
+
+    if [ "$project" = "runlens" ]; then
+      # Runlens accepts only its closed, version-bound prebuilt release inventory.
+      [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
+      for platform in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
+        url_key="${platform}_url"
+        sha_key="${platform}_sha256"
+        expected="https://github.com/delinoio/oss/releases/download/runlens@v${version}/runlens-${platform//_/-}.tar.gz"
+        [ "${!url_key}" = "$expected" ] || { log "unexpected Runlens release URL"; exit 1; }
+        [[ "${!sha_key}" =~ ^[0-9a-f]{64}$ ]] || { log "invalid Runlens SHA256"; exit 1; }
+      done
     fi
 
     template_path="$repo_root/packaging/homebrew/templates/${project}.rb.tmpl"

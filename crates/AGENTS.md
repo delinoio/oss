@@ -27,7 +27,7 @@
 
 ### Rust Workspace Rules
 
-- Add new crates as explicit workspace members in root `Cargo.toml`.
+- Add new crates as explicit workspace members in root `Cargo.toml`, except the documented independent `crates/runlens` workspace.
 - Keep crate naming aligned with project IDs when possible.
 - Document behavior contracts in project index docs and relevant crate-domain docs before large implementation changes.
 - Planned crate paths must not be added as workspace members until the crate skeleton exists.
@@ -148,3 +148,28 @@
 - DevHud native-host IPC and registration fixtures must remain callable from the package-local DevHud CI commands. Native binaries, installers, signing, release, and deployment tasks are non-cacheable and CI must not publish or install outside disposable layouts.
 - Keep logs sufficient for debugging install, dispatch, and runtime resolution flow.
 - Keep CLI logs colorized by default for human operators, with explicit opt-out controls.
+
+### Runlens Rules
+
+- Follow docs/project-runlens.md and docs/crates-runlens-foundation.md. Run independent tests/fmt/Clippy with nightly-2026-08-02 in addition to root cargo test.
+- Keep fspy and dependency notices, immutable provenance, and a tested patch ledger. Do not reformat unrelated vendored sources or add root dependency patches.
+- Do not inject unused tracing environment markers or overwrite the caller's `FSPY` value; retain only required backend coordination mutations.
+- Collection budgets apply inside the tracing/snapshot layers, not only after materialization. Use typed incomplete outcomes and retain available evidence.
+- Charge each snapshot record and directory member before retaining it; an over-budget final entry must remain incomplete even when no subsequent entry is walked.
+- Redacted symlink targets are unknown evidence and mark collection incomplete; identical masking placeholders must never prove that two targets are equal.
+- Exact directory exclusions apply to every descendant in snapshots, membership, and observed access scope, including paths that no longer exist; excluded inputs cannot become apparently new outputs.
+- Deserialize evidence under the shared process memory budget before spilling; do not force every small report map to allocate its own file handles.
+- Preflight conflict analysis against the aggregate limit of 65,536 cross-report target pairs before inspecting paths or creating findings; preparation executions do not count.
+- Comparison compatibility includes source revision and working-tree inclusion policy; identical observed bytes cannot make different source selections comparable.
+- Linux OS identity includes distribution ID and VERSION_ID; legacy version-only, missing, or malformed identities cannot establish comparison compatibility.
+- Selected environment names cannot prove equality of omitted values. Keep their report comparisons inconclusive without persisting values or guessable value hashes.
+- Clean environment selection must reject reserved Git controls case-insensitively on Windows so casing cannot escape fresh checkout/configuration isolation.
+- Retain the inspected executable handle through snapshots and revalidate pathname identity at the launch boundary; a stale digest must never certify a replacement executable.
+- Normalize only complete workspace/home/temporary path roots; similarly prefixed external paths must remain distinguishable in policy and query evidence.
+- Unsupported accesses, lexical aliases through parent components, and uncovered workspace paths prevent a policy pass; never collapse such paths across potentially changed symlinks to invent an identity. Known absolute external paths still support literal boundary checks without establishing cache coverage.
+- Offline path queries follow the report's OS syntax, including Windows drive and UNC paths; do not reinterpret Unix literal backslashes as separators.
+- Compile Windows input/output/exclusion/policy globs case-insensitively, including directory roots. Offline checks follow each execution's recorded OS, not the analyst's host OS.
+- Combined clean/repeat verdicts preserve definite failures ahead of inconclusive results and passes; an incomplete baseline cannot erase a policy violation.
+- Preserve imported baseline executions as historical evidence with the baseline role; only current target/preparation errors determine invocation exit status or receive current cleanup failures.
+- Apply global read/write policy boundaries to current preparation and target executions. Target input/output declarations and baseline new-access comparisons remain target-scoped.
+- Retained evidence maps share a process-wide memory threshold, including repeat rounds and supplied reports. Cancellation handlers must be registered before owned child work. Reject known macOS restrictive code-signing flags and restricted segments by bounded passive inspection; never invoke the target to discover its version.

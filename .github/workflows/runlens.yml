@@ -1,0 +1,104 @@
+name: Runlens native validation
+
+on:
+  pull_request:
+    paths: ['crates/runlens/**', 'scripts/install/runlens*', 'scripts/release/runlens*', 'packaging/runlens/**', 'packaging/homebrew/templates/runlens.rb.tmpl', 'scripts/release/update-homebrew.sh', '.github/workflows/runlens.yml', '.github/workflows/release-runlens.yml']
+  push:
+    branches: [main]
+    paths: ['crates/runlens/**', 'scripts/install/runlens*', 'scripts/release/runlens*', 'packaging/runlens/**', 'packaging/homebrew/templates/runlens.rb.tmpl', 'scripts/release/update-homebrew.sh', '.github/workflows/runlens.yml', '.github/workflows/release-runlens.yml']
+  workflow_dispatch:
+    inputs:
+      minimum_os:
+        description: 'Use dedicated native macOS 13, Windows 10 22H2, and Ubuntu 22.04 runners'
+        type: boolean
+        default: false
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Native ${{ matrix.platform }}
+    runs-on: ${{ inputs.minimum_os && fromJSON(matrix.minimum) || fromJSON(matrix.runner) }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: darwin-amd64
+            runner: '"macos-15-intel"'
+            minimum: '["self-hosted", "runlens-macos-13", "X64"]'
+            target: x86_64-apple-darwin
+          - platform: darwin-arm64
+            runner: '"macos-14"'
+            minimum: '["self-hosted", "runlens-macos-13", "ARM64"]'
+            target: aarch64-apple-darwin
+          - platform: linux-amd64
+            runner: '"ubuntu-22.04"'
+            minimum: '["self-hosted", "runlens-ubuntu-22.04", "X64"]'
+            target: x86_64-unknown-linux-gnu
+          - platform: linux-arm64
+            runner: '"ubuntu-24.04-arm"'
+            minimum: '["self-hosted", "runlens-ubuntu-22.04", "ARM64"]'
+            target: aarch64-unknown-linux-gnu
+          - platform: windows-amd64
+            runner: '"windows-2022"'
+            minimum: '["self-hosted", "runlens-windows-10-22h2", "X64"]'
+            target: x86_64-pc-windows-msvc
+          - platform: windows-arm64
+            runner: '"windows-11-arm"'
+            minimum: '["self-hosted", "runlens-windows-10-22h2", "ARM64"]'
+            target: aarch64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-08-02
+          components: rustfmt, clippy
+          targets: ${{ matrix.target }}
+      - name: Install Linux fixture compiler
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build static Linux child fixture
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          musl-gcc -static crates/runlens/tests/fixtures/static.c -o "$RUNNER_TEMP/runlens-static-child"
+          echo "RUNLENS_STATIC_FIXTURE=$RUNNER_TEMP/runlens-static-child" >> "$GITHUB_ENV"
+      - name: Offline release contract fixtures
+        run: python scripts/release/runlens-test.py
+      - name: Format and Clippy
+        working-directory: crates/runlens
+        run: |
+          cargo fmt --package runlens --check
+          cargo clippy --locked --package runlens --all-targets --features test-support --no-deps -- -D warnings
+      - name: Native execution tests
+        working-directory: crates/runlens
+        run: cargo test --locked --features test-support
+      - name: Release build
+        working-directory: crates/runlens
+        run: cargo build --locked --release --target ${{ matrix.target }} --bin runlens
+      - name: Package native archive
+        run: python scripts/release/runlens.py package --version 0.1.0 --platform ${{ matrix.platform }} --directory runlens-artifacts
+      - name: Verify native installer with authentication doubles
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture=crates/runlens/target/debug/runlens-test-command
+          if [ "$RUNNER_OS" = Windows ]; then fixture="$fixture.exe"; fi
+          python scripts/install/runlens-test.py --directory runlens-artifacts --fixture "$fixture"
+      - name: Record native evidence
+        run: python scripts/release/runlens.py evidence --version 0.1.0 --platform ${{ matrix.platform }} --directory runlens-artifacts
+      - uses: actions/upload-artifact@v7
+        with:
+          name: runlens-${{ matrix.platform }}
+          path: runlens-artifacts/*
+          retention-days: 7
+          if-no-files-found: error

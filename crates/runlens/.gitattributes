@@ -1,0 +1,2 @@
+# Generated public schema bytes are identical on every supported host.
+schema/*.json text eol=lf

@@ -30,6 +30,12 @@ Each project must have one project index document and one or more domain contrac
 
 ## Project Catalog
 
+### runlens
+- `docs/project-runlens.md`
+- `docs/crates-runlens-foundation.md`
+- `docs/apps-runlens-docs-foundation.md`
+
+
 ### binpm
 - `docs/project-binpm.md`
 - `docs/crates-binpm-foundation.md`

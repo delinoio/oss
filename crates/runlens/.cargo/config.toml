@@ -1,0 +1,7 @@
+[unstable]
+bindeps = true
+
+# The pinned fspy Windows integration must assign/inject before the primary thread
+# resumes. Tokio's custom spawn callback is still behind this upstream cfg.
+[target.'cfg(windows)']
+rustflags = ["--cfg", "tokio_unstable"]

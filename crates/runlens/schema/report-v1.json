@@ -1,0 +1,543 @@
+{
+  "$defs": {
+    "Access": {
+      "additionalProperties": false,
+      "properties": {
+        "in_scope": {
+          "type": "boolean"
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "read_directory": {
+          "type": "boolean"
+        },
+        "unsupported": {
+          "type": "boolean"
+        },
+        "write": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "read",
+        "write",
+        "read_directory",
+        "unsupported",
+        "in_scope"
+      ],
+      "type": "object"
+    },
+    "ChangeKind": {
+      "enum": [
+        "created",
+        "modified",
+        "deleted",
+        "type-changed",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "Classification": {
+      "enum": [
+        "observed",
+        "candidate",
+        "violation",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "Entries_Access": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Access"
+      },
+      "type": "object"
+    },
+    "Entries_ChangeKind": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ChangeKind"
+      },
+      "type": "object"
+    },
+    "Entries_FileState": {
+      "additionalProperties": {
+        "$ref": "#/$defs/FileState"
+      },
+      "type": "object"
+    },
+    "Entries_Finding": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Finding"
+      },
+      "type": "object"
+    },
+    "Environment": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {
+          "type": "string"
+        },
+        "engine_version": {
+          "type": "string"
+        },
+        "environment_names": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "executable_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "os": {
+          "type": "string"
+        },
+        "os_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "runlens_version": {
+          "type": "string"
+        },
+        "source_revision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "working_tree_included": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "os",
+        "architecture",
+        "runlens_version",
+        "engine_version",
+        "working_tree_included",
+        "environment_names"
+      ],
+      "type": "object"
+    },
+    "ErrorCode": {
+      "enum": [
+        "command-failed",
+        "invalid-input",
+        "unsupported",
+        "incomplete",
+        "verification-failed",
+        "timeout",
+        "cancelled",
+        "save-failed",
+        "cleanup-failed",
+        "internal"
+      ],
+      "type": "string"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "execution_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/EvidenceSource"
+        }
+      },
+      "required": [
+        "execution_id",
+        "source"
+      ],
+      "type": "object"
+    },
+    "EvidenceSource": {
+      "enum": [
+        "access",
+        "before",
+        "after",
+        "outcome"
+      ],
+      "type": "string"
+    },
+    "Execution": {
+      "additionalProperties": false,
+      "properties": {
+        "accesses": {
+          "$ref": "#/$defs/Entries_Access"
+        },
+        "after": {
+          "$ref": "#/$defs/Entries_FileState"
+        },
+        "before": {
+          "$ref": "#/$defs/Entries_FileState"
+        },
+        "changes": {
+          "$ref": "#/$defs/Entries_ChangeKind"
+        },
+        "command": {
+          "$ref": "#/$defs/Identity"
+        },
+        "environment": {
+          "$ref": "#/$defs/Environment"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome"
+        },
+        "repetition": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "role": {
+          "$ref": "#/$defs/Role"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "repetition",
+        "command",
+        "environment",
+        "scope",
+        "before",
+        "after",
+        "accesses",
+        "changes",
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "FileKind": {
+      "enum": [
+        "file",
+        "directory",
+        "symlink",
+        "other"
+      ],
+      "type": "string"
+    },
+    "FileState": {
+      "additionalProperties": false,
+      "properties": {
+        "executable": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FileKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "knowledge": {
+          "$ref": "#/$defs/Knowledge"
+        },
+        "link_target": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObservationIssue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "size": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "knowledge"
+      ],
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "properties": {
+        "classification": {
+          "$ref": "#/$defs/Classification"
+        },
+        "code": {
+          "$ref": "#/$defs/FindingCode"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "code",
+        "classification",
+        "evidence"
+      ],
+      "type": "object"
+    },
+    "FindingCode": {
+      "enum": [
+        "undeclared-input",
+        "uncovered-output",
+        "input-output-overlap",
+        "read-boundary",
+        "write-boundary",
+        "new-access",
+        "potential-write-conflict",
+        "potential-read-write-conflict",
+        "missing-output",
+        "different-output",
+        "unknown-evidence",
+        "incomparable-environment",
+        "failed-execution",
+        "collection-incomplete"
+      ],
+      "type": "string"
+    },
+    "Identity": {
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "argv",
+        "cwd"
+      ],
+      "type": "object"
+    },
+    "Knowledge": {
+      "enum": [
+        "known",
+        "missing",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "ObservationIssue": {
+      "enum": [
+        "permission-denied",
+        "unstable",
+        "io",
+        "excluded",
+        "outside-scope",
+        "non-unicode",
+        "redacted",
+        "collection-limit",
+        "unsupported-process",
+        "cancelled"
+      ],
+      "type": "string"
+    },
+    "Outcome": {
+      "additionalProperties": false,
+      "properties": {
+        "child_exit_code": {
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "child_signal": {
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "collection_complete": {
+          "type": "boolean"
+        },
+        "elapsed_ms": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "errors": {
+          "items": {
+            "$ref": "#/$defs/ErrorCode"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "collection_complete",
+        "errors",
+        "elapsed_ms"
+      ],
+      "type": "object"
+    },
+    "ReportKind": {
+      "enum": [
+        "run",
+        "clean",
+        "repeat"
+      ],
+      "type": "string"
+    },
+    "Role": {
+      "enum": [
+        "target",
+        "preparation",
+        "baseline"
+      ],
+      "type": "string"
+    },
+    "Scope": {
+      "additionalProperties": false,
+      "properties": {
+        "after_complete": {
+          "type": "boolean"
+        },
+        "before_complete": {
+          "type": "boolean"
+        },
+        "exclusions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "input_patterns": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "output_patterns": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "redacted_paths": {
+          "type": "boolean"
+        },
+        "root": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "root",
+        "exclusions",
+        "input_patterns",
+        "output_patterns",
+        "before_complete",
+        "after_complete",
+        "redacted_paths"
+      ],
+      "type": "object"
+    },
+    "Verdict": {
+      "enum": [
+        "passed",
+        "failed",
+        "inconclusive"
+      ],
+      "type": "string"
+    }
+  },
+  "$id": "https://runlens.delino.io/schema/report-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "executions": {
+      "items": {
+        "$ref": "#/$defs/Execution"
+      },
+      "type": "array"
+    },
+    "findings": {
+      "$ref": "#/$defs/Entries_Finding"
+    },
+    "kind": {
+      "$ref": "#/$defs/ReportKind"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1,
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "verification": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Verdict"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "executions",
+    "findings",
+    "limitations"
+  ],
+  "title": "Report",
+  "type": "object"
+}
