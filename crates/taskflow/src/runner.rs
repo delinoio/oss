@@ -121,6 +121,8 @@ pub struct RunOptions {
     pub services: Option<Arc<Services>>,
     pub task_cancellations: Arc<Mutex<BTreeMap<String, CancellationToken>>>,
     pub shard: Option<(usize, usize)>,
+    pub os: Option<config::Os>,
+    pub arch: Option<config::Arch>,
 }
 impl Default for RunOptions {
     fn default() -> Self {
@@ -135,6 +137,8 @@ impl Default for RunOptions {
             services: None,
             task_cancellations: Arc::new(Mutex::new(BTreeMap::new())),
             shard: None,
+            os: None,
+            arch: None,
         }
     }
 }
@@ -251,9 +255,35 @@ pub async fn run_plan(
                     Err(error) => {
                         // Detailed native stderr already passes through the masker;
                         // engine errors contain identifiers and stable context only.
-                        tracing::error!(task = %id, error = %error, "Task failed");
+                        let node = &graph.tasks[&id];
+                        if node.task.service {
+                            if let Some(services) = &options.services {
+                                let _ = services.events.send((
+                                    id.clone(),
+                                    ProcessExit {
+                                        code: 1,
+                                        cancelled: false,
+                                    },
+                                ));
+                            }
+                        }
+                        let secrets = Environment::build(
+                            &graph.workspace,
+                            &graph.workspace.projects[&node.project],
+                            &node.task,
+                            &options.env,
+                            options.no_dotenv,
+                        )
+                        .map(|e| e.secrets)
+                        .unwrap_or_default();
+                        let message = String::from_utf8_lossy(&Redactor::mask(
+                            error.to_string().as_bytes(),
+                            secrets,
+                        ))
+                        .into_owned();
+                        tracing::error!(task = %id, error = %message, "Task failed");
                         let mut receipt = Receipt::skipped(&id, Outcome::Failed, causes);
-                        receipt.diagnostic = Some(error.to_string());
+                        receipt.diagnostic = Some(message);
                         receipt
                     }
                 };
@@ -339,8 +369,10 @@ async fn run_task(
     let inputs = files::input_state(&graph.workspace, project, task)?;
     let mut tools = BTreeMap::new();
     for (name, command) in &task.tools {
-        let bytes = crate::process::capture_with_env(
+        let bytes = crate::process::capture_task(
+            &graph.workspace.root,
             &project.directory,
+            task,
             command,
             &environment.values,
             &cancel,
@@ -399,7 +431,12 @@ async fn run_task(
         };
         if artifact.is_none() {
             if let Some(remote) = &remote {
-                match remote.get(&key).await {
+                let fetched = tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => anyhow::bail!("task cancelled during cache lookup"),
+                    result = remote.get(&key) => result,
+                };
+                match fetched {
                     Ok(value) => {
                         artifact = value;
                         source = Outcome::RemoteCache;
@@ -413,7 +450,26 @@ async fn run_task(
             }
         }
         if let Some(artifact) = artifact {
-            if artifact.validate(&key, id, project, task).is_ok() {
+            let valid_shards = match (&task.shard, &artifact.shards) {
+                (None, None) => true,
+                (Some(config), Some((inventory, reports))) => {
+                    crate::shard::validate_reports(inventory, config.count, reports).is_ok_and(
+                        |passed| {
+                            passed
+                                && match options.shard {
+                                    Some((index, count)) => {
+                                        reports.len() == 1
+                                            && reports[0].index == index
+                                            && reports[0].count == count
+                                    }
+                                    None => reports.len() == config.count,
+                                }
+                        },
+                    )
+                }
+                _ => false,
+            };
+            if valid_shards && artifact.validate(&key, id, project, task).is_ok() {
                 ensure!(
                     !cancel.is_cancelled(),
                     "task cancelled before cache restoration"
@@ -423,6 +479,10 @@ async fn run_task(
                     artifact.restore(&key, id, project, task)?;
                     source = Outcome::Restored;
                 }
+                ensure!(
+                    files::input_state(&graph.workspace, project, task)? == inputs,
+                    "inputs changed during cache restoration"
+                );
                 let receipt = Receipt {
                     version: 1,
                     task: id.into(),
@@ -438,6 +498,17 @@ async fn run_task(
                     exit_code: 0,
                     diagnostic: None,
                 };
+                if let Some((inventory, reports)) = &artifact.shards {
+                    crate::shard::write_reports(
+                        &graph
+                            .workspace
+                            .root
+                            .join(".taskflow/runs")
+                            .join(&receipt.execution),
+                        inventory,
+                        reports,
+                    )?;
+                }
                 if !cancel.is_cancelled() {
                     cache::store(&graph.workspace.root, &artifact)?;
                     persist(&graph.workspace.root, &receipt)?;
@@ -468,7 +539,8 @@ async fn run_task(
     let log = Arc::new(Mutex::new(File::create(run_directory.join("output.log"))?));
     let mut docker = None;
     let mut command = task.command.clone();
-    if task.platform.executor == Executor::Docker {
+    if task.platform.executor == Executor::Docker && task.shard.is_none() {
+        values = crate::docker::host_environment(&values);
         let prepared = crate::docker::prepare(
             &graph.workspace.root,
             &project.directory,
@@ -482,7 +554,7 @@ async fn run_task(
         docker = Some(prepared.1);
     }
     if task.shard.is_some() {
-        let receipt = crate::shard::execute(
+        let mut receipt = crate::shard::execute(
             graph,
             id,
             &values,
@@ -495,9 +567,7 @@ async fn run_task(
             log.clone(),
         )
         .await?;
-        if receipt.success() && !cancel.is_cancelled() {
-            persist(&graph.workspace.root, &receipt)?;
-        }
+        publish(graph, id, &mut receipt, &inputs, remote.as_ref(), &cancel).await?;
         return Ok(receipt);
     }
     let mut process = OwnedProcess::spawn(
@@ -520,17 +590,26 @@ async fn run_task(
         options.show_secrets,
         options.quiet,
     ));
-    tracing::info!(task = id, execution = %execution, "Task started");
+    tracing::info!(task = id, execution = %execution, causes = ?causes, "Task started");
     if task.service {
         if let Some(readiness) = &task.readiness {
-            wait_ready(
+            if let Err(error) = wait_ready(
                 &mut process,
                 readiness,
                 &project.directory,
                 &values,
                 &cancel,
             )
-            .await?;
+            .await
+            {
+                process.terminate().await?;
+                stdout.await??;
+                stderr.await??;
+                if let Some(mut docker) = docker {
+                    docker.cleanup().await?;
+                }
+                return Err(error);
+            }
         }
         let services = options.services.as_ref().unwrap().clone();
         // Services outlive the finite activation wave; their token is owned by the
@@ -585,7 +664,8 @@ async fn run_task(
     if let Some(mut docker) = docker {
         docker.cleanup().await?;
     }
-    let stable = task.install || files::input_state(&graph.workspace, project, task)? == inputs;
+    let stable = (task.install && !task.cache)
+        || files::input_state(&graph.workspace, project, task)? == inputs;
     let mut receipt = Receipt {
         version: 1,
         task: id.into(),
@@ -627,26 +707,82 @@ async fn run_task(
         } else {
             receipt.key.clone()
         };
-        if task.cache && !cancel.is_cancelled() {
-            let artifact = cache::Artifact::capture(receipt.key.clone(), id.into(), project, task)?;
-            receipt.output = artifact.output_digest.clone();
-            cache::store(&graph.workspace.root, &artifact)?;
-            if let Some(remote) = &remote {
-                if remote.put(&artifact).await.is_err() {
-                    tracing::warn!(
-                        task = id,
-                        code = "remote-write-failed",
-                        "Remote cache write failed"
-                    );
-                }
-            }
-        }
-        if !cancel.is_cancelled() {
-            persist(&graph.workspace.root, &receipt)?;
-        }
+        publish(graph, id, &mut receipt, &inputs, remote.as_ref(), &cancel).await?;
     }
     tracing::info!(task = id, outcome = ?receipt.outcome, changed = receipt.changed, duration_ms = receipt.duration_ms, "Task finished");
     Ok(receipt)
+}
+
+async fn publish(
+    graph: &Graph,
+    id: &str,
+    receipt: &mut Receipt,
+    inputs: &BTreeMap<String, String>,
+    remote: Option<&Remote>,
+    cancel: &CancellationToken,
+) -> Result<()> {
+    let node = &graph.tasks[id];
+    let project = &graph.workspace.projects[&node.project];
+    let task = &node.task;
+    let valid = |receipt: &mut Receipt| -> Result<bool> {
+        if cancel.is_cancelled() {
+            receipt.outcome = Outcome::Cancelled;
+        } else if !(task.install && !task.cache)
+            && files::input_state(&graph.workspace, project, task)? != *inputs
+        {
+            receipt.outcome = Outcome::Invalidated;
+        }
+        Ok(receipt.success())
+    };
+    if !valid(receipt)? {
+        return Ok(());
+    }
+    if task.output.as_ref().is_some_and(|v| !v.is_empty()) {
+        receipt.output = cache::output_state(project, task)?;
+    }
+    if task.cache {
+        let mut artifact = cache::Artifact::capture(receipt.key.clone(), id.into(), project, task)?;
+        if task.shard.is_some() {
+            artifact.shards = Some(crate::shard::read_reports(
+                &graph
+                    .workspace
+                    .root
+                    .join(".taskflow/runs")
+                    .join(&receipt.execution),
+            )?);
+        }
+        receipt.output = artifact.output_digest.clone();
+        let staged = if let Some(remote) = remote {
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => None,
+                result = remote.stage(&artifact) => match result {
+                    Ok(digest) => digest,
+                    Err(_) => { tracing::warn!(task = id, code = "remote-write-failed", "Remote cache object upload failed"); None }
+                }
+            }
+        } else {
+            None
+        };
+        if !valid(receipt)? {
+            return Ok(());
+        }
+        if let (Some(remote), Some(digest)) = (remote, staged) {
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => {},
+                result = remote.commit(&artifact.key, &digest) => if result.is_err() { tracing::warn!(task = id, code = "remote-write-failed", "Remote cache publication failed"); }
+            }
+        }
+        if !valid(receipt)? {
+            return Ok(());
+        }
+        cache::store(&graph.workspace.root, &artifact)?;
+    }
+    if valid(receipt)? {
+        persist(&graph.workspace.root, receipt)?;
+    }
+    Ok(())
 }
 
 pub fn persist(root: &Path, receipt: &Receipt) -> Result<()> {

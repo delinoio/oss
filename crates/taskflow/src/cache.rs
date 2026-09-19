@@ -18,6 +18,8 @@ pub struct Artifact {
     pub task: String,
     pub output_digest: String,
     pub files: Vec<FileRecord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shards: Option<(crate::shard::Inventory, Vec<crate::shard::ShardResults>)>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -140,6 +142,7 @@ impl Artifact {
             task: id,
             output_digest: output_digest(&files)?,
             files,
+            shards: None,
         })
     }
 
@@ -152,6 +155,14 @@ impl Artifact {
             self.output_digest == output_digest(&self.files)?,
             "cache output digest mismatch"
         );
+        if let Some((inventory, reports)) = &self.shards {
+            let count = task
+                .shard
+                .as_ref()
+                .context("unexpected cached shard results")?
+                .count;
+            crate::shard::validate_reports(inventory, count, reports)?;
+        }
         let roots = anchors(task)?;
         let mut seen = BTreeSet::new();
         let mut links = vec![];

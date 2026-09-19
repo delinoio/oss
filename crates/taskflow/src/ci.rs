@@ -35,6 +35,8 @@ pub struct Unit {
     pub platform: String,
     pub needs: BTreeSet<String>,
     pub shard: Option<(usize, usize)>,
+    pub outputs: BTreeSet<String>,
+    pub suites: BTreeMap<String, usize>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CiPlan {
@@ -46,6 +48,7 @@ pub struct CiPlan {
 pub struct Bundle {
     pub version: u32,
     pub blueprint: String,
+    pub plan: String,
     pub unit: String,
     pub result: RunResult,
     pub artifacts: BTreeMap<String, Artifact>,
@@ -84,7 +87,21 @@ impl Blueprint {
                     .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
             "ci.revision must be an immutable lowercase Git SHA"
         );
-        ensure!(!ci.rust.is_empty(), "ci.rust is required");
+        let dated_rust = ci
+            .rust
+            .strip_prefix("nightly-")
+            .or_else(|| ci.rust.strip_prefix("beta-"))
+            .is_some_and(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").is_ok());
+        ensure!(
+            dated_rust || exact_version(&ci.rust),
+            "CI requires an exact Rust version or dated toolchain"
+        );
+        for version in [&ci.node, &ci.pnpm, &ci.go].into_iter().flatten() {
+            ensure!(
+                exact_version(version),
+                "CI native tool versions must pin all three numeric components"
+            );
+        }
         for project in graph.workspace.projects.values() {
             if project.native.contains("pnpm") {
                 ensure!(
@@ -201,13 +218,34 @@ impl Blueprint {
                     platform: platform.clone(),
                     needs: BTreeSet::new(),
                     shard: (count > 1).then_some((index, count)),
+                    outputs: tasks
+                        .iter()
+                        .filter(|id| {
+                            graph.tasks[*id]
+                                .task
+                                .output
+                                .as_ref()
+                                .is_some_and(|v| !v.is_empty())
+                        })
+                        .cloned()
+                        .collect(),
+                    suites: tasks
+                        .iter()
+                        .filter_map(|id| {
+                            graph.tasks[id]
+                                .task
+                                .shard
+                                .as_ref()
+                                .map(|s| (id.clone(), s.count))
+                        })
+                        .collect(),
                 });
             }
         }
         let identity = units.clone();
         for unit in &mut units {
             for task in &unit.tasks {
-                for dependency in graph.prerequisites(task) {
+                for dependency in graph.closure(&BTreeSet::from([task.clone()]), false, false) {
                     if unit.tasks.contains(&dependency) {
                         continue;
                     }
@@ -324,7 +362,44 @@ pub fn export(graph: &Graph, targets: Vec<String>, output: &Path) -> Result<()> 
         if !unit.needs.is_empty() {
             steps.push(json!({"uses":"actions/download-artifact@v4","with":{"pattern":"tflow-result-*","path":".taskflow/ci-input"}}));
         }
-        steps.push(json!({"name":"Execute graph unit","shell":"bash","env":{"TFLOW_BLUEPRINT":blueprint_relative,"TFLOW_UNIT":unit.id,"TFLOW_UNTRUSTED_CI":"${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && '1' || '0' }}"},"run":format!("{binary} ci execute --blueprint \"$TFLOW_BLUEPRINT\" --plan .taskflow/ci-plan.json --unit \"$TFLOW_UNIT\" --input .taskflow/ci-input --output .taskflow/ci-result/bundle.json")}));
+        let mut env = serde_json::Map::from_iter([
+            ("TFLOW_BLUEPRINT".into(), json!(blueprint_relative)),
+            ("TFLOW_UNIT".into(), json!(unit.id)),
+            (
+                "TFLOW_UNTRUSTED_CI".into(),
+                json!(
+                    "${{ (github.event_name == 'pull_request' || github.event_name == \
+                     'pull_request_target') && '1' || '0' }}"
+                ),
+            ),
+        ]);
+        let mut secrets: BTreeSet<String> = unit
+            .tasks
+            .iter()
+            .flat_map(|id| graph.tasks[id].task.secrets.iter().cloned())
+            .collect();
+        if let Some(remote) = &graph.workspace.config.remote {
+            secrets.extend([remote.access_key_env.clone(), remote.secret_key_env.clone()]);
+            secrets.extend(remote.session_token_env.iter().cloned());
+        }
+        for name in secrets {
+            ensure!(
+                environment_name(&name)
+                    && !matches!(
+                        name.as_str(),
+                        "TFLOW_BLUEPRINT" | "TFLOW_UNIT" | "TFLOW_UNTRUSTED_CI"
+                    ),
+                "CI secret requires a non-reserved environment identifier"
+            );
+            env.insert(
+                name.clone(),
+                json!(format!(
+                    "${{{{ (github.event_name != 'pull_request' && github.event_name != \
+                     'pull_request_target') && secrets.{name} || '' }}}}"
+                )),
+            );
+        }
+        steps.push(json!({"name":"Execute graph unit","shell":"bash","env":env,"run":format!("{binary} ci execute --blueprint \"$TFLOW_BLUEPRINT\" --plan .taskflow/ci-plan.json --unit \"$TFLOW_UNIT\" --input .taskflow/ci-input --output .taskflow/ci-result/bundle.json")}));
         steps.push(json!({"uses":"actions/upload-artifact@v4","if":"always()","with":{"name":format!("tflow-result-{}",unit.id),"path":".taskflow/ci-result/bundle.json","include-hidden-files":true,"if-no-files-found":"error"}}));
         let needs: Vec<_> = std::iter::once("plan".to_owned())
             .chain(unit.needs.iter().cloned())
@@ -332,8 +407,9 @@ pub fn export(graph: &Graph, targets: Vec<String>, output: &Path) -> Result<()> 
         jobs.insert(unit.id.clone(), json!({"runs-on":ci.runners[&unit.platform],"needs":needs,"if":"${{ !cancelled() && needs.plan.result == 'success' }}","steps":steps}));
     }
     let mut finish = setup();
+    finish.push(json!({"uses":"actions/download-artifact@v4","with":{"name":"tflow-plan","path":".taskflow"}}));
     finish.push(json!({"uses":"actions/download-artifact@v4","with":{"pattern":"tflow-result-*","path":".taskflow/ci-input"}}));
-    finish.push(json!({"shell":"bash","env":{"TFLOW_BLUEPRINT":blueprint_relative},"run":format!("{binary} ci aggregate --blueprint \"$TFLOW_BLUEPRINT\" --input .taskflow/ci-input")}));
+    finish.push(json!({"shell":"bash","env":{"TFLOW_BLUEPRINT":blueprint_relative},"run":format!("{binary} ci aggregate --blueprint \"$TFLOW_BLUEPRINT\" --plan .taskflow/ci-plan.json --input .taskflow/ci-input")}));
     let needs: Vec<_> = jobs.keys().cloned().collect();
     jobs.insert(
         "result".into(),
@@ -381,21 +457,92 @@ fn read_bundles(path: &Path) -> Result<Vec<Bundle>> {
     }
     Ok(bundles)
 }
-fn validate_bundle(blueprint: &Blueprint, bundle: &Bundle) -> Result<()> {
+fn environment_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .enumerate()
+            .all(|(i, b)| b == b'_' || b.is_ascii_alphabetic() || (i > 0 && b.is_ascii_digit()))
+}
+fn exact_version(version: &str) -> bool {
+    let components: Vec<_> = version.trim_start_matches('v').split('.').collect();
+    components.len() == 3
+        && components
+            .iter()
+            .all(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
+}
+fn plan_digest(blueprint: &Blueprint, plan: &CiPlan) -> Result<String> {
+    ensure!(
+        plan.version == 1
+            && plan.blueprint == blueprint.digest()?
+            && plan.plan.generation == plan.blueprint,
+        "CI plan mismatch"
+    );
+    Ok(files::digest(&serde_json::to_vec(plan)?))
+}
+fn validate_bundle(blueprint: &Blueprint, plan: &CiPlan, bundle: &Bundle) -> Result<()> {
     let unit = blueprint
         .units
         .iter()
         .find(|u| u.id == bundle.unit)
         .context("unknown CI unit receipt")?;
     ensure!(
-        bundle.version == 1 && bundle.blueprint == blueprint.digest()?,
+        bundle.version == 1
+            && bundle.result.version == 1
+            && bundle.blueprint == blueprint.digest()?
+            && bundle.plan == plan_digest(blueprint, plan)?,
         "CI receipt blueprint mismatch"
+    );
+    let expected: BTreeSet<_> = unit
+        .tasks
+        .iter()
+        .filter(|id| plan.plan.causes.contains_key(*id))
+        .collect();
+    ensure!(
+        expected == bundle.result.results.keys().collect(),
+        "CI unit is missing a selected task result"
     );
     for (id, receipt) in &bundle.result.results {
         ensure!(
             unit.tasks.contains(id) && receipt.task == *id && receipt.version == 1,
             "CI receipt contains an unexpected task"
         );
+    }
+    for (id, receipt) in &bundle.result.results {
+        if receipt.success() && unit.outputs.contains(id) {
+            let artifact = bundle
+                .artifacts
+                .get(id)
+                .context("CI unit is missing required output artifacts")?;
+            ensure!(
+                artifact.key == receipt.key
+                    && artifact.task == *id
+                    && artifact.output_digest == receipt.output,
+                "CI artifact receipt mismatch"
+            );
+        }
+        if receipt.success() && receipt.outcome != runner::Outcome::Suppressed {
+            if let Some(count) = unit.suites.get(id) {
+                let (inventory, reports) = bundle
+                    .shards
+                    .get(id)
+                    .context("CI unit is missing shard results")?;
+                ensure!(
+                    crate::shard::validate_reports(inventory, *count, reports)?,
+                    "successful CI receipt contains failed shard results"
+                );
+                ensure!(
+                    match unit.shard {
+                        Some((index, count)) =>
+                            reports.len() == 1
+                                && reports[0].index == index
+                                && reports[0].count == count,
+                        None => reports.len() == *count,
+                    },
+                    "CI unit shard selection mismatch"
+                );
+            }
+        }
     }
     for id in bundle.artifacts.keys().chain(bundle.shards.keys()) {
         ensure!(
@@ -429,7 +576,7 @@ pub async fn execute(
     let mut seen = BTreeSet::new();
     let mut shard_reports: BTreeMap<String, (Inventory, Vec<ShardResults>)> = BTreeMap::new();
     for bundle in bundles {
-        validate_bundle(blueprint, &bundle)?;
+        validate_bundle(blueprint, &plan, &bundle)?;
         ensure!(seen.insert(bundle.unit.clone()), "duplicate CI unit result");
         if !unit.needs.contains(&bundle.unit) {
             continue;
@@ -508,6 +655,7 @@ pub async fn execute(
     let mut bundle = Bundle {
         version: 1,
         blueprint: blueprint.digest()?,
+        plan: plan_digest(blueprint, &plan)?,
         unit: unit_id.into(),
         result: result.clone(),
         artifacts: BTreeMap::new(),
@@ -529,30 +677,23 @@ pub async fn execute(
                 )?,
             );
         }
-        if node.task.shard.is_some() && receipt.outcome == runner::Outcome::Executed {
+        if node.task.shard.is_some() && receipt.outcome != runner::Outcome::Suppressed {
             let directory = root.join(".taskflow/runs").join(&receipt.execution);
-            let inventory =
-                serde_json::from_slice(&std::fs::read(directory.join("inventory.json"))?)?;
-            let mut reports = vec![];
-            for entry in std::fs::read_dir(&directory)? {
-                let entry = entry?;
-                if entry.file_name().to_string_lossy().starts_with("shard-") {
-                    reports.push(serde_json::from_slice(&std::fs::read(entry.path())?)?);
-                }
-            }
+            let (inventory, reports) = crate::shard::read_reports(&directory)?;
             bundle.shards.insert(id.clone(), (inventory, reports));
         }
     }
     files::atomic_write(output, &serde_json::to_vec(&bundle)?)?;
     Ok(result)
 }
-pub fn aggregate(blueprint: &Blueprint, input: &Path) -> Result<Value> {
+pub fn aggregate(blueprint: &Blueprint, plan: &CiPlan, input: &Path) -> Result<Value> {
+    plan_digest(blueprint, plan)?;
     let bundles = read_bundles(input)?;
     let mut seen = BTreeSet::new();
     let mut success = true;
     let mut shards: BTreeMap<String, (Inventory, Vec<ShardResults>)> = BTreeMap::new();
     for bundle in bundles {
-        validate_bundle(blueprint, &bundle)?;
+        validate_bundle(blueprint, plan, &bundle)?;
         ensure!(seen.insert(bundle.unit), "duplicate CI unit result");
         success &= bundle.result.success && bundle.result.results.values().all(Receipt::success);
         for (id, (inventory, reports)) in bundle.shards {

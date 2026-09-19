@@ -31,6 +31,12 @@ pub struct Cli {
     pub json: bool,
     #[arg(long, global = true)]
     pub no_color: bool,
+    /// Default OS for tasks that do not declare one.
+    #[arg(long, global = true, value_enum)]
+    pub os: Option<config::Os>,
+    /// Default architecture for tasks that do not declare one.
+    #[arg(long, global = true, value_enum)]
+    pub arch: Option<config::Arch>,
     #[command(subcommand)]
     pub command: Action,
 }
@@ -165,6 +171,8 @@ pub enum CiAction {
         #[arg(long)]
         blueprint: PathBuf,
         #[arg(long)]
+        plan: PathBuf,
+        #[arg(long)]
         input: PathBuf,
     },
 }
@@ -178,7 +186,7 @@ fn parse_env(value: &str) -> std::result::Result<(String, String), String> {
     Ok((key.into(), value.into()))
 }
 impl Execution {
-    fn options(&self) -> Result<RunOptions> {
+    fn options(&self, os: Option<config::Os>, arch: Option<config::Arch>) -> Result<RunOptions> {
         ensure!(self.jobs != Some(0), "jobs must be positive");
         let shard = self
             .shard
@@ -198,6 +206,8 @@ impl Execution {
             show_secrets: self.show_secrets,
             quiet: self.quiet,
             shard,
+            os,
+            arch,
             ..RunOptions::default()
         })
     }
@@ -242,7 +252,11 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
         let value = match command {
             CiAction::Export { tasks, output } => {
                 ensure!(!tasks.is_empty(), "CI export requires selected task roots");
-                let graph = Graph::build(Workspace::discover(&root).await?)?;
+                let graph = Graph::build(
+                    Workspace::discover(&root)
+                        .await?
+                        .select_platform(cli.os, cli.arch),
+                )?;
                 ci::export(&graph, tasks.clone(), output)?;
                 json!({"version":1,"workflow":output,"blueprint":output.with_extension("taskflow.json")})
             }
@@ -274,9 +288,15 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
                 )
                 .await?,
             )?,
-            CiAction::Aggregate { blueprint, input } => {
-                ci::aggregate(&read_json(&root.join(blueprint))?, &root.join(input))?
-            }
+            CiAction::Aggregate {
+                blueprint,
+                plan,
+                input,
+            } => ci::aggregate(
+                &read_json(&root.join(blueprint))?,
+                &read_json(&root.join(plan))?,
+                &root.join(input),
+            )?,
         };
         let success = value
             .get("success")
@@ -323,11 +343,22 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
         return Ok(0);
     }
     if let Action::Start { profile, execution } = cli.command {
-        let result = crate::session::start(&root, &profile, execution.options()?, cancel).await?;
+        let result = crate::session::start(
+            &root,
+            &profile,
+            execution.options(cli.os, cli.arch)?,
+            cancel,
+        )
+        .await?;
         print(&serde_json::to_value(&result)?, cli.json)?;
         return Ok(if result.success { 0 } else { 1 });
     }
-    let mut graph = Arc::new(Graph::build(Workspace::discover(&root).await?)?);
+    let mut graph = Arc::new(Graph::build(
+        Workspace::discover(&root)
+            .await?
+            .select_platform(cli.os, cli.arch),
+    )?);
+    let is_query = matches!(cli.command, Action::Query { .. });
     let value = match cli.command {
         Action::Check => {
             ensure!(
@@ -400,7 +431,7 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
             selection,
             execution,
         } => {
-            let mut options = execution.options()?;
+            let mut options = execution.options(cli.os, cli.arch)?;
             let mut plan = selection.plan(&graph).await?;
             if plan.order.iter().any(|id| graph.unresolved.contains(id)) {
                 let installs: Vec<_> = plan
@@ -423,7 +454,11 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
                 .await?;
                 ensure!(result.success, "installation prerequisite failed");
                 options.provided.extend(result.results);
-                graph = Arc::new(Graph::build(Workspace::discover(&root).await?)?);
+                graph = Arc::new(Graph::build(
+                    Workspace::discover(&root)
+                        .await?
+                        .select_platform(cli.os, cli.arch),
+                )?);
                 plan = selection.plan(&graph).await?;
             }
             let result = runner::run_plan(graph, plan, options, cancel).await?;
@@ -433,8 +468,50 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
         }
         _ => unreachable!(),
     };
+    let value = if is_query {
+        redact_query(value, &graph)?
+    } else {
+        value
+    };
     print(&value, cli.json)?;
     Ok(0)
+}
+fn redact_query(mut value: Value, graph: &Graph) -> Result<Value> {
+    let mut secrets = vec![];
+    for node in graph.tasks.values() {
+        let environment = crate::environment::Environment::build(
+            &graph.workspace,
+            &graph.workspace.projects[&node.project],
+            &node.task,
+            &Default::default(),
+            false,
+        )?;
+        secrets.extend(environment.secrets);
+    }
+    fn visit(value: &mut Value, secrets: &[Vec<u8>]) {
+        match value {
+            Value::String(text) => {
+                *text = String::from_utf8(crate::environment::Redactor::mask(
+                    text.as_bytes(),
+                    secrets.to_vec(),
+                ))
+                .expect("masking preserves UTF-8")
+            }
+            Value::Array(values) => {
+                for value in values {
+                    visit(value, secrets);
+                }
+            }
+            Value::Object(values) => {
+                for value in values.values_mut() {
+                    visit(value, secrets);
+                }
+            }
+            _ => {}
+        }
+    }
+    visit(&mut value, &secrets);
+    Ok(value)
 }
 fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
     Ok(serde_json::from_slice(&std::fs::read(path)?)?)

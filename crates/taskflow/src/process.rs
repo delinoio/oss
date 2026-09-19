@@ -9,9 +9,14 @@ use tokio_util::sync::CancellationToken;
 
 use crate::config::Command;
 
+tokio::task_local! {
+    pub static CANCELLATION: CancellationToken;
+}
+
 pub struct OwnedProcess {
     pub child: Child,
     pid: u32,
+    cleaned: bool,
     #[cfg(windows)]
     job: usize,
 }
@@ -54,6 +59,7 @@ impl OwnedProcess {
         let mut owned = Self {
             child,
             pid,
+            cleaned: false,
             #[cfg(windows)]
             job: 0,
         };
@@ -113,10 +119,19 @@ impl OwnedProcess {
         let _ = tokio::time::timeout(Duration::from_secs(2), self.child.wait()).await;
         self.kill_tree();
         let _ = self.child.wait().await;
+        tracing::debug!(
+            pid = self.pid,
+            outcome = "reaped",
+            "Owned process tree cleanup completed"
+        );
         Ok(())
     }
 
     fn kill_tree(&mut self) {
+        if self.cleaned {
+            return;
+        }
+        self.cleaned = true;
         #[cfg(unix)]
         {
             let _ = nix::sys::signal::killpg(
@@ -158,20 +173,12 @@ pub fn argv(command: &Command, shell: Option<&[String]>) -> Vec<String> {
                 .first()
                 .is_some_and(|p| matches!(p.as_str(), "pnpm" | "npm" | "npx"))
             {
-                // npm-family launchers are .cmd files on Windows. Quote each argv
-                // value rather than treating the user command as a shell expression.
-                let expression = args
-                    .iter()
-                    .map(|s| format!("\"{}\"", s.replace('"', "\"\"")))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                return vec![
-                    "cmd.exe".into(),
-                    "/D".into(),
-                    "/S".into(),
-                    "/C".into(),
-                    expression,
-                ];
+                // Rust's Windows Command implementation owns the special batch
+                // quoting rules. Do not construct a cmd expression from argv:
+                // shell interpolation would corrupt literal %, &, and quotes.
+                let mut args = args.clone();
+                args[0].push_str(".cmd");
+                return args;
             }
             args.clone()
         }
@@ -198,7 +205,8 @@ pub async fn capture(
     for (key, value) in environment {
         env.insert((*key).into(), (*value).into());
     }
-    capture_with_env(directory, command, &env, &CancellationToken::new()).await
+    let cancel = CANCELLATION.try_with(Clone::clone).unwrap_or_default();
+    capture_with_env(directory, command, &env, &cancel).await
 }
 pub async fn capture_with_env(
     directory: &Path,
@@ -220,6 +228,35 @@ pub async fn capture_with_env(
         status.code
     );
     Ok(output)
+}
+
+pub async fn capture_task(
+    root: &Path,
+    directory: &Path,
+    task: &crate::config::Task,
+    command: &Command,
+    environment: &BTreeMap<String, String>,
+    cancel: &CancellationToken,
+) -> Result<Vec<u8>> {
+    if task.platform.executor == crate::config::Executor::Host {
+        return capture_with_env(directory, command, environment, cancel).await;
+    }
+    let mut probe = task.clone();
+    probe.command = command.clone();
+    probe.platform.ports.clear();
+    let environment = crate::docker::host_environment(environment);
+    let (command, mut container) = crate::docker::prepare(
+        root,
+        directory,
+        &probe,
+        &environment,
+        &uuid::Uuid::now_v7().to_string(),
+        cancel,
+    )
+    .await?;
+    let result = capture_with_env(directory, &command, &environment, cancel).await;
+    container.cleanup().await?;
+    result
 }
 async fn read_bounded(mut reader: impl AsyncRead + Unpin) -> Result<Vec<u8>> {
     let mut bytes = vec![];

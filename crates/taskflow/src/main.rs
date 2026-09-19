@@ -29,7 +29,9 @@ async fn main() {
         }
         signal.cancel();
     });
-    let result = taskflow::cli::run(cli, cancel.clone()).await;
+    let result = taskflow::process::CANCELLATION
+        .scope(cancel.clone(), taskflow::cli::run(cli, cancel.clone()))
+        .await;
     signal_task.abort();
     let code = match result {
         Ok(code) => {
@@ -46,7 +48,7 @@ async fn main() {
                     serde_json::json!({"version":1,"error":{"message":error.to_string()}})
                 );
             } else {
-                eprintln!("tflow: {error:#}");
+                eprintln!("tflow: {error}");
             }
             1
         }

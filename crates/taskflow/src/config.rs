@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct Config {
+    #[schemars(range(min = 1, max = 1))]
     pub version: u32,
     pub project: String,
     #[serde(default)]
@@ -209,6 +210,7 @@ pub struct Platform {
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(rename_all = "lowercase")]
+#[derive(clap::ValueEnum)]
 pub enum Os {
     Macos,
     Linux,
@@ -218,6 +220,7 @@ pub enum Os {
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(rename_all = "lowercase")]
+#[derive(clap::ValueEnum)]
 pub enum Arch {
     X64,
     Arm64,
@@ -292,6 +295,7 @@ pub enum RemoteMode {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct ShardConfig {
     pub adapter: ShardAdapter,
+    #[schemars(range(min = 1, max = 256))]
     pub count: usize,
     pub list: Option<Command>,
     pub run: Option<Command>,
@@ -352,6 +356,10 @@ pub fn duration(value: &str) -> Result<std::time::Duration> {
 pub fn load(path: &Path) -> Result<Config> {
     let bytes =
         std::fs::read(path).with_context(|| format!("read configuration {}", path.display()))?;
+    // Value's YAML mapping visitor rejects duplicate map keys, including maps
+    // such as tasks/env that a normal BTreeMap visitor would overwrite silently.
+    let _: serde_yaml::Value = serde_yaml::from_slice(&bytes)
+        .with_context(|| format!("invalid YAML mapping {}", path.display()))?;
     let config: Config = serde_yaml::from_slice(&bytes)
         .with_context(|| format!("invalid configuration {}", path.display()))?;
     config.validate()?;
@@ -484,6 +492,7 @@ impl Task {
         for command in self.tools.values() {
             validate_command(command)?;
         }
+        crate::shard::validate_task(self)?;
         Ok(())
     }
 

@@ -47,9 +47,22 @@ pub fn within(root: &Path, path: &Path) -> Result<PathBuf> {
     Ok(path)
 }
 pub fn canonical_path(path: &Path) -> Result<PathBuf> {
+    if path.is_symlink() {
+        return Ok(path
+            .parent()
+            .context("symlink has no parent")?
+            .canonicalize()?
+            .join(path.file_name().unwrap()));
+    }
     for ancestor in path.ancestors() {
         if ancestor.exists() || ancestor.is_symlink() {
-            return Ok(ancestor.canonicalize()?.join(path.strip_prefix(ancestor)?));
+            let canonical = ancestor.canonicalize()?;
+            let suffix = path.strip_prefix(ancestor)?;
+            return Ok(if suffix.as_os_str().is_empty() {
+                canonical
+            } else {
+                canonical.join(suffix)
+            });
         }
     }
     Ok(path.to_path_buf())
@@ -125,6 +138,16 @@ pub fn input_matches(project: &Project, task: &crate::config::Task, path: &Path)
         }
     }
     if matches_patterns(task.output.as_deref().unwrap_or(&[]), &relative)? {
+        return Ok(false);
+    }
+    // Exact directory outputs own descendants too. Without this check an
+    // `output: [generated]` task would observe generated/file as its own input.
+    if task
+        .output
+        .iter()
+        .flatten()
+        .any(|output| path.starts_with(normalize(&project.directory.join(output_anchor(output)))))
+    {
         return Ok(false);
     }
     Ok(matched)

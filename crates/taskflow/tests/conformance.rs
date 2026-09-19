@@ -42,6 +42,603 @@ fn helper() -> PathBuf {
         .1
         .clone()
 }
+
+#[tokio::test]
+#[ignore = "native adapter conformance requires pnpm and Go in addition to Rust"]
+async fn scenarios_12_13_14_21_23_24_native_workspaces_aliases_and_conditions() {
+    let root = tempfile::tempdir().unwrap();
+    let write = |name: &str, content: &str| {
+        files::atomic_write(&root.path().join(name), content.as_bytes()).unwrap()
+    };
+    write(
+        "taskflow.yml",
+        "version: 1\nproject: repo\nworkspace:\n  manifests: [pnpm-workspace.yaml, Cargo.toml, \
+         go.work]\n",
+    );
+    write(
+        "package.json",
+        r#"{"name":"root","private":true,"packageManager":"pnpm@10.26.2"}"#,
+    );
+    write(
+        "pnpm-workspace.yaml",
+        "packages:\n  - 'packages/*'\n  - '!packages/excluded'\n",
+    );
+    write(
+        "packages/a/package.json",
+        r#"{"name":"package-a","version":"1.0.0","dependencies":{"alias":"workspace:package-b@*"},"devDependencies":{"package-b":"workspace:*"}}"#,
+    );
+    write(
+        "packages/b/package.json",
+        r#"{"name":"package-b","version":"1.0.0"}"#,
+    );
+    write(
+        "packages/excluded/package.json",
+        r#"{"name":"excluded","version":"1.0.0"}"#,
+    );
+    write(
+        "packages/a/taskflow.yml",
+        "version: 1\nproject: js-a\ntasks:\n  build:\n    command: [node, --version]\n    \
+         dependsOn:\n      - task: build\n        from: dependencies\n",
+    );
+    write(
+        "packages/b/taskflow.yml",
+        "version: 1\nproject: js-b\ntasks:\n  build:\n    command: [node, --version]\n",
+    );
+    write(
+        "Cargo.toml",
+        "[workspace]\nmembers=['rust/a','rust/b']\nresolver='2'\n",
+    );
+    write(
+        "rust/a/Cargo.toml",
+        r#"[package]
+name='native-a'
+version='0.1.0'
+edition='2021'
+[dependencies]
+renamed={package='native-b',path='../b'}
+[target.'cfg(windows)'.build-dependencies]
+renamed={package='native-b',path='../b'}
+"#,
+    );
+    write(
+        "rust/a/src/lib.rs",
+        "pub fn a() -> usize { renamed::b() }\n",
+    );
+    write(
+        "rust/b/Cargo.toml",
+        "[package]\nname='native-b'\nversion='0.1.0'\nedition='2021'\n",
+    );
+    write("rust/b/src/lib.rs", "pub fn b() -> usize { 1 }\n");
+    write(
+        "rust/a/taskflow.yml",
+        "version: 1\nproject: rust-a\ntasks:\n  build:\n    command: [cargo, build, -p, \
+         native-a]\n",
+    );
+    write("rust/b/taskflow.yml", "version: 1\nproject: rust-b\n");
+    write("go.work", "go 1.25.0\nuse (\n ./go/a\n ./go/b\n)\n");
+    write(
+        "go/a/go.mod",
+        "module example.test/a\ngo 1.25.0\nrequire example.test/b v0.0.0\nreplace example.test/b \
+         => ../b\n",
+    );
+    write("go/b/go.mod", "module example.test/b\ngo 1.25.0\n");
+    write("go/a/taskflow.yml", "version: 1\nproject: go-a\n");
+    write("go/b/taskflow.yml", "version: 1\nproject: go-b\n");
+    taskflow::discover::output_tool(
+        root.path(),
+        &["pnpm", "install", "--lockfile-only", "--ignore-scripts"],
+        &[],
+    )
+    .await
+    .unwrap();
+    let lockfile = std::process::Command::new("cargo")
+        .args(["generate-lockfile", "--offline"])
+        .current_dir(root.path())
+        .output()
+        .unwrap();
+    assert!(
+        lockfile.status.success(),
+        "{}",
+        String::from_utf8_lossy(&lockfile.stderr)
+    );
+    let g = graph(root.path()).await;
+    if !g.workspace.complete() {
+        for (directory, args) in [
+            (
+                root.path().to_path_buf(),
+                vec![
+                    "cargo",
+                    "metadata",
+                    "--locked",
+                    "--offline",
+                    "--format-version",
+                    "1",
+                ],
+            ),
+            (
+                root.path().join("go/a"),
+                vec!["go", "list", "-mod=readonly", "-m", "-json", "all"],
+            ),
+        ] {
+            let output = std::process::Command::new(args[0])
+                .args(&args[1..])
+                .current_dir(directory)
+                .output()
+                .unwrap();
+            eprintln!(
+                "fixture metadata diagnostic: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+    assert!(g.workspace.complete(), "{:?}", g.workspace.coverage);
+    assert_eq!(g.workspace.projects.len(), 7);
+    assert_eq!(g.prerequisites("js-a#build"), vec!["js-b#build"]);
+    assert!(
+        g.prerequisites("rust-a#build").is_empty(),
+        "native compilation must remain Cargo-owned"
+    );
+    assert!(g
+        .workspace
+        .edges
+        .iter()
+        .any(|e| e.from == "go-a" && e.to == "go-b"));
+    assert!(g
+        .workspace
+        .edges
+        .iter()
+        .any(|e| e.from == "rust-a" && e.to == "rust-b" && e.condition.is_some()));
+    assert!(g.workspace.edges.iter().any(|e| e.from == "js-a"
+        && e.to == "js-b"
+        && e.kind == config::DependencyKind::DevDependencies));
+    let plan = Plan::create(
+        &g,
+        &["build".into()],
+        &[PathBuf::from("rust/b/src/lib.rs")],
+        true,
+    )
+    .unwrap();
+    assert!(plan.causes.contains_key("rust-a#build"));
+    let direct = taskflow::discover::output_tool(
+        &root.path().join("rust/a"),
+        &["cargo", "build", "-p", "native-a", "--offline"],
+        &[],
+    )
+    .await;
+    assert!(direct.is_ok(), "{direct:?}");
+    assert!(run(g.clone(), &["rust-a#build"]).await.success);
+    write("packages/b/taskflow.yml", "version: 1\nproject: js-b\n");
+    let changed = graph(root.path()).await;
+    assert!(changed.prerequisites("js-a#build").is_empty());
+    assert!(changed.explanations.iter().any(|e| e.contains("task-less")));
+    assert_ne!(g.workspace.generation, changed.workspace.generation);
+    write("packages/b/taskflow.yml", "version: 1\nproject: js-a\n");
+    assert!(Workspace::discover(root.path()).await.is_err());
+}
+
+#[tokio::test]
+#[ignore = "requires Docker and the pinned Node fixture image"]
+async fn scenario_10_local_docker_execution_uses_explicit_platform_and_cleans_container() {
+    let image = "node@sha256:6dac556d980b7f0e5498d08f08cee0ca67798b4ad6c23964a9214920e67758d0";
+    let dir = fixture(
+        json!({"container":{"command":["node","-e","require('fs').mkdirSync('out',{recursive:true});require('fs').writeFileSync('out/value',process.env.MESSAGE)"],"input":[],"output":["out/**"],"env":{"MESSAGE":"docker-ok"},"platform":{"os":"linux","arch":config::host_arch(),"executor":"docker","image":image}}}),
+    );
+    let result = run(graph(dir.path()).await, &["container"]).await;
+    assert!(result.success, "{result:?}");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("out/value")).unwrap(),
+        "docker-ok"
+    );
+    let name = format!("tflow-{}", result.results["app#container"].execution);
+    let output = taskflow::discover::output_tool(
+        dir.path(),
+        &[
+            "docker",
+            "ps",
+            "-a",
+            "--filter",
+            &format!("name=^/{name}$"),
+            "--format",
+            "{{.Names}}",
+        ],
+        &[],
+    )
+    .await
+    .unwrap();
+    assert!(output.is_empty());
+}
+
+#[tokio::test]
+#[ignore = "requires Docker and the pinned MinIO conformance image"]
+async fn scenario_22_real_s3_cache_restores_on_clean_runner_and_handles_denied_credentials() {
+    struct Container(String);
+    impl Drop for Container {
+        fn drop(&mut self) {
+            let _ = std::process::Command::new("docker")
+                .args(["rm", "-f", &self.0])
+                .stdout(std::process::Stdio::null())
+                .status();
+        }
+    }
+    let name = format!("tflow-s3-{}", uuid::Uuid::now_v7());
+    let container = Container(name.clone());
+    let root = tempfile::tempdir().unwrap();
+    let image = "quay.io/minio/minio@sha256:\
+                 14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e";
+    taskflow::discover::output_tool(
+        root.path(),
+        &[
+            "docker",
+            "run",
+            "-d",
+            "--rm",
+            "--name",
+            &name,
+            "-p",
+            "127.0.0.1::9000",
+            "-e",
+            "MINIO_ROOT_USER=taskflowfixture",
+            "-e",
+            "MINIO_ROOT_PASSWORD=taskflow-fixture-password",
+            image,
+            "server",
+            "/data",
+        ],
+        &[],
+    )
+    .await
+    .unwrap();
+    let address = String::from_utf8(
+        taskflow::discover::output_tool(root.path(), &["docker", "port", &name, "9000"], &[])
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    let endpoint = format!("http://{}", address.trim());
+    for _ in 0..100 {
+        if reqwest::get(format!("{endpoint}/minio/health/live"))
+            .await
+            .is_ok_and(|r| r.status().is_success())
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    taskflow::discover::output_tool(
+        root.path(),
+        &[
+            "docker",
+            "exec",
+            &name,
+            "mc",
+            "alias",
+            "set",
+            "fixture",
+            "http://127.0.0.1:9000",
+            "taskflowfixture",
+            "taskflow-fixture-password",
+        ],
+        &[],
+    )
+    .await
+    .unwrap();
+    taskflow::discover::output_tool(
+        root.path(),
+        &["docker", "exec", &name, "mc", "mb", "fixture/taskflow"],
+        &[],
+    )
+    .await
+    .unwrap();
+    let suffix = uuid::Uuid::now_v7().simple().to_string();
+    let key_env = format!("TFLOW_FIXTURE_KEY_{suffix}");
+    let secret_env = format!("TFLOW_FIXTURE_SECRET_{suffix}");
+    std::env::set_var(&key_env, "taskflowfixture");
+    std::env::set_var(&secret_env, "taskflow-fixture-password");
+    let tasks = json!({"build":{"command":command(&["copy","source","out/result"]),"input":["source"],"output":["out/**"],"cache":true,"tools":{"fixture":command(&["version"])}}});
+    let configuration = json!({"version":1,"project":"app","tasks":tasks,"remote":{"endpoint":endpoint,"bucket":"taskflow","namespace":"conformance","region":"us-east-1","accessKeyEnv":key_env,"secretKeyEnv":secret_env,"mode":"read-write"}});
+    let source = serde_yaml::to_string(&configuration).unwrap();
+    let first = tempfile::tempdir().unwrap();
+    let second = tempfile::tempdir().unwrap();
+    let denied = tempfile::tempdir().unwrap();
+    for directory in [&first, &second, &denied] {
+        std::fs::write(directory.path().join("taskflow.yml"), &source).unwrap();
+        std::fs::write(directory.path().join("source"), "remote artifact").unwrap();
+    }
+    assert_eq!(
+        run(graph(first.path()).await, &["build"]).await.results["app#build"].outcome,
+        Outcome::Executed
+    );
+    let restored = run(graph(second.path()).await, &["build"]).await;
+    assert_eq!(
+        restored.results["app#build"].outcome,
+        Outcome::Restored,
+        "{restored:?}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(second.path().join("out/result")).unwrap(),
+        "remote artifact"
+    );
+    std::env::set_var(&secret_env, "incorrect-fixture-password");
+    assert_eq!(
+        run(graph(denied.path()).await, &["build"]).await.results["app#build"].outcome,
+        Outcome::Executed
+    );
+    std::env::remove_var(&key_env);
+    std::env::remove_var(&secret_env);
+    drop(container);
+}
+
+#[tokio::test]
+#[ignore = "native suite conformance installs pinned Vitest and Jest fixtures"]
+async fn scenario_09_native_go_rust_vitest_and_jest_sharding() {
+    let go = fixture(
+        json!({"test":{"command":["go","test","./..."],"input":["*.go"],"output":[],"shard":{"adapter":"go","count":2}}}),
+    );
+    std::fs::write(
+        go.path().join("go.mod"),
+        "module example.test/shard\ngo 1.25.0\n",
+    )
+    .unwrap();
+    std::fs::write(
+        go.path().join("sample_test.go"),
+        "package shard\nimport \"testing\"\nfunc TestOne(t *testing.T) {}\nfunc TestTwo(t \
+         *testing.T) {}\n",
+    )
+    .unwrap();
+    let result = run(graph(go.path()).await, &["test"]).await;
+    assert!(result.success, "{result:?}");
+    let rust = fixture(
+        json!({"test":{"command":["cargo","test"],"input":["src/**"],"output":[],"shard":{"adapter":"libtest","count":2}}}),
+    );
+    files::atomic_write(
+        &rust.path().join("Cargo.toml"),
+        b"[package]\nname='shard-fixture'\nversion='0.1.0'\nedition='2021'\n[workspace]\n",
+    )
+    .unwrap();
+    files::atomic_write(&rust.path().join("src/lib.rs"),b"/// ```\n/// assert!(true);\n/// ```\npub fn sample() {}\n#[test] fn one() {}\n#[test] fn two() {}\n").unwrap();
+    taskflow::discover::output_tool(
+        rust.path(),
+        &["cargo", "generate-lockfile", "--offline"],
+        &[],
+    )
+    .await
+    .unwrap();
+    let result = run(graph(rust.path()).await, &["test"]).await;
+    assert!(result.success, "{result:?}");
+    for (adapter, version) in [("vitest", "4.1.11"), ("jest", "29.7.0")] {
+        let command = if adapter == "vitest" {
+            vec!["pnpm", "exec", adapter, "run"]
+        } else {
+            vec!["pnpm", "exec", adapter, "--runInBand"]
+        };
+        let js = fixture(
+            json!({"test":{"command":command,"input":["*.test.js"],"output":[],"shard":{"adapter":adapter,"count":3}}}),
+        );
+        std::fs::write(js.path().join("package.json"),serde_json::to_vec(&json!({"name":"taskflow-shard-fixture","private":true,"packageManager":"pnpm@10.26.2","devDependencies":{adapter:version}})).unwrap()).unwrap();
+        for name in ["one", "two"] {
+            std::fs::write(
+                js.path().join(format!("{name}.test.js")),
+                if adapter == "vitest" {
+                    "import {test,expect} from 'vitest';test('works',()=>expect(1).toBe(1));"
+                } else {
+                    "test('works',()=>expect(1).toBe(1));"
+                },
+            )
+            .unwrap();
+        }
+        taskflow::discover::output_tool(
+            js.path(),
+            &[
+                "pnpm",
+                "install",
+                "--ignore-scripts",
+                "--prefer-offline",
+                "--fetch-timeout=30000",
+                "--fetch-retries=1",
+            ],
+            &[],
+        )
+        .await
+        .unwrap();
+        let result = run(graph(js.path()).await, &["test"]).await;
+        assert!(result.success, "{adapter}: {result:?}");
+    }
+}
+
+#[tokio::test]
+async fn scenarios_08_15_16_19_watch_and_timer_companions_preserve_server() {
+    let address = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .to_string();
+    let dir = fixture(json!({
+        "server":{"command":command(&["server",&address,"server.pid"]),"input":[],"service":true,"readiness":{"type":"tcp","address":address,"timeout":"5s"},"dependsOn":["check"],"with":["check","poll"]},
+        "check":{"command":command(&["record","trace","check"]),"input":["source"],"watch":{"initial":true,"debounce":"30ms"}},
+        "poll":{"command":command(&["record","trace","poll"]),"input":[],"schedule":{"every":"100ms","initial":false},"overlap":"skip"}
+    }));
+    let mut cfg: Value =
+        serde_yaml::from_slice(&std::fs::read(dir.path().join("taskflow.yml")).unwrap()).unwrap();
+    cfg["start"] = json!({"default":["server"]});
+    files::atomic_write(
+        &dir.path().join("taskflow.yml"),
+        serde_yaml::to_string(&cfg).unwrap().as_bytes(),
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("source"), "before").unwrap();
+    let cancel = CancellationToken::new();
+    let token = cancel.clone();
+    let root = dir.path().to_path_buf();
+    let session = tokio::spawn(async move {
+        taskflow::session::start(
+            &root,
+            "default",
+            RunOptions {
+                quiet: true,
+                ..RunOptions::default()
+            },
+            token,
+        )
+        .await
+    });
+    for _ in 0..500 {
+        if dir.path().join("server.pid").exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(dir.path().join("server.pid").exists());
+    let pid = std::fs::read_to_string(dir.path().join("server.pid")).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("trace"))
+            .unwrap()
+            .matches("check")
+            .count(),
+        1
+    );
+    std::fs::write(dir.path().join("source"), "after").unwrap();
+    for _ in 0..100 {
+        let trace = std::fs::read_to_string(dir.path().join("trace")).unwrap();
+        if trace.matches("check").count() == 2 && trace.contains("poll") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let trace = std::fs::read_to_string(dir.path().join("trace")).unwrap();
+    assert_eq!(trace.matches("check").count(), 2, "{trace}");
+    assert!(trace.contains("poll"));
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("server.pid")).unwrap(),
+        pid
+    );
+    cancel.cancel();
+    tokio::time::timeout(Duration::from_secs(5), session)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(tokio::net::TcpStream::connect(&address).await.is_err());
+}
+
+#[tokio::test]
+async fn scenarios_11_22_26_ci_units_transfer_artifacts_and_preserve_causes() {
+    let dir = fixture(json!({
+        "a":{"command":command(&["copy","source","a-out/file"]),"input":["source"],"output":["a-out/**"]},
+        "b":{"command":command(&["copy","a-out/file","b-out/file"]),"input":["a-out/**"],"output":["b-out/**"],"dependsOn":["a"]},
+        "c":{"command":command(&["copy","b-out/file","c-out/file"]),"input":["b-out/**"],"output":["c-out/**"],"dependsOn":["b"]}
+    }));
+    let mut cfg: Value =
+        serde_yaml::from_slice(&std::fs::read(dir.path().join("taskflow.yml")).unwrap()).unwrap();
+    let platform = config::Platform::default();
+    let (os, arch) = platform.resolved();
+    for task in cfg["tasks"].as_object_mut().unwrap().values_mut() {
+        task["platform"] = json!({"os":os,"arch":arch});
+    }
+    cfg["ci"] = json!({"revision":"1111111111111111111111111111111111111111","rust":"nightly-2026-01-01","runners":{platform.key():"self-hosted"}});
+    files::atomic_write(
+        &dir.path().join("taskflow.yml"),
+        serde_yaml::to_string(&cfg).unwrap().as_bytes(),
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("source"), "artifact").unwrap();
+    let g = graph(dir.path()).await;
+    let blueprint = taskflow::ci::Blueprint::new(&g, vec!["c".into()]).unwrap();
+    assert_eq!(blueprint.units.len(), 3);
+    let plan = taskflow::ci::prepare(dir.path(), &blueprint, None)
+        .await
+        .unwrap();
+    let storage = tempfile::tempdir().unwrap();
+    let mut completed = BTreeSet::new();
+    while completed.len() < blueprint.units.len() {
+        let unit = blueprint
+            .units
+            .iter()
+            .find(|u| !completed.contains(&u.id) && u.needs.iter().all(|n| completed.contains(n)))
+            .unwrap();
+        let runner = tempfile::tempdir().unwrap();
+        std::fs::copy(
+            dir.path().join("taskflow.yml"),
+            runner.path().join("taskflow.yml"),
+        )
+        .unwrap();
+        std::fs::copy(dir.path().join("source"), runner.path().join("source")).unwrap();
+        let output = storage.path().join(&unit.id).join("bundle.json");
+        let result = taskflow::ci::execute(
+            runner.path(),
+            &blueprint,
+            plan.clone(),
+            &unit.id,
+            storage.path(),
+            &output,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert!(result.success, "{result:?}");
+        assert_eq!(
+            result.results.len(),
+            1,
+            "prerequisites must not be executed again on another runner"
+        );
+        completed.insert(unit.id.clone());
+    }
+    assert_eq!(
+        taskflow::ci::aggregate(&blueprint, &plan, storage.path()).unwrap()["success"],
+        true
+    );
+    taskflow::ci::export(
+        &g,
+        vec!["c".into()],
+        Path::new(".github/workflows/taskflow.yml"),
+    )
+    .unwrap();
+    let workflow: Value = serde_yaml::from_slice(
+        &std::fs::read(dir.path().join(".github/workflows/taskflow.yml")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        workflow["jobs"]["result"]["needs"]
+            .as_array()
+            .unwrap()
+            .len()
+            >= 4
+    );
+    if let Ok(actionlint) = std::env::var("TFLOW_ACTIONLINT") {
+        let result = std::process::Command::new(actionlint)
+            .arg("-shellcheck=")
+            .arg(dir.path().join(".github/workflows/taskflow.yml"))
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+    let bundle_path = storage
+        .path()
+        .join(&blueprint.units[0].id)
+        .join("bundle.json");
+    let original = std::fs::read(&bundle_path).unwrap();
+    let mut incomplete: Value = serde_json::from_slice(&original).unwrap();
+    incomplete["result"]["results"] = json!({});
+    std::fs::write(&bundle_path, serde_json::to_vec(&incomplete).unwrap()).unwrap();
+    assert!(taskflow::ci::aggregate(&blueprint, &plan, storage.path()).is_err());
+    let mut incomplete: Value = serde_json::from_slice(&original).unwrap();
+    incomplete["artifacts"] = json!({});
+    std::fs::write(&bundle_path, serde_json::to_vec(&incomplete).unwrap()).unwrap();
+    assert!(taskflow::ci::aggregate(&blueprint, &plan, storage.path()).is_err());
+    std::fs::write(&bundle_path, original).unwrap();
+    std::fs::remove_file(
+        storage
+            .path()
+            .join(&blueprint.units[0].id)
+            .join("bundle.json"),
+    )
+    .unwrap();
+    assert!(taskflow::ci::aggregate(&blueprint, &plan, storage.path()).is_err());
+}
 fn command(args: &[&str]) -> Value {
     json!(std::iter::once(helper().to_string_lossy().into_owned())
         .chain(args.iter().map(|v| (*v).to_owned()))
@@ -87,6 +684,8 @@ fn configuration_rejects_duplicates_unknown_fields_and_invalid_policies() {
     for text in [
         "version: 1\nproject: app\nproject: duplicate\n",
         "version: 1\nproject: app\nunknown: true\n",
+        "version: 1\nproject: app\ntasks:\n  test: {command: echo one}\n  test: {command: echo \
+         two}\n",
         "version: 1\nproject: app\ntasks:\n  test:\n    command: echo hi\n    cache: true\n",
         "version: 1\nproject: app\ntasks:\n  test:\n    command: echo hi\n    output: \
          ['../outside']\n",
@@ -361,7 +960,7 @@ async fn scenario_17_cancellation_reaps_process_tree_and_never_caches() {
     let stop = cancel.clone();
     let root = dir.path().to_path_buf();
     let task = tokio::spawn(runner::run_plan(g, plan, RunOptions::default(), cancel));
-    for _ in 0..100 {
+    for _ in 0..500 {
         if root.join("child.pid").exists() {
             break;
         }
@@ -406,4 +1005,242 @@ async fn scenario_25_external_effect_survives_unchanged_prerequisite() {
         .await
         .unwrap();
     assert_eq!(result.results["app#deploy"].outcome, Outcome::Executed);
+}
+
+#[test]
+fn schema_is_fresh_and_cli_queries_mask_designated_values() {
+    let expected: Value =
+        serde_json::from_slice(include_bytes!("../taskflow.schema.json")).unwrap();
+    assert_eq!(
+        expected,
+        serde_json::to_value(schemars::schema_for!(config::Config)).unwrap()
+    );
+    let directory = fixture(
+        json!({"secret": {"command":command(&["env","EXAMPLE_VALUE"]),"env":{"EXAMPLE_VALUE":"fixture-sensitive-value"},"secrets":["EXAMPLE_VALUE"]}}),
+    );
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+        .args(["--json", "--root"])
+        .arg(directory.path())
+        .args(["query", "tasks"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("fixture-sensitive-value"));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("[REDACTED]"));
+}
+
+#[tokio::test]
+async fn cached_shards_retain_complete_accounting_evidence() {
+    let directory = fixture(
+        json!({"suite":{"command":command(&["version"]),"input":[],"output":[],"cache":true,"tools":{"fixture":command(&["version"])},"shard":{"adapter":"generic","count":4,"list":command(&["inventory"]),"run":command(&["shard"])}}}),
+    );
+    let g = graph(directory.path()).await;
+    assert!(run(g.clone(), &["suite"]).await.success);
+    let cached = run(g, &["suite"]).await;
+    let receipt = &cached.results["app#suite"];
+    assert_eq!(receipt.outcome, Outcome::LocalCache);
+    let (inventory, reports) = shard::read_reports(
+        &directory
+            .path()
+            .join(".taskflow/runs")
+            .join(&receipt.execution),
+    )
+    .unwrap();
+    assert!(shard::aggregate(&inventory, 4, &reports).unwrap());
+}
+
+fn profile(directory: &Path, tasks: &[&str]) {
+    let path = directory.join("taskflow.yml");
+    let mut value: Value = serde_yaml::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    value["start"] = json!({"default": tasks});
+    files::atomic_write(&path, serde_yaml::to_string(&value).unwrap().as_bytes()).unwrap();
+}
+async fn wait_lines(path: &Path, prefix: &str, count: usize) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        if std::fs::read_to_string(path)
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| l.starts_with(prefix))
+            .count()
+            >= count
+        {
+            return;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "missing {count} {prefix} records in {}",
+            path.display()
+        );
+        tokio::time::sleep(Duration::from_millis(15)).await;
+    }
+}
+
+#[tokio::test]
+async fn scenario_17_queue_skip_restart_own_real_exclusive_processes() {
+    for (overlap, expected_starts) in [("queue", 2), ("skip", 1), ("restart", 2)] {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        drop(listener);
+        let directory = fixture(
+            json!({"check":{"command":command(&["paced","events",&address,"700"]),"input":["source"],"watch":{"debounce":"20ms"},"overlap":overlap}}),
+        );
+        std::fs::write(directory.path().join("source"), "initial").unwrap();
+        profile(directory.path(), &["check"]);
+        let root = directory.path().to_path_buf();
+        let token = CancellationToken::new();
+        let stop = token.clone();
+        let session = tokio::spawn(async move {
+            taskflow::session::start(
+                &root,
+                "default",
+                RunOptions {
+                    quiet: true,
+                    ..Default::default()
+                },
+                stop,
+            )
+            .await
+        });
+        let events = directory.path().join("events");
+        wait_lines(&events, "start", 1).await;
+        for change in ["first", "second"] {
+            std::fs::write(directory.path().join("source"), change).unwrap();
+            tokio::time::sleep(Duration::from_millis(40)).await;
+        }
+        wait_lines(&events, "start", expected_starts).await;
+        wait_lines(&events, "end", if overlap == "queue" { 2 } else { 1 }).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        token.cancel();
+        session.await.unwrap().unwrap();
+        let records = std::fs::read_to_string(events).unwrap();
+        let starts = records.lines().filter(|l| l.starts_with("start")).count();
+        // Restart may replace twice when two separated edits are delivered.
+        assert!(
+            if overlap == "restart" {
+                (2..=3).contains(&starts)
+            } else {
+                starts == expected_starts
+            },
+            "{overlap}: {records}"
+        );
+        assert!(
+            std::net::TcpListener::bind(&address).is_ok(),
+            "session leaked a process"
+        );
+    }
+}
+
+#[tokio::test]
+async fn scenarios_15_19_21_live_invalid_configuration_recovers_atomically() {
+    let directory = fixture(
+        json!({"check":{"command":command(&["record","events","old"]),"input":["source"],"watch":{}}}),
+    );
+    std::fs::write(directory.path().join("source"), "initial").unwrap();
+    profile(directory.path(), &["check"]);
+    let path = directory.path().join("taskflow.yml");
+    let original = std::fs::read(&path).unwrap();
+    let root = directory.path().to_path_buf();
+    let token = CancellationToken::new();
+    let stop = token.clone();
+    let session = tokio::spawn(async move {
+        taskflow::session::start(
+            &root,
+            "default",
+            RunOptions {
+                quiet: true,
+                ..Default::default()
+            },
+            stop,
+        )
+        .await
+    });
+    let events = directory.path().join("events");
+    wait_lines(&events, "old", 1).await;
+    files::atomic_write(&path, b"version: 1\nproject: app\ntasks: [invalid").unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    std::fs::write(directory.path().join("source"), "changed").unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(std::fs::read_to_string(&events).unwrap().lines().count(), 1);
+    let mut corrected: Value = serde_yaml::from_slice(&original).unwrap();
+    corrected["tasks"]["check"]["command"] = command(&["record", "events", "new"]);
+    files::atomic_write(&path, serde_yaml::to_string(&corrected).unwrap().as_bytes()).unwrap();
+    wait_lines(&events, "new", 1).await;
+    token.cancel();
+    session.await.unwrap().unwrap();
+    let g = graph(directory.path()).await;
+    let plan = Plan::create(&g, &[], &[PathBuf::from("removed/package.json")], true).unwrap();
+    assert!(plan.causes.contains_key("app#check"));
+}
+
+#[tokio::test]
+async fn server_readiness_failure_reaps_concurrent_work_before_returning() {
+    let directory = fixture(json!({
+        "server":{"command":command(&["sleep","server.pid"]),"input":[],"service":true,"readiness":{"type":"command","command":command(&["fail-after-files","server.pid","check.pid"]),"timeout":"3s"}},
+        "check":{"command":command(&["sleep","check.pid"]),"input":[],"watch":{}}
+    }));
+    profile(directory.path(), &["server", "check"]);
+    let result = tokio::time::timeout(
+        Duration::from_secs(8),
+        taskflow::session::start(
+            directory.path(),
+            "default",
+            RunOptions {
+                jobs: 2,
+                quiet: true,
+                ..Default::default()
+            },
+            CancellationToken::new(),
+        ),
+    )
+    .await
+    .expect("service failure must promptly cancel its parallel checks");
+    assert!(result.is_err());
+    #[cfg(unix)]
+    for name in ["server.pid", "check.pid"] {
+        let pid: i32 = std::fs::read_to_string(directory.path().join(name))
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(
+            nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_err(),
+            "owned process survived session failure"
+        );
+    }
+}
+
+#[tokio::test]
+async fn untrusted_ci_never_contacts_the_remote_cache() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let directory = fixture(
+        json!({"check":{"command":command(&["version"]),"input":[],"output":[],"cache":true,"tools":{"fixture":command(&["version"])}}}),
+    );
+    let path = directory.path().join("taskflow.yml");
+    let mut config: Value = serde_yaml::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    config["remote"] = json!({"endpoint":format!("http://{}",listener.local_addr().unwrap()),"bucket":"fixture","namespace":"fixture","accessKeyEnv":"FIXTURE_ACCESS","secretKeyEnv":"FIXTURE_PRIVATE","mode":"read-write"});
+    std::fs::write(path, serde_yaml::to_string(&config).unwrap()).unwrap();
+    let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+        .arg("--root")
+        .arg(directory.path())
+        .args(["run", "check", "--quiet"])
+        .env("GITHUB_EVENT_NAME", "pull_request")
+        .env("FIXTURE_ACCESS", "fixture-value")
+        .env("FIXTURE_PRIVATE", "fixture-value")
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), listener.accept())
+            .await
+            .is_err()
+    );
 }

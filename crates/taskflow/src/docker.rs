@@ -12,9 +12,21 @@ pub struct Container {
     name: String,
     cleaned: bool,
 }
+pub fn host_environment(environment: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    let mut values = environment.clone();
+    for key in ["DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"] {
+        if let Ok(value) = std::env::var(key) {
+            values.insert(key.into(), value);
+        }
+    }
+    values
+}
 impl Container {
     pub async fn cleanup(&mut self) -> Result<()> {
-        let result = process::capture(
+        // Cleanup must remain available after the task/session token is cancelled.
+        let cleanup_token = CancellationToken::new();
+        let environment: BTreeMap<String, String> = std::env::vars().collect();
+        let result = process::capture_with_env(
             Path::new("."),
             &Command::Argv(vec![
                 "docker".into(),
@@ -22,21 +34,34 @@ impl Container {
                 "-f".into(),
                 self.name.clone(),
             ]),
-            &[],
+            &environment,
+            &cleanup_token,
         )
         .await;
         self.cleaned = result.is_ok();
         // --rm may already have removed an exited container; a failed removal is
-        // acceptable only after an independent inspect proves it no longer exists.
+        // acceptable only after a successful daemon query proves it is absent.
         if !self.cleaned {
-            let exists = process::capture(
+            let remaining = process::capture_with_env(
                 Path::new("."),
-                &Command::Argv(vec!["docker".into(), "inspect".into(), self.name.clone()]),
-                &[],
+                &Command::Argv(vec![
+                    "docker".into(),
+                    "ps".into(),
+                    "-a".into(),
+                    "--filter".into(),
+                    format!("name=^{}$", self.name),
+                    "--format".into(),
+                    "{{.ID}}".into(),
+                ]),
+                &environment,
+                &cleanup_token,
             )
             .await
-            .is_ok();
-            ensure!(!exists, "owned Docker container cleanup failed");
+            .context("could not verify Docker container cleanup")?;
+            ensure!(
+                remaining.iter().all(u8::is_ascii_whitespace),
+                "owned Docker container cleanup failed"
+            );
             self.cleaned = true;
         }
         Ok(())
@@ -137,6 +162,17 @@ pub async fn prepare(
         "--env".into(),
         "TFLOW_EXECUTION_ID".into(),
     ]);
+    for key in ["TFLOW_SHARD_INPUT", "TFLOW_SHARD_RESULT"] {
+        if let Some(value) = environment.get(key) {
+            let relative = Path::new(value)
+                .strip_prefix(root)
+                .context("shard exchange file outside workspace")?;
+            args.extend([
+                "--env".into(),
+                format!("{key}=/workspace/{}", crate::files::slash(relative)),
+            ]);
+        }
+    }
     for port in &task.platform.ports {
         ensure!(!port.starts_with('-'), "invalid Docker port mapping");
         args.extend(["--publish".into(), port.clone()]);

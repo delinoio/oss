@@ -378,7 +378,8 @@
         },
         "count": {
           "format": "uint",
-          "minimum": 0,
+          "maximum": 256,
+          "minimum": 1,
           "type": "integer"
         },
         "list": {
@@ -699,7 +700,8 @@
     },
     "version": {
       "format": "uint32",
-      "minimum": 0,
+      "maximum": 1,
+      "minimum": 1,
       "type": "integer"
     },
     "workspace": {

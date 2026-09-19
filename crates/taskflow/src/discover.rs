@@ -22,6 +22,8 @@ pub struct ProjectEdge {
     pub to: String,
     pub kind: DependencyKind,
     pub condition: Option<String>,
+    pub name: String,
+    pub resolved: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Coverage {
@@ -62,6 +64,27 @@ pub fn locate_root(start: &Path) -> Result<PathBuf> {
 }
 
 impl Workspace {
+    pub fn select_platform(mut self, os: Option<config::Os>, arch: Option<config::Arch>) -> Self {
+        if os.is_none() && arch.is_none() {
+            return self;
+        }
+        for config in self
+            .projects
+            .values_mut()
+            .filter_map(|p| p.config.as_mut())
+            .chain(std::iter::once(&mut self.config))
+        {
+            for task in config.tasks.values_mut() {
+                task.platform.os = task.platform.os.or(os);
+                task.platform.arch = task.platform.arch.or(arch);
+            }
+        }
+        self.generation = crate::files::digest(
+            &serde_json::to_vec(&(&self.generation, os, arch)).expect("platform serialization"),
+        );
+        self
+    }
+
     pub async fn discover(root: &Path) -> Result<Self> {
         let root = root
             .canonicalize()
@@ -296,17 +319,23 @@ impl Workspace {
                     else {
                         continue;
                     };
-                    let target = Path::new(target);
+                    let target = crate::files::canonical_path(Path::new(target))?;
                     if target.starts_with(&self.root)
                         && !target.components().any(|c| c.as_os_str() == "node_modules")
                         && target.join("package.json").is_file()
                     {
-                        let to = self.add_project(target, "pnpm")?;
+                        let to = self.add_project(&target, "pnpm")?;
                         self.edges.insert(ProjectEdge {
                             from: source.clone(),
                             to,
                             kind,
                             condition: None,
+                            name: name.clone(),
+                            resolved: resolved
+                                .and_then(|v| v.get("version"))
+                                .and_then(Value::as_str)
+                                .unwrap_or("local")
+                                .into(),
                         });
                     }
                 }
@@ -362,11 +391,11 @@ impl Workspace {
             if package.get("source").is_some_and(|v| !v.is_null()) {
                 continue;
             }
-            let path = Path::new(
+            let path = crate::files::canonical_path(Path::new(
                 package["manifest_path"]
                     .as_str()
                     .context("Cargo package lacks manifest path")?,
-            );
+            ))?;
             if !path.starts_with(&self.root) {
                 continue;
             }
@@ -422,6 +451,14 @@ impl Workspace {
                         to: to.clone(),
                         kind: kind_id,
                         condition: kind["target"].as_str().map(str::to_owned),
+                        name: dep["name"]
+                            .as_str()
+                            .context("Cargo dependency alias missing")?
+                            .into(),
+                        resolved: dep["pkg"]
+                            .as_str()
+                            .context("Cargo dependency identity missing")?
+                            .into(),
                     });
                 }
             }
@@ -441,7 +478,14 @@ impl Workspace {
 
     async fn go(&mut self, manifest: &Path) -> Result<()> {
         let directory = manifest.parent().unwrap();
-        let environment = [("GOTOOLCHAIN", "local")];
+        // Never let a parent checkout's workspace or an inherited GOWORK change
+        // which native manifest this adapter resolves.
+        let work = if manifest.file_name().unwrap() == "go.work" {
+            manifest.to_string_lossy().into_owned()
+        } else {
+            "off".into()
+        };
+        let environment = [("GOTOOLCHAIN", "local"), ("GOWORK", work.as_str())];
         let mut paths = vec![];
         if manifest.file_name().unwrap() == "go.work" {
             let data = metadata(directory, &["go", "work", "edit", "-json"], &environment).await?;
@@ -488,9 +532,9 @@ impl Workspace {
                     .to_owned();
                 let effective = module.get("Replace").unwrap_or(&module);
                 if let Some(dir) = effective.get("Dir").and_then(Value::as_str) {
-                    let dir = Path::new(dir);
+                    let dir = crate::files::canonical_path(Path::new(dir))?;
                     if dir.starts_with(&self.root) && dir.join("go.mod").is_file() {
-                        targets.insert(name, self.add_project(dir, "go")?);
+                        targets.insert(name, self.add_project(&dir, "go")?);
                     }
                 }
             }
@@ -503,6 +547,8 @@ impl Workspace {
                         from: source.clone(),
                         to: to.clone(),
                         kind: DependencyKind::Dependencies,
+                        name: name.into(),
+                        resolved: require["Version"].as_str().unwrap_or("workspace").into(),
                         condition: Some(
                             if require["Indirect"].as_bool().unwrap_or(false) {
                                 "indirect"

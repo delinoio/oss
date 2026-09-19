@@ -7,11 +7,12 @@ Implement issue [#898](https://github.com/delinoio/oss/issues/898): a graph-driv
 `taskflow`; product `TaskFlow`; executable `tflow`.
 
 ## Domain Ownership Map
-- `crates/taskflow`: Rust library, CLI, configuration schema, adapters, fixtures, and conformance tests (implementation begins after this contract).
+- `crates/taskflow`: Rust library, CLI, configuration schema, adapters, fixtures, and conformance tests.
 - Public `/taskflow` documentation is curated in `apps/public-docs`.
 
 ## Domain Contract Documents
 - [TaskFlow engine](crates-taskflow-foundation.md)
+- [Conformance and validation](crates-taskflow-conformance.md)
 
 ## Cross-Domain Invariants
 - Project dependencies, task prerequisites, and declared artifact relationships are distinct. Native dependency edges never implicitly generate compiler commands.

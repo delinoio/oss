@@ -51,23 +51,39 @@ pub async fn start(
     });
     options.services = Some(services.clone());
     let work_cancel = cancel.child_token();
+    // Keep the JoinSet outside the fallible session body. A server/configuration
+    // failure must cancel and await every wave, rather than aborting its futures
+    // before their process/container owners have finished asynchronous cleanup.
+    let mut waves = tokio::task::JoinSet::new();
     let result = async {
-        let mut graph = Arc::new(Graph::build(Workspace::discover(root).await?)?);
+        let mut graph = Arc::new(Graph::build(Workspace::discover(root).await?.select_platform(options.os, options.arch))?);
         let mut roots = roots(&graph, profile)?;
         let mut active_set = activation(&graph, &roots);
+        let mut bootstrap_results = BTreeMap::new();
+        if active_set.iter().any(|id| graph.unresolved.contains(id)) {
+            let installs: Vec<_> = active_set.iter().filter(|id| graph.tasks[*id].task.install).cloned().collect();
+            ensure!(!installs.is_empty(), "unresolved native metadata requires an explicit install: true prerequisite");
+            let install_plan = Plan::create(&graph, &installs, &[], false)?;
+            let result = runner::run_plan(graph.clone(), install_plan, options.clone(), work_cancel.child_token()).await?;
+            ensure!(result.success, "installation prerequisite failed");
+            bootstrap_results = result.results;
+            graph = Arc::new(Graph::build(Workspace::discover(root).await?.select_platform(options.os, options.arch))?);
+            roots = roots_for_profile(&graph, profile)?;
+            active_set = activation(&graph, &roots);
+        }
         let mut pending = initial(&graph, &active_set);
+        pending.retain(|id, _| !bootstrap_results.contains_key(id));
         let mut timers = timers(&graph, &active_set)?;
         let mut observed = snapshots(&graph, &active_set)?;
-        let mut results: BTreeMap<String, Receipt> = BTreeMap::new();
+        let mut results: BTreeMap<String, Receipt> = bootstrap_results;
         let mut active_tasks = BTreeSet::new();
-        let mut waves = tokio::task::JoinSet::new();
         let mut reload = false;
         let mut invalid = false;
         let mut initial_done = false;
         loop {
             if work_cancel.is_cancelled() { break; }
             if reload && waves.is_empty() {
-                match Workspace::discover(root).await.and_then(Graph::build) {
+                match Workspace::discover(root).await.map(|ws| ws.select_platform(options.os, options.arch)).and_then(Graph::build) {
                     Ok(next) => {
                         if next.workspace.generation != graph.workspace.generation || invalid {
                             services.shutdown().await;
@@ -195,6 +211,7 @@ pub async fn start(
     for token in options.task_cancellations.lock().unwrap().values() {
         token.cancel();
     }
+    while waves.join_next().await.is_some() {}
     services.shutdown().await;
     drop(watcher);
     result

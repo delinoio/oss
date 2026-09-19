@@ -307,6 +307,13 @@ impl Graph {
         let mut owners: Vec<(std::path::PathBuf, String)> = vec![];
         for node in self.tasks.values() {
             let project = &self.workspace.projects[&node.project];
+            crate::cache::anchors(&node.task)?;
+            for input in node.task.input.iter().flatten() {
+                if let crate::config::Input::Pattern(pattern) = input {
+                    let prefix = files::output_anchor(pattern.trim_start_matches('!'));
+                    files::within(&self.workspace.root, &project.directory.join(prefix))?;
+                }
+            }
             for output in node.task.output.iter().flatten() {
                 let anchor = files::output_anchor(output);
                 ensure!(
@@ -326,12 +333,26 @@ impl Graph {
                 owners.push((absolute.clone(), node.id.clone()));
                 for consumer in self.tasks.values().filter(|c| c.id != node.id) {
                     let consumer_project = &self.workspace.projects[&consumer.project];
-                    let probe = if output.contains('*') {
-                        absolute.join("__taskflow_artifact__")
-                    } else {
-                        absolute.clone()
-                    };
-                    if files::input_matches(consumer_project, &consumer.task, &probe)? {
+                    // Glob-language intersection is deliberately conservative.
+                    // Prefix overlap preserves extension-specific consumers even
+                    // before their generated files exist; it does not add ordering.
+                    let overlaps = consumer.task.input.as_ref().is_none_or(|inputs| {
+                        inputs.iter().any(|input| match input {
+                            crate::config::Input::Auto(auto) => {
+                                auto.auto && absolute.starts_with(&consumer_project.directory)
+                            }
+                            crate::config::Input::Pattern(pattern) if !pattern.starts_with('!') => {
+                                let prefix = files::normalize(
+                                    &consumer_project
+                                        .directory
+                                        .join(files::output_anchor(pattern)),
+                                );
+                                prefix.starts_with(&absolute) || absolute.starts_with(prefix)
+                            }
+                            _ => false,
+                        })
+                    });
+                    if overlaps {
                         self.artifacts.push(ArtifactEdge {
                             producer: node.id.clone(),
                             consumer: consumer.id.clone(),

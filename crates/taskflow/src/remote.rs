@@ -100,16 +100,30 @@ impl Remote {
     }
 
     pub async fn put(&self, artifact: &Artifact) -> Result<()> {
+        if let Some(digest) = self.stage(artifact).await? {
+            self.commit(&artifact.key, &digest).await?;
+        }
+        Ok(())
+    }
+
+    /// Objects are unreachable until the small entry manifest is committed.
+    /// The executor rechecks input generation and cancellation between these
+    /// steps.
+    pub async fn stage(&self, artifact: &Artifact) -> Result<Option<String>> {
         if self.config.mode != RemoteMode::ReadWrite {
-            return Ok(());
+            return Ok(None);
         }
         let bytes = crate::cache::encode(artifact)?;
         let digest = files::digest(&bytes);
         self.request(Method::PUT, &format!("objects/{digest}.json"), bytes)
             .await?;
+        Ok(Some(digest))
+    }
+
+    pub async fn commit(&self, key: &str, digest: &str) -> Result<()> {
         self.request(
             Method::PUT,
-            &format!("entries/{}.json", artifact.key),
+            &format!("entries/{key}.json"),
             serde_json::to_vec(&serde_json::json!({"version":1,"object":digest}))?,
         )
         .await?;

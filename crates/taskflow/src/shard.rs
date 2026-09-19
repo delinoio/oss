@@ -59,6 +59,124 @@ pub enum UnitStatus {
     Cancelled,
 }
 
+pub fn validate_task(task: &crate::config::Task) -> Result<()> {
+    let Some(shard) = &task.shard else {
+        return Ok(());
+    };
+    if shard.adapter == ShardAdapter::Generic {
+        for command in [shard.list.as_ref(), shard.run.as_ref()] {
+            crate::config::validate_command(
+                command.context("generic adapter requires list and run")?,
+            )?;
+        }
+        return Ok(());
+    }
+    let Command::Argv(args) = &task.command else {
+        bail!("native sharding requires argv; use generic for shell commands");
+    };
+    match shard.adapter {
+        ShardAdapter::Go => {
+            ensure!(
+                args.len() >= 2 && args[0] == "go" && args[1] == "test",
+                "Go sharding requires go test"
+            );
+            go_flags(&args[2..])?;
+        }
+        ShardAdapter::Libtest => {
+            ensure!(
+                args.len() >= 2 && args[0] == "cargo" && args[1] == "test",
+                "libtest sharding requires cargo test"
+            );
+            let mut rest = args[2..].iter();
+            while let Some(arg) = rest.next() {
+                let flag = arg.split('=').next().unwrap();
+                if matches!(
+                    flag,
+                    "-p" | "--package"
+                        | "--exclude"
+                        | "--manifest-path"
+                        | "--target"
+                        | "--target-dir"
+                        | "--features"
+                        | "--profile"
+                        | "-j"
+                        | "--jobs"
+                        | "--test"
+                        | "--bin"
+                        | "--example"
+                        | "--config"
+                ) {
+                    if !arg.contains('=') {
+                        rest.next().context("Cargo flag requires a value")?;
+                    }
+                } else {
+                    ensure!(
+                        matches!(
+                            flag,
+                            "--workspace"
+                                | "--all"
+                                | "--all-features"
+                                | "--no-default-features"
+                                | "--release"
+                                | "--locked"
+                                | "--offline"
+                                | "--frozen"
+                                | "--lib"
+                                | "--tests"
+                                | "--bins"
+                                | "--examples"
+                                | "--all-targets"
+                                | "-q"
+                                | "--quiet"
+                                | "-v"
+                                | "--verbose"
+                        ),
+                        "Cargo test filters and unsupported options require generic sharding"
+                    );
+                }
+            }
+        }
+        ShardAdapter::Vitest | ShardAdapter::Jest => {
+            let runner = if shard.adapter == ShardAdapter::Vitest {
+                "vitest"
+            } else {
+                "jest"
+            };
+            let position = args
+                .iter()
+                .position(|v| v == runner)
+                .context("native test runner missing from argv")?;
+            for arg in &args[position + 1..] {
+                ensure!(
+                    arg == "run"
+                        || matches!(
+                            arg.split('=').next(),
+                            Some(
+                                "--run"
+                                    | "--runInBand"
+                                    | "--maxWorkers"
+                                    | "--minWorkers"
+                                    | "--pool"
+                                    | "--config"
+                                    | "--coverage"
+                                    | "--no-file-parallelism"
+                                    | "--fileParallelism"
+                                    | "--isolate"
+                                    | "--no-isolate"
+                                    | "--silent"
+                                    | "--bail"
+                            )
+                        ),
+                    "JS selection/reporting overrides require generic sharding; option values \
+                     must use ="
+                );
+            }
+        }
+        ShardAdapter::Generic => unreachable!(),
+    }
+    Ok(())
+}
+
 pub fn assign(inventory: &Inventory, count: usize) -> Result<Vec<Vec<String>>> {
     ensure!(
         inventory.version == 1 && (1..=256).contains(&count),
@@ -99,9 +217,17 @@ pub fn account(expected: &[String], actual: &[UnitResult]) -> Result<bool> {
         .all(|r| matches!(r.status, UnitStatus::Passed | UnitStatus::Skipped)))
 }
 pub fn aggregate(inventory: &Inventory, count: usize, results: &[ShardResults]) -> Result<bool> {
+    ensure!(results.len() == count, "missing shard result");
+    validate_reports(inventory, count, results)
+}
+
+pub fn validate_reports(
+    inventory: &Inventory,
+    count: usize,
+    results: &[ShardResults],
+) -> Result<bool> {
     let assignments = assign(inventory, count)?;
     let digest = files::digest(&serde_json::to_vec(inventory)?);
-    ensure!(results.len() == count, "missing shard result");
     let mut seen = BTreeSet::new();
     let mut passed = true;
     for result in results {
@@ -118,6 +244,37 @@ pub fn aggregate(inventory: &Inventory, count: usize, results: &[ShardResults]) 
     Ok(passed)
 }
 
+pub fn read_reports(directory: &Path) -> Result<(Inventory, Vec<ShardResults>)> {
+    let inventory = serde_json::from_slice(&std::fs::read(directory.join("inventory.json"))?)?;
+    let mut reports = vec![];
+    for entry in std::fs::read_dir(directory)? {
+        let entry = entry?;
+        if entry.file_name().to_string_lossy().starts_with("shard-") {
+            reports.push(serde_json::from_slice(&std::fs::read(entry.path())?)?);
+        }
+    }
+    reports.sort_by_key(|r: &ShardResults| r.index);
+    Ok((inventory, reports))
+}
+
+pub fn write_reports(
+    directory: &Path,
+    inventory: &Inventory,
+    reports: &[ShardResults],
+) -> Result<()> {
+    files::atomic_write(
+        &directory.join("inventory.json"),
+        &serde_json::to_vec(inventory)?,
+    )?;
+    for report in reports {
+        files::atomic_write(
+            &directory.join(format!("shard-{}.json", report.index)),
+            &serde_json::to_vec(report)?,
+        )?;
+    }
+    Ok(())
+}
+
 pub async fn inventory(
     graph: &Graph,
     id: &str,
@@ -131,8 +288,10 @@ pub async fn inventory(
         .context("task has no shard configuration")?;
     let directory = &graph.workspace.projects[&graph.tasks[id].project].directory;
     if shard.adapter == ShardAdapter::Generic {
-        let bytes = process::capture_with_env(
+        let bytes = process::capture_task(
+            &graph.workspace.root,
             directory,
+            task,
             shard
                 .list
                 .as_ref()
@@ -157,8 +316,15 @@ pub async fn inventory(
             );
             let mut list = base.clone();
             list.extend(["-list".into(), ".".into(), "-json".into()]);
-            let bytes =
-                process::capture_with_env(directory, &Command::Argv(list), env, cancel).await?;
+            let bytes = process::capture_task(
+                &graph.workspace.root,
+                directory,
+                task,
+                &Command::Argv(list),
+                env,
+                cancel,
+            )
+            .await?;
             let flags = go_flags(&base[2..])?;
             for line in bytes.split(|b| *b == b'\n').filter(|l| !l.is_empty()) {
                 let event: Value = serde_json::from_slice(line)?;
@@ -206,9 +372,55 @@ pub async fn inventory(
                 "custom Rust harness requires the generic adapter"
             );
             let mut build = base.clone();
+            let metadata = process::capture_task(
+                &graph.workspace.root,
+                directory,
+                task,
+                &Command::Argv(vec![
+                    "cargo".into(),
+                    "metadata".into(),
+                    "--no-deps".into(),
+                    "--format-version=1".into(),
+                ]),
+                env,
+                cancel,
+            )
+            .await?;
+            let metadata: Value = serde_json::from_slice(&metadata)?;
+            for package in metadata["packages"].as_array().into_iter().flatten() {
+                if let Some(path) = package["manifest_path"].as_str() {
+                    let path = if task.platform.executor == crate::config::Executor::Docker {
+                        graph.workspace.root.join(
+                            path.strip_prefix("/workspace/")
+                                .context("Cargo test manifest outside container workspace")?,
+                        )
+                    } else {
+                        path.into()
+                    };
+                    let manifest = std::fs::read_to_string(path)?;
+                    ensure!(
+                        !manifest.lines().any(|line| line
+                            .split('#')
+                            .next()
+                            .unwrap_or("")
+                            .chars()
+                            .filter(|c| !c.is_whitespace())
+                            .collect::<String>()
+                            == "harness=false"),
+                        "custom Rust harness requires generic sharding"
+                    );
+                }
+            }
             build.extend(["--no-run".into(), "--message-format=json".into()]);
-            let bytes =
-                process::capture_with_env(directory, &Command::Argv(build), env, cancel).await?;
+            let bytes = process::capture_task(
+                &graph.workspace.root,
+                directory,
+                task,
+                &Command::Argv(build),
+                env,
+                cancel,
+            )
+            .await?;
             let mut has_library = false;
             for line in bytes.split(|b| *b == b'\n').filter(|l| !l.is_empty()) {
                 let artifact: Value = serde_json::from_slice(line)?;
@@ -231,8 +443,10 @@ pub async fn inventory(
                 has_library |= kinds
                     .iter()
                     .any(|v| matches!(v.as_str(), Some("lib" | "rlib")));
-                let names = process::capture_with_env(
+                let names = process::capture_task(
+                    &graph.workspace.root,
                     directory,
+                    task,
                     &Command::Argv(vec![
                         binary.into(),
                         "--list".into(),
@@ -302,8 +516,15 @@ pub async fn inventory(
             } else {
                 list.extend(["--listTests".into(), "--json".into()]);
             }
-            let bytes =
-                process::capture_with_env(directory, &Command::Argv(list), env, cancel).await?;
+            let bytes = process::capture_task(
+                &graph.workspace.root,
+                directory,
+                task,
+                &Command::Argv(list),
+                env,
+                cancel,
+            )
+            .await?;
             let files: Vec<String> = if shard.adapter == ShardAdapter::Jest {
                 serde_json::from_slice(&bytes)?
             } else {
@@ -314,7 +535,17 @@ pub async fn inventory(
                     .collect()
             };
             for file in files {
-                let absolute = files::within(&graph.workspace.root, &directory.join(&file))?;
+                let file_path = if task.platform.executor == crate::config::Executor::Docker
+                    && file.starts_with("/workspace/")
+                {
+                    graph
+                        .workspace
+                        .root
+                        .join(file.trim_start_matches("/workspace/"))
+                } else {
+                    directory.join(&file)
+                };
+                let absolute = files::within(&graph.workspace.root, &file_path)?;
                 ensure!(
                     absolute.is_file(),
                     "test runner inventory returned a non-file"
@@ -326,7 +557,16 @@ pub async fn inventory(
                 } else if !run.iter().any(|v| v == "run" || v == "--run") {
                     run.insert(position + 1, "run".into());
                 }
-                run.push(absolute.to_string_lossy().into_owned());
+                run.push(
+                    if task.platform.executor == crate::config::Executor::Docker {
+                        format!(
+                            "/workspace/{}",
+                            files::slash(absolute.strip_prefix(&graph.workspace.root)?)
+                        )
+                    } else {
+                        absolute.to_string_lossy().into_owned()
+                    },
+                );
                 commands.insert(id, Command::Argv(run));
             }
         }
@@ -397,13 +637,25 @@ pub async fn execute(
 ) -> Result<Receipt> {
     let task = &graph.tasks[id].task;
     let config = task.shard.as_ref().unwrap();
-    ensure!(
-        task.platform.executor == crate::config::Executor::Host,
-        "native shard adapter runs on its selected host; use a generic Docker command adapter for \
-         container suites"
-    );
-    let directory = &graph.workspace.projects[&graph.tasks[id].project].directory;
-    let (inventory, commands) = inventory(graph, id, environment, cancel).await?;
+    let (mut inventory, commands) = inventory(graph, id, environment, cancel).await?;
+    let history_path = graph
+        .workspace
+        .root
+        .join(".taskflow/test-durations")
+        .join(format!("{}.json", files::digest(id.as_bytes())));
+    // Distributed shards start from identical declared inventory bytes. Local
+    // history is used only when this invocation owns the complete suite.
+    if options.shard.is_none() {
+        let history: BTreeMap<String, u64> = std::fs::read(&history_path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default();
+        for test in &mut inventory.tests {
+            if let Some(duration) = history.get(&test.id) {
+                test.duration_ms = *duration;
+            }
+        }
+    }
     let count = options.shard.map_or(config.count, |s| s.1);
     let assignments = assign(&inventory, count)?;
     let inventory_digest = files::digest(&serde_json::to_vec(&inventory)?);
@@ -443,7 +695,8 @@ pub async fn execute(
                 results_path.to_string_lossy().into_owned(),
             );
             let status = run_unit(
-                directory,
+                graph,
+                id,
                 config.run.as_ref().unwrap(),
                 &env,
                 secrets,
@@ -480,7 +733,8 @@ pub async fn execute(
                     UnitStatus::Cancelled
                 } else {
                     run_unit(
-                        directory,
+                        graph,
+                        id,
                         &commands[test],
                         environment,
                         secrets,
@@ -510,6 +764,15 @@ pub async fn execute(
             &serde_json::to_vec(&report)?,
         )?;
     }
+    if options.shard.is_none() && all_passed && !cancel.is_cancelled() {
+        let (_, reports) = read_reports(&root)?;
+        let durations: BTreeMap<_, _> = reports
+            .into_iter()
+            .flat_map(|r| r.results)
+            .map(|r| (r.id, r.duration_ms))
+            .collect();
+        files::atomic_write(&history_path, &serde_json::to_vec(&durations)?)?;
+    }
     Ok(Receipt {
         version: 1,
         task: id.into(),
@@ -530,8 +793,10 @@ pub async fn execute(
         diagnostic: None,
     })
 }
+#[allow(clippy::too_many_arguments)]
 async fn run_unit(
-    directory: &Path,
+    graph: &Graph,
+    id: &str,
     command: &Command,
     env: &BTreeMap<String, String>,
     secrets: &[Vec<u8>],
@@ -539,7 +804,29 @@ async fn run_unit(
     cancel: &CancellationToken,
     log: Arc<Mutex<File>>,
 ) -> Result<UnitStatus> {
-    let mut child = OwnedProcess::spawn(directory, command, None, Some(env))?;
+    let task = &graph.tasks[id].task;
+    let directory = &graph.workspace.projects[&graph.tasks[id].project].directory;
+    let mut container = None;
+    let mut command = command.clone();
+    let mut env = env.clone();
+    if task.platform.executor == crate::config::Executor::Docker {
+        let mut unit = task.clone();
+        unit.command = command;
+        unit.platform.ports.clear();
+        env = crate::docker::host_environment(&env);
+        let prepared = crate::docker::prepare(
+            &graph.workspace.root,
+            directory,
+            &unit,
+            &env,
+            &uuid::Uuid::now_v7().to_string(),
+            cancel,
+        )
+        .await?;
+        command = prepared.0;
+        container = Some(prepared.1);
+    }
+    let mut child = OwnedProcess::spawn(directory, &command, None, Some(&env))?;
     let stdout = tokio::spawn(crate::runner::stream_log(
         child.child.stdout.take().unwrap(),
         log.clone(),
@@ -554,9 +841,20 @@ async fn run_unit(
         options.show_secrets,
         options.quiet,
     ));
-    let status = child.wait(cancel, None).await?;
+    let status = child
+        .wait(
+            cancel,
+            task.timeout
+                .as_deref()
+                .map(crate::config::duration)
+                .transpose()?,
+        )
+        .await?;
     stdout.await??;
     stderr.await??;
+    if let Some(mut container) = container {
+        container.cleanup().await?;
+    }
     Ok(if status.cancelled {
         UnitStatus::Cancelled
     } else if status.code == 0 {

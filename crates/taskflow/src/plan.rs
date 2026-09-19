@@ -65,7 +65,21 @@ impl Plan {
                     });
                 }
                 if graph.workspace.metadata_files.contains(&path)
-                    || path.file_name().is_some_and(|p| p == "taskflow.yml")
+                    || path.file_name().and_then(|p| p.to_str()).is_some_and(|p| {
+                        matches!(
+                            p,
+                            "taskflow.yml"
+                                | "package.json"
+                                | "pnpm-workspace.yaml"
+                                | "pnpm-lock.yaml"
+                                | "Cargo.toml"
+                                | "Cargo.lock"
+                                | "go.mod"
+                                | "go.sum"
+                                | "go.work"
+                                | "go.work.sum"
+                        )
+                    })
                 {
                     for task in graph.tasks.keys() {
                         causes

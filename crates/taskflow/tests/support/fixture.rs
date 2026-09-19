@@ -1,7 +1,9 @@
 use std::{fs, io::Write, path::Path, time::Duration};
 fn write(path: &str, content: &[u8]) {
     if let Some(parent) = Path::new(path).parent() { if !parent.as_os_str().is_empty() { fs::create_dir_all(parent).unwrap(); } }
-    fs::write(path, content).unwrap();
+    let staged = Path::new(path).with_extension(format!("{}.tmp", std::process::id()));
+    fs::write(&staged, content).unwrap();
+    fs::rename(staged, path).unwrap();
 }
 fn main() {
     let args: Vec<_> = std::env::args().collect();
@@ -36,6 +38,13 @@ fn main() {
             write(&args[3], std::process::id().to_string().as_bytes());
             for stream in listener.incoming() { drop(stream.unwrap()); }
         }
+        "paced" => {
+            let _exclusive = std::net::TcpListener::bind(&args[3]).unwrap();
+            let mut file = fs::OpenOptions::new().create(true).append(true).open(&args[2]).unwrap();
+            writeln!(file, "start:{}", std::process::id()).unwrap();
+            std::thread::sleep(Duration::from_millis(args[4].parse().unwrap()));
+            writeln!(file, "end:{}", std::process::id()).unwrap();
+        }
         "inventory" => println!("{{\"version\":1,\"tests\":[{{\"id\":\"aa\"}},{{\"id\":\"bb\"}},{{\"id\":\"cc\"}}]}}"),
         "shard" => {
             let input = fs::read_to_string(std::env::var("TFLOW_SHARD_INPUT").unwrap()).unwrap();
@@ -43,6 +52,12 @@ fn main() {
             write(&std::env::var("TFLOW_SHARD_RESULT").unwrap(), format!("{{\"version\":1,\"results\":[{}]}}", selected.join(",")).as_bytes());
         }
         "fail" => std::process::exit(7),
+        "fail-after-files" => {
+            while args[2..].iter().any(|path| !Path::new(path).exists()) {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            std::process::exit(7);
+        }
         _ => panic!("unknown fixture mode"),
     }
 }
