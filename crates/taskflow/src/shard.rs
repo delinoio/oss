@@ -432,6 +432,16 @@ pub async fn inventory(
                 let Some(binary) = artifact["executable"].as_str() else {
                     continue;
                 };
+                let package = metadata["packages"]
+                    .as_array()
+                    .context("Cargo packages missing")?
+                    .iter()
+                    .find(|package| package["id"] == artifact["package_id"])
+                    .context("test artifact package missing from metadata")?;
+                let package_name = package["name"].as_str().context("package name missing")?;
+                let version = package["version"]
+                    .as_str()
+                    .context("package version missing")?;
                 let target = artifact
                     .pointer("/target/name")
                     .and_then(Value::as_str)
@@ -459,7 +469,7 @@ pub async fn inventory(
                 for line in std::str::from_utf8(&names)?.lines() {
                     if let Some(name) = line.strip_suffix(": test") {
                         let unit = format!(
-                            "{}:{target}::{name}",
+                            "{package_name}@{version}:{}:{target}::{name}",
                             kinds
                                 .iter()
                                 .filter_map(Value::as_str)

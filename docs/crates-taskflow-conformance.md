@@ -105,3 +105,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 - [Project index](project-taskflow.md)
 - [Engine contract](crates-taskflow-foundation.md)
 - [Issue #898](https://github.com/delinoio/oss/issues/898)
+
+`libtest_ids_distinguish_workspace_packages` executes two Cargo packages with identically named integration targets and tests. Inventory IDs include stable package name/version identity, preserving complete shard accounting without checkout paths.
