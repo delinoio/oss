@@ -37,6 +37,7 @@ Hook write/sync/close or ownership-save failures remove the newly created file a
 Project-scoped agent install/uninstall resolves `--repo` to the registered worktree root, including when invoked from a nested directory or linked worktree. User-scoped integration paths remain independent of the current repository.
 
 `run-and-wait` submits a fresh attempt when the latest compatible result is terminal but nonpassing, including expired or missing evidence. It waits for an existing unfinished attempt without duplicating it; `wait` never submits work.
+The shared pre-push service selects that attempt, evaluates retained passing evidence and inserts any necessary replacement inside one immediate SQLite transaction. Concurrent clients, including separate database connections, reuse the same pending attempt for the repository/commit/fingerprint. The transaction ends before starting workers or waiting. Ordinary explicit run/rerun requests still create independent attempts.
 
 Cancellation of an unstarted queued run acquires its worker ownership lock and atomically completes the run and unfinished checks without launching a worker. If a worker owns the run or any process may have started, cancellation remains a request until that owner reconciles descendants.
 

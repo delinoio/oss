@@ -207,6 +207,15 @@ func (s *Store) InsertRun(r *Run, auto string) (string, error) {
 	return r.ID, err
 }
 func (s *Store) Run(id string) (Run, error) {
+	return loadRun(s.DB, id)
+}
+
+type runReader interface {
+	QueryRow(string, ...any) *sql.Row
+	Query(string, ...any) (*sql.Rows, error)
+}
+
+func loadRun(db runReader, id string) (Run, error) {
 	r := Run{}
 	if !ValidID(id) {
 		return r, E("invalid-run-id", "expected canonical UUID v7", 2)
@@ -215,7 +224,7 @@ func (s *Store) Run(id string) (Run, error) {
 	var ack sql.NullString
 	var state State
 	var seq int64
-	err := s.DB.QueryRow("SELECT record,seq,state,ack FROM runs WHERE id=?", id).Scan(&b, &seq, &state, &ack)
+	err := db.QueryRow("SELECT record,seq,state,ack FROM runs WHERE id=?", id).Scan(&b, &seq, &state, &ack)
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, E("run-not-found", "run not found", 2)
 	}
@@ -231,7 +240,7 @@ func (s *Store) Run(id string) (Run, error) {
 		t, _ := time.Parse(time.RFC3339Nano, ack.String)
 		r.AcknowledgedAt = &t
 	}
-	rows, err := s.DB.Query("SELECT record,state FROM checks WHERE run_id=? ORDER BY name", id)
+	rows, err := db.Query("SELECT record,state FROM checks WHERE run_id=? ORDER BY name", id)
 	if err != nil {
 		return r, err
 	}
