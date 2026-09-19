@@ -49,7 +49,7 @@ func logicalCount(s Snapshot, name string) int {
 	return n
 }
 func eligible(s Snapshot, p *PoolState) bool {
-	if s.Paused || s.Stopping || p.Phase != Ready || p.ScaleSetID == 0 || p.Session == "" {
+	if p == nil || s.Paused || s.Stopping || p.Phase != Ready || p.ScaleSetID == 0 || p.Session == "" {
 		return false
 	}
 	for _, old := range s.Pools {

@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/actions/scaleset"
 )
 
 type initializingRemote struct {
@@ -278,5 +280,45 @@ func TestLateSessionAfterRetirementAndPruningIsClosed(t *testing.T) {
 	m.wg.Wait()
 	if len(m.remotes) != 0 || len(m.poolLocks) != 0 || len(m.poolLoops) != 0 || m.Store.View().Pools[pool] != nil {
 		t.Fatal("late session resurrected a retired generation")
+	}
+}
+
+func TestFinalSessionMessageEligibilityAfterRetirementAndPruning(t *testing.T) {
+	m, _, remote, _, pool := testManager(t)
+	if err := m.Store.Update(func(s *Snapshot) error {
+		other := *s.Pools[pool]
+		other.ID, other.Spec.Name, other.Spec.ScaleSet = "other", "other", "other"
+		other.Demand = 1
+		s.Pools[other.ID] = &other
+		s.Pools[pool].Phase = Draining
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	msg := &scaleset.RunnerScaleSetMessage{MessageID: 7, Statistics: &scaleset.RunnerScaleSetStatistic{TotalAssignedJobs: 0}}
+	if err := m.Store.Update(func(s *Snapshot) error { return applyMessage(s, pool, remote.session.ID(), msg) }); err != nil {
+		t.Fatal(err)
+	}
+	if m.Store.View().Pools[pool].LastMessage != msg.MessageID {
+		t.Fatal("final message was not durably processed")
+	}
+	// Reproduce retirement/pruning between listen's message commit and its
+	// fresh eligibility lookup, without a timing-dependent goroutine race.
+	m.retirePool(context.Background(), pool)
+	if err := m.Store.Prune(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	current := m.Store.View()
+	if current.Pools[pool] != nil {
+		t.Fatal("retired pool was not pruned")
+	}
+	if eligible(current, current.Pools[pool]) {
+		t.Fatal("pruned session can still acquire offered jobs")
+	}
+	if !eligible(current, current.Pools["other"]) {
+		t.Fatal("retirement interrupted an unrelated pool")
+	}
+	if got := Schedule(current); len(got) != 1 || got[0] != "other" {
+		t.Fatalf("unrelated demand stopped after retirement: %v", got)
 	}
 }
