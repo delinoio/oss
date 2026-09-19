@@ -927,14 +927,12 @@ async fn publish(
         // its response is lost, so cancellation cannot retract this completion.
         persist(&graph.workspace.root, receipt)?;
         if let (Some(remote), Some(digest)) = (remote, staged) {
-            if !cancel.is_cancelled() {
-                if remote.commit(&artifact.key, &digest).await.is_err() {
-                    tracing::warn!(
-                        task = id,
-                        code = "remote-write-failed",
-                        "Remote cache publication failed"
-                    );
-                }
+            if !cancel.is_cancelled() && remote.commit(&artifact.key, &digest).await.is_err() {
+                tracing::warn!(
+                    task = id,
+                    code = "remote-write-failed",
+                    "Remote cache publication failed"
+                );
             }
         }
         return Ok(());
