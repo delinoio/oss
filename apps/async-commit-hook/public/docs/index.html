@@ -252,9 +252,11 @@ ach ack --run &lt;id&gt;</pre
           Every actual branch tip in Git's pre-push input is checked, including
           multi-ref and non-HEAD pushes. Tags and deletions are excluded. The
           policy is block (reject incomplete immediately), wait (wait only for
-          an existing unfinished attempt), or run-and-wait (submit missing work
-          and wait). Failed completed attempts remain failures; rerun
-          explicitly. A missing result or expired wait never permits a push.
+          an existing unfinished attempt), or run-and-wait (submit a new attempt
+          when none exists or the latest completed attempt does not pass, then
+          wait). Run-and-wait reuses an unfinished attempt and renews failed,
+          cancelled, interrupted, expired, or missing evidence. Block and wait
+          never submit work. A missing result or expired wait never permits a push.
         </p>
       </section>
       <section id="commands">
