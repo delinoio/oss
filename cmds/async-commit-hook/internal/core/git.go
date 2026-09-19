@@ -71,11 +71,31 @@ func ResolveCommit(ctx context.Context, path, ref string) (string, error) {
 	return v, nil
 }
 func CommitConfig(ctx context.Context, path, sha string) (Project, error) {
-	b, err := Git(ctx, path, "show", sha+":"+ProjectFile)
-	if err != nil {
+	unavailable := func() (Project, error) {
 		return Project{}, E("config-unavailable", "commit does not contain "+ProjectFile+"; commit the configuration before running", 2)
 	}
-	return ParseProject([]byte(b))
+	cmd := gitCommand(ctx, path, "cat-file", "blob", sha+":"+ProjectFile)
+	output, err := cmd.StdoutPipe()
+	if err != nil {
+		return unavailable()
+	}
+	if err = cmd.Start(); err != nil {
+		return unavailable()
+	}
+	// Enforce the parser's byte limit before buffering an arbitrary Git blob.
+	// One extra byte distinguishes an exact-limit configuration from overflow.
+	b, readErr := io.ReadAll(io.LimitReader(output, maxProjectConfigBytes+1))
+	if readErr != nil || len(b) > maxProjectConfigBytes {
+		_ = cmd.Process.Kill()
+	}
+	waitErr := cmd.Wait()
+	if len(b) > maxProjectConfigBytes {
+		return ParseProject(b)
+	}
+	if readErr != nil || waitErr != nil {
+		return unavailable()
+	}
+	return ParseProject(b)
 }
 
 type treeEntry struct{ Mode, OID, Path string }

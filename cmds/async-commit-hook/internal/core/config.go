@@ -118,9 +118,11 @@ func ReadPersonal(paths Paths) (Personal, error) {
 var checkName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,127}$`)
 var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
+const maxProjectConfigBytes = 1024 * 1024
+
 func ParseProject(b []byte) (Project, error) {
 	p := Project{}
-	if len(b) > 1024*1024 {
+	if len(b) > maxProjectConfigBytes {
 		return p, E("invalid-config", "project configuration exceeds 1 MiB", 2)
 	}
 	if err := toml.NewDecoder(strings.NewReader(string(b))).DisallowUnknownFields().Decode(&p); err != nil {
