@@ -45,9 +45,12 @@ pub struct Workspace {
     pub generation: String,
 }
 
-pub fn locate_root(start: &Path) -> Result<PathBuf> {
+pub async fn locate_root(start: &Path) -> Result<PathBuf> {
     let start = start.canonicalize()?;
     let mut nearest = None;
+    let mut cargo_root = None;
+    let mut cargo_probed = false;
+    let mut cargo_workspace = false;
     for directory in start.ancestors() {
         let configuration = directory.join("taskflow.yml");
         if configuration.is_file() {
@@ -59,11 +62,36 @@ pub fn locate_root(start: &Path) -> Result<PathBuf> {
         if directory.join("pnpm-workspace.yaml").exists() || directory.join("go.work").exists() {
             return Ok(directory.to_path_buf());
         }
+        if !cargo_probed && directory.join("Cargo.toml").is_file() {
+            cargo_probed = true;
+            // Cargo owns membership (including exclusions and nested standalone
+            // packages). Locate the workspace without resolving dependencies.
+            let manifest = output_tool(
+                directory,
+                &[
+                    "cargo",
+                    "locate-project",
+                    "--workspace",
+                    "--message-format=plain",
+                    "--offline",
+                ],
+                &[],
+            )
+            .await?;
+            let manifest = Path::new(std::str::from_utf8(&manifest)?.trim()).canonicalize()?;
+            cargo_root = manifest.parent().map(Path::to_path_buf);
+            cargo_workspace = cargo_root.as_deref() != Some(directory);
+        }
+        if cargo_workspace && cargo_root.as_deref() == Some(directory) {
+            return Ok(directory.to_path_buf());
+        }
         if directory.join(".git").exists() {
-            return Ok(nearest.unwrap_or_else(|| directory.to_path_buf()));
+            return Ok(nearest
+                .or(cargo_root)
+                .unwrap_or_else(|| directory.to_path_buf()));
         }
     }
-    Ok(nearest.unwrap_or(start))
+    Ok(nearest.or(cargo_root).unwrap_or(start))
 }
 
 async fn cargo_platforms(

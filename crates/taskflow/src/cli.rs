@@ -254,7 +254,7 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
     }
     let root = match &cli.root {
         Some(root) => root.canonicalize()?,
-        None => discover::locate_root(&std::env::current_dir()?)?,
+        None => discover::locate_root(&std::env::current_dir()?).await?,
     };
     if let Action::Ci { command } = &cli.command {
         let value = match command {

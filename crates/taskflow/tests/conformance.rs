@@ -2452,3 +2452,73 @@ async fn generic_shard_inventory_and_execution_use_the_configured_shell() {
     assert_eq!(inventory.tests.len(), 3);
     assert!(shard::aggregate(&inventory, 2, &reports).unwrap());
 }
+
+#[tokio::test]
+async fn cargo_member_commands_discover_the_implicit_workspace_root() {
+    let directory = fixture(
+        json!({"root":{"command":command(&["version"]),"input":[],"dependsOn":["a#build"]}}),
+    );
+    profile(directory.path(), &["root"]);
+    std::fs::create_dir(directory.path().join(".git")).unwrap();
+    files::atomic_write(
+        &directory.path().join("Cargo.toml"),
+        b"[workspace]\nmembers=['a','b']\nexclude=['standalone']\nresolver='2'\n",
+    )
+    .unwrap();
+    for name in ["a", "b", "standalone"] {
+        let manifest = format!(
+            "[package]\nname='{name}'\nversion='0.1.0'\nedition='2021'\n{}",
+            if name == "a" {
+                "[dependencies]\nb={path='../b'}\n"
+            } else {
+                ""
+            }
+        );
+        files::atomic_write(
+            &directory.path().join(name).join("Cargo.toml"),
+            manifest.as_bytes(),
+        )
+        .unwrap();
+        files::atomic_write(
+            &directory.path().join(name).join("src/lib.rs"),
+            b"pub fn sample() {}\n",
+        )
+        .unwrap();
+        files::atomic_write(&directory.path().join(name).join("taskflow.yml"), serde_yaml::to_string(&json!({"version":1,"project":name,"tasks":{"build":{"command":command(&["version"]),"input":[],"dependsOn":[{"task":"build","from":"dependencies"}]}}})).unwrap().as_bytes()).unwrap();
+    }
+    taskflow::discover::output_tool(
+        directory.path(),
+        &["cargo", "generate-lockfile", "--offline"],
+        &[],
+    )
+    .await
+    .unwrap();
+    let member = directory.path().join("a");
+    assert_eq!(
+        taskflow::discover::locate_root(&member.join("src"))
+            .await
+            .unwrap(),
+        directory.path().canonicalize().unwrap()
+    );
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+        .current_dir(&member)
+        .args(["--json", "start"])
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let result: runner::RunResult = serde_json::from_slice(&result.stdout).unwrap();
+    assert!(result.results.contains_key("app#root"));
+    assert!(result.results.contains_key("b#build"));
+    let standalone = directory.path().join("standalone");
+    assert_eq!(
+        taskflow::discover::locate_root(&standalone.join("src"))
+            .await
+            .unwrap(),
+        standalone.canonicalize().unwrap()
+    );
+}
