@@ -179,3 +179,8 @@ Four additional incoming-head reviews were first visible in the final inventory.
 `TestGoReportLargeRepeatedOutputUsesBoundedTailAllocations` parses 50,000 output events for one test, verifies its exact chronological tail, and rejects allocation growth above a generous 256 MiB budget (the old implementation copies multiple GiB). `TestReportOutputTailWrapAndOversizedEvents` covers oversized chunks, wraparound, Unicode bytes and the 64 KiB allocation bound.
 
 `TestRetentionAgeOverflowRejectedWithoutDeletingEvidence` rejects negative, first-overflow, million-day and maximum-int inputs through both personal configuration and dry/live pruning. It verifies unchanged run records and retained bytes, and accepts zero/unlimited and the maximum safe day boundary.
+
+
+### Final fourth-pass verification
+
+All five inventoried review findings are repaired: Unix ownership (`PRRT_kwDORRAKg86j9n3x`), environment secrecy conflicts (`PRRT_kwDORRAKg86j9zOj`), commit-subject transport (`PRRT_kwDORRAKg86j9zOq`), Go report tail allocation (`PRRT_kwDORRAKg86j9zOs`), and retention overflow (`PRRT_kwDORRAKg86j9zOx`). The independent Windows fixture watchdog repair is also included. After the four late-arriving findings, the complete async-commit-hook race suite, root serial Go suite, root Go vet, app-directory frontend tests, and all six unsigned archives passed again. Final archives are under `/tmp/ach-pr901-repair4-all-findings-release`. The prior artifact directories record intermediate verification only. New hosted CI results are not claimed; the one-shot repair workflow does not poll after its final inventory. Version remains `0.1.0`, the PR stays non-draft, and no publication occurred.
