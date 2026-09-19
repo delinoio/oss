@@ -86,6 +86,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   const [error, setError] = useState<RealqaFeedback | null>(null);
   const [previewRequest, setPreviewRequest] = useState<FloatingPreviewRequest | null>(null);
   const [captureDialog, setCaptureDialog] = useState<CaptureActionId | null>(null);
+  const [submissionOpen, setSubmissionOpen] = useState(false);
   const [captureStatus, setCaptureStatus] = useState<{ topology: readonly CaptureDisplay[]; shadowRemovalSupported: boolean } | null>(null);
   const [options, setOptions] = useState<CaptureOptions>({ delaySeconds: 0, includePointer: false, removeShadow: false });
   const lastRequested = useRef<number | null>(null);
@@ -103,6 +104,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   const previewActivationNeedsFocusFallback = useRef(false);
   const inSheetPreview = useRef<HTMLElement | null>(null);
   const editorPreviewFallback = useRef<HTMLButtonElement | null>(null);
+  const submissionFocusFallback = useRef<HTMLInputElement | null>(null);
   const paletteWasOpen = useRef(false);
   const previewSequence = useRef(0);
   const resetGeneration = useRef(0);
@@ -234,6 +236,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     if (active) return;
     draftOpenRequest.current += 1;
     setSelected(null);
+    setSubmissionOpen(false);
     if (!captureInFlight.current) dismissCaptureDialog();
   }, [active, dismissCaptureDialog]);
 
@@ -260,6 +263,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     setError(null);
     setPreviewRequest(null);
     setCaptureDialog(null);
+    setSubmissionOpen(false);
     setCaptureStatus(null);
     setOptions({ delaySeconds: 0, includePointer: false, removeShadow: false });
   }, []);
@@ -399,7 +403,11 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     }
     if (!paletteWasOpen.current) return;
     paletteWasOpen.current = false;
-    const focusFallback = captureDialog ? captureDialogFocusFallback.current : selected ? editorPreviewFallback.current : null;
+    const focusFallback = captureDialog
+      ? captureDialogFocusFallback.current
+      : submissionOpen
+        ? submissionFocusFallback.current
+        : selected ? editorPreviewFallback.current : null;
     if (!focusFallback) return;
     let deferredRecovery = 0;
     const recovery = requestAnimationFrame(() => {
@@ -411,7 +419,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       cancelAnimationFrame(recovery);
       cancelAnimationFrame(deferredRecovery);
     };
-  }, [captureDialog, paletteOpen, selected]);
+  }, [captureDialog, paletteOpen, selected, submissionOpen]);
   useEffect(() => {
     const key = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -458,6 +466,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
   };
   const closeEditor = () => {
     const selectedDraftId = selected?.id;
+    setSubmissionOpen(false);
     setSelected(null);
     if (selectedDraftId && captureOriginatingDraftId.current === selectedDraftId) cancelInFlightCapture();
   };
@@ -489,7 +498,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
         {!selected && !captureDialog && <CaptureFeedback status={status} error={error} />}
         <DraftList />
       </div>
-      {selected && <CaptureEditor key={selected.id} draft={selected} previewImage={!captureDialog && !paletteOpen ? previewImage : null} previewRef={inSheetPreview} previewFocusFallbackRef={editorPreviewFallback} returnFocusRef={draftEditorOpener} restoreFocus onPreviewOpen={openPreview} />}
+      {selected && <CaptureEditor key={selected.id} draft={selected} previewImage={!captureDialog && !paletteOpen ? previewImage : null} previewRef={inSheetPreview} previewFocusFallbackRef={editorPreviewFallback} returnFocusRef={draftEditorOpener} restoreFocus onPreviewOpen={openPreview} submissionOpen={submissionOpen} onSubmissionOpenChange={setSubmissionOpen} submissionFocusFallbackRef={submissionFocusFallback} />}
       {captureDialog && <CaptureDialog key={captureDialog} action={captureDialog} status={captureStatus} options={options} onOptions={setOptions} onCapture={completeCapture} onClose={cancelCapture} focusRef={captureDialogFocusFallback} />}
     </>}
     {preview && previewImage && (!active || !selected) && !captureDialog && !paletteOpen && <aside className="floating-capture-preview" aria-label={copy.floatingPreview}>
@@ -571,6 +580,7 @@ function CaptureDialog({ action, status, options, onOptions, onCapture, onClose,
   const first = status?.topology[0];
   const [mode, setMode] = useState<"region" | "window" | "display" | "active-window" | "all-displays">("region");
   const [optionShadow, setOptionShadow] = useState(false);
+  const cancelRef = useRef<HTMLButtonElement>(null);
   const [rect, setRect] = useState<CaptureRect>(() => ({ x: first?.logicalBounds.x ?? 0, y: first?.logicalBounds.y ?? 0, width: Math.min(640, first?.logicalBounds.width ?? 640), height: Math.min(480, first?.logicalBounds.height ?? 480) }));
   const updateRect = (key: keyof CaptureRect, value: string) => setRect((current) => ({ ...current, [key]: Number(value) }));
   const regionValid = captureRegionValid(rect);
@@ -578,6 +588,9 @@ function CaptureDialog({ action, status, options, onOptions, onCapture, onClose,
   const submitAction = mode === "display" ? ShortcutActionId.CaptureDisplay : mode === "active-window" ? ShortcutActionId.CaptureActiveWindow : mode === "all-displays" ? ShortcutActionId.CaptureAllDisplays : action;
   const submit = () => {
     if (mode === "region" && !regionValid) return;
+    // Capture now is disabled while native capture is pending; move focus first
+    // so CEF cannot leave the active modal when it disables this control.
+    cancelRef.current?.focus();
     void onCapture(submitAction, { ...options, removeShadow: options.removeShadow || optionShadow, selectionWindow: mode === "window", ...(mode === "region" ? { selection: rect } : {}) });
   };
   useEffect(() => {
@@ -600,7 +613,7 @@ function CaptureDialog({ action, status, options, onOptions, onCapture, onClose,
     <label>{copy.captureTimer}<select value={options.delaySeconds ?? 0} onChange={(event) => onOptions({ ...options, delaySeconds: Number(event.target.value) as 0 | 5 | 10 })}><option value="0">{copy.captureTimerOff}</option><option value="5">{copy.captureTimerFive}</option><option value="10">{copy.captureTimerTen}</option></select></label>
     <label className="check"><input type="checkbox" checked={options.includePointer ?? false} onChange={(event) => onOptions({ ...options, includePointer: event.target.checked })} />{copy.capturePointer}</label>
     {status?.shadowRemovalSupported && <label className="check"><input type="checkbox" checked={(options.removeShadow ?? false) || optionShadow} onChange={(event) => onOptions({ ...options, removeShadow: event.target.checked })} />{copy.captureShadow}</label>}
-    <div className="actions"><Button ref={focusRef} autoFocus variant="primary" disabled={busy || (mode === "region" && !regionValid)} onClick={submit}>{copy.captureNow}</Button><Button onClick={onClose}>{copy.captureCancel}</Button></div>
+    <div className="actions"><Button ref={focusRef} autoFocus variant="primary" disabled={busy || (mode === "region" && !regionValid)} onClick={submit}>{copy.captureNow}</Button><Button ref={cancelRef} onClick={onClose}>{copy.captureCancel}</Button></div>
   </div></Dialog>;
 }
 
@@ -648,7 +661,7 @@ function RegionPicker({ displays, value, onChange, label }: { readonly displays:
   </svg>;
 }
 
-function CaptureEditor({ draft, previewImage, previewRef, previewFocusFallbackRef, returnFocusRef, restoreFocus, onPreviewOpen }: { readonly draft: CaptureDraft; readonly previewImage: CaptureDraftImage | null; readonly previewRef: RefObject<HTMLElement | null>; readonly previewFocusFallbackRef: RefObject<HTMLButtonElement | null>; readonly returnFocusRef: RefObject<HTMLElement | null>; readonly restoreFocus: boolean; readonly onPreviewOpen: () => void }) {
+function CaptureEditor({ draft, previewImage, previewRef, previewFocusFallbackRef, returnFocusRef, restoreFocus, onPreviewOpen, submissionOpen, onSubmissionOpenChange, submissionFocusFallbackRef }: { readonly draft: CaptureDraft; readonly previewImage: CaptureDraftImage | null; readonly previewRef: RefObject<HTMLElement | null>; readonly previewFocusFallbackRef: RefObject<HTMLButtonElement | null>; readonly returnFocusRef: RefObject<HTMLElement | null>; readonly restoreFocus: boolean; readonly onPreviewOpen: () => void; readonly submissionOpen: boolean; readonly onSubmissionOpenChange: (open: boolean) => void; readonly submissionFocusFallbackRef: RefObject<HTMLInputElement | null> }) {
   const { state: { busy, status, error }, actions, meta: { bridge, copy } } = useRealqa();
   const [imageId, setImageId] = useState(draft.images[0]?.id ?? "");
   const [tool, setTool] = useState<EditorTool>("arrow");
@@ -659,7 +672,6 @@ function CaptureEditor({ draft, previewImage, previewRef, previewFocusFallbackRe
   const [coordinates, setCoordinates] = useState<CaptureRect>({ x: 0, y: 0, width: 100, height: 100 });
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
-  const [submissionOpen, setSubmissionOpen] = useState(false);
   const submissionTrigger = useRef<HTMLButtonElement>(null);
   const imageSelectorControls = useRef(new Map<string, HTMLButtonElement>());
   const imageRemovalControls = useRef(new Map<string, HTMLButtonElement>());
@@ -798,7 +810,7 @@ function CaptureEditor({ draft, previewImage, previewRef, previewFocusFallbackRe
     if (target >= 0 && target < draft.images.length) void mutate({ kind: "move-image", imageId: draft.images[index].id, toIndex: target });
   };
   const closeSubmission = () => {
-    setSubmissionOpen(false);
+    onSubmissionOpenChange(false);
     requestAnimationFrame(() => submissionTrigger.current?.focus());
   };
   const confirmCreated = async (expectedRevision: number) => {
@@ -823,10 +835,10 @@ function CaptureEditor({ draft, previewImage, previewRef, previewFocusFallbackRe
         if (document.activeElement === control) focusImageSelector(current.images, active.id);
       })} />
       <Button variant="primary" disabled={busy} onClick={() => void flatten()}>{copy.editorFlatten}</Button>
-      <Button ref={submissionTrigger} variant="primary" disabled={busy} onClick={() => setSubmissionOpen(true)}>{copy.issueSubmit}</Button>
+      <Button ref={submissionTrigger} variant="primary" disabled={busy} onClick={() => onSubmissionOpenChange(true)}>{copy.issueSubmit}</Button>
       {message && (failed ? <StatePanel eyebrow={copy.error} title={copy.realqaSaveTitle} summary={message} headingLevel={3} tone="danger" role="alert" /> : <div role="status"><StatusBadge tone="success">{message}</StatusBadge></div>)}
     </aside></div>
-    {submissionOpen && <RealqaSubmissionModal draft={draft} bridge={bridge} copy={copy} onClose={closeSubmission} onConfirmed={confirmCreated} />}
+    {submissionOpen && <RealqaSubmissionModal draft={draft} bridge={bridge} copy={copy} onClose={closeSubmission} onConfirmed={confirmCreated} initialFocusRef={submissionFocusFallbackRef} />}
   </section></Sheet>;
 }
 

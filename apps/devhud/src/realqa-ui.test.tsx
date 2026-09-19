@@ -10,7 +10,7 @@ import { RealqaSurface, type RealqaController } from "./realqa-ui";
 import { ShortcutActionId } from "./shortcuts";
 
 vi.mock("./realqa-submission-ui.tsx", () => ({
-  RealqaSubmissionModal: ({ draft, onConfirmed }: { readonly draft: CaptureDraft; readonly onConfirmed: (expectedRevision: number) => Promise<void> }) => <button onClick={() => void onConfirmed(draft.revision)}>confirm fixture issue</button>,
+  RealqaSubmissionModal: ({ draft, onConfirmed, initialFocusRef }: { readonly draft: CaptureDraft; readonly onConfirmed: (expectedRevision: number) => Promise<void>; readonly initialFocusRef?: { current: HTMLInputElement | null } }) => <><input ref={initialFocusRef} aria-label="fixture issue title" /><button onClick={() => void onConfirmed(draft.revision)}>confirm fixture issue</button></>,
 }));
 
 const draft: CaptureDraft = {
@@ -144,6 +144,20 @@ describe("RealQA capture and editor", () => {
     await waitFor(() => expect(document.activeElement).toBe(captureNow));
     fireEvent.keyDown(captureNow, { key: "Tab" });
     expect(picker.contains(document.activeElement)).toBe(true);
+  });
+
+  it("returns palette focus to an open issue submission dialog", async () => {
+    const { bridge } = bridgeWith();
+    const view = render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    await openEditor();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.issueSubmit }));
+    const title = await screen.findByLabelText("fixture issue title");
+
+    view.rerender(<RealqaSurface bridge={bridge} copy={messages.en} paletteOpen />);
+    screen.getByRole("button", { name: messages.en.captureDisplay }).focus();
+    view.rerender(<RealqaSurface bridge={bridge} copy={messages.en} paletteOpen={false} />);
+
+    await waitFor(() => expect(document.activeElement).toBe(title));
   });
 
   it("starts append captures from the editor sheet", async () => {
@@ -462,6 +476,10 @@ describe("RealQA capture and editor", () => {
     expect(screen.getByRole("radio", { name: messages.en.captureWindowMode })).toHaveProperty("checked", true);
     fireEvent.click(screen.getByRole("button", { name: messages.en.captureNow }));
     await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "capture.start" })));
+    const cancel = screen.getByRole("button", { name: messages.en.captureCancel });
+    expect(document.activeElement).toBe(cancel);
+    fireEvent.keyDown(cancel, { key: "Tab" });
+    expect(dialog.contains(document.activeElement)).toBe(true);
     fireEvent.keyDown(dialog, { key: "Escape" });
     await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "capture.cancel" }));
     expect(screen.queryByRole("dialog")).toBeNull();

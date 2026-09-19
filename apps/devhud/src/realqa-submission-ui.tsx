@@ -1,6 +1,6 @@
 import { UploadContentType, UploadQuery } from "@delinoio/devhud-api-client";
 import { useMutation } from "@connectrpc/connect-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { uuidV7 } from "./diagnostics.ts";
 import type { Copy } from "./localization.ts";
 import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, issueMarker, readGitHubCredential, type GitHubProvider, type GitHubRepositoryRef } from "./github-provider.ts";
@@ -18,9 +18,10 @@ interface SubmissionModalProps {
   readonly onClose: () => void;
   readonly onConfirmed: (expectedRevision: number) => Promise<void>;
   readonly provider?: GitHubProvider;
+  readonly initialFocusRef?: RefObject<HTMLInputElement | null>;
 }
 
-export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirmed, provider: injectedProvider }: SubmissionModalProps) {
+export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirmed, provider: injectedProvider, initialFocusRef }: SubmissionModalProps) {
   const identity = useIdentitySettings();
   const createUpload = useMutation(UploadQuery.createUpload);
   const finalizeUpload = useMutation(UploadQuery.finalizeUpload);
@@ -47,7 +48,8 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
   const [createdUrl, setCreatedUrl] = useState<string | null>(null);
   const [cleanupPending, setCleanupPending] = useState(false);
   const [pendingUploadCleanupIds, setPendingUploadCleanupIds] = useState<readonly string[]>([]);
-  const titleInput = useRef<HTMLInputElement>(null);
+  const localTitleInput = useRef<HTMLInputElement>(null);
+  const titleInput = initialFocusRef ?? localTitleInput;
   const submittedRevision = useRef<number | null>(null);
   const selectedRepository = repositories.find((entry) => repositoryKeyFor(entry) === repositoryKey) ?? null;
   const selectedProfile = identity.settings.github.profiles.find((entry) => entry.id === profileRef) ?? null;
