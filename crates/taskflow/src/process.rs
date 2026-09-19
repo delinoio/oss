@@ -11,7 +11,30 @@ use crate::config::Command;
 
 tokio::task_local! {
     pub static CANCELLATION: CancellationToken;
+    pub(crate) static DEADLINE: Option<tokio::time::Instant>;
 }
+
+pub(crate) fn remaining_timeout(limit: Option<Duration>) -> Option<Duration> {
+    let remaining = DEADLINE
+        .try_with(|deadline| {
+            deadline.map(|d| d.saturating_duration_since(tokio::time::Instant::now()))
+        })
+        .ok()
+        .flatten();
+    match (limit, remaining) {
+        (Some(limit), Some(remaining)) => Some(limit.min(remaining)),
+        (limit, remaining) => limit.or(remaining),
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct TimedOut;
+impl std::fmt::Display for TimedOut {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("task timeout elapsed")
+    }
+}
+impl std::error::Error for TimedOut {}
 
 pub struct OwnedProcess {
     pub child: Child,
@@ -263,6 +286,9 @@ async fn capture_output(
     if status.cancelled() {
         return Err(Cancelled.into());
     }
+    if status.reason == ExitReason::TimedOut {
+        return Err(TimedOut.into());
+    }
     ensure!(
         status.code == 0,
         "native command failed (exit {})",
@@ -315,12 +341,17 @@ async fn capture_owned(
     if cancel.is_cancelled() {
         return Err(Cancelled.into());
     }
+    if remaining_timeout(None).is_some_and(|remaining| remaining.is_zero()) {
+        return Err(TimedOut.into());
+    }
     let mut child = OwnedProcess::spawn(directory, command, shell, Some(environment))?;
     let stdout = child.child.stdout.take().unwrap();
     let stderr = child.child.stderr.take().unwrap();
     let out = tokio::spawn(read_bounded(stdout));
     let err = tokio::spawn(read_bounded(stderr));
-    let status = child.wait(cancel, Some(Duration::from_secs(120))).await;
+    let status = child
+        .wait(cancel, remaining_timeout(Some(Duration::from_secs(120))))
+        .await;
     let cleanup = if status.is_err() {
         child.terminate().await
     } else {

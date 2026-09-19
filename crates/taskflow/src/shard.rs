@@ -660,7 +660,37 @@ pub async fn execute(
 ) -> Result<Receipt> {
     let task = &graph.tasks[id].task;
     let config = task.shard.as_ref().unwrap();
-    let (mut inventory, commands) = inventory(graph, id, environment, &options.env, cancel).await?;
+    let started = Instant::now();
+    let deadline = task
+        .timeout
+        .as_deref()
+        .map(crate::config::duration)
+        .transpose()?
+        .map(|limit| tokio::time::Instant::now() + limit);
+    let listed = process::DEADLINE
+        .scope(
+            deadline,
+            inventory(graph, id, environment, &options.env, cancel),
+        )
+        .await;
+    let (mut inventory, commands) = match listed {
+        Err(error) if error.is::<process::TimedOut>() => {
+            return Ok(Receipt {
+                version: 1,
+                task: id.into(),
+                execution: execution.into(),
+                outcome: Outcome::Failed,
+                changed: true,
+                key: key.into(),
+                output: String::new(),
+                causes,
+                duration_ms: started.elapsed().as_millis() as u64,
+                exit_code: 124,
+                diagnostic: Some("task timeout elapsed during inventory".into()),
+            })
+        }
+        listed => listed?,
+    };
     let history_path = graph
         .workspace
         .root
@@ -696,7 +726,6 @@ pub async fn execute(
     } else {
         (0..count).collect()
     };
-    let started = Instant::now();
     let mut all_passed = true;
     let mut termination: Option<ProcessExit> = None;
     for index in indices {
@@ -737,6 +766,7 @@ pub async fn execute(
                     options,
                     cancel,
                     log.clone(),
+                    deadline,
                 )
                 .await?
             };
@@ -783,6 +813,7 @@ pub async fn execute(
                         options,
                         cancel,
                         log.clone(),
+                        deadline,
                     )
                     .await?
                 };
@@ -809,7 +840,15 @@ pub async fn execute(
             &serde_json::to_vec(&report)?,
         )?;
     }
-    if options.shard.is_none() && all_passed && !cancel.is_cancelled() {
+    if termination.is_none()
+        && deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline)
+    {
+        termination = Some(ProcessExit {
+            code: 124,
+            reason: ExitReason::TimedOut,
+        });
+    }
+    if options.shard.is_none() && all_passed && termination.is_none() && !cancel.is_cancelled() {
         let (_, reports) = read_reports(&root)?;
         let durations: BTreeMap<_, _> = reports
             .into_iter()
@@ -860,67 +899,79 @@ async fn run_unit(
     options: &RunOptions,
     cancel: &CancellationToken,
     log: Arc<Mutex<File>>,
+    deadline: Option<tokio::time::Instant>,
 ) -> Result<ProcessExit> {
-    let task = &graph.tasks[id].task;
-    let directory = &graph.workspace.projects[&graph.tasks[id].project].directory;
-    let mut container = None;
-    let mut command = command.clone();
-    let mut env = env.clone();
-    if task.platform.executor == crate::config::Executor::Docker {
-        let mut unit = task.clone();
-        unit.command = command;
-        unit.platform.ports.clear();
-        env = crate::docker::host_environment(&env);
-        let prepared = crate::docker::prepare(
-            &graph.workspace.root,
-            directory,
-            &unit,
-            &env,
-            &options.env,
-            &uuid::Uuid::now_v7().to_string(),
-            cancel,
-        )
-        .await?;
-        command = prepared.0;
-        container = Some(prepared.1);
-    }
-    let mut child = OwnedProcess::spawn(directory, &command, task.shell.as_deref(), Some(&env))?;
-    let stdout = tokio::spawn(crate::runner::stream_log(
-        child.child.stdout.take().unwrap(),
-        log.clone(),
-        secrets.to_vec(),
-        options.show_secrets,
-        options.quiet,
-    ));
-    let stderr = tokio::spawn(crate::runner::stream_log(
-        child.child.stderr.take().unwrap(),
-        log,
-        secrets.to_vec(),
-        options.show_secrets,
-        options.quiet,
-    ));
-    let waited = child
-        .wait(
-            cancel,
-            task.timeout
-                .as_deref()
-                .map(crate::config::duration)
-                .transpose()?,
-        )
+    let result = process::DEADLINE
+        .scope(deadline, async {
+            let task = &graph.tasks[id].task;
+            let directory = &graph.workspace.projects[&graph.tasks[id].project].directory;
+            let mut container = None;
+            let mut command = command.clone();
+            let mut env = env.clone();
+            if task.platform.executor == crate::config::Executor::Docker {
+                let mut unit = task.clone();
+                unit.command = command;
+                unit.platform.ports.clear();
+                env = crate::docker::host_environment(&env);
+                let prepared = crate::docker::prepare(
+                    &graph.workspace.root,
+                    directory,
+                    &unit,
+                    &env,
+                    &options.env,
+                    &uuid::Uuid::now_v7().to_string(),
+                    cancel,
+                )
+                .await?;
+                command = prepared.0;
+                container = Some(prepared.1);
+            }
+            if process::remaining_timeout(None).is_some_and(|remaining| remaining.is_zero()) {
+                crate::runner::cleanup_container(container).await?;
+                return Ok(ProcessExit {
+                    code: 124,
+                    reason: ExitReason::TimedOut,
+                });
+            }
+            let mut child =
+                OwnedProcess::spawn(directory, &command, task.shell.as_deref(), Some(&env))?;
+            let stdout = tokio::spawn(crate::runner::stream_log(
+                child.child.stdout.take().unwrap(),
+                log.clone(),
+                secrets.to_vec(),
+                options.show_secrets,
+                options.quiet,
+            ));
+            let stderr = tokio::spawn(crate::runner::stream_log(
+                child.child.stderr.take().unwrap(),
+                log,
+                secrets.to_vec(),
+                options.show_secrets,
+                options.quiet,
+            ));
+            let waited = child.wait(cancel, process::remaining_timeout(None)).await;
+            let reaped = if waited.is_err() {
+                child.terminate().await
+            } else {
+                Ok(())
+            };
+            crate::runner::finish_logs_and_container(
+                stdout,
+                stderr,
+                crate::runner::cleanup_container(container),
+            )
+            .await?;
+            reaped?;
+            waited
+        })
         .await;
-    let reaped = if waited.is_err() {
-        child.terminate().await
-    } else {
-        Ok(())
-    };
-    crate::runner::finish_logs_and_container(
-        stdout,
-        stderr,
-        crate::runner::cleanup_container(container),
-    )
-    .await?;
-    reaped?;
-    waited
+    match result {
+        Err(error) if error.is::<process::TimedOut>() => Ok(ProcessExit {
+            code: 124,
+            reason: ExitReason::TimedOut,
+        }),
+        result => result,
+    }
 }
 
 fn unit_status(exit: ProcessExit) -> UnitStatus {

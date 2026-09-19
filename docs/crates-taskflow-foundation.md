@@ -50,7 +50,7 @@ Intervals use monotonic time. Cron uses five fields, IANA zones, UTC by default,
 Cron weekdays use 0 or 7 for Sunday, 1–6 for Monday–Saturday, and named weekdays. Restricted day-of-month and day-of-week fields form a union. Interval and cron decision functions accept explicit times so missed ticks and DST can be tested without sleeping.
 
 ### Shards and CI
-Go top-level tests, Rust libtest items (plus one doctest unit), and Vitest/Jest files are supported inventories. Generic adapters exchange versioned JSON inventory, selected-ID files, and results. Assignment is deterministic and optionally duration-balanced. Missing, duplicate, failed, and cancelled units prevent a false aggregate success.
+Go top-level tests, Rust libtest items (plus one doctest unit), and Vitest/Jest files are supported inventories. Generic adapters exchange versioned JSON inventory, selected-ID files, and results. Assignment is deterministic and optionally duration-balanced. Missing, duplicate, failed, and cancelled units prevent a false aggregate success. One task deadline covers inventory and every selected unit; inventory processes also obey their shorter metadata bound, and expiry awaits owned cleanup before returning code 124.
 
 Explicit shard selection is validated before any prerequisite executes: a nonempty pending plan must include a sharded task, and all pending sharded tasks must declare the requested count. Empty affected CI units and already supplied prerequisite receipts require no shard execution.
 

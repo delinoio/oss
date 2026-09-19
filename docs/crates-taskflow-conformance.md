@@ -227,3 +227,5 @@ Windows native opens explicitly request `FILE_READ_ATTRIBUTES`, the metadata per
 `unix_backslash_paths_cannot_alias_directory_paths` verifies distinct Unix literal-backslash and nested-directory names are rejected before input or output identities can collide.
 
 `captured_output_link_chains_never_leave_the_project` rejects captured and uncached output chains that cross an external prefix before returning to an internal file, while accepting an entirely internal link.
+
+`shard_deadline_includes_inventory_and_all_units` checks slow inventory and cumulative unit duration against a single timeout, with failed complete accounting when inventory succeeded.

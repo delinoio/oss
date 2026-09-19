@@ -4883,3 +4883,27 @@ async fn captured_output_link_chains_never_leave_the_project() {
     assert!(cache::snapshot(project, task).is_ok());
     assert!(cache::output_state(project, task).is_ok());
 }
+
+#[tokio::test]
+async fn shard_deadline_includes_inventory_and_all_units() {
+    for slow_inventory in [true, false] {
+        let root = fixture(
+            json!({"suite":{"command":command(&["version"]),"input":[],"output":[],"timeout":"600ms","shard":{"adapter":"generic","count":3,"list":command(&["delay",if slow_inventory {"3000"} else {"200"},"inventory"]),"run":command(&["delay","250","shard"])}}}),
+        );
+        let g = graph(root.path()).await;
+        let result = tokio::time::timeout(Duration::from_secs(5), run(g, &["suite"]))
+            .await
+            .unwrap();
+        let receipt = &result.results["app#suite"];
+        assert_eq!(receipt.outcome, Outcome::Failed, "{result:?}");
+        assert_eq!(receipt.exit_code, 124, "{result:?}");
+        assert!(receipt.diagnostic.as_ref().unwrap().contains("timeout"));
+        if !slow_inventory {
+            let (inventory, reports) =
+                shard::read_reports(&root.path().join(".taskflow/runs").join(&receipt.execution))
+                    .unwrap();
+            assert_eq!(reports.len(), 3);
+            assert!(!shard::aggregate(&inventory, 3, &reports).unwrap());
+        }
+    }
+}

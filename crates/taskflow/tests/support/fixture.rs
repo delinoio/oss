@@ -74,6 +74,10 @@ fn main() {
         writeln!(log, "{}", args[2]).unwrap();
         args.remove(1);
     }
+    if args[1] == "delay" {
+        std::thread::sleep(Duration::from_millis(args[2].parse().unwrap()));
+        args.drain(1..3);
+    }
     match args[1].as_str() {
         "version" => println!("taskflow-fixture-1"),
         "version-streams" => {
