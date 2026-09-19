@@ -2278,3 +2278,49 @@ async fn input_permission_changes_invalidate_cached_success() {
         assert_eq!(result.results["app#build"].outcome, Outcome::Failed);
     }
 }
+
+#[tokio::test]
+async fn unchanged_metadata_notifications_do_not_cancel_live_work() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    drop(listener);
+    let directory = fixture(
+        json!({"check":{"command":command(&["paced","events",&address,"700"]),"input":[],"watch":{},"overlap":"queue"}}),
+    );
+    profile(directory.path(), &["check"]);
+    let config = directory.path().join("taskflow.yml");
+    let original = std::fs::read(&config).unwrap();
+    let root = directory.path().to_path_buf();
+    let token = CancellationToken::new();
+    let stop = token.clone();
+    let session = tokio::spawn(async move {
+        taskflow::session::start(&root, "default", RunOptions::default(), stop).await
+    });
+    let events = directory.path().join("events");
+    wait_lines(&events, "start", 1).await;
+    for _ in 0..4 {
+        files::atomic_write(&config, &original).unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    wait_lines(&events, "end", 1).await;
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !runner::previous(directory.path(), "app#check")
+            .is_some_and(|receipt| receipt.success())
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    token.cancel();
+    assert!(session.await.unwrap().unwrap().success);
+    let records = std::fs::read_to_string(events).unwrap();
+    assert_eq!(
+        records
+            .lines()
+            .filter(|line| line.starts_with("start"))
+            .count(),
+        1,
+        "{records}"
+    );
+}

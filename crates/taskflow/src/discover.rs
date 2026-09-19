@@ -221,7 +221,23 @@ impl Workspace {
                 ws.metadata_files.insert(project.directory.join(name));
             }
         }
-        let graph_bytes = serde_json::to_vec(&(&ws.projects, &ws.edges, &ws.coverage, &ws.config))?;
+        let metadata_state = ws
+            .metadata_files
+            .iter()
+            .map(|path| {
+                Ok((
+                    crate::files::relative_to(&ws.root, path),
+                    crate::files::file_state(path)?,
+                ))
+            })
+            .collect::<Result<BTreeMap<_, _>>>()?;
+        let graph_bytes = serde_json::to_vec(&(
+            &ws.projects,
+            &ws.edges,
+            &ws.coverage,
+            &ws.config,
+            metadata_state,
+        ))?;
         ws.generation = crate::files::digest(&graph_bytes);
         Ok(ws)
     }

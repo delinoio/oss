@@ -12,7 +12,7 @@
 - Cache link validation follows archive link chains and existing filesystem ancestors before processing parent components; lexical containment alone cannot authorize restoration.
 - Local cache readers, writers, and cleaning share a process-safe cache lock outside the removable cache tree; never hold it during commands or network operations.
 - Every child belongs to a process-tree/container owner; replacement waits for reaping. Tests must assert actual cleanup.
-- Watch invalidation consumes filesystem mutations, never access notifications from metadata discovery or input hashing.
+- Watch invalidation consumes filesystem mutations, never access notifications from metadata discovery or input hashing. Metadata notifications must confirm a changed or invalid graph before cancelling the active generation; identical rewrites preserve live work.
 - Canonicalize watcher roots and event paths before graph matching, including deleted paths through their existing ancestors and Windows path prefixes.
 - Maintain schema freshness and numbered issue #898 conformance scenarios. Report unavailable platform/service evidence accurately.
 - Keep `docs/crates-taskflow-conformance.md`, the native/Docker CI matrices, and their centralized `scripts/ci/job-paths.json` ownership synchronized. CI result bundles must prove complete task, artifact, and shard accounting against the exact plan; secret transport is forbidden for PR jobs.

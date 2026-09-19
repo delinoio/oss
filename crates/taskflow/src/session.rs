@@ -87,13 +87,24 @@ pub async fn start(
         let mut observed = snapshots(&graph, &active_set)?;
         let mut results: BTreeMap<String, Receipt> = bootstrap_results;
         let mut active_tasks = BTreeSet::new();
+        let mut generation_cancel = work_cancel.child_token();
         let mut reload = false;
         let mut invalid = false;
         let mut initial_done = false;
         loop {
             if work_cancel.is_cancelled() { break; }
-            if reload && waves.is_empty() {
-                match Workspace::discover(root).await.map(|ws| ws.select_platform(options.os, options.arch)).and_then(Graph::build) {
+            if reload {
+                // FSEvents can deliver delayed/coalesced metadata notifications.
+                // Confirm a different generation before cancelling healthy work.
+                let next = Workspace::discover(root).await.map(|ws| ws.select_platform(options.os, options.arch)).and_then(Graph::build);
+                let changed = !next.as_ref().is_ok_and(|next| next.workspace.generation == graph.workspace.generation) || invalid;
+                if changed {
+                    generation_cancel.cancel();
+                    while waves.join_next().await.is_some() {}
+                    active_tasks.clear();
+                    generation_cancel = work_cancel.child_token();
+                }
+                match next {
                     Ok(next) => {
                         if next.workspace.generation != graph.workspace.generation || invalid {
                             services.shutdown().await;
@@ -140,7 +151,7 @@ pub async fn start(
                         wave_options.provided = results.iter().filter(|(id, r)| r.success() && !seeds.contains_key(*id)).map(|(id, r)| (id.clone(), r.clone())).collect();
                         active_tasks.extend(selected.clone());
                         let graph = graph.clone();
-                        let token = work_cancel.child_token();
+                        let token = generation_cancel.child_token();
                         waves.spawn(async move { (selected, runner::run_plan(graph, plan, wave_options, token).await) });
                     }
                 }
@@ -165,7 +176,6 @@ pub async fn start(
                                     if path.components().any(|c| c.as_os_str() == ".taskflow") || path.components().any(|c| c.as_os_str().to_string_lossy().starts_with(".taskflow-restore-")) { continue; }
                                     if graph.workspace.metadata_files.contains(&path) || path.file_name().is_some_and(|v| matches!(v.to_str(), Some("taskflow.yml" | "package.json" | "Cargo.toml" | "go.mod" | "go.work" | "pnpm-workspace.yaml"))) {
                                         reload = true;
-                                        for token in options.task_cancellations.lock().unwrap().values() { token.cancel(); }
                                         continue;
                                     }
                                     for id in &active_set {
