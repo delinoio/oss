@@ -44,14 +44,14 @@ impl Redactor {
             value = rule.replace_all(&value, "[redacted]").into_owned();
         }
         for root in &self.temporary {
-            value = value.replace(root, "${temporary}");
+            value = replace_root(value, root, "${temporary}");
         }
-        value = value.replace(&self.root, "${workspace}");
+        value = replace_root(value, &self.root, "${workspace}");
         if let Some(home) = &self.home
             && home != "/"
             && !home.is_empty()
         {
-            value = value.replace(home, "${home}");
+            value = replace_root(value, home, "${home}");
         }
         // Control characters must never control the user's terminal.
         value
@@ -96,5 +96,16 @@ impl Redactor {
     }
 }
 pub fn normalized(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
+    let text = path.to_string_lossy().replace('\\', "/");
+    if let Some(unc) = text.strip_prefix("//?/UNC/") {
+        format!("//{unc}")
+    } else {
+        text.strip_prefix("//?/").unwrap_or(&text).to_owned()
+    }
+}
+fn replace_root(value: String, root: &str, placeholder: &str) -> String {
+    let value = value.replace(root, placeholder);
+    #[cfg(windows)]
+    let value = value.replace(&root.replace('/', "\\"), placeholder);
+    value
 }

@@ -9,7 +9,7 @@ runlens doctor --json
 
 ## macOS
 
-Use a native architecture executable that permits library injection. SIP-protected system executables and interpreters cannot be tracked without changing the requested program. Runlens rejects known protected targets before launch and never substitutes another shell or core utility. Explicitly select an installed injectable tool where appropriate. Rosetta and mixed-architecture execution are excluded. Hardened or otherwise protected programs may prevent collection; incomplete observations cannot pass verification.
+Use a native architecture executable that permits library injection. SIP-protected system executables and interpreters cannot be tracked without changing the requested program. Runlens rejects known protected targets before launch and never substitutes another shell or core utility. Explicitly select an installed injectable tool where appropriate. Rosetta and mixed-architecture execution are excluded. Passive executable inspection rejects restricted segments and restrictive code-signing flags, including hardened runtime and library validation, before launch. This is conservative even when an entitlement might allow injection. Other protection or runtime collection failures remain incomplete and cannot pass verification.
 
 ## Windows
 

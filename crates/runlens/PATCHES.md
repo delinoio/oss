@@ -28,3 +28,13 @@ metadata/source-preparation children share the owned lifecycle implementation.
 Native Windows CI compiles this boundary and integration tests exercise clean,
 repeat, timeout, and lingering-child reaping. Remove the cfg only after the pinned
 Tokio release provides this callback through a stable API with the same ordering.
+
+Windows child creation calls the original CreateProcess function with a temporary
+suspended flag, copies only the tracing payload, injects directly, and resumes
+the original successful child even when optional injection fails. It never
+launches a helper or replacement executable. Injection and DLL hook initialization
+failures set the typed unsupported marker rather than aborting the host process.
+Failed OS thread resumption reaps the suspended child before returning failure.
+Native Windows nested-child and timeout fixtures exercise this boundary. Remove
+this patch when upstream preserves successful child execution, reports collection
+loss, and owns suspended handles under the same constraints.

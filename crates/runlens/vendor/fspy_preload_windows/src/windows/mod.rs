@@ -14,14 +14,13 @@ use fspy_detours_sys::{
 };
 use fspy_shared::windows::PAYLOAD_ID;
 use winapi::{
-    shared::minwindef::{BOOL, DWORD, FALSE, HINSTANCE, TRUE},
+    shared::minwindef::{BOOL, DWORD, HINSTANCE, TRUE},
     um::{
         processthreadsapi::GetCurrentThread,
         winnt::{self},
     },
 };
 use winapi_utils::{ck, ck_long};
-use winsafe::SetLastError;
 
 use crate::windows::detour::AttachContext;
 
@@ -41,11 +40,16 @@ fn dll_main(_hinstance: HINSTANCE, reason: u32) -> winsafe::SysResult<()> {
             // SAFETY: FFI call to find the injected payload by GUID
             let payload_ptr =
                 unsafe { DetourFindPayloadEx(&PAYLOAD_ID, &raw mut payload_len).cast::<u8>() };
-            // SAFETY: creating a static slice from the payload pointer; lifetime is valid for process duration
+            if payload_ptr.is_null() || payload_len == 0 || payload_len > 1024 * 1024 {
+                return Err(winsafe::co::ERROR::INVALID_DATA);
+            }
+            // SAFETY: creating a static slice from the payload pointer; lifetime is valid
+            // for process duration
             let payload_bytes = unsafe {
                 slice::from_raw_parts::<'static, u8>(payload_ptr, payload_len.try_into().unwrap())
             };
-            let client = Client::from_payload_bytes(payload_bytes, fspy_nostd_alloc::pooled_bump());
+            let client = Client::from_payload_bytes(payload_bytes, fspy_nostd_alloc::pooled_bump())
+                .ok_or(winsafe::co::ERROR::INVALID_DATA)?;
             // SAFETY: setting the global client during single-threaded DLL_PROCESS_ATTACH
             unsafe { set_global_client(client) };
 
@@ -90,9 +94,14 @@ fn dll_main(_hinstance: HINSTANCE, reason: u32) -> winsafe::SysResult<()> {
 extern "system" fn DllMain(hinstance: HINSTANCE, reason: u32, _: *mut std::ffi::c_void) -> BOOL {
     match dll_main(hinstance, reason) {
         Ok(()) => TRUE,
-        Err(err) => {
-            SetLastError(err);
-            FALSE
+        Err(_) => {
+            // A collector failure must not abort the host's DLL initialization.
+            // Abort an uncommitted hook transaction and retain only a typed marker.
+            unsafe {
+                fspy_detours_sys::DetourTransactionAbort();
+            }
+            client::report_global_failure();
+            TRUE
         }
     }
 }

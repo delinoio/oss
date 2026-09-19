@@ -166,6 +166,8 @@ pub struct Environment {
     #[serde(deserialize_with = "bounded_text")]
     pub engine_version: String,
     #[serde(deserialize_with = "bounded_optional_text")]
+    pub executable_sha256: Option<String>,
+    #[serde(deserialize_with = "bounded_optional_text")]
     pub source_revision: Option<String>,
     pub working_tree_included: bool,
     #[serde(deserialize_with = "bounded_strings::<_, 1024>")]

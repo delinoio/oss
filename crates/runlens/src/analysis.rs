@@ -25,8 +25,14 @@ pub struct Analysis {
     pub verdict: Option<Verdict>,
     pub findings: Entries<Finding>,
     pub differences: Entries<Difference>,
+    pub environment_differences: Entries<EnvironmentDifference>,
     pub usages: Entries<Usage>,
     pub limitations: Vec<String>,
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EnvironmentDifference {
+    pub left: Environment,
+    pub right: Environment,
 }
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -54,6 +60,7 @@ impl Analysis {
             verdict: None,
             findings: Entries::default(),
             differences: Entries::default(),
+            environment_differences: Entries::default(),
             usages: Entries::default(),
             limitations: vec![
                 "Accesses are attempts. Producer/consumer relationships and conflicts are \
@@ -161,7 +168,15 @@ fn coverage(
         let (path, access) = item?;
         let input = matches(&inputs, &command.inputs, &path);
         let output = matches(&outputs, &command.outputs, &path);
-        if inputs_required && (access.read || access.read_directory) && !input && !output {
+        let existed_before = execution
+            .before
+            .get(&path)?
+            .is_some_and(|state| state.knowledge != Knowledge::Missing);
+        if inputs_required
+            && (access.read || access.read_directory)
+            && !input
+            && (!output || existed_before)
+        {
             result.finding(
                 FindingCode::UndeclaredInput,
                 Classification::Violation,
@@ -182,7 +197,7 @@ fn coverage(
                 vec![evidence(execution, Some(&path), EvidenceSource::Access)],
             )?;
         }
-        if access.unsupported {
+        if access.unsupported || !access.in_scope {
             result.finding(
                 FindingCode::UnknownEvidence,
                 Classification::Unknown,
@@ -206,7 +221,15 @@ fn coverage(
             result.finding(
                 FindingCode::UnknownEvidence,
                 Classification::Unknown,
-                vec![evidence(execution, Some(&path), EvidenceSource::After)],
+                vec![evidence(
+                    execution,
+                    Some(&path),
+                    if execution.after.get(&path)?.is_some() {
+                        EvidenceSource::After
+                    } else {
+                        EvidenceSource::Before
+                    },
+                )],
             )?;
         } else if outputs_required && !output && !ancestor {
             let source = if change == ChangeKind::Deleted {
@@ -393,6 +416,15 @@ pub fn compatible(left: &Execution, right: &Execution) -> bool {
         && left.environment.os_version == right.environment.os_version
         && left.environment.runlens_version == right.environment.runlens_version
         && left.environment.engine_version == right.environment.engine_version
+        && left.environment.executable_sha256.is_some()
+        && left.environment.executable_sha256 == right.environment.executable_sha256
+        && left.environment.os_version.is_some()
+        && !left
+            .command
+            .argv
+            .iter()
+            .chain(right.command.argv.iter())
+            .any(|arg| arg.contains("[redacted]"))
         && left.command.argv == right.command.argv
         && left.command.cwd == right.command.cwd
         && left.environment.environment_names == right.environment.environment_names
@@ -409,7 +441,12 @@ impl std::str::FromStr for PathMap {
         let (from, to) = value
             .split_once('=')
             .ok_or("path mapping must be FROM=TO")?;
-        if from.is_empty() || to.is_empty() || from.contains('\0') || to.contains('\0') {
+        if from.is_empty()
+            || to.is_empty()
+            || from.len() > 32768
+            || to.len() > 32768
+            || from.chars().chain(to.chars()).any(char::is_control)
+        {
             return Err("invalid path mapping".into());
         }
         Ok(Self(
@@ -439,6 +476,17 @@ pub fn compare(left: &Report, right: &Report, mappings: &[PathMap]) -> Result<An
     for (left, right) in left_targets.into_iter().zip(right_targets) {
         quality(&mut result, left)?;
         quality(&mut result, right)?;
+        if serde_json::to_value(&left.environment).map_err(|_| Error::storage())?
+            != serde_json::to_value(&right.environment).map_err(|_| Error::storage())?
+        {
+            result.environment_differences.insert(
+                left.id.to_string(),
+                EnvironmentDifference {
+                    left: left.environment.clone(),
+                    right: right.environment.clone(),
+                },
+            )?;
+        }
         if !compatible(left, right) {
             result.finding(
                 FindingCode::IncomparableEnvironment,

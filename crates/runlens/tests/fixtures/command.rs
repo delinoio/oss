@@ -39,7 +39,46 @@ fn main() {
                 .unwrap();
         }
         "sleep" => std::thread::sleep(Duration::from_secs(60)),
+        "ready-sleep" => {
+            fs::write("child-ready", "ready").unwrap();
+            std::thread::sleep(Duration::from_secs(60));
+        }
         "fail" => std::process::exit(23),
+        "vary-content" | "vary-set" | "vary-permissions" => {
+            fs::create_dir_all("out").unwrap();
+            let cwd = std::env::current_dir().unwrap();
+            let round = cwd.parent().unwrap().file_name().unwrap().to_str().unwrap();
+            let path = if args[0] == "vary-set" {
+                format!("out/{round}")
+            } else {
+                "out/result.txt".into()
+            };
+            fs::write(
+                &path,
+                if args[0] == "vary-content" {
+                    round
+                } else {
+                    "stable"
+                },
+            )
+            .unwrap();
+            #[cfg(unix)]
+            if args[0] == "vary-permissions" {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(
+                    path,
+                    fs::Permissions::from_mode(if round == "round-1" { 0o755 } else { 0o644 }),
+                )
+                .unwrap();
+            }
+        }
+        "benchmark" => {
+            let mut bytes = 0usize;
+            for entry in fs::read_dir("inputs").unwrap() {
+                bytes += fs::read(entry.unwrap().path()).unwrap().len();
+            }
+            std::hint::black_box(bytes);
+        }
         "overflow" => {
             for index in 0..10000 {
                 let _ = fs::metadata(format!("missing-{index}"));

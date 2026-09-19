@@ -348,3 +348,36 @@ impl Drop for State {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn retained_maps_share_one_memory_threshold() {
+        set_memory_limit(256);
+        let mut first = Entries::new(1024 * 1024);
+        let mut second = Entries::new(1024 * 1024);
+        first.insert("first".into(), "a".repeat(150)).unwrap();
+        second.insert("second".into(), "b".repeat(150)).unwrap();
+        assert!(first.spilled() && second.spilled());
+        set_memory_limit(DEFAULT_MEMORY_BYTES);
+    }
+    #[cfg(unix)]
+    #[test]
+    fn index_cleanup_failure_is_observable() {
+        let mut values = Entries::new(0);
+        values.insert("path".into(), true).unwrap();
+        let path = {
+            let state = values.state.lock().unwrap();
+            match &state.storage {
+                Storage::Disk(disk) => disk._file.path().to_owned(),
+                _ => panic!("expected a disk index"),
+            }
+        };
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        drop(values);
+        assert!(crate::temporary::cleanup_failed());
+        std::fs::remove_dir(path).unwrap();
+    }
+}

@@ -396,14 +396,19 @@ fn cancellation_is_reaped_and_saved_as_incomplete() {
             "cancelled.json",
             "--",
             fixture(),
-            "sleep",
+            "ready-sleep",
         ])
         .current_dir(root.path())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    std::thread::sleep(std::time::Duration::from_secs(1));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while !root.path().join("child-ready").exists() {
+        assert!(std::time::Instant::now() < deadline, "target did not start");
+        assert!(child.try_wait().unwrap().is_none(), "tracer exited early");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
     unsafe {
         libc::kill(child.id() as i32, libc::SIGTERM);
     };
@@ -492,5 +497,154 @@ fn static_linux_child_uses_seccomp_collection() {
     assert_eq!(
         report["executions"][0]["changes"]["${workspace}/static-output.txt"],
         "created"
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn hardened_macos_image_is_blocked_before_execution() {
+    let root = tempfile::tempdir().unwrap();
+    let protected = root.path().join("protected-tool");
+    fs::copy(fixture(), &protected).unwrap();
+    let status = Command::new("/usr/bin/codesign")
+        .args(["--force", "--sign", "-", "--options", "runtime"])
+        .arg(&protected)
+        .stderr(Stdio::null())
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let output = invoke(
+        root.path(),
+        &["run", "--", protected.to_str().unwrap(), "read-write"],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!root.path().join("out").exists());
+}
+
+#[test]
+fn repeat_detects_content_sets_permissions_and_failed_preparation() {
+    let mut modes = vec!["vary-content", "vary-set"];
+    if cfg!(unix) {
+        modes.push("vary-permissions");
+    }
+    for mode in modes {
+        let root = repository(mode);
+        let result = invoke(
+            root.path(),
+            &[
+                "verify",
+                "repeat",
+                "build",
+                "--runs",
+                "2",
+                "--save",
+                "different.json",
+            ],
+        );
+        assert_eq!(
+            result.status.code(),
+            Some(5),
+            "{mode}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let report = parse(root.path(), "different.json");
+        assert_eq!(report["verification"], "failed");
+        assert!(
+            report["findings"]
+                .as_object()
+                .unwrap()
+                .values()
+                .any(|item| item["code"] == "different-output")
+        );
+        assert!(!root.path().join("out").exists());
+    }
+    let root = repository("read-write");
+    let tool = fixture().replace('\\', "/");
+    fs::write(
+        root.path().join("runlens.toml"),
+        format!(
+            r#"schema_version = 1
+[commands.build]
+argv = [{tool:?}, "read-write"]
+outputs = ["out/**"]
+prepare = [[{tool:?}, "fail"], [{tool:?}, "read-write"]]
+"#
+        ),
+    )
+    .unwrap();
+    let result = invoke(
+        root.path(),
+        &["verify", "clean", "build", "--save", "setup.json"],
+    );
+    assert!(!result.status.success());
+    assert!(
+        root.path().join("setup.json").exists(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let report = parse(root.path(), "setup.json");
+    assert_eq!(report["executions"].as_array().unwrap().len(), 1);
+    assert_eq!(report["executions"][0]["role"], "preparation");
+    assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 23);
+    assert!(!root.path().join("out").exists());
+    fs::write(
+        root.path().join("runlens.toml"),
+        format!("schema_version=1\n[commands.build]\nargv=[{tool:?},'read-write']\n"),
+    )
+    .unwrap();
+    assert_eq!(
+        invoke(root.path(), &["verify", "repeat", "build"])
+            .status
+            .code(),
+        Some(2)
+    );
+}
+
+#[test]
+fn hostile_envelopes_and_forged_changes_are_rejected() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("input.txt"), "input").unwrap();
+    assert!(
+        run(root.path(), "original.json", "read-write")
+            .status
+            .success()
+    );
+    let report = parse(root.path(), "original.json");
+    let mut changed = report.clone();
+    changed["executions"][0]["changes"]["${workspace}/out/result.txt"] = "deleted".into();
+    let mut uppercase = report.clone();
+    uppercase["executions"][0]["id"] = "019a1234-ABCD-7000-8000-123456789ABC".into();
+    let mut oversized = report.clone();
+    oversized["executions"][0]["command"]["argv"] =
+        serde_json::json!(vec!["large".repeat(7000); 64]);
+    let mut wrong_scope = report.clone();
+    wrong_scope["executions"][0]["scope"]["before_complete"] = false.into();
+    for (index, value) in [changed, uppercase, oversized, wrong_scope]
+        .iter()
+        .enumerate()
+    {
+        let name = format!("hostile-{index}.json");
+        fs::write(root.path().join(&name), serde_json::to_vec(value).unwrap()).unwrap();
+        assert_eq!(
+            invoke(root.path(), &["receipt", &name, "--json"])
+                .status
+                .code(),
+            Some(2)
+        );
+    }
+    let oversized = fs::File::create(root.path().join("oversized.json")).unwrap();
+    oversized
+        .set_len(runlens::report::MAX_REPORT_BYTES + 1)
+        .unwrap();
+    assert_eq!(
+        invoke(root.path(), &["receipt", "oversized.json"])
+            .status
+            .code(),
+        Some(2)
     );
 }

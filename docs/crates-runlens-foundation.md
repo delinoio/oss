@@ -372,3 +372,15 @@ Index and early-return directory cleanup failures remain visible through the
 stable cleanup-failed exit classification. Report parsing bounds arrays during
 deserialization and limits the non-evidence string envelope to 1 MiB; querying up
 to 64 explicit reports additionally caps their combined input bytes at 1 GiB.
+
+## Passive identity and failure boundaries
+
+Execution metadata includes the executable SHA-256 computed without invoking the
+target. Comparison requires known matching executable identity and OS metadata;
+redacted arguments cannot establish equivalence. Known restrictive Mach-O code
+signature flags and restricted segments are rejected by a bounded parser before
+launch. Windows injection failure preserves the original child execution and
+records incomplete evidence. Retained metadata maps share one process-wide memory
+threshold, including repeat rounds; private index cleanup failures are surfaced.
+Cancellation handlers are installed before owned child work. Native cancellation
+fixtures synchronize on actual child readiness rather than assuming startup time.

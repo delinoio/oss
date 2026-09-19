@@ -154,3 +154,4 @@
 - Follow docs/project-runlens.md and docs/crates-runlens-foundation.md. Run independent tests/fmt/Clippy with nightly-2026-08-02 in addition to root cargo test.
 - Keep fspy and dependency notices, immutable provenance, and a tested patch ledger. Do not reformat unrelated vendored sources or add root dependency patches.
 - Collection budgets apply inside the tracing/snapshot layers, not only after materialization. Use typed incomplete outcomes and retain available evidence.
+- Retained evidence maps share a process-wide memory threshold, including repeat rounds and supplied reports. Cancellation handlers must be registered before owned child work. Reject known macOS restrictive code-signing flags and restricted segments by bounded passive inspection; never invoke the target to discover its version.

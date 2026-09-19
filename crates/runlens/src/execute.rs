@@ -51,6 +51,7 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
     }
     let executable = platform::resolve(&request.command.argv[0], &request.environment, &cwd)?;
     platform::preflight(&executable)?;
+    let executable_sha256 = platform::executable_sha256(&executable, &request.cancellation);
     if request.cancellation.is_cancelled() {
         return Err(Error::new(
             ErrorCode::Cancelled,
@@ -136,7 +137,10 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
     let mut errors = Vec::new();
     let mut complete = true;
     let mut exit_code = None;
+    #[cfg(unix)]
     let mut signal = None;
+    #[cfg(not(unix))]
+    let signal = None;
     let matcher = patterns(&exclusions)?;
     match termination {
         Ok(termination) => {
@@ -170,8 +174,17 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
                             write: false,
                             read_directory: false,
                             unsupported: false,
-                            in_scope: path.starts_with(request.root)
-                                && !snapshot::excluded(path, request.root, &matcher, &temporary),
+                            in_scope: observed_in_scope(
+                                path,
+                                request.root,
+                                &before.entries,
+                                &redactor,
+                            ) && !snapshot::excluded(
+                                path,
+                                request.root,
+                                &matcher,
+                                &temporary,
+                            ),
                         });
                         value.read |= observation.mode.contains(fspy::AccessMode::READ);
                         value.write |= observation.mode.contains(fspy::AccessMode::WRITE);
@@ -246,6 +259,7 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
             os_version: platform::os_version(),
             runlens_version: env!("CARGO_PKG_VERSION").into(),
             engine_version: ENGINE_REVISION.into(),
+            executable_sha256,
             source_revision: request.revision,
             working_tree_included: request.working_tree_included,
             environment_names: request.command.env.clone(),
@@ -288,4 +302,43 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
     }
     tracing::info!(execution_id=%id,stage="complete",elapsed_ms=execution.outcome.elapsed_ms,"execution evidence ready");
     Ok(execution)
+}
+
+fn observed_in_scope(
+    path: &Path,
+    root: &Path,
+    before: &Entries<FileState>,
+    redactor: &Redactor,
+) -> bool {
+    let normalized = crate::privacy::normalized(path);
+    let root_text = crate::privacy::normalized(root);
+    if !(normalized == root_text
+        || normalized
+            .strip_prefix(&root_text)
+            .is_some_and(|suffix| suffix.starts_with('/')))
+        || path
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+    {
+        return false;
+    }
+    for ancestor in path.ancestors() {
+        if crate::privacy::normalized(ancestor) == root_text {
+            break;
+        }
+        if std::fs::symlink_metadata(ancestor).is_ok_and(|metadata| metadata.is_symlink()) {
+            return false;
+        }
+        if before
+            .get(&redactor.path(ancestor))
+            .ok()
+            .flatten()
+            .is_some_and(|state| {
+                state.kind == Some(FileKind::Symlink) || state.knowledge == Knowledge::Unknown
+            })
+        {
+            return false;
+        }
+    }
+    true
 }

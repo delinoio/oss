@@ -4,6 +4,7 @@ pub mod config;
 pub mod entries;
 pub mod error;
 pub mod execute;
+pub mod macho;
 pub mod model;
 pub mod platform;
 pub mod privacy;

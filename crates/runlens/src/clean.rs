@@ -177,20 +177,11 @@ async fn git_output(
     command.args(args);
     managed_git(command, true, cancel).await
 }
-pub async fn repository_root(cwd: &Path, cancel: &CancellationToken) -> Result<PathBuf> {
-    let env = execution_context();
-    let output = git_output(
-        cwd,
-        &[OsStr::new("rev-parse"), OsStr::new("--show-toplevel")],
-        &env,
-        cancel,
-    )
-    .await?;
-    let text =
-        String::from_utf8(output).map_err(|_| Error::input("workspace path must be UTF-8"))?;
-    PathBuf::from(text.trim_end_matches(['\r', '\n']))
-        .canonicalize()
-        .map_err(|_| Error::input("workspace root is unavailable"))
+pub fn workspace_root(cwd: &Path) -> PathBuf {
+    cwd.ancestors()
+        .find(|directory| directory.join(".git").exists())
+        .unwrap_or(cwd)
+        .to_owned()
 }
 pub async fn revision(root: &Path, cancel: &CancellationToken) -> Option<String> {
     let bytes = git_output(

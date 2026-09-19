@@ -79,3 +79,76 @@ fn argv_redaction_precedes_storage() {
     assert!(!serialized.contains("canary"));
     assert!(!serialized.contains("password-canary"));
 }
+
+#[cfg(unix)]
+#[test]
+fn snapshots_cover_links_types_permissions_deletions_and_exclusions() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().canonicalize().unwrap();
+    std::fs::write(root.join("delete"), "old").unwrap();
+    std::fs::write(root.join("replace"), "old").unwrap();
+    std::fs::write(root.join("executable"), "same contents").unwrap();
+    std::fs::set_permissions(
+        root.join("executable"),
+        std::fs::Permissions::from_mode(0o644),
+    )
+    .unwrap();
+    std::fs::create_dir(root.join("excluded")).unwrap();
+    std::fs::write(root.join("excluded/private"), "never inspect").unwrap();
+    symlink("replace", root.join("link")).unwrap();
+    let redactor = Redactor::new(&root, &[], &config::Redaction::default()).unwrap();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let take = || {
+        snapshot::take(
+            &root,
+            &["excluded".into()],
+            &[],
+            &redactor,
+            &config::Limits::default(),
+            &cancel,
+        )
+        .unwrap()
+    };
+    let before = take();
+    assert!(
+        before
+            .entries
+            .get("${workspace}/excluded/private")
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        before
+            .entries
+            .get("${workspace}/link")
+            .unwrap()
+            .unwrap()
+            .link_target
+            .as_deref(),
+        Some("replace")
+    );
+    std::fs::remove_file(root.join("delete")).unwrap();
+    std::fs::remove_file(root.join("replace")).unwrap();
+    std::fs::create_dir(root.join("replace")).unwrap();
+    std::fs::set_permissions(
+        root.join("executable"),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    let after = take();
+    let changes = snapshot::changes(&before.entries, &after.entries, true, true).unwrap();
+    assert_eq!(
+        changes.get("${workspace}/delete").unwrap(),
+        Some(ChangeKind::Deleted)
+    );
+    assert_eq!(
+        changes.get("${workspace}/replace").unwrap(),
+        Some(ChangeKind::TypeChanged)
+    );
+    assert_eq!(
+        changes.get("${workspace}/executable").unwrap(),
+        Some(ChangeKind::Modified)
+    );
+    assert!(changes.get("${workspace}/link").unwrap().is_none());
+}

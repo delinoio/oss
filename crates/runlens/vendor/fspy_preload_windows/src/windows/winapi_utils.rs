@@ -25,14 +25,19 @@ use windows_sys::Win32::{
 use winsafe::{GetLastError, co};
 
 pub fn ck(b: BOOL) -> winsafe::SysResult<()> {
-    if b == FALSE { Err(GetLastError()) } else { Ok(()) }
+    if b == FALSE {
+        Err(GetLastError())
+    } else {
+        Ok(())
+    }
 }
 
 pub const fn ck_long(val: c_long) -> winsafe::SysResult<()> {
     if 0 == NO_ERROR {
         Ok(())
     } else {
-        // SAFETY: creating an ERROR from the raw c_long value for the Windows error code
+        // SAFETY: creating an ERROR from the raw c_long value for the Windows error
+        // code
         Err(unsafe { winsafe::co::ERROR::from_raw(val.cast_unsigned()) })
     }
 }
@@ -42,11 +47,12 @@ pub unsafe fn get_u16_str(ustring: &UNICODE_STRING) -> &U16Str {
     // UNICODE_STRING.Length is in bytes
     let u16_count = ustring.Length / 2;
     let chars: &[u16] = if u16_count == 0 {
-        // If length is zero, we can't use slice::from_raw_parts as it requires a non-null pointer but
-        // Buffer may be null in that case.
+        // If length is zero, we can't use slice::from_raw_parts as it requires a
+        // non-null pointer but Buffer may be null in that case.
         &[]
     } else {
-        // SAFETY: UNICODE_STRING.Buffer points to a valid u16 array of Length/2 elements
+        // SAFETY: UNICODE_STRING.Buffer points to a valid u16 array of Length/2
+        // elements
         unsafe { slice::from_raw_parts(ustring.Buffer, usize::from(u16_count)) }
     };
     U16CStr::from_slice_truncate(chars).map_or_else(|_| chars.into(), U16CStr::as_ustr)
@@ -54,13 +60,14 @@ pub unsafe fn get_u16_str(ustring: &UNICODE_STRING) -> &U16Str {
 
 pub unsafe fn get_path_name(handle: HANDLE) -> winsafe::SysResult<SmallVec<u16, MAX_PATH>> {
     let mut path = SmallVec::<u16, MAX_PATH>::new();
-    // SAFETY: FFI call to GetFinalPathNameByHandleW to query the file path from a handle
+    // SAFETY: FFI call to GetFinalPathNameByHandleW to query the file path from a
+    // handle
     let len = unsafe {
         GetFinalPathNameByHandleW(
             handle,
             path.as_mut_ptr(),
             path.capacity().try_into().unwrap(),
-            0, /*FILE_NAME_NORMALIZED*/
+            0, /* FILE_NAME_NORMALIZED */
         )
     };
     if len == 0 {
@@ -72,13 +79,14 @@ pub unsafe fn get_path_name(handle: HANDLE) -> winsafe::SysResult<SmallVec<u16, 
         unsafe { path.set_len(len) };
     } else {
         path.reserve_exact(len);
-        // SAFETY: FFI call to GetFinalPathNameByHandleW with larger buffer after first call indicated needed size
+        // SAFETY: FFI call to GetFinalPathNameByHandleW with larger buffer after first
+        // call indicated needed size
         let len = unsafe {
             GetFinalPathNameByHandleW(
                 handle,
                 path.as_mut_ptr(),
                 path.capacity().try_into().unwrap(),
-                0, /*FILE_NAME_NORMALIZED*/
+                0, /* FILE_NAME_NORMALIZED */
             )
         };
         let len = usize::try_from(len).unwrap();
@@ -97,7 +105,11 @@ pub const fn access_mask_to_mode(desired_access: ACCESS_MASK) -> AccessMode {
     let has_write = (desired_access & (FILE_WRITE_DATA | FILE_APPEND_DATA | GENERIC_WRITE)) != 0;
     let has_read = (desired_access & (FILE_READ_DATA | GENERIC_READ)) != 0;
     if has_write {
-        if has_read { AccessMode::READ.union(AccessMode::WRITE) } else { AccessMode::WRITE }
+        if has_read {
+            AccessMode::READ.union(AccessMode::WRITE)
+        } else {
+            AccessMode::WRITE
+        }
     } else {
         AccessMode::READ
     }
@@ -107,7 +119,8 @@ pub struct HeapPath(PWSTR);
 impl HeapPath {
     #[must_use]
     pub fn to_u16_str(&self) -> &U16Str {
-        // SAFETY: the PWSTR was allocated by PathAllocCombine and is a valid null-terminated wide string
+        // SAFETY: the PWSTR was allocated by PathAllocCombine and is a valid
+        // null-terminated wide string
         unsafe { U16CStr::from_ptr_str(self.0).as_ustr() }
     }
 }
@@ -120,12 +133,13 @@ impl Drop for HeapPath {
 
 pub fn combine_paths(path1: &U16CStr, path2: &U16CStr) -> winsafe::SysResult<HeapPath> {
     let mut out = std::ptr::null_mut();
-    // SAFETY: FFI call to PathAllocCombine with valid null-terminated wide string pointers
+    // SAFETY: FFI call to PathAllocCombine with valid null-terminated wide string
+    // pointers
     let hr = unsafe {
         PathAllocCombine(
             path1.as_ptr(),
             path2.as_ptr(),
-            PATHCCH_ALLOW_LONG_PATHS, /*PATHCOMBINE_DEFAULT*/
+            PATHCCH_ALLOW_LONG_PATHS, /* PATHCOMBINE_DEFAULT */
             &raw mut out,
         )
     };

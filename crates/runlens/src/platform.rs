@@ -266,21 +266,15 @@ fn inspect_executable(program: &Path, depth: usize) -> Result<()> {
         } else {
             0x0100000c
         };
-        let thin = bytes.len() >= 8
-            && bytes[..4] == [0xcf, 0xfa, 0xed, 0xfe]
-            && u32::from_le_bytes(bytes[4..8].try_into().unwrap()) == machine;
-        let fat = bytes.len() >= 8
-            && bytes[..4] == [0xca, 0xfe, 0xba, 0xbe]
-            && bytes[8..]
-                .as_chunks::<20>()
-                .0
-                .iter()
-                .take(u32::from_be_bytes(bytes[4..8].try_into().unwrap()) as usize)
-                .any(|b| u32::from_be_bytes(b[..4].try_into().unwrap()) == machine);
-        if !thin && !fat {
+        if crate::macho::protected(&mut file, machine).map_err(|_| {
+            Error::new(
+                ErrorCode::Unsupported,
+                "executable Mach-O architecture or metadata is unsupported",
+            )
+        })? {
             return Err(Error::new(
                 ErrorCode::Unsupported,
-                "executable has no native Mach-O architecture",
+                "restricted, library-validated, or hardened macOS executable is unsupported",
             ));
         }
     }
@@ -314,4 +308,31 @@ fn inspect_executable(program: &Path, depth: usize) -> Result<()> {
     }
     let _ = metadata;
     Ok(())
+}
+
+/// A passive executable identity: never run an extra tool-version command.
+pub fn executable_sha256(
+    path: &Path,
+    cancel: &tokio_util::sync::CancellationToken,
+) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    let mut file = std::fs::File::open(path).ok()?;
+    let before = file.metadata().ok()?;
+    let mut hash = Sha256::new();
+    let mut buffer = [0u8; 65536];
+    loop {
+        if cancel.is_cancelled() {
+            return None;
+        }
+        let count = file.read(&mut buffer).ok()?;
+        if count == 0 {
+            break;
+        }
+        hash.update(&buffer[..count]);
+    }
+    let after = file.metadata().ok()?;
+    if before.len() != after.len() || before.modified().ok() != after.modified().ok() {
+        return None;
+    }
+    Some(hex::encode(hash.finalize()))
 }

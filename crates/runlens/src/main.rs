@@ -202,16 +202,24 @@ async fn main() -> ExitCode {
         .try_init();
     let cancel = CancellationToken::new();
     let signal_cancel = cancel.clone();
+    // Install handlers before any snapshot or child work can occupy the runtime.
+    #[cfg(unix)]
+    let signals = (
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()),
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()),
+    );
+    #[cfg(unix)]
+    let (mut terminate, mut interrupt) = match signals {
+        (Ok(terminate), Ok(interrupt)) => (terminate, interrupt),
+        _ => {
+            eprintln!("Runlens could not initialize cancellation handlers.");
+            return ExitCode::from(ErrorCode::Internal.exit_code() as u8);
+        }
+    };
     let signal = tokio::spawn(async move {
         #[cfg(unix)]
         {
-            if let Ok(mut terminate) =
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            {
-                tokio::select! {_=tokio::signal::ctrl_c()=>{},_=terminate.recv()=>{}}
-            } else {
-                let _ = tokio::signal::ctrl_c().await;
-            }
+            tokio::select! {_=interrupt.recv()=>{},_=terminate.recv()=>{}}
         }
         #[cfg(not(unix))]
         {
@@ -241,20 +249,7 @@ async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
         .map_err(|_| Error::input("current directory is unavailable"))?
         .canonicalize()
         .map_err(|_| Error::input("current directory is unavailable"))?;
-    let needs_workspace = matches!(
-        &cli.command,
-        Commands::Run(_)
-            | Commands::Verify { .. }
-            | Commands::Cache { .. }
-            | Commands::Policy { .. }
-    );
-    let root = if needs_workspace {
-        clean::repository_root(&cwd, &cancel)
-            .await
-            .unwrap_or(cwd.clone())
-    } else {
-        cwd.clone()
-    };
+    let root = clean::workspace_root(&cwd);
     match cli.command {
         Commands::Run(args) => {
             if let Some(path) = &args.save {
@@ -526,6 +521,13 @@ fn print_analysis(result: analysis::Analysis, output: Output, check: bool) -> Re
         for item in result.differences.iter() {
             let (_, difference) = item?;
             println!("{:?}: {}", difference.change, difference.path);
+        }
+        for item in result.environment_differences.iter() {
+            let (id, _) = item?;
+            println!(
+                "Environment metadata differs for execution {id}; use --json for exact non-secret \
+                 fields."
+            );
         }
         for item in result.usages.iter() {
             let (path, usage) = item?;
