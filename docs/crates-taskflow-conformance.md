@@ -235,3 +235,5 @@ Windows native opens explicitly request `FILE_READ_ATTRIBUTES`, the metadata per
 The real Go flag suite also compares `-failfast` and `-failfast=false` across two shard partitions: a later test is skipped only when requested, all results are accounted for, and the suite remains failed.
 
 `input_digest_uses_bounded_reads_and_preserves_sha256_identity` checks the input reader buffer bound, reference digest parity, and regular/file-link identities.
+
+`dangling_input_links_track_target_deletion_and_recreation` runs automatic and explicit inputs through present, deleted, and recreated file-link targets while rejecting missing external targets and cycles.

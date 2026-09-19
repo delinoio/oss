@@ -4940,3 +4940,42 @@ async fn shard_deadline_includes_inventory_and_all_units() {
         }
     }
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn dangling_input_links_track_target_deletion_and_recreation() {
+    for auto in [true, false] {
+        let mut task = json!({"command":command(&["version"]),"output":[]});
+        if !auto {
+            task["input"] = json!(["link"]);
+        }
+        let root = fixture(json!({"check":task}));
+        std::fs::write(root.path().join("target-file"), "first").unwrap();
+        std::os::unix::fs::symlink("target-file", root.path().join("link")).unwrap();
+        let g = graph(root.path()).await;
+        let snapshot = || {
+            files::input_state(
+                &g.workspace,
+                &g.workspace.projects["app"],
+                &g.tasks["app#check"].task,
+            )
+        };
+        let first = snapshot().unwrap();
+        std::fs::remove_file(root.path().join("target-file")).unwrap();
+        let missing = snapshot().unwrap();
+        assert_eq!(missing["link"], "link:target-file:missing");
+        assert_ne!(first["link"], missing["link"]);
+        assert!(run(g.clone(), &["check"]).await.success);
+        std::fs::write(root.path().join("target-file"), "second").unwrap();
+        assert_ne!(snapshot().unwrap()["link"], first["link"]);
+        std::fs::remove_file(root.path().join("link")).unwrap();
+        std::os::unix::fs::symlink("../missing-outside", root.path().join("link")).unwrap();
+        assert!(
+            snapshot().is_err(),
+            "missing targets cannot bypass containment"
+        );
+        std::fs::remove_file(root.path().join("link")).unwrap();
+        std::os::unix::fs::symlink("link", root.path().join("link")).unwrap();
+        assert!(snapshot().is_err(), "cycles are not missing targets");
+    }
+}

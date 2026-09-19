@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     io::Read,
     path::{Component, Path, PathBuf},
 };
@@ -231,17 +231,74 @@ pub fn file_state(path: &Path) -> Result<String> {
             !path.is_dir(),
             "directory symlinks require explicit underlying input paths"
         );
-        return Ok(format!(
-            "link:{}:{}",
-            slash(&target)?,
-            digest_reader(std::fs::File::open(path)?)?
-        ));
+        let state = match std::fs::File::open(path) {
+            Ok(file) => digest_reader(file)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => "missing".into(),
+            Err(error) => return Err(error.into()),
+        };
+        return Ok(format!("link:{}:{state}", slash(&target)?));
     }
     if path.is_file() {
         Ok(digest_reader(std::fs::File::open(path)?)?)
     } else {
         Ok("missing".into())
     }
+}
+
+// Resolve links component by component even when the final target is missing.
+// Canonicalization alone cannot distinguish an internal dangling link from an
+// escaping one, and normalizing `..` before following links hides escapes.
+fn validate_input_link(root: &Path, path: &Path) -> Result<()> {
+    fn parts(path: &Path) -> Result<VecDeque<PathBuf>> {
+        slash(path)?;
+        path.components()
+            .map(|part| match part {
+                Component::Normal(value) => Ok(PathBuf::from(value)),
+                Component::CurDir => Ok(PathBuf::from(".")),
+                Component::ParentDir => Ok(PathBuf::from("..")),
+                _ => anyhow::bail!("input link target must resolve inside workspace"),
+            })
+            .collect()
+    }
+    let mut pending = parts(path.strip_prefix(root)?)?;
+    let mut resolved = root.to_path_buf();
+    let mut links = 0;
+    while let Some(part) = pending.pop_front() {
+        if part == Path::new(".") {
+            continue;
+        }
+        if part == Path::new("..") {
+            ensure!(
+                resolved != root && resolved.pop(),
+                "input link escapes workspace"
+            );
+            continue;
+        }
+        let candidate = resolved.join(part);
+        match std::fs::symlink_metadata(&candidate) {
+            Ok(metadata) if metadata.is_symlink() => {
+                links += 1;
+                ensure!(links <= 40, "input link cycle or excessive link depth");
+                let target = std::fs::read_link(&candidate)?;
+                let mut expanded = if target.is_absolute() {
+                    resolved = root.to_path_buf();
+                    parts(
+                        target
+                            .strip_prefix(root)
+                            .context("input link escapes workspace")?,
+                    )?
+                } else {
+                    parts(&target)?
+                };
+                expanded.append(&mut pending);
+                pending = expanded;
+            }
+            Ok(_) => resolved = candidate,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => resolved = candidate,
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
 }
 pub fn input_state(
     ws: &Workspace,
@@ -287,7 +344,11 @@ pub fn input_state(
             continue;
         }
         if input_matches(project, task, entry.path())? {
-            within(&ws.root, entry.path())?;
+            if entry.file_type().is_symlink() {
+                validate_input_link(&ws.root, entry.path())?;
+            } else {
+                within(&ws.root, entry.path())?;
+            }
             result.insert(
                 slash(entry.path().strip_prefix(&ws.root)?)?,
                 input_file_state(entry.path())?,
