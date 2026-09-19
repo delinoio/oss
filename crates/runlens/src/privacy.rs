@@ -84,14 +84,17 @@ impl Redactor {
             .enumerate()
             .map(|(index, arg)| {
                 let hide = std::mem::take(&mut hide_next) || self.indices.contains(&index);
+                let sensitive = arg.starts_with('-') && self.sensitive_flag.is_match(arg);
+                // A hidden argument can itself be a flag. Preserve its effect
+                // on the following value before replacing the argument text.
+                hide_next = sensitive && !arg.contains('=');
                 if hide {
                     return "[redacted]".into();
                 }
-                if arg.starts_with('-') && self.sensitive_flag.is_match(arg) {
+                if sensitive {
                     if let Some((key, _)) = arg.split_once('=') {
                         return format!("{}=[redacted]", self.text(key));
                     }
-                    hide_next = true;
                 }
                 self.text(arg)
             })

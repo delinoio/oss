@@ -541,6 +541,58 @@ fn non_unicode_environment_entries_do_not_abort_observation() {
     assert_eq!(report["executions"][0]["command"]["argv"][3], "[redacted]");
 }
 #[test]
+fn consecutive_sensitive_flags_stay_redacted_in_saved_and_exported_reports() {
+    let root = tempfile::tempdir().unwrap();
+    let output = invoke(
+        root.path(),
+        &[
+            "run",
+            "--save",
+            "report.json",
+            "--",
+            fixture(),
+            "read",
+            "input.txt",
+            "--token",
+            "--password",
+            "consecutive-flag-canary",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("consecutive-flag-canary"));
+    for (format, name) in [("json", "export.json"), ("html", "export.html")] {
+        assert!(
+            invoke(
+                root.path(),
+                &[
+                    "export",
+                    "report.json",
+                    "--format",
+                    format,
+                    "--output",
+                    name
+                ]
+            )
+            .status
+            .success()
+        );
+        assert!(
+            !fs::read_to_string(root.path().join(name))
+                .unwrap()
+                .contains("consecutive-flag-canary")
+        );
+    }
+    assert!(
+        !fs::read_to_string(root.path().join("report.json"))
+            .unwrap()
+            .contains("consecutive-flag-canary")
+    );
+}
+#[test]
 fn cache_policy_and_overflow_fail_closed() {
     let root = repository("read-write");
     let recorded = run(root.path(), "report.json", "read-write");

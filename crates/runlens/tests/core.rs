@@ -136,6 +136,39 @@ fn path_normalization_preserves_similar_external_roots() {
     );
 }
 #[test]
+fn hidden_sensitive_flags_still_redact_their_values() {
+    let root = tempfile::tempdir().unwrap();
+    for (args, indices, expected) in [
+        (
+            vec!["tool", "--token", "--password", "plain-canary"],
+            vec![],
+            vec!["tool", "--token", "[redacted]", "[redacted]"],
+        ),
+        (
+            vec!["tool", "--password", "plain-canary"],
+            vec![1],
+            vec!["tool", "[redacted]", "[redacted]"],
+        ),
+        (
+            vec!["tool", "--token", "--password=plain-canary", "public"],
+            vec![],
+            vec!["tool", "--token", "[redacted]", "public"],
+        ),
+    ] {
+        let redactor = Redactor::new(
+            root.path(),
+            &[],
+            &config::Redaction {
+                argument_indices: indices,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let args = args.into_iter().map(str::to_owned).collect::<Vec<_>>();
+        assert_eq!(redactor.argv(&args), expected);
+    }
+}
+#[test]
 fn argv_redaction_precedes_storage() {
     let root = tempfile::tempdir().unwrap();
     let redactor = Redactor::new(
