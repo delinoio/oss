@@ -3,12 +3,12 @@
 - Follow root `AGENTS.md` and project-specific docs before adding or changing app code.
 - Keep app-specific contracts synchronized in the project index doc (`docs/project-*.md`) and relevant app-domain contract docs (`docs/apps-*.md`) in the same change.
 - Keep repository and domain rules in the appropriate `AGENTS.md` files.
-- Public documentation app content must not expose repository-internal implementation details. Use `docs/` as the internal source of truth, then curate `apps/public-docs`, `apps/binpm-docs`, `apps/nodeup-docs`, and `apps/runmoor-docs` around user-facing behavior, supported workflows, stable public interfaces, and explicitly contracted maintainer-facing paths.
+- Public documentation app content must not expose repository-internal implementation details. Use `docs/` as the internal source of truth, then curate `apps/public-docs`, `apps/binpm-docs`, `apps/nodeup-docs`, `apps/runmoor-docs`, and `apps/runlens-docs` around user-facing behavior, supported workflows, stable public interfaces, and explicitly contracted maintainer-facing paths.
 - Write all source and comments in English.
 - Follow Toss Design Guidelines for frontend UX/UI decisions across web and mobile apps.
 - For new static sites under `apps/`, default to Rsbuild/Rspress-style toolchains and Cloudflare Pages deployment unless a project contract documents a different platform.
 - Prefer Rspack-family build tools for app build pipelines when they fit the runtime and deployment target.
-- Root development uses `pnpm dev:public-docs`, `pnpm dev:nodeup-docs`, `pnpm dev:binpm-docs`, and `pnpm dev:runmoor-docs`; package-local development uses `pnpm dev`. Both entry points use fixed loopback ports: public-docs `46302`, nodeup-docs `46303`, binpm-docs `46304`, and runmoor-docs `46309`. Development wrappers must prevent CLI address overrides, forward termination signals to their child server, wait for it to exit, and fail with an actionable conflict message instead of searching for or incrementing to another port.
+- Root development uses `pnpm dev:public-docs`, `pnpm dev:nodeup-docs`, `pnpm dev:binpm-docs`, `pnpm dev:runmoor-docs`, and `pnpm dev:runlens-docs`; package-local development uses `pnpm dev`. Both entry points use fixed loopback ports: public-docs `46302`, nodeup-docs `46303`, binpm-docs `46304`, runmoor-docs `46309`, and runlens-docs `46310`. Development wrappers must prevent CLI address overrides, forward termination signals to their child server, wait for it to exit, and fail with an actionable conflict message instead of searching for or incrementing to another port.
 - DevHud frontend and administrator development use fixed ports `46305` and `46306`. Their package wrappers receive only the validated `DEVHUD_LOGTO_ISSUER` from the administrator configuration path, reject every other team-injected name, and never pass configuration through the root Turbo process. The frontend reduces that issuer to its origin for the exact development CSP required by pinned CEF. In team mode both launch issuers must match the private preflight comparison pin; in OSS mode they must exactly match the API wrapper's package-local value so Bootstrap and both browser policies agree. Follow `docs/repository-environment-contract.md`.
 - DevHud GitHub PATs and BYO R2 credentials remain in app-owned secure storage, never in the team development secret manager. `apps/mpapp/.env.example` public `EXPO_PUBLIC_*` configuration also remains package-local.
 - App file upload/download flows should default to Cloudflare R2 plus signed URLs unless the app contract documents a different storage or access pattern.
@@ -107,7 +107,7 @@
 - The stable `/devhud` page documents public product availability and the coordinated all-channels GA rule without exposing release credentials, private workflow details, or deployment internals.
 - Nodeup, binpm, and Runmoor are exposed from `apps/public-docs` through external top-level navigation links to `https://nodeup.delino.io`, `https://binpm.delino.io`, and `https://runmoor.delino.io`. Runmoor discovery links on the home and project catalog must also use its standalone site; the former `/runmoor` and child routes are removed without compatibility pages or redirects.
 - The legacy `/nodeup` public-docs route must remain a lightweight handoff page to `https://nodeup.delino.io` for compatibility with previously shared URLs.
-- Do not add or restore in-site `nodeup`, `binpm`, or `runmoor` guide routes under `apps/public-docs`; the lightweight legacy `/nodeup` handoff is the sole in-site Nodeup route, and their public documentation is owned by `apps/nodeup-docs`, `apps/binpm-docs`, and `apps/runmoor-docs`.
+- Do not add or restore in-site `nodeup`, `binpm`, `runlens`, or `runmoor` guide routes under `apps/public-docs`; the lightweight legacy `/nodeup` handoff is the sole in-site Nodeup route, and their public documentation is owned by `apps/nodeup-docs`, `apps/binpm-docs`, and `apps/runmoor-docs`.
 - `public-docs` must curate repository contracts into public guidance and must not document repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 - When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
 
@@ -160,3 +160,5 @@
 - Bind dev to 127.0.0.1:46310 and preview to 127.0.0.1:46272 using the shared strict wrapper. Root pnpm dev:runlens-docs delegates to the package.
 - Preserve every contracted route and all nine capabilities. Publish supported behavior and evidence limitations; internal architecture stays in docs.
 - Run package-local pnpm test and public-docs tests when discovery links change.
+
+- Runlens discovery links in public-docs navigation, home, and project catalog use `https://runlens.delino.io`; its guides remain owned by `apps/runlens-docs`.

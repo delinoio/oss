@@ -48,3 +48,44 @@ Changes to DevHud workflows or these contracts must update `docs/apps-devhud-ope
 `.github/workflows/release-runmoor.yml` accepts exact `runmoor@v<MAJOR.MINOR.PATCH>` tags and manual version/dry-run dispatch. Source version and revision must match the release plan; publication permits main or the exact tag only. Plan, build and package jobs use read-only contents authority and produce the three native platform archives plus SHA256SUMS. Dry runs cannot request OIDC, sign, create tags/releases, or upload public assets. Only the explicitly guarded publish job obtains `contents: write` and `id-token: write`, rejects conflicting existing tags or existing public releases, signs the exact archives/checksum file, verifies the exact workflow certificate identity and issuer, and publishes a prerelease with overwrite disabled. No macOS/Xcode images or placeholder signatures are shipped.
 
 Run `node --test scripts/release/runmoor.test.mjs` for deterministic archive, identity, checksum, signature-verifier-double and workflow isolation checks. Cross-build with `node scripts/release/runmoor.mjs build --version 0.1.0 --revision <40-hex-commit> --ref <git-ref> --mode dry-run --output <temporary-directory>`, then its `checksums` and `verify` commands. These commands do not need credentials or signing tools. Repository-wide release fixtures that use Debian packaging and GNU tar run on Linux. Follow `docs/cmds-runmoor-foundation.md` for runtime verification and preview limitations.
+
+
+## Runlens independent validation and release
+
+`crates/runlens` owns its independent lockfile and nightly-2026-08-02 toolchain.
+The root workspace excludes it; `lefthook.yml` runs its product formatter with an
+explicit hook root, alongside the existing root formatter. Its native workflow
+`.github/workflows/runlens.yml` runs product fmt/Clippy, tests, release compilation,
+archive construction, and installed native execution on six native OS/architecture
+runners. Linux tests include a real static child fixture. No cross compile result
+counts as platform evidence. Dedicated `runlens-macos-13`,
+`runlens-windows-10-22h2`, and `runlens-ubuntu-22.04` self-hosted labels, paired with
+X64 or ARM64, select the minimum-OS dispatch matrix. The workflow records actual
+OS identity and never substitutes a runner label for evidence.
+
+`scripts/release/runlens.py` owns the six-archive inventory, reproducible archive
+headers, license aggregation, SHA256 manifest, native evidence, and prebuilt tap
+rendering. `.github/workflows/release-runlens.yml` is manually dispatched. The
+default dry run has read-only permissions, never signs or accesses publication
+credentials, builds native archives, and records blockers without claiming release
+readiness. Publication requires its exact `runlens@vX.Y.Z` tag and a successful
+manual native-validation workflow at the same commit, with every archive digest
+bound to execution and minimum-OS evidence. A missing platform or OS proof prevents
+the protected `runlens-release` signing environment from being reached.
+
+Only the signing job receives OIDC write permission. Its keyless Sigstore identity
+is the release workflow at the exact tag; checksum manifests and each archive are
+signed separately. All six minimum-OS runners then install authenticated archives
+with the production installers. Only after those jobs pass does the publication
+job receive contents-write permission and the tap credential. It creates a new
+draft, uploads the complete signed inventory, verifies uploaded sizes, and then
+publishes; any existing release, including an incomplete draft, is refused.
+Operator recovery must inspect and intentionally handle an incomplete draft.
+Homebrew uses the existing `delinoio/homebrew-tap` prebuilt formula path.
+
+The six native installer fixtures deliberately replace only cosign authentication
+with a failing/succeeding double to test install rejection, tampering, atomic
+replacement, and real execution from the installed binary without public release
+side effects. They are explicitly not signed-install evidence. The subsequent
+protected release installation matrix uses real cosign verification. PR work does
+not create release tags, releases, tap commits, or documentation deployments.

@@ -16,7 +16,7 @@ These changes do not add event timelines, syscall-success claims, a PTY, a servi
 
 The collection-loss close bit preserves the committed frame count with an atomic
 OR. Replacing the count with only the close flag loses partial evidence when the
-bounded buffer fills. `cache_policy_and_collection_overflow_are_fail_closed` in
+bounded buffer fills. `cache_policy_and_overflow_fail_closed` in
 `tests/native.rs` covers continued child execution, retained accesses, and a failed
 verification outcome. Remove this patch only when the upstream reader/writer
 protocol preserves committed records on collection loss.

@@ -38,3 +38,22 @@ Update project-runlens, the runtime contract, apps/AGENTS.md, public discovery, 
 - [Project](project-runlens.md)
 - [Runtime](crates-runlens-foundation.md)
 - [Repository defaults](repository-defaults.md)
+
+
+## Build validation and installation entrypoints
+
+The app copies the owning `scripts/install/runlens.sh` and `runlens.ps1` into
+ignored public `install.sh` and `install.ps1` inputs immediately before Rspress
+build. These generated copies must never be independently edited. `pnpm test`
+builds the app, runs validator regression tests, and checks every stable clean
+route's artifact, English semantic article, complete navigation, GitHub discovery,
+public content boundary, installer authentication, and absence of source maps.
+Cloudflare Pages serves `doc_build` using clean paths; build output uses flat HTML
+files and internal links never use their `.html` suffixes.
+
+`.github/workflows/runlens-docs.yml` provides a manual, default-dry-run deployment
+pipeline. Validation produces a private short-lived artifact without credentials.
+Only the explicitly selected deploy job enters `runlens-docs-production` and
+receives the Cloudflare token/account configuration. The Pages project is
+`runlens-docs`; operators configure its custom domain as `runlens.delino.io`.
+No site is deployed as part of implementing or validating the PR.

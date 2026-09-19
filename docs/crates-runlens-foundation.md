@@ -354,3 +354,9 @@ children, finite stdin forwarding, clean/repeat source isolation, privacy canari
 explicit persistence, offline analysis/export, overflow, and protected macOS tools.
 Linux native CI additionally compiles and executes a static musl child on the
 glibc host to verify seccomp coverage; cross compilation cannot satisfy that test.
+
+`schema/config-v1.json` and `schema/report-v1.json` are generated from product types
+with schemars and committed. `RUNLENS_UPDATE_SCHEMAS=1 cargo test --test schema`
+regenerates them; ordinary tests reject drift. The documentation build copies
+these inputs to ignored public schema assets. Semantic and bounded-allocation
+validation remains required in addition to JSON Schema shape validation.

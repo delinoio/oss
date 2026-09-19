@@ -75,7 +75,10 @@
       "scripts/spawn-dev-server.mjs",
       "servers/AGENTS.md",
       "servers/devhud-api/**",
-      "turbo.json"
+      "turbo.json",
+      "apps/runlens-docs/**",
+      "docs/project-runlens.md",
+      "docs/apps-runlens-docs-foundation.md"
     ]
   },
   "rust-fmt": {
@@ -533,6 +536,23 @@
       "servers/**",
       "servers/devhud-api/internal/rpc/diagnostics.go",
       "turbo.json"
+    ]
+  },
+  "node-runlens-docs-test": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "apps/runlens-docs/**",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "scripts/run-rspress-port.mjs",
+      "turbo.json",
+      "scripts/install/runlens.*"
+    ],
+    "workspace": "runlens-docs",
+    "workspacePaths": [
+      "apps/runlens-docs/**"
     ]
   }
 }

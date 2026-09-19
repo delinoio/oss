@@ -14,6 +14,7 @@ This repository hosts multiple products and shared tooling across apps, CLIs, an
 
 | Project ID | Purpose | Owned Paths | Status | Primary Docs |
 | --- | --- | --- | --- | --- |
+| `runlens` | Command filesystem diagnostics, clean verification, and metadata-only reports; initial release validation in progress. | `crates/runlens`<br>`apps/runlens-docs` | `development` | [project-runlens](docs/project-runlens.md) |
 | `binpm` | Rust-based, Node-free binary package manager for installing and running command-line tools from release assets. | `crates/binpm` | `active` | [project-binpm](docs/project-binpm.md), [crates-binpm-foundation](docs/crates-binpm-foundation.md) |
 | `cargo-mono` | Cargo subcommand for Rust monorepo lifecycle management, including version bump and publish orchestration. | `crates/cargo-mono` | `active` | [project-cargo-mono](docs/project-cargo-mono.md), [crates-cargo-mono-foundation](docs/crates-cargo-mono-foundation.md) |
 | `nodeup` | Rust-based Node.js version manager with deterministic channel resolution, shell completions, and shim execution. | `crates/nodeup` | `active` | [project-nodeup](docs/project-nodeup.md), [crates-nodeup-foundation](docs/crates-nodeup-foundation.md) |

@@ -295,3 +295,13 @@ impl<'de, T: Serialize + DeserializeOwned> Deserialize<'de> for Entries<T> {
         deserializer.deserialize_map(MapVisitor(PhantomData))
     }
 }
+
+impl<T: schemars::JsonSchema> schemars::JsonSchema for Entries<T> {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        format!("Entries_{}", T::schema_name()).into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        <std::collections::BTreeMap<String, T>>::json_schema(generator)
+    }
+}

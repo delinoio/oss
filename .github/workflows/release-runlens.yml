@@ -1,0 +1,212 @@
+name: Release Runlens
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Stable source version (X.Y.Z)'
+        required: true
+        default: '0.1.0'
+      dry_run:
+        description: 'Build and validate without signing, publication, or credentials'
+        type: boolean
+        default: true
+      validation_run_id:
+        description: 'Successful Runlens native validation run at this exact commit on all minimum OS runners; required to publish'
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-runlens-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: inputs.dry_run
+    uses: ./.github/workflows/runlens.yml
+
+  validate:
+    needs: [build]
+    if: always() && (needs.build.result == 'success' || (!inputs.dry_run && needs.build.result == 'skipped'))
+    runs-on: ubuntu-22.04
+    outputs:
+      tag: ${{ steps.metadata.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Validate source identity and native workflow evidence
+        id: metadata
+        uses: actions/github-script@v8
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          VALIDATION_RUN_ID: ${{ inputs.validation_run_id }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        with:
+          script: |
+            const version = process.env.RELEASE_VERSION;
+            if (!/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(version)) throw Error('Invalid release version');
+            const tag = `runlens@v${version}`;
+            core.setOutput('tag', tag);
+            if (process.env.DRY_RUN === 'true') return;
+            if (context.ref !== `refs/tags/${tag}`) throw Error('Publication must run at its exact immutable release tag');
+            const runId = process.env.VALIDATION_RUN_ID;
+            if (!/^[1-9][0-9]*$/.test(runId)) throw Error('Native minimum OS validation run is required');
+            const {data: run} = await github.rest.actions.getWorkflowRun({...context.repo, run_id: Number(runId)});
+            if (run.path !== '.github/workflows/runlens.yml' || run.event !== 'workflow_dispatch' || run.conclusion !== 'success' || run.head_sha !== context.sha) throw Error('Native evidence must be successful at the exact release commit');
+            try {
+              await github.rest.repos.getReleaseByTag({...context.repo, tag});
+              throw Error('Existing releases must never be overwritten');
+            } catch (error) { if (error.status !== 404) throw error; }
+      - uses: actions/download-artifact@v8
+        if: inputs.dry_run
+        with:
+          pattern: runlens-*
+          merge-multiple: true
+          path: runlens-artifacts
+      - uses: actions/download-artifact@v8
+        if: '!inputs.dry_run'
+        with:
+          pattern: runlens-*
+          merge-multiple: true
+          path: runlens-artifacts
+          run-id: ${{ inputs.validation_run_id }}
+          github-token: ${{ github.token }}
+      - name: Validate archives and release readiness
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          python scripts/release/runlens.py collect --directory runlens-artifacts --version "$RELEASE_VERSION"
+          arguments=()
+          if [ "$DRY_RUN" = true ]; then arguments+=(--dry-run); fi
+          python scripts/release/runlens.py readiness --directory runlens-artifacts --version "$RELEASE_VERSION" "${arguments[@]}" | tee runlens-artifacts/readiness.json
+          python scripts/release/runlens.py homebrew --directory runlens-artifacts --version "$RELEASE_VERSION" --dry-run > runlens-artifacts/runlens.rb
+      - uses: actions/upload-artifact@v7
+        with:
+          name: runlens-validated
+          path: runlens-artifacts/*
+          retention-days: 7
+
+  sign:
+    needs: validate
+    if: '!inputs.dry_run'
+    runs-on: ubuntu-22.04
+    environment: runlens-release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: runlens-validated
+          path: runlens-artifacts
+      - uses: sigstore/cosign-installer@v4.1.1
+      - name: Sign the closed artifact inventory
+        env:
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          cd runlens-artifacts
+          for file in runlens-*.tar.gz runlens-*.zip SHA256SUMS; do
+            cosign sign-blob --yes --bundle "$file.sigstore.json" "$file"
+            cosign verify-blob --bundle "$file.sigstore.json" --certificate-identity "https://github.com/delinoio/oss/.github/workflows/release-runlens.yml@refs/tags/$RELEASE_TAG" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$file"
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: runlens-signed
+          path: runlens-artifacts/*
+          retention-days: 7
+
+  install:
+    needs: [validate, sign]
+    if: '!inputs.dry_run'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: [self-hosted, runlens-macos-13, X64]
+          - runner: [self-hosted, runlens-macos-13, ARM64]
+          - runner: [self-hosted, runlens-ubuntu-22.04, X64]
+          - runner: [self-hosted, runlens-ubuntu-22.04, ARM64]
+          - runner: [self-hosted, runlens-windows-10-22h2, X64]
+          - runner: [self-hosted, runlens-windows-10-22h2, ARM64]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: runlens-signed
+          path: runlens-artifacts
+      - uses: sigstore/cosign-installer@v4.1.1
+      - name: Install and execute authenticated native archive
+        if: runner.os != 'Windows'
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          sh scripts/install/runlens.sh --version "$RELEASE_VERSION" --archive-dir runlens-artifacts --install-dir "$RUNNER_TEMP/runlens-verified-$GITHUB_RUN_ID"
+          "$RUNNER_TEMP/runlens-verified-$GITHUB_RUN_ID/runlens" doctor
+          rm -rf "$RUNNER_TEMP/runlens-verified-$GITHUB_RUN_ID"
+      - name: Install and execute authenticated Windows archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          $destination = Join-Path $env:RUNNER_TEMP "runlens-verified-$env:GITHUB_RUN_ID"
+          try {
+            ./scripts/install/runlens.ps1 -Version $env:RELEASE_VERSION -ArchiveDir runlens-artifacts -InstallDir $destination
+            & (Join-Path $destination 'runlens.exe') doctor
+            if ($LASTEXITCODE -ne 0) { throw 'Installed executable doctor failed.' }
+          } finally { if (Test-Path $destination) { Remove-Item -Recurse -Force $destination } }
+
+  publish:
+    needs: [validate, sign, install]
+    if: '!inputs.dry_run'
+    runs-on: ubuntu-22.04
+    environment: runlens-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - uses: actions/download-artifact@v8
+        with:
+          name: runlens-signed
+          path: runlens-artifacts
+      - name: Publish a new release without overwriting
+        uses: actions/github-script@v8
+        env:
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const tag = process.env.RELEASE_TAG;
+            try { await github.rest.repos.getReleaseByTag({...context.repo, tag}); throw Error('Release already exists'); }
+            catch (error) { if (error.status !== 404) throw error; }
+            const files = fs.readdirSync('runlens-artifacts').filter(name => /^(runlens-(darwin|linux|windows)-(amd64|arm64)\.(tar\.gz|zip)|SHA256SUMS)(\.sigstore\.json)?$/.test(name));
+            if (files.length !== 14) throw Error('Incomplete signed inventory');
+            const {data: release} = await github.rest.repos.createRelease({...context.repo, tag_name: tag, draft: true, generate_release_notes: true});
+            for (const name of files) await github.rest.repos.uploadReleaseAsset({...context.repo, release_id: release.id, name, data: fs.readFileSync(`runlens-artifacts/${name}`)});
+            const {data: assets} = await github.rest.repos.listReleaseAssets({...context.repo, release_id: release.id});
+            if (assets.length !== 14 || assets.some(asset => asset.size !== fs.statSync(`runlens-artifacts/${asset.name}`).size)) throw Error('Incomplete uploaded assets; draft retained for inspection');
+            await github.rest.repos.updateRelease({...context.repo, release_id: release.id, draft: false});
+      - name: Update the prebuilt Homebrew formula
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          HOMEBREW_TAP_GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GH_TOKEN }}
+        run: python scripts/release/runlens.py homebrew --directory runlens-artifacts --version "$RELEASE_VERSION"

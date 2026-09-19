@@ -27,7 +27,8 @@
     "proto:lint": "buf format --diff --exit-code && buf lint",
     "proto:breaking": "./scripts/check-proto-breaking.sh",
     "proto:fresh": "turbo run //#proto:generate --force && git diff --exit-code -- 'protos/gen' 'packages/devhud-api-client/src/gen' && test -z \"$(git ls-files --others --exclude-standard -- 'protos/gen' 'packages/devhud-api-client/src/gen')\"",
-    "proto:check": "pnpm proto:lint && pnpm proto:breaking && pnpm proto:fresh"
+    "proto:check": "pnpm proto:lint && pnpm proto:breaking && pnpm proto:fresh",
+    "dev:runlens-docs": "pnpm --filter runlens-docs dev"
   },
   "pnpm": {
     "overrides": {

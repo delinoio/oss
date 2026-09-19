@@ -17,3 +17,5 @@ This site provides a curated, user-facing layer of documentation that complement
 This Rspress app focuses on externally consumable guidance and stable product-facing information.
 Deep implementation contracts remain in the repository's internal project documents.
 Major projects with standalone documentation stay linked from this surface without duplicating their guides here.
+
+Explore [Runlens](https://runlens.delino.io) for command filesystem diagnostics and verification. Release availability and validated platform evidence are listed in its release guide.

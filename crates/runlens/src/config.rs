@@ -10,7 +10,7 @@ use crate::{
     error::{Error, Result},
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub schema_version: u32,
@@ -37,7 +37,7 @@ impl Default for Config {
         }
     }
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Command {
     pub argv: Vec<String>,
@@ -72,7 +72,7 @@ impl Command {
         }
     }
 }
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct Policy {
     pub allow_reads: Option<Vec<String>>,
@@ -83,14 +83,14 @@ pub struct Policy {
     pub require_outputs: bool,
     pub fail_new_accesses: bool,
 }
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct Redaction {
     pub patterns: Vec<String>,
     pub environment_names: Vec<String>,
     pub argument_indices: Vec<usize>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct Limits {
     pub memory_bytes: usize,

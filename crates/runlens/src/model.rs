@@ -5,27 +5,27 @@ use crate::{entries::Entries, error::ErrorCode};
 
 pub const SCHEMA_VERSION: u32 = 1;
 pub const ENGINE_REVISION: &str = "13aa80a0dac698023ce68ba16497b16e5330600b+runlens.1";
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum ReportKind {
     Run,
     Clean,
     Repeat,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Role {
     Target,
     Preparation,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Knowledge {
     Known,
     Missing,
     Unknown,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum FileKind {
     File,
@@ -33,7 +33,7 @@ pub enum FileKind {
     Symlink,
     Other,
 }
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FileState {
     pub knowledge: Knowledge,
@@ -69,7 +69,7 @@ impl FileState {
         }
     }
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum ObservationIssue {
     PermissionDenied,
@@ -83,7 +83,7 @@ pub enum ObservationIssue {
     UnsupportedProcess,
     Cancelled,
 }
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Access {
     pub read: bool,
@@ -92,7 +92,7 @@ pub struct Access {
     pub unsupported: bool,
     pub in_scope: bool,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum ChangeKind {
     Created,
@@ -101,7 +101,7 @@ pub enum ChangeKind {
     TypeChanged,
     Unknown,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Classification {
     Observed,
@@ -109,15 +109,16 @@ pub enum Classification {
     Violation,
     Unknown,
 }
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Evidence {
     #[serde(deserialize_with = "uuid_v7")]
+    #[schemars(with = "uuid::Uuid")]
     pub execution_id: Uuid,
     pub path: Option<String>,
     pub source: EvidenceSource,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum EvidenceSource {
     Access,
@@ -125,14 +126,14 @@ pub enum EvidenceSource {
     After,
     Outcome,
 }
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Finding {
     pub code: FindingCode,
     pub classification: Classification,
     pub evidence: Vec<Evidence>,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum FindingCode {
     UndeclaredInput,
@@ -150,7 +151,7 @@ pub enum FindingCode {
     FailedExecution,
     CollectionIncomplete,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Environment {
     pub os: String,
@@ -162,14 +163,14 @@ pub struct Environment {
     pub working_tree_included: bool,
     pub environment_names: Vec<String>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Identity {
     pub name: Option<String>,
     pub argv: Vec<String>,
     pub cwd: String,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Scope {
     pub root: String,
@@ -180,7 +181,7 @@ pub struct Scope {
     pub after_complete: bool,
     pub redacted_paths: bool,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Outcome {
     pub child_exit_code: Option<i32>,
@@ -194,10 +195,11 @@ impl Outcome {
         self.child_exit_code == Some(0) && self.collection_complete && self.errors.is_empty()
     }
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Execution {
     #[serde(deserialize_with = "uuid_v7")]
+    #[schemars(with = "uuid::Uuid")]
     pub id: Uuid,
     pub role: Role,
     pub repetition: u32,
@@ -210,14 +212,14 @@ pub struct Execution {
     pub changes: Entries<ChangeKind>,
     pub outcome: Outcome,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Verdict {
     Passed,
     Failed,
     Inconclusive,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Report {
     pub schema_version: u32,

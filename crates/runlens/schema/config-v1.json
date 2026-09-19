@@ -1,0 +1,232 @@
+{
+  "$defs": {
+    "Command": {
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "cwd": {
+          "default": ".",
+          "type": "string"
+        },
+        "env": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "exclusions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "inputs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "outputs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "prepare": {
+          "default": [],
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "timeout_ms": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "argv"
+      ],
+      "type": "object"
+    },
+    "Limits": {
+      "additionalProperties": false,
+      "properties": {
+        "max_paths": {
+          "default": 1000000,
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "memory_bytes": {
+          "default": 268435456,
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total_bytes": {
+          "default": 1073741824,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "Policy": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_reads": {
+          "default": null,
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "allow_writes": {
+          "default": null,
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "deny_reads": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "deny_writes": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "fail_new_accesses": {
+          "default": false,
+          "type": "boolean"
+        },
+        "require_inputs": {
+          "default": false,
+          "type": "boolean"
+        },
+        "require_outputs": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "Redaction": {
+      "additionalProperties": false,
+      "properties": {
+        "argument_indices": {
+          "default": [],
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "environment_names": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "patterns": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$id": "https://runlens.delino.io/schema/config-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "commands": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Command"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "exclusions": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "limits": {
+      "$ref": "#/$defs/Limits",
+      "default": {
+        "max_paths": 1000000,
+        "memory_bytes": 268435456,
+        "total_bytes": 1073741824
+      }
+    },
+    "policy": {
+      "$ref": "#/$defs/Policy",
+      "default": {
+        "allow_reads": null,
+        "allow_writes": null,
+        "deny_reads": [],
+        "deny_writes": [],
+        "fail_new_accesses": false,
+        "require_inputs": false,
+        "require_outputs": false
+      }
+    },
+    "redaction": {
+      "$ref": "#/$defs/Redaction",
+      "default": {
+        "argument_indices": [],
+        "environment_names": [],
+        "patterns": []
+      }
+    },
+    "schema_version": {
+      "const": 1,
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version"
+  ],
+  "title": "Config",
+  "type": "object"
+}

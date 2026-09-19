@@ -1,0 +1,17 @@
+{
+  "name": "runlens-docs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare:app": "echo 'runlens-docs: no prepare step'",
+    "dev": "node ../../scripts/run-rspress-port.mjs runlens-docs dev 46310 -",
+    "build": "node scripts/copy-installers.mjs && rspress build",
+    "preview": "node ../../scripts/run-rspress-port.mjs runlens-docs preview 46272 -",
+    "test": "pnpm build && node --test scripts/validate.test.mjs && node scripts/validate.mjs"
+  },
+  "devDependencies": {
+    "@rspress/core": "^2.0.14",
+    "entities": "6.0.1"
+  }
+}
