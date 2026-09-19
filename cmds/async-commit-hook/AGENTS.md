@@ -69,6 +69,6 @@
 - Go test failure IDs include separate package/test identity and a deterministic completed-iteration occurrence, counting pass/skip as well as fail; messages never determine identity.
 - Collect Go test output in lazily grown bounded tails; appending an event must not copy the entire retained tail. Release per-test output after terminal events while preserving failure text.
 
-- Bound CLI wait timeouts to 0..9223372036 seconds before conversion to time.Duration; zero expires the query immediately and never cancels work.
+- Bound CLI wait timeouts to 0..9223372036 seconds before conversion to time.Duration; zero expires the query immediately and never cancels work. Check context expiration before loading a run and again before accepting the read result, including already-terminal runs.
 
 - Bound retention ages to 0..106751 days in both personal configuration and the shared prune service before converting days to time.Duration or mutating evidence; zero remains indefinite retention.

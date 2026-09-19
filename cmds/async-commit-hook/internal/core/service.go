@@ -198,8 +198,16 @@ func (s *Service) GateRun(r Run) Gate {
 	return g
 }
 func (s *Service) Wait(ctx context.Context, id string) (Run, error) {
+	var r Run
 	for {
-		r, e := s.Store.Run(id)
+		if ctx.Err() != nil {
+			return r, E("wait-expired", "wait ended; execution continues", 4)
+		}
+		var e error
+		r, e = s.Store.Run(id)
+		if ctx.Err() != nil {
+			return r, E("wait-expired", "wait ended; execution continues", 4)
+		}
 		if e != nil {
 			return r, e
 		}
