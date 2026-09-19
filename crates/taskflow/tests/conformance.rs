@@ -1123,6 +1123,33 @@ async fn wait_lines(path: &Path, prefix: &str, count: usize) {
 }
 
 #[tokio::test]
+async fn session_normalizes_watch_paths_for_existing_and_deleted_inputs() {
+    let directory = fixture(json!({"check": {
+        "command": command(&["record", "events", "run"]),
+        "input": ["source"], "watch": {"debounce": "20ms"}
+    }}));
+    std::fs::write(directory.path().join("source"), "initial").unwrap();
+    std::fs::create_dir(directory.path().join("nested")).unwrap();
+    profile(directory.path(), &["check"]);
+    // Keep a lexical alias at the API boundary. On Windows TempDir's ordinary
+    // drive path also differs from discovery's verbatim canonical root.
+    let root = directory.path().join("nested").join("..");
+    let token = CancellationToken::new();
+    let stop = token.clone();
+    let session = tokio::spawn(async move {
+        taskflow::session::start(&root, "default", RunOptions::default(), stop).await
+    });
+    let events = directory.path().join("events");
+    wait_lines(&events, "run", 1).await;
+    std::fs::remove_file(directory.path().join("source")).unwrap();
+    wait_lines(&events, "run", 2).await;
+    std::fs::write(directory.path().join("source"), "recreated").unwrap();
+    wait_lines(&events, "run", 3).await;
+    token.cancel();
+    session.await.unwrap().unwrap();
+}
+
+#[tokio::test]
 async fn reading_session_files_does_not_cancel_or_requeue_work() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap().to_string();

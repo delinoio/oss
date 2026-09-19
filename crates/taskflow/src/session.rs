@@ -34,6 +34,11 @@ pub async fn start(
     mut options: RunOptions,
     cancel: CancellationToken,
 ) -> Result<RunResult> {
+    // Discovery stores canonical paths (including Windows verbatim prefixes).
+    // Watch the same root and normalize notifications before path comparisons;
+    // notify may return ordinary drive paths or paths through a root alias.
+    let root = root.canonicalize()?;
+    let root = root.as_path();
     // Subscription precedes discovery/activation; events during initial metadata
     // reads, cache hits, and prerequisite execution remain queued for
     // reconciliation.
@@ -155,6 +160,8 @@ pub async fn start(
                         match event {
                             Ok(event) => {
                                 for path in event.paths {
+                                    let path = files::canonical_path(&path)?;
+                                    if !path.starts_with(root) { continue; }
                                     if path.components().any(|c| c.as_os_str() == ".taskflow") || path.components().any(|c| c.as_os_str().to_string_lossy().starts_with(".taskflow-restore-")) { continue; }
                                     if graph.workspace.metadata_files.contains(&path) || path.file_name().is_some_and(|v| matches!(v.to_str(), Some("taskflow.yml" | "package.json" | "Cargo.toml" | "go.mod" | "go.work" | "pnpm-workspace.yaml"))) {
                                         reload = true;
