@@ -14,8 +14,8 @@ import {
   type Account,
   type DevHudClientError,
 } from "@delinoio/devhud-api-client";
-import { createContext, use, useEffect, useMemo, useRef, useState, type PropsWithChildren, type RefObject } from "react";
-import { createIdentitySession, isTerminalAccessTokenError, sessionProfileId, validateBootstrap, type IdentitySession, type ValidatedBootstrap } from "./identity-client";
+import { createContext, use, useEffect, useMemo, useRef, useState, type MutableRefObject, type PropsWithChildren, type RefObject } from "react";
+import { clearAuthCallbackBinding, createIdentitySession, isTerminalAccessTokenError, sessionProfileId, validateBootstrap, type IdentitySession, type ValidatedBootstrap } from "./identity-client";
 import { clearDeckCaches } from "./deck.ts";
 import { invalidateDeckPolling } from "./deck-polling-cancellation.ts";
 import { assertDeviceLocalSettingsPersistable, clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, deviceLocalSettingsEqual, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
@@ -95,11 +95,16 @@ interface BoundaryProps extends PropsWithChildren {
   readonly platform: RuntimePlatform;
   readonly bridge: NativeBridgeV1;
   readonly onCallbackConsumed: (url: string) => void;
+  readonly onCallbackAbandoned?: (url: string) => void;
+  readonly onAuthCallbackEpoch?: (epoch: number) => void;
   readonly onDeckLinkPolicyReady?: () => void;
   readonly onContinueLocally: () => void;
   readonly onLoggedOut: () => void;
   readonly initialAppearance?: DevHudSettingsV1["appearance"];
   readonly identitySessionRef?: RefObject<IdentitySession | null>;
+  readonly identityRecoveryGeneration?: number;
+  readonly identityRecoveryGenerationRef?: MutableRefObject<number>;
+  readonly prepareApiOriginChangeRef?: MutableRefObject<(() => Promise<void>) | null>;
 }
 
 export function DevHudServiceBoundary(props: BoundaryProps) {
@@ -140,7 +145,7 @@ export function DevHudServiceBoundary(props: BoundaryProps) {
   </QueryClientProvider></TransportProvider>;
 }
 
-function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onCallbackConsumed, onDeckLinkPolicyReady, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
+function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onCallbackConsumed, onCallbackAbandoned, onAuthCallbackEpoch, onDeckLinkPolicyReady, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset, identityRecoveryGeneration = 0, identityRecoveryGenerationRef, prepareApiOriginChangeRef }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
   const storage = getLocalStorage();
   const queryClient = useQueryClient();
   const transport = useTransport();
@@ -178,13 +183,20 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [logoutCleanupPending, setLogoutCleanupPending] = useState(false);
   const signInPendingRef = useRef(false);
   const callbackHandled = useRef<string | null>(null);
+  const failedCallback = useRef<string | null>(null);
+  const callbackAbandonment = useRef<Promise<void> | null>(null);
   const invalidSessionCleanupRef = useRef<Promise<void> | null>(null);
+  const pendingDeletionCleanupRef = useRef<Promise<void> | null>(null);
   const irrecoverableCleanupPendingRef = useRef(false);
   const continueLocallyRef = useRef(false);
   const githubPatReconciliationRef = useRef<Promise<boolean> | null>(null);
   const lastReconciledGitHubPatKeyRef = useRef<string | null>(null);
   const settingsWritableRef = useRef(false);
   const replaceSettingsRef = useRef<IdentitySettingsValue["replaceSettings"]>(async () => false);
+  const recoveredGeneration = useRef(identityRecoveryGeneration);
+  const localRecoveryGenerationRef = useRef(identityRecoveryGeneration);
+  localRecoveryGenerationRef.current = identityRecoveryGeneration;
+  const recoveryGenerationRef = identityRecoveryGenerationRef ?? localRecoveryGenerationRef;
 
   useEffect(() => {
     if (session !== null || continuedLocally && networkReady) onDeckLinkPolicyReady?.();
@@ -261,22 +273,48 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     return cleanup;
   }
 
-  async function cleanPendingDeletion(): Promise<void> {
+  function cleanPendingDeletion(): Promise<void> {
+    if (pendingDeletionCleanupRef.current !== null) return pendingDeletionCleanupRef.current;
     invalidateDeckPolling();
     setDeckAccessSuspended(true);
-    const releaseDiagnosticWrites = beginDiagnosticWriteSuppression(storage);
-    try {
-      const localCleanupComplete = clearAllContractedLocalData(storage);
+    let cleanup: Promise<void>;
+    cleanup = (async () => {
+      const releaseDiagnosticWrites = beginDiagnosticWriteSuppression(storage);
       try {
-        await bridge.request({ operation: "secure.purge", scope: "account-deletion", profileId: await sessionProfileId(apiOrigin) });
-        setDeletionCleanupFailed(!localCleanupComplete);
-      } catch {
-        setDeletionCleanupFailed(true);
+        const localCleanupComplete = clearAllContractedLocalData(storage);
+        try {
+          await bridge.request({ operation: "secure.purge", scope: "account-deletion", profileId: await sessionProfileId(apiOrigin) });
+          setDeletionCleanupFailed(!localCleanupComplete);
+        } catch {
+          setDeletionCleanupFailed(true);
+        }
+      } finally {
+        releaseDiagnosticWrites();
       }
-    } finally {
-      releaseDiagnosticWrites();
-    }
+    })();
+    pendingDeletionCleanupRef.current = cleanup;
+    void cleanup.then(
+      () => { if (pendingDeletionCleanupRef.current === cleanup) pendingDeletionCleanupRef.current = null; },
+      () => { if (pendingDeletionCleanupRef.current === cleanup) pendingDeletionCleanupRef.current = null; },
+    );
+    return cleanup;
   }
+
+  useEffect(() => {
+    if (!prepareApiOriginChangeRef) return;
+    const prepareApiOriginChange = async () => {
+      // Invalidate continuations before waiting: a deletion that has not yet
+      // entered cleanup must not start one after the origin transition begins.
+      recoveryGenerationRef.current += 1;
+      invalidateDeckPolling();
+      setDeckAccessSuspended(true);
+      await pendingDeletionCleanupRef.current;
+    };
+    prepareApiOriginChangeRef.current = prepareApiOriginChange;
+    return () => {
+      if (prepareApiOriginChangeRef.current === prepareApiOriginChange) prepareApiOriginChangeRef.current = null;
+    };
+  }, [prepareApiOriginChangeRef, recoveryGenerationRef]);
 
   async function clearIrrecoverableAccount(): Promise<void> {
     invalidateDeckPolling();
@@ -316,13 +354,14 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     let cancelled = false;
     void bridge.request({ operation: "session.configure-origins", apiOrigin }).then((response) => {
       if (cancelled || response.kind !== "session-network-policy") return;
+      if (response.authCallbackEpoch !== undefined) onAuthCallbackEpoch?.(response.authCallbackEpoch);
       if (response.changed) location.reload();
       else setNetworkReady(true);
     }).catch((reason) => {
       if (!cancelled && !continueLocallyRef.current) { setStatus("error"); setError(safeError(reason)); }
     });
     return () => { cancelled = true; };
-  }, [active, apiOrigin, bootstrapAttempt, bridge]);
+  }, [active, apiOrigin, bootstrapAttempt, bridge, onAuthCallbackEpoch]);
 
   useEffect(() => {
     if (!active || !online || !networkReady || !bootstrapQuery.data) return;
@@ -415,15 +454,21 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   useEffect(() => {
     if (!callbackUrl || callbackHandled.current === callbackUrl || session === null) return;
     callbackHandled.current = callbackUrl;
+    const operationRecoveryGeneration = recoveryGenerationRef.current;
     void (async () => {
       await session.handleCallback(callbackUrl);
+      if (recoveryGenerationRef.current !== operationRecoveryGeneration) return;
       const pending = await bridge.request({ operation: "auth.take-pending-callback" });
       if (pending.kind !== "auth-callback" || pending.url !== callbackUrl) throw new Error("auth-callback-unavailable");
+      if (recoveryGenerationRef.current !== operationRecoveryGeneration) return;
       onCallbackConsumed(callbackUrl);
+      failedCallback.current = null;
       setStatus("authenticated");
       setError(null);
     })().catch((reason) => {
+      if (recoveryGenerationRef.current !== operationRecoveryGeneration) return;
       callbackHandled.current = null;
+      failedCallback.current = callbackUrl;
       setStatus("error");
       setError(safeError(reason));
     });
@@ -566,6 +611,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
 
   async function replaceAt(local: DevHudSettingsV1, expectedRevision: bigint, expectedContentSHA256: Uint8Array = contentSHA256Ref.current): Promise<boolean> {
     if (!online) throw new Error("offline-read-only");
+    const operationRecoveryGeneration = recoveryGenerationRef.current;
     const deviceLocalSettingsGeneration = deviceLocalSettingsGenerationRef.current;
     setSettingsError(null);
     let canonicalJson: Uint8Array;
@@ -578,14 +624,17 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     }
     try {
       const response = await replaceMutation.mutateAsync({ schemaVersion: SettingsSchemaVersion, canonicalJson: Uint8Array.from(canonicalJson), expectedRevision, expectedContentSha256: expectedRevision === 0n ? new Uint8Array() : Uint8Array.from(expectedContentSHA256) });
+      if (recoveryGenerationRef.current !== operationRecoveryGeneration) return false;
       let validated: ValidatedSettingsSnapshot;
       try {
         if (!response.snapshot) throw new SettingsSnapshotError("settings response is missing its snapshot");
         validated = await validatedSettingsSnapshot(response.snapshot);
       } catch (reason) {
+        if (recoveryGenerationRef.current !== operationRecoveryGeneration) return false;
         markSettingsContractInvalid();
         throw reason;
       }
+      if (recoveryGenerationRef.current !== operationRecoveryGeneration) return false;
       const hasNewerDeviceLocalSettings = deviceLocalSettingsGenerationRef.current !== deviceLocalSettingsGeneration;
       const latestDeviceLocalSettings = hasNewerDeviceLocalSettings ? settingsRef.current : local;
       const requiresDeviceLocalPersistence = hasGuestSettings(storage) || !hasNewerDeviceLocalSettings && !deviceLocalSettingsEqual(local, settingsRef.current);
@@ -601,6 +650,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       if (requiresDeviceLocalPersistence && !persisted) throw new Error("device-local-settings-persistence-failed");
       return true;
     } catch (reason) {
+      if (recoveryGenerationRef.current !== operationRecoveryGeneration) return false;
       if (reason instanceof SettingsSnapshotError) throw reason;
       const mapped = mapDevHudError(reason);
       if (mapped.kind === "revisionConflict") {
@@ -640,7 +690,50 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     setBootstrapAttempt((current) => current + 1);
   }
 
+  useEffect(() => {
+    if (recoveredGeneration.current === identityRecoveryGeneration) return;
+    recoveredGeneration.current = identityRecoveryGeneration;
+    const guest = readGuestSettings(storage);
+    sessionRef.current = null;
+    setSession(null);
+    setBootstrap(null);
+    setAccount(null);
+    setAccountError(null);
+    setIdentityReady(false);
+    setSettingsReady(false);
+    resetDesktopShortcuts();
+    setSettingsError(null);
+    setImportDiff(null);
+    setConflict(null);
+    setDeckAccessSuspended(false);
+    applySettings(!hasGuestSettings(storage) && initialAppearance ? { ...guest, appearance: initialAppearance } : guest);
+    applyRevision(0n);
+    void clearIdentityQueryCache();
+    retryIdentity();
+  }, [identityRecoveryGeneration]);
+
+  async function abandonFailedCallback(): Promise<void> {
+    const url = failedCallback.current;
+    if (url === null) return;
+    if (callbackAbandonment.current !== null) {
+      await callbackAbandonment.current;
+      return;
+    }
+    failedCallback.current = null;
+    callbackHandled.current = null;
+    const abandonment = bridge.request({ operation: "auth.take-pending-callback" }).catch(() => {}).then(() => {
+      onCallbackAbandoned?.(url);
+    });
+    callbackAbandonment.current = abandonment;
+    try {
+      await abandonment;
+    } finally {
+      if (callbackAbandonment.current === abandonment) callbackAbandonment.current = null;
+    }
+  }
+
   async function resetIdentity(): Promise<void> {
+    await abandonFailedCallback();
     clearAuthenticatedSettingsCache(storage, apiOrigin);
     setStatus("starting");
     setError(null);
@@ -787,6 +880,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       if (signInPendingRef.current) return;
       continueLocallyRef.current = false;
       setContinuedLocally(false);
+      if (failedCallback.current !== null) await abandonFailedCallback();
       const current = sessionRef.current;
       if (current === null) throw new Error("bootstrap-not-ready");
       signInPendingRef.current = true;
@@ -810,6 +904,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       await settingsQuery.refetch();
     },
     continueLocally: () => {
+      void abandonFailedCallback();
       continueLocallyRef.current = true;
       setContinuedLocally(true);
       setDeckAccessSuspended(false);
@@ -879,21 +974,30 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       }
     },
     deleteAccount: async () => {
+      const operationRecoveryGeneration = recoveryGenerationRef.current;
       const response = await deleteMutation.mutateAsync({});
+      if (recoveryGenerationRef.current !== operationRecoveryGeneration) return;
       setAccount(response.account ?? null);
       setStatus("deletion-pending");
+      if (recoveryGenerationRef.current !== operationRecoveryGeneration) return;
       await cleanPendingDeletion();
     },
     restoreAccount: async () => {
+      const operationRecoveryGeneration = recoveryGenerationRef.current;
       try {
         const response = await restoreMutation.mutateAsync({});
+        if (recoveryGenerationRef.current !== operationRecoveryGeneration) return;
         setAccount(response.account ?? null);
         setDeletionCleanupFailed(false);
         setDeckAccessSuspended(false);
         const blocked = response.account?.administrativeBlockState === AdministrativeBlockState.BLOCKED;
         setStatus(blocked ? "blocked" : "authenticated");
-        if (!blocked) await settingsQuery.refetch();
+        if (!blocked) {
+          await settingsQuery.refetch();
+          if (recoveryGenerationRef.current !== operationRecoveryGeneration) return;
+        }
       } catch (reason) {
+        if (recoveryGenerationRef.current !== operationRecoveryGeneration) return;
         const mapped = mapDevHudError(reason);
         if (mapped.kind === "accountPrecondition" && mapped.detail.reason === AccountFailureReason.PURGE_CLAIMED) {
           await clearIrrecoverableAccount();
@@ -950,6 +1054,7 @@ export async function clearIdentityForApiChange(
 ): Promise<void> {
   const session = sessionRef?.current ?? null;
   if (sessionRef) sessionRef.current = null;
+  clearAuthCallbackBinding(storage);
   const discardedCallback = await bridge.request({ operation: "auth.take-pending-callback" });
   if (discardedCallback.kind !== "auth-callback") throw new Error("auth-callback-discard-failed");
   await session?.clear();

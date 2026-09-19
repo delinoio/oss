@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode, type Ref, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { ErrorIcon, InfoIcon, SuccessIcon, WarningIcon } from "./ui-icons";
 
 export const ShellLayout = { Sidebar: "sidebar", Rail: "rail", Mobile: "mobile" } as const;
@@ -20,7 +21,7 @@ export function useShellLayout(): ShellLayout {
   return layout;
 }
 
-export function AppShell({ layout, skipLabel, navigation, topBar, bottomBar, children, className, style, ...props }: HTMLAttributes<HTMLDivElement> & { readonly layout: ShellLayout; readonly skipLabel: string; readonly navigation?: ReactNode; readonly topBar?: ReactNode; readonly bottomBar?: ReactNode }) {
+export function AppShell({ layout, skipLabel, skipLinkInert = false, navigation, topBar, bottomBar, children, className, style, ...props }: HTMLAttributes<HTMLDivElement> & { readonly layout: ShellLayout; readonly skipLabel: string; readonly skipLinkInert?: boolean; readonly navigation?: ReactNode; readonly topBar?: ReactNode; readonly bottomBar?: ReactNode }) {
   const shell = useRef<HTMLDivElement>(null);
   const main = useRef<HTMLElement>(null);
   const bottomBarContainer = useRef<HTMLDivElement>(null);
@@ -48,10 +49,11 @@ export function AppShell({ layout, skipLabel, navigation, topBar, bottomBar, chi
   }, [hasBottomBar]);
   const skip = (event: React.MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
+    if (skipLinkInert) return;
     main.current?.focus();
   };
   return <div ref={shell} className={`app-shell${className ? ` ${className}` : ""}`} data-shell-layout={layout} style={style} {...props}>
-    <a className="skip-link" href="#devhud-main-content" onClick={skip}>{skipLabel}</a>
+    <a className="skip-link" href="#devhud-main-content" aria-disabled={skipLinkInert || undefined} inert={skipLinkInert} tabIndex={skipLinkInert ? -1 : undefined} onClick={skip}>{skipLabel}</a>
     {navigation}
     {topBar}
     <main ref={main} id="devhud-main-content" className="content" tabIndex={-1} aria-live="polite">{children}</main>
@@ -107,9 +109,9 @@ export function StatePanel({ eyebrow, title, summary, role = "status", tone = "i
   </section>;
 }
 
-export function DataRow({ icon, title, description, trailing, onClick, ariaCurrent }: { readonly icon?: ReactNode; readonly title: ReactNode; readonly description?: ReactNode; readonly trailing?: ReactNode; readonly onClick?: () => void; readonly ariaCurrent?: "page" }) {
+export function DataRow({ icon, title, description, trailing, onClick, ariaCurrent, ariaLabel }: { readonly icon?: ReactNode; readonly title: ReactNode; readonly description?: ReactNode; readonly trailing?: ReactNode; readonly onClick?: () => void; readonly ariaCurrent?: "page"; readonly ariaLabel?: string }) {
   const content = <><span className="data-row-icon">{icon}</span><span className="data-row-content"><strong>{title}</strong>{description && <span>{description}</span>}</span>{trailing && <span className="data-row-trailing">{trailing}</span>}</>;
-  if (onClick) return <button type="button" className="data-row" onClick={onClick} aria-current={ariaCurrent}>{content}</button>;
+  if (onClick) return <button type="button" className="data-row" onClick={onClick} aria-current={ariaCurrent} aria-label={ariaLabel}>{content}</button>;
   return <div className="data-row">{content}</div>;
 }
 
@@ -151,7 +153,7 @@ function ModalSurface({ open, title, titleId, className, role = "dialog", descri
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
-  return <div className="ui-overlay" role="presentation"><section ref={(element) => { surface.current = element; if (surfaceRef) surfaceRef.current = element; }} className={className} role={role} aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} inert={inert || undefined} tabIndex={-1} onKeyDown={keyDown}><h2 id={titleId}>{title}</h2>{children}</section></div>;
+  return createPortal(<div className="ui-overlay" role="presentation"><section ref={(element) => { surface.current = element; if (surfaceRef) surfaceRef.current = element; }} className={className} role={role} aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} inert={inert || undefined} tabIndex={-1} onKeyDown={keyDown}><h2 id={titleId}>{title}</h2>{children}</section></div>, document.body);
 }
 
 export function Dialog({ open, title, role, descriptionId, surfaceRef, initialFocusRef, returnFocusRef, restoreFocus = true, onClose, children }: { readonly open: boolean; readonly title: ReactNode; readonly role?: "dialog" | "alertdialog"; readonly descriptionId?: string; readonly surfaceRef?: RefObject<HTMLElement | null>; readonly initialFocusRef?: RefObject<HTMLElement | null>; readonly returnFocusRef?: RefObject<HTMLElement | null>; readonly restoreFocus?: boolean; readonly onClose: () => void; readonly children: ReactNode }) {

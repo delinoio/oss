@@ -27,7 +27,7 @@ test("mobile shell keeps an internal five-item navigation and repository-owned i
   assert.doesNotMatch(icons, /from "(?!react")/u);
   assert.match(foundation, /import \{[\s\S]*\} from "react";/u);
   assert.match(foundation, /from "\.\/ui-icons"/u);
-  assert.doesNotMatch(foundation, /from "(?!react"|\.\/ui-icons")/u);
+  assert.doesNotMatch(foundation, /from "(?!react"|react-dom"|\.\/ui-icons")/u);
 });
 
 test("mobile policy validates every field in every immutable target tuple", () => {
@@ -82,7 +82,9 @@ test("mobile policy exports the permission-protected Android widget refresh JobS
 
 test("mobile policy requires lifecycle-owned Android persistence and native platform safeguards", () => {
   const androidNativeBridge = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"), "utf8").replaceAll("\r\n", "\n");
+  const nativeBridgeHost = readFileSync(join(appRoot, "src-tauri/src/bridge.rs"), "utf8").replaceAll("\r\n", "\n");
   assert.doesNotThrow(() => assertAndroidNativeBridge(androidNativeBridge));
+  assert.match(nativeBridgeHost, /"auth\.quarantine-pending-callback", "quarantined": api_origin_changed/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("secureSettingsExecutor.shutdown()", "Unit")), /executor must stop with the plugin lifecycle/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace(".commit()", ".apply()")), /must confirm persistence/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("updateAAD", "missingAAD")), /AES-GCM AAD/u);
@@ -96,8 +98,9 @@ test("mobile policy requires lifecycle-owned Android persistence and native plat
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace('PermissionState.PROMPT -> "not-determined"', 'PermissionState.PROMPT, PermissionState.PROMPT_WITH_RATIONALE -> "not-determined"')), /rationale-required/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("manager.notify(notificationId, 0, built)", "manager.notify(deckId.hashCode(), built)")), /distinct notification identities/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("it.notification.group == deckId", "false")), /every associated notification/u);
-  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("Intent(activity.intent).setData(null)", "Intent(activity.intent)")), /activity intent/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replaceAll("Intent(activity.intent).setData(null)", "Intent(activity.intent)")), /activity intent/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replaceAll("peekAuthCallback", "missing")), /inspection must be non-destructive/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace('\"auth.clear-pending-callback\" -> clearAuthCallback(invoke)', '\"auth.clear-pending-callback\" -> Unit')), /origin rekeys must clear/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("if (diagnosticsExportPickerActive)", "if (false)")), /reject a concurrent picker/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("if (diagnosticsPurgesInProgress.get() > 0)", "if (false)")), /remain blocked until destructive secure purges finish/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("diagnosticsExportPickerActive = true", "diagnosticsExportPickerActive = false")), /concurrent picker|record the active picker/u);

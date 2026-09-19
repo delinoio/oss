@@ -14,7 +14,7 @@ import { deckPollingCancellationGeneration } from "./deck-polling-cancellation";
 import { DiagnosticsCorrelationsKey, DiagnosticsStorageKey, appendDiagnosticCorrelation, appendDiagnosticEvent, captureDiagnosticEvent } from "./diagnostics";
 import type { GitHubProvider } from "./github-provider";
 import * as identityClient from "./identity-client";
-import { sessionProfileId, type IdentitySession } from "./identity-client";
+import { hasAuthCallbackBinding, recordAuthCallbackBinding, sessionProfileId, type IdentitySession } from "./identity-client";
 import { SynchronizedSettingsBoundary } from "./identity-ui";
 import { messages } from "./localization";
 import { assertDeviceLocalSettingsPersistable, DeviceLocalSettingsMaximumBytes, hasGuestSettings, readAuthenticatedSettingsCache, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
@@ -134,6 +134,7 @@ function IdentityStateProbe({ replacement = defaultDevHudSettings, deviceLocalRe
       data-error={identity.error ?? ""}
       data-account-error={identity.accountError?.code ?? ""}
       data-account-correlation={identity.accountError?.correlationId ?? ""}
+      data-account-name={identity.account?.displayName ?? ""}
       data-correlation={identity.settingsError?.correlationId ?? ""}
       data-query-data-count={queryClient.getQueryCache().getAll().filter((query) => query.state.data !== undefined).length}
       data-action-error={String(actionError)}
@@ -149,6 +150,8 @@ function IdentityStateProbe({ replacement = defaultDevHudSettings, deviceLocalRe
     {deviceLocalReplacement && <button type="button" onClick={() => void identity.replaceSettings(deviceLocalReplacement).catch(() => setActionError(true))}>replace probe device-local settings</button>}
     <button type="button" onClick={() => void queryClient.refetchQueries()}>refetch probe queries</button>
     <button type="button" onClick={() => { setActionError(false); void identity.logout().catch(() => setActionError(true)); }}>logout probe identity</button>
+    <button type="button" onClick={() => { setActionError(false); void identity.deleteAccount().then(() => setActionSettled((current) => current + 1), () => { setActionError(true); setActionSettled((current) => current + 1); }); }}>delete probe account</button>
+    <button type="button" onClick={() => { setActionError(false); void identity.restoreAccount().then(() => setActionSettled((current) => current + 1), () => { setActionError(true); setActionSettled((current) => current + 1); }); }}>restore probe account</button>
     <button type="button" onClick={identity.continueLocally}>continue probe locally</button>
   </>;
 }
@@ -216,7 +219,7 @@ describe("generated Connect identity/settings fixture", () => {
     const confirmation = screen.getByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle });
     const cancel = within(confirmation).getByRole("button", { name: messages.en.cancel });
     const more = screen.getByRole("button", { name: messages.en.more });
-    expect(cancel).toBe(document.activeElement);
+    await waitFor(() => expect(cancel).toBe(document.activeElement));
     expect((more as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(more);
     expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull();
@@ -396,6 +399,218 @@ describe("generated Connect identity/settings fixture", () => {
     const cached = readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io");
     expect(cached?.settings.shortcuts.desktop[ShortcutActionId.CommandPalette].enabled).toBe(false);
     expect(cached?.settings.agents[0]?.repositoryPrompts).toEqual([prompt]);
+  });
+
+  it("discards a settings replacement that completes after identity recovery begins", async () => {
+    const server = parseDevHudSettings({ ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "light" } });
+    const replacement = parseDevHudSettings({ ...server, appearance: { ...server.appearance, theme: "dark" } });
+    let releaseReplacement!: () => void;
+    const replacementGate = new Promise<void>((resolve) => { releaseReplacement = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: SettingsSchemaVersion, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        await replacementGate;
+        return connectResponse({ snapshot: { schemaVersion: SettingsSchemaVersion, revision: "2", canonicalJson: encodedSettings(replacement) } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    const recoveryGenerationRef = { current: 0 };
+    const renderProbe = (identityRecoveryGeneration: number) => <DevHudServiceBoundary
+      apiOrigin="https://devhud.api.delino.io"
+      active
+      online
+      callbackUrl={null}
+      platform={RuntimePlatform.Desktop}
+      bridge={authenticatedBridge()}
+      onCallbackConsumed={() => {}}
+      onContinueLocally={() => {}}
+      onLoggedOut={() => {}}
+      identityRecoveryGeneration={identityRecoveryGeneration}
+      identityRecoveryGenerationRef={recoveryGenerationRef}
+    ><IdentityStateProbe replacement={replacement} /></DevHudServiceBoundary>;
+    const view = render(renderProbe(0));
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.readOnly).toBe("false"));
+    fireEvent.click(screen.getByRole("button", { name: "replace probe settings" }));
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.readOnly).toBe("true"));
+    recoveryGenerationRef.current = 1;
+    view.rerender(renderProbe(1));
+    act(() => { releaseReplacement(); });
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.actionSettled).toBe("1"));
+    expect(screen.getByTestId("identity-state").dataset.revision).not.toBe("2");
+    expect(readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io")?.revision).not.toBe(2n);
+  });
+
+  it("discards account mutations that complete after identity recovery begins", async () => {
+    const recoveredAccount = { ...fixture.account, displayName: "Recovered User" };
+    const staleDeletion = { ...fixture.account, displayName: "Stale Deleted User", deletionState: "ACCOUNT_DELETION_STATE_PENDING" };
+    const staleRestore = { ...fixture.account, displayName: "Stale Restored User" };
+    let releaseDeletion!: () => void;
+    let releaseRestore!: () => void;
+    const deletionGate = new Promise<void>((resolve) => { releaseDeletion = resolve; });
+    const restoreGate = new Promise<void>((resolve) => { releaseRestore = resolve; });
+    let recovered = false;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: recovered ? recoveredAccount : fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: SettingsSchemaVersion, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.AccountService/DeleteAccount")) {
+        await deletionGate;
+        return connectResponse({ account: staleDeletion });
+      }
+      if (url.endsWith("/devhud.v1.AccountService/RestoreAccount")) {
+        await restoreGate;
+        return connectResponse({ account: staleRestore });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    const recoveryGenerationRef = { current: 0 };
+    const renderProbe = (identityRecoveryGeneration: number) => <DevHudServiceBoundary
+      apiOrigin="https://devhud.api.delino.io"
+      active
+      online
+      callbackUrl={null}
+      platform={RuntimePlatform.Desktop}
+      bridge={authenticatedBridge()}
+      onCallbackConsumed={() => {}}
+      onContinueLocally={() => {}}
+      onLoggedOut={() => {}}
+      identityRecoveryGeneration={identityRecoveryGeneration}
+      identityRecoveryGenerationRef={recoveryGenerationRef}
+    ><IdentityStateProbe /></DevHudServiceBoundary>;
+    const view = render(renderProbe(0));
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.accountName).toBe("Fixture User"));
+    fireEvent.click(screen.getByRole("button", { name: "delete probe account" }));
+    recoveryGenerationRef.current = 1;
+    recovered = true;
+    view.rerender(renderProbe(1));
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.accountName).toBe("Recovered User"));
+    act(() => { releaseDeletion(); });
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.actionSettled).toBe("1"));
+    expect(screen.getByTestId("identity-state").dataset.accountName).toBe("Recovered User");
+
+    fireEvent.click(screen.getByRole("button", { name: "restore probe account" }));
+    recoveryGenerationRef.current = 2;
+    view.rerender(renderProbe(2));
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.accountName).toBe("Recovered User"));
+    act(() => { releaseRestore(); });
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.actionSettled).toBe("2"));
+    expect(screen.getByTestId("identity-state").dataset.accountName).toBe("Recovered User");
+  });
+
+  it("waits for active account-deletion cleanup before an API-origin transition continues", async () => {
+    let releasePurge!: () => void;
+    const purge = new Promise<void>((resolve) => { releasePurge = resolve; });
+    let purgeStarted = false;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: SettingsSchemaVersion, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.AccountService/DeleteAccount")) return connectResponse({ account: { ...fixture.account, deletionState: "ACCOUNT_DELETION_STATE_PENDING" } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+    const secureSession = JSON.stringify({
+      idToken: "fixture-id-token",
+      accessToken: JSON.stringify({ "@https://api.example/api": { token: "fixture-access-token", scope: "", expiresAt: 4_102_444_800 } }),
+    });
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: request.setting.kind === "logto-session" ? secureSession : null };
+        if (request.operation === "secure.purge" && request.scope === "account-deletion") {
+          purgeStarted = true;
+          await purge;
+          return { kind: "ok" };
+        }
+        if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+    const prepareApiOriginChangeRef = { current: null as (() => Promise<void>) | null };
+    render(<DevHudServiceBoundary
+      apiOrigin="https://devhud.api.delino.io"
+      active
+      online
+      callbackUrl={null}
+      platform={RuntimePlatform.Desktop}
+      bridge={bridge}
+      onCallbackConsumed={() => {}}
+      onContinueLocally={() => {}}
+      onLoggedOut={() => {}}
+      prepareApiOriginChangeRef={prepareApiOriginChangeRef}
+    ><IdentityStateProbe /></DevHudServiceBoundary>);
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.accountName).toBe("Fixture User"));
+    fireEvent.click(screen.getByRole("button", { name: "delete probe account" }));
+    await waitFor(() => expect(purgeStarted).toBe(true));
+    const transition = prepareApiOriginChangeRef.current?.();
+    expect(transition).toBeDefined();
+    let transitionCompleted = false;
+    void transition?.then(() => { transitionCompleted = true; });
+    await Promise.resolve();
+    expect(transitionCompleted).toBe(false);
+    await act(async () => { releasePurge(); await purge; });
+    await transition;
+    expect(transitionCompleted).toBe(true);
+  });
+
+  it("discards callback completion after identity recovery starts", async () => {
+    let releaseCallback!: () => void;
+    const callback = new Promise<void>((resolve) => { releaseCallback = resolve; });
+    const handleCallback = vi.fn(async () => callback);
+    const session = {
+      getAccessToken: async () => "fixture-access-token",
+      isAuthenticated: async () => false,
+      signIn: async () => {},
+      clear: async () => {},
+      handleCallback,
+    } as unknown as IdentitySession;
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue(session);
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      throw new Error(`unexpected request ${url}`);
+    }));
+    const recoveryGenerationRef = { current: 0 };
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+    const renderProbe = (generation: number) => <DevHudServiceBoundary
+      apiOrigin="https://devhud.api.delino.io"
+      active
+      online
+      callbackUrl="devhud://auth/callback?code=opaque&state=opaque"
+      platform={RuntimePlatform.Desktop}
+      bridge={bridge}
+      onCallbackConsumed={() => {}}
+      onContinueLocally={() => {}}
+      onLoggedOut={() => {}}
+      identityRecoveryGeneration={generation}
+      identityRecoveryGenerationRef={recoveryGenerationRef}
+    ><IdentityStateProbe /></DevHudServiceBoundary>;
+    const view = render(renderProbe(0));
+
+    await waitFor(() => expect(handleCallback).toHaveBeenCalledOnce());
+    recoveryGenerationRef.current = 1;
+    view.rerender(renderProbe(1));
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.status).toBe("starting"));
+    await act(async () => { releaseCallback(); await callback; });
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.status).not.toBe("error"));
   });
 
   it("keeps synchronized agent saves successful when authenticated cache writes fail", async () => {
@@ -910,10 +1125,11 @@ describe("generated Connect identity/settings fixture", () => {
     const firstConfirmation = screen.getByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle });
     const cancel = within(firstConfirmation).getByRole("button", { name: messages.en.cancel });
     const confirmDelete = within(firstConfirmation).getByRole("button", { name: messages.en.deleteAccount });
-    expect(cancel).toBe(document.activeElement);
+    await waitFor(() => expect(cancel).toBe(document.activeElement));
+    confirmDelete.focus();
     fireEvent.keyDown(firstConfirmation, { key: "Tab" });
-    expect(confirmDelete).toBe(document.activeElement);
-    fireEvent.keyDown(window, { key: "Escape" });
+    expect(cancel).toBe(document.activeElement);
+    fireEvent.keyDown(firstConfirmation, { key: "Escape" });
     expect(screen.queryByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle })).toBeNull();
     await waitFor(() => expect(deleteTrigger).toBe(document.activeElement));
     fireEvent.click(screen.getByRole("button", { name: messages.en.deleteAccount }));
@@ -1677,6 +1893,7 @@ describe("generated Connect identity/settings fixture", () => {
 
   it("does not reuse a consumed callback after logout resets identity", async () => {
     const callbackUrl = "devhud://auth/callback?code=opaque&state=opaque";
+    expect(recordAuthCallbackBinding(localStorage, "https://devhud.api.delino.io")).toBe(true);
     let receive!: (event: NativeBridgeEventV1) => void;
     let pendingCallback: string | null = callbackUrl;
     let authenticated = false;
@@ -1729,6 +1946,7 @@ describe("generated Connect identity/settings fixture", () => {
 
   it("retains a callback until a transient Logto exchange failure is retried", async () => {
     const callbackUrl = "devhud://auth/callback?code=opaque&state=opaque";
+    expect(recordAuthCallbackBinding(localStorage, "https://devhud.api.delino.io")).toBe(true);
     let receive!: (event: NativeBridgeEventV1) => void;
     let pendingCallback: string | null = callbackUrl;
     let authenticated = false;
@@ -1777,6 +1995,48 @@ describe("generated Connect identity/settings fixture", () => {
     await waitFor(() => expect(handleCallback).toHaveBeenCalledTimes(2));
     expect(pendingCallback).toBeNull();
     expect(await screen.findByText("Fixture User")).toBeTruthy();
+  });
+
+  it("abandons a failed callback when the user continues locally", async () => {
+    const callbackUrl = "devhud://auth/callback?code=opaque&state=opaque";
+    expect(recordAuthCallbackBinding(localStorage, "https://devhud.api.delino.io")).toBe(true);
+    let receive!: (event: NativeBridgeEventV1) => void;
+    let pendingCallback: string | null = callbackUrl;
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      client: {},
+      storage: {},
+      getAccessToken: async () => "fixture-access-token",
+      isAuthenticated: async () => false,
+      signIn: async () => {},
+      handleCallback: async () => { throw new Error("expired-state"); },
+      clear: async () => {},
+    } as unknown as IdentitySession);
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      throw new Error(`unexpected request ${String(input)}`);
+    }));
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "auth.take-pending-callback") {
+          const url = pendingCallback;
+          pendingCallback = null;
+          return { kind: "auth-callback", url };
+        }
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen(listener) { receive = listener; return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    await waitFor(() => expect(receive).toBeTypeOf("function"));
+    act(() => receive({ version: 1, kind: "auth-callback", url: callbackUrl }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: messages.en.continueLocally }));
+
+    await waitFor(() => expect(pendingCallback).toBeNull());
+    expect(hasAuthCallbackBinding(localStorage)).toBe(false);
   });
 
   it.each([

@@ -2,9 +2,54 @@ import { ProjectId, StaticCapability, type GetBootstrapResponse } from "@delinoi
 import LogtoClient, { createRequester, isLogtoRequestError, LogtoClientError, type ClientAdapter, type Storage as LogtoStorage } from "@logto/client";
 import { isValidLogtoAudience, logtoEndpointFromIssuer, normalizeLogtoIssuer, normalizeNetworkOrigin, normalizePublicAssetUrl } from "./identity-contract.ts";
 import { nativeBridge, RuntimePlatform, SecureSettingKind, type NativeBridgeV1, type RuntimePlatform as RuntimePlatformType } from "./native-bridge";
+import { getLocalStorage } from "./shell";
 
 export const NativeAuthCallback = "devhud://auth/callback" as const;
 export const SupportedProtocolSchemaVersion = 2 as const;
+
+const AuthCallbackBindingKey = "devhud.identity.auth-callback-binding.v1";
+
+interface AuthCallbackBinding {
+  readonly version: 1;
+  readonly apiOrigin: string;
+}
+
+function parsedAuthCallbackBinding(storage: Pick<Storage, "getItem">): AuthCallbackBinding | null {
+  try {
+    const value: unknown = JSON.parse(storage.getItem(AuthCallbackBindingKey) ?? "null");
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+    const binding = value as Record<string, unknown>;
+    return binding.version === 1 && typeof binding.apiOrigin === "string" ? { version: 1, apiOrigin: binding.apiOrigin } : null;
+  } catch {
+    return null;
+  }
+}
+
+export function hasAuthCallbackBinding(storage: Pick<Storage, "getItem">): boolean {
+  return parsedAuthCallbackBinding(storage) !== null;
+}
+
+/** Records the API-origin owner before a browser callback can outlive this process. */
+export function recordAuthCallbackBinding(storage: Storage, apiOrigin: string): boolean {
+  if (hasAuthCallbackBinding(storage)) return false;
+  const binding = JSON.stringify({ version: 1, apiOrigin } satisfies AuthCallbackBinding);
+  try {
+    storage.setItem(AuthCallbackBindingKey, binding);
+    return storage.getItem(AuthCallbackBindingKey) === binding;
+  } catch {
+    return false;
+  }
+}
+
+export function authCallbackBindingMatches(storage: Pick<Storage, "getItem">, apiOrigin: string): boolean {
+  return parsedAuthCallbackBinding(storage)?.apiOrigin === apiOrigin;
+}
+
+export function clearAuthCallbackBinding(storage: Pick<Storage, "removeItem">): void {
+  try {
+    storage.removeItem(AuthCallbackBindingKey);
+  } catch {}
+}
 
 export interface ValidatedBootstrap {
   readonly issuer: string;
@@ -134,7 +179,14 @@ export async function createIdentitySession(bootstrap: ValidatedBootstrap, apiOr
     storage,
     navigate: async (url, parameters) => {
       if (parameters.for === "post-sign-in") return;
-      await bridge.request({ operation: "auth.open-system-browser", url, issuer: bootstrap.issuer });
+      const callbackStorage = getLocalStorage();
+      if (!recordAuthCallbackBinding(callbackStorage, apiOrigin)) throw new Error("auth-callback-binding-failed");
+      try {
+        await bridge.request({ operation: "auth.open-system-browser", url, issuer: bootstrap.issuer });
+      } catch (reason) {
+        clearAuthCallbackBinding(callbackStorage);
+        throw reason;
+      }
     },
     generateState: () => randomBase64Url(32),
     generateCodeVerifier: () => randomBase64Url(64),
@@ -157,7 +209,10 @@ export async function createIdentitySession(bootstrap: ValidatedBootstrap, apiOr
       return currentAccessToken;
     },
     isAuthenticated: () => client.isAuthenticated(),
-    signIn: () => client.signIn({ redirectUri: bootstrap.redirectUri }),
+    signIn: async () => {
+      if (hasAuthCallbackBinding(getLocalStorage())) throw new Error("auth-callback-pending");
+      await client.signIn({ redirectUri: bootstrap.redirectUri });
+    },
     handleCallback: (url) => client.handleSignInCallback(url),
     clear: async () => {
       const accessToken = currentAccessToken;
