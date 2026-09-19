@@ -449,21 +449,42 @@ func (s *Service) runOne(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	r.State = Passed
-	applicable := 0
-	for _, c := range r.Checks {
-		if c.State != Skipped {
-			applicable++
-		}
-		if c.State == Cancelled || c.State == Replaced || c.State == Interrupted || (!c.Optional && c.State != Passed && c.State != Skipped) {
-			r.State = c.State
-		}
-	}
+	state, applicable := aggregateCheckState(r.Checks)
+	r.State = state
 	if applicable == 0 {
 		r.State = Failed
 		r.Diagnostics = append(r.Diagnostics, Diagnostic{Code: "no-applicable-checks", Message: "this execution does not validate any applicable checks"})
 	}
 	return s.finalize(r)
+}
+
+func aggregateCheckState(checks []Check) (State, int) {
+	seen := map[State]bool{}
+	applicable := 0
+	for _, c := range checks {
+		if c.State == Skipped {
+			continue
+		}
+		applicable++
+		if c.Optional && (c.State == Failed || c.State == Blocked) {
+			continue
+		}
+		seen[c.State] = true
+		if !c.State.Terminal() {
+			seen[Interrupted] = true
+		}
+	}
+	if applicable == 0 {
+		return Failed, 0
+	}
+	// Lifecycle/evidence loss takes precedence over validation failures;
+	// a failed prerequisite takes precedence over its blocked dependents.
+	for _, state := range []State{Interrupted, Cancelled, Replaced, Expired, Failed, Blocked} {
+		if seen[state] {
+			return state, applicable
+		}
+	}
+	return Passed, applicable
 }
 func (s *Service) finalize(r Run) error {
 	workspace := filepath.Join(s.Store.Root, "workspaces", r.ID)

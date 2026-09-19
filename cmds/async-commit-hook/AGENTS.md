@@ -1,6 +1,7 @@
 # async-commit-hook command ownership
 
 - The common application service owns scheduling, final validation, acknowledgement, retention and comparison. CLI, Connect and MCP adapters must not implement competing decisions.
+- Aggregate check outcomes independently of names/order: interrupted, cancelled, replaced, expired, failed, blocked, then passed. Optional failed/blocked outcomes do not fail the run; lifecycle loss remains visible, and no applicable checks is failed.
 - Pre-push `run-and-wait` renews terminal nonpassing attempts and waits for existing unfinished attempts; `wait` never submits work.
 - Acknowledgement is idempotent and accepts terminal runs only; check terminal state and persist the timestamp in one transaction.
 - Account lifecycle control remains in the canonical home configuration directory even when `--config` or `state_dir` changes. Tests must use isolated homes or explicit injected `Paths`; never touch developer credentials or real account state.
