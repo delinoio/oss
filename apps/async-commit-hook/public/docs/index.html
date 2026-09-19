@@ -440,7 +440,9 @@ ach browser revoke --browser &lt;id&gt;</pre
         <p>
           Submodule and Git LFS source are explicitly unsupported. Each committed
           <code>.gitattributes</code> file must be at most 1 MiB; larger files are
-          rejected before an execution is accepted. Docker is not
+          rejected before an execution is accepted. A single Git tree record
+          (path plus object metadata) must also fit within 1 MiB; the total
+          number of paths has no product limit. Docker is not
           required. Managed checks do not recursively trigger automatic checks.
           Original worktrees and unrelated processes are preserved.
         </p>

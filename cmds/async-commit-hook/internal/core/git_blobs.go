@@ -12,7 +12,7 @@ import (
 )
 
 // One batch session streams raw objects without filters or working-tree conversions.
-func materializeBlobs(ctx context.Context, dir string, owned *os.Root, entries []treeEntry) error {
+func materializeBlobs(ctx context.Context, dir string, owned *os.Root, sha string) error {
 	cmd := gitCommand(ctx, dir, "cat-file", "--batch")
 	input, err := cmd.StdinPipe()
 	if err != nil {
@@ -35,7 +35,7 @@ func materializeBlobs(ctx context.Context, dir string, owned *os.Root, entries [
 	}()
 	reader := bufio.NewReader(output)
 	buffer := make([]byte, 32*1024)
-	for _, entry := range entries {
+	err = walkTree(ctx, dir, sha, func(entry treeEntry) error {
 		if err = ctx.Err(); err != nil {
 			return err
 		}
@@ -102,6 +102,10 @@ func materializeBlobs(ctx context.Context, dir string, owned *os.Root, entries [
 		if err != nil || delimiter != '\n' {
 			return E("git-object-unavailable", "invalid committed object boundary", 3)
 		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	if err = input.Close(); err != nil {
 		return err

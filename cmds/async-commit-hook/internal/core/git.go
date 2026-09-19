@@ -1,8 +1,10 @@
 package core
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -100,43 +102,75 @@ func CommitConfig(ctx context.Context, path, sha string) (Project, error) {
 
 type treeEntry struct{ Mode, OID, Path string }
 
-func tree(ctx context.Context, path, sha string) ([]treeEntry, error) {
-	v, err := Git(ctx, path, "ls-tree", "-rz", "--full-tree", sha)
+const maxTreeRecordBytes = 1024 * 1024
+
+func walkTree(ctx context.Context, path, sha string, visit func(treeEntry) error) error {
+	cmd := gitCommand(ctx, path, "ls-tree", "-rz", "--full-tree", sha)
+	output, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	out := []treeEntry{}
-	for _, entry := range strings.Split(v, "\x00") {
-		if entry == "" {
-			continue
+	if err = cmd.Start(); err != nil {
+		return err
+	}
+	err = readTreeEntries(output, visit)
+	if err != nil {
+		_ = cmd.Process.Kill()
+	}
+	waitErr := cmd.Wait()
+	if err != nil {
+		return err
+	}
+	if waitErr != nil {
+		return E("git-tree-unavailable", "cannot read committed Git tree", 3)
+	}
+	return nil
+}
+
+func readTreeEntries(input io.Reader, visit func(treeEntry) error) error {
+	scanner := bufio.NewScanner(input)
+	scanner.Buffer(make([]byte, 64*1024), maxTreeRecordBytes+1)
+	scanner.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+		if i := bytes.IndexByte(data, 0); i >= 0 {
+			return i + 1, data[:i], nil
 		}
-		pair := strings.SplitN(entry, "\t", 2)
+		if atEOF && len(data) > 0 {
+			return 0, nil, E("git-tree-invalid", "unterminated Git tree record", 3)
+		}
+		return 0, nil, nil
+	})
+	for scanner.Scan() {
+		pair := strings.SplitN(scanner.Text(), "\t", 2)
 		if len(pair) != 2 {
-			return nil, E("git-tree-invalid", "invalid Git tree record", 3)
+			return E("git-tree-invalid", "invalid Git tree record", 3)
 		}
 		meta := strings.Fields(pair[0])
-		if len(meta) != 3 || !SafeRelative(pair[1]) {
-			return nil, E("unsupported-source-path", "source contains an unrepresentable file path", 2)
+		if len(meta) != 3 || !objectID.MatchString(meta[2]) || !SafeRelative(pair[1]) {
+			return E("unsupported-source-path", "source contains an unrepresentable file path", 2)
 		}
 		for _, component := range strings.Split(pair[1], "/") {
 			folded := strings.ToLower(strings.TrimRight(component, " ."))
 			if folded == ".git" || strings.HasPrefix(folded, "git~") {
-				return nil, E("unsupported-source-path", "source path overlaps managed Git metadata", 2)
+				return E("unsupported-source-path", "source path overlaps managed Git metadata", 2)
 			}
 		}
 		if meta[0] == "160000" {
-			return nil, E("submodules-unsupported", "submodule source is unsupported", 2)
+			return E("submodules-unsupported", "submodule source is unsupported", 2)
 		}
-		out = append(out, treeEntry{meta[0], meta[2], pair[1]})
+		if (meta[0] != "100644" && meta[0] != "100755" && meta[0] != "120000") || meta[1] != "blob" {
+			return E("git-tree-invalid", "unsupported Git tree object mode or type", 3)
+		}
+		if err := visit(treeEntry{meta[0], meta[2], pair[1]}); err != nil {
+			return err
+		}
 	}
-	return out, nil
+	if errors.Is(scanner.Err(), bufio.ErrTooLong) {
+		return E("unsupported-source-path", "Git tree record exceeds the supported 1 MiB limit", 2)
+	}
+	return scanner.Err()
 }
 func ValidateSource(ctx context.Context, path, sha string) error {
-	entries, err := tree(ctx, path, sha)
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
+	return walkTree(ctx, path, sha, func(e treeEntry) error {
 		if filepath.Base(e.Path) == ".gitattributes" {
 			b, err := readAttributeBlob(ctx, path, e.OID)
 			if err != nil {
@@ -146,8 +180,8 @@ func ValidateSource(ctx context.Context, path, sha string) error {
 				return E("lfs-unsupported", "Git LFS source is unsupported", 2)
 			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 const maxAttributeBytes = 1024 * 1024
@@ -240,16 +274,12 @@ func (s *Store) Prepare(ctx context.Context, r Run) (string, error) {
 	if _, err := Git(ctx, dir, "read-tree", r.Commit); err != nil {
 		return dir, err
 	}
-	entries, err := tree(ctx, dir, r.Commit)
-	if err != nil {
-		return dir, err
-	}
 	owned, err := os.OpenRoot(dir)
 	if err != nil {
 		return dir, err
 	}
 	defer owned.Close()
-	if err := materializeBlobs(ctx, dir, owned, entries); err != nil {
+	if err := materializeBlobs(ctx, dir, owned, r.Commit); err != nil {
 		return dir, err
 	}
 	return dir, nil

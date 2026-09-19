@@ -79,6 +79,8 @@ Repository/worktree listings discover the current checkout branch on access, inc
 
 Crash recovery resumes a preparing/running request when all local checks are still queued or skipped with no process identity or start timestamp (inherited results are already complete). Under the run ownership lock it removes partial source, resets the run to queued and prepares fresh committed source. A claimed/preparing check is ambiguous and remains interrupted; it is never automatically replayed.
 
+Git tree traversal streams NUL-delimited records directly into attribute validation or blob materialization without retaining the complete listing or an entry slice. Each record is bounded to 1 MiB; unsupported/unterminated records fail closed, and reader processes are killed and reaped on early failure.
+
 Workspace materialization uses one raw `git cat-file --batch` session, validates each OID/type/size and streams regular blobs through a 32 KiB copy buffer. Large committed files are not loaded whole. Symlink targets are bounded at 64 KiB, LFS pointer prefixes are rejected before writing, and filters/hooks/line-ending conversion remain disabled. Batch framing follows the [Git cat-file contract](https://git-scm.com/docs/git-cat-file).
 
 Workspace-preparation failures persist every affected check diagnostic before finalizing the run. If a check write fails, return that error and leave the run pending for recovery instead of publishing a terminal run with queued checks.

@@ -6,6 +6,7 @@
 - Pre-push hashes terminal evidence outside SQLite transactions, then reselects the latest attempt and compares its full metadata snapshot in a short immediate transaction before reuse or replacement insertion. Concurrent clients reuse one pending attempt without blocking unrelated workers during file I/O.
 - Acknowledgement is idempotent and accepts terminal runs only; check terminal state and persist the timestamp in one transaction.
 - Account lifecycle control remains in the canonical home configuration directory even when `--config` or `state_dir` changes. Tests must use isolated homes or explicit injected `Paths`; never touch developer credentials or real account state.
+- Stream NUL-delimited Git tree records directly into validation/materialization, retaining no full listing or entry slice; bound one record to 1 MiB and kill/reap readers on failure.
 - Committed source is streamed through one validated raw Git blob batch per workspace, with bounded buffers. Never enable original hooks, filters, submodules or LFS implicitly. Hook installation discovery must not use the execution helper's disabled-hooks override.
 - Read committed project configuration through a 1 MiB plus one-byte stream limit before parsing; terminate and reap oversized Git readers rather than buffering the full blob.
 - LFS declaration checks ignore attribute comments and pattern text, match exact filter values, and retain independent raw-pointer rejection before commands start.
