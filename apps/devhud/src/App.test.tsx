@@ -396,6 +396,49 @@ describe("native App state", () => {
     expect(screen.getByRole("button", { name: messages.en.signIn })).toBeTruthy();
   });
 
+  it("persists the new origin when callback draining fails after policy configuration", async () => {
+    let authenticated = true;
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      getAccessToken: async () => "fixture-access-token",
+      isAuthenticated: async () => authenticated,
+      signIn: async () => {},
+      handleCallback: async () => {},
+      clear: async () => { authenticated = false; },
+    } as unknown as IdentitySession);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      projectId: "PROJECT_ID_DEVHUD",
+      protocolSchemaVersion: 2,
+      apiVersion: "0.1.0-dev",
+      logtoIssuer: "https://identity.example/oidc",
+      logtoAudience: "https://api.example/api",
+      publicAssetBaseUrl: "https://images.example/devhud",
+      logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
+      logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
+    }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
+    let callbackDrainAttempts = 0;
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      if (value.operation === "auth.take-pending-callback") {
+        callbackDrainAttempts += 1;
+        if (callbackDrainAttempts === 2) throw new Error("post-policy-callback-discard-failed");
+        return { kind: "auth-callback", url: null };
+      }
+      if (value.operation === "secure.purge") return { kind: "ok" };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+
+    render(<App bridge={bridgeWith(request)} initialRuntime={mobileRuntime} />);
+    await waitFor(() => expect(identityClient.createIdentitySession).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).getByRole("button", { name: messages.en.applyApiOrigin }));
+
+    await waitFor(() => expect(JSON.parse(localStorage.getItem("devhud.shell.preferences.v1") ?? "null").apiOrigin).toBe("https://custom.example"));
+    expect(screen.queryByText(messages.en.apiChangePolicyFailed)).toBeNull();
+    await waitFor(() => expect(identityClient.createIdentitySession).toHaveBeenCalledTimes(2));
+  });
+
   it("quarantines callbacks received while changing the API origin policy", async () => {
     const listeners: Array<(event: NativeBridgeEventV1) => void> = [];
     const handleCallback = vi.fn(async () => {});

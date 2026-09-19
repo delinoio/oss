@@ -448,13 +448,23 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     let policy;
     try {
       policy = await bridge.request({ operation: "session.configure-origins", apiOrigin: normalized });
-      const discardedCallback = await bridge.request({ operation: "auth.take-pending-callback" });
-      if (discardedCallback.kind !== "auth-callback") throw new Error("auth-callback-discard-failed");
     }
     catch {
       setIdentityBoundaryGeneration((current) => current + 1);
       apiOriginChangeInFlight.current = false;
       setApiChangeError("policy");
+      return;
+    }
+    try {
+      const discardedCallback = await bridge.request({ operation: "auth.take-pending-callback" });
+      if (discardedCallback.kind !== "auth-callback") throw new Error("auth-callback-discard-failed");
+    }
+    catch {
+      // The native policy has already committed, so retain the matching origin
+      // instead of remounting the old boundary against the new allowlist.
+      update({ apiOrigin: normalized });
+      apiOriginChangeInFlight.current = false;
+      if (policy.kind === "session-network-policy" && policy.changed) location.reload();
       return;
     }
     update({ apiOrigin: normalized });
