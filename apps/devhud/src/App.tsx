@@ -443,6 +443,13 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     setApiChangeError(null);
     try { await clearIdentityForApiChange(bridge, storage, preferences.apiOrigin, identitySession); }
     catch {
+      // Callbacks received while the old identity session was being cleared
+      // remain quarantined in native storage. Discard them before admitting
+      // events again so a partially cleared transaction cannot replay.
+      try {
+        const discardedCallback = await bridge.request({ operation: "auth.take-pending-callback" });
+        if (discardedCallback.kind !== "auth-callback") throw new Error("auth-callback-discard-failed");
+      } catch {}
       apiOriginChangeInFlight.current = false;
       setApiChangeError("cleanup");
       return;

@@ -352,6 +352,60 @@ describe("native App state", () => {
     expect(screen.queryByText(messages.en.externalFailed)).toBeNull();
   });
 
+  it("drains callbacks quarantined while API-origin cleanup fails", async () => {
+    const listeners: Array<(event: NativeBridgeEventV1) => void> = [];
+    let rejectClear: (() => void) | undefined;
+    let pendingCallback: string | null = null;
+    let callbackDrains = 0;
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      getAccessToken: async () => "fixture-access-token",
+      isAuthenticated: async () => false,
+      signIn: async () => {},
+      handleCallback: async () => {},
+      clear: async () => new Promise<void>((_, reject) => { rejectClear = () => reject(new Error("clear-failed")); }),
+    } as unknown as IdentitySession);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      projectId: "PROJECT_ID_DEVHUD",
+      protocolSchemaVersion: 2,
+      apiVersion: "0.1.0-dev",
+      logtoIssuer: "https://identity.example/oidc",
+      logtoAudience: "https://api.example/api",
+      publicAssetBaseUrl: "https://images.example/devhud",
+      logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
+      logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
+    }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "auth.take-pending-callback") {
+          callbackDrains += 1;
+          const url = pendingCallback;
+          pendingCallback = null;
+          return { kind: "auth-callback", url };
+        }
+        throw new Error(`unexpected operation ${request.operation}`);
+      },
+      async listen(listener) { listeners.push(listener); return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={mobileRuntime} />);
+    await waitFor(() => expect(identityClient.createIdentitySession).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(listeners).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).getByRole("button", { name: messages.en.applyApiOrigin }));
+    await waitFor(() => expect(rejectClear).toBeTypeOf("function"));
+
+    pendingCallback = "devhud://auth/callback?code=old&state=old";
+    act(() => listeners[0]({ version: 1, kind: "auth-callback", url: pendingCallback as string }));
+    await act(async () => { rejectClear?.(); });
+
+    await waitFor(() => expect(within(document.querySelector(".api-origin-editor") as HTMLElement).getByRole("alert").textContent).toBe(messages.en.apiChangeFailed));
+    expect(callbackDrains).toBe(2);
+    expect(pendingCallback).toBeNull();
+  });
+
   it("reports API-origin policy configuration failures without persisting the new origin", async () => {
     let authenticated = true;
     vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
