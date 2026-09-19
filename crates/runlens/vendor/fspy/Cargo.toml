@@ -53,12 +53,6 @@ fspy_preload_windows = { workspace = true }
 winapi = { workspace = true, features = ["winbase", "securitybaseapi", "handleapi"] }
 winsafe = { workspace = true, features = ["kernel"] }
 
-[build-dependencies]
-anyhow = { workspace = true }
-flate2 = { workspace = true }
-sha2 = { workspace = true }
-tar = { workspace = true }
-
 [lints]
 workspace = true
 

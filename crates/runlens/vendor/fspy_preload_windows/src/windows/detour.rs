@@ -12,8 +12,7 @@ use winsafe::SysResult;
 
 use crate::windows::winapi_utils::ck_long;
 
-// SAFETY: Detour<T> is only mutated during DLL attach/detach (single-threaded
-// DLL_PROCESS_ATTACH)
+// SAFETY: Detour<T> is only mutated during DLL attach/detach (single-threaded DLL_PROCESS_ATTACH)
 unsafe impl<T: Sync> Sync for Detour<T> {}
 pub struct Detour<T> {
     symbol_name: &'static CStr,
@@ -23,27 +22,17 @@ pub struct Detour<T> {
 
 impl<T: Copy> Detour<T> {
     pub const unsafe fn new(symbol_name: &'static CStr, target: T, new: T) -> Self {
-        // SAFETY: transmute_copy reinterprets the function pointer as *mut c_void for
-        // Detours API
-        Self {
-            symbol_name,
-            target: UnsafeCell::new(unsafe { transmute_copy(&target) }),
-            new,
-        }
+        // SAFETY: transmute_copy reinterprets the function pointer as *mut c_void for Detours API
+        Self { symbol_name, target: UnsafeCell::new(unsafe { transmute_copy(&target) }), new }
     }
 
     pub const unsafe fn dynamic(symbol_name: &'static CStr, new: T) -> Self {
-        Self {
-            symbol_name,
-            target: UnsafeCell::new(null_mut()),
-            new,
-        }
+        Self { symbol_name, target: UnsafeCell::new(null_mut()), new }
     }
 
     #[must_use]
     pub fn real(&self) -> &T {
-        // SAFETY: target is initialized during Detour construction or attach; read-only
-        // after attach
+        // SAFETY: target is initialized during Detour construction or attach; read-only after attach
         unsafe { &(*self.target.get().cast::<T>()) }
     }
 
@@ -77,16 +66,11 @@ impl AttachContext {
         let kernelbase = get_module_handle(wide_cstr!("kernelbase.dll")).ok();
         let kernel32 = get_module_handle(wide_cstr!("kernel32.dll"))?;
         let ntdll = get_module_handle(wide_cstr!("ntdll.dll"))?;
-        Ok(Self {
-            kernelbase,
-            kernel32,
-            ntdll,
-        })
+        Ok(Self { kernelbase, kernel32, ntdll })
     }
 }
 
-// SAFETY: DetourAny is only used during DLL attach/detach (single-threaded
-// DLL_PROCESS_ATTACH)
+// SAFETY: DetourAny is only used during DLL attach/detach (single-threaded DLL_PROCESS_ATTACH)
 unsafe impl Sync for DetourAny {}
 impl DetourAny {
     pub unsafe fn attach(&self, ctx: &AttachContext) -> SysResult<()> {

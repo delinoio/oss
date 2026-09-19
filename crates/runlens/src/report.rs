@@ -96,6 +96,17 @@ pub fn validate(report: &Report) -> Result<()> {
         return Err(Error::input("invalid report envelope size"));
     }
     let mut ids = std::collections::BTreeSet::new();
+    let mut envelope_bytes = 0usize;
+    let mut charge = |value: &str| -> Result<()> {
+        envelope_bytes = envelope_bytes.saturating_add(value.len() + std::mem::size_of::<String>());
+        if value.len() > MAX_RECORD_BYTES || envelope_bytes > MAX_ENVELOPE_BYTES {
+            return Err(Error::input("report metadata exceeds the envelope limit"));
+        }
+        Ok(())
+    };
+    for value in &report.limitations {
+        charge(value)?;
+    }
     for execution in &report.executions {
         if execution.id.get_version_num() != 7 || !ids.insert(execution.id) {
             return Err(Error::input("execution IDs must be unique UUID v7 values"));
@@ -106,6 +117,34 @@ pub fn validate(report: &Report) -> Result<()> {
             || execution.scope.root != "${workspace}"
         {
             return Err(Error::input("invalid execution metadata"));
+        }
+        let env = &execution.environment;
+        for value in execution
+            .command
+            .argv
+            .iter()
+            .chain(execution.command.name.iter())
+            .chain([
+                &execution.command.cwd,
+                &execution.scope.root,
+                &env.os,
+                &env.architecture,
+                &env.runlens_version,
+                &env.engine_version,
+            ])
+            .chain(execution.scope.exclusions.iter())
+            .chain(execution.scope.input_patterns.iter())
+            .chain(execution.scope.output_patterns.iter())
+            .chain(env.environment_names.iter())
+            .chain(env.os_version.iter())
+            .chain(env.source_revision.iter())
+            .chain(env.executable_sha256.iter())
+        {
+            charge(value)?;
+        }
+        valid_path(&execution.command.cwd)?;
+        if let Some(hash) = &env.executable_sha256 {
+            valid_digest(hash)?;
         }
         if execution.outcome.collection_complete
             && execution.outcome.errors.iter().any(|e| {
@@ -121,17 +160,15 @@ pub fn validate(report: &Report) -> Result<()> {
         {
             return Err(Error::input("inconsistent collection outcome"));
         }
-        for states in [&execution.before, &execution.after] {
+        for (states, complete) in [
+            (&execution.before, execution.scope.before_complete),
+            (&execution.after, execution.scope.after_complete),
+        ] {
             for item in states.iter() {
                 let (path, state) = item?;
                 valid_path(&path)?;
-                if let Some(hash) = state.sha256.as_ref()
-                    && (hash.len() != 64
-                        || !hash
-                            .bytes()
-                            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
-                {
-                    return Err(Error::input("invalid content digest"));
+                if let Some(hash) = state.sha256.as_ref() {
+                    valid_digest(hash)?;
                 }
                 if state.knowledge == Knowledge::Known && state.kind.is_none()
                     || state.knowledge == Knowledge::Unknown && state.reason.is_none()
@@ -144,6 +181,15 @@ pub fn validate(report: &Report) -> Result<()> {
                 {
                     return Err(Error::input("known file metadata requires size and digest"));
                 }
+                if complete && state.knowledge == Knowledge::Unknown {
+                    return Err(Error::input("complete snapshot contains unknown state"));
+                }
+                if state.knowledge == Knowledge::Missing && state != FileState::missing() {
+                    return Err(Error::input("missing state contains observed metadata"));
+                }
+                if state.knowledge == Knowledge::Known && state.reason.is_some() {
+                    return Err(Error::input("known state contains an observation failure"));
+                }
             }
         }
         for access in execution.accesses.iter() {
@@ -151,6 +197,38 @@ pub fn validate(report: &Report) -> Result<()> {
             valid_path(&path)?;
             if !access.read && !access.write && !access.read_directory && !access.unsupported {
                 return Err(Error::input("empty access observation"));
+            }
+            if access.unsupported && execution.outcome.collection_complete {
+                return Err(Error::input(
+                    "unsupported access cannot have a complete outcome",
+                ));
+            }
+        }
+        // Require every derived change as well as validating supplied changes.
+        // Omitting a changed output must not turn an edited report into a pass.
+        for states in [&execution.before, &execution.after] {
+            for item in states.iter() {
+                let (path, _) = item?;
+                let absent = |complete| {
+                    if complete {
+                        FileState::missing()
+                    } else {
+                        FileState::unknown(ObservationIssue::CollectionLimit)
+                    }
+                };
+                let before = execution
+                    .before
+                    .get(&path)?
+                    .unwrap_or_else(|| absent(execution.scope.before_complete));
+                let after = execution
+                    .after
+                    .get(&path)?
+                    .unwrap_or_else(|| absent(execution.scope.after_complete));
+                if crate::snapshot::difference(&before, &after) != execution.changes.get(&path)? {
+                    return Err(Error::input(
+                        "snapshot change evidence is missing or inconsistent",
+                    ));
+                }
             }
         }
         for change in execution.changes.iter() {
@@ -231,6 +309,17 @@ pub fn validate(report: &Report) -> Result<()> {
         }
     }
     Ok(())
+}
+fn valid_digest(hash: &str) -> Result<()> {
+    if hash.len() != 64
+        || !hash
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        Err(Error::input("invalid content digest"))
+    } else {
+        Ok(())
+    }
 }
 fn valid_path(path: &str) -> Result<()> {
     if path.is_empty() || path.len() > 32768 || path.chars().any(char::is_control) {

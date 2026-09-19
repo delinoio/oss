@@ -39,8 +39,7 @@ impl ToAbsolutePath for HANDLE {
         self,
         f: F,
     ) -> winsafe::SysResult<R> {
-        // SAFETY: get_path_name performs FFI call with this HANDLE to retrieve the file
-        // path
+        // SAFETY: get_path_name performs FFI call with this HANDLE to retrieve the file path
         let resolved = unsafe { get_path_name(self) }.ok();
         let resolved = resolved.as_ref().map(|p| U16Str::from_slice(p));
         f(resolved)
@@ -52,8 +51,7 @@ impl ToAbsolutePath for POBJECT_ATTRIBUTES {
         self,
         f: F,
     ) -> winsafe::SysResult<R> {
-        // SAFETY: dereferencing POBJECT_ATTRIBUTES to read ObjectName field from
-        // Windows API struct
+        // SAFETY: dereferencing POBJECT_ATTRIBUTES to read ObjectName field from Windows API struct
         let fname_str = unsafe { (*self).ObjectName.as_ref() }.map_or_else(
             || U16Str::from_slice(&[]),
             |object_name| {

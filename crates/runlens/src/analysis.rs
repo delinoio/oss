@@ -148,12 +148,30 @@ fn matches(set: &globset::GlobSet, patterns: &[String], path: &str) -> bool {
 }
 pub fn cache(report: &Report, command: &Command) -> Result<Analysis> {
     let mut result = Analysis::new(AnalysisKind::Cache);
+    target_quality(&mut result, report)?;
     for execution in report.targets() {
         quality(&mut result, execution)?;
         coverage(&mut result, execution, command, true, true)?;
     }
     result.finish()?;
     Ok(result)
+}
+fn target_quality(result: &mut Analysis, report: &Report) -> Result<()> {
+    for execution in report
+        .executions
+        .iter()
+        .filter(|e| e.role == Role::Preparation)
+    {
+        quality(result, execution)?;
+        if report.targets().next().is_none() {
+            result.finding(
+                FindingCode::FailedExecution,
+                Classification::Unknown,
+                vec![evidence(execution, None, EvidenceSource::Outcome)],
+            )?;
+        }
+    }
+    Ok(())
 }
 fn coverage(
     result: &mut Analysis,
@@ -291,6 +309,7 @@ pub fn policy(
     let deny_read = config::patterns(&rules.deny_reads)?;
     let deny_write = config::patterns(&rules.deny_writes)?;
     let mut result = Analysis::new(AnalysisKind::Policy);
+    target_quality(&mut result, report)?;
     for execution in report.targets() {
         quality(&mut result, execution)?;
         if rules.require_inputs || rules.require_outputs {
@@ -466,13 +485,18 @@ pub fn compare(left: &Report, right: &Report, mappings: &[PathMap]) -> Result<An
     let mut result = Analysis::new(AnalysisKind::Compare);
     let left_targets = left.targets().collect::<Vec<_>>();
     let right_targets = right.targets().collect::<Vec<_>>();
-    if left_targets.len() != right_targets.len() {
+    if left_targets.is_empty()
+        || right_targets.is_empty()
+        || left_targets.len() != right_targets.len()
+    {
         result.verdict = Some(Verdict::Inconclusive);
-        result
-            .limitations
-            .push("The reports contain different target execution counts.".into());
+        result.limitations.push(
+            "The reports have no target execution or different target execution counts.".into(),
+        );
         return Ok(result);
     }
+    target_quality(&mut result, left)?;
+    target_quality(&mut result, right)?;
     for (left, right) in left_targets.into_iter().zip(right_targets) {
         quality(&mut result, left)?;
         quality(&mut result, right)?;

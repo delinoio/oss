@@ -38,3 +38,9 @@ Failed OS thread resumption reaps the suspended child before returning failure.
 Native Windows nested-child and timeout fixtures exercise this boundary. Remove
 this patch when upstream preserves successful child execution, reports collection
 loss, and owns suspended handles under the same constraints.
+
+Detours transaction APIs return zero on success (LONG), unlike BOOL APIs. DLL
+detach uses the LONG checker so successful teardown does not emit a false
+unsupported marker. Native Windows finite-command tests require complete
+collection after process exit. Remove this fix only when upstream uses the
+documented transaction result convention in every detach call.

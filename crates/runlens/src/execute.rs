@@ -155,6 +155,7 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
             }
             match termination.path_accesses {
                 Ok(observations) => {
+                    tracing::debug!(execution_id=%id, stage="collection", attached=observations.attached(), lost=observations.incomplete(), lifecycle_incomplete=termination.lifecycle_incomplete, "native collection status");
                     complete &= !observations.incomplete() && observations.attached();
                     for observation in observations.iter() {
                         if observation.mode.contains(fspy::AccessMode::ATTACHED) {
@@ -234,6 +235,7 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
         &request.cancellation,
     )?;
     complete &= before.complete && after.complete;
+    tracing::debug!(execution_id=%id, stage="snapshots", before_complete=before.complete, after_complete=after.complete, "snapshot coverage status");
     if !complete && !errors.contains(&ErrorCode::Incomplete) {
         errors.push(ErrorCode::Incomplete);
     }
@@ -244,6 +246,12 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
         after.complete,
     )?;
     let redacted_paths = redactor.path_redacted.load(Ordering::Relaxed);
+    if redacted_paths {
+        complete = false;
+        if !errors.contains(&ErrorCode::Incomplete) {
+            errors.push(ErrorCode::Incomplete);
+        }
+    }
     let mut execution = Execution {
         id,
         role: request.role,
@@ -262,7 +270,12 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
             executable_sha256,
             source_revision: request.revision,
             working_tree_included: request.working_tree_included,
-            environment_names: request.command.env.clone(),
+            environment_names: request
+                .command
+                .env
+                .iter()
+                .map(|name| redactor.text(name))
+                .collect(),
         },
         scope: Scope {
             root: "${workspace}".into(),

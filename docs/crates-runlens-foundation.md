@@ -384,3 +384,10 @@ records incomplete evidence. Retained metadata maps share one process-wide memor
 threshold, including repeat rounds; private index cleanup failures are surfaced.
 Cancellation handlers are installed before owned child work. Native cancellation
 fixtures synchronize on actual child readiness rather than assuming startup time.
+
+Offline checks never pass a report with no target execution. The schema parser
+requires the full derived change map, consistent knowledge/scope flags, valid
+executable digests, and a 1 MiB aggregate non-evidence string envelope on both read
+and save. Git working-tree inclusion diffs against the initially selected commit,
+and copies check cancellation between entries. Windows Git source locators omit
+verbatim filesystem prefixes while native filesystem operations retain them.

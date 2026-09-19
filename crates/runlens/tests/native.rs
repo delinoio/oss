@@ -591,6 +591,26 @@ prepare = [[{tool:?}, "fail"], [{tool:?}, "read-write"]]
     assert_eq!(report["executions"].as_array().unwrap().len(), 1);
     assert_eq!(report["executions"][0]["role"], "preparation");
     assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 23);
+    for args in [
+        vec![
+            "cache",
+            "check",
+            "setup.json",
+            "--command",
+            "build",
+            "--json",
+        ],
+        vec!["policy", "check", "setup.json", "--json"],
+        vec!["compare", "setup.json", "setup.json", "--json"],
+    ] {
+        let output = invoke(root.path(), &args);
+        assert!(
+            !output.status.success(),
+            "preparation-only reports cannot pass"
+        );
+        let analysis: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(analysis["verdict"], "inconclusive");
+    }
     assert!(!root.path().join("out").exists());
     fs::write(
         root.path().join("runlens.toml"),
@@ -624,9 +644,20 @@ fn hostile_envelopes_and_forged_changes_are_rejected() {
         serde_json::json!(vec!["large".repeat(7000); 64]);
     let mut wrong_scope = report.clone();
     wrong_scope["executions"][0]["scope"]["before_complete"] = false.into();
-    for (index, value) in [changed, uppercase, oversized, wrong_scope]
-        .iter()
-        .enumerate()
+    let mut omitted = report.clone();
+    omitted["executions"][0]["changes"] = serde_json::json!({});
+    let mut wrong_digest = report.clone();
+    wrong_digest["executions"][0]["environment"]["executable_sha256"] = "invalid".into();
+    for (index, value) in [
+        changed,
+        uppercase,
+        oversized,
+        wrong_scope,
+        omitted,
+        wrong_digest,
+    ]
+    .iter()
+    .enumerate()
     {
         let name = format!("hostile-{index}.json");
         fs::write(root.path().join(&name), serde_json::to_vec(value).unwrap()).unwrap();

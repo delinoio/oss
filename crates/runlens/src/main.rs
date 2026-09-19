@@ -216,14 +216,25 @@ async fn main() -> ExitCode {
             return ExitCode::from(ErrorCode::Internal.exit_code() as u8);
         }
     };
+    #[cfg(windows)]
+    let (mut interrupt, mut terminate) = match (
+        tokio::signal::windows::ctrl_c(),
+        tokio::signal::windows::ctrl_break(),
+    ) {
+        (Ok(interrupt), Ok(terminate)) => (interrupt, terminate),
+        _ => {
+            eprintln!("Runlens could not initialize cancellation handlers.");
+            return ExitCode::from(ErrorCode::Internal.exit_code() as u8);
+        }
+    };
     let signal = tokio::spawn(async move {
         #[cfg(unix)]
         {
             tokio::select! {_=interrupt.recv()=>{},_=terminate.recv()=>{}}
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
         {
-            let _ = tokio::signal::ctrl_c().await;
+            tokio::select! {_=interrupt.recv()=>{},_=terminate.recv()=>{}}
         }
         signal_cancel.cancel();
     });
@@ -462,7 +473,7 @@ fn finish_execution(value: &Report, save: Option<&std::path::Path>) -> Result<i3
     let mut code = 0;
     for execution in &value.executions {
         eprintln!(
-            "Execution {}: child={:?}, collection={}, accesses={}, changes={}",
+            "Execution {}: child={:?}, collection={}, accesses={}, changes={}, errors={:?}",
             execution.id,
             execution.outcome.child_exit_code,
             if execution.outcome.collection_complete {
@@ -471,7 +482,8 @@ fn finish_execution(value: &Report, save: Option<&std::path::Path>) -> Result<i3
                 "incomplete"
             },
             execution.accesses.len(),
-            execution.changes.len()
+            execution.changes.len(),
+            execution.outcome.errors
         );
         for error in &execution.outcome.errors {
             code = code.max(error.exit_code());

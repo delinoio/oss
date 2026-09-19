@@ -213,7 +213,13 @@ async fn run_git(
     command.args(args).stdout(Stdio::null());
     managed_git(command, false, cancel).await.map(|_| ())
 }
-fn copy_entry(source: &Path, destination: &Path) -> Result<()> {
+fn copy_entry(source: &Path, destination: &Path, cancel: &CancellationToken) -> Result<()> {
+    if cancel.is_cancelled() {
+        return Err(Error::new(
+            ErrorCode::Cancelled,
+            "source preparation cancelled",
+        ));
+    }
     let metadata = fs::symlink_metadata(source).map_err(|_| Error::storage())?;
     if metadata.is_symlink() {
         let target = fs::read_link(source).map_err(|_| Error::storage())?;
@@ -239,7 +245,7 @@ fn copy_entry(source: &Path, destination: &Path) -> Result<()> {
         fs::create_dir(destination).map_err(|_| Error::storage())?;
         for entry in fs::read_dir(source).map_err(|_| Error::storage())? {
             let entry = entry.map_err(|_| Error::storage())?;
-            copy_entry(&entry.path(), &destination.join(entry.file_name()))?;
+            copy_entry(&entry.path(), &destination.join(entry.file_name()), cancel)?;
         }
     } else if metadata.is_file() {
         fs::copy(source, destination).map_err(|_| Error::storage())?;
@@ -265,6 +271,7 @@ async fn include_worktree(
     temporary: &Path,
     env: &[(OsString, OsString)],
     cancel: &CancellationToken,
+    revision: &str,
 ) -> Result<()> {
     let patch = temporary.join("tracked.patch");
     let file = fs::File::create(&patch).map_err(|_| Error::storage())?;
@@ -275,7 +282,7 @@ async fn include_worktree(
             "--binary",
             "--no-ext-diff",
             "--no-textconv",
-            "HEAD",
+            revision,
             "--",
         ])
         .stdout(file);
@@ -336,7 +343,7 @@ async fn include_worktree(
             }
         }
         fs::create_dir_all(parent).map_err(|_| Error::storage())?;
-        copy_entry(&root.join(relative), &destination)?;
+        copy_entry(&root.join(relative), &destination, cancel)?;
     }
     fs::remove_file(patch).map_err(|_| Error::storage())?;
     Ok(())
@@ -419,6 +426,12 @@ async fn verify_in(
     );
     let env = isolated_environment(&owned.join("source-environment"), &[])?;
     let selected = owned.join("selected");
+    // Git parses its source argument as a repository locator. Windows verbatim
+    // filesystem prefixes are OS paths, not Git's UNC/URL locator grammar.
+    #[cfg(windows)]
+    let source_locator = OsString::from(crate::privacy::normalized(root));
+    #[cfg(not(windows))]
+    let source_locator = root.as_os_str().to_owned();
     run_git(
         owned,
         &[
@@ -426,7 +439,7 @@ async fn verify_in(
             OsStr::new("--no-checkout"),
             OsStr::new("--no-local"),
             OsStr::new("--"),
-            root.as_os_str(),
+            &source_locator,
             selected.as_os_str(),
         ],
         &env,
@@ -445,7 +458,7 @@ async fn verify_in(
     )
     .await?;
     if include {
-        include_worktree(root, &selected, owned, &env, &cancel).await?;
+        include_worktree(root, &selected, owned, &env, &cancel, revision).await?;
     }
     let mut report = Report::new(if runs == 1 {
         ReportKind::Clean
@@ -469,13 +482,23 @@ async fn verify_in(
     );
     for repetition in 1..=runs {
         if cancel.is_cancelled() {
+            if report.executions.is_empty() {
+                return Err(Error::new(
+                    ErrorCode::Cancelled,
+                    "verification cancelled before execution",
+                ));
+            }
+            if let Some(last) = report.executions.last_mut() {
+                last.outcome.errors.push(ErrorCode::Cancelled);
+                last.outcome.collection_complete = false;
+            }
             report.verification = Some(Verdict::Inconclusive);
             break;
         }
         let round = owned.join(format!("round-{repetition}"));
         fs::create_dir(&round).map_err(|_| Error::storage())?;
         let workspace = round.join("workspace");
-        copy_entry(&selected, &workspace)?;
+        copy_entry(&selected, &workspace, &cancel)?;
         let workspace = workspace.canonicalize().map_err(|_| Error::storage())?;
         let environment = isolated_environment(&round.join("environment"), &command.env)?;
         let mut prepared = true;
