@@ -395,6 +395,10 @@ impl Task {
                 !shell.is_empty() && !shell[0].is_empty(),
                 "shell must contain an executable"
             );
+            ensure!(
+                shell.iter().all(|part| !part.contains('\0')),
+                "shell arguments must not contain NUL"
+            );
         }
         if self.cache {
             ensure!(

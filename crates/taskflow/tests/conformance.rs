@@ -4171,3 +4171,18 @@ fn check_rejects_windows_rooted_outputs_on_every_host() {
         }
     }
 }
+
+#[test]
+fn check_rejects_nul_in_every_shell_argument() {
+    for shell in [json!(["sh\0", "-c"]), json!(["sh", "-c\0"])] {
+        let directory = fixture(json!({"task":{"command":"echo unexpected", "shell":shell}}));
+        let error = config::load(&directory.path().join("taskflow.yml")).unwrap_err();
+        assert!(format!("{error:#}").contains("shell arguments must not contain NUL"));
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .current_dir(directory.path())
+            .arg("check")
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+    }
+}
