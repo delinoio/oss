@@ -62,6 +62,12 @@ impl Graph {
             if let Some(config) = &project.config {
                 for (name, task) in &config.tasks {
                     let id = reference(&project.id, name);
+                    if let Some(remote) = &graph.workspace.config.remote {
+                        crate::environment::validate_remote_inputs(remote, task, &BTreeMap::new())
+                            .map_err(|error| {
+                                anyhow::anyhow!("invalid environment for {id}: {error}")
+                            })?;
+                    }
                     graph.tasks.insert(
                         id.clone(),
                         TaskNode {

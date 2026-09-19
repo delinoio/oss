@@ -149,3 +149,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `notification_paths_survive_concurrent_file_removal` repeatedly removes and recreates a file while normalizing its notification path. Missing ancestors are retried at the next parent without hiding broken links or permission errors. Session barrier assertions surface early session failures directly instead of waiting for a record timeout.
 
 `docker_context_cannot_override_a_validated_local_host` injects a remote selected context alongside a local `DOCKER_HOST` and verifies rejection before container launch. Endpoint validation delegates precedence to Docker using the exact launch environment.
+
+`check_rejects_remote_credentials_in_every_project_task` exercises CLI preflight across unselected child tasks, all three environment declaration forms, all transport credential references, and host-specific name casing, including remote mode `off`.

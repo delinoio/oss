@@ -110,17 +110,11 @@ impl Environment {
             values.retain(|key, _| contains_name(keys.iter(), key));
         }
         if let Some(remote) = &ws.config.remote {
+            validate_remote_inputs(remote, task, overrides)?;
             for key in [&remote.access_key_env, &remote.secret_key_env]
                 .into_iter()
                 .chain(remote.session_token_env.iter())
             {
-                ensure!(
-                    !contains_name(task.env_inputs.iter(), key)
-                        && !contains_name(task.env.keys(), key)
-                        && !contains_name(task.secrets.iter(), key)
-                        && !contains_name(overrides.keys(), key),
-                    "cache transport credentials cannot be task inputs"
-                );
                 values.retain(|name, _| !same_name(name, key));
             }
         }
@@ -130,6 +124,26 @@ impl Environment {
             fingerprint,
         })
     }
+}
+
+pub(crate) fn validate_remote_inputs(
+    remote: &crate::config::RemoteConfig,
+    task: &Task,
+    overrides: &BTreeMap<String, String>,
+) -> Result<()> {
+    for key in [&remote.access_key_env, &remote.secret_key_env]
+        .into_iter()
+        .chain(remote.session_token_env.iter())
+    {
+        ensure!(
+            !contains_name(task.env_inputs.iter(), key)
+                && !contains_name(task.env.keys(), key)
+                && !contains_name(task.secrets.iter(), key)
+                && !contains_name(overrides.keys(), key),
+            "cache transport credentials cannot be task inputs"
+        );
+    }
+    Ok(())
 }
 
 fn same_name(left: &str, right: &str) -> bool {

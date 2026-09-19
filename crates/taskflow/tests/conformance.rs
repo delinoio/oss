@@ -3143,3 +3143,67 @@ async fn docker_context_cannot_override_a_validated_local_host() {
     );
     assert!(!directory.path().join("docker-start").exists());
 }
+
+#[tokio::test]
+async fn check_rejects_remote_credentials_in_every_project_task() {
+    for name in [
+        "TFLOW_REMOTE_ACCESS",
+        "TFLOW_REMOTE_SECRET",
+        "TFLOW_REMOTE_SESSION",
+        "tflow_remote_secret",
+    ] {
+        for field in ["env", "envInputs", "secrets"] {
+            let directory = fixture(json!({"safe":{"command":command(&["version"])}}));
+            let path = directory.path().join("taskflow.yml");
+            let mut config: Value = serde_yaml::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            config["remote"] = json!({"endpoint":"http://127.0.0.1:9000","bucket":"fixture","namespace":"fixture","accessKeyEnv":"TFLOW_REMOTE_ACCESS","secretKeyEnv":"TFLOW_REMOTE_SECRET","sessionTokenEnv":"TFLOW_REMOTE_SESSION","mode":"off"});
+            std::fs::write(path, serde_yaml::to_string(&config).unwrap()).unwrap();
+            std::fs::create_dir(directory.path().join("child")).unwrap();
+            std::fs::write(
+                directory.path().join("Cargo.toml"),
+                "[workspace]\nmembers=['child']\nresolver='2'\n",
+            )
+            .unwrap();
+            std::fs::write(
+                directory.path().join("child/Cargo.toml"),
+                "[package]\nname='child'\nversion='0.1.0'\n[lib]\npath='lib.rs'\n",
+            )
+            .unwrap();
+            std::fs::write(directory.path().join("child/lib.rs"), "").unwrap();
+            let mut task = json!({"command":command(&["write","executed","unexpected"])});
+            task[field] = if field == "env" {
+                json!({name:"value"})
+            } else {
+                json!([name])
+            };
+            std::fs::write(
+                directory.path().join("child/taskflow.yml"),
+                serde_yaml::to_string(
+                    &json!({"version":1,"project":"child","tasks":{"unused":task}}),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            let result = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+                .current_dir(directory.path())
+                .args(["--json", "check"])
+                .output()
+                .unwrap();
+            let collision = cfg!(windows) || name != "tflow_remote_secret";
+            assert_eq!(
+                result.status.success(),
+                !collision,
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            if collision {
+                let error = String::from_utf8_lossy(&result.stderr);
+                assert!(
+                    error.contains("child#unused") && error.contains("cache transport credentials"),
+                    "{error}"
+                );
+            }
+            assert!(!directory.path().join("child/executed").exists());
+        }
+    }
+}
