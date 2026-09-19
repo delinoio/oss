@@ -40,6 +40,7 @@
 - Native Go shard arguments use an explicit flag/value contract; reject unknown or selection/output flags before inventory execution.
 - Maintain schema freshness and numbered issue #898 conformance scenarios. Report unavailable platform/service evidence accurately.
 - Keep `docs/crates-taskflow-conformance.md`, the native/Docker CI matrices, and their centralized `scripts/ci/job-paths.json` ownership synchronized. CI result bundles must prove complete task, artifact, and shard accounting against the exact plan; secret transport is forbidden for PR jobs.
+- Docker task commands, tool probes, and shard inventory/execution forward effective explicit CLI overrides alongside task-declared names; never forward the ambient host environment or another task's filtered secrets.
 - Retain the validated Docker launch environment and working directory for awaited removal, absence verification, and destructor fallback.
 - Validate Docker OS selection after CLI defaults are applied; explicit task components retain precedence.
 - Validate the effective Docker context endpoint with the exact launch environment; a local DOCKER_HOST cannot authorize an overriding remote context.

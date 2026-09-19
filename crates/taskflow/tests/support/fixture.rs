@@ -17,10 +17,32 @@ fn main() {
                 println!("\"{endpoint}\"");
             }
             "run" => {
+                if std::env::var("DOCKER_CONTEXT").as_deref() == Ok("forwarding-fixture") {
+                    let flags: Vec<_> = args.windows(2).filter(|pair| pair[0] == "--env").map(|pair| pair[1].as_str()).collect();
+                    assert!(flags.contains(&"TFLOW_CLI_VALUE"), "CLI override missing: {flags:?}");
+                    assert!(!flags.contains(&"TFLOW_INHERITED_VALUE"), "undeclared host variable forwarded");
+                    assert!(!flags.contains(&"TFLOW_SIBLING_SECRET"), "another task's secret forwarded");
+                    let value = std::env::var("TFLOW_CLI_VALUE").unwrap();
+                    let phase = args.last().unwrap();
+                    let mut log = fs::OpenOptions::new().create(true).append(true).open(".taskflow/docker-phases").unwrap();
+                    writeln!(log, "{phase}:{value}").unwrap();
+                    match phase.as_str() {
+                        "probe" => println!("fixture-{value}"),
+                        "finite" => write("received", value.as_bytes()),
+                        "inventory" => println!("{{\"version\":1,\"tests\":[{{\"id\":\"aa\"}}]}}"),
+                        "shard" => {
+                            let result = flags.iter().find_map(|value| value.strip_prefix("TFLOW_SHARD_RESULT=/workspace/")).unwrap();
+                            write(result, b"{\"version\":1,\"results\":[{\"id\":\"aa\",\"status\":\"passed\"}]}");
+                        }
+                        _ => panic!("unexpected forwarded phase"),
+                    }
+                    return;
+                }
                 write("docker-start", std::process::id().to_string().as_bytes());
                 std::thread::sleep(Duration::from_secs(30));
             }
             "rm" | "ps" => {
+                if std::env::var("DOCKER_CONTEXT").as_deref() == Ok("forwarding-fixture") { return; }
                 if std::env::var("DOCKER_CONTEXT").as_deref() == Ok("cleanup-fixture") {
                     assert_eq!(std::env::var("DOCKER_HOST").unwrap(), "unix:///selected.sock");
                     let mut log = fs::OpenOptions::new().create(true).append(true)

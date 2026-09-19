@@ -444,6 +444,7 @@ async fn run_task(
             task,
             command,
             &environment.values,
+            &options.env,
             &cancel,
         )
         .await?;
@@ -624,6 +625,7 @@ async fn run_task(
             &project.directory,
             task,
             &values,
+            &options.env,
             &execution,
             &cancel,
         )

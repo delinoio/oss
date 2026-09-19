@@ -125,6 +125,7 @@ pub async fn prepare(
     directory: &Path,
     task: &Task,
     environment: &BTreeMap<String, String>,
+    overrides: &BTreeMap<String, String>,
     execution: &str,
     cancel: &CancellationToken,
 ) -> Result<(Command, Container)> {
@@ -200,6 +201,8 @@ pub async fn prepare(
         .keys()
         .chain(task.env_inputs.iter())
         .chain(task.secrets.iter())
+        .chain(overrides.keys())
+        .filter(|key| crate::environment::get(environment, key).is_some())
     {
         args.extend(["--env".into(), key.clone()]);
     }

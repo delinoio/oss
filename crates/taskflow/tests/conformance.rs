@@ -3242,6 +3242,7 @@ async fn docker_context_cannot_override_a_validated_local_host() {
         directory.path(),
         &task,
         &environment,
+        &BTreeMap::new(),
         &uuid::Uuid::now_v7().to_string(),
         &CancellationToken::new(),
     )
@@ -3823,6 +3824,7 @@ async fn docker_cleanup_reuses_the_validated_launch_environment() {
             directory.path(),
             &task,
             &environment,
+            &BTreeMap::new(),
             &uuid::Uuid::now_v7().to_string(),
             &CancellationToken::new(),
         )
@@ -4310,6 +4312,63 @@ async fn output_ownership_uses_destination_filesystem_aliases() {
             }
             assert!(!root.path().join("nested").join(first).exists());
             assert!(!root.path().join("nested").join(second).exists());
+        }
+    }
+}
+
+#[tokio::test]
+async fn docker_forwards_cli_overrides_to_tasks_tools_and_shards() {
+    let platform = json!({"executor":"docker","os":"linux","image":"fixture@sha256:0000000000000000000000000000000000000000000000000000000000000000"});
+    let root = fixture(json!({
+        "finite":{"command":["fixture","finite"],"input":[],"output":["received"],"cache":true,"tools":{"fixture":["fixture","probe"]},"platform":platform},
+        "test":{"command":["fixture","shard"],"input":[],"tools":{"fixture":["fixture","probe"]},"shard":{"adapter":"generic","count":1,"list":["fixture","inventory"],"run":["fixture","shard"]},"platform":platform},
+        "secret":{"command":command(&["version"]),"secrets":["TFLOW_SIBLING_SECRET"]}
+    }));
+    let tools = tempfile::tempdir().unwrap();
+    std::fs::hard_link(
+        helper(),
+        tools.path().join(if cfg!(windows) {
+            "docker.exe"
+        } else {
+            "docker"
+        }),
+    )
+    .unwrap();
+    let path = std::env::join_paths(
+        std::iter::once(tools.path().to_path_buf())
+            .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
+    for value in ["first", "second"] {
+        let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .current_dir(root.path())
+            .args([
+                "--json",
+                "run",
+                "finite",
+                "test",
+                "--env",
+                &format!("TFLOW_CLI_VALUE={value}"),
+                "--env",
+                "TFLOW_SIBLING_SECRET=excluded",
+                "--quiet",
+            ])
+            .env("PATH", &path)
+            .env("DOCKER_CONTEXT", "forwarding-fixture")
+            .env("TFLOW_INHERITED_VALUE", "host-only")
+            .output()
+            .await
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let result: runner::RunResult = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(result.success);
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("received")).unwrap(),
+            value
+        );
+        let phases = std::fs::read_to_string(root.path().join(".taskflow/docker-phases")).unwrap();
+        for phase in ["probe", "finite", "inventory", "shard"] {
+            assert!(phases.contains(&format!("{phase}:{value}")), "{phases}");
         }
     }
 }

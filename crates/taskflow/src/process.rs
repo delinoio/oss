@@ -284,13 +284,20 @@ pub async fn capture_task(
     task: &crate::config::Task,
     command: &Command,
     environment: &BTreeMap<String, String>,
+    overrides: &BTreeMap<String, String>,
     cancel: &CancellationToken,
 ) -> Result<Vec<u8>> {
-    Ok(
-        capture_task_output(root, directory, task, command, environment, cancel)
-            .await?
-            .stdout,
+    Ok(capture_task_output(
+        root,
+        directory,
+        task,
+        command,
+        environment,
+        overrides,
+        cancel,
     )
+    .await?
+    .stdout)
 }
 
 pub(crate) async fn tool_identity(
@@ -299,9 +306,19 @@ pub(crate) async fn tool_identity(
     task: &crate::config::Task,
     command: &Command,
     environment: &BTreeMap<String, String>,
+    overrides: &BTreeMap<String, String>,
     cancel: &CancellationToken,
 ) -> Result<String> {
-    let output = capture_task_output(root, directory, task, command, environment, cancel).await?;
+    let output = capture_task_output(
+        root,
+        directory,
+        task,
+        command,
+        environment,
+        overrides,
+        cancel,
+    )
+    .await?;
     // Hash separately before framing: moving bytes between stdout and stderr
     // must not produce the same identity. Metadata consumers still receive only
     // stdout.
@@ -317,6 +334,7 @@ async fn capture_task_output(
     task: &crate::config::Task,
     command: &Command,
     environment: &BTreeMap<String, String>,
+    overrides: &BTreeMap<String, String>,
     cancel: &CancellationToken,
 ) -> Result<CapturedOutput> {
     if task.platform.executor == crate::config::Executor::Host {
@@ -338,6 +356,7 @@ async fn capture_task_output(
         directory,
         &probe,
         &environment,
+        overrides,
         &uuid::Uuid::now_v7().to_string(),
         cancel,
     )

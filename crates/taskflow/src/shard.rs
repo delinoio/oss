@@ -279,6 +279,7 @@ pub async fn inventory(
     graph: &Graph,
     id: &str,
     env: &BTreeMap<String, String>,
+    overrides: &BTreeMap<String, String>,
     cancel: &CancellationToken,
 ) -> Result<(Inventory, BTreeMap<String, Command>)> {
     let task = &graph.tasks[id].task;
@@ -297,6 +298,7 @@ pub async fn inventory(
                 .as_ref()
                 .context("generic inventory command missing")?,
             env,
+            overrides,
             cancel,
         )
         .await?;
@@ -322,6 +324,7 @@ pub async fn inventory(
                 task,
                 &Command::Argv(list),
                 env,
+                overrides,
                 cancel,
             )
             .await?;
@@ -386,6 +389,7 @@ pub async fn inventory(
                 task,
                 &Command::Argv(metadata_command),
                 env,
+                overrides,
                 cancel,
             )
             .await?;
@@ -397,6 +401,7 @@ pub async fn inventory(
                 task,
                 &Command::Argv(build),
                 env,
+                overrides,
                 cancel,
             )
             .await?;
@@ -483,6 +488,7 @@ pub async fn inventory(
                         "--format=terse".into(),
                     ]),
                     env,
+                    overrides,
                     cancel,
                 )
                 .await?;
@@ -552,6 +558,7 @@ pub async fn inventory(
                 task,
                 &Command::Argv(list),
                 env,
+                overrides,
                 cancel,
             )
             .await?;
@@ -653,7 +660,7 @@ pub async fn execute(
 ) -> Result<Receipt> {
     let task = &graph.tasks[id].task;
     let config = task.shard.as_ref().unwrap();
-    let (mut inventory, commands) = inventory(graph, id, environment, cancel).await?;
+    let (mut inventory, commands) = inventory(graph, id, environment, &options.env, cancel).await?;
     let history_path = graph
         .workspace
         .root
@@ -869,6 +876,7 @@ async fn run_unit(
             directory,
             &unit,
             &env,
+            &options.env,
             &uuid::Uuid::now_v7().to_string(),
             cancel,
         )
