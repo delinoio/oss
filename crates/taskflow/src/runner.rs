@@ -467,7 +467,7 @@ async fn run_task(
         task.platform.key(),
         None::<(usize, usize)>,
     ))?);
-    let key = if options.shard.is_some() {
+    let key = if task.shard.is_some() && options.shard.is_some() {
         files::digest(&serde_json::to_vec(&(&result_key, options.shard))?)
     } else {
         result_key.clone()

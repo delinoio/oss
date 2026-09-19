@@ -5027,3 +5027,45 @@ async fn ready_service_identity_invalidates_cached_consumers() {
     assert_ne!(keys[1], keys[2]);
     assert_eq!(keys[2], keys[3]);
 }
+
+#[tokio::test]
+async fn shard_partitions_reuse_unsharded_prerequisite_cache_keys() {
+    let root = fixture(json!({
+        "prepare":{"command":command(&["record","events","prepare"]),"input":[],"output":[],"cache":true,"tools":{"fixture":command(&["version"])}},
+        "suite":{"command":command(&["version"]),"dependsOn":["prepare"],"input":[],"output":[],"shard":{"adapter":"generic","count":2,"list":command(&["inventory"]),"run":command(&["shard"])}}
+    }));
+    let g = graph(root.path()).await;
+    let mut prerequisites = BTreeSet::new();
+    let mut suites = BTreeSet::new();
+    for index in 0..2 {
+        let plan = Plan::create(&g, &["suite".into()], &[], false).unwrap();
+        let result = runner::run_plan(
+            g.clone(),
+            plan,
+            RunOptions {
+                shard: Some((index, 2)),
+                ..Default::default()
+            },
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert!(result.success, "{result:?}");
+        assert_eq!(
+            result.results["app#prepare"].outcome,
+            if index == 0 {
+                Outcome::Executed
+            } else {
+                Outcome::LocalCache
+            }
+        );
+        prerequisites.insert(result.results["app#prepare"].key.clone());
+        suites.insert(result.results["app#suite"].key.clone());
+    }
+    assert_eq!(prerequisites.len(), 1);
+    assert_eq!(suites.len(), 2);
+    assert_eq!(
+        std::fs::read_to_string(root.path().join("events")).unwrap(),
+        "prepare\n"
+    );
+}
