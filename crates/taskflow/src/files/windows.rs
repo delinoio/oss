@@ -30,6 +30,11 @@ pub(super) fn canonicalize(path: &Path) -> io::Result<PathBuf> {
 }
 
 fn canonicalize_handle(file: &File) -> io::Result<PathBuf> {
+    let resolved = resolve_handle_path(file);
+    validate_handle_path(file, resolved)
+}
+
+fn resolve_handle_path(file: &File) -> io::Result<PathBuf> {
     let handle = file.as_raw_handle();
     let mut buffer = vec![0; 512];
     let length = loop {
@@ -49,10 +54,17 @@ fn canonicalize_handle(file: &File) -> io::Result<PathBuf> {
         }
         buffer.resize(length, 0);
     };
+    Ok(PathBuf::from(OsString::from_wide(&buffer[..length])))
+}
+
+fn validate_handle_path(file: &File, resolved: io::Result<PathBuf>) -> io::Result<PathBuf> {
+    let handle = file.as_raw_handle();
     // NTFS can move a concurrently unlinked file into $Extend/$Deleted while
     // its handle remains open. Check deletion on this same handle after path
-    // resolution; a second path open can observe a replacement file instead.
-    // Return NotFound so the notification resolver uses the original parent.
+    // resolution, including a failed lookup (the deletion path can deny access).
+    // A second path open could observe a replacement file instead. Return
+    // NotFound for this deleted handle before propagating a lookup error, but
+    // preserve permission errors for live files and metadata-query failures.
     let mut info = FILE_STANDARD_INFO::default();
     if unsafe {
         GetFileInformationByHandleEx(
@@ -68,7 +80,7 @@ fn canonicalize_handle(file: &File) -> io::Result<PathBuf> {
     if info.DeletePending || info.NumberOfLinks == 0 {
         return Err(io::Error::from(io::ErrorKind::NotFound));
     }
-    Ok(PathBuf::from(OsString::from_wide(&buffer[..length])))
+    resolved
 }
 
 #[cfg(test)]
@@ -81,10 +93,23 @@ mod tests {
         let path = directory.path().join("transient");
         std::fs::write(&path, "old").unwrap();
         let handle = File::open(&path).unwrap();
+        let denied = || {
+            Err(io::Error::from_raw_os_error(
+                windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED as i32,
+            ))
+        };
+        assert_eq!(
+            validate_handle_path(&handle, denied()).unwrap_err().kind(),
+            io::ErrorKind::PermissionDenied
+        );
         std::fs::remove_file(&path).unwrap();
         // The original name can already refer to a new file while the old
         // object remains accessible through a handle in the deletion queue.
         std::fs::write(&path, "new").unwrap();
+        assert_eq!(
+            validate_handle_path(&handle, denied()).unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
         assert_eq!(
             canonicalize_handle(&handle).unwrap_err().kind(),
             io::ErrorKind::NotFound
