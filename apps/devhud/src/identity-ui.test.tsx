@@ -79,6 +79,9 @@ describe("identity UI", () => {
     fireEvent.change(origin, { target: { value: "https://custom.example" } });
     fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
     const confirmation = await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle });
+    const summary = within(confirmation).getByText(messages.en.apiChangeConfirm);
+    expect(summary.id).toBe("api-origin-change-confirmation-summary");
+    expect(confirmation.getAttribute("aria-describedby")).toBe(summary.id);
     expect(confirmation.closest(".account-content")).toBeNull();
     await waitFor(() => expect(onModalConfirmationOpenChange).toHaveBeenCalledWith(true));
     expect(onApiOrigin).not.toHaveBeenCalled();

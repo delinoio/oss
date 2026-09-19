@@ -68,8 +68,8 @@ export function ApiOriginEditor({ copy, value, inputRef, autoFocus = false, onAp
     </Field>
     <Button ref={applyTrigger} type="button" onClick={() => void apply()} disabled={disabled || applying || normalizeApiOrigin(draft) === normalizeApiOrigin(value)}>{copy.applyApiOrigin}</Button>
     {applyError && <p className="external-message" role="alert">{applyError}</p>}
-    <Dialog open={confirmationOpen} title={copy.apiChangeConfirmTitle} initialFocusRef={cancelChange} returnFocusRef={returnFocusRef} onClose={() => { if (!applying) setPendingOrigin(null); }}>
-      <div aria-busy={applying}><p>{copy.apiChangeConfirm}</p>
+    <Dialog open={confirmationOpen} title={copy.apiChangeConfirmTitle} descriptionId="api-origin-change-confirmation-summary" initialFocusRef={cancelChange} returnFocusRef={returnFocusRef} onClose={() => { if (!applying) setPendingOrigin(null); }}>
+      <div aria-busy={applying}><p id="api-origin-change-confirmation-summary">{copy.apiChangeConfirm}</p>
       <div className="actions"><Button ref={cancelChange} onClick={() => setPendingOrigin(null)} disabled={applying}>{copy.cancel}</Button><Button variant="primary" onClick={confirm} disabled={applying}>{copy.applyApiOrigin}</Button></div></div>
     </Dialog>
   </div>;
