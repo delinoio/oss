@@ -97,7 +97,7 @@ impl CronClock {
         let fields: Vec<_> = expression.split_whitespace().collect();
         // Restricted day-of-month and weekday fields form a union in five-field
         // cron. The underlying seven-field parser intersects them instead.
-        if !fields[2].starts_with('*') && !fields[4].starts_with('*') {
+        if fields[2] != "*" && fields[4] != "*" {
             let mut month_day = fields.clone();
             month_day[4] = "*";
             let mut week_day = fields;

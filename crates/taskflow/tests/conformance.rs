@@ -1922,6 +1922,14 @@ fn scenario_16_five_field_cron_uses_conventional_weekdays_and_day_union() {
     assert!(monday.tick(date("2026-09-21T00:00:00Z")));
     assert!(!monday.tick(date("2026-09-22T00:00:00Z")));
     assert!(monday.tick(date("2026-10-01T00:00:00Z")));
+    let mut stepped = taskflow::schedule::CronClock::new("0 0 */2 * MON", "UTC").unwrap();
+    assert!(!stepped.tick(date("2026-09-22T00:00:00Z")));
+    assert!(stepped.tick(date("2026-09-23T00:00:00Z")));
+    assert!(stepped.tick(date("2026-09-28T00:00:00Z")));
+    let mut stepped_weekday = taskflow::schedule::CronClock::new("0 0 1 * */2", "UTC").unwrap();
+    assert!(stepped_weekday.tick(date("2026-09-22T00:00:00Z")));
+    assert!(!stepped_weekday.tick(date("2026-09-23T00:00:00Z")));
+    assert!(stepped_weekday.tick(date("2026-10-01T00:00:00Z")));
     let mut weekend = taskflow::schedule::CronClock::new("0 0 * * 5-7", "UTC").unwrap();
     for day in [
         "2026-09-25T00:00:00Z",

@@ -22,7 +22,7 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 | 11 | `scenarios_11_22_26_ci_units_transfer_artifacts_and_preserve_causes` executes separate fresh directories and validates generated YAML with actionlint. |
 | 12–14 | `scenarios_12_13_14_21_23_24_native_workspaces_aliases_and_conditions` covers native membership/exclusion, Cargo virtual root, mixed workspace, aliases, renames, kinds, config-less projects, duplicate IDs, and task-less neighbors; explicit missing/cycles are checked by `scenario_26_queries_cycles_missing_references_and_output_ownership`. |
 | 15 | Watch/server fixture and `scenarios_15_19_21_live_invalid_configuration_recovers_atomically`. |
-| 16 | Real interval companion, explicit-time interval/weekday/day-union tests, and cron/DST tests in `scenarios_09_16_shard_accounting_and_cron_dst`. |
+| 16 | Real interval companion, explicit-time interval/weekday/day-union tests (including stepped star fields), and cron/DST tests in `scenarios_09_16_shard_accounting_and_cron_dst`. |
 | 17 | `scenario_17_queue_skip_restart_own_real_exclusive_processes` and `scenario_17_cancellation_reaps_process_tree_and_never_caches`. |
 | 18 | Independent cause tests and watched/scheduled companions with unchanged prerequisites. |
 | 19 | Shared prerequisite/companion first-run deduplication, subscription shutdown, and `server_readiness_failure_reaps_concurrent_work_before_returning`. |
