@@ -218,7 +218,7 @@ func TestUpdateRecoveryAndActiveRefusal(t *testing.T) {
 	candidate := exe + ".new"
 	os.WriteFile(backup, []byte("old"), 0700)
 	os.WriteFile(candidate, []byte("new"), 0700)
-	j := UpdateJournal{Executable: exe, Backup: backup, Candidate: candidate, SHA256: Hash([]byte("new")), Phase: "original-backed-up"}
+	j := UpdateJournal{Executable: exe, Backup: backup, Candidate: candidate, SHA256: Hash([]byte("new")), OriginalSHA256: Hash([]byte("old")), Phase: "original-backed-up"}
 	if err = AtomicWrite(filepath.Join(s.Paths.Control, "update.json"), Encode(j), 0600); err != nil {
 		t.Fatal(err)
 	}

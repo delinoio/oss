@@ -466,8 +466,15 @@ func (s *Service) RecoverUpdate() (map[string]string, error) {
 		return nil, E("update-active", "the updater process is still active", 2)
 	}
 	if j.Phase == "original-backed-up" {
-		if _, e = os.Stat(j.Executable); os.IsNotExist(e) {
-			if e = os.Rename(j.Backup, j.Executable); e != nil {
+		if _, e = os.Lstat(j.Executable); os.IsNotExist(e) {
+			original, mode, err := authenticatedUpdateBackup(j)
+			if err != nil {
+				return nil, err
+			}
+			// Publish the authenticated snapshot, not a backup pathname that
+			// could change after verification. Retain the backup for inspection
+			// and never overwrite a concurrently restored executable.
+			if e = AtomicCreate(j.Executable, original, mode); e != nil {
 				return nil, E("update-recovery-required", "cannot restore the recorded binary backup", 3)
 			}
 		} else {
@@ -490,4 +497,32 @@ func (s *Service) RecoverUpdate() (map[string]string, error) {
 		return nil, e
 	}
 	return map[string]string{"status": "recovered", "state_backup": j.StateBackup, "binary_backup": j.Backup}, nil
+}
+
+func authenticatedUpdateBackup(j UpdateJournal) ([]byte, os.FileMode, error) {
+	invalid := func() ([]byte, os.FileMode, error) {
+		return nil, 0, E("update-recovery-required", "recorded binary backup is unavailable, nonregular or does not match the original digest", 3)
+	}
+	info, err := os.Lstat(j.Backup)
+	if err != nil || !info.Mode().IsRegular() {
+		return invalid()
+	}
+	f, err := os.Open(j.Backup)
+	if err != nil {
+		return invalid()
+	}
+	defer f.Close()
+	opened, err := f.Stat()
+	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
+		return invalid()
+	}
+	const maxExecutableBytes = 128 * 1024 * 1024
+	if opened.Size() > maxExecutableBytes {
+		return invalid()
+	}
+	b, err := io.ReadAll(io.LimitReader(f, maxExecutableBytes+1))
+	if err != nil || len(b) == 0 || len(b) > maxExecutableBytes || Hash(b) != j.OriginalSHA256 {
+		return invalid()
+	}
+	return b, opened.Mode().Perm(), nil
 }

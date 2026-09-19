@@ -57,6 +57,7 @@
 - JUnit identities include suite ancestry and deterministic sibling/test/failure occurrences; namespace persisted report failures by report kind/path to prevent duplicate comparison and UI keys.
 - Windows updater helper cleanup survives replacement-journal removal; retain digest/birth-scoped cleanup metadata until a later launch confirms exit and removes the exact helper.
 - Update helpers revalidate the exact prepared journal under the lifecycle lock after waiting for their parent; a recovered or replaced journal must never be replayed from memory.
+- Recovery of an absent executable requires a regular nonsymlink backup matching OriginalSHA256 within the executable-size bound. Atomically publish the authenticated bytes without replacing an existing path, retain the backup, and preserve the journal on every validation/restoration failure.
 - Repository trust requires the common-directory local UUID as well as its canonical path. Reused paths need explicit initialization; preserve historical IDs and reject source access through stale worktree registrations.
 
 - Reject duplicate environment names within each check and conflicting secret/public classifications across the complete project graph, using case-insensitive names for Windows portability, before reading public snapshot inputs or resolving credentials.
