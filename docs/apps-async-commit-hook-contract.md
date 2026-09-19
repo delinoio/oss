@@ -39,3 +39,5 @@ Update project/protocol/client contracts, app AGENTS and public docs alongside u
 ## References
 - [Project](project-async-commit-hook.md)
 - [Repository defaults](repository-defaults.md)
+
+Execution-detail queries poll every 1.5 seconds only while queued, preparing, running or collecting. Polling stops after a terminal response so integrity verification does not continuously rehash immutable evidence. Explicit query invalidation, mutations and navigation can still refresh completed data.

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { create } from "@bufbuild/protobuf";
 import { createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -45,4 +45,28 @@ it.each([false, true])("distinguishes detached checks from an unfiltered inbox (
   await waitFor(() => expect(listRuns).toHaveBeenCalledOnce());
   expect(listRuns.mock.calls[0]?.[0]).toMatchObject({ branch: "", detached: !inbox, inbox });
   unmount(); client.clear();
+});
+
+it("stops detail polling after completion and still supports explicit invalidation", async () => {
+  vi.useFakeTimers();
+  const getRun = vi.fn()
+    .mockReturnValueOnce({ run: create(RunSchema, { id: "run", state: ExecutionState.RUNNING }) })
+    .mockReturnValue({ run: create(RunSchema, { id: "run", state: ExecutionState.PASSED }) });
+  const transport = createRouterTransport((router) => router.service(LocalService, { getRun }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const { unmount } = render(
+    <QueryClientProvider client={client}><TransportProvider transport={transport}>
+      <RunDetail id="run" onBack={() => {}} onSelect={() => {}} />
+    </TransportProvider></QueryClientProvider>,
+  );
+  try {
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(getRun).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1600); });
+    expect(getRun).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(getRun).toHaveBeenCalledTimes(2);
+    await act(async () => { await client.invalidateQueries(); await vi.advanceTimersByTimeAsync(1); });
+    expect(getRun).toHaveBeenCalledTimes(3);
+  } finally { unmount(); client.clear(); vi.useRealTimers(); }
 });

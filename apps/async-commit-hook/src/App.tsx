@@ -566,7 +566,12 @@ export function RunDetail({
   const query = useQuery(
     LocalQuery.getRun,
     { runId: id },
-    { refetchInterval: 1500 },
+    {
+      refetchInterval: (query) =>
+        active(query.state.data?.run?.state ?? ExecutionState.UNSPECIFIED)
+          ? 1500
+          : false,
+    },
   );
   const cache = useQueryClient();
   const ack = useMutation(LocalQuery.acknowledge);
@@ -622,6 +627,9 @@ export function RunDetail({
           </p>
         </div>
         <div className="actions">
+          <button disabled={query.isFetching} onClick={() => { void query.refetch(); }}>
+            Refresh execution
+          </button>
           <button
             disabled={active(run.state) || run.state === ExecutionState.UNSPECIFIED || Boolean(run.acknowledgedAt) || ack.isPending}
             onClick={async () => {
