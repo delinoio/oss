@@ -181,3 +181,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `docker_platform_validation_applies_cli_defaults_first` checks omitted, Linux, and non-Linux task OS values against all CLI OS defaults without starting Docker or task processes.
 
 `check_rejects_absolute_input_patterns_on_every_host` rejects absolute inputs even inside the checkout, along with Windows drive/UNC/rooted forms and negative variants. Project-relative sibling inputs remain supported.
+
+The distributed artifact fixture also corrupts terminal-unit file digests, paths, and matching receipt/artifact digest claims. Final aggregation must reject each unusable bundle without relying on downstream restoration.

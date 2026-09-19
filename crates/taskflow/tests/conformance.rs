@@ -733,6 +733,45 @@ async fn scenarios_11_22_26_ci_units_transfer_artifacts_and_preserve_causes() {
         taskflow::ci::aggregate(&blueprint, &plan, storage.path()).unwrap()["success"],
         true
     );
+    // Terminal outputs have no downstream restore to validate their contents.
+    let terminal = blueprint
+        .units
+        .iter()
+        .find(|unit| unit.tasks.contains(&"app#c".into()))
+        .unwrap();
+    let terminal_path = storage.path().join(&terminal.id).join("bundle.json");
+    let terminal_bytes = std::fs::read(&terminal_path).unwrap();
+    for corruption in ["digest", "path", "output"] {
+        let mut bundle: Value = serde_json::from_slice(&terminal_bytes).unwrap();
+        let artifact = &mut bundle["artifacts"]["app#c"];
+        match corruption {
+            "digest" => {
+                let file = artifact["files"]
+                    .as_array_mut()
+                    .unwrap()
+                    .iter_mut()
+                    .find(|entry| entry["content"]["type"] == "file")
+                    .unwrap();
+                file["content"]["digest"] = json!(files::digest(b"corrupt"));
+            }
+            "path" => artifact["files"][0]["path"] = json!("../outside"),
+            "output" => {
+                artifact["output_digest"] = json!(files::digest(b"corrupt"));
+                bundle["result"]["results"]["app#c"]["output"] = json!(files::digest(b"corrupt"));
+            }
+            _ => unreachable!(),
+        }
+        std::fs::write(&terminal_path, serde_json::to_vec(&bundle).unwrap()).unwrap();
+        assert!(
+            taskflow::ci::aggregate(&blueprint, &plan, storage.path()).is_err(),
+            "{corruption}"
+        );
+    }
+    std::fs::write(&terminal_path, terminal_bytes).unwrap();
+    assert_eq!(
+        taskflow::ci::aggregate(&blueprint, &plan, storage.path()).unwrap()["success"],
+        true
+    );
     taskflow::ci::export(
         &g,
         vec!["c".into()],

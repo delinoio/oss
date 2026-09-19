@@ -606,6 +606,9 @@ fn validate_bundle(blueprint: &Blueprint, plan: &CiPlan, bundle: &Bundle) -> Res
                     && artifact.output_digest == receipt.output,
                 "CI artifact receipt mismatch"
             );
+            artifact
+                .validate_integrity(&receipt.key)
+                .with_context(|| format!("invalid CI output artifact for {id}"))?;
         }
         if receipt.success() && receipt.outcome != runner::Outcome::Suppressed {
             if let Some(count) = unit.suites.get(id) {
