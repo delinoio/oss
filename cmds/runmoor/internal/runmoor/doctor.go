@@ -11,6 +11,10 @@ import (
 	"time"
 )
 
+// Latest-100 release responses include descriptions and assets that can exceed
+// 2 MiB. Keep an explicit budget while allowing ordinary release metadata.
+const runnerReleaseResponseLimit = 8 << 20
+
 type Check struct {
 	Name    string   `json:"name"`
 	Image   string   `json:"image,omitempty"`
@@ -119,13 +123,22 @@ func checkRunnerVersion(ctx context.Context, pinned string, client *http.Client)
 	if resp.StatusCode != 200 {
 		return problem(ErrRetry, "Runner release freshness could not be checked.", "Retry doctor after GitHub rate limits or connectivity recover.")
 	}
+	// The extra byte distinguishes size exhaustion from malformed upstream JSON;
+	// never decode an incomplete prefix, even if it contains a complete value.
+	body, e := io.ReadAll(io.LimitReader(resp.Body, runnerReleaseResponseLimit+1))
+	if len(body) > runnerReleaseResponseLimit {
+		return problem(ErrRetry, "Runner release metadata exceeds the 8 MiB response limit.", "Check the official actions/runner release notes manually and retry doctor later; no automatic update is performed.")
+	}
+	if e != nil {
+		return problem(ErrRetry, "Runner release metadata could not be read.", "Retry doctor after GitHub connectivity recovers; check the pinned runner release manually in the meantime.")
+	}
 	var releases []struct {
 		Tag        string    `json:"tag_name"`
 		Published  time.Time `json:"published_at"`
 		Draft      bool      `json:"draft"`
 		Prerelease bool      `json:"prerelease"`
 	}
-	if json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(&releases) != nil {
+	if json.Unmarshal(body, &releases) != nil {
 		return problem(ErrRetry, "Runner release metadata is invalid.", "Check the official actions/runner release notes.")
 	}
 	var olderUpdate time.Time
