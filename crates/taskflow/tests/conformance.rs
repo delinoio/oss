@@ -1167,6 +1167,29 @@ fn profile(directory: &Path, tasks: &[&str]) {
 }
 
 #[test]
+fn invalid_shard_selection_cannot_execute_prerequisites() {
+    for shard in [
+        Value::Null,
+        json!({"adapter":"generic","count":2,
+        "list":command(&["inventory"]),"run":command(&["shard"])}),
+    ] {
+        let directory = fixture(json!({
+            "prepare":{"command":command(&["write","started","unexpected"])},
+            "test":{"command":command(&["version"]),"dependsOn":["prepare"],"shard":shard}
+        }));
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .arg("--root")
+            .arg(directory.path())
+            .args(["run", "test", "--shard", "0/4"])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("--shard"));
+        assert!(!directory.path().join("started").exists());
+    }
+}
+
+#[test]
 fn standalone_head_never_becomes_a_direct_run() {
     let directory = fixture(json!({"deploy": {
         "command": command(&["write", "deployed", "unexpected"]), "effect":"external"

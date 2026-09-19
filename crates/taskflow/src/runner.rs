@@ -153,6 +153,28 @@ pub async fn run_plan(
         plan.generation == graph.workspace.generation,
         "execution plan is stale"
     );
+    if let Some((index, count)) = options.shard {
+        ensure!(count > 0 && index < count, "invalid shard index/count");
+        let pending: Vec<_> = plan
+            .order
+            .iter()
+            .filter(|id| !options.provided.contains_key(*id))
+            .collect();
+        if !pending.is_empty() {
+            let shards: Vec<_> = pending
+                .iter()
+                .filter_map(|id| graph.tasks[*id].task.shard.as_ref())
+                .collect();
+            ensure!(
+                !shards.is_empty(),
+                "--shard requires a selected task with shard configuration"
+            );
+            ensure!(
+                shards.iter().all(|shard| shard.count == count),
+                "--shard count must match every selected sharded task"
+            );
+        }
+    }
     for id in &plan.order {
         ensure!(
             !graph.unresolved.contains(id),
