@@ -356,6 +356,10 @@ Unix privacy regressions include non-Unicode environment keys and values in dire
 and clean execution. Ambient redaction enumerates OS strings without panicking and
 retains textual secret masking for Unicode entries; environment values are never
 serialized.
+Root normalization requires a path start and an exact root or separator boundary;
+similarly prefixed external paths retain their identity for policy, mapping, and
+query matching. Embedded path arguments after whitespace, assignment, or quotes
+use the same component-boundary rule.
 Linux native CI additionally compiles and executes a static musl child on the
 glibc host to verify seccomp coverage; cross compilation cannot satisfy that test.
 

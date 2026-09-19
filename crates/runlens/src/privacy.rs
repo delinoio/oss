@@ -114,8 +114,37 @@ pub fn normalized(path: &Path) -> String {
     }
 }
 fn replace_root(value: String, root: &str, placeholder: &str) -> String {
-    let value = value.replace(root, placeholder);
+    let value = replace_path_root(&value, root, placeholder);
     #[cfg(windows)]
-    let value = value.replace(&root.replace('/', "\\"), placeholder);
+    let value = replace_path_root(&value, &root.replace('/', "\\"), placeholder);
     value
+}
+fn replace_path_root(value: &str, root: &str, placeholder: &str) -> String {
+    if root.is_empty() {
+        return value.to_owned();
+    }
+    let separator = |ch| ch == '/' || cfg!(windows) && ch == '\\';
+    let root_ends_in_separator = root.chars().next_back().is_some_and(separator);
+    let mut result = String::with_capacity(value.len());
+    let mut copied = 0;
+    for (start, _) in value.match_indices(root) {
+        let end = start + root.len();
+        let starts_path = start == 0
+            || value[..start].chars().next_back().is_some_and(|ch| {
+                ch.is_whitespace() || matches!(ch, '=' | '\'' | '"' | '(' | '[' | '{' | ',')
+            });
+        let ends_component = end == value.len()
+            || root_ends_in_separator
+            || value[end..].chars().next().is_some_and(separator);
+        if starts_path && ends_component {
+            result.push_str(&value[copied..start]);
+            result.push_str(placeholder);
+            if root_ends_in_separator && end < value.len() {
+                result.push('/');
+            }
+            copied = end;
+        }
+    }
+    result.push_str(&value[copied..]);
+    result
 }

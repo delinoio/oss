@@ -86,6 +86,56 @@ fn ignored_and_unknown_states_are_not_empty_files() {
     );
 }
 #[test]
+fn path_normalization_preserves_similar_external_roots() {
+    use std::path::Path;
+    let root = if cfg!(windows) {
+        "C:/Runlens/project"
+    } else {
+        "/runlens/project"
+    };
+    let temporary = if cfg!(windows) {
+        "C:/Runlens/temporary"
+    } else {
+        "/runlens/temporary"
+    };
+    let redactor = Redactor::new(
+        Path::new(root),
+        &[Path::new(temporary)],
+        &config::Redaction::default(),
+    )
+    .unwrap();
+    assert_eq!(redactor.path(Path::new(root)), "${workspace}");
+    assert_eq!(
+        redactor.path(Path::new(&format!("{root}/input"))),
+        "${workspace}/input"
+    );
+    for sibling in [
+        format!("{root}-cache/file"),
+        format!("{temporary}-cache/file"),
+    ] {
+        assert_eq!(redactor.path(Path::new(&sibling)), sibling);
+    }
+    assert_eq!(
+        redactor.text(&format!("--file={root}/input --copy={root}-cache/input")),
+        format!("--file=${{workspace}}/input --copy={root}-cache/input")
+    );
+    assert_eq!(
+        redactor.text(&format!("prefix{root}/input")),
+        format!("prefix{root}/input")
+    );
+    #[cfg(windows)]
+    assert_eq!(
+        redactor.text(r"--file=C:\Runlens\project\input"),
+        r"--file=${workspace}\input"
+    );
+    let volume = if cfg!(windows) { "C:/" } else { "/" };
+    let redactor = Redactor::new(Path::new(volume), &[], &config::Redaction::default()).unwrap();
+    assert_eq!(
+        redactor.path(Path::new(&format!("{volume}file"))),
+        "${workspace}/file"
+    );
+}
+#[test]
 fn argv_redaction_precedes_storage() {
     let root = tempfile::tempdir().unwrap();
     let redactor = Redactor::new(
