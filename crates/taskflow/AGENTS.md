@@ -21,7 +21,7 @@
 - Cache verification checks artifact identity, content digests, paths, and shard accounting independently of current configuration; restoration additionally validates project ownership and link containment.
 - Do not close the detached Unix descendant cleanup gap using process-group tests or periodic PID enumeration; require ownership evidence for setsid/setpgid and double-fork descendants on macOS and Linux.
 - Output-drain failures must still await both stream owners and container removal/absence verification before returning; unverified cleanup takes precedence over log errors.
-- Preserve completed, cancelled, and timed-out process reasons separately; finite deadlines produce failed receipts with code 124, while operator cancellation remains code 130.
+- Preserve completed, cancelled, and timed-out process reasons separately; finite deadlines produce failed receipts with code 124, while operator cancellation remains code 130. Shard aggregation retains these reasons and accounts for every remaining unit without launching replacement work.
 - Every child belongs to a process-tree/container owner; replacement waits for reaping. Tests must assert actual cleanup. Service shutdown must await all owners and propagate every unverified process/container cleanup as failure.
 - Session waves reuse finite prerequisite receipts only while current output digests match; missing or modified outputs return to normal restore/execution before consumers run.
 - Apply overlap policies to per-task execution ownership, not to membership in an unfinished wave.

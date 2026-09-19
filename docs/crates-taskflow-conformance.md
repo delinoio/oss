@@ -173,3 +173,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `session_revalidates_provided_prerequisite_outputs` modifies and deletes a watched consumer's prerequisite output across live session waves, covering both uncached rebuild and cached restoration before consumption.
 
 `docker_cleanup_reuses_the_validated_launch_environment` isolates the Docker executable and daemon/context/configuration from the parent environment and verifies both awaited removal/absence checks and destructor cleanup, including a relative configuration path.
+
+`shard_timeouts_and_cancellation_preserve_receipt_reasons` exercises generic exchange and native command inventories, including empty shards. Deadlines and cancellation retain codes 124/130 and complete failed/cancelled accounting even when no generic result file is written.

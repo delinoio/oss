@@ -16,7 +16,7 @@ use crate::{
     files,
     graph::Graph,
     plan::Cause,
-    process::{self, OwnedProcess},
+    process::{self, ExitReason, OwnedProcess, ProcessExit},
     runner::{Outcome, Receipt, RunOptions},
 };
 
@@ -674,6 +674,7 @@ pub async fn execute(
     };
     let started = Instant::now();
     let mut all_passed = true;
+    let mut termination: Option<ProcessExit> = None;
     for index in indices {
         let selected = &assignments[index];
         let mut results = vec![];
@@ -695,18 +696,29 @@ pub async fn execute(
                 "TFLOW_SHARD_RESULT".into(),
                 results_path.to_string_lossy().into_owned(),
             );
-            let status = run_unit(
-                graph,
-                id,
-                config.run.as_ref().unwrap(),
-                &env,
-                secrets,
-                options,
-                cancel,
-                log.clone(),
-            )
-            .await?;
-            if status == UnitStatus::Cancelled {
+            let exit = if let Some(exit) = termination {
+                exit
+            } else if cancel.is_cancelled() {
+                ProcessExit {
+                    code: 130,
+                    reason: ExitReason::Cancelled,
+                }
+            } else {
+                run_unit(
+                    graph,
+                    id,
+                    config.run.as_ref().unwrap(),
+                    &env,
+                    secrets,
+                    options,
+                    cancel,
+                    log.clone(),
+                )
+                .await?
+            };
+            let status = unit_status(exit);
+            if exit.reason != ExitReason::Completed {
+                termination.get_or_insert(exit);
                 results.extend(selected.iter().map(|id| UnitResult {
                     id: id.clone(),
                     status,
@@ -730,8 +742,13 @@ pub async fn execute(
         } else {
             for test in selected {
                 let began = Instant::now();
-                let status = if cancel.is_cancelled() {
-                    UnitStatus::Cancelled
+                let exit = if let Some(exit) = termination {
+                    exit
+                } else if cancel.is_cancelled() {
+                    ProcessExit {
+                        code: 130,
+                        reason: ExitReason::Cancelled,
+                    }
                 } else {
                     run_unit(
                         graph,
@@ -745,9 +762,12 @@ pub async fn execute(
                     )
                     .await?
                 };
+                if exit.reason != ExitReason::Completed {
+                    termination.get_or_insert(exit);
+                }
                 results.push(UnitResult {
                     id: test.clone(),
-                    status,
+                    status: unit_status(exit),
                     duration_ms: began.elapsed().as_millis() as u64,
                 });
             }
@@ -774,11 +794,23 @@ pub async fn execute(
             .collect();
         files::atomic_write(&history_path, &serde_json::to_vec(&durations)?)?;
     }
+    if termination.is_none() && cancel.is_cancelled() {
+        termination = Some(ProcessExit {
+            code: 130,
+            reason: ExitReason::Cancelled,
+        });
+    }
+    let timed_out = termination.is_some_and(|exit| exit.reason == ExitReason::TimedOut);
+    if let Some(exit) = termination {
+        tracing::info!(task = id, reason = ?exit.reason, code = exit.code, "Shard execution terminated");
+    }
     Ok(Receipt {
         version: 1,
         task: id.into(),
         execution: execution.into(),
-        outcome: if cancel.is_cancelled() {
+        outcome: if timed_out {
+            Outcome::Failed
+        } else if termination.is_some() {
             Outcome::Cancelled
         } else if all_passed {
             Outcome::Executed
@@ -790,8 +822,8 @@ pub async fn execute(
         output: inventory_digest,
         causes,
         duration_ms: started.elapsed().as_millis() as u64,
-        exit_code: if all_passed { 0 } else { 1 },
-        diagnostic: None,
+        exit_code: termination.map_or(if all_passed { 0 } else { 1 }, |exit| exit.code),
+        diagnostic: timed_out.then(|| "task timeout elapsed".into()),
     })
 }
 #[allow(clippy::too_many_arguments)]
@@ -804,7 +836,7 @@ async fn run_unit(
     options: &RunOptions,
     cancel: &CancellationToken,
     log: Arc<Mutex<File>>,
-) -> Result<UnitStatus> {
+) -> Result<ProcessExit> {
     let task = &graph.tasks[id].task;
     let directory = &graph.workspace.projects[&graph.tasks[id].project].directory;
     let mut container = None;
@@ -863,12 +895,14 @@ async fn run_unit(
     )
     .await?;
     reaped?;
-    let status = waited?;
-    Ok(if status.cancelled() {
-        UnitStatus::Cancelled
-    } else if status.code == 0 {
-        UnitStatus::Passed
-    } else {
-        UnitStatus::Failed
-    })
+    waited
+}
+
+fn unit_status(exit: ProcessExit) -> UnitStatus {
+    match exit.reason {
+        ExitReason::Cancelled => UnitStatus::Cancelled,
+        ExitReason::TimedOut => UnitStatus::Failed,
+        ExitReason::Completed if exit.code == 0 => UnitStatus::Passed,
+        ExitReason::Completed => UnitStatus::Failed,
+    }
 }

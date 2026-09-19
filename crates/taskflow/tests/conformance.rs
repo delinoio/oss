@@ -3716,3 +3716,72 @@ async fn docker_cleanup_reuses_the_validated_launch_environment() {
         "rm\nps\nrm\n"
     );
 }
+
+#[tokio::test]
+async fn shard_timeouts_and_cancellation_preserve_receipt_reasons() {
+    for adapter in ["generic", "jest"] {
+        for cancelled in [false, true] {
+            let shard = if adapter == "generic" {
+                json!({"adapter":adapter,"count":4,"list":command(&["inventory"]),"run":command(&["sleep","unit.pid"])})
+            } else {
+                json!({"adapter":adapter,"count":4})
+            };
+            let root = fixture(
+                json!({"suite":{"command":command(&["jest"]),"input":[],"output":[],"timeout":if cancelled {"30s"} else {"2s"},"shard":shard}}),
+            );
+            for file in ["one.test.js", "two.test.js"] {
+                std::fs::write(root.path().join(file), "test").unwrap();
+            }
+            let g = graph(root.path()).await;
+            let plan = Plan::create(&g, &["suite".into()], &[], false).unwrap();
+            let token = CancellationToken::new();
+            let execution = tokio::spawn(runner::run_plan(
+                g,
+                plan,
+                RunOptions::default(),
+                token.clone(),
+            ));
+            if cancelled {
+                tokio::time::timeout(Duration::from_secs(60), async {
+                    while !root.path().join("unit.pid").exists() {
+                        assert!(!execution.is_finished());
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                })
+                .await
+                .unwrap();
+                token.cancel();
+            }
+            let result = tokio::time::timeout(Duration::from_secs(15), execution)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            let receipt = &result.results["app#suite"];
+            assert!(!result.success);
+            assert_eq!(
+                receipt.outcome,
+                if cancelled {
+                    Outcome::Cancelled
+                } else {
+                    Outcome::Failed
+                }
+            );
+            assert_eq!(receipt.exit_code, if cancelled { 130 } else { 124 });
+            assert_eq!(
+                receipt.diagnostic.as_deref(),
+                if cancelled {
+                    None
+                } else {
+                    Some("task timeout elapsed")
+                }
+            );
+            let (inventory, reports) =
+                shard::read_reports(&root.path().join(".taskflow/runs").join(&receipt.execution))
+                    .unwrap();
+            assert_eq!(reports.len(), 4);
+            assert!(!shard::aggregate(&inventory, 4, &reports).unwrap());
+            assert!(!cache::entry_path(root.path(), &receipt.key).exists());
+        }
+    }
+}

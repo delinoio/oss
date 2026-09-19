@@ -69,6 +69,13 @@ fn main() {
             write(&args[2], b"started");
             while !Path::new(&args[3]).exists() { std::thread::sleep(Duration::from_millis(10)); }
         }
+        "jest" if args.iter().any(|arg| arg == "--listTests") => {
+            println!("[\"one.test.js\",\"two.test.js\"]");
+        }
+        "jest" => {
+            write("unit.pid", std::process::id().to_string().as_bytes());
+            std::thread::sleep(Duration::from_secs(30));
+        }
         "sleep" => {
             write(&args[2], std::process::id().to_string().as_bytes());
             if let Some(child_path) = args.get(3) {
