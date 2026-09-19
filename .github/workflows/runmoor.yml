@@ -1,0 +1,40 @@
+name: Runmoor contracts and local Docker
+
+on:
+  pull_request:
+    paths:
+      - cmds/runmoor/**
+      - scripts/release/runmoor*
+      - .github/workflows/runmoor.yml
+      - .github/workflows/release-runmoor.yml
+      - go.mod
+      - go.sum
+  push:
+    branches: [main]
+    paths:
+      - cmds/runmoor/**
+      - scripts/release/runmoor*
+      - .github/workflows/runmoor.yml
+      - .github/workflows/release-runmoor.yml
+      - go.mod
+      - go.sum
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Unit, lifecycle and mocked API tests
+        run: go test -race ./cmds/runmoor/...
+      - name: Local Docker integration without GitHub job assignment
+        env:
+          RUNMOOR_DOCKER_TEST: "1"
+        run: go test -run TestDockerIntegration -v -timeout 10m ./cmds/runmoor/internal/runmoor
