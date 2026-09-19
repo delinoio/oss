@@ -221,10 +221,11 @@ func loadRun(db runReader, id string) (Run, error) {
 		return r, E("invalid-run-id", "expected canonical UUID v7", 2)
 	}
 	var b []byte
-	var ack sql.NullString
+	var ack, source sql.NullString
+	var branch string
 	var state State
 	var seq int64
-	err := db.QueryRow("SELECT record,seq,state,ack FROM runs WHERE id=?", id).Scan(&b, &seq, &state, &ack)
+	err := db.QueryRow("SELECT r.record,r.seq,r.state,r.ack,r.branch,w.path FROM runs r LEFT JOIN worktrees w ON w.id=r.worktree AND w.repository_id=r.repo WHERE r.id=?", id).Scan(&b, &seq, &state, &ack, &branch, &source)
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, E("run-not-found", "run not found", 2)
 	}
@@ -234,6 +235,12 @@ func loadRun(db runReader, id string) (Run, error) {
 	if err = json.Unmarshal(b, &r); err != nil {
 		return r, Wrap("state-corrupt", err)
 	}
+	// JSON snapshots and responses normalize invalid UTF-8. Operational paths
+	// and historical branch identity come from lossless SQLite columns instead.
+	if source.Valid {
+		r.Source = source.String
+	}
+	r.Branch = branch
 	r.Sequence = seq
 	r.State = state
 	if ack.Valid {

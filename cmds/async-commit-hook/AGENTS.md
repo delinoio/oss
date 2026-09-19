@@ -57,7 +57,7 @@
 
 - Normalize arbitrary Git commit-subject bytes into valid UTF-8 for display/transport while preserving commit and parent object IDs.
 - Branch-list transport labels also normalize invalid Git bytes to valid UTF-8 without changing the referenced commit IDs or raw Git refs.
-- Repository/worktree transport names, paths and branch labels must be valid UTF-8; preserve raw database paths for filesystem/Git access and use IDs for API selection.
+- Repository/worktree transport names, paths and branch labels must be valid UTF-8; preserve raw database paths for filesystem/Git access and use IDs for API selection. Reload operational run source paths from the worktree registry and historical branch identity from the run column, never lossy JSON display snapshots; unavailable checkouts must not block history reads.
 
 - Accept Go test JSON events up to the bounded report size; slice the existing report lines without a smaller scanner token limit or a second full event buffer.
 - Go test failure IDs include separate package/test identity and a deterministic completed-iteration occurrence, counting pass/skip as well as fail; messages never determine identity.
