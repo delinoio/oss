@@ -10,8 +10,8 @@ import (
 	"testing"
 )
 
-func TestDockerInspectionRequiresOwnedLiveDindDaemon(t *testing.T) {
-	for _, state := range []string{"running", "stopped", "missing", "foreign", "replaced", "unavailable", "unpublished"} {
+func TestDockerInspectionRequiresHealthyRunnerAndOwnedDindDaemon(t *testing.T) {
+	for _, state := range []string{"running", "stopped", "missing", "foreign", "replaced", "unavailable", "unpublished", "runner paused", "runner restarting"} {
 		t.Run(state, func(t *testing.T) {
 			m, c, remote, _, pool := testManager(t)
 			id := seedRunner(t, m, pool, Idle)
@@ -69,7 +69,7 @@ func TestDockerInspectionRequiresOwnedLiveDindDaemon(t *testing.T) {
 				if role == "daemon" && state == "foreign" {
 					labels[runnerKey] = newID()
 				}
-				_ = json.NewEncoder(w).Encode(map[string]any{"Id": cid, "Config": map[string]any{"Labels": labels}, "State": map[string]any{"Running": running, "ExitCode": 0}})
+				_ = json.NewEncoder(w).Encode(map[string]any{"Id": cid, "Config": map[string]any{"Labels": labels}, "State": map[string]any{"Running": running, "Paused": role == "runner" && state == "runner paused", "Restarting": role == "runner" && state == "runner restarting", "ExitCode": 0}})
 			})}
 			go func() { _ = server.Serve(listener) }()
 			defer server.Close()
@@ -77,7 +77,7 @@ func TestDockerInspectionRequiresOwnedLiveDindDaemon(t *testing.T) {
 			m.inspect(context.Background(), id)
 			r = m.Store.View().Runners[id]
 			want := Idle
-			if state == "missing" || state == "stopped" {
+			if state == "missing" || state == "stopped" || strings.HasPrefix(state, "runner ") {
 				want = Cleaning
 			}
 			if state == "foreign" || state == "replaced" {
@@ -94,6 +94,16 @@ func TestDockerInspectionRequiresOwnedLiveDindDaemon(t *testing.T) {
 			}
 			if remote.removed != 0 {
 				t.Fatal("inspection bypassed busy-aware cleanup")
+			}
+			if strings.HasPrefix(state, "runner ") {
+				if _, reserved, _ := usage(m.Store.View()); reserved != 1 {
+					t.Fatal("unavailable container released its reservation before termination")
+				}
+				remote.busy = true
+				m.cleanup(context.Background(), id)
+				if got := m.Store.View().Runners[id]; got.Phase != Busy || got.Terminated || got.Forced {
+					t.Fatal("unavailable container bypassed the assignment race")
+				}
 			}
 		})
 	}

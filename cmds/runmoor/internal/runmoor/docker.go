@@ -341,7 +341,7 @@ func (d *DockerDriver) Inspect(ctx context.Context, c Config, r Runner, s Snapsh
 	h.Container = v.ID
 	out := Observation{Exists: true, Handle: h}
 	if v.State != nil {
-		out.Running = v.State.Running
+		out.Running = v.State.Running && !v.State.Paused && !v.State.Restarting
 		code := v.State.ExitCode
 		out.ExitCode = &code
 	}

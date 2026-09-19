@@ -145,6 +145,20 @@ func TestDockerIntegration(t *testing.T) {
 			if e != nil || !obs.Running || obs.Handle.Container != r.Handle.Container {
 				t.Fatal("restart adoption failed", e)
 			}
+			if e = cli.ContainerPause(ctx, r.Handle.Container); e != nil {
+				t.Fatal(e)
+			}
+			obs, e = driver.Inspect(ctx, c, r, snap)
+			if e != nil || obs.Running || !obs.Exists {
+				t.Fatal("paused runner remained available", e)
+			}
+			if e = cli.ContainerUnpause(ctx, r.Handle.Container); e != nil {
+				t.Fatal(e)
+			}
+			obs, e = driver.Inspect(ctx, c, r, snap)
+			if e != nil || !obs.Running {
+				t.Fatal("unpaused runner was not recovered", e)
+			}
 			if mode == DinD {
 				if obs.Handle.Daemon != r.Handle.Daemon {
 					t.Fatal("restart adoption lost the owned daemon")
