@@ -4,6 +4,7 @@
 - Keep CLI, TOML v1, SQLite v1, and versioned JSON contracts synchronized with the English README and public `/runmoor` documentation.
 - Use the official pinned `actions/scaleset` client. Persist message effects before acknowledgement; derive demand from statistics, never event counts.
 - Preserve installation ownership, per-runner resource reservations, original configuration generations, and cleanup progress across crashes. Never adopt resources based only on their names. Serialize each pool's scale-set initialization/publication with retirement; draining pools may resolve pending creation by lookup but cannot begin a new creation or retire while that outcome is unresolved.
+- After durable pool retirement, discard its cached GitHub client and mutex and cancel its session loop. Stale work must not recreate these caches or publish a session for a retired/pruned generation; failed retirement commits retain retry state.
 - GitHub management credentials stay on the host. Do not persist JIT credentials or copy raw workflow output, upstream response bodies, or subprocess stderr into diagnostics.
 - Scale down through GitHub's busy-aware removal before terminating an idle execution. Preserve an assignment that wins the race.
 - Expired preparation recovery also requires busy-aware removal; only explicit force-stop or an established busy-job deadline permits forced cleanup. Recover an unknown job start conservatively from the persisted creation time.

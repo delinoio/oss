@@ -160,3 +160,123 @@ func TestRetirementResolvesPendingCreationBeforeReleasingIdentity(t *testing.T) 
 		})
 	}
 }
+
+func TestRetirementReleasesCachesAndRejectsStaleGenerations(t *testing.T) {
+	m, c, _, _, pool := testManager(t)
+	for i := 0; i < 12; i++ {
+		old := *m.Store.View().Pools[pool]
+		if _, err := m.remote(old); err != nil {
+			t.Fatal(err)
+		}
+		if m.poolLock(pool) == nil {
+			t.Fatal("active pool has no serialization boundary")
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		m.poolLoops[pool] = cancel
+		c.Pools[0].MaxRunners++
+		if err := m.accept(c, false); err != nil {
+			t.Fatal(err)
+		}
+		m.retirePool(context.Background(), pool)
+		if ctx.Err() == nil {
+			t.Fatal("retirement left its session loop alive")
+		}
+		delete(m.poolLoops, pool) // Simulate the canceled loop's deferred exit.
+		if p := m.Store.View().Pools[pool]; p.Phase != Retired || p.Session != "" {
+			t.Fatal("retirement did not publish the terminal state")
+		}
+		for _, prune := range []bool{false, true} {
+			if prune {
+				if err := m.Store.Prune(time.Now()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := m.remote(old); err == nil || m.poolLock(pool) != nil {
+				t.Fatal("stale generation recreated cached credentials or a mutex")
+			}
+			if len(m.remotes) != 0 || len(m.poolLocks) != 0 {
+				t.Fatal("retired pool caches accumulated across reloads")
+			}
+		}
+		for id, p := range m.Store.View().Pools {
+			if p.Phase == Ready {
+				pool = id
+			}
+		}
+	}
+}
+
+type retiringRemote struct {
+	*fakeRemote
+	delete func()
+}
+
+func (r *retiringRemote) DeletePool(context.Context, PoolState) error {
+	r.delete()
+	return nil
+}
+
+func TestRetirementKeepsCachesWhenDurableCommitFails(t *testing.T) {
+	m, _, remote, _, pool := testManager(t)
+	m.RemoteFactory = func(Connection) (Remote, error) {
+		return &retiringRemote{fakeRemote: remote, delete: func() { _ = m.Store.Close() }}, nil
+	}
+	if err := m.Store.Update(func(s *Snapshot) error { s.Pools[pool].Phase = Draining; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	lock := m.poolLock(pool)
+	m.retirePool(context.Background(), pool)
+	if m.Store.View().Pools[pool].Phase != Draining || m.remotes[pool] == nil || m.poolLocks[pool] != lock {
+		t.Fatal("failed durable retirement discarded retry state")
+	}
+}
+
+type lateSessionRemote struct {
+	*fakeRemote
+	entered, release, closed chan struct{}
+}
+
+func (r *lateSessionRemote) Session(context.Context, PoolState, string) (RemoteSession, error) {
+	close(r.entered)
+	<-r.release
+	return &closingSession{fakeSession: r.session, closed: r.closed}, nil
+}
+
+type closingSession struct {
+	*fakeSession
+	closed chan struct{}
+}
+
+func (s *closingSession) Close(context.Context) error { close(s.closed); return nil }
+
+func TestLateSessionAfterRetirementAndPruningIsClosed(t *testing.T) {
+	m, c, remote, _, pool := testManager(t)
+	r := &lateSessionRemote{fakeRemote: remote, entered: make(chan struct{}), release: make(chan struct{}), closed: make(chan struct{})}
+	m.RemoteFactory = func(Connection) (Remote, error) { return r, nil }
+	var release sync.Once
+	defer release.Do(func() { close(r.release) })
+	m.ensurePoolLoop(pool)
+	select {
+	case <-r.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("session creation did not start")
+	}
+	c.Pools[0].MaxRunners++
+	if err := m.accept(c, false); err != nil {
+		t.Fatal(err)
+	}
+	m.retirePool(context.Background(), pool)
+	if err := m.Store.Prune(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	release.Do(func() { close(r.release) })
+	select {
+	case <-r.closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("late session was not closed")
+	}
+	m.wg.Wait()
+	if len(m.remotes) != 0 || len(m.poolLocks) != 0 || len(m.poolLoops) != 0 || m.Store.View().Pools[pool] != nil {
+		t.Fatal("late session resurrected a retired generation")
+	}
+}

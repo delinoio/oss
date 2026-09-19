@@ -37,6 +37,9 @@ func NewManager(store *Store, path string, l *slog.Logger) *Manager {
 func (m *Manager) poolLock(id string) *sync.Mutex {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if p := m.Store.View().Pools[id]; p == nil || p.Phase == Retired {
+		return nil
+	}
 	if m.poolLocks[id] == nil {
 		m.poolLocks[id] = &sync.Mutex{}
 	}
@@ -45,6 +48,9 @@ func (m *Manager) poolLock(id string) *sync.Mutex {
 func (m *Manager) remote(p PoolState) (Remote, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if current := m.Store.View().Pools[p.ID]; current == nil || current.Phase == Retired {
+		return nil, problem(ErrRetry, "Pool generation has retired.", "Use the active pool generation shown by status.")
+	}
 	if r := m.remotes[p.ID]; r != nil {
 		return r, nil
 	}
@@ -436,6 +442,9 @@ func (m *Manager) poolLoop(ctx context.Context, id string) {
 		if e == nil {
 			e = m.Store.Update(func(v *Snapshot) error {
 				q := v.Pools[id]
+				if q == nil || q.Phase == Retired || ctx.Err() != nil {
+					return problem(ErrRetry, "Pool session initialization was interrupted.", "Use the active pool generation shown by status.")
+				}
 				q.Session = session.ID()
 				q.LastMessage = 0
 				q.Demand = session.InitialDemand()
@@ -476,6 +485,9 @@ func (m *Manager) poolLoop(ctx context.Context, id string) {
 }
 func (m *Manager) ensureScaleSet(ctx context.Context, id string, remote Remote) (*PoolState, error) {
 	lock := m.poolLock(id)
+	if lock == nil {
+		return nil, nil
+	}
 	lock.Lock()
 	defer lock.Unlock()
 	return m.ensureScaleSetLocked(ctx, id, remote)
@@ -957,6 +969,9 @@ func (m *Manager) cleanup(ctx context.Context, id string) {
 }
 func (m *Manager) retirePool(ctx context.Context, id string) {
 	lock := m.poolLock(id)
+	if lock == nil {
+		return
+	}
 	lock.Lock()
 	defer lock.Unlock()
 	s := m.Store.View()
@@ -980,7 +995,24 @@ func (m *Manager) retirePool(ctx context.Context, id string) {
 			return
 		}
 	}
-	_ = m.Store.Update(func(s *Snapshot) error { s.Pools[id].Phase = Retired; return nil })
+	if err := m.Store.Update(func(s *Snapshot) error {
+		p := s.Pools[id]
+		p.Phase, p.Session, p.Demand = Retired, "", 0
+		return nil
+	}); err != nil {
+		m.poolProblem(id, err, false)
+		return
+	}
+	m.mu.Lock()
+	// Existing lock waiters retain this mutex until they see Retired. The
+	// current-state guards above prevent late work from recreating either cache.
+	delete(m.remotes, id)
+	delete(m.poolLocks, id)
+	if cancel := m.poolLoops[id]; cancel != nil {
+		cancel()
+	}
+	m.mu.Unlock()
+	m.Log.Info("pool_retired", "pool", p.Spec.Name, "pool_id", id)
 }
 func (m *Manager) Stop(force bool) error {
 	err := m.Store.Update(func(s *Snapshot) error {
