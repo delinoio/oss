@@ -85,8 +85,9 @@ func TestDockerIntegration(t *testing.T) {
 				p.DaemonResources = Resources{CPU: 1, MemoryMiB: 768}
 			}
 			snap := s.View()
+			snap.Pools["integration"] = &PoolState{ID: "integration", Spec: p}
 			id := newID()
-			r := Runner{ID: id, Name: "runmoor-" + id, Phase: Preparing, Backend: Docker, Resources: p.Cost(), Image: p.Image}
+			r := Runner{ID: id, PoolID: "integration", Name: "runmoor-" + id, Phase: Preparing, Backend: Docker, Resources: p.Cost(), Image: p.Image}
 			driver := &DockerDriver{}
 			// A foreign volume proves cleanup never sweeps by a broad name prefix.
 			foreign, e := cli.VolumeCreate(ctx, volume.CreateOptions{Name: r.Name + "-foreign", Labels: map[string]string{ownerKey: snap.Installation, runnerKey: newID()}})
@@ -143,6 +144,19 @@ func TestDockerIntegration(t *testing.T) {
 			obs, e := (&DockerDriver{}).Inspect(ctx, c, recovered, snap)
 			if e != nil || !obs.Running || obs.Handle.Container != r.Handle.Container {
 				t.Fatal("restart adoption failed", e)
+			}
+			if mode == DinD {
+				if obs.Handle.Daemon != r.Handle.Daemon {
+					t.Fatal("restart adoption lost the owned daemon")
+				}
+				if e = cli.ContainerStop(ctx, r.Handle.Daemon, container.StopOptions{}); e != nil {
+					t.Fatal(e)
+				}
+				obs, e = driver.Inspect(ctx, c, r, snap)
+				actual, inspectErr := cli.ContainerInspect(ctx, r.Handle.Container)
+				if e != nil || inspectErr != nil || obs.Running || !actual.State.Running {
+					t.Fatal("live runner remained available without its DinD daemon", e, inspectErr)
+				}
 			}
 			if e = driver.Stop(ctx, c, r, snap); e != nil {
 				t.Fatal(e)

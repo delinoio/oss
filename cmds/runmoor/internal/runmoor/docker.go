@@ -334,7 +334,7 @@ func (d *DockerDriver) Inspect(ctx context.Context, c Config, r Runner, s Snapsh
 	if e != nil {
 		return Observation{}, dockerProblem()
 	}
-	if !ownedDocker(v.Config.Labels, s, r) || (r.Handle.Container != "" && r.Handle.Container != v.ID) {
+	if v.Config == nil || !ownedDocker(v.Config.Labels, s, r) || (r.Handle.Container != "" && r.Handle.Container != v.ID) {
 		return Observation{}, problem(ErrOwnership, "Docker runner ownership is ambiguous.", "Keep the execution quarantined and inspect the owned resource labels.")
 	}
 	h := r.Handle
@@ -344,6 +344,27 @@ func (d *DockerDriver) Inspect(ctx context.Context, c Config, r Runner, s Snapsh
 		out.Running = v.State.Running
 		code := v.State.ExitCode
 		out.ExitCode = &code
+	}
+	dind := r.Handle.Daemon != ""
+	if p := s.Pools[r.PoolID]; p != nil && p.Spec.Mode == DinD {
+		dind = true
+	}
+	if out.Running && dind {
+		daemon, err := cli.ContainerInspect(ctx, r.Name+"-daemon")
+		if errdefs.IsNotFound(err) {
+			out.Running = false
+			return out, nil
+		}
+		if err != nil {
+			return Observation{}, dockerProblem()
+		}
+		if daemon.Config == nil || !ownedDocker(daemon.Config.Labels, s, r) || daemon.Config.Labels[roleKey] != "daemon" || (r.Handle.Daemon != "" && r.Handle.Daemon != daemon.ID) {
+			return Observation{}, problem(ErrOwnership, "Docker-in-Docker daemon ownership is ambiguous.", "Keep the execution quarantined and inspect its recorded daemon identity and ownership labels.")
+		}
+		out.Handle.Daemon = daemon.ID
+		// A live runner without its daemon is not an available execution. This
+		// requests busy-aware cleanup; only Stop may confirm local termination.
+		out.Running = daemon.State != nil && daemon.State.Running && !daemon.State.Paused && !daemon.State.Restarting
 	}
 	return out, nil
 }
