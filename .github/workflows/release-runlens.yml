@@ -188,7 +188,8 @@ jobs:
         with:
           name: runlens-signed
           path: runlens-artifacts
-      - name: Publish a new release without overwriting
+      - name: Prepare and verify a new draft without overwriting
+        id: draft
         uses: actions/github-script@v8
         env:
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
@@ -205,9 +206,21 @@ jobs:
             for (const name of files) await github.rest.repos.uploadReleaseAsset({...context.repo, release_id: release.id, name, data: fs.readFileSync(`runlens-artifacts/${name}`)});
             const {data: assets} = await github.rest.repos.listReleaseAssets({...context.repo, release_id: release.id});
             if (assets.length !== 14 || assets.some(asset => !files.includes(asset.name) || asset.size !== fs.statSync(`runlens-artifacts/${asset.name}`).size || asset.digest !== `sha256:${crypto.createHash('sha256').update(fs.readFileSync(`runlens-artifacts/${asset.name}`)).digest('hex')}`)) throw Error('Incomplete or mismatched uploaded assets; draft retained for inspection');
-            await github.rest.repos.updateRelease({...context.repo, release_id: release.id, draft: false});
+            core.setOutput('release_id', release.id);
       - name: Update the prebuilt Homebrew formula
         env:
           RELEASE_VERSION: ${{ inputs.version }}
           HOMEBREW_TAP_GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GH_TOKEN }}
         run: python scripts/release/runlens.py homebrew --directory runlens-artifacts --version "$RELEASE_VERSION"
+      - name: Publish the verified draft after the tap update
+        uses: actions/github-script@v8
+        env:
+          RELEASE_ID: ${{ steps.draft.outputs.release_id }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+        with:
+          script: |
+            const releaseId = Number(process.env.RELEASE_ID);
+            if (!Number.isSafeInteger(releaseId) || releaseId <= 0) throw Error('Missing draft release identity');
+            const {data: release} = await github.rest.repos.getRelease({...context.repo, release_id: releaseId});
+            if (!release.draft || release.tag_name !== process.env.RELEASE_TAG) throw Error('Draft identity changed; refusing publication');
+            await github.rest.repos.updateRelease({...context.repo, release_id: releaseId, draft: false});

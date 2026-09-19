@@ -453,3 +453,4 @@ Release automation baseline:
 - Runlens release identity is `runlens@vX.Y.Z`, initially `runlens@v0.1.0`. Its archives, installers, and prebuilt Homebrew formula share the closed inventory in `scripts/release/runlens.py`. Never substitute cross compilation or authentication doubles for native or signed-install proof.
 - Runlens POSIX installation must reject symlinks and non-regular destination objects while preserving their contents; successful replacement must install the executable at the exact requested file path.
 - Runlens native validation must watch its Homebrew formula template and shared tap renderer on both pull requests and main pushes.
+- Keep each verified Runlens release private until its Homebrew update succeeds; tap failure must not leave a public release missing required distribution.

@@ -82,8 +82,11 @@ signed separately. All six minimum-OS runners then install authenticated archive
 with the production installers. Only after those jobs pass does the publication
 job receive contents-write permission and the tap credential. It creates a new
 draft, uploads the complete signed inventory, verifies uploaded sizes, and then
-publishes; any existing release, including an incomplete draft, is refused.
-Operator recovery must inspect and intentionally handle an incomplete draft.
+updates the Homebrew tap before making the verified draft public. Tap failures
+leave the release private; the final publication step requires successful tap
+completion and rechecks the draft's identity. Any existing release, including an
+incomplete draft, is refused. Operator recovery must inspect and intentionally
+handle an incomplete draft and any tap update that preceded a publication failure.
 Homebrew uses the existing `delinoio/homebrew-tap` prebuilt formula path.
 
 The six native installer fixtures deliberately replace only cosign authentication

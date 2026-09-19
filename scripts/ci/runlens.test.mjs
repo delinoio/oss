@@ -42,6 +42,22 @@ test("Runlens dry run cannot reach publication credentials or OIDC", () => {
   const validation = JSON.stringify(release.jobs.validate);
   for (const marker of ["run.head_sha !== context.sha", "run.conclusion !== 'success'", "context.ref", "getReleaseByTag", "readiness"]) assert.ok(validation.includes(marker), marker);
 });
+test("Runlens keeps the verified release private until the Homebrew update succeeds", () => {
+  const steps = release.jobs.publish.steps;
+  const draft = steps.findIndex((step) => step.id === "draft");
+  const tap = steps.findIndex((step) => step.run?.includes("runlens.py homebrew"));
+  const publish = steps.findIndex((step) => step.with?.script?.includes("updateRelease"));
+  assert.ok(draft >= 0 && draft < tap && tap < publish);
+  assert.match(steps[draft].with.script, /draft: true/u);
+  assert.match(steps[draft].with.script, /core.setOutput\('release_id', release.id\)/u);
+  assert.doesNotMatch(steps[draft].with.script, /updateRelease|draft: false/u);
+  for (const step of [steps[tap], steps[publish]]) {
+    assert.equal(step.if, undefined, "publication must retain implicit success() gating");
+    assert.equal(step["continue-on-error"], undefined);
+  }
+  assert.equal(steps[publish].env.RELEASE_ID, "${{ steps.draft.outputs.release_id }}");
+  assert.match(steps[publish].with.script, /!release.draft \|\| release.tag_name !== process.env.RELEASE_TAG/u);
+});
 test("production installers require version-bound authenticated checksums and archives", () => {
   for (const file of ["runlens.sh", "runlens.ps1"]) {
     const source = read(`scripts/install/${file}`);
