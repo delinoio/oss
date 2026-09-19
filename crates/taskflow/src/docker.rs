@@ -12,6 +12,15 @@ pub struct Container {
     name: String,
     cleaned: bool,
 }
+
+#[derive(Debug)]
+pub(crate) struct CleanupFailure;
+impl std::fmt::Display for CleanupFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Docker container cleanup could not be confirmed")
+    }
+}
+impl std::error::Error for CleanupFailure {}
 pub fn host_environment(environment: &BTreeMap<String, String>) -> BTreeMap<String, String> {
     let mut values = environment.clone();
     for key in ["DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"] {
@@ -23,6 +32,10 @@ pub fn host_environment(environment: &BTreeMap<String, String>) -> BTreeMap<Stri
 }
 impl Container {
     pub async fn cleanup(&mut self) -> Result<()> {
+        self.cleanup_inner().await.context(CleanupFailure)
+    }
+
+    async fn cleanup_inner(&mut self) -> Result<()> {
         // Cleanup must remain available after the task/session token is cancelled.
         let cleanup_token = CancellationToken::new();
         let environment: BTreeMap<String, String> = [

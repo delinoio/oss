@@ -220,7 +220,7 @@ pub async fn start(
                             tracing::error!(error = %error, "Session wave failed; subscriptions remain active");
                         }
                     }
-                    if selected.iter().any(|id| graph.tasks[id].task.service && results.get(id).is_some_and(|r| !r.success())) { anyhow::bail!("service activation failed"); }
+                    if selected.iter().any(|id| graph.tasks[id].task.service && results.get(id).is_some_and(|r| !r.success() && r.outcome != runner::Outcome::Cancelled)) { anyhow::bail!("service activation failed"); }
                 }
                 _ = tokio::time::sleep(Duration::from_millis(25)) => {}
             }

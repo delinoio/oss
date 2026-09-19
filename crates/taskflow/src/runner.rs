@@ -291,12 +291,23 @@ pub async fn run_plan(
                 .unwrap()
                 .insert(id.clone(), token.clone());
             active.push(async move {
-                let result =
-                    run_task(&graph, &id, causes.clone(), &prerequisites, &options, token).await;
+                let result = run_task(
+                    &graph,
+                    &id,
+                    causes.clone(),
+                    &prerequisites,
+                    &options,
+                    token.clone(),
+                )
+                .await;
                 options.task_cancellations.lock().unwrap().remove(&id);
                 let receipt = match result {
                     Ok(receipt) => receipt,
                     Err(error) => {
+                        // Setup can be cancelled before there is a normal process
+                        // exit. Unverified cleanup still overrides cancellation.
+                        let cancelled =
+                            token.is_cancelled() && !error.is::<crate::docker::CleanupFailure>();
                         // Detailed native stderr already passes through the masker;
                         // engine errors contain identifiers and stable context only.
                         let node = &graph.tasks[&id];
@@ -305,8 +316,8 @@ pub async fn run_plan(
                                 let _ = services.events.send((
                                     id.clone(),
                                     ProcessExit {
-                                        code: 1,
-                                        cancelled: false,
+                                        code: if cancelled { 130 } else { 1 },
+                                        cancelled,
                                     },
                                 ));
                             }
@@ -325,8 +336,18 @@ pub async fn run_plan(
                             secrets,
                         ))
                         .into_owned();
-                        tracing::error!(task = %id, error = %message, "Task failed");
-                        let mut receipt = Receipt::skipped(&id, Outcome::Failed, causes);
+                        let outcome = if cancelled {
+                            Outcome::Cancelled
+                        } else {
+                            Outcome::Failed
+                        };
+                        if cancelled {
+                            tracing::info!(task = %id, outcome = ?outcome, "Task setup cancelled");
+                        } else {
+                            tracing::error!(task = %id, error = %message, "Task failed");
+                        }
+                        let mut receipt = Receipt::skipped(&id, outcome, causes);
+                        receipt.exit_code = if cancelled { 130 } else { 1 };
                         receipt.diagnostic = Some(message);
                         receipt
                     }

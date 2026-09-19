@@ -2662,53 +2662,62 @@ fn go_metadata_queries_do_not_contact_module_proxies() {
 #[cfg(unix)]
 #[tokio::test]
 async fn docker_service_cleanup_failure_survives_session_cancellation() {
-    let directory = fixture(
-        json!({"server":{"command":["unused"],"input":[],"service":true,"platform":{"executor":"docker","os":"linux","arch":config::host_arch(),"image":"fixture@sha256:0000000000000000000000000000000000000000000000000000000000000000"}}}),
-    );
-    profile(directory.path(), &["server"]);
-    let tools = tempfile::tempdir().unwrap();
-    std::fs::copy(helper(), tools.path().join("docker")).unwrap();
-    let paths = std::iter::once(tools.path().to_path_buf())
-        .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap()))
-        .collect::<Vec<_>>();
-    let child = tokio::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
-        .current_dir(directory.path())
-        .args(["--json", "start"])
-        .env("PATH", std::env::join_paths(paths).unwrap())
-        .env_remove("DOCKER_HOST")
-        .env_remove("DOCKER_CONTEXT")
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
-    tokio::time::timeout(Duration::from_secs(60), async {
-        while !directory.path().join("docker-start").exists() {
-            tokio::time::sleep(Duration::from_millis(20)).await;
+    for setup in [false, true] {
+        let directory = fixture(
+            json!({"server":{"command":["unused"],"input":[],"service":true,"platform":{"executor":"docker","os":"linux","arch":config::host_arch(),"image":"fixture@sha256:0000000000000000000000000000000000000000000000000000000000000000"}}}),
+        );
+        profile(directory.path(), &["server"]);
+        if setup {
+            let path = directory.path().join("taskflow.yml");
+            let mut config: Value = serde_yaml::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            config["tasks"]["server"]["tools"] = json!({"probe":["unused"]});
+            std::fs::write(path, serde_yaml::to_string(&config).unwrap()).unwrap();
         }
-    })
-    .await
-    .unwrap();
-    nix::sys::signal::kill(
-        nix::unistd::Pid::from_raw(child.id().unwrap() as i32),
-        nix::sys::signal::Signal::SIGINT,
-    )
-    .unwrap();
-    let output = tokio::time::timeout(Duration::from_secs(10), child.wait_with_output())
+        let tools = tempfile::tempdir().unwrap();
+        std::fs::copy(helper(), tools.path().join("docker")).unwrap();
+        let paths = std::iter::once(tools.path().to_path_buf())
+            .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap()))
+            .collect::<Vec<_>>();
+        let child = tokio::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .current_dir(directory.path())
+            .args(["--json", "start"])
+            .env("PATH", std::env::join_paths(paths).unwrap())
+            .env_remove("DOCKER_HOST")
+            .env_remove("DOCKER_CONTEXT")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(60), async {
+            while !directory.path().join("docker-start").exists() {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
         .await
-        .unwrap()
         .unwrap();
-    assert!(!output.status.success());
-    let diagnostic = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        diagnostic.contains("could not confirm cleanup"),
-        "{diagnostic}"
-    );
-    let pid: u32 = std::fs::read_to_string(directory.path().join("docker-start"))
-        .unwrap()
-        .parse()
+        nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(child.id().unwrap() as i32),
+            nix::sys::signal::Signal::SIGINT,
+        )
         .unwrap();
-    assert!(!pid_alive(pid));
+        let output = tokio::time::timeout(Duration::from_secs(10), child.wait_with_output())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!output.status.success());
+        let diagnostic = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            diagnostic.contains("could not confirm cleanup")
+                || diagnostic.contains("cleanup could not be confirmed"),
+            "{diagnostic}"
+        );
+        let pid: u32 = std::fs::read_to_string(directory.path().join("docker-start"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(!pid_alive(pid));
+    }
 }
 
 #[tokio::test]
@@ -2895,4 +2904,82 @@ async fn environment_names_follow_host_precedence_and_security_rules() {
         Environment::build(&ws, project, &tasks["sibling"], &overrides, false).is_err(),
         cfg!(windows)
     );
+}
+
+#[tokio::test]
+async fn setup_cancellation_preserves_receipts_and_service_events() {
+    for service in [false, true] {
+        for probe in [false, true] {
+            let mut task = json!({"command":command(&["write","executed","unexpected"]),"input":[],"service":service,"resources":["held"]});
+            if probe {
+                task["tools"] = json!({"fixture":command(&["sleep","probe.pid"])});
+            }
+            let directory = fixture(json!({"task":task}));
+            let g = graph(directory.path()).await;
+            let plan = Plan::create(&g, &["task".into()], &[], false).unwrap();
+            let lock_path = directory
+                .path()
+                .join(".taskflow/locks")
+                .join(files::digest(b"resource:held"));
+            files::atomic_write(&lock_path, b"").unwrap();
+            let lock = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(lock_path)
+                .unwrap();
+            if !probe {
+                lock.lock().unwrap();
+            }
+            let (events, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+            let services = Arc::new(runner::Services {
+                controls: std::sync::Mutex::new(BTreeMap::new()),
+                events,
+                joins: std::sync::Mutex::new(vec![]),
+            });
+            let options = RunOptions {
+                services: Some(services.clone()),
+                quiet: true,
+                ..Default::default()
+            };
+            let running = options.task_cancellations.clone();
+            let cancel = CancellationToken::new();
+            let stop = cancel.clone();
+            let execution =
+                tokio::spawn(async move { runner::run_plan(g, plan, options, stop).await });
+            if probe {
+                wait_lines(&directory.path().join("probe.pid"), "", 1).await;
+            } else {
+                tokio::time::timeout(Duration::from_secs(10), async {
+                    while !running.lock().unwrap().contains_key("app#task") {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                })
+                .await
+                .unwrap();
+            }
+            cancel.cancel();
+            let result = tokio::time::timeout(Duration::from_secs(10), execution)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            let receipt = &result.results["app#task"];
+            assert_eq!(receipt.outcome, Outcome::Cancelled, "{receipt:?}");
+            assert_eq!(receipt.exit_code, 130);
+            assert!(!directory.path().join("executed").exists());
+            if service {
+                let (_, event) = receiver.try_recv().unwrap();
+                assert!(event.cancelled);
+                assert_eq!(event.code, 130);
+            }
+            services.shutdown().await.unwrap();
+            if probe {
+                let pid = std::fs::read_to_string(directory.path().join("probe.pid"))
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                assert!(!pid_alive(pid));
+            }
+        }
+    }
 }

@@ -141,3 +141,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `check_rejects_malformed_positive_and_negative_input_globs` exercises the public CLI's preflight diagnostics for malformed inclusion/exclusion patterns while retaining valid ordered globs and automatic inputs.
 
 `environment_names_follow_host_precedence_and_security_rules` checks host-specific casing across dotenv/task/CLI precedence, secret scoping (including Unicode), environment fingerprints, lookup context, and remote credentials. The grouped-task subprocess fixture injects mixed-case inherited credentials on Windows and verifies both absence from siblings and masked stored logs.
+
+`setup_cancellation_preserves_receipts_and_service_events` cancels finite tasks and services while waiting for a resource and while probing a real tool process. Receipts and service events retain cancellation, commands never start, and probe children are reaped. Unverified Docker cleanup remains a failure even when cancellation is active.
