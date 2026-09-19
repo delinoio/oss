@@ -51,7 +51,7 @@ export function createPublicContentValidator(routeIds) {
     .join("|");
   const htmlRoutes = new Set(routes.map((route) => route === "/" ? "/index.html" : `${route}.html`));
   const forbiddenPaths = [
-    new RegExp(`(?:^|[\\s("'\\x60>])/(?!${routePattern}(?:\\.html)?(?:[?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
+    new RegExp(`(?:^|[\\s("'\\x60>])/(?!(?:${routePattern})(?:\\.html)?(?:[?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
     /(?:^|[\s("'`>])(?:\.\.[\\/])+(?:[A-Za-z0-9._~-]+[\\/])+[^\s"'`<>]*/u,
     /(?:^|[\s("'`>])(?:apps|cmds|crates|docs|packaging|packages|protos|scripts|servers)(?:[\\/][^\s"'`<>]+)+/u,
     /(?:^|[\s("'`>])[A-Za-z]:[\\/][^\s"'`<>]*/u,

@@ -47,6 +47,7 @@ const forbidden = [
   ["repository path comment", "<!-- repository path: servers/runmoor/config -->"],
   ["relative repository link", '<a href="../../servers/runmoor/config">Private</a>'],
   ["encoded relative path", '<img src="%2E%2E/%2E%2E/servers/runmoor/private.png">'],
+  ["route-name prefix path", '<img src="/installer/private.png">'],
   ["file URL", '<a href="file://server/share/private.conf">Private</a>'],
   ["local file URL", '<a href="file://localhost/etc/private.conf">Private</a>'],
   ["encoded resource scheme", '<img src="file&colon;///etc/private.png">'],
@@ -62,6 +63,12 @@ const forbidden = [
   ["CSS credential URL", '<style>.private { background: url("https://example.com/image?token&equals;fixture-value") }</style>'],
   ["public asset with credentials", '<img src="/assets/logo.svg#token=fixture-value">'],
 ];
+for (const route of ["install", "configuration", "commands", "docker", "tart", "operations"]) {
+  forbidden.push(
+    [`route-prefixed ${route} resource`, `<img src="/${route}/servers/runmoor/private.png">`],
+    [`route-prefixed ${route} text`, `<code>/${route}/servers/runmoor/private.conf</code>`],
+  );
+}
 for (const attribute of ["src", "poster", "action", "formaction", "data"]) {
   forbidden.push(
     [`${attribute} private path`, `<div ${attribute}="file:///etc/private.conf"></div>`],
@@ -84,6 +91,7 @@ for (const [name, fixture] of forbidden) {
 test("publication preserves public routes, assets, external references, and credential placeholders", () => {
   const result = validateFixture(`
     <a href="/install#verification">Install</a>
+    <a href="/configuration?lang=en">Configuration</a>
     <a href="https://docs.example.com/guide.html">External reference</a>
     <img src="/assets/logo.svg">
     <img srcset="/assets/logo.svg 1x, /static/logo.svg 2x">
