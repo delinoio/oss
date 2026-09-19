@@ -46,11 +46,14 @@ if command -v sha256sum >/dev/null 2>&1; then actual=$(sha256sum "$work/$asset" 
 [ "$(tar -tzf "$work/$asset" | LC_ALL=C sort)" = "$(printf 'LICENSES.txt\nrunlens')" ] || fail 'unexpected archive members'
 mkdir -p -- "$install_dir" || fail 'cannot create installation directory'
 [ ! -L "$install_dir/runlens" ] || fail 'refusing to replace a symlink'
+[ ! -e "$install_dir/runlens" ] || [ -f "$install_dir/runlens" ] || fail 'installation target is not a regular file'
 staged=$(mktemp "$install_dir/.runlens.XXXXXXXX") || fail 'cannot stage installation'
 tar -xOzf "$work/$asset" runlens > "$staged" || fail 'cannot read executable'
 chmod 755 "$staged"
 [ "$("$staged" --version)" = "runlens $version" ] || fail 'executable version mismatch'
 # Rename on the destination volume preserves the previous executable until verification succeeds.
+[ ! -L "$install_dir/runlens" ] || fail 'refusing to replace a symlink'
+[ ! -e "$install_dir/runlens" ] || [ -f "$install_dir/runlens" ] || fail 'installation target is not a regular file'
 mv -f -- "$staged" "$install_dir/runlens" || fail 'atomic installation failed'
 staged=
 printf '%s\n' "Installed Runlens $version. Run runlens doctor to check host tracing support." >&2

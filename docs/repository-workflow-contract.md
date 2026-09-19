@@ -86,6 +86,8 @@ Homebrew uses the existing `delinoio/homebrew-tap` prebuilt formula path.
 The six native installer fixtures deliberately replace only cosign authentication
 with a failing/succeeding double to test install rejection, tampering, atomic
 replacement, and real execution from the installed binary without public release
-side effects. They are explicitly not signed-install evidence. The subsequent
+side effects. POSIX installers reject symlink, directory, and other non-regular
+destinations before staging and recheck before replacement; rejected destinations
+retain their original contents. They are explicitly not signed-install evidence. The subsequent
 protected release installation matrix uses real cosign verification. PR work does
 not create release tags, releases, tap commits, or documentation deployments.

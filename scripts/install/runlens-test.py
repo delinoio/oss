@@ -47,6 +47,21 @@ function global:cosign { $global:LASTEXITCODE = [int]$env:RUNLENS_VERIFY_RESULT 
         assert subprocess.run(command, env=env).returncode != 0
         assert not binary.exists(), 'failed authentication must not install'
         env['RUNLENS_VERIFY_RESULT'] = '0'
+        if platform.system() != 'Windows':
+            install.mkdir()
+            binary.mkdir()
+            marker = binary / 'preserved'
+            marker.write_text('existing directory contents')
+            assert subprocess.run(command, env=env).returncode != 0
+            assert list(binary.iterdir()) == [marker], 'directory target must remain untouched'
+            assert marker.read_text() == 'existing directory contents'
+            marker.unlink()
+            binary.rmdir()
+            os.mkfifo(binary)
+            assert subprocess.run(command, env=env).returncode != 0
+            assert binary.is_fifo(), 'special-file target must remain untouched'
+            binary.unlink()
+            assert not list(install.glob('.runlens*')), 'rejected targets must not leave staging files'
         subprocess.run(command, env=env, check=True)
         before = binary.read_bytes()
         subprocess.run([binary, '--version'], check=True)
