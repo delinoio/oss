@@ -43,6 +43,11 @@ the search path, use the executable named by `TFLOW_BIN`. The report is accepted
 only after successful exit in the same execution. Writing the word “unchanged” to
 stdout has no special meaning.
 
+Docker tasks receive a container-local `TFLOW_BIN` helper supporting
+`"$TFLOW_BIN" result unchanged`; the image needs a POSIX `sh` in its root `bin`
+directory, plus `mv` and `rm` on the search path, to use it.
+The image does not need a separately installed TaskFlow binary.
+
 An unchanged prerequisite suppresses only work caused by that prerequisite. A
 dependent's direct request, own input change, schedule tick, other changed
 prerequisite, or external effect remains effective. Missing required outputs still

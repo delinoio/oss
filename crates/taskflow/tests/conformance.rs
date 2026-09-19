@@ -298,7 +298,7 @@ renamed={package='native-b',path='../b'}
 async fn scenario_10_local_docker_execution_uses_explicit_platform_and_cleans_container() {
     let image = "node@sha256:6dac556d980b7f0e5498d08f08cee0ca67798b4ad6c23964a9214920e67758d0";
     let dir = fixture(
-        json!({"container":{"command":["node","-e","require('fs').mkdirSync('out',{recursive:true});require('fs').writeFileSync('out/value',process.env.MESSAGE)"],"input":[],"output":["out/**"],"env":{"MESSAGE":"docker-ok"},"platform":{"os":"linux","arch":config::host_arch(),"executor":"docker","image":image}}}),
+        json!({"container":{"command":["node","-e","require('fs').mkdirSync('out',{recursive:true});require('fs').writeFileSync('out/value',process.env.MESSAGE);require('child_process').execFileSync(process.env.TFLOW_BIN,['result','unchanged'])"],"input":[],"output":["out/**"],"env":{"MESSAGE":"docker-ok"},"platform":{"os":"linux","arch":config::host_arch(),"executor":"docker","image":image}}}),
     );
     let result = run(graph(dir.path()).await, &["container"]).await;
     assert!(result.success, "{result:?}");
@@ -306,6 +306,7 @@ async fn scenario_10_local_docker_execution_uses_explicit_platform_and_cleans_co
         std::fs::read_to_string(dir.path().join("out/value")).unwrap(),
         "docker-ok"
     );
+    assert!(!result.results["app#container"].changed);
     let name = format!("tflow-{}", result.results["app#container"].execution);
     let output = taskflow::discover::output_tool(
         dir.path(),

@@ -79,7 +79,7 @@ Configuration, result protocol, cache format, adapter coverage, lifecycle, and C
 - [Issue #898](https://github.com/delinoio/oss/issues/898)
 
 ## Version 1 compatibility boundaries
-- CLI `--os` and `--arch` fill undeclared task platform components; explicit task platforms win. Host execution rejects a different platform. Docker image digests and Linux architecture are explicit, and tool identities are probed inside that image.
+- CLI `--os` and `--arch` fill undeclared task platform components; explicit task platforms win. Host execution rejects a different platform. Docker image digests and Linux architecture are explicit, and tool identities are probed inside that image. Docker tasks receive a generation-bound POSIX result helper through `TFLOW_BIN`; reporting requires `/bin/sh`, `mv`, and `rm` in the image.
 - Artifact graph edges describe conservative positive glob-prefix overlap, independently of prerequisite ordering. Exact input queries apply ordered positive/negative globs. New or deleted native manifest names conservatively invalidate selection even when no longer present in the discovered graph.
 - Cache output roots are exact files/directories or complete `directory/**` trees. Partial wildcard ownership is rejected before execution. Snapshots are bounded to 512 MiB encoded transfer size. Relative output symlinks must stay inside owned projects; input directory symlinks require explicit underlying paths.
 - Metadata subprocesses have a 120-second deadline and 64 MiB output limit. Cargo uses locked, offline format-1 metadata before installation, with membership-only fallback. Go pins `GOWORK` to the selected native workspace, or `off` for a module, and never downloads a toolchain implicitly.

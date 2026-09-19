@@ -153,6 +153,29 @@ pub async fn prepare(
         endpoint.starts_with("unix://") || endpoint.starts_with("npipe://"),
         "Docker execution requires a local daemon socket"
     );
+    // Host binaries may target another OS/architecture. Provide the bounded
+    // result-reporting interface using the container's POSIX shell instead.
+    uuid::Uuid::parse_str(execution)?;
+    let report = serde_json::to_string(&crate::runner::TaskReport {
+        version: 1,
+        execution: execution.into(),
+        result: crate::runner::TaskReported::Unchanged,
+    })?;
+    let helper = root.join(format!(".taskflow/runs/{execution}/tflow-result"));
+    let result_path = format!("/workspace/.taskflow/runs/{execution}/result.json");
+    let script = format!(
+        "#!/bin/sh\nset -eu\n[ \"$#\" = 2 ] && [ \"${{1-}}\" = result ] && [ \"${{2-}}\" = \
+         unchanged ] || exit 2\n[ \"${{TFLOW_EXECUTION_ID-}}\" = '{execution}' ] || exit 2\n[ \
+         \"${{TFLOW_RESULT_FILE-}}\" = '{result_path}' ] || exit \
+         2\nstaged=\"$TFLOW_RESULT_FILE.$$\"\ntrap 'rm -f \"$staged\"' EXIT HUP INT TERM\nprintf \
+         '%s\\n' '{report}' > \"$staged\"\nmv -f \"$staged\" \"$TFLOW_RESULT_FILE\"\n"
+    );
+    crate::files::atomic_write(&helper, script.as_bytes())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755))?;
+    }
     let name = format!("tflow-{execution}");
     let relative = directory.strip_prefix(root)?;
     let mut args = vec![
@@ -189,6 +212,8 @@ pub async fn prepare(
         format!("TFLOW_RESULT_FILE=/workspace/.taskflow/runs/{execution}/result.json"),
         "--env".into(),
         "TFLOW_EXECUTION_ID".into(),
+        "--env".into(),
+        format!("TFLOW_BIN=/workspace/.taskflow/runs/{execution}/tflow-result"),
     ]);
     for key in ["TFLOW_SHARD_INPUT", "TFLOW_SHARD_RESULT"] {
         if let Some(value) = environment.get(key) {
