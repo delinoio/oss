@@ -14,6 +14,7 @@ use windows_sys::{
         Foundation::OBJECT_ATTRIBUTES,
         Storage::FileSystem::{
             NtOpenFile, RtlDosPathNameToNtPathName_U_WithStatus, FILE_OPEN_FOR_BACKUP_INTENT,
+            FILE_SYNCHRONOUS_IO_NONALERT,
         },
     },
     Win32::{
@@ -23,8 +24,8 @@ use windows_sys::{
         },
         Storage::FileSystem::{
             FileStandardInfo, GetFileInformationByHandleEx, GetFinalPathNameByHandleW,
-            FILE_NAME_NORMALIZED, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-            FILE_STANDARD_INFO, VOLUME_NAME_DOS,
+            FILE_NAME_NORMALIZED, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
+            FILE_SHARE_WRITE, FILE_STANDARD_INFO, SYNCHRONIZE, VOLUME_NAME_DOS,
         },
         System::{WindowsProgramming::RtlFreeUnicodeString, IO::IO_STATUS_BLOCK},
     },
@@ -63,6 +64,11 @@ fn open_path(path: &Path) -> io::Result<File> {
         )
     };
     if converted < 0 {
+        tracing::debug!(
+            operation = "convert-path",
+            status = converted,
+            "Windows path conversion failed"
+        );
         return Err(nt_error(converted));
     }
     let attributes = OBJECT_ATTRIBUTES {
@@ -76,17 +82,22 @@ fn open_path(path: &Path) -> io::Result<File> {
     let status = unsafe {
         NtOpenFile(
             &mut handle,
-            0,
+            // Native opens do not supply CreateFile's metadata access defaults.
+            // Both final-path resolution and deletion inspection need an
+            // attribute-readable handle. Keep synchronous query completion,
+            // with its required SYNCHRONIZE right; no file-data access is requested.
+            FILE_READ_ATTRIBUTES | SYNCHRONIZE,
             &attributes,
             &mut status_block,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-            FILE_OPEN_FOR_BACKUP_INTENT,
+            FILE_OPEN_FOR_BACKUP_INTENT | FILE_SYNCHRONOUS_IO_NONALERT,
         )
     };
     unsafe {
         RtlFreeUnicodeString(&mut name);
     }
     if status < 0 {
+        tracing::debug!(operation = "open-path", status, "Windows path open failed");
         return Err(nt_error(status));
     }
     // NtOpenFile transferred ownership of a successful, non-inheritable handle.
@@ -111,7 +122,13 @@ fn resolve_handle_path(file: &File) -> io::Result<PathBuf> {
             )
         } as usize;
         if length == 0 {
-            return Err(io::Error::last_os_error());
+            let error = io::Error::last_os_error();
+            tracing::debug!(
+                operation = "final-path",
+                code = error.raw_os_error(),
+                "Windows handle path lookup failed"
+            );
+            return Err(error);
         }
         if length < buffer.len() {
             break length;
@@ -139,7 +156,13 @@ fn validate_handle_path(file: &File, resolved: io::Result<PathBuf>) -> io::Resul
         )
     } == 0
     {
-        return Err(io::Error::last_os_error());
+        let error = io::Error::last_os_error();
+        tracing::debug!(
+            operation = "deletion-state",
+            code = error.raw_os_error(),
+            "Windows handle deletion query failed"
+        );
+        return Err(error);
     }
     if info.DeletePending || info.NumberOfLinks == 0 {
         return Err(io::Error::from(io::ErrorKind::NotFound));
@@ -150,6 +173,21 @@ fn validate_handle_path(file: &File, resolved: io::Result<PathBuf>) -> io::Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_metadata_open_resolves_live_files_and_directories() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("live");
+        std::fs::write(&path, "metadata only").unwrap();
+        for path in [directory.path(), path.as_path()] {
+            let handle = open_path(path).expect("native metadata open must succeed");
+            let resolved =
+                resolve_handle_path(&handle).expect("metadata handle must resolve its name");
+            let validated = validate_handle_path(&handle, Ok(resolved))
+                .expect("metadata handle must allow deletion-state inspection");
+            assert_eq!(validated, path.canonicalize().unwrap());
+        }
+    }
 
     #[test]
     fn delete_pending_open_is_not_a_permission_failure() {
