@@ -54,6 +54,25 @@ fn spill_preserves_sorted_records_and_roundtrip() {
     assert!(serde_json::from_str::<Entries<u32>>(r#"{"a":1,"a":2}"#).is_err());
 }
 #[test]
+fn path_patterns_use_the_observed_platform_case_rules() {
+    let patterns = vec!["private/**".into(), "output.bin".into()];
+    for os in ["windows", "linux", "macos"] {
+        let matcher = config::patterns_for_os(&patterns, os).unwrap();
+        assert!(matcher.is_match("private/file"));
+        assert_eq!(matcher.is_match("Private"), os == "windows");
+        assert_eq!(matcher.is_match("Private/File"), os == "windows");
+        assert_eq!(matcher.is_match("OUTPUT.BIN"), os == "windows");
+    }
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("Private");
+    std::fs::create_dir(&path).unwrap();
+    let matcher = config::patterns(&patterns).unwrap();
+    assert_eq!(
+        snapshot::excluded(&path, root.path(), &matcher, &[]),
+        cfg!(windows)
+    );
+}
+#[test]
 fn final_snapshot_record_and_directory_member_obey_byte_budget() {
     let root = tempfile::tempdir().unwrap();
     let root = root.path().canonicalize().unwrap();

@@ -583,6 +583,58 @@ fn comparison_distinguishes_linux_distributions_with_equal_versions() {
     }
 }
 #[test]
+fn offline_policy_and_cache_follow_windows_case_rules() {
+    let root = repository("read");
+    fs::create_dir(root.path().join("Private")).unwrap();
+    fs::write(root.path().join("Private/file"), "contents").unwrap();
+    assert!(
+        invoke(
+            root.path(),
+            &[
+                "run",
+                "--save",
+                "mixed.json",
+                "--",
+                fixture(),
+                "read",
+                "Private/file"
+            ]
+        )
+        .status
+        .success()
+    );
+    let mut report = runlens::report::read(&root.path().join("mixed.json")).unwrap();
+    let rules = runlens::config::Policy {
+        deny_reads: vec!["private/**".into()],
+        ..Default::default()
+    };
+    let commands = std::collections::BTreeMap::new();
+    for os in ["windows", "linux"] {
+        report.executions[0].environment.os = os.into();
+        let result = runlens::analysis::policy(&report, &rules, &commands, None).unwrap();
+        assert_eq!(
+            result.verdict,
+            Some(if os == "windows" {
+                runlens::model::Verdict::Failed
+            } else {
+                runlens::model::Verdict::Passed
+            })
+        );
+        let mut command = runlens::config::Command::direct(vec![]);
+        command.inputs = vec!["private/**".into()];
+        let cache = runlens::analysis::cache(&report, &command).unwrap();
+        let missed_private = cache.findings.iter().any(|entry| {
+            let (_, finding) = entry.unwrap();
+            finding.code == runlens::model::FindingCode::UndeclaredInput
+                && finding
+                    .evidence
+                    .iter()
+                    .any(|e| e.path.as_deref() == Some("${workspace}/Private/file"))
+        });
+        assert_eq!(missed_private, os != "windows");
+    }
+}
+#[test]
 fn preparation_obeys_global_policy_boundaries_in_clean_and_repeat() {
     let root = repository("read");
     fs::write(root.path().join("private.txt"), "private").unwrap();

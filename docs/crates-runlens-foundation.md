@@ -432,6 +432,9 @@ Cancellation handlers are installed before owned child work. Native cancellation
 fixtures synchronize on actual child readiness rather than assuming startup time.
 
 Offline checks never pass a report with no target execution.
+Input/output, exclusion, and boundary globs use case-insensitive Windows matching,
+including the directory itself for `directory/**`. Offline analysis selects case
+semantics from each execution's OS, including when read on a different platform.
 Snapshot records and directory names are charged before insertion, including the
 last walked record. An entry exceeding its collection budget is not retained as
 known evidence: the snapshot is incomplete, and overflowing directory membership

@@ -139,15 +139,8 @@ fn quality(result: &mut Analysis, execution: &Execution) -> Result<()> {
     }
     Ok(())
 }
-fn matches(set: &globset::GlobSet, patterns: &[String], path: &str) -> bool {
-    let relative = config::relative_pattern_path(path);
-    set.is_match(relative)
-        || set.is_match(path)
-        || patterns.iter().any(|pattern| {
-            pattern
-                .strip_suffix("/**")
-                .is_some_and(|parent| parent == relative || parent == path)
-        })
+fn matches(set: &globset::GlobSet, path: &str) -> bool {
+    set.is_match(config::relative_pattern_path(path)) || set.is_match(path)
 }
 pub fn cache(report: &Report, command: &Command) -> Result<Analysis> {
     let mut result = Analysis::new(AnalysisKind::Cache);
@@ -183,12 +176,12 @@ fn coverage(
     inputs_required: bool,
     outputs_required: bool,
 ) -> Result<()> {
-    let inputs = config::patterns(&command.inputs)?;
-    let outputs = config::patterns(&command.outputs)?;
+    let inputs = config::patterns_for_os(&command.inputs, &execution.environment.os)?;
+    let outputs = config::patterns_for_os(&command.outputs, &execution.environment.os)?;
     for item in execution.accesses.iter() {
         let (path, access) = item?;
-        let input = matches(&inputs, &command.inputs, &path);
-        let output = matches(&outputs, &command.outputs, &path);
+        let input = matches(&inputs, &path);
+        let output = matches(&outputs, &path);
         let existed_before = execution
             .before
             .get(&path)?
@@ -228,7 +221,7 @@ fn coverage(
     }
     for item in execution.changes.iter() {
         let (path, change) = item?;
-        let output = matches(&outputs, &command.outputs, &path);
+        let output = matches(&outputs, &path);
         let state = execution.after.get(&path)?.or(execution.before.get(&path)?);
         // Directory membership ancestors are described in receipts. Changed leaf
         // entries are audited independently, avoiding an implicit whole-root output.
@@ -264,7 +257,7 @@ fn coverage(
                 vec![evidence(execution, Some(&path), source)],
             )?;
         }
-        if matches(&inputs, &command.inputs, &path) && output {
+        if matches(&inputs, &path) && output {
             let source = if change == ChangeKind::Deleted {
                 EvidenceSource::Before
             } else {
@@ -299,21 +292,21 @@ pub fn policy(
             "fail_new_accesses requires an explicit baseline report",
         ));
     }
-    let allow_read = rules
-        .allow_reads
-        .as_ref()
-        .map(|p| config::patterns(p))
-        .transpose()?;
-    let allow_write = rules
-        .allow_writes
-        .as_ref()
-        .map(|p| config::patterns(p))
-        .transpose()?;
-    let deny_read = config::patterns(&rules.deny_reads)?;
-    let deny_write = config::patterns(&rules.deny_writes)?;
     let mut result = Analysis::new(AnalysisKind::Policy);
     target_quality(&mut result, report)?;
     for execution in report.current_executions() {
+        let allow_read = rules
+            .allow_reads
+            .as_ref()
+            .map(|p| config::patterns_for_os(p, &execution.environment.os))
+            .transpose()?;
+        let allow_write = rules
+            .allow_writes
+            .as_ref()
+            .map(|p| config::patterns_for_os(p, &execution.environment.os))
+            .transpose()?;
+        let deny_read = config::patterns_for_os(&rules.deny_reads, &execution.environment.os)?;
+        let deny_write = config::patterns_for_os(&rules.deny_writes, &execution.environment.os)?;
         let target = execution.role == Role::Target;
         if target {
             quality(&mut result, execution)?;
@@ -379,10 +372,8 @@ pub fn policy(
                 )?;
             }
             if (access.read || access.read_directory)
-                && (matches(&deny_read, &rules.deny_reads, &path)
-                    || allow_read.as_ref().is_some_and(|set| {
-                        !matches(set, rules.allow_reads.as_ref().unwrap(), &path)
-                    }))
+                && (matches(&deny_read, &path)
+                    || allow_read.as_ref().is_some_and(|set| !matches(set, &path)))
             {
                 result.finding(
                     FindingCode::ReadBoundary,
@@ -391,10 +382,8 @@ pub fn policy(
                 )?;
             }
             if access.write
-                && (matches(&deny_write, &rules.deny_writes, &path)
-                    || allow_write.as_ref().is_some_and(|set| {
-                        !matches(set, rules.allow_writes.as_ref().unwrap(), &path)
-                    }))
+                && (matches(&deny_write, &path)
+                    || allow_write.as_ref().is_some_and(|set| !matches(set, &path)))
             {
                 result.finding(
                     FindingCode::WriteBoundary,
@@ -426,10 +415,8 @@ pub fn policy(
         for entry in execution.changes.iter() {
             let (path, change) = entry?;
             if change != ChangeKind::Unknown
-                && (matches(&deny_write, &rules.deny_writes, &path)
-                    || allow_write.as_ref().is_some_and(|set| {
-                        !matches(set, rules.allow_writes.as_ref().unwrap(), &path)
-                    }))
+                && (matches(&deny_write, &path)
+                    || allow_write.as_ref().is_some_and(|set| !matches(set, &path)))
             {
                 result.finding(
                     FindingCode::WriteBoundary,
@@ -904,7 +891,6 @@ pub fn repeated_outputs(report: &Report, outputs: &[String]) -> Result<Analysis>
             "repeat verification requires declared outputs",
         ));
     }
-    let set = config::patterns(outputs)?;
     let mut result = Analysis::new(AnalysisKind::Compare);
     let targets = report.targets().collect::<Vec<_>>();
     if targets.len() < 2 {
@@ -915,13 +901,12 @@ pub fn repeated_outputs(report: &Report, outputs: &[String]) -> Result<Analysis>
     for target in &targets {
         quality(&mut result, target)?;
         for pattern in outputs {
-            let matcher = config::patterns(std::slice::from_ref(pattern))?;
+            let matcher =
+                config::patterns_for_os(std::slice::from_ref(pattern), &target.environment.os)?;
             let mut found = false;
             for entry in target.after.iter() {
                 let (path, state) = entry?;
-                if matches(&matcher, std::slice::from_ref(pattern), &path)
-                    && state.knowledge == Knowledge::Known
-                {
+                if matches(&matcher, &path) && state.knowledge == Knowledge::Known {
                     found = true;
                 }
             }
@@ -947,10 +932,11 @@ pub fn repeated_outputs(report: &Report, outputs: &[String]) -> Result<Analysis>
             )?;
         }
         let mut paths: Entries<bool> = Entries::default();
-        for states in [&first.after, &target.after] {
-            for entry in states.iter() {
+        for execution in [first, *target] {
+            let set = config::patterns_for_os(outputs, &execution.environment.os)?;
+            for entry in execution.after.iter() {
                 let (path, _) = entry?;
-                if matches(&set, outputs, &path) {
+                if matches(&set, &path) {
                     paths.insert(path, true)?;
                 }
             }

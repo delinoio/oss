@@ -39,6 +39,9 @@ The example tool is a placeholder; select an installed executable appropriate fo
 
 `cwd` is relative to the workspace root and must remain inside it. Input/output/exclusion patterns use forward slashes and glob syntax; `**` crosses directory boundaries. Exclusions narrow snapshot coverage and are visible in the report. Git-ignored paths are otherwise included.
 
+Windows patterns match without regard to case, including directory roots. Offline
+policy, cache, and output checks use the recorded platform's matching rules.
+
 Preparation applies only to clean/repeated verification, in the listed order. A failed or incompletely observed preparation prevents target execution. Runlens never infers installation steps. Environment selections contain **names only**, never values. Ordinary `run` inherits its calling environment; clean verification uses required OS context, fresh HOME/cache locations, and selected names only. Reserved isolation variables cannot replace the temporary directories.
 
 ## Policy boundaries

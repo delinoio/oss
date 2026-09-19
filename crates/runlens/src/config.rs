@@ -199,6 +199,9 @@ pub fn load(path: Option<&Path>, root: &Path) -> Result<Config> {
     Ok(config)
 }
 pub fn patterns(values: &[String]) -> Result<globset::GlobSet> {
+    patterns_for_os(values, std::env::consts::OS)
+}
+pub fn patterns_for_os(values: &[String], os: &str) -> Result<globset::GlobSet> {
     let mut set = globset::GlobSetBuilder::new();
     if values.len() > 4096 {
         return Err(Error::input("too many path patterns"));
@@ -213,13 +216,18 @@ pub fn patterns(values: &[String]) -> Result<globset::GlobSet> {
                 "patterns use forward slashes and cannot contain parent traversal",
             ));
         }
-        set.add(
-            globset::GlobBuilder::new(value)
-                .literal_separator(true)
-                .backslash_escape(false)
-                .build()
-                .map_err(|_| Error::input("invalid path pattern"))?,
-        );
+        // A directory glob also covers the directory itself, with exactly the
+        // same case semantics as its descendants.
+        for pattern in std::iter::once(value.as_str()).chain(value.strip_suffix("/**")) {
+            set.add(
+                globset::GlobBuilder::new(pattern)
+                    .literal_separator(true)
+                    .backslash_escape(false)
+                    .case_insensitive(os == "windows")
+                    .build()
+                    .map_err(|_| Error::input("invalid path pattern"))?,
+            );
+        }
     }
     set.build()
         .map_err(|_| Error::input("invalid path patterns"))
