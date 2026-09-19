@@ -1135,6 +1135,31 @@ fn profile(directory: &Path, tasks: &[&str]) {
     value["start"] = json!({"default": tasks});
     files::atomic_write(&path, serde_yaml::to_string(&value).unwrap().as_bytes()).unwrap();
 }
+
+#[test]
+fn check_rejects_invalid_readiness_before_starting_processes() {
+    for readiness in [
+        json!({"type":"command", "command":[], "timeout":"5s"}),
+        json!({"type":"command", "command":"", "timeout":"5s"}),
+        json!({"type":"command", "command":["echo"], "timeout":"invalid"}),
+        json!({"type":"tcp", "address":"127.0.0.1:1234", "timeout":"invalid"}),
+        json!({"type":"http", "url":"http://127.0.0.1:1234", "timeout":"invalid"}),
+    ] {
+        let directory = fixture(json!({"server": {
+            "command": command(&["write", "started", "unexpected"]),
+            "service": true, "readiness": readiness
+        }}));
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .arg("--root")
+            .arg(directory.path())
+            .arg("check")
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "{readiness}");
+        assert!(!directory.path().join("started").exists());
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("panicked"));
+    }
+}
 async fn wait_lines(path: &Path, prefix: &str, count: usize) {
     // CI runs native compilers and test runners alongside these sessions. Wait
     // for observable progress instead of assuming workstation startup timings.

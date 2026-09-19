@@ -418,6 +418,16 @@ impl Task {
             self.service || self.readiness.is_none(),
             "readiness requires service: true"
         );
+        if let Some(readiness) = &self.readiness {
+            let timeout = match readiness {
+                Readiness::Command { command, timeout } => {
+                    validate_command(command)?;
+                    timeout
+                }
+                Readiness::Tcp { timeout, .. } | Readiness::Http { timeout, .. } => timeout,
+            };
+            duration(timeout).context("invalid readiness timeout")?;
+        }
         if let Some(watch) = &self.watch {
             duration(&watch.debounce)?;
         }
