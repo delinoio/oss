@@ -42,6 +42,20 @@ impl Environment {
         values.extend(std::env::vars());
         values.extend(task.env.clone());
         values.extend(overrides.clone());
+        // A CI unit can carry credentials for several tasks. Designation is
+        // workspace-wide, but access remains scoped to each declaring task.
+        for name in ws
+            .projects
+            .values()
+            .filter_map(|project| project.config.as_ref())
+            .chain(std::iter::once(&ws.config))
+            .flat_map(|config| config.tasks.values())
+            .flat_map(|task| &task.secrets)
+        {
+            if !task.secrets.contains(name) {
+                values.remove(name);
+            }
+        }
         let secrets = task
             .secrets
             .iter()

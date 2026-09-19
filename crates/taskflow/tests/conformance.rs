@@ -1935,3 +1935,45 @@ fn scenario_16_five_field_cron_uses_conventional_weekdays_and_day_union() {
         .unwrap()
         .tick(date("2026-09-21T00:00:00Z")));
 }
+
+#[tokio::test]
+async fn grouped_tasks_only_receive_their_declared_secrets() {
+    let directory = fixture(json!({
+        "owner":{"input":[],"command":command(&["env","TFLOW_GROUP_SECRET","owner-value"]),"secrets":["TFLOW_GROUP_SECRET"]},
+        "sibling":{"input":[],"command":command(&["env","TFLOW_GROUP_SECRET","sibling-value"]),"dependsOn":["owner"]}
+    }));
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+        .current_dir(directory.path())
+        .args(["--json", "run", "sibling"])
+        .env("TFLOW_GROUP_SECRET", "grouped-credential")
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(directory.path().join("owner-value")).unwrap(),
+        "grouped-credential"
+    );
+    assert_eq!(
+        std::fs::read_to_string(directory.path().join("sibling-value")).unwrap(),
+        ""
+    );
+    let result: runner::RunResult = serde_json::from_slice(&result.stdout).unwrap();
+    for receipt in result.results.values() {
+        let log = std::fs::read_to_string(
+            directory
+                .path()
+                .join(".taskflow/runs")
+                .join(&receipt.execution)
+                .join("output.log"),
+        )
+        .unwrap();
+        assert!(!log.contains("grouped-credential"));
+        if receipt.task == "app#owner" {
+            assert_eq!(log, "[REDACTED]");
+        }
+    }
+}

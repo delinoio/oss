@@ -36,6 +36,8 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 
 Additional invariants include unknown/duplicate configuration rejection, schema freshness, stale/partial CI receipt rejection, required artifact accounting, cache path traversal rejection before mutation, masked stored logs, and service failure cancelling other running checks before returning.
 
+`grouped_tasks_only_receive_their_declared_secrets` passes a CI-style credential union to a real CLI run: only the declaring task receives the credential, and persisted output remains masked.
+
 `check_rejects_invalid_readiness_before_starting_processes` rejects empty readiness commands and malformed readiness timeouts at configuration validation, before service startup.
 
 `unchanged_prerequisites_cannot_suppress_corrupt_outputs` checks a three-task chain with both cached and uncached middle tasks: existing but modified outputs must be restored or rebuilt before a directly requested consumer can read them. Suppression requires the current output digest to match a previous successful receipt.
