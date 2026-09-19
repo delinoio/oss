@@ -22,6 +22,7 @@ Issue #907 is normative. Version 0.1.0 implements all nine capabilities; regular
 Runlens is an explicit exception to the default Go language and root Cargo membership rules: its fspy artifact dependencies require an isolated nightly-2026-08-02 workspace. The root nightly-2026-01-01 and protected DevHud dependency graph must not change. Local metadata reports are an explicit exception to default hosted R2 storage: no service, telemetry, or retained history exists.
 
 Report and configuration schema versions are independently fixed at 1. Execution identifiers are UUID v7. CLI/report compatibility is preserved within a product major version. Unknown, incomplete, or cross-environment evidence never establishes reproducibility or universal cache safety.
+Baseline compatibility requires equal source revisions and working-tree inclusion policies, even when source bytes match.
 
 Root `pnpm dev:runlens-docs` starts the documentation app on its fixed loopback port; see the app contract for build and preview commands.
 

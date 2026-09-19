@@ -376,7 +376,8 @@ to 64 explicit reports additionally caps their combined input bytes at 1 GiB.
 ## Passive identity and failure boundaries
 
 Execution metadata includes the executable SHA-256 computed without invoking the
-target. Comparison requires known matching executable identity and OS metadata;
+target. Comparison requires known matching executable identity and OS metadata,
+equal source revision metadata, and the same working-tree inclusion policy;
 redacted arguments cannot establish equivalence. Known restrictive Mach-O code
 signature flags and restricted segments are rejected by a bounded parser before
 launch. Windows injection failure preserves the original child execution and

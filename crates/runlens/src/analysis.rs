@@ -435,6 +435,8 @@ pub fn compatible(left: &Execution, right: &Execution) -> bool {
         && left.environment.os_version == right.environment.os_version
         && left.environment.runlens_version == right.environment.runlens_version
         && left.environment.engine_version == right.environment.engine_version
+        && left.environment.source_revision == right.environment.source_revision
+        && left.environment.working_tree_included == right.environment.working_tree_included
         && left.environment.executable_sha256.is_some()
         && left.environment.executable_sha256 == right.environment.executable_sha256
         && left.environment.os_version.is_some()

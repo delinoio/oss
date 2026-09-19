@@ -304,6 +304,77 @@ fn clean_and_repeat_use_fresh_environments_without_worktree_changes() {
     );
 }
 #[test]
+fn clean_baselines_require_matching_source_selection() {
+    let root = repository("read");
+    assert!(
+        invoke(
+            root.path(),
+            &["verify", "clean", "build", "--save", "baseline.json"]
+        )
+        .status
+        .success()
+    );
+    let verify = |extra: &[&str], report: &str| {
+        let mut args = vec![
+            "verify",
+            "clean",
+            "build",
+            "--baseline",
+            "baseline.json",
+            "--save",
+            report,
+        ];
+        args.extend_from_slice(extra);
+        invoke(root.path(), &args)
+    };
+    let matching = verify(&[], "matching.json");
+    assert!(
+        matching.status.success(),
+        "{}",
+        String::from_utf8_lossy(&matching.stderr)
+    );
+    assert_eq!(
+        parse(root.path(), "matching.json")["verification"],
+        "passed"
+    );
+
+    // Even identical source bytes cannot establish equivalence across source
+    // policies.
+    let included = verify(&["--include-working-tree"], "included.json");
+    assert_eq!(
+        included.status.code(),
+        Some(4),
+        "{}",
+        String::from_utf8_lossy(&included.stderr)
+    );
+    assert_eq!(
+        parse(root.path(), "included.json")["verification"],
+        "inconclusive"
+    );
+
+    git(
+        root.path(),
+        &[
+            "commit",
+            "--allow-empty",
+            "-qm",
+            "same tree, new source revision",
+        ],
+    );
+    let revised = verify(&[], "revised.json");
+    assert_eq!(
+        revised.status.code(),
+        Some(4),
+        "{}",
+        String::from_utf8_lossy(&revised.stderr)
+    );
+    assert_eq!(
+        parse(root.path(), "revised.json")["verification"],
+        "inconclusive"
+    );
+    assert!(!root.path().join("out").exists());
+}
+#[test]
 fn cache_policy_and_overflow_fail_closed() {
     let root = repository("read-write");
     let recorded = run(root.path(), "report.json", "read-write");
