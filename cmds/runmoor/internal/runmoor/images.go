@@ -92,8 +92,8 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 		if req.RunnerPath == "" {
 			req.RunnerPath = "/Users/runner/actions-runner"
 		}
-		if !filepath.IsAbs(req.RunnerPath) || strings.ContainsAny(req.RunnerPath, "\x00\n\r") {
-			return nil, problem(ErrConfig, "Runner path must be an absolute guest path.", "Use the prepared runner installation directory.")
+		if !validRunnerPath(req.RunnerPath) {
+			return nil, problem(ErrConfig, "Runner path must be an absolute clean guest path.", "Use the same absolute guest directory as runner_path in TOML, without '..', NUL or line breaks.")
 		}
 		if e := m.reserve(c, im.ID); e != nil {
 			return nil, e

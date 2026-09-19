@@ -250,7 +250,7 @@ func NormalizeConfig(c Config) (Config, error) {
 				p.RunnerPath = "/Users/runner/actions-runner"
 			}
 		}
-		if !strings.HasPrefix(p.RunnerPath, "/") || strings.ContainsAny(p.RunnerPath, "\x00\n\r") || strings.Contains(p.RunnerPath, "..") {
+		if !validRunnerPath(p.RunnerPath) {
 			return fail("runner_path must be an absolute clean guest path.")
 		}
 		if !versionPattern.MatchString(p.RunnerVersion) {
@@ -297,6 +297,9 @@ func NormalizeConfig(c Config) (Config, error) {
 }
 func validResources(r Resources) bool {
 	return r.CPU > 0 && r.CPU <= 100000 && r.MemoryMiB > 0 && r.MemoryMiB <= 1<<40
+}
+func validRunnerPath(path string) bool {
+	return strings.HasPrefix(path, "/") && !strings.ContainsAny(path, "\x00\n\r") && !strings.Contains(path, "..")
 }
 func validID(s string) bool    { u, e := uuidParse(s); return e == nil && u == s }
 func (p Pool) Cost() Resources { return p.Resources.Add(p.DaemonResources) }

@@ -149,6 +149,56 @@ func TestImageOpenWaitsForConfirmedVMStartup(t *testing.T) {
 		})
 	}
 }
+
+func TestImageSealAndConfigurationShareRunnerPathValidation(t *testing.T) {
+	for _, path := range []string{"/Users/runner/tools/../actions-runner", "/Users/runner/a..b", "relative/runner", "/runner\x00", "/runner\n", "/runner\r", "/Users/runner/actions-runner", "/Users/runner/actions runner", ""} {
+		t.Run(path, func(t *testing.T) {
+			c, s := fixtureStore(t)
+			driver, fixture := fakeTart(c)
+			images := &ImageManager{Store: s, Tart: driver}
+			im, err := images.Operate(context.Background(), c, ImageRequest{Action: "create", Name: "setup", IPSW: "/fixture.ipsw", Resources: Resources{1, 512}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.Pools[0].RunnerPath = path
+			_, configErr := NormalizeConfig(c)
+			before, calls := fingerprint(s.View()), len(fixture.commands)
+			im, err = images.Operate(context.Background(), c, ImageRequest{Action: "seal", ID: im.ID, RunnerPath: path, RunnerVersion: "2.337.0"})
+			if configErr != nil {
+				requireCode(t, err, ErrConfig)
+				if fingerprint(s.View()) != before {
+					t.Fatal("invalid seal path mutated image state or reserved capacity")
+				}
+				for _, args := range fixture.commands[calls:] {
+					if args[0] != "--version" {
+						t.Fatal("invalid seal path reached VM preparation", args)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := path
+			if want == "" {
+				want = "/Users/runner/actions-runner"
+			}
+			if im.RunnerPath != want || im.Phase != ImageSealed {
+				t.Fatal("seal changed the accepted literal runner path")
+			}
+			c.Pools[0].RunnerPath = im.RunnerPath
+			normalized, err := NormalizeConfig(c)
+			if err != nil || normalized.Pools[0].RunnerPath != im.RunnerPath {
+				t.Fatal("sealed metadata cannot be configured exactly", err)
+			}
+			p := normalized.Pools[0]
+			p.Backend, p.Image = Tart, im.ID
+			if err = driver.Validate(context.Background(), c, p, s.View()); err != nil {
+				t.Fatal("pool rejected its compatible sealed path", err)
+			}
+		})
+	}
+}
 func TestTartImageLifecycleAndCredentialBoundary(t *testing.T) {
 	c, s := fixtureStore(t)
 	t.Setenv("RUNMOOR_TEST_CREDENTIAL", "management-secret-must-stay-host")
