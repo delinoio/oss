@@ -409,6 +409,11 @@ before launch Runlens rechecks platform eligibility, pathname file identity, and
 metadata stability. A changed identity returns incomplete before launching the
 replacement. This is a launch-boundary race check, not an OS sandbox or a guarantee
 against a concurrent replacement after the final check.
+The replacement regression retains the inspected handle, renames the original to
+a spare path, and installs a different file at the original path with matching
+length and modification time. This keeps the identity check covered on Windows,
+where the temporary-file persistence API cannot overwrite an open destination;
+the extra rename can be removed when that API supports open-file replacement.
 Comparison requires known matching executable identity and OS metadata,
 equal source revision metadata, and the same working-tree inclusion policy;
 redacted arguments cannot establish equivalence. Selected environment names do not

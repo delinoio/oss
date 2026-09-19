@@ -9,14 +9,22 @@ fn executable_identity_rejects_path_replacement_with_matching_metadata() {
     let identity = runlens::platform::executable_identity(&path, &cancel).unwrap();
     assert!(identity.revalidate(&path).is_ok());
     let identity = runlens::platform::executable_identity(&path, &cancel).unwrap();
-    let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+    let original_metadata = std::fs::metadata(&path).unwrap();
+    let modified = original_metadata.modified().unwrap();
     let mut replacement = tempfile::NamedTempFile::new_in(root.path()).unwrap();
     replacement.write_all(b"other-image").unwrap();
     replacement
         .as_file()
         .set_times(std::fs::FileTimes::new().set_modified(modified))
         .unwrap();
+    // Windows persist cannot overwrite an open destination. Move the original
+    // aside without closing its inspected handle, then replace the pathname.
+    // This extra rename can go if persist supports replacing open Windows files.
+    std::fs::rename(&path, root.path().join("retained-executable")).unwrap();
     replacement.persist(&path).unwrap();
+    let replacement_metadata = std::fs::metadata(&path).unwrap();
+    assert_eq!(replacement_metadata.len(), original_metadata.len());
+    assert_eq!(replacement_metadata.modified().unwrap(), modified);
     assert_eq!(
         identity.revalidate(&path).unwrap_err().code,
         runlens::error::ErrorCode::Incomplete
