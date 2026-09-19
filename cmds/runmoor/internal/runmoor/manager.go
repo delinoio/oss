@@ -742,7 +742,12 @@ func (m *Manager) inspect(ctx context.Context, id string) {
 	if r.Forced || (r.Phase != Idle && time.Now().After(r.Deadline)) {
 		_ = m.Store.Update(func(s *Snapshot) error {
 			r := s.Runners[id]
-			r.Forced = true
+			if !r.Forced && (r.Phase == Idle || !time.Now().After(r.Deadline)) {
+				return nil
+			}
+			// An expired preparation may have accepted work while we were
+			// offline. Only a known busy-job timeout authorizes forced cleanup.
+			r.Forced = r.Forced || r.Phase == Busy
 			r.Phase = Cleaning
 			if r.Problem == nil {
 				r.Problem = problem(ErrTimeout, "Runner exceeded its persisted deadline.", "Inspect the failed run in GitHub; Runmoor never reruns jobs.")
@@ -880,7 +885,9 @@ func (m *Manager) cleanup(ctx context.Context, id string) {
 					rr := s.Runners[id]
 					rr.Phase = Busy
 					if rr.StartedAt.IsZero() {
-						rr.StartedAt = nowUTC()
+						// With no observed job start, use the durable creation time
+						// so recovery never grants a fresh timeout after downtime.
+						rr.StartedAt = rr.CreatedAt
 						rr.Deadline = rr.StartedAt.Add(c.JobTimeout())
 					}
 					return nil

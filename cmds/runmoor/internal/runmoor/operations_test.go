@@ -204,6 +204,59 @@ func TestPersistedJobTimeoutAndIdleLifetime(t *testing.T) {
 	}
 }
 
+func TestExpiredPreparationRecoveryPreservesAssignmentRace(t *testing.T) {
+	for _, outcome := range []string{"busy", "idle", "unavailable"} {
+		t.Run(outcome, func(t *testing.T) {
+			m, c, remote, driver, pool := testManager(t)
+			id := seedRunner(t, m, pool, Preparing)
+			created := nowUTC().Add(-time.Hour)
+			if err := m.Store.Update(func(s *Snapshot) error {
+				s.Runners[id].CreatedAt = created
+				s.Runners[id].Deadline = created.Add(5 * time.Minute)
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			driver.live[id] = true
+			remote.busy = outcome == "busy"
+			if outcome == "unavailable" {
+				remote.failure = problem(ErrRetry, "Unavailable.", "Retry.")
+			}
+			if err := m.Store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := OpenStore(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close()
+			m.Store = reopened
+			m.inspect(context.Background(), id)
+			r := m.Store.View().Runners[id]
+			if r.Phase != Cleaning || r.Forced || r.Terminated {
+				t.Fatal("expired preparation authorized termination before checking GitHub")
+			}
+			requireCode(t, r.Problem, ErrTimeout)
+			m.cleanup(context.Background(), id)
+			r = m.Store.View().Runners[id]
+			switch outcome {
+			case "busy":
+				if r.Phase != Busy || r.Forced || r.Terminated || driver.stops != 0 || !r.Deadline.Equal(created.Add(c.JobTimeout())) {
+					t.Fatal("recovery killed a valid assignment or reset its deadline")
+				}
+			case "idle":
+				if r.Phase != Completed || !r.RemoteRemoved || remote.removed != 1 || driver.stops != 1 {
+					t.Fatal("unassigned expired preparation was not cleaned")
+				}
+			case "unavailable":
+				if r.Phase != Cleaning || r.Terminated || driver.stops != 0 {
+					t.Fatal("uncertain registration released the execution")
+				}
+			}
+		})
+	}
+}
+
 type failingPower struct{ active bool }
 
 func (p *failingPower) Set(active bool) *Problem {
