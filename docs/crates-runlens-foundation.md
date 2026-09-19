@@ -373,7 +373,12 @@ these inputs to ignored public schema assets. Semantic and bounded-allocation
 validation remains required in addition to JSON Schema shape validation.
 
 Git metadata and source-preparation children use the same Unix group / suspended
-Windows Job ownership as target execution, without tracer injection. Metadata
+Windows Job ownership as target execution, without tracer injection.
+Selected environment names cannot override isolated HOME/cache variables or Git
+configuration/repository controls (`GIT_CONFIG*`, `GIT_DIR`, `GIT_WORK_TREE`). Git
+control matching follows Windows case-insensitive environment lookup; Unix keeps
+case-sensitive Git names.
+Metadata
 stdout is capped at 16 MiB during reading, and each Git operation has a 120-second
 deadline plus the documented termination grace. Cancellation waits for owned
 processes before checkout cleanup. Read-only report commands do not invoke Git.

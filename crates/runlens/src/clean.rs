@@ -55,12 +55,19 @@ pub fn execution_context() -> Vec<(OsString, OsString)> {
 pub fn isolated_environment(root: &Path, names: &[String]) -> Result<Vec<(OsString, OsString)>> {
     let mut env = execution_context();
     for name in names {
+        // Windows environment keys are case-insensitive, including Git's
+        // repository and configuration controls passed to preparation commands.
+        let git_name = if cfg!(windows) {
+            name.to_ascii_uppercase()
+        } else {
+            name.clone()
+        };
         if ISOLATED_VARIABLES
             .iter()
             .any(|key| key.eq_ignore_ascii_case(name))
-            || name.starts_with("GIT_CONFIG")
-            || name == "GIT_DIR"
-            || name == "GIT_WORK_TREE"
+            || git_name.starts_with("GIT_CONFIG")
+            || git_name == "GIT_DIR"
+            || git_name == "GIT_WORK_TREE"
         {
             return Err(Error::input(
                 "selected environment name conflicts with clean isolation",

@@ -46,6 +46,42 @@ fn spill_preserves_sorted_records_and_roundtrip() {
     assert!(serde_json::from_str::<Entries<u32>>(r#"{"a":1,"a":2}"#).is_err());
 }
 #[test]
+fn clean_environment_reserves_git_controls_with_platform_case_rules() {
+    let root = tempfile::tempdir().unwrap();
+    for (index, name) in [
+        "GIT_CONFIG_GLOBAL",
+        "GIT_CONFIG_COUNT",
+        "GIT_CONFIG_KEY_0",
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "git_config_global",
+        "Git_Config_Count",
+        "git_config_key_0",
+        "Git_Dir",
+        "git_work_tree",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let result = runlens::clean::isolated_environment(
+            &root.path().join(index.to_string()),
+            &[(*name).into()],
+        );
+        let reserved = cfg!(windows) || *name == name.to_ascii_uppercase();
+        assert_eq!(result.is_err(), reserved, "{name}");
+        if let Err(error) = result {
+            assert_eq!(error.code, runlens::error::ErrorCode::InvalidInput);
+        }
+    }
+    assert!(
+        runlens::clean::isolated_environment(
+            &root.path().join("allowed"),
+            &["RUNLENS_ALLOWED_CONTEXT".into()]
+        )
+        .is_ok()
+    );
+}
+#[test]
 fn ignored_and_unknown_states_are_not_empty_files() {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join(".gitignore"), "ignored\n").unwrap();
