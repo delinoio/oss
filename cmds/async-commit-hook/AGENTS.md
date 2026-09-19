@@ -26,6 +26,7 @@
 - Each declared report path has one check owner across the graph. Clear its previous file through the owned workspace root before starting that check; stale committed or prerequisite reports must never satisfy validation.
 - Pruning is idempotent for expired records; resume incomplete owned-file cleanup without growing tombstone diagnostics.
 - Use synchronization barriers, not elapsed-time assertions, to prove asynchronous behavior in integration tests. Run `go test -race ./cmds/async-commit-hook/...` for lifecycle changes, and the root Go suite after generating administrator assets.
+- Inspect Codex MCP ownership through parsed TOML keys, including equivalent quoted/escaped/dotted forms; validate the merged document before any backup, ownership or skill publication while preserving unrelated text.
 - Agent integration tests use isolated settings and preserve unrelated entries and comments. Keep the object-form MCP output schema compatible with supported clients.
 - Failed hook publication or ownership persistence rolls back only the newly created, identity-and-content-matching file; concurrent edits remain untouched with a rollback conflict diagnostic.
 - Worker-correctness fixtures must distinguish injected failures from deadlock watchdog expiry; allow native shell cold startup under CI load instead of imposing an undocumented command-startup SLA.

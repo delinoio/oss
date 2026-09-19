@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/pelletier/go-toml/v2"
 	"github.com/tailscale/hujson"
 )
 
@@ -130,14 +131,32 @@ func (s *Service) Agent(client, scope, repo string, remove bool) (InstallResult,
 				return InstallResult{}, E("agent-conflict", "Codex ach MCP entry was modified", 2)
 			}
 			text = text[:i] + text[j:]
-		} else if strings.Contains(text, "mcp_servers.async-commit-hook") {
-			return InstallResult{}, E("agent-conflict", "Codex already has an unowned async-commit-hook MCP entry", 2)
+		}
+		// TOML quoted, escaped and dotted keys can name the same table. Inspect
+		// semantic keys without rewriting the user's comments or formatting.
+		var configuration map[string]any
+		if err := toml.Unmarshal([]byte(text), &configuration); err != nil {
+			return InstallResult{}, E("agent-config-invalid", "Codex TOML is invalid; no changes made", 2)
+		}
+		if value, exists := configuration["mcp_servers"]; exists {
+			servers, table := value.(map[string]any)
+			if !table {
+				return InstallResult{}, E("agent-conflict", "Codex mcp_servers must be a table; no changes made", 2)
+			}
+			if _, exists := servers["async-commit-hook"]; exists {
+				return InstallResult{}, E("agent-conflict", "Codex already has an unowned async-commit-hook MCP entry", 2)
+			}
 		}
 		if !remove {
 			entry = start + "[mcp_servers.async-commit-hook]\ncommand = " + string(Encode(executable)) + "\nargs = " + string(Encode([]string{"mcp", "--config", s.Paths.Config})) + "\n" + end
 			updated = []byte(strings.TrimRight(text, "\n") + "\n" + entry)
 		} else {
 			updated = []byte(text)
+		}
+		// An inline parent table cannot be extended by an appended table. Fail
+		// before publishing any ownership, skill or settings in that case.
+		if err := toml.Unmarshal(updated, &configuration); err != nil {
+			return InstallResult{}, E("agent-conflict", "cannot safely merge Codex MCP configuration; no changes made", 2)
 		}
 	} else {
 		if len(old) == 0 {
