@@ -139,7 +139,13 @@ export function App() {
         {connection.token ? (
           <Workspace
             initialRun={connection.run}
-            onPair={() => setConnection({ ...connection, token: "", code: "" })}
+            onPair={() => {
+              client.clear();
+              try {
+                localStorage.removeItem(`ach-v1-browser-${connection.port}`);
+              } catch {}
+              setConnection({ ...connection, token: "" });
+            }}
           />
         ) : (
           <Pairing

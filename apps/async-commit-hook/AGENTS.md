@@ -7,6 +7,7 @@
 - Poll execution details only while active; terminal evidence verification must not repeat on a timer. Explicit refresh and mutation invalidation remain available.
 - Render source, logs, report data and failure diagnostics as inert text. Do not use HTML interpretation or remote telemetry.
 - Pairing codes are short-lived URL fragments or explicit user input. Remove fragments immediately; keep results only in in-memory query caches.
+- Authentication recovery clears stale authorization and cached results but retains an unconsumed in-memory pairing code; explicit disconnect still discards it.
 - Preserve keyboard navigation, dialog focus restoration, status words and recoverable network/version/authentication states.
 - Public documentation and installers live under `public`; internal implementation contracts remain in `docs/`.
 - Public recovery guidance must distinguish confirmed descendant cleanup from lost ownership proof: incomplete cancellation blocks replacement, and a forcibly killed Linux supervisor requires host-reboot recovery. Do not claim actual minimum-OS machine qualification from local tests or cross-builds.

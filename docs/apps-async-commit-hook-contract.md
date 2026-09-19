@@ -18,6 +18,8 @@ Pairing receives a single-use five-minute code through a URL fragment or user en
 
 ## Storage
 
+When a fresh pairing fragment accompanies stale stored authorization, Pair again removes that authorization and clears query data while retaining the consumed fragment's in-memory code for the pairing form. Successful pairing and explicit disconnect discard the code.
+
 Detail navigation focuses the commit heading, returning to results restores the selected row, and polling never steals focus. Cancellation uses a native modal dialog with Escape and prior-focus restoration. Browsers exposing the local-network-access Permissions API receive a distinct denied-permission recovery message; older browser APIs retain ordinary connection guidance.
 Browser authorization and local connection preferences only; result cache is in memory. Durable results belong to the CLI's local state. Public docs cover configuration, installation, CLI/MCP/skills, privacy, validation meaning, compatibility and recovery.
 
