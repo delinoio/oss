@@ -192,9 +192,12 @@ impl Plan {
         let selected = graph.closure(&seeds.keys().cloned().collect(), false, false);
         let mut causes = seeds;
         for id in &selected {
-            causes
+            let reasons = causes
                 .entry(id.clone())
                 .or_insert_with(|| BTreeSet::from([Cause::Activation]));
+            if graph.tasks[id].task.effect == Effect::External {
+                reasons.insert(Cause::ExternalEffect);
+            }
         }
         for id in &selected {
             for prerequisite in graph.prerequisites(id) {

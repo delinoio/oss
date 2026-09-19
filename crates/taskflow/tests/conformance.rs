@@ -1194,10 +1194,41 @@ async fn scenario_25_external_effect_survives_unchanged_prerequisite() {
     );
     let g = graph(dir.path()).await;
     let plan = Plan::create(&g, &[], &[PathBuf::from("source")], true).unwrap();
-    let result = runner::run_plan(g, plan, RunOptions::default(), CancellationToken::new())
+    let result = runner::run_plan(
+        g.clone(),
+        plan,
+        RunOptions::default(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.results["app#deploy"].outcome, Outcome::Executed);
+    // Session propagation seeds a dependent with no independent input cause.
+    for reason in [
+        Cause::Input {
+            path: "source".into(),
+        },
+        Cause::Schedule,
+    ] {
+        let plan = Plan::for_tasks(
+            &g,
+            BTreeMap::from([
+                ("app#build".into(), BTreeSet::from([reason])),
+                ("app#deploy".into(), BTreeSet::new()),
+            ]),
+        )
+        .unwrap();
+        assert!(plan.causes["app#deploy"].contains(&Cause::ExternalEffect));
+        let result = runner::run_plan(
+            g.clone(),
+            plan,
+            RunOptions::default(),
+            CancellationToken::new(),
+        )
         .await
         .unwrap();
-    assert_eq!(result.results["app#deploy"].outcome, Outcome::Executed);
+        assert_eq!(result.results["app#deploy"].outcome, Outcome::Executed);
+    }
 }
 
 #[test]
