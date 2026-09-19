@@ -1,0 +1,562 @@
+{
+  "go-quality": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "apps/devhud-admin/**",
+      "cmds/**",
+      "go.mod",
+      "go.sum",
+      "package.json",
+      "packages/devhud-api-client/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "protos/**",
+      "servers/**",
+      "turbo.json"
+    ]
+  },
+  "go-test": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "apps/devhud-admin/**",
+      "cmds/**",
+      "go.mod",
+      "go.sum",
+      "package.json",
+      "packages/devhud-api-client/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "protos/**",
+      "servers/**",
+      "turbo.json"
+    ]
+  },
+  "repository-environment": {
+    "paths": [
+      ".gitignore",
+      ".npmrc",
+      ".nvmrc",
+      "AGENTS.md",
+      "apps/AGENTS.md",
+      "apps/binpm-docs/**",
+      "apps/devhud-admin/**",
+      "apps/devhud/**",
+      "apps/mpapp/.env.example",
+      "apps/nodeup-docs/**",
+      "apps/public-docs/**",
+      "apps/runmoor-docs/**",
+      "docs/README.md",
+      "docs/apps-binpm-docs-foundation.md",
+      "docs/apps-devhud-admin-contract.md",
+      "docs/apps-devhud-foundation.md",
+      "docs/apps-nodeup-docs-foundation.md",
+      "docs/apps-public-docs-foundation.md",
+      "docs/apps-runmoor-docs-foundation.md",
+      "docs/project-binpm.md",
+      "docs/project-devhud.md",
+      "docs/project-nodeup.md",
+      "docs/project-public-docs.md",
+      "docs/project-runmoor.md",
+      "docs/repository-environment-contract.md",
+      "docs/servers-devhud-api-contract.md",
+      "go.mod",
+      "go.sum",
+      "package.json",
+      "packages/devhud-api-client/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "scripts/dev-environment/**",
+      "scripts/install-git-hooks.sh",
+      "scripts/prepare-apps.sh",
+      "scripts/run-*-dev.mjs",
+      "scripts/run-rspress-port.mjs",
+      "scripts/spawn-dev-server.mjs",
+      "servers/AGENTS.md",
+      "servers/devhud-api/**",
+      "turbo.json"
+    ]
+  },
+  "rust-fmt": {
+    "paths": [
+      "**/*.rs",
+      "**/Cargo.lock",
+      "**/Cargo.toml",
+      "**/rust-toolchain",
+      "**/rust-toolchain.toml",
+      ".cargo/**",
+      "Cargo.lock",
+      "Cargo.toml",
+      "crates/**",
+      "rust-toolchain",
+      "rust-toolchain.toml"
+    ]
+  },
+  "rust-clippy": {
+    "paths": [
+      "**/*.rs",
+      "**/Cargo.lock",
+      "**/Cargo.toml",
+      "**/rust-toolchain",
+      "**/rust-toolchain.toml",
+      ".cargo/**",
+      ".npmrc",
+      ".nvmrc",
+      "Cargo.lock",
+      "Cargo.toml",
+      "apps/devhud/src-tauri/**",
+      "crates/**",
+      "package.json",
+      "packages/devhud-api-client/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "rust-toolchain",
+      "rust-toolchain.toml",
+      "turbo.json"
+    ]
+  },
+  "rust-test": {
+    "paths": [
+      "**/*.rs",
+      "**/Cargo.lock",
+      "**/Cargo.toml",
+      "**/rust-toolchain",
+      "**/rust-toolchain.toml",
+      ".cargo/**",
+      ".npmrc",
+      ".nvmrc",
+      "Cargo.lock",
+      "Cargo.toml",
+      "apps/devhud/src-tauri/**",
+      "crates/**",
+      "package.json",
+      "packages/devhud-api-client/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "rust-toolchain",
+      "rust-toolchain.toml",
+      "turbo.json"
+    ]
+  },
+  "node-mpapp-test": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "apps/mpapp/**",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "turbo.json"
+    ],
+    "workspace": "mpapp",
+    "workspacePaths": [
+      "apps/mpapp/**"
+    ]
+  },
+  "node-mpapp-lint": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "apps/mpapp/**",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "turbo.json"
+    ],
+    "workspace": "mpapp",
+    "workspacePaths": [
+      "apps/mpapp/**"
+    ]
+  },
+  "node-binpm-docs-test": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "apps/binpm-docs/**",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "scripts/install/binpm.*",
+      "scripts/run-rspress-port.mjs",
+      "turbo.json"
+    ],
+    "workspace": "binpm-docs",
+    "workspacePaths": [
+      "apps/binpm-docs/**"
+    ]
+  },
+  "node-runmoor-docs-test": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "apps/runmoor-docs/**",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "scripts/run-rspress-port.mjs",
+      "turbo.json"
+    ],
+    "workspace": "runmoor-docs",
+    "workspacePaths": [
+      "apps/runmoor-docs/**"
+    ]
+  },
+  "node-nodeup-docs-test": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "apps/nodeup-docs/**",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "scripts/install/nodeup.*",
+      "scripts/run-rspress-port.mjs",
+      "turbo.json"
+    ],
+    "workspace": "nodeup-docs",
+    "workspacePaths": [
+      "apps/nodeup-docs/**"
+    ]
+  },
+  "node-public-docs-test": {
+    "paths": [
+      ".github/workflows/package-devhud-private.yml",
+      ".github/workflows/release-devhud.yml",
+      ".npmrc",
+      ".nvmrc",
+      "apps/public-docs/**",
+      "docs/apps-devhud-operations-contract.md",
+      "docs/apps-devhud-support-contract.md",
+      "docs/project-devhud.md",
+      "package.json",
+      "packaging/devhud/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "scripts/run-rspress-port.mjs",
+      "turbo.json"
+    ],
+    "workspace": "public-docs",
+    "workspacePaths": [
+      "apps/public-docs/**"
+    ]
+  },
+  "devhud-frontend": {
+    "paths": [
+      ".cargo/**",
+      ".npmrc",
+      ".nvmrc",
+      "Cargo.lock",
+      "Cargo.toml",
+      "apps/devhud/**",
+      "crates/devhud-native-messaging-host/**",
+      "package.json",
+      "packages/**",
+      "packages/devhud-api-client/**",
+      "packaging/devhud/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "protos/**",
+      "rust-toolchain*",
+      "scripts/release/*devhud*",
+      "scripts/release/linux/**",
+      "scripts/run-rsbuild-dev.mjs",
+      "scripts/spawn-dev-server.mjs",
+      "servers/devhud-api/internal/rpc/diagnostics.go",
+      "turbo.json"
+    ],
+    "workspace": "devhud",
+    "workspacePaths": [
+      "apps/devhud/**",
+      "packages/devhud-api-client/**"
+    ]
+  },
+  "devhud-extension": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "apps/devhud-chrome-extension/**",
+      "apps/devhud/src-tauri/icons/**",
+      "crates/devhud-native-messaging-host/**",
+      "package.json",
+      "packaging/devhud/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "turbo.json"
+    ]
+  },
+  "devhud-rust-conformance": {
+    "paths": [
+      ".cargo/**",
+      ".npmrc",
+      ".nvmrc",
+      "Cargo.lock",
+      "Cargo.toml",
+      "apps/devhud/**",
+      "crates/devhud-native-messaging-host/**",
+      "package.json",
+      "packages/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "protos/**",
+      "rust-toolchain",
+      "rust-toolchain.toml",
+      "scripts/install-git-hooks.sh",
+      "turbo.json"
+    ]
+  },
+  "devhud-security": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "apps/devhud-admin/**",
+      "apps/devhud-chrome-extension/**",
+      "apps/devhud/**",
+      "crates/devhud-native-messaging-host/**",
+      "package.json",
+      "packages/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "protos/**",
+      "servers/**",
+      "turbo.json"
+    ]
+  },
+  "devhud-desktop": {
+    "paths": [
+      ".cargo/**",
+      ".npmrc",
+      ".nvmrc",
+      "Cargo.lock",
+      "Cargo.toml",
+      "apps/devhud-chrome-extension/**",
+      "apps/devhud/**",
+      "crates/devhud-native-messaging-host/**",
+      "package.json",
+      "packages/**",
+      "packaging/devhud/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "protos/**",
+      "rust-toolchain",
+      "rust-toolchain.toml",
+      "scripts/install-git-hooks.sh",
+      "scripts/release/*devhud*",
+      "scripts/release/generate-checksums*",
+      "scripts/release/linux/**",
+      "scripts/run-rsbuild-dev.mjs",
+      "scripts/spawn-dev-server.mjs",
+      "turbo.json"
+    ],
+    "native": true
+  },
+  "devhud-mobile-contracts": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "Cargo.lock",
+      "Cargo.toml",
+      "apps/devhud/**",
+      "package.json",
+      "packages/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "protos/**",
+      "rust-toolchain",
+      "scripts/run-rsbuild-dev.mjs",
+      "scripts/spawn-dev-server.mjs",
+      "turbo.json"
+    ]
+  },
+  "devhud-ios-simulator": {
+    "paths": [
+      ".cargo/**",
+      ".npmrc",
+      ".nvmrc",
+      "Cargo.lock",
+      "Cargo.toml",
+      "apps/devhud/**",
+      "package.json",
+      "packages/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "protos/**",
+      "rust-toolchain",
+      "rust-toolchain.toml",
+      "scripts/install-git-hooks.sh",
+      "scripts/run-rsbuild-dev.mjs",
+      "scripts/spawn-dev-server.mjs",
+      "turbo.json"
+    ],
+    "native": true
+  },
+  "devhud-android-emulator": {
+    "paths": [
+      ".cargo/**",
+      ".npmrc",
+      ".nvmrc",
+      "Cargo.lock",
+      "Cargo.toml",
+      "apps/devhud/**",
+      "package.json",
+      "packages/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "protos/**",
+      "rust-toolchain",
+      "rust-toolchain.toml",
+      "scripts/install-git-hooks.sh",
+      "scripts/run-rsbuild-dev.mjs",
+      "scripts/spawn-dev-server.mjs",
+      "turbo.json"
+    ],
+    "native": true
+  },
+  "devhud-protocol": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "buf.gen.yaml",
+      "buf.yaml",
+      "go.mod",
+      "go.sum",
+      "package.json",
+      "packages/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "protos/**",
+      "scripts/check-proto-breaking.sh",
+      "turbo.json"
+    ]
+  },
+  "devhud-admin": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "apps/devhud-admin/**",
+      "package.json",
+      "packages/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "protos/**",
+      "scripts/run-rsbuild-dev.mjs",
+      "scripts/spawn-dev-server.mjs",
+      "servers/devhud-api/internal/adminassets/**",
+      "turbo.json"
+    ]
+  },
+  "devhud-api": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "apps/devhud-admin/**",
+      "go.mod",
+      "go.sum",
+      "package.json",
+      "packages/devhud-api-client/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "protos/**",
+      "scripts/ci/check-go-format.mjs",
+      "servers/**",
+      "turbo.json"
+    ]
+  },
+  "devhud-oci": {
+    "paths": [
+      ".dockerignore",
+      ".npmrc",
+      ".nvmrc",
+      "apps/devhud-admin/**",
+      "go.mod",
+      "go.sum",
+      "package.json",
+      "packages/**",
+      "packaging/devhud/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "protos/**",
+      "scripts/release/*devhud*",
+      "scripts/release/generate-checksums*",
+      "scripts/release/linux/**",
+      "servers/**",
+      "turbo.json"
+    ]
+  },
+  "devhud-supply-chain": {
+    "paths": [
+      ".github/workflows/devhud-cef-security-review.yml",
+      ".github/workflows/package-devhud-private.yml",
+      ".github/workflows/release-devhud.yml",
+      ".npmrc",
+      ".nvmrc",
+      "apps/devhud-chrome-extension/**",
+      "apps/devhud/**",
+      "crates/devhud-native-messaging-host/**",
+      "package.json",
+      "packaging/devhud/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "scripts/release/**",
+      "turbo.json"
+    ]
+  },
+  "devhud-release-contracts": {
+    "paths": [
+      ".github/workflows/devhud-cef-security-review.yml",
+      ".github/workflows/package-devhud-private.yml",
+      ".github/workflows/release-devhud.yml",
+      ".npmrc",
+      ".nvmrc",
+      "AGENTS.md",
+      "apps/devhud-admin/**",
+      "apps/devhud-chrome-extension/**",
+      "apps/devhud/**",
+      "apps/public-docs/**",
+      "crates/devhud-native-messaging-host/**",
+      "docs/README.md",
+      "docs/apps-devhud-operations-contract.md",
+      "docs/apps-devhud-support-contract.md",
+      "docs/apps-devhud-updater-contract.md",
+      "docs/project-devhud.md",
+      "docs/repository-workflow-contract.md",
+      "docs/servers-devhud-api-contract.md",
+      "docs/servers-devhud-release-controller-contract.md",
+      "package.json",
+      "packages/**",
+      "packaging/devhud/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "protos/**",
+      "scripts/release/**",
+      "scripts/release/devhud-operations.test.mjs",
+      "servers/**",
+      "servers/devhud-api/internal/rpc/diagnostics.go",
+      "turbo.json"
+    ]
+  },
+  "taskflow-conformance": {
+    "paths": [
+      ".cargo/**",
+      "Cargo.lock",
+      "Cargo.toml",
+      "crates/taskflow/**",
+      "docs/*taskflow*",
+      "go.mod",
+      "go.sum",
+      "rust-toolchain",
+      "rust-toolchain.toml"
+    ]
+  },
+  "taskflow-docker": {
+    "paths": [
+      ".cargo/**",
+      "Cargo.lock",
+      "Cargo.toml",
+      "crates/taskflow/**",
+      "docs/*taskflow*",
+      "rust-toolchain",
+      "rust-toolchain.toml"
+    ]
+  }
+}

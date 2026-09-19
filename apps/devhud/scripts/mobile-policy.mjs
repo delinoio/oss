@@ -304,15 +304,14 @@ export function assertMobileCi(workflow) {
   const contractsJob = workflowJob(normalizedWorkflow, "devhud-mobile-contracts");
   const iosJob = workflowJob(normalizedWorkflow, "devhud-ios-simulator");
   const androidJob = workflowJob(normalizedWorkflow, "devhud-android-emulator");
-  for (const job of [contractsJob, iosJob, androidJob]) {
-    assert(job.includes("uses: dorny/paths-filter@v4") && job.includes("- apps/devhud/**"), "mobile CI job must filter relevant DevHUD paths");
-    assert(job.includes("EVENT_NAME: ${{ github.event_name }}") && job.includes('if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${DEVHUD_CHANGED}" = "true" ]; then'), "mobile CI job must run for manual dispatch or relevant paths");
-    assert(job.includes("Skip (DevHUD mobile unaffected)") && job.includes("if: ${{ steps.gate.outputs.run == 'true' }}\n        uses: pnpm/action-setup@v5"), "mobile CI job must skip expensive setup when DevHUD is unaffected");
+  for (const [name, job] of [["devhud-mobile-contracts", contractsJob], ["devhud-ios-simulator", iosJob], ["devhud-android-emulator", androidJob]]) {
+    assert(job.includes("needs: changes") && job.includes(`if: \u0024{{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['${name}'] }}`), "mobile CI job must use its central execution decision before runner allocation");
+    assert(job.includes("uses: ./.github/actions/setup-ci-node"), "mobile CI job must use shared dependency setup");
   }
   for (const [target, runner] of [["aarch64", "macos-15"], ["aarch64-sim", "macos-15"], ["x86_64", "macos-15-intel"]]) {
     assert(iosJob.includes(`- target: ${target}\n            runner: ${runner}`), `iOS CI target ${target} must run on ${runner}`);
   }
-  assert(iosJob.includes("if: ${{ steps.gate.outputs.run == 'true' && matrix.target == 'x86_64' }}\n        run: xcrun simctl list > /dev/null"), "Intel iOS CI must initialize simulator devices");
+  assert(iosJob.includes("if: ${{ matrix.target == 'x86_64' }}\n        run: xcrun simctl list > /dev/null"), "Intel iOS CI must initialize simulator devices");
   assert(iosJob.includes("ios build --target ${{ matrix.target }} --ci --no-sign"), "iOS CI must build every matrix target without signing");
   for (const [target, artifacts] of [["aarch64", "--apk --aab"], ["armv7", "--apk --aab"], ["x86_64", "--apk"]]) {
     assert(androidJob.includes(`- target: ${target}\n            artifacts: ${artifacts}`), `Android CI target ${target} must build ${artifacts}`);
@@ -322,7 +321,7 @@ export function assertMobileCi(workflow) {
   assert(androidJob.includes("android build --target aarch64 --target armv7 --aab"), "Android CI must exercise the combined production build command");
   assert(androidJob.includes("target/devhud-mobile/android/armv7/*.aab"), "Android CI must inspect the preserved combined App Bundle");
   assert(androidJob.includes("--android-abi arm64-v8a --android-abi armeabi-v7a"), "Android CI must verify both production ABIs in the combined App Bundle");
-  assert(androidJob.includes("if: ${{ steps.gate.outputs.run == 'true' && matrix.production }}") && androidJob.includes("Download checksum-pinned bundletool"), "Android production CI must install the pinned App Bundle inspector");
+  assert(androidJob.includes("if: ${{ matrix.production }}") && androidJob.includes("Download checksum-pinned bundletool"), "Android production CI must install the pinned App Bundle inspector");
   assert(androidJob.includes('--android-artifact "${aab_artifacts[0]}"') && androidJob.includes('--bundletool-jar "${{ steps.bundletool.outputs.jar }}"'), "Android production CI must inspect the generated App Bundle manifest");
 }
 

@@ -64,7 +64,7 @@ cargo test -p taskflow --test conformance -- --include-ignored
 
 To lint generated workflows inside the integration suite, build the repository-pinned actionlint with `go build -o <temporary-executable> github.com/rhysd/actionlint/cmd/actionlint`, then set `TFLOW_ACTIONLINT` to that executable for the conformance invocation. Also run `pnpm ci:workflows`, `pnpm ci:contracts`, and package-local `pnpm test` in `apps/public-docs`.
 
-The `taskflow-conformance` CI job covers macOS/Linux/Windows x64/arm64 and excludes the Docker/S3 tests. `taskflow-docker` explicitly runs those tests on Linux x64/arm64. Both self-gate and feed `ci-result`.
+The `taskflow-conformance` CI job covers macOS/Linux/Windows x64/arm64 and excludes the Docker/S3 tests. `taskflow-docker` explicitly runs those tests on Linux x64/arm64. Both use the centralized `changes` plan before runner allocation on affected PRs and main pushes, run on manual dispatch, and feed `ci-result`.
 
 ## Validation evidence and limits
 The implementation session exercised real macOS arm64 host execution, Linux arm64 containers through Docker, loopback MinIO, pnpm/Cargo/Go discovery, all four native shard adapters, source-build CLI/schema, generated-workflow actionlint, root Rust tests, and public-docs build/route checks. Committed CI definitions are not evidence that remote platform jobs have already executed. Windows and other host architectures require their conformance results before a release support claim. Registry/service availability failures must be reported as failed or unavailable validation, never counted as passes.

@@ -16,7 +16,7 @@
 - Run `git commit` only after `git add`; once files are staged, commit without unnecessary delay so staged changes are preserved in history.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
 - Root `pnpm install` must install Lefthook in linked worktrees when the effective `core.hooksPath` resolves to Git's shared common-directory hooks path, preserve Lefthook's protective failure for unrelated custom hook paths, and skip hook installation without blocking app preparation when Git metadata is unavailable.
-- Root `pnpm dev` is the DevHud team workflow. Root documentation development uses `pnpm dev:public-docs`, `pnpm dev:nodeup-docs`, or `pnpm dev:binpm-docs`; every root and package-local development command must use the app-owned fixed ports documented in `apps/AGENTS.md` and fail on conflicts instead of automatically remapping a server.
+- Root `pnpm dev` is the DevHud team workflow. Root documentation development uses `pnpm dev:public-docs`, `pnpm dev:nodeup-docs`, `pnpm dev:binpm-docs`, or `pnpm dev:runmoor-docs`; every root and package-local development command must use the app-owned fixed ports documented in `apps/AGENTS.md` and fail on conflicts instead of automatically remapping a server.
 - `docs/repository-environment-contract.md` is the source of truth for environment ownership. Root development orchestration may pass only the bounded `DEVHUD_LOCAL_MODE` selector, optional non-secret `CARGO_HOME` and `RUSTUP_HOME` tool locations, and platform-conditional Linux X11/XWayland `DISPLAY`, `XAUTHORITY`, and per-user `XDG_RUNTIME_DIR` session/runtime context through Turbo's exact task environment allowlist; team values are injected and validated only by their owning service wrapper, whose loopback HTTP validation must reject numeric IPv4 spellings not accepted by Go and whose public asset-base validation must inspect the raw path before WHATWG normalization. Exact API/administrator issuer parity must be proved before migration and pinned through migration plus the API, administrator, and frontend Turbo launches without writing a raw value; the frontend wrapper may receive only that validated public issuer and may use only its origin in the fixed development CSP. OSS mode must never invoke Infisical. Team startup is non-interactive and exclusive while that private comparison pin exists, checkout identity material is published atomically, and every preflight, startup, or cleanup child run under installed root signal handlers must be lifecycle-tracked. Windows process-tree termination utilities receive only minimal system lookup context, never validated service configuration. Docker children may additionally inherit only `DOCKER_HOST` and `DOCKER_CONTEXT`, but OSS startup must reject effective remote daemon endpoints before Compose startup. OSS startup is exclusive per checkout through cleanup, and an idempotent one-shot database step must repair missing Logto database creation in preserved PostgreSQL volumes before Logto seeding. Environment tests must inject temporary generated state and an external temporary Infisical config directory, and must never replace checkout identity or project-binding material.
 - Keep `.infisical.json`, `.dev-environment/`, real `.env` files, user credentials, and production/release/signing credentials uncommitted. Service-local `.env.example` files contain names, validation guidance, placeholders, and safe loopback defaults only; do not add a root environment example or expose internal secret paths in public product docs.
 - After addressing pull request review comments and pushing updates, mark the corresponding review threads as resolved.
@@ -74,6 +74,7 @@
 - `docs/crates-rustia-macros-foundation.md`: Rustia macros derive contract.
 - `docs/cmds-ttl-language-contract.md`: TTL language syntax/type/invalidation/code-generation contract.
 - `docs/apps-nodeup-docs-foundation.md`: Nodeup Rspress documentation app, route, validation, and Cloudflare Pages deployment contract.
+- `docs/apps-runmoor-docs-foundation.md`: Runmoor Rspress documentation app, route migration, fixed-port validation, and Cloudflare Pages deployment contract.
 
 ### Project Identifier Contract
 
@@ -105,7 +106,7 @@ enum ProjectId {
 - `binpm` -> `crates/binpm`, `apps/binpm-docs`
 - `with-watch` -> `crates/with-watch`
 - `cargo-mono` -> `crates/cargo-mono`
-- `runmoor` -> `cmds/runmoor`, public `/runmoor` documentation in `apps/public-docs`
+- `runmoor` -> `cmds/runmoor`, `apps/runmoor-docs`
 - `derun` -> `cmds/derun`
 - `ttl` -> `cmds/ttlc`
 - `mpapp` -> `apps/mpapp`
@@ -355,11 +356,12 @@ Coverage expectations:
 - `rust-fmt`: runs `cargo fmt --all --check`.
 - `rust-clippy`: runs `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
 - `rust-test`: runs `cargo test --workspace --all-targets`.
-- `node-mpapp-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp test`.
-- `node-mpapp-lint`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp lint`.
-- `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter binpm-docs test`.
-- `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter nodeup-docs test`.
-- `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.
+- `node-mpapp-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter mpapp test`.
+- `node-mpapp-lint`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter mpapp lint`.
+- `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter binpm-docs test`.
+- `node-runmoor-docs-test`: validates the standalone Runmoor routes with one frozen install using `--ignore-scripts`, the shared change plan, and its exact Turbo comparison; it participates in `ci-result` and saves caches only after successful main validation.
+- `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter nodeup-docs test`.
+- `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`.
 - `ci-contracts`: validates workflow syntax and the repository CI contract with the checked-in Go `actionlint` tool and Node fixtures.
 - `devhud-frontend`, `devhud-extension`, and `devhud-admin`: run package-local type, lint, unit, component, accessibility, and deterministic frontend/package builds.
 - `devhud-protocol`: runs schema formatting, lint, compatibility, and generated-freshness checks; Go binding tests; and TypeScript client lint, tests, and build on Ubuntu.
@@ -373,17 +375,19 @@ Coverage expectations:
 - `devhud-release-contracts`: runs deterministic static/dry Node tests for the reusable private candidate, exact public release identity, configuration failure, signing/preflight failure, review retry, channel ordering, rollback, and redaction contracts without exercising publication.
 - `taskflow-conformance`: runs graph/cache/session/sharding and generated-workflow conformance plus Clippy on macOS, Linux, and Windows x64/arm64.
 - `taskflow-docker`: runs immutable local Linux container and S3-compatible cache fixtures on x64/arm64 without credentials or publication.
-- `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
+- `ci-result`: retains the `CI Result` status and checks every dependency against the exact `changes` plan; failed/cancelled jobs, missing dependencies, and unexpected skips or execution fail the aggregate.
 - The DevHud release-contract job also validates the internal operations runbook, repository workflow contract, and read-only CEF review workflow through `scripts/release/devhud-operations.test.mjs`.
 
 Change-scoped execution rules:
-- CI jobs perform self-gating; there is no repository-wide `detect-changes` job.
-- Go and Rust jobs use in-job path-based change detection via `dorny/paths-filter`.
-- Node workspace jobs install with the frozen lockfile and use the committed Turbo binary via `pnpm exec turbo run <task> --affected --filter <workspace> --dry=json`; an empty task set is a successful self-gated no-op.
-- DevHud path filters include `servers/**`, `protos/**`, `packages/**`, every DevHud app, `crates/devhud-native-messaging-host/**`, `packaging/devhud/**`, public docs, and the DevHud package/release/review workflows.
+- A single `changes` job selects domain jobs before runner allocation using `scripts/ci/job-paths.json` and `scripts/ci/plan.mjs`. `ci-contracts` always runs. Go and environment checks retain all three operating systems when selected.
+- PRs run affected validation, including OCI checks, but never allocate the ten desktop, three iOS, or four Android package entries. Relevant main pushes run the complete existing native matrices. Manual dispatch runs every check and platform. There is no nightly CI schedule.
+- PR comparisons use the base/head merge-base; main comparisons use the exact `before..sha` trees, including all commits in the push. Missing or invalid comparisons fail. Deleted and renamed files select both affected owners.
+- Node workspace jobs use `scripts/ci/run-affected.mjs` and the committed `pnpm exec turbo run <task> --affected --filter <workspace>` with the planner's exact `TURBO_SCM_BASE` and `TURBO_SCM_HEAD`. External inputs and forced runs omit `--affected`; an otherwise empty affected set is a successful no-op.
+- Central path rules cover Go, Rust, every Node workspace, repository environment tooling, DevHud domains, packaging, public docs, and package/release/review workflows. Runmoor-only release scripts do not select DevHud native packaging; shared DevHud packaging inputs still do.
+- The PR frontend job runs the complete DevHud test command, including native-script fixtures, clean desktop/mobile frontend output validation, static mobile/widget contracts, and immutable CEF pins. Its aggregate `test` task is non-cacheable because it validates consecutive clean builds and external contract inputs.
 - Protocol generation and package-local frontend outputs are deterministic and cacheable; the ignored administrator bundle, native package, mobile, smoke, signing, release, and deployment tasks remain non-cacheable.
-- Changes to `.github/workflows/CI.yml` force all `go`, `node`, and `rust` domain jobs to run.
-- `workflow_dispatch` runs all domain jobs regardless of changed paths.
+- Changes to `.github/workflows/CI.yml`, `.github/actions/**`, or `scripts/ci/**` force every check eligible for that event; PRs still exclude native packaging. `workflow_dispatch` runs all domain jobs regardless of changed paths.
+- CI installs always use the frozen pnpm lockfile with `--ignore-scripts`. Shared pnpm/Go setup actions restore caches scoped by OS, architecture, tool version, and lockfile; only successful main jobs save them. Rust compilation caches likewise save only on successful main jobs; rustfmt has no dependency cache. PRs may restore main caches but never create branch-scoped caches. The Runmoor workflow uses the same Go cache policy and cancels superseded executions on the same ref.
 - CI is read-only: it does not consume release secrets, push tags or images, create releases, upload stores, deploy services/docs, or mutate updater/controller state.
 - When build or test commands change in project contracts, update this section and `.github/workflows/CI.yml` in the same commit.
 
@@ -432,6 +436,8 @@ Release automation baseline:
 - If a project splits into multiple deployables, the project index must include path ownership and integration boundaries, and component-level domain docs must exist.
 
 ### Runmoor Contract
+
+- Public Runmoor documentation is owned by `apps/runmoor-docs` at `https://runmoor.delino.io`; follow `docs/apps-runmoor-docs-foundation.md`. The former `public-docs` `/runmoor` and child routes are removed without handoff pages or redirects. Keep all public discovery links pointed at the standalone site.
 
 - Follow `docs/project-runmoor.md`, `docs/cmds-runmoor-foundation.md`, and `cmds/runmoor/AGENTS.md` for issue #893. Runmoor owns local ephemeral GitHub Actions runners through Docker and Tart, with host-only credentials, durable ownership, fair resource budgets, and single-job disposable environments.
 - Initial Runmoor binaries are preview prereleases for darwin-arm64, linux-amd64, and linux-arm64 under `runmoor@v<MAJOR.MINOR.PATCH>`; publication dry runs are credential-free and non-publishing. No Homebrew distribution is added.

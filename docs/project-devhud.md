@@ -28,6 +28,10 @@ enum ProjectId {
 
 The desktop and mobile hosts, native widgets, Chrome extension, Native Messaging host, administrator SPA, protocol, client, server foundation, Diagnostics paths, and RealQA direct issue submission above are implemented. `apps/devhud/src-tauri` and `crates/devhud-native-messaging-host` are DevHud Cargo workspace members; remaining product domains retain their documented planned status.
 
+## CI validation modes
+
+PR CI runs affected validation, including the full DevHud frontend test command, native-script fixtures, clean desktop/mobile frontend output checks, static widgets, CEF pins, Go/Rust conformance, and OCI checks. Desktop packaging (ten matrix entries), iOS (three), and Android (four) run on relevant main pushes; manual dispatch runs every check and platform. A shared change plan selects jobs before runner allocation and the stable `CI Result` aggregate rejects unexpected missing or skipped checks. No nightly schedule or publication is added. See `docs/repository-workflow-contract.md` for exact comparison and cache policies and `docs/apps-devhud-operations-contract.md` for interpreting PR versus full native evidence.
+
 ## Local development environment
 
 The repository environment contract defines two modes. `pnpm dev` is the authorized-team path: it checks the pinned Infisical CLI and local authentication/project binding only when needed, validates the API and administrator allowlists plus their exact issuer parity, privately pins that comparison through migration and the API, administrator, and frontend launches, and launches those applications at fixed ports `46307`, `46306`, and `46305`. The frontend wrapper accepts only the same public issuer and reduces it to its origin for the fixed development CSP. Startup fails closed on authentication, path, cross-service issuer, or mid-startup configuration-generation errors and never wraps the root Turbo process with secrets.

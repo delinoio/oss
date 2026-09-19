@@ -12,7 +12,6 @@ const productPages = [
   { text: "Cargo Mono", link: "/cargo-mono" },
   { text: "Derun", link: "/derun" },
   { text: "With Watch", link: "/with-watch" },
-  { text: "Runmoor", link: "/runmoor", activeMatch: "^/runmoor" },
   { text: "TaskFlow", link: "/taskflow", activeMatch: "^/taskflow" },
 ];
 
@@ -35,6 +34,7 @@ export default defineConfig({
       ...productPages,
       { text: "Nodeup", link: "https://nodeup.delino.io" },
       { text: "binpm", link: "https://binpm.delino.io" },
+      { text: "Runmoor", link: "https://runmoor.delino.io" },
     ],
     sidebar: {
       "/": [
@@ -61,18 +61,6 @@ export default defineConfig({
             { text: "Support", link: "/devhud/support" },
             { text: "Administration", link: "/devhud/admin" },
             { text: "Releases", link: "/devhud/releases" },
-          ],
-        },
-        {
-          text: "Ephemeral Actions Runners",
-          items: [
-            { text: "Runmoor", link: "/runmoor" },
-            { text: "Install and Verify", link: "/runmoor/install" },
-            { text: "Configuration", link: "/runmoor/configuration" },
-            { text: "Commands and Routing", link: "/runmoor/commands" },
-            { text: "Docker", link: "/runmoor/docker" },
-            { text: "Tart Images", link: "/runmoor/tart" },
-            { text: "Operations and Recovery", link: "/runmoor/operations" },
           ],
         },
         {

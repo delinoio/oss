@@ -50,4 +50,4 @@ All commands accept `--config PATH` and `--no-color`. Commands and flags are cas
 | `image seal` | `--id UUID`, `--runner-version VERSION`, optional `--runner-path PATH` |
 | `image list` | Optional `--json`; includes preparation/sealed revisions and problems |
 
-Image commands print structured revision data. Image changes require a running manager; `image list` also works offline. See [Tart image preparation](/runmoor/tart) for starting without any pools. CPU values are whole cores and memory values are MiB. Use `--help` to list commands. Read [operations and recovery](/runmoor/operations) before force-stop or image removal.
+Image commands print structured revision data. Image changes require a running manager; `image list` also works offline. See [Tart image preparation](/tart) for starting without any pools. CPU values are whole cores and memory values are MiB. Use `--help` to list commands. Read [operations and recovery](/operations) before force-stop or image removal.

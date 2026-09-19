@@ -10,7 +10,8 @@ This page provides a high-level public catalog of projects in the Delino OSS mon
 - [`binpm`](https://binpm.delino.io): Rust-based, Node-free binary package manager with standalone documentation.
 - [`derun`](derun): Terminal-fidelity run execution and MCP bridge tool.
 - [`with-watch`](with-watch): Command rerun watcher for inferred or explicit filesystem inputs.
-- [`runmoor`](runmoor): Preview manager for disposable Docker and Tart GitHub Actions runners on a personal computer.
+- [`runmoor`](https://runmoor.delino.io): Preview manager for disposable Docker and Tart GitHub Actions runners on a personal computer.
+- [`TaskFlow`](taskflow): Source-distributed task engine with native workspace discovery, development sessions, caching, and CI test sharding.
 - `mpapp`: Expo React Native mobile app.
 - `public-docs`: Rspress public documentation app.
 
@@ -18,5 +19,4 @@ This page provides a high-level public catalog of projects in the Delino OSS mon
 
 Authoritative implementation contracts are maintained in the repository's internal project documents.
 Use this public catalog for orientation, and use internal project docs for precise engineering and operational details.
-Standalone project documentation links are canonical entry points for Nodeup and binpm public guidance.
-- [`TaskFlow`](taskflow): Source-distributed task engine with native workspace discovery, development sessions, caching, and CI test sharding.
+Standalone project documentation links are canonical entry points for Nodeup, binpm, and Runmoor public guidance.

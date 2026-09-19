@@ -80,4 +80,4 @@ installation_id = 12345
 credential = { file = "REPLACE_WITH_ABSOLUTE_PRIVATE_PEM_FILE" }
 ```
 
-See [Docker execution](/runmoor/docker) and [Tart images](/runmoor/tart) for backend requirements.
+See [Docker execution](/docker) and [Tart images](/tart) for backend requirements.
