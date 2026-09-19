@@ -246,8 +246,46 @@ func (s *Store) Cancel(id string, reason State) error {
 	if r.State.Terminal() {
 		return nil
 	}
-	_, err = s.DB.Exec("UPDATE checks SET cancel=? WHERE run_id=? AND state IN ('queued','preparing','running','collecting')", reason, id)
-	return err
+	// Share the worker's ownership lock: a worker that has read Queued must not
+	// overwrite an immediate cancellation with its subsequent Preparing write.
+	owner, err := TryLock(filepath.Join(s.Root, "locks", id+".lock"))
+	if err != nil {
+		return err
+	}
+	if owner != nil {
+		defer owner.Close()
+		r, err = s.Run(id)
+		if err != nil {
+			return err
+		}
+	}
+	return s.Transaction(func(tx *sql.Tx) error {
+		if _, err := tx.Exec("UPDATE checks SET cancel=? WHERE run_id=? AND state IN ('queued','preparing','running','collecting')", reason, id); err != nil {
+			return err
+		}
+		if owner == nil || r.State != Queued {
+			return nil
+		}
+		for _, c := range r.Checks {
+			if !c.State.Terminal() && (c.State != Queued || c.Process.PID != 0 || c.StartedAt != nil) {
+				return nil
+			}
+		}
+		now := time.Now().UTC()
+		for _, c := range r.Checks {
+			if c.State.Terminal() {
+				continue
+			}
+			c.State = reason
+			c.FinishedAt = &now
+			if err := saveCheck(tx, c); err != nil {
+				return err
+			}
+		}
+		r.State = reason
+		r.FinishedAt = &now
+		return saveRun(tx, r)
+	})
 }
 func (s *Store) Cancellation(check string) State {
 	var state State

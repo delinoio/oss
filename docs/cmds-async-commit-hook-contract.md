@@ -30,6 +30,8 @@ Pre-push parses every actual branch-update object ID from stdin, ignores tags/de
 
 `run-and-wait` submits a fresh attempt when the latest compatible result is terminal but nonpassing, including expired or missing evidence. It waits for an existing unfinished attempt without duplicating it; `wait` never submits work.
 
+Cancellation of an unstarted queued run acquires its worker ownership lock and atomically completes the run and unfinished checks without launching a worker. If a worker owns the run or any process may have started, cancellation remains a request until that owner reconciles descendants.
+
 ## Storage
 SQLite WAL with foreign keys, transactional claims and durable accepted ordering. User-only state includes registry, attempts, checks, coordination, browser hashes, acknowledgements and diagnostics. Logs/reports are owned files with integrity metadata. Indefinite retention is default; pruning protects active work and retains authoritative expired-attempt records. Original-repository removal never deletes results.
 

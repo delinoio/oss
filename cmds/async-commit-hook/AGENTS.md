@@ -6,6 +6,7 @@
 - Account lifecycle control remains in the canonical home configuration directory even when `--config` or `state_dir` changes. Tests must use isolated homes or explicit injected `Paths`; never touch developer credentials or real account state.
 - Committed source is materialized from raw Git blobs. Never enable original hooks, filters, submodules or LFS implicitly. Hook installation discovery must not use the execution helper's disabled-hooks override.
 - Persist the receipt before starting any worker. Queue order uses accepted sequence; cancellation/replacement cannot release a group before owned processes are reconciled by birth identity or a Windows Job Object.
+- Cancellation may finalize an unstarted queued run only while holding its worker ownership lock, with check and run transitions committed together. Owned or previously started work still requires worker reconciliation.
 - Report and log reads use owned artifact IDs and bounded, root-confined reads. Keep known-secret redaction before persistence, including streamed chunk boundaries and structured failures.
 - Evidence text responses must be valid UTF-8 while pagination and integrity continue to use the original stored bytes.
 - Each declared report path has one check owner across the graph. Clear its previous file through the owned workspace root before starting that check; stale committed or prerequisite reports must never satisfy validation.
