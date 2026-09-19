@@ -2555,12 +2555,18 @@ async fn completed_tasks_keep_edits_while_an_independent_wave_task_runs() {
         let root = directory.path().to_path_buf();
         let token = CancellationToken::new();
         let stop = token.clone();
-        let session =
+        let mut session =
             tokio::spawn(
                 async move { taskflow::session::start(&root, "default", options, stop).await },
             );
         tokio::time::timeout(Duration::from_secs(60), async {
             loop {
+                if session.is_finished() {
+                    panic!(
+                        "session exited before the watch barrier: {:?}",
+                        (&mut session).await
+                    );
+                }
                 if runner::previous(directory.path(), "app#fast").is_some_and(|r| r.success())
                     && directory.path().join("slow-start").exists()
                 {
@@ -2794,14 +2800,18 @@ async fn readiness_commands_use_the_configured_shell() {
         "server":{"command":command(&["sleep","server.pid"]),"input":[],"service":true,"shell":[helper(),"shell"],"readiness":{"type":"command","command":"version","timeout":"15s"}},
         "check":{"command":command(&["record","events","ready"]),"input":[],"dependsOn":[{"task":"server","waitFor":"ready"}]}
     }));
-    profile(directory.path(), &["check"]);
+    profile(directory.path(), &["server", "check"]);
     let root = directory.path().to_path_buf();
     let stop = CancellationToken::new();
     let cancel = stop.clone();
-    let session = tokio::spawn(async move {
+    let mut session = tokio::spawn(async move {
         taskflow::session::start(&root, "default", RunOptions::default(), cancel).await
     });
-    wait_lines(&directory.path().join("events"), "ready", 1).await;
+    let events = directory.path().join("events");
+    tokio::select! {
+        result = &mut session => panic!("readiness session exited early: {result:?}"),
+        _ = wait_lines(&events, "ready", 1) => {}
+    }
     stop.cancel();
     session.await.unwrap().unwrap();
     assert_eq!(
@@ -3060,4 +3070,25 @@ async fn cache_verify_rejects_misdirected_and_inconsistent_artifacts() {
         std::fs::read_to_string(directory.path().join("output")).unwrap(),
         "retained"
     );
+}
+
+#[test]
+fn notification_paths_survive_concurrent_file_removal() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("transient");
+    let expected = directory.path().canonicalize().unwrap().join("transient");
+    let barrier = std::sync::Barrier::new(2);
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            barrier.wait();
+            for _ in 0..10000 {
+                std::fs::write(&path, "temporary").unwrap();
+                std::fs::remove_file(&path).unwrap();
+            }
+        });
+        barrier.wait();
+        for _ in 0..10000 {
+            assert_eq!(files::canonical_path(&path).unwrap(), expected);
+        }
+    });
 }

@@ -19,6 +19,7 @@
 - Apply overlap policies to per-task execution ownership, not to membership in an unfinished wave.
 - Watch invalidation consumes filesystem mutations, never access notifications from metadata discovery or input hashing. Metadata notifications must confirm a changed or invalid graph before cancelling the active generation; identical rewrites preserve live work.
 - Canonicalize watcher roots and event paths before graph matching, including deleted paths through their existing ancestors and Windows path prefixes.
+- Notification path normalization must tolerate concurrent removal while preserving broken-link and permission errors; do not separate existence checks from canonicalization.
 - Go discovery must disable module proxies, checksum databases, VCS, and automatic toolchain downloads; private-module proxy bypass cannot override this boundary.
 - Native Go shard arguments use an explicit flag/value contract; reject unknown or selection/output flags before inventory execution.
 - Maintain schema freshness and numbered issue #898 conformance scenarios. Report unavailable platform/service evidence accurately.

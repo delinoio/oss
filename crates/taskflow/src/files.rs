@@ -47,22 +47,26 @@ pub fn within(root: &Path, path: &Path) -> Result<PathBuf> {
     Ok(path)
 }
 pub fn canonical_path(path: &Path) -> Result<PathBuf> {
+    let mut ancestors = path.ancestors();
     if path.is_symlink() {
-        return Ok(path
-            .parent()
-            .context("symlink has no parent")?
-            .canonicalize()?
-            .join(path.file_name().unwrap()));
+        // Preserve a link leaf for ownership validation against its parent.
+        ancestors.next();
     }
-    for ancestor in path.ancestors() {
-        if ancestor.exists() || ancestor.is_symlink() {
-            let canonical = ancestor.canonicalize()?;
-            let suffix = path.strip_prefix(ancestor)?;
-            return Ok(if suffix.as_os_str().is_empty() {
-                canonical
-            } else {
-                canonical.join(suffix)
-            });
+    for ancestor in ancestors {
+        match ancestor.canonicalize() {
+            Ok(canonical) => {
+                let suffix = path.strip_prefix(ancestor)?;
+                return Ok(if suffix.as_os_str().is_empty() {
+                    canonical
+                } else {
+                    canonical.join(suffix)
+                });
+            }
+            // Notifications can outlive a temporary file or directory. Avoid an
+            // existence-check race, but never hide a broken link or access error.
+            Err(error)
+                if error.kind() == std::io::ErrorKind::NotFound && !ancestor.is_symlink() => {}
+            Err(error) => return Err(error.into()),
         }
     }
     Ok(path.to_path_buf())

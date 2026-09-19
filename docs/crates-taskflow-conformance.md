@@ -145,3 +145,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `setup_cancellation_preserves_receipts_and_service_events` cancels finite tasks and services while waiting for a resource and while probing a real tool process. Receipts and service events retain cancellation, commands never start, and probe children are reaped. Unverified Docker cleanup remains a failure even when cancellation is active.
 
 `cache_verify_rejects_misdirected_and_inconsistent_artifacts` gives the CLI valid object envelopes containing a mismatched entry key, invalid version, output/file digest corruption, malformed content encoding, duplicate paths, and traversal paths. Only the intact entry remains valid, verification fails, and task outputs remain untouched.
+
+`notification_paths_survive_concurrent_file_removal` repeatedly removes and recreates a file while normalizing its notification path. Missing ancestors are retried at the next parent without hiding broken links or permission errors. Session barrier assertions surface early session failures directly instead of waiting for a record timeout.
