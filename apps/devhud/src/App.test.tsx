@@ -394,9 +394,10 @@ describe("native App state", () => {
     expect(screen.queryByText(messages.en.externalFailed)).toBeNull();
     await waitFor(() => expect(identityClient.createIdentitySession).toHaveBeenCalledTimes(2));
     expect(screen.getByRole("button", { name: messages.en.signIn })).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: messages.en.apiOrigin }));
   });
 
-  it("persists the new origin when callback draining fails after policy configuration", async () => {
+  it("retries callback draining before persisting the new origin", async () => {
     let authenticated = true;
     vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
       getAccessToken: async () => "fixture-access-token",
@@ -436,7 +437,35 @@ describe("native App state", () => {
 
     await waitFor(() => expect(JSON.parse(localStorage.getItem("devhud.shell.preferences.v1") ?? "null").apiOrigin).toBe("https://custom.example"));
     expect(screen.queryByText(messages.en.apiChangePolicyFailed)).toBeNull();
+    expect(callbackDrainAttempts).toBe(3);
     await waitFor(() => expect(identityClient.createIdentitySession).toHaveBeenCalledTimes(2));
+  });
+
+  it("restores the old policy when both post-policy callback drains fail", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    let callbackDrainAttempts = 0;
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      if (value.operation === "auth.take-pending-callback") {
+        callbackDrainAttempts += 1;
+        if (callbackDrainAttempts > 1) throw new Error("callback-drain-unavailable");
+        return { kind: "auth-callback", url: null };
+      }
+      if (value.operation === "secure.purge") return { kind: "ok" };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+
+    render(<App bridge={bridgeWith(request)} initialRuntime={mobileRuntime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).getByRole("button", { name: messages.en.applyApiOrigin }));
+
+    await waitFor(() => expect(within(document.querySelector(".api-origin-editor") as HTMLElement).getByRole("alert").textContent).toBe(messages.en.apiChangePolicyFailed));
+    expect(JSON.parse(localStorage.getItem("devhud.shell.preferences.v1") ?? "null").apiOrigin).toBe("https://devhud.api.delino.io");
+    expect(callbackDrainAttempts).toBe(3);
+    const policyCalls = request.mock.calls.map(([value]) => value).filter((value) => value.operation === "session.configure-origins");
+    expect(policyCalls.at(-1)).toEqual({ operation: "session.configure-origins", apiOrigin: "https://devhud.api.delino.io" });
   });
 
   it("quarantines callbacks received while changing the API origin policy", async () => {
@@ -1136,7 +1165,7 @@ describe("native App state", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: messages.en.deck }).getAttribute("aria-current")).toBe("page"));
   });
 
-  it("keeps the palette modal while a capture completes and inerts its preview during Account confirmation", async () => {
+  it("keeps the palette modal while a capture completes and preserves its preview through Account policy recovery", async () => {
     const runtime: RuntimeSnapshot = { ...desktopRuntime, capabilities: { ...desktopRuntime.capabilities, capture: true } };
     let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;
     const capturedDraft = {
@@ -1155,6 +1184,12 @@ describe("native App state", () => {
       if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "windows", shadowRemovalSupported: false, topology: [] };
       if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
       if (value.operation === "capture.start") return new Promise((resolve) => { resolveCapture = resolve; });
+      if (value.operation === "session.configure-origins") {
+        if (value.apiOrigin === "https://custom.example") throw new Error("policy-configuration-failed");
+        return { kind: "session-network-policy", changed: false };
+      }
+      if (value.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+      if (value.operation === "secure.purge") return { kind: "ok" };
       throw new Error(`unexpected operation ${value.operation}`);
     });
 
@@ -1180,7 +1215,10 @@ describe("native App state", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.floatingPreviewOpen }));
     expect(screen.getByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).toBe(confirmation);
     expect(screen.queryByRole("heading", { name: messages.en.editorTitle })).toBeNull();
-    fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.cancel }));
+    fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.applyApiOrigin }));
+    await waitFor(() => expect(within(document.querySelector(".api-origin-editor") as HTMLElement).getByRole("alert").textContent).toBe(messages.en.apiChangePolicyFailed));
+    expect(screen.getByRole("complementary", { name: messages.en.floatingPreview })).toBe(preview);
+    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: messages.en.apiOrigin }));
     await waitFor(() => expect(preview.hasAttribute("inert")).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: messages.en.floatingPreviewOpen }));
     expect(await screen.findByRole("heading", { name: messages.en.editorTitle })).toBeTruthy();

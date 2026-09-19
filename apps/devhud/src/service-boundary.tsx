@@ -100,6 +100,7 @@ interface BoundaryProps extends PropsWithChildren {
   readonly onLoggedOut: () => void;
   readonly initialAppearance?: DevHudSettingsV1["appearance"];
   readonly identitySessionRef?: RefObject<IdentitySession | null>;
+  readonly identityRecoveryGeneration?: number;
 }
 
 export function DevHudServiceBoundary(props: BoundaryProps) {
@@ -140,7 +141,7 @@ export function DevHudServiceBoundary(props: BoundaryProps) {
   </QueryClientProvider></TransportProvider>;
 }
 
-function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onCallbackConsumed, onDeckLinkPolicyReady, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
+function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onCallbackConsumed, onDeckLinkPolicyReady, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset, identityRecoveryGeneration = 0 }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
   const storage = getLocalStorage();
   const queryClient = useQueryClient();
   const transport = useTransport();
@@ -185,6 +186,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const lastReconciledGitHubPatKeyRef = useRef<string | null>(null);
   const settingsWritableRef = useRef(false);
   const replaceSettingsRef = useRef<IdentitySettingsValue["replaceSettings"]>(async () => false);
+  const recoveredGeneration = useRef(identityRecoveryGeneration);
 
   useEffect(() => {
     if (session !== null || continuedLocally && networkReady) onDeckLinkPolicyReady?.();
@@ -639,6 +641,26 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     setNetworkReady(false);
     setBootstrapAttempt((current) => current + 1);
   }
+
+  useEffect(() => {
+    if (recoveredGeneration.current === identityRecoveryGeneration) return;
+    recoveredGeneration.current = identityRecoveryGeneration;
+    const guest = readGuestSettings(storage);
+    sessionRef.current = null;
+    setSession(null);
+    setBootstrap(null);
+    setAccount(null);
+    setAccountError(null);
+    setIdentityReady(false);
+    setSettingsReady(false);
+    resetDesktopShortcuts();
+    setSettingsError(null);
+    setDeckAccessSuspended(false);
+    applySettings(!hasGuestSettings(storage) && initialAppearance ? { ...guest, appearance: initialAppearance } : guest);
+    applyRevision(0n);
+    void clearIdentityQueryCache();
+    retryIdentity();
+  }, [identityRecoveryGeneration]);
 
   async function resetIdentity(): Promise<void> {
     clearAuthenticatedSettingsCache(storage, apiOrigin);
