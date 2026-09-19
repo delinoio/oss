@@ -114,6 +114,10 @@ impl Blueprint {
             }
         }
         let plan = Plan::create(graph, &targets, &[], false)?;
+        for id in &plan.order {
+            crate::cache::validate_artifact_outputs(&graph.tasks[id].task)
+                .with_context(|| format!("{id}: CI output transfer requires complete ownership"))?;
+        }
         let mut groups: BTreeMap<String, BTreeSet<String>> = plan
             .order
             .iter()

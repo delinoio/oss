@@ -78,7 +78,8 @@ lockfiles participate in invalidation automatically.
 
 Outputs must remain inside the owning project and cannot overlap another task's
 outputs. Cache and CI snapshots own complete directories, exact files, or
-`directory/**` trees; avoid partial wildcard output ownership. Declare shared native
+`directory/**` trees. Partial wildcard outputs are supported only for local uncached
+tasks; CI export rejects them even when caching is disabled. Declare shared native
 incremental caches through common `resources` locks instead of treating them as
 portable output snapshots. `output: []` explicitly declares a check with no outputs.
 Omitted outputs make CI keep dependent tasks in the same job.

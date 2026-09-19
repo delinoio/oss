@@ -133,3 +133,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `go_metadata_queries_do_not_contact_module_proxies` runs real CLI queries with a cold isolated module cache and a recording loopback proxy, including an inherited private-module bypass. Missing dependencies yield incomplete coverage without requests or downloaded module metadata.
 
 `docker_service_cleanup_failure_survives_session_cancellation` injects Docker removal and absence-check failures through an isolated CLI fixture. Ctrl+C must still reap its real child and return a cleanup failure instead of a successful session. No real daemon is interrupted.
+
+`partial_outputs_cannot_be_exported_or_restored_as_artifacts` retains local uncached partial output support while rejecting CI export, artifact capture, and restoration before undeclared neighboring inputs can be transferred or replaced.

@@ -81,6 +81,9 @@ struct Entry {
 }
 
 pub fn anchors(task: &Task) -> Result<Vec<PathBuf>> {
+    if task.cache {
+        validate_artifact_outputs(task)?;
+    }
     let mut values: Vec<PathBuf> = vec![];
     for pattern in task.output.iter().flatten() {
         let anchor = files::output_anchor(pattern);
@@ -88,15 +91,6 @@ pub fn anchors(task: &Task) -> Result<Vec<PathBuf>> {
             !anchor.as_os_str().is_empty() && anchor != Path::new("."),
             "output requires a literal owned root"
         );
-        // Restoring a partially-owned directory could erase undeclared neighbors.
-        // Cache contracts therefore own exact files/directories or complete trees.
-        if task.cache && pattern.contains(['*', '?', '[', '{']) {
-            ensure!(
-                pattern.ends_with("/**")
-                    && !pattern[..pattern.len() - 3].contains(['*', '?', '[', '{']),
-                "cache outputs must be exact paths or complete directory/** trees"
-            );
-        }
         if !values.iter().any(|v| anchor.starts_with(v)) {
             values.retain(|v| !v.starts_with(&anchor));
             values.push(anchor);
@@ -104,6 +98,21 @@ pub fn anchors(task: &Task) -> Result<Vec<PathBuf>> {
     }
     values.sort();
     Ok(values)
+}
+
+pub fn validate_artifact_outputs(task: &Task) -> Result<()> {
+    // Both cache and CI restoration replace complete roots. Partial ownership
+    // remains available for local uncached tasks, but cannot cross this boundary.
+    for pattern in task.output.iter().flatten() {
+        if pattern.contains(['*', '?', '[', '{']) {
+            ensure!(
+                pattern.ends_with("/**")
+                    && !pattern[..pattern.len() - 3].contains(['*', '?', '[', '{']),
+                "artifact outputs must be exact paths or complete directory/** trees"
+            );
+        }
+    }
+    Ok(())
 }
 
 pub fn snapshot(project: &Project, task: &Task) -> Result<Vec<FileRecord>> {
@@ -185,6 +194,7 @@ pub fn output_state(project: &Project, task: &Task) -> Result<String> {
 
 impl Artifact {
     pub fn capture(key: String, id: String, project: &Project, task: &Task) -> Result<Self> {
+        validate_artifact_outputs(task)?;
         let files = snapshot(project, task)?;
         Ok(Self {
             version: 1,
@@ -197,6 +207,7 @@ impl Artifact {
     }
 
     pub fn validate(&self, key: &str, id: &str, project: &Project, task: &Task) -> Result<()> {
+        validate_artifact_outputs(task)?;
         ensure!(
             self.version == 1 && self.key == key && self.task == id,
             "cache identity mismatch"

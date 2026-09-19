@@ -2727,3 +2727,47 @@ async fn service_cleanup_failures_still_await_all_owners() {
     assert!(complete.load(std::sync::atomic::Ordering::SeqCst));
     assert!(services.controls.lock().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn partial_outputs_cannot_be_exported_or_restored_as_artifacts() {
+    let directory = fixture(
+        json!({"build":{"command":command(&["write","generated/bundle.js","built"]),"input":["generated/config.json"],"output":["generated/*.js"]}}),
+    );
+    let path = directory.path().join("taskflow.yml");
+    let mut cfg: Value = serde_yaml::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let platform = config::Platform::default();
+    cfg["ci"] = json!({"revision":"1111111111111111111111111111111111111111","rust":"nightly-2026-01-01","runners":{platform.key():"self-hosted"}});
+    std::fs::write(path, serde_yaml::to_string(&cfg).unwrap()).unwrap();
+    files::atomic_write(
+        &directory.path().join("generated/config.json"),
+        b"private input",
+    )
+    .unwrap();
+    let g = graph(directory.path()).await;
+    assert!(run(g.clone(), &["build"]).await.success);
+    let project = &g.workspace.projects["app"];
+    let task = &g.tasks["app#build"].task;
+    assert!(cache::Artifact::capture("key".into(), "app#build".into(), project, task).is_err());
+    let error = taskflow::ci::export(&g, vec!["build".into()], Path::new("ci.yml")).unwrap_err();
+    assert!(
+        error.to_string().contains("complete ownership"),
+        "{error:#}"
+    );
+    assert!(!directory.path().join("ci.yml").exists());
+    assert!(!directory.path().join("ci.taskflow.json").exists());
+    // An old or forged complete-root artifact must not authorize partial ownership.
+    let mut whole = task.clone();
+    whole.output = Some(vec!["generated/**".into()]);
+    let artifact =
+        cache::Artifact::capture("key".into(), "app#build".into(), project, &whole).unwrap();
+    std::fs::write(
+        directory.path().join("generated/config.json"),
+        "new private input",
+    )
+    .unwrap();
+    assert!(artifact.restore("key", "app#build", project, task).is_err());
+    assert_eq!(
+        std::fs::read_to_string(directory.path().join("generated/config.json")).unwrap(),
+        "new private input"
+    );
+}

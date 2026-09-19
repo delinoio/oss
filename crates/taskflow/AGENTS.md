@@ -8,6 +8,7 @@
 - Unix input cache state includes permissions, including file-link target permissions; portable CI structure fingerprints remain content-based.
 - Never collapse direct/input/schedule causes into a prerequisite cause. Cancellation and invalidation prohibit cache publication.
 - Output restoration must validate the complete entry and containment before mutation. Secrets must be masked before persistence.
+- CI output transfer requires exact files/directories or complete directory trees even for uncached tasks; reject partial ownership before export, capture, or restoration.
 - Strip workspace-designated secret variables from every task that does not declare them, including tasks grouped into one CI unit.
 - Cache link validation follows archive link chains and existing filesystem ancestors before processing parent components; lexical containment alone cannot authorize restoration.
 - Cache link records use portable separators; Windows link creation converts targets to native separators before invoking the filesystem API.
