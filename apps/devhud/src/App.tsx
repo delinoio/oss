@@ -235,7 +235,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
         // A native API-origin transition clears callbacks and advances this
         // epoch atomically. A delayed event from the prior boundary must never
         // be associated with the rekeyed identity session.
-        if (!apiOriginChangeInFlight.current && (event.authCallbackEpoch === undefined || event.authCallbackEpoch === authCallbackEpoch.current)) setAuthCallback(event.url);
+        if (!apiOriginChangeInFlight.current && (event.authCallbackEpoch === undefined || authCallbackEpoch.current === null || event.authCallbackEpoch === authCallbackEpoch.current)) setAuthCallback(event.url);
       }
       if (event.kind === "deck-link") peekPendingDeckLink();
       if (event.kind === "shortcut-triggered") {

@@ -44,6 +44,7 @@ pub struct NativeBridgeState {
     pending_auth_callback: Arc<Mutex<AuthCallbackState>>,
     pending_deck_link: Arc<Mutex<Option<String>>>,
     session_origins: Arc<Mutex<SessionOrigins>>,
+    session_origins_initialized: Arc<AtomicBool>,
     #[cfg(desktop)]
     official_upload_authority: Arc<Mutex<Option<url::Url>>>,
     shortcuts: Arc<Mutex<ShortcutService<PlatformShortcutBackend>>>,
@@ -160,6 +161,7 @@ impl Default for NativeBridgeState {
                 api_origin: DEFAULT_API_ORIGIN.to_string(),
                 logto_issuer: None,
             })),
+            session_origins_initialized: Arc::new(AtomicBool::new(false)),
             #[cfg(desktop)]
             official_upload_authority: Arc::new(Mutex::new(None)),
             shortcuts: Arc::new(Mutex::new(ShortcutService::new(
@@ -754,7 +756,7 @@ impl NativeBridgeState {
         )
     }
 
-    fn configure_session_origins(&self, request: &Value) -> Result<(bool, u32), String> {
+    fn configure_session_origins(&self, request: &Value) -> Result<(bool, u32, bool), String> {
         let api_origin = request
             .get("apiOrigin")
             .and_then(Value::as_str)
@@ -771,7 +773,14 @@ impl NativeBridgeState {
             None if origins.api_origin == api_origin => origins.logto_issuer.clone(),
             None => None,
         };
-        let api_origin_changed = origins.api_origin != api_origin;
+        // The default origin is a startup placeholder, not proof that a
+        // renderer-confirmed identity session already exists. Preserve a
+        // cold-start callback while the first valid policy hydrates a
+        // persisted custom origin; subsequent origin changes are rekeys.
+        let api_origin_changed = self
+            .session_origins_initialized
+            .swap(true, Ordering::SeqCst)
+            && origins.api_origin != api_origin;
         let next = SessionOrigins {
             api_origin,
             logto_issuer,
@@ -789,7 +798,7 @@ impl NativeBridgeState {
             callbacks.epoch = callbacks.epoch.wrapping_add(1);
             callbacks.pending = None;
         }
-        Ok((changed, callbacks.epoch))
+        Ok((changed, callbacks.epoch, api_origin_changed))
     }
 
     #[cfg(desktop)]
@@ -1528,7 +1537,7 @@ pub fn handle_native_bridge_request(
         "shortcuts.rollback" => Ok(rollback_staged_shortcuts(state)),
         "shortcuts.suspend" => Ok(suspend_shortcuts(state)),
         "session.configure-origins" => {
-            let (changed, auth_callback_epoch) = state.configure_session_origins(request)?;
+            let (changed, auth_callback_epoch, _) = state.configure_session_origins(request)?;
             Ok(
                 json!({ "kind": "session-network-policy", "changed": changed, "authCallbackEpoch": auth_callback_epoch }),
             )
@@ -1657,6 +1666,22 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
     }
     if operation == "auth.open-system-browser" {
         validate_auth_browser_request(&request, &state)?;
+    }
+    if operation == "session.configure-origins" {
+        let (changed, auth_callback_epoch, api_origin_changed) =
+            state.configure_session_origins(&request)?;
+        #[cfg(not(target_os = "android"))]
+        let _ = api_origin_changed;
+        #[cfg(target_os = "android")]
+        if api_origin_changed {
+            crate::native_plugin::request(
+                &app,
+                &json!({ "operation": "auth.clear-pending-callback" }),
+            )?;
+        }
+        return Ok(
+            json!({ "kind": "session-network-policy", "changed": changed, "authCallbackEpoch": auth_callback_epoch }),
+        );
     }
     if routes_to_mobile_plugin(operation, cfg!(target_os = "android")) {
         if operation == "secure.purge" && purge_clears_diagnostics(&request) {
@@ -2665,7 +2690,7 @@ mod tests {
     }
 
     #[test]
-    fn api_origin_change_atomically_retires_pending_callbacks() {
+    fn initial_origin_hydration_preserves_callbacks_and_later_rekeys_retire_them() {
         let state = NativeBridgeState::default();
         assert_eq!(
             state.offer_auth_callback("devhud://auth/callback?state=one"),
@@ -2678,13 +2703,25 @@ mod tests {
         let peek = json!({ "operation": "auth.peek-pending-callback" });
         let peeked = handle_native_bridge_request(&peek, &state).expect("peek callback");
         assert_eq!(peeked["url"], "devhud://auth/callback?state=two");
-        let policy = handle_native_bridge_request(
+        let initial_policy = handle_native_bridge_request(
             &json!({ "operation": "session.configure-origins", "apiOrigin": "https://custom.example" }),
             &state,
         )
-        .expect("configure custom origin");
-        assert_eq!(policy["authCallbackEpoch"], 1);
+        .expect("hydrate custom origin");
+        assert_eq!(initial_policy["authCallbackEpoch"], 0);
         let request = json!({ "operation": "auth.take-pending-callback" });
+        let preserved = handle_native_bridge_request(&request, &state).expect("preserved callback");
+        assert_eq!(preserved["url"], "devhud://auth/callback?state=two");
+        assert_eq!(
+            state.offer_auth_callback("devhud://auth/callback?state=old"),
+            Some(0)
+        );
+        let rekeyed_policy = handle_native_bridge_request(
+            &json!({ "operation": "session.configure-origins", "apiOrigin": "https://other.example" }),
+            &state,
+        )
+        .expect("rekey custom origin");
+        assert_eq!(rekeyed_policy["authCallbackEpoch"], 1);
         let cleared = handle_native_bridge_request(&request, &state).expect("cleared callback");
         assert!(cleared["url"].is_null());
         assert_eq!(

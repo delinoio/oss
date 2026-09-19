@@ -83,6 +83,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
             when (invoke.getArgs().getString("operation")) {
                 "auth.peek-pending-callback" -> peekAuthCallback(invoke)
                 "auth.take-pending-callback" -> takeAuthCallback(invoke)
+                "auth.clear-pending-callback" -> clearAuthCallback(invoke)
                 "auth.open-system-browser" -> openAuthenticationBrowser(invoke)
                 "lifecycle.open-external" -> openExternal(invoke)
                 "diagnostics.export" -> exportDiagnostics(invoke)
@@ -277,6 +278,15 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         }
         pendingAuthCallback = null
         invoke.resolve(response)
+    }
+
+    private fun clearAuthCallback(invoke: Invoke) {
+        val callback = pendingAuthCallback
+        if (callback != null && activity.intent?.dataString == callback) {
+            activity.intent = Intent(activity.intent).setData(null)
+        }
+        pendingAuthCallback = null
+        invoke.resolve(JSObject().put("kind", "ok"))
     }
 
     private fun peekAuthCallback(invoke: Invoke) {

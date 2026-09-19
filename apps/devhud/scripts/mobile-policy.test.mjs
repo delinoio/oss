@@ -96,8 +96,9 @@ test("mobile policy requires lifecycle-owned Android persistence and native plat
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace('PermissionState.PROMPT -> "not-determined"', 'PermissionState.PROMPT, PermissionState.PROMPT_WITH_RATIONALE -> "not-determined"')), /rationale-required/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("manager.notify(notificationId, 0, built)", "manager.notify(deckId.hashCode(), built)")), /distinct notification identities/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("it.notification.group == deckId", "false")), /every associated notification/u);
-  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("Intent(activity.intent).setData(null)", "Intent(activity.intent)")), /activity intent/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replaceAll("Intent(activity.intent).setData(null)", "Intent(activity.intent)")), /activity intent/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replaceAll("peekAuthCallback", "missing")), /inspection must be non-destructive/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace('\"auth.clear-pending-callback\" -> clearAuthCallback(invoke)', '\"auth.clear-pending-callback\" -> Unit')), /origin rekeys must clear/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("if (diagnosticsExportPickerActive)", "if (false)")), /reject a concurrent picker/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("if (diagnosticsPurgesInProgress.get() > 0)", "if (false)")), /remain blocked until destructive secure purges finish/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("diagnosticsExportPickerActive = true", "diagnosticsExportPickerActive = false")), /concurrent picker|record the active picker/u);
