@@ -124,3 +124,51 @@ impl Drop for Job {
         unsafe {windows_sys::Win32::Foundation::CloseHandle(self.0);}
     }
 }
+
+/// Runlens-owned uninstrumented metadata/preparation subprocess. It uses the
+/// same process lifetime rules as tracing without injecting a library into Git.
+pub struct OwnedChild {
+    pub child: tokio::process::Child,
+    #[cfg(windows)]
+    job: Job,
+}
+impl OwnedChild {
+    pub fn spawn(mut command: tokio::process::Command) -> std::io::Result<Self> {
+        command.kill_on_drop(true);
+        #[cfg(unix)]
+        {
+            command.process_group(0);
+            #[cfg(target_os = "linux")]
+            // SAFETY: this process adopts descendants so its owned groups can be reaped.
+            if unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) } != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(Self { child: command.spawn()? })
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::{io::AsRawHandle, process::ChildExt};
+            let job = Job::new()?;
+            command.creation_flags(0x00000004 | 0x00000200);
+            let child = command.spawn_with(|command| {
+                let mut child = command.spawn()?;
+                if let Err(error) = job.assign(child.as_raw_handle()) {
+                    let _ = child.kill(); let _ = child.wait(); return Err(error);
+                }
+                // SAFETY: only the primary thread of our suspended, job-owned child is resumed.
+                if unsafe { windows_sys::Win32::System::Threading::ResumeThread(child.main_thread_handle().as_raw_handle()) } == u32::MAX {
+                    let error = std::io::Error::last_os_error();
+                    let _ = child.kill(); let _ = child.wait(); return Err(error);
+                }
+                Ok(child)
+            })?;
+            Ok(Self { child, job })
+        }
+    }
+    pub async fn wait(mut self, cancel: tokio_util::sync::CancellationToken) -> std::io::Result<(std::process::ExitStatus, bool)> {
+        #[cfg(unix)]
+        { wait_unix(&mut self.child, cancel).await }
+        #[cfg(windows)]
+        { self.job.wait(&mut self.child, cancel).await }
+    }
+}

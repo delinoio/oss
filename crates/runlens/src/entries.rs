@@ -4,7 +4,10 @@
 use std::{
     collections::{BTreeMap, VecDeque},
     marker::PhantomData,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use rusqlite::{Connection, params};
@@ -21,6 +24,21 @@ pub const MAX_RECORD_BYTES: usize = 64 * 1024;
 pub const MAX_RECORDS: usize = 1_000_000;
 pub const DEFAULT_MEMORY_BYTES: usize = 256 * 1024 * 1024;
 
+static MEMORY_USED: AtomicUsize = AtomicUsize::new(0);
+static MEMORY_LIMIT: AtomicUsize = AtomicUsize::new(DEFAULT_MEMORY_BYTES);
+
+pub fn set_memory_limit(bytes: usize) {
+    MEMORY_LIMIT.store(bytes, Ordering::Relaxed);
+}
+fn reserve(previous: usize, next: usize) -> bool {
+    MEMORY_USED
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |used| {
+            used.checked_sub(previous)?
+                .checked_add(next)
+                .filter(|total| *total <= MEMORY_LIMIT.load(Ordering::Relaxed))
+        })
+        .is_ok()
+}
 struct Disk {
     connection: Connection,
     _file: NamedTempFile,
@@ -32,6 +50,7 @@ enum Storage {
 struct State {
     storage: Storage,
     memory_limit: usize,
+    reserved: usize,
     bytes: usize,
     count: usize,
 }
@@ -59,6 +78,7 @@ impl<T> Entries<T> {
             state: Arc::new(Mutex::new(State {
                 storage: Storage::Memory(BTreeMap::new()),
                 memory_limit,
+                reserved: 0,
                 bytes: 0,
                 count: 0,
             })),
@@ -103,7 +123,7 @@ impl<T: Serialize + DeserializeOwned> Entries<T> {
                 use rusqlite::OptionalExtension;
                 disk.connection
                     .query_row(
-                        "SELECT length(value) FROM entries WHERE key=?1",
+                        "SELECT length(CAST(value AS BLOB)) FROM entries WHERE key=?1",
                         [&key],
                         |r| r.get::<_, i64>(0).map(|n| n as usize),
                     )
@@ -121,7 +141,14 @@ impl<T: Serialize + DeserializeOwned> Entries<T> {
             } else {
                 0
             };
-        if next_bytes > state.memory_limit && matches!(state.storage, Storage::Memory(_)) {
+        let memory_storage = matches!(state.storage, Storage::Memory(_));
+        let fits_memory = memory_storage
+            && next_bytes <= state.memory_limit
+            && reserve(state.reserved, next_bytes);
+        if fits_memory {
+            state.reserved = next_bytes;
+        }
+        if memory_storage && !fits_memory {
             let file = NamedTempFile::new().map_err(|_| Error::storage())?;
             let mut connection = Connection::open(file.path()).map_err(|_| Error::storage())?;
             connection
@@ -143,6 +170,8 @@ impl<T: Serialize + DeserializeOwned> Entries<T> {
                 }
             }
             transaction.commit().map_err(|_| Error::storage())?;
+            MEMORY_USED.fetch_sub(state.reserved, Ordering::Relaxed);
+            state.reserved = 0;
             state.storage = Storage::Disk(Disk {
                 connection,
                 _file: file,
@@ -303,5 +332,19 @@ impl<T: schemars::JsonSchema> schemars::JsonSchema for Entries<T> {
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         <std::collections::BTreeMap<String, T>>::json_schema(generator)
+    }
+}
+
+impl Drop for State {
+    fn drop(&mut self) {
+        MEMORY_USED.fetch_sub(self.reserved, Ordering::Relaxed);
+        if let Storage::Disk(Disk { connection, _file }) =
+            std::mem::replace(&mut self.storage, Storage::Memory(BTreeMap::new()))
+        {
+            drop(connection);
+            if _file.close().is_err() {
+                crate::temporary::record_cleanup_failure();
+            }
+        }
     }
 }

@@ -9,3 +9,4 @@ pub mod platform;
 pub mod privacy;
 pub mod report;
 pub mod snapshot;
+pub mod temporary;

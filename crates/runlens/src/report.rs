@@ -28,6 +28,7 @@ pub fn read(path: &Path) -> Result<Report> {
     reader
         .seek(SeekFrom::Start(0))
         .map_err(|_| Error::input("report cannot be read"))?;
+    crate::model::reset_envelope_budget();
     let report: Report = serde_json::from_reader(reader)
         .map_err(|_| Error::input("invalid or incompatible report; expected schema v1"))?;
     validate(&report)?;

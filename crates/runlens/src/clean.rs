@@ -98,36 +98,101 @@ fn git(root: &Path, environment: &[(OsString, OsString)]) -> Process {
         .stdin(Stdio::null());
     command
 }
-fn git_output(root: &Path, args: &[&OsStr], env: &[(OsString, OsString)]) -> Result<Vec<u8>> {
-    let output = git(root, env)
-        .args(args)
-        .stderr(Stdio::null())
-        .output()
-        .map_err(|_| Error::input("Git could not be started"))?;
-    if !output.status.success() {
+async fn managed_git(
+    command: Process,
+    capture: bool,
+    cancel: &CancellationToken,
+) -> Result<Vec<u8>> {
+    use tokio::io::AsyncReadExt;
+    let mut command = tokio::process::Command::from(command);
+    command.stderr(Stdio::null());
+    if capture {
+        command.stdout(Stdio::piped());
+    }
+    let mut child = fspy::lifecycle::OwnedChild::spawn(command)
+        .map_err(|_| Error::input("Git preparation could not be started"))?;
+    let stdout = child.child.stdout.take();
+    let local_cancel = cancel.child_token();
+    let read_cancel = local_cancel.clone();
+    let operation = async {
+        let read = async {
+            let mut bytes = Vec::new();
+            if let Some(stdout) = stdout {
+                stdout
+                    .take(16 * 1024 * 1024 + 1)
+                    .read_to_end(&mut bytes)
+                    .await
+                    .map_err(|_| Error::input("Git metadata could not be read"))?;
+                if bytes.len() > 16 * 1024 * 1024 {
+                    read_cancel.cancel();
+                    return Err(Error::input("Git metadata exceeds the size limit"));
+                }
+            }
+            Ok(bytes)
+        };
+        tokio::join!(child.wait(local_cancel.clone()), read)
+    };
+    tokio::pin!(operation);
+    let mut timed_out = false;
+    let (status, output) = tokio::select! {
+        result = &mut operation => result,
+        () = tokio::time::sleep(std::time::Duration::from_secs(120)) => {
+            timed_out = true;
+            local_cancel.cancel();
+            operation.await
+        }
+    };
+    let (status, incomplete) =
+        status.map_err(|_| Error::new(ErrorCode::CleanupFailed, "Git process cleanup failed"))?;
+    if cancel.is_cancelled() {
+        return Err(Error::new(
+            ErrorCode::Cancelled,
+            "Git preparation cancelled",
+        ));
+    }
+    if timed_out {
+        return Err(Error::new(ErrorCode::Timeout, "Git preparation timed out"));
+    }
+    let output = output?;
+    if incomplete {
+        return Err(Error::new(
+            ErrorCode::CleanupFailed,
+            "Git left an incomplete process lifetime",
+        ));
+    }
+    if !status.success() {
         return Err(Error::input(
             "Git source selection failed; a readable repository and HEAD are required",
         ));
     }
-    if output.stdout.len() > 16 * 1024 * 1024 {
-        return Err(Error::input("Git metadata exceeds the size limit"));
-    }
-    Ok(output.stdout)
+    Ok(output)
 }
-pub fn repository_root(cwd: &Path) -> Result<PathBuf> {
+async fn git_output(
+    root: &Path,
+    args: &[&OsStr],
+    env: &[(OsString, OsString)],
+    cancel: &CancellationToken,
+) -> Result<Vec<u8>> {
+    let mut command = git(root, env);
+    command.args(args);
+    managed_git(command, true, cancel).await
+}
+pub async fn repository_root(cwd: &Path, cancel: &CancellationToken) -> Result<PathBuf> {
     let env = execution_context();
     let output = git_output(
         cwd,
         &[OsStr::new("rev-parse"), OsStr::new("--show-toplevel")],
         &env,
-    )?;
+        cancel,
+    )
+    .await?;
     let text =
         String::from_utf8(output).map_err(|_| Error::input("workspace path must be UTF-8"))?;
     PathBuf::from(text.trim_end_matches(['\r', '\n']))
         .canonicalize()
         .map_err(|_| Error::input("workspace root is unavailable"))
 }
-pub fn revision(root: &Path) -> Option<String> {
+pub async fn revision(root: &Path, cancel: &CancellationToken) -> Option<String> {
     let bytes = git_output(
         root,
         &[
@@ -136,29 +201,26 @@ pub fn revision(root: &Path) -> Option<String> {
             OsStr::new("HEAD^{commit}"),
         ],
         &execution_context(),
+        cancel,
     )
+    .await
     .ok()?;
     let value = String::from_utf8(bytes).ok()?.trim().to_owned();
-    if value.len() == 40 || value.len() == 64 {
+    if (value.len() == 40 || value.len() == 64) && value.bytes().all(|b| b.is_ascii_hexdigit()) {
         Some(value)
     } else {
         None
     }
 }
-fn run_git(root: &Path, args: &[&OsStr], environment: &[(OsString, OsString)]) -> Result<()> {
-    let status = git(root, environment)
-        .args(args)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map_err(|_| Error::input("Git preparation could not be started"))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(Error::input(
-            "Git checkout preparation failed; inspect repository availability and selected source",
-        ))
-    }
+async fn run_git(
+    root: &Path,
+    args: &[&OsStr],
+    environment: &[(OsString, OsString)],
+    cancel: &CancellationToken,
+) -> Result<()> {
+    let mut command = git(root, environment);
+    command.args(args).stdout(Stdio::null());
+    managed_git(command, false, cancel).await.map(|_| ())
 }
 fn copy_entry(source: &Path, destination: &Path) -> Result<()> {
     let metadata = fs::symlink_metadata(source).map_err(|_| Error::storage())?;
@@ -206,15 +268,17 @@ fn copy_entry(source: &Path, destination: &Path) -> Result<()> {
     }
     Ok(())
 }
-fn include_worktree(
+async fn include_worktree(
     root: &Path,
     selected: &Path,
     temporary: &Path,
     env: &[(OsString, OsString)],
+    cancel: &CancellationToken,
 ) -> Result<()> {
     let patch = temporary.join("tracked.patch");
     let file = fs::File::create(&patch).map_err(|_| Error::storage())?;
-    let status = git(root, env)
+    let mut command = git(root, env);
+    command
         .args([
             "diff",
             "--binary",
@@ -223,13 +287,8 @@ fn include_worktree(
             "HEAD",
             "--",
         ])
-        .stdout(file)
-        .stderr(Stdio::null())
-        .status()
-        .map_err(|_| Error::input("working tree changes could not be selected"))?;
-    if !status.success() {
-        return Err(Error::input("working tree changes could not be selected"));
-    }
+        .stdout(file);
+    managed_git(command, false, cancel).await?;
     if fs::metadata(&patch).map_err(|_| Error::storage())?.len() > 0 {
         run_git(
             selected,
@@ -240,7 +299,9 @@ fn include_worktree(
                 patch.as_os_str(),
             ],
             env,
-        )?;
+            cancel,
+        )
+        .await?;
     }
     let names = git_output(
         root,
@@ -251,7 +312,9 @@ fn include_worktree(
             OsStr::new("-z"),
         ],
         env,
-    )?;
+        cancel,
+    )
+    .await?;
     for name in names
         .split(|byte| *byte == 0)
         .filter(|name| !name.is_empty())
@@ -310,12 +373,10 @@ pub async fn verify(
             "repeat verification requires declared outputs",
         ));
     }
-    let revision = revision(root)
+    let revision = revision(root, &cancel)
+        .await
         .ok_or_else(|| Error::input("clean verification requires a repository HEAD"))?;
-    let owned = tempfile::Builder::new()
-        .prefix("runlens-clean-")
-        .tempdir()
-        .map_err(|_| Error::storage())?;
+    let owned = crate::temporary::Directory::new("runlens-clean-").map_err(|_| Error::storage())?;
     let result = verify_in(
         root,
         name,
@@ -378,7 +439,9 @@ async fn verify_in(
             selected.as_os_str(),
         ],
         &env,
-    )?;
+        &cancel,
+    )
+    .await?;
     run_git(
         &selected,
         &[
@@ -387,9 +450,11 @@ async fn verify_in(
             OsStr::new(revision),
         ],
         &env,
-    )?;
+        &cancel,
+    )
+    .await?;
     if include {
-        include_worktree(root, &selected, owned, &env)?;
+        include_worktree(root, &selected, owned, &env, &cancel).await?;
     }
     let mut report = Report::new(if runs == 1 {
         ReportKind::Clean

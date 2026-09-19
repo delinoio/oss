@@ -3,7 +3,7 @@ use std::{path::PathBuf, process::ExitCode};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use runlens::{
     analysis, clean, config,
-    error::{Error, Result},
+    error::{Error, ErrorCode, Result},
     execute::{self, Request},
     model::{Report, ReportKind, Role, Verdict},
     platform, report,
@@ -219,7 +219,13 @@ async fn main() -> ExitCode {
         }
         signal_cancel.cancel();
     });
-    let result = run(cli, cancel).await;
+    let mut result = run(cli, cancel).await;
+    if runlens::temporary::cleanup_failed() {
+        result = Err(Error::new(
+            ErrorCode::CleanupFailed,
+            "private temporary metadata cleanup failed",
+        ));
+    }
     signal.abort();
     match result {
         Ok(code) => ExitCode::from(code as u8),
@@ -235,7 +241,20 @@ async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
         .map_err(|_| Error::input("current directory is unavailable"))?
         .canonicalize()
         .map_err(|_| Error::input("current directory is unavailable"))?;
-    let root = clean::repository_root(&cwd).unwrap_or(cwd.clone());
+    let needs_workspace = matches!(
+        &cli.command,
+        Commands::Run(_)
+            | Commands::Verify { .. }
+            | Commands::Cache { .. }
+            | Commands::Policy { .. }
+    );
+    let root = if needs_workspace {
+        clean::repository_root(&cwd, &cancel)
+            .await
+            .unwrap_or(cwd.clone())
+    } else {
+        cwd.clone()
+    };
     match cli.command {
         Commands::Run(args) => {
             if let Some(path) = &args.save {
@@ -267,7 +286,7 @@ async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
                 config: &config,
                 environment: std::env::vars_os().collect(),
                 temporary: vec![],
-                revision: clean::revision(&root),
+                revision: clean::revision(&root, &cancel).await,
                 working_tree_included: true,
                 role: Role::Target,
                 repetition: 1,
@@ -427,6 +446,17 @@ async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
 fn read_reports(paths: &[PathBuf]) -> Result<Vec<Report>> {
     if paths.len() > 64 {
         return Err(Error::input("at most 64 reports may be queried at once"));
+    }
+    let mut bytes = 0u64;
+    for path in paths {
+        bytes = bytes.saturating_add(
+            std::fs::metadata(path)
+                .map_err(|_| Error::input("report cannot be opened"))?
+                .len(),
+        );
+        if bytes > report::MAX_REPORT_BYTES {
+            return Err(Error::input("combined report inputs exceed 1 GiB"));
+        }
     }
     paths.iter().map(|path| report::read(path)).collect()
 }

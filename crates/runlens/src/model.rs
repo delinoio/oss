@@ -131,6 +131,7 @@ pub enum EvidenceSource {
 pub struct Finding {
     pub code: FindingCode,
     pub classification: Classification,
+    #[serde(deserialize_with = "bounded_vec::<_, _, 32>")]
     pub evidence: Vec<Evidence>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -154,28 +155,42 @@ pub enum FindingCode {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Environment {
+    #[serde(deserialize_with = "bounded_text")]
     pub os: String,
+    #[serde(deserialize_with = "bounded_text")]
     pub architecture: String,
+    #[serde(deserialize_with = "bounded_optional_text")]
     pub os_version: Option<String>,
+    #[serde(deserialize_with = "bounded_text")]
     pub runlens_version: String,
+    #[serde(deserialize_with = "bounded_text")]
     pub engine_version: String,
+    #[serde(deserialize_with = "bounded_optional_text")]
     pub source_revision: Option<String>,
     pub working_tree_included: bool,
+    #[serde(deserialize_with = "bounded_strings::<_, 1024>")]
     pub environment_names: Vec<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Identity {
+    #[serde(deserialize_with = "bounded_optional_text")]
     pub name: Option<String>,
+    #[serde(deserialize_with = "bounded_strings::<_, 1024>")]
     pub argv: Vec<String>,
+    #[serde(deserialize_with = "bounded_text")]
     pub cwd: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Scope {
+    #[serde(deserialize_with = "bounded_text")]
     pub root: String,
+    #[serde(deserialize_with = "bounded_strings::<_, 4096>")]
     pub exclusions: Vec<String>,
+    #[serde(deserialize_with = "bounded_strings::<_, 4096>")]
     pub input_patterns: Vec<String>,
+    #[serde(deserialize_with = "bounded_strings::<_, 4096>")]
     pub output_patterns: Vec<String>,
     pub before_complete: bool,
     pub after_complete: bool,
@@ -187,6 +202,7 @@ pub struct Outcome {
     pub child_exit_code: Option<i32>,
     pub child_signal: Option<i32>,
     pub collection_complete: bool,
+    #[serde(deserialize_with = "bounded_vec::<_, _, 10>")]
     pub errors: Vec<ErrorCode>,
     pub elapsed_ms: u64,
 }
@@ -224,9 +240,11 @@ pub enum Verdict {
 pub struct Report {
     pub schema_version: u32,
     pub kind: ReportKind,
+    #[serde(deserialize_with = "bounded_vec::<_, _, 1056>")]
     pub executions: Vec<Execution>,
     pub findings: Entries<Finding>,
     pub verification: Option<Verdict>,
+    #[serde(deserialize_with = "bounded_strings::<_, 64>")]
     pub limitations: Vec<String>,
 }
 impl Report {
@@ -268,4 +286,72 @@ fn uuid_v7<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Uuid, D:
         ));
     }
     Ok(id)
+}
+
+pub const MAX_ENVELOPE_BYTES: usize = 1024 * 1024;
+thread_local! { static ENVELOPE_BYTES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+pub fn reset_envelope_budget() {
+    ENVELOPE_BYTES.set(0);
+}
+fn charge<E: serde::de::Error>(bytes: usize) -> Result<(), E> {
+    let total = ENVELOPE_BYTES.get().saturating_add(bytes);
+    if total > MAX_ENVELOPE_BYTES {
+        return Err(E::custom("report envelope exceeds 1 MiB"));
+    }
+    ENVELOPE_BYTES.set(total);
+    Ok(())
+}
+fn bounded_text<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    let value = String::deserialize(deserializer)?;
+    charge::<D::Error>(value.len() + std::mem::size_of::<String>())?;
+    Ok(value)
+}
+fn bounded_optional_text<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    let value = Option::<String>::deserialize(deserializer)?;
+    if let Some(value) = &value {
+        charge::<D::Error>(value.len() + std::mem::size_of::<String>())?;
+    }
+    Ok(value)
+}
+fn bounded_vec<'de, D, T, const N: usize>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    struct Bounded<T, const N: usize>(std::marker::PhantomData<T>);
+    impl<'de, T: Deserialize<'de>, const N: usize> serde::de::Visitor<'de> for Bounded<T, N> {
+        type Value = Vec<T>;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            write!(f, "at most {N} elements")
+        }
+
+        fn visit_seq<S: serde::de::SeqAccess<'de>>(
+            self,
+            mut seq: S,
+        ) -> Result<Self::Value, S::Error> {
+            let mut values = Vec::new();
+            while let Some(value) = seq.next_element()? {
+                if values.len() == N {
+                    return Err(serde::de::Error::custom("too many report array elements"));
+                }
+                values.push(value);
+            }
+            Ok(values)
+        }
+    }
+    deserializer.deserialize_seq(Bounded::<T, N>(std::marker::PhantomData))
+}
+fn bounded_strings<'de, D: serde::Deserializer<'de>, const N: usize>(
+    deserializer: D,
+) -> Result<Vec<String>, D::Error> {
+    // A string is charged as soon as it is decoded, before the array can grow.
+    #[derive(Deserialize)]
+    struct Text(#[serde(deserialize_with = "bounded_text")] String);
+    Ok(bounded_vec::<D, Text, N>(deserializer)?
+        .into_iter()
+        .map(|text| text.0)
+        .collect())
 }

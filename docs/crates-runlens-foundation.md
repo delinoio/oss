@@ -360,3 +360,15 @@ with schemars and committed. `RUNLENS_UPDATE_SCHEMAS=1 cargo test --test schema`
 regenerates them; ordinary tests reject drift. The documentation build copies
 these inputs to ignored public schema assets. Semantic and bounded-allocation
 validation remains required in addition to JSON Schema shape validation.
+
+Git metadata and source-preparation children use the same Unix group / suspended
+Windows Job ownership as target execution, without tracer injection. Metadata
+stdout is capped at 16 MiB during reading, and each Git operation has a 120-second
+deadline plus the documented termination grace. Cancellation waits for owned
+processes before checkout cleanup. Read-only report commands do not invoke Git.
+Disposable metadata indexes share a process-wide memory reservation budget so
+retaining multiple clean/repeat executions cannot multiply the 256 MiB threshold.
+Index and early-return directory cleanup failures remain visible through the
+stable cleanup-failed exit classification. Report parsing bounds arrays during
+deserialization and limits the non-evidence string envelope to 1 MiB; querying up
+to 64 explicit reports additionally caps their combined input bytes at 1 GiB.

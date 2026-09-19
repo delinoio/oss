@@ -35,6 +35,7 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
     let id = uuid::Uuid::now_v7();
     let started = Instant::now();
     request.config.limits.validate()?;
+    crate::entries::set_memory_limit(request.config.limits.memory_bytes);
     if request.command.argv.is_empty() {
         return Err(Error::input("command argv is required"));
     }
@@ -56,10 +57,7 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
             "execution cancelled before launch",
         ));
     }
-    let owned = tempfile::Builder::new()
-        .prefix("runlens-")
-        .tempdir()
-        .map_err(|_| Error::storage())?;
+    let owned = crate::temporary::Directory::new("runlens-").map_err(|_| Error::storage())?;
     let mut temporary = request
         .temporary
         .iter()

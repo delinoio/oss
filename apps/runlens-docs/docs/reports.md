@@ -54,3 +54,7 @@ Download the [report schema v1](https://runlens.delino.io/schema/report-v1.json)
 describes the data model represented by `runlens.toml`. JSON Schema checks shape;
 Runlens additionally checks bounded records, UUID-v7 spelling, digest formats,
 evidence references, filesystem-state consistency, and verification outcomes.
+
+The non-evidence string envelope is limited to 1 MiB. Arrays and individual
+records are bounded while parsing; an analysis accepting multiple reports allows
+at most 64 inputs totaling 1 GiB. Oversized metadata is rejected before analysis.

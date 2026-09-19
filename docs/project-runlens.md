@@ -23,6 +23,8 @@ Runlens is an explicit exception to the default Go language and root Cargo membe
 
 Report and configuration schema versions are independently fixed at 1. Execution identifiers are UUID v7. CLI/report compatibility is preserved within a product major version. Unknown, incomplete, or cross-environment evidence never establishes reproducibility or universal cache safety.
 
+Root `pnpm dev:runlens-docs` starts the documentation app on its fixed loopback port; see the app contract for build and preview commands.
+
 ## Change Policy
 Update this index, domain contracts, applicable AGENTS rules, public guides, and affected tests together when ownership or public behavior changes. Vendored patches require provenance, rationale, tests, and removal conditions. Generated dist directories are never tracked and must be removed before delivery.
 

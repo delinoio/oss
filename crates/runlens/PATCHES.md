@@ -20,3 +20,11 @@ bounded buffer fills. `cache_policy_and_overflow_fail_closed` in
 `tests/native.rs` covers continued child execution, retained accesses, and a failed
 verification outcome. Remove this patch only when the upstream reader/writer
 protocol preserves committed records on collection loss.
+
+The independent Windows Cargo target enables Tokio's pinned `tokio_unstable`
+configuration so `spawn_with` can assign the suspended primary process to its Job
+before injection and thread resumption. Both tracing and the uninstrumented Git
+metadata/source-preparation children share the owned lifecycle implementation.
+Native Windows CI compiles this boundary and integration tests exercise clean,
+repeat, timeout, and lingering-child reaping. Remove the cfg only after the pinned
+Tokio release provides this callback through a stable API with the same ordering.

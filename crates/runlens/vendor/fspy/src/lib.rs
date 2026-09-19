@@ -15,7 +15,7 @@ mod os_impl;
 
 
 mod command;
-mod lifecycle;
+pub mod lifecycle;
 
 use std::{io, process::ExitStatus};
 
