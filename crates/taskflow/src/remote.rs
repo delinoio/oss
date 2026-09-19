@@ -19,6 +19,15 @@ pub struct Remote {
     client: reqwest::Client,
 }
 impl Remote {
+    #[cfg(test)]
+    pub(crate) fn fixture(endpoint: String) -> Self {
+        Self {
+            config: serde_json::from_value(serde_json::json!({"endpoint":endpoint,"bucket":"fixture","namespace":"fixture","accessKeyEnv":"UNUSED_ACCESS","secretKeyEnv":"UNUSED_SECRET","mode":"read-write"})).unwrap(),
+            key: "fixture".into(), secret: "fixture".into(), token: None,
+            client: reqwest::Client::builder().timeout(std::time::Duration::from_secs(5)).build().unwrap(),
+        }
+    }
+
     pub fn new(config: &RemoteConfig) -> Result<Option<Self>> {
         if config.mode == RemoteMode::Off || untrusted_ci() {
             return Ok(None);

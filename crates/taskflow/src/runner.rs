@@ -919,19 +919,25 @@ async fn publish(
         if !valid(receipt)? {
             return Ok(());
         }
-        if let (Some(remote), Some(digest)) = (remote, staged) {
-            tokio::select! {
-                biased;
-                _ = cancel.cancelled() => {},
-                result = remote.commit(&artifact.key, &digest) => if result.is_err() { tracing::warn!(task = id, code = "remote-write-failed", "Remote cache publication failed"); }
-            }
-        }
-        if !valid(receipt)? {
-            return Ok(());
-        }
         if !cache::store_if(&graph.workspace.root, &artifact, || valid(receipt))? {
             return Ok(());
         }
+        // The guarded local commit completes this task. Persist that decision
+        // before exposing a remote entry: an in-flight PUT may succeed even if
+        // its response is lost, so cancellation cannot retract this completion.
+        persist(&graph.workspace.root, receipt)?;
+        if let (Some(remote), Some(digest)) = (remote, staged) {
+            if !cancel.is_cancelled() {
+                if remote.commit(&artifact.key, &digest).await.is_err() {
+                    tracing::warn!(
+                        task = id,
+                        code = "remote-write-failed",
+                        "Remote cache publication failed"
+                    );
+                }
+            }
+        }
+        return Ok(());
     }
     if valid(receipt)? {
         persist(&graph.workspace.root, receipt)?;
@@ -1186,6 +1192,103 @@ mod output_cleanup_tests {
         assert_eq!(receipt.outcome, Outcome::Cancelled);
         assert_eq!(receipt.exit_code, 130);
         assert!(previous(directory.path(), "app#check").is_none());
+    }
+
+    #[tokio::test]
+    async fn remote_publication_cannot_retract_completed_receipts() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for phase in ["object", "entry", "lost-response"] {
+            let directory = tempfile::tempdir().unwrap();
+            std::fs::write(
+                directory.path().join("taskflow.yml"),
+                "version: 1\nproject: app\ntasks:\n  check:\n    command: [unused]\n    input: \
+                 []\n    output: []\n    cache: true\n    tools: {fixture: [unused]}\n",
+            )
+            .unwrap();
+            let graph = Graph::build(
+                crate::discover::Workspace::discover(directory.path())
+                    .await
+                    .unwrap(),
+            )
+            .unwrap();
+            let inputs = files::input_state(
+                &graph.workspace,
+                &graph.workspace.projects["app"],
+                &graph.tasks["app#check"].task,
+            )
+            .unwrap();
+            let mut receipt = Receipt::skipped(
+                "app#check",
+                Outcome::Executed,
+                BTreeSet::from([Cause::Direct]),
+            );
+            receipt.exit_code = 0;
+            receipt.key = files::digest(b"fixture");
+            receipt.output = receipt.key.clone();
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let remote = Remote::fixture(format!("http://{}", listener.local_addr().unwrap()));
+            let cancel = CancellationToken::new();
+            let stop = cancel.clone();
+            let root = directory.path().to_path_buf();
+            let server = tokio::spawn(async move {
+                for index in 0..if phase == "object" { 1 } else { 2 } {
+                    let (mut socket, _) = listener.accept().await.unwrap();
+                    let mut request = Vec::new();
+                    let end = loop {
+                        assert!(socket.read_buf(&mut request).await.unwrap() > 0);
+                        if let Some(end) = request.windows(4).position(|part| part == b"\r\n\r\n") {
+                            break end + 4;
+                        }
+                    };
+                    let headers = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+                    let length: usize = headers
+                        .lines()
+                        .find_map(|line| line.strip_prefix("content-length: "))
+                        .unwrap()
+                        .parse()
+                        .unwrap();
+                    while request.len() < end + length {
+                        assert!(socket.read_buf(&mut request).await.unwrap() > 0);
+                    }
+                    assert!(headers.contains(if index == 0 { "/objects/" } else { "/entries/" }));
+                    if index == 1 {
+                        assert!(previous(&root, "app#check").unwrap().success());
+                    }
+                    if phase == "object" || index == 1 {
+                        stop.cancel();
+                    }
+                    if phase != "lost-response" || index == 0 {
+                        let _ = socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
+                    }
+                }
+            });
+            publish(
+                &graph,
+                "app#check",
+                &mut receipt,
+                &inputs,
+                Some(&remote),
+                &cancel,
+            )
+            .await
+            .unwrap();
+            server.await.unwrap();
+            if phase == "object" {
+                assert_eq!(receipt.outcome, Outcome::Cancelled);
+                assert!(!cache::entry_path(directory.path(), &receipt.key).exists());
+                assert!(previous(directory.path(), "app#check").is_none());
+            } else {
+                assert_eq!(receipt.outcome, Outcome::Executed);
+                assert_eq!(receipt.exit_code, 0);
+                assert_eq!(
+                    previous(directory.path(), "app#check").unwrap().outcome,
+                    Outcome::Executed
+                );
+                assert!(cache::load(directory.path(), &receipt.key)
+                    .unwrap()
+                    .is_some());
+            }
+        }
     }
 
     #[tokio::test]

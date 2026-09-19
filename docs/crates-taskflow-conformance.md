@@ -229,3 +229,5 @@ Windows native opens explicitly request `FILE_READ_ATTRIBUTES`, the metadata per
 `captured_output_link_chains_never_leave_the_project` rejects captured and uncached output chains that cross an external prefix before returning to an internal file, while accepting an entirely internal link.
 
 `shard_deadline_includes_inventory_and_all_units` checks slow inventory and cumulative unit duration against a single timeout, with failed complete accounting when inventory succeeded.
+
+`remote_publication_cannot_retract_completed_receipts` cancels real HTTP object staging and manifest commits, including a lost response after the entry reaches the server. Only pre-completion cancellation produces a cancelled receipt; remote entry visibility follows durable local completion.
