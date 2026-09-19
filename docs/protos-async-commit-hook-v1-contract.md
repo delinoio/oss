@@ -33,3 +33,5 @@ Update project, command, app and client contracts with all wire changes.
 ## References
 - [Project](project-async-commit-hook.md)
 - [Repository defaults](repository-defaults.md)
+
+Run pages apply repository, worktree and branch filters before cursor pagination. Cursor scope includes all selected filters. Report reads require an artifact ID listed on a check belonging to the selected execution; report and log pages are bounded and root-confined.

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +15,7 @@ import (
 var objectID = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 
 func gitCommand(ctx context.Context, path string, args ...string) *exec.Cmd {
-	argv := append([]string{"-c", "core.quotePath=false", "-c", "core.hooksPath=" + filepath.Join(os.TempDir(), "ach-disabled-hooks"), "-c", "core.fsmonitor=false", "-C", path}, args...)
+	argv := append([]string{"-c", "core.quotePath=false", "-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=false", "-C", path}, args...)
 	c := exec.CommandContext(ctx, "git", argv...)
 	env := SystemEnvironment()
 	env["GIT_CONFIG_NOSYSTEM"] = "1"
@@ -177,7 +178,15 @@ func (s *Store) Prepare(ctx context.Context, r Run) (string, error) {
 			if e.Mode == "100755" {
 				mode = 0700
 			}
-			err = os.WriteFile(path, data, mode)
+			var file *os.File
+			file, err = os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+			if err == nil {
+				_, err = file.Write(data)
+				closeErr := file.Close()
+				if err == nil {
+					err = closeErr
+				}
+			}
 		}
 		if err != nil {
 			return dir, Wrap("workspace-write", err)
@@ -264,7 +273,26 @@ func Diff(ctx context.Context, path, ref, base string) (Changes, error) {
 	if e != nil {
 		return out, E("merge-base-unavailable", "selected histories have no available merge base", 2)
 	}
-	out.Diff, e = Git(ctx, path, "diff", "--no-ext-diff", "--no-textconv", "--no-color", out.MergeBase, out.Head, "--")
+	cmd := gitCommand(ctx, path, "diff", "--no-ext-diff", "--no-textconv", "--no-color", out.MergeBase, out.Head, "--")
+	pipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return out, err
+	}
+	if err = cmd.Start(); err != nil {
+		return out, err
+	}
+	data, readErr := io.ReadAll(io.LimitReader(pipe, 2*1024*1024+1))
+	if len(data) > 2*1024*1024 {
+		_ = cmd.Process.Kill()
+	}
+	waitErr := cmd.Wait()
+	if readErr != nil {
+		return out, readErr
+	}
+	if waitErr != nil && len(data) <= 2*1024*1024 {
+		return out, E("git-diff-failed", "could not read committed diff", 3)
+	}
+	out.Diff = string(data)
 	if len(out.Diff) > 2*1024*1024 {
 		out.Diff = out.Diff[:2*1024*1024]
 		out.Truncated = true

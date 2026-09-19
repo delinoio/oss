@@ -15,6 +15,7 @@ service LocalService {
   rpc ListRuns(ListRunsRequest) returns (ListRunsResponse);
   rpc GetRun(GetRunRequest) returns (GetRunResponse);
   rpc GetLogs(GetLogsRequest) returns (GetLogsResponse);
+  rpc GetReport(GetReportRequest) returns (GetReportResponse);
   rpc GetFailures(GetFailuresRequest) returns (GetFailuresResponse);
   rpc Compare(CompareRequest) returns (CompareResponse);
   rpc Acknowledge(AcknowledgeRequest) returns (AcknowledgeResponse);
@@ -63,6 +64,12 @@ message Check {
   repeated Diagnostic diagnostics = 8;
   repeated Failure failures = 9;
   string command = 10;
+  repeated Report reports = 11;
+}
+message Report {
+  string id = 1;
+  string name = 2;
+  uint64 size = 3;
 }
 message Run {
   string id = 1;
@@ -151,6 +158,8 @@ message ListRunsRequest {
   bool inbox = 2;
   string cursor = 3;
   uint32 limit = 4;
+  string branch = 5;
+  string worktree_id = 6;
 }
 message ListRunsResponse {
   repeated Run runs = 1;
@@ -207,3 +216,15 @@ message CancelRequest {
   string run_id = 1;
 }
 message CancelResponse {}
+
+message GetReportRequest {
+  string run_id = 1;
+  string report_id = 2;
+  int64 offset = 3;
+  uint32 limit = 4;
+}
+message GetReportResponse {
+  string text = 1;
+  int64 next_offset = 2;
+  bool complete = 3;
+}

@@ -153,7 +153,7 @@ func (s *Service) Gate(ctx context.Context, path, commit string) (Gate, error) {
 }
 func (s *Service) GateRun(r Run) Gate {
 	g := Gate{Commit: r.Commit, RunID: r.ID, State: r.State, Reason: "latest attempt is " + string(r.State), Diagnostics: r.Diagnostics}
-	if !r.State.Terminal() || r.State == Expired {
+	if r.State != Passed {
 		return g
 	}
 	applicable := 0
@@ -206,6 +206,14 @@ func (s *Service) Wait(ctx context.Context, id string) (Run, error) {
 	}
 }
 func (s *Service) Rerun(id string, failedOnly bool) (Receipt, error) {
+	retention, err := TryLock(filepath.Join(s.Store.Root, "locks", "retention.lock"))
+	if err != nil {
+		return Receipt{}, err
+	}
+	if retention == nil {
+		return Receipt{}, E("retention-busy", "retention is changing evidence; retry the rerun", 3)
+	}
+	defer retention.Close()
 	original, e := s.Store.Run(id)
 	if e != nil {
 		return Receipt{}, e
@@ -262,7 +270,9 @@ func (s *Service) Rerun(id string, failedOnly bool) (Receipt, error) {
 			c.Diagnostics = []Diagnostic{}
 			c.InheritedFrom = ""
 		} else if c.State == Passed {
-			c.InheritedFrom = original.ID
+			if c.InheritedFrom == "" {
+				c.InheritedFrom = original.ID
+			}
 		}
 		r.Checks[i] = c
 	}

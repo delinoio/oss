@@ -50,6 +50,11 @@ export const getRun = LocalService.method.getRun;
 export const getLogs = LocalService.method.getLogs;
 
 /**
+ * @generated from rpc async_commit_hook.v1.LocalService.GetReport
+ */
+export const getReport = LocalService.method.getReport;
+
+/**
  * @generated from rpc async_commit_hook.v1.LocalService.GetFailures
  */
 export const getFailures = LocalService.method.getFailures;

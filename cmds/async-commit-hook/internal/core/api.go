@@ -264,6 +264,9 @@ func (a *API) run(r Run) *pb.Run {
 			exit := int32(*c.ExitCode)
 			v.ExitCode = &exit
 		}
+		for _, report := range c.Reports {
+			v.Reports = append(v.Reports, &pb.Report{Id: report.ID, Name: report.Name, Size: uint64(report.Size)})
+		}
 		out.Checks = append(out.Checks, v)
 	}
 	return out
@@ -346,7 +349,7 @@ func (a *API) GetChanges(ctx context.Context, r *connect.Request[pb.GetChangesRe
 	return connect.NewResponse(&pb.GetChangesResponse{Base: v.Base, Head: v.Head, MergeBase: v.MergeBase, Diff: v.Diff, Truncated: v.Truncated}), nil
 }
 func (a *API) ListRuns(_ context.Context, r *connect.Request[pb.ListRunsRequest]) (*connect.Response[pb.ListRunsResponse], error) {
-	page, e := a.s.Store.List(r.Msg.RepositoryId, r.Msg.Inbox, r.Msg.Cursor, int(r.Msg.Limit))
+	page, e := a.s.Store.ListFiltered(r.Msg.RepositoryId, r.Msg.WorktreeId, r.Msg.Branch, r.Msg.Inbox, r.Msg.Cursor, int(r.Msg.Limit))
 	if e != nil {
 		return nil, apiError(e)
 	}
@@ -409,4 +412,12 @@ func (a *API) Cancel(_ context.Context, r *connect.Request[pb.CancelRequest]) (*
 		return nil, apiError(e)
 	}
 	return connect.NewResponse(&pb.CancelResponse{}), nil
+}
+
+func (a *API) GetReport(_ context.Context, r *connect.Request[pb.GetReportRequest]) (*connect.Response[pb.GetReportResponse], error) {
+	page, err := a.s.Report(r.Msg.RunId, r.Msg.ReportId, r.Msg.Offset, int(r.Msg.Limit))
+	if err != nil {
+		return nil, apiError(err)
+	}
+	return connect.NewResponse(&pb.GetReportResponse{Text: page.Text, NextOffset: page.NextOffset, Complete: page.Complete}), nil
 }

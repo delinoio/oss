@@ -120,9 +120,10 @@ type Evidence struct {
 	Size   int64  `json:"size"`
 }
 type Process struct {
-	PID   int    `json:"pid"`
-	Birth string `json:"birth"`
-	Group int    `json:"group"`
+	PID     int       `json:"pid"`
+	Birth   string    `json:"birth"`
+	Group   int       `json:"group"`
+	Members []Process `json:"members,omitempty"`
 }
 type Check struct {
 	ID            string       `json:"id"`

@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file async_commit_hook/v1/ach.proto.
  */
 export const file_async_commit_hook_v1_ach: GenFile = /*@__PURE__*/
-  fileDesc("Ch5hc3luY19jb21taXRfaG9vay92MS9hY2gucHJvdG8SFGFzeW5jX2NvbW1pdF9ob29rLnYxIjkKCkRpYWdub3N0aWMSDAoEY29kZRgBIAEoCRIPCgdtZXNzYWdlGAIgASgJEgwKBGhpbnQYAyABKAkigAEKB0ZhaWx1cmUSCgoCaWQYASABKAkSDQoFY2hlY2sYAiABKAkSDAoEdGVzdBgDIAEoCRIPCgdjb21tYW5kGAQgASgJEg8KB21lc3NhZ2UYBSABKAkSDAoEZmlsZRgGIAEoCRIMCgRsaW5lGAcgASgFEg4KBmxvZ19pZBgIIAEoCSKuAgoFQ2hlY2sSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIzCgVzdGF0ZRgDIAEoDjIkLmFzeW5jX2NvbW1pdF9ob29rLnYxLkV4ZWN1dGlvblN0YXRlEhAKCG9wdGlvbmFsGAQgASgIEhYKCWV4aXRfY29kZRgFIAEoBUgAiAEBEg0KBXNoZWxsGAYgASgJEhYKDmluaGVyaXRlZF9mcm9tGAcgASgJEjUKC2RpYWdub3N0aWNzGAggAygLMiAuYXN5bmNfY29tbWl0X2hvb2sudjEuRGlhZ25vc3RpYxIvCghmYWlsdXJlcxgJIAMoCzIdLmFzeW5jX2NvbW1pdF9ob29rLnYxLkZhaWx1cmUSDwoHY29tbWFuZBgKIAEoCUIMCgpfZXhpdF9jb2RlIqEDCgNSdW4SCgoCaWQYASABKAkSEAoIc2VxdWVuY2UYAiABKAQSFQoNcmVwb3NpdG9yeV9pZBgDIAEoCRITCgt3b3JrdHJlZV9pZBgEIAEoCRIOCgZicmFuY2gYBSABKAkSDgoGY29tbWl0GAYgASgJEjMKBXN0YXRlGAcgASgOMiQuYXN5bmNfY29tbWl0X2hvb2sudjEuRXhlY3V0aW9uU3RhdGUSCgoCb3MYCCABKAkSDAoEYXJjaBgJIAEoCRISCgpjcmVhdGVkX2F0GAogASgJEhMKC2ZpbmlzaGVkX2F0GAsgASgJEhcKD2Fja25vd2xlZGdlZF9hdBgMIAEoCRIRCglwYXJlbnRfaWQYDSABKAkSKwoGY2hlY2tzGA4gAygLMhsuYXN5bmNfY29tbWl0X2hvb2sudjEuQ2hlY2sSNQoLZGlhZ25vc3RpY3MYDyADKAsyIC5hc3luY19jb21taXRfaG9vay52MS5EaWFnbm9zdGljEhMKC2dhdGVfcGFzc2VkGBAgASgIEhMKC2dhdGVfcmVhc29uGBEgASgJIkcKCFdvcmt0cmVlEgoKAmlkGAEgASgJEgwKBHBhdGgYAiABKAkSDgoGYnJhbmNoGAMgASgJEhEKCWF2YWlsYWJsZRgEIAEoCCJZCgpSZXBvc2l0b3J5EgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSMQoJd29ya3RyZWVzGAMgAygLMh4uYXN5bmNfY29tbWl0X2hvb2sudjEuV29ya3RyZWUiJgoGQnJhbmNoEgwKBG5hbWUYASABKAkSDgoGY29tbWl0GAIgASgJIjYKBkNvbW1pdBIKCgJpZBgBIAEoCRIPCgdwYXJlbnRzGAIgAygJEg8KB3N1YmplY3QYAyABKAkiEwoRR2V0VmVyc2lvblJlcXVlc3QiOgoSR2V0VmVyc2lvblJlc3BvbnNlEhMKC2FwaV92ZXJzaW9uGAEgASgNEg8KB3ZlcnNpb24YAiABKAkiMQoLUGFpclJlcXVlc3QSDAoEY29kZRgBIAEoCRIUCgxicm93c2VyX25hbWUYAiABKAkiMQoMUGFpclJlc3BvbnNlEhIKCmJyb3dzZXJfaWQYASABKAkSDQoFdG9rZW4YAiABKAkiGQoXTGlzdFJlcG9zaXRvcmllc1JlcXVlc3QiUgoYTGlzdFJlcG9zaXRvcmllc1Jlc3BvbnNlEjYKDHJlcG9zaXRvcmllcxgBIAMoCzIgLmFzeW5jX2NvbW1pdF9ob29rLnYxLlJlcG9zaXRvcnkiKgoTTGlzdEJyYW5jaGVzUmVxdWVzdBITCgt3b3JrdHJlZV9pZBgBIAEoCSJGChRMaXN0QnJhbmNoZXNSZXNwb25zZRIuCghicmFuY2hlcxgBIAMoCzIcLmFzeW5jX2NvbW1pdF9ob29rLnYxLkJyYW5jaCJGChJMaXN0Q29tbWl0c1JlcXVlc3QSEwoLd29ya3RyZWVfaWQYASABKAkSCwoDcmVmGAIgASgJEg4KBm9mZnNldBgDIAEoDSJEChNMaXN0Q29tbWl0c1Jlc3BvbnNlEi0KB2NvbW1pdHMYASADKAsyHC5hc3luY19jb21taXRfaG9vay52MS5Db21taXQiQwoRR2V0Q2hhbmdlc1JlcXVlc3QSEwoLd29ya3RyZWVfaWQYASABKAkSCwoDcmVmGAIgASgJEgwKBGJhc2UYAyABKAkiZQoSR2V0Q2hhbmdlc1Jlc3BvbnNlEgwKBGJhc2UYASABKAkSDAoEaGVhZBgCIAEoCRISCgptZXJnZV9iYXNlGAMgASgJEgwKBGRpZmYYBCABKAkSEQoJdHJ1bmNhdGVkGAUgASgIIlYKD0xpc3RSdW5zUmVxdWVzdBIVCg1yZXBvc2l0b3J5X2lkGAEgASgJEg0KBWluYm94GAIgASgIEg4KBmN1cnNvchgDIAEoCRINCgVsaW1pdBgEIAEoDSJQChBMaXN0UnVuc1Jlc3BvbnNlEicKBHJ1bnMYASADKAsyGS5hc3luY19jb21taXRfaG9vay52MS5SdW4SEwoLbmV4dF9jdXJzb3IYAiABKAkiHwoNR2V0UnVuUmVxdWVzdBIOCgZydW5faWQYASABKAkiOAoOR2V0UnVuUmVzcG9uc2USJgoDcnVuGAEgASgLMhkuYXN5bmNfY29tbWl0X2hvb2sudjEuUnVuIlEKDkdldExvZ3NSZXF1ZXN0Eg4KBnJ1bl9pZBgBIAEoCRIQCghjaGVja19pZBgCIAEoCRIOCgZvZmZzZXQYAyABKAMSDQoFbGltaXQYBCABKA0iRgoPR2V0TG9nc1Jlc3BvbnNlEgwKBHRleHQYASABKAkSEwoLbmV4dF9vZmZzZXQYAiABKAMSEAoIY29tcGxldGUYAyABKAgiJAoSR2V0RmFpbHVyZXNSZXF1ZXN0Eg4KBnJ1bl9pZBgBIAEoCSJGChNHZXRGYWlsdXJlc1Jlc3BvbnNlEi8KCGZhaWx1cmVzGAEgAygLMh0uYXN5bmNfY29tbWl0X2hvb2sudjEuRmFpbHVyZSI1Cg5Db21wYXJlUmVxdWVzdBIOCgZydW5faWQYASABKAkSEwoLcHJldmlvdXNfaWQYAiABKAkihAIKD0NvbXBhcmVSZXNwb25zZRIRCglhdmFpbGFibGUYASABKAgSDgoGcmVhc29uGAIgASgJEg4KBnJ1bl9pZBgDIAEoCRITCgtwcmV2aW91c19pZBgEIAEoCRIzCgxuZXdfZmFpbHVyZXMYBSADKAsyHS5hc3luY19jb21taXRfaG9vay52MS5GYWlsdXJlEjoKE2NvbnRpbnVpbmdfZmFpbHVyZXMYBiADKAsyHS5hc3luY19jb21taXRfaG9vay52MS5GYWlsdXJlEjgKEXJlc29sdmVkX2ZhaWx1cmVzGAcgAygLMh0uYXN5bmNfY29tbWl0X2hvb2sudjEuRmFpbHVyZSIkChJBY2tub3dsZWRnZVJlcXVlc3QSDgoGcnVuX2lkGAEgASgJIhUKE0Fja25vd2xlZGdlUmVzcG9uc2UiMwoMUmVydW5SZXF1ZXN0Eg4KBnJ1bl9pZBgBIAEoCRITCgtmYWlsZWRfb25seRgCIAEoCCIfCg1SZXJ1blJlc3BvbnNlEg4KBnJ1bl9pZBgBIAEoCSIfCg1DYW5jZWxSZXF1ZXN0Eg4KBnJ1bl9pZBgBIAEoCSIQCg5DYW5jZWxSZXNwb25zZSqWAwoORXhlY3V0aW9uU3RhdGUSHwobRVhFQ1VUSU9OX1NUQVRFX1VOU1BFQ0lGSUVEEAASGgoWRVhFQ1VUSU9OX1NUQVRFX1FVRVVFRBABEh0KGUVYRUNVVElPTl9TVEFURV9QUkVQQVJJTkcQAhIbChdFWEVDVVRJT05fU1RBVEVfUlVOTklORxADEh4KGkVYRUNVVElPTl9TVEFURV9DT0xMRUNUSU5HEAQSGgoWRVhFQ1VUSU9OX1NUQVRFX1BBU1NFRBAFEhoKFkVYRUNVVElPTl9TVEFURV9GQUlMRUQQBhIbChdFWEVDVVRJT05fU1RBVEVfQkxPQ0tFRBAHEh0KGUVYRUNVVElPTl9TVEFURV9DQU5DRUxMRUQQCBIcChhFWEVDVVRJT05fU1RBVEVfUkVQTEFDRUQQCRIfChtFWEVDVVRJT05fU1RBVEVfSU5URVJSVVBURUQQChIbChdFWEVDVVRJT05fU1RBVEVfU0tJUFBFRBALEhsKF0VYRUNVVElPTl9TVEFURV9FWFBJUkVEEAwyrAoKDExvY2FsU2VydmljZRJfCgpHZXRWZXJzaW9uEicuYXN5bmNfY29tbWl0X2hvb2sudjEuR2V0VmVyc2lvblJlcXVlc3QaKC5hc3luY19jb21taXRfaG9vay52MS5HZXRWZXJzaW9uUmVzcG9uc2USTQoEUGFpchIhLmFzeW5jX2NvbW1pdF9ob29rLnYxLlBhaXJSZXF1ZXN0GiIuYXN5bmNfY29tbWl0X2hvb2sudjEuUGFpclJlc3BvbnNlEnEKEExpc3RSZXBvc2l0b3JpZXMSLS5hc3luY19jb21taXRfaG9vay52MS5MaXN0UmVwb3NpdG9yaWVzUmVxdWVzdBouLmFzeW5jX2NvbW1pdF9ob29rLnYxLkxpc3RSZXBvc2l0b3JpZXNSZXNwb25zZRJlCgxMaXN0QnJhbmNoZXMSKS5hc3luY19jb21taXRfaG9vay52MS5MaXN0QnJhbmNoZXNSZXF1ZXN0GiouYXN5bmNfY29tbWl0X2hvb2sudjEuTGlzdEJyYW5jaGVzUmVzcG9uc2USYgoLTGlzdENvbW1pdHMSKC5hc3luY19jb21taXRfaG9vay52MS5MaXN0Q29tbWl0c1JlcXVlc3QaKS5hc3luY19jb21taXRfaG9vay52MS5MaXN0Q29tbWl0c1Jlc3BvbnNlEl8KCkdldENoYW5nZXMSJy5hc3luY19jb21taXRfaG9vay52MS5HZXRDaGFuZ2VzUmVxdWVzdBooLmFzeW5jX2NvbW1pdF9ob29rLnYxLkdldENoYW5nZXNSZXNwb25zZRJZCghMaXN0UnVucxIlLmFzeW5jX2NvbW1pdF9ob29rLnYxLkxpc3RSdW5zUmVxdWVzdBomLmFzeW5jX2NvbW1pdF9ob29rLnYxLkxpc3RSdW5zUmVzcG9uc2USUwoGR2V0UnVuEiMuYXN5bmNfY29tbWl0X2hvb2sudjEuR2V0UnVuUmVxdWVzdBokLmFzeW5jX2NvbW1pdF9ob29rLnYxLkdldFJ1blJlc3BvbnNlElYKB0dldExvZ3MSJC5hc3luY19jb21taXRfaG9vay52MS5HZXRMb2dzUmVxdWVzdBolLmFzeW5jX2NvbW1pdF9ob29rLnYxLkdldExvZ3NSZXNwb25zZRJiCgtHZXRGYWlsdXJlcxIoLmFzeW5jX2NvbW1pdF9ob29rLnYxLkdldEZhaWx1cmVzUmVxdWVzdBopLmFzeW5jX2NvbW1pdF9ob29rLnYxLkdldEZhaWx1cmVzUmVzcG9uc2USVgoHQ29tcGFyZRIkLmFzeW5jX2NvbW1pdF9ob29rLnYxLkNvbXBhcmVSZXF1ZXN0GiUuYXN5bmNfY29tbWl0X2hvb2sudjEuQ29tcGFyZVJlc3BvbnNlEmIKC0Fja25vd2xlZGdlEiguYXN5bmNfY29tbWl0X2hvb2sudjEuQWNrbm93bGVkZ2VSZXF1ZXN0GikuYXN5bmNfY29tbWl0X2hvb2sudjEuQWNrbm93bGVkZ2VSZXNwb25zZRJQCgVSZXJ1bhIiLmFzeW5jX2NvbW1pdF9ob29rLnYxLlJlcnVuUmVxdWVzdBojLmFzeW5jX2NvbW1pdF9ob29rLnYxLlJlcnVuUmVzcG9uc2USUwoGQ2FuY2VsEiMuYXN5bmNfY29tbWl0X2hvb2sudjEuQ2FuY2VsUmVxdWVzdBokLmFzeW5jX2NvbW1pdF9ob29rLnYxLkNhbmNlbFJlc3BvbnNlQkJaQGdpdGh1Yi5jb20vZGVsaW5vaW8vb3NzL3Byb3Rvcy9nZW4vZ28vYXN5bmNfY29tbWl0X2hvb2svdjE7YWNodjFiBnByb3RvMw");
+  fileDesc("Ch5hc3luY19jb21taXRfaG9vay92MS9hY2gucHJvdG8SFGFzeW5jX2NvbW1pdF9ob29rLnYxIjkKCkRpYWdub3N0aWMSDAoEY29kZRgBIAEoCRIPCgdtZXNzYWdlGAIgASgJEgwKBGhpbnQYAyABKAkigAEKB0ZhaWx1cmUSCgoCaWQYASABKAkSDQoFY2hlY2sYAiABKAkSDAoEdGVzdBgDIAEoCRIPCgdjb21tYW5kGAQgASgJEg8KB21lc3NhZ2UYBSABKAkSDAoEZmlsZRgGIAEoCRIMCgRsaW5lGAcgASgFEg4KBmxvZ19pZBgIIAEoCSLdAgoFQ2hlY2sSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIzCgVzdGF0ZRgDIAEoDjIkLmFzeW5jX2NvbW1pdF9ob29rLnYxLkV4ZWN1dGlvblN0YXRlEhAKCG9wdGlvbmFsGAQgASgIEhYKCWV4aXRfY29kZRgFIAEoBUgAiAEBEg0KBXNoZWxsGAYgASgJEhYKDmluaGVyaXRlZF9mcm9tGAcgASgJEjUKC2RpYWdub3N0aWNzGAggAygLMiAuYXN5bmNfY29tbWl0X2hvb2sudjEuRGlhZ25vc3RpYxIvCghmYWlsdXJlcxgJIAMoCzIdLmFzeW5jX2NvbW1pdF9ob29rLnYxLkZhaWx1cmUSDwoHY29tbWFuZBgKIAEoCRItCgdyZXBvcnRzGAsgAygLMhwuYXN5bmNfY29tbWl0X2hvb2sudjEuUmVwb3J0QgwKCl9leGl0X2NvZGUiMAoGUmVwb3J0EgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSDAoEc2l6ZRgDIAEoBCKhAwoDUnVuEgoKAmlkGAEgASgJEhAKCHNlcXVlbmNlGAIgASgEEhUKDXJlcG9zaXRvcnlfaWQYAyABKAkSEwoLd29ya3RyZWVfaWQYBCABKAkSDgoGYnJhbmNoGAUgASgJEg4KBmNvbW1pdBgGIAEoCRIzCgVzdGF0ZRgHIAEoDjIkLmFzeW5jX2NvbW1pdF9ob29rLnYxLkV4ZWN1dGlvblN0YXRlEgoKAm9zGAggASgJEgwKBGFyY2gYCSABKAkSEgoKY3JlYXRlZF9hdBgKIAEoCRITCgtmaW5pc2hlZF9hdBgLIAEoCRIXCg9hY2tub3dsZWRnZWRfYXQYDCABKAkSEQoJcGFyZW50X2lkGA0gASgJEisKBmNoZWNrcxgOIAMoCzIbLmFzeW5jX2NvbW1pdF9ob29rLnYxLkNoZWNrEjUKC2RpYWdub3N0aWNzGA8gAygLMiAuYXN5bmNfY29tbWl0X2hvb2sudjEuRGlhZ25vc3RpYxITCgtnYXRlX3Bhc3NlZBgQIAEoCBITCgtnYXRlX3JlYXNvbhgRIAEoCSJHCghXb3JrdHJlZRIKCgJpZBgBIAEoCRIMCgRwYXRoGAIgASgJEg4KBmJyYW5jaBgDIAEoCRIRCglhdmFpbGFibGUYBCABKAgiWQoKUmVwb3NpdG9yeRIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEjEKCXdvcmt0cmVlcxgDIAMoCzIeLmFzeW5jX2NvbW1pdF9ob29rLnYxLldvcmt0cmVlIiYKBkJyYW5jaBIMCgRuYW1lGAEgASgJEg4KBmNvbW1pdBgCIAEoCSI2CgZDb21taXQSCgoCaWQYASABKAkSDwoHcGFyZW50cxgCIAMoCRIPCgdzdWJqZWN0GAMgASgJIhMKEUdldFZlcnNpb25SZXF1ZXN0IjoKEkdldFZlcnNpb25SZXNwb25zZRITCgthcGlfdmVyc2lvbhgBIAEoDRIPCgd2ZXJzaW9uGAIgASgJIjEKC1BhaXJSZXF1ZXN0EgwKBGNvZGUYASABKAkSFAoMYnJvd3Nlcl9uYW1lGAIgASgJIjEKDFBhaXJSZXNwb25zZRISCgpicm93c2VyX2lkGAEgASgJEg0KBXRva2VuGAIgASgJIhkKF0xpc3RSZXBvc2l0b3JpZXNSZXF1ZXN0IlIKGExpc3RSZXBvc2l0b3JpZXNSZXNwb25zZRI2CgxyZXBvc2l0b3JpZXMYASADKAsyIC5hc3luY19jb21taXRfaG9vay52MS5SZXBvc2l0b3J5IioKE0xpc3RCcmFuY2hlc1JlcXVlc3QSEwoLd29ya3RyZWVfaWQYASABKAkiRgoUTGlzdEJyYW5jaGVzUmVzcG9uc2USLgoIYnJhbmNoZXMYASADKAsyHC5hc3luY19jb21taXRfaG9vay52MS5CcmFuY2giRgoSTGlzdENvbW1pdHNSZXF1ZXN0EhMKC3dvcmt0cmVlX2lkGAEgASgJEgsKA3JlZhgCIAEoCRIOCgZvZmZzZXQYAyABKA0iRAoTTGlzdENvbW1pdHNSZXNwb25zZRItCgdjb21taXRzGAEgAygLMhwuYXN5bmNfY29tbWl0X2hvb2sudjEuQ29tbWl0IkMKEUdldENoYW5nZXNSZXF1ZXN0EhMKC3dvcmt0cmVlX2lkGAEgASgJEgsKA3JlZhgCIAEoCRIMCgRiYXNlGAMgASgJImUKEkdldENoYW5nZXNSZXNwb25zZRIMCgRiYXNlGAEgASgJEgwKBGhlYWQYAiABKAkSEgoKbWVyZ2VfYmFzZRgDIAEoCRIMCgRkaWZmGAQgASgJEhEKCXRydW5jYXRlZBgFIAEoCCJ7Cg9MaXN0UnVuc1JlcXVlc3QSFQoNcmVwb3NpdG9yeV9pZBgBIAEoCRINCgVpbmJveBgCIAEoCBIOCgZjdXJzb3IYAyABKAkSDQoFbGltaXQYBCABKA0SDgoGYnJhbmNoGAUgASgJEhMKC3dvcmt0cmVlX2lkGAYgASgJIlAKEExpc3RSdW5zUmVzcG9uc2USJwoEcnVucxgBIAMoCzIZLmFzeW5jX2NvbW1pdF9ob29rLnYxLlJ1bhITCgtuZXh0X2N1cnNvchgCIAEoCSIfCg1HZXRSdW5SZXF1ZXN0Eg4KBnJ1bl9pZBgBIAEoCSI4Cg5HZXRSdW5SZXNwb25zZRImCgNydW4YASABKAsyGS5hc3luY19jb21taXRfaG9vay52MS5SdW4iUQoOR2V0TG9nc1JlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhAKCGNoZWNrX2lkGAIgASgJEg4KBm9mZnNldBgDIAEoAxINCgVsaW1pdBgEIAEoDSJGCg9HZXRMb2dzUmVzcG9uc2USDAoEdGV4dBgBIAEoCRITCgtuZXh0X29mZnNldBgCIAEoAxIQCghjb21wbGV0ZRgDIAEoCCIkChJHZXRGYWlsdXJlc1JlcXVlc3QSDgoGcnVuX2lkGAEgASgJIkYKE0dldEZhaWx1cmVzUmVzcG9uc2USLwoIZmFpbHVyZXMYASADKAsyHS5hc3luY19jb21taXRfaG9vay52MS5GYWlsdXJlIjUKDkNvbXBhcmVSZXF1ZXN0Eg4KBnJ1bl9pZBgBIAEoCRITCgtwcmV2aW91c19pZBgCIAEoCSKEAgoPQ29tcGFyZVJlc3BvbnNlEhEKCWF2YWlsYWJsZRgBIAEoCBIOCgZyZWFzb24YAiABKAkSDgoGcnVuX2lkGAMgASgJEhMKC3ByZXZpb3VzX2lkGAQgASgJEjMKDG5ld19mYWlsdXJlcxgFIAMoCzIdLmFzeW5jX2NvbW1pdF9ob29rLnYxLkZhaWx1cmUSOgoTY29udGludWluZ19mYWlsdXJlcxgGIAMoCzIdLmFzeW5jX2NvbW1pdF9ob29rLnYxLkZhaWx1cmUSOAoRcmVzb2x2ZWRfZmFpbHVyZXMYByADKAsyHS5hc3luY19jb21taXRfaG9vay52MS5GYWlsdXJlIiQKEkFja25vd2xlZGdlUmVxdWVzdBIOCgZydW5faWQYASABKAkiFQoTQWNrbm93bGVkZ2VSZXNwb25zZSIzCgxSZXJ1blJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhMKC2ZhaWxlZF9vbmx5GAIgASgIIh8KDVJlcnVuUmVzcG9uc2USDgoGcnVuX2lkGAEgASgJIh8KDUNhbmNlbFJlcXVlc3QSDgoGcnVuX2lkGAEgASgJIhAKDkNhbmNlbFJlc3BvbnNlIlQKEEdldFJlcG9ydFJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhEKCXJlcG9ydF9pZBgCIAEoCRIOCgZvZmZzZXQYAyABKAMSDQoFbGltaXQYBCABKA0iSAoRR2V0UmVwb3J0UmVzcG9uc2USDAoEdGV4dBgBIAEoCRITCgtuZXh0X29mZnNldBgCIAEoAxIQCghjb21wbGV0ZRgDIAEoCCqWAwoORXhlY3V0aW9uU3RhdGUSHwobRVhFQ1VUSU9OX1NUQVRFX1VOU1BFQ0lGSUVEEAASGgoWRVhFQ1VUSU9OX1NUQVRFX1FVRVVFRBABEh0KGUVYRUNVVElPTl9TVEFURV9QUkVQQVJJTkcQAhIbChdFWEVDVVRJT05fU1RBVEVfUlVOTklORxADEh4KGkVYRUNVVElPTl9TVEFURV9DT0xMRUNUSU5HEAQSGgoWRVhFQ1VUSU9OX1NUQVRFX1BBU1NFRBAFEhoKFkVYRUNVVElPTl9TVEFURV9GQUlMRUQQBhIbChdFWEVDVVRJT05fU1RBVEVfQkxPQ0tFRBAHEh0KGUVYRUNVVElPTl9TVEFURV9DQU5DRUxMRUQQCBIcChhFWEVDVVRJT05fU1RBVEVfUkVQTEFDRUQQCRIfChtFWEVDVVRJT05fU1RBVEVfSU5URVJSVVBURUQQChIbChdFWEVDVVRJT05fU1RBVEVfU0tJUFBFRBALEhsKF0VYRUNVVElPTl9TVEFURV9FWFBJUkVEEAwyigsKDExvY2FsU2VydmljZRJfCgpHZXRWZXJzaW9uEicuYXN5bmNfY29tbWl0X2hvb2sudjEuR2V0VmVyc2lvblJlcXVlc3QaKC5hc3luY19jb21taXRfaG9vay52MS5HZXRWZXJzaW9uUmVzcG9uc2USTQoEUGFpchIhLmFzeW5jX2NvbW1pdF9ob29rLnYxLlBhaXJSZXF1ZXN0GiIuYXN5bmNfY29tbWl0X2hvb2sudjEuUGFpclJlc3BvbnNlEnEKEExpc3RSZXBvc2l0b3JpZXMSLS5hc3luY19jb21taXRfaG9vay52MS5MaXN0UmVwb3NpdG9yaWVzUmVxdWVzdBouLmFzeW5jX2NvbW1pdF9ob29rLnYxLkxpc3RSZXBvc2l0b3JpZXNSZXNwb25zZRJlCgxMaXN0QnJhbmNoZXMSKS5hc3luY19jb21taXRfaG9vay52MS5MaXN0QnJhbmNoZXNSZXF1ZXN0GiouYXN5bmNfY29tbWl0X2hvb2sudjEuTGlzdEJyYW5jaGVzUmVzcG9uc2USYgoLTGlzdENvbW1pdHMSKC5hc3luY19jb21taXRfaG9vay52MS5MaXN0Q29tbWl0c1JlcXVlc3QaKS5hc3luY19jb21taXRfaG9vay52MS5MaXN0Q29tbWl0c1Jlc3BvbnNlEl8KCkdldENoYW5nZXMSJy5hc3luY19jb21taXRfaG9vay52MS5HZXRDaGFuZ2VzUmVxdWVzdBooLmFzeW5jX2NvbW1pdF9ob29rLnYxLkdldENoYW5nZXNSZXNwb25zZRJZCghMaXN0UnVucxIlLmFzeW5jX2NvbW1pdF9ob29rLnYxLkxpc3RSdW5zUmVxdWVzdBomLmFzeW5jX2NvbW1pdF9ob29rLnYxLkxpc3RSdW5zUmVzcG9uc2USUwoGR2V0UnVuEiMuYXN5bmNfY29tbWl0X2hvb2sudjEuR2V0UnVuUmVxdWVzdBokLmFzeW5jX2NvbW1pdF9ob29rLnYxLkdldFJ1blJlc3BvbnNlElYKB0dldExvZ3MSJC5hc3luY19jb21taXRfaG9vay52MS5HZXRMb2dzUmVxdWVzdBolLmFzeW5jX2NvbW1pdF9ob29rLnYxLkdldExvZ3NSZXNwb25zZRJcCglHZXRSZXBvcnQSJi5hc3luY19jb21taXRfaG9vay52MS5HZXRSZXBvcnRSZXF1ZXN0GicuYXN5bmNfY29tbWl0X2hvb2sudjEuR2V0UmVwb3J0UmVzcG9uc2USYgoLR2V0RmFpbHVyZXMSKC5hc3luY19jb21taXRfaG9vay52MS5HZXRGYWlsdXJlc1JlcXVlc3QaKS5hc3luY19jb21taXRfaG9vay52MS5HZXRGYWlsdXJlc1Jlc3BvbnNlElYKB0NvbXBhcmUSJC5hc3luY19jb21taXRfaG9vay52MS5Db21wYXJlUmVxdWVzdBolLmFzeW5jX2NvbW1pdF9ob29rLnYxLkNvbXBhcmVSZXNwb25zZRJiCgtBY2tub3dsZWRnZRIoLmFzeW5jX2NvbW1pdF9ob29rLnYxLkFja25vd2xlZGdlUmVxdWVzdBopLmFzeW5jX2NvbW1pdF9ob29rLnYxLkFja25vd2xlZGdlUmVzcG9uc2USUAoFUmVydW4SIi5hc3luY19jb21taXRfaG9vay52MS5SZXJ1blJlcXVlc3QaIy5hc3luY19jb21taXRfaG9vay52MS5SZXJ1blJlc3BvbnNlElMKBkNhbmNlbBIjLmFzeW5jX2NvbW1pdF9ob29rLnYxLkNhbmNlbFJlcXVlc3QaJC5hc3luY19jb21taXRfaG9vay52MS5DYW5jZWxSZXNwb25zZUJCWkBnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2FzeW5jX2NvbW1pdF9ob29rL3YxO2FjaHYxYgZwcm90bzM");
 
 /**
  * @generated from message async_commit_hook.v1.Diagnostic
@@ -144,6 +144,11 @@ export type Check = Message<"async_commit_hook.v1.Check"> & {
    * @generated from field: string command = 10;
    */
   command: string;
+
+  /**
+   * @generated from field: repeated async_commit_hook.v1.Report reports = 11;
+   */
+  reports: Report[];
 };
 
 /**
@@ -152,6 +157,33 @@ export type Check = Message<"async_commit_hook.v1.Check"> & {
  */
 export const CheckSchema: GenMessage<Check> = /*@__PURE__*/
   messageDesc(file_async_commit_hook_v1_ach, 2);
+
+/**
+ * @generated from message async_commit_hook.v1.Report
+ */
+export type Report = Message<"async_commit_hook.v1.Report"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: uint64 size = 3;
+   */
+  size: bigint;
+};
+
+/**
+ * Describes the message async_commit_hook.v1.Report.
+ * Use `create(ReportSchema)` to create a new message.
+ */
+export const ReportSchema: GenMessage<Report> = /*@__PURE__*/
+  messageDesc(file_async_commit_hook_v1_ach, 3);
 
 /**
  * @generated from message async_commit_hook.v1.Run
@@ -248,7 +280,7 @@ export type Run = Message<"async_commit_hook.v1.Run"> & {
  * Use `create(RunSchema)` to create a new message.
  */
 export const RunSchema: GenMessage<Run> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 3);
+  messageDesc(file_async_commit_hook_v1_ach, 4);
 
 /**
  * @generated from message async_commit_hook.v1.Worktree
@@ -280,7 +312,7 @@ export type Worktree = Message<"async_commit_hook.v1.Worktree"> & {
  * Use `create(WorktreeSchema)` to create a new message.
  */
 export const WorktreeSchema: GenMessage<Worktree> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 4);
+  messageDesc(file_async_commit_hook_v1_ach, 5);
 
 /**
  * @generated from message async_commit_hook.v1.Repository
@@ -307,7 +339,7 @@ export type Repository = Message<"async_commit_hook.v1.Repository"> & {
  * Use `create(RepositorySchema)` to create a new message.
  */
 export const RepositorySchema: GenMessage<Repository> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 5);
+  messageDesc(file_async_commit_hook_v1_ach, 6);
 
 /**
  * @generated from message async_commit_hook.v1.Branch
@@ -329,7 +361,7 @@ export type Branch = Message<"async_commit_hook.v1.Branch"> & {
  * Use `create(BranchSchema)` to create a new message.
  */
 export const BranchSchema: GenMessage<Branch> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 6);
+  messageDesc(file_async_commit_hook_v1_ach, 7);
 
 /**
  * @generated from message async_commit_hook.v1.Commit
@@ -356,7 +388,7 @@ export type Commit = Message<"async_commit_hook.v1.Commit"> & {
  * Use `create(CommitSchema)` to create a new message.
  */
 export const CommitSchema: GenMessage<Commit> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 7);
+  messageDesc(file_async_commit_hook_v1_ach, 8);
 
 /**
  * @generated from message async_commit_hook.v1.GetVersionRequest
@@ -369,7 +401,7 @@ export type GetVersionRequest = Message<"async_commit_hook.v1.GetVersionRequest"
  * Use `create(GetVersionRequestSchema)` to create a new message.
  */
 export const GetVersionRequestSchema: GenMessage<GetVersionRequest> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 8);
+  messageDesc(file_async_commit_hook_v1_ach, 9);
 
 /**
  * @generated from message async_commit_hook.v1.GetVersionResponse
@@ -391,7 +423,7 @@ export type GetVersionResponse = Message<"async_commit_hook.v1.GetVersionRespons
  * Use `create(GetVersionResponseSchema)` to create a new message.
  */
 export const GetVersionResponseSchema: GenMessage<GetVersionResponse> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 9);
+  messageDesc(file_async_commit_hook_v1_ach, 10);
 
 /**
  * @generated from message async_commit_hook.v1.PairRequest
@@ -413,7 +445,7 @@ export type PairRequest = Message<"async_commit_hook.v1.PairRequest"> & {
  * Use `create(PairRequestSchema)` to create a new message.
  */
 export const PairRequestSchema: GenMessage<PairRequest> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 10);
+  messageDesc(file_async_commit_hook_v1_ach, 11);
 
 /**
  * @generated from message async_commit_hook.v1.PairResponse
@@ -435,7 +467,7 @@ export type PairResponse = Message<"async_commit_hook.v1.PairResponse"> & {
  * Use `create(PairResponseSchema)` to create a new message.
  */
 export const PairResponseSchema: GenMessage<PairResponse> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 11);
+  messageDesc(file_async_commit_hook_v1_ach, 12);
 
 /**
  * @generated from message async_commit_hook.v1.ListRepositoriesRequest
@@ -448,7 +480,7 @@ export type ListRepositoriesRequest = Message<"async_commit_hook.v1.ListReposito
  * Use `create(ListRepositoriesRequestSchema)` to create a new message.
  */
 export const ListRepositoriesRequestSchema: GenMessage<ListRepositoriesRequest> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 12);
+  messageDesc(file_async_commit_hook_v1_ach, 13);
 
 /**
  * @generated from message async_commit_hook.v1.ListRepositoriesResponse
@@ -465,7 +497,7 @@ export type ListRepositoriesResponse = Message<"async_commit_hook.v1.ListReposit
  * Use `create(ListRepositoriesResponseSchema)` to create a new message.
  */
 export const ListRepositoriesResponseSchema: GenMessage<ListRepositoriesResponse> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 13);
+  messageDesc(file_async_commit_hook_v1_ach, 14);
 
 /**
  * @generated from message async_commit_hook.v1.ListBranchesRequest
@@ -482,7 +514,7 @@ export type ListBranchesRequest = Message<"async_commit_hook.v1.ListBranchesRequ
  * Use `create(ListBranchesRequestSchema)` to create a new message.
  */
 export const ListBranchesRequestSchema: GenMessage<ListBranchesRequest> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 14);
+  messageDesc(file_async_commit_hook_v1_ach, 15);
 
 /**
  * @generated from message async_commit_hook.v1.ListBranchesResponse
@@ -499,7 +531,7 @@ export type ListBranchesResponse = Message<"async_commit_hook.v1.ListBranchesRes
  * Use `create(ListBranchesResponseSchema)` to create a new message.
  */
 export const ListBranchesResponseSchema: GenMessage<ListBranchesResponse> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 15);
+  messageDesc(file_async_commit_hook_v1_ach, 16);
 
 /**
  * @generated from message async_commit_hook.v1.ListCommitsRequest
@@ -526,7 +558,7 @@ export type ListCommitsRequest = Message<"async_commit_hook.v1.ListCommitsReques
  * Use `create(ListCommitsRequestSchema)` to create a new message.
  */
 export const ListCommitsRequestSchema: GenMessage<ListCommitsRequest> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 16);
+  messageDesc(file_async_commit_hook_v1_ach, 17);
 
 /**
  * @generated from message async_commit_hook.v1.ListCommitsResponse
@@ -543,7 +575,7 @@ export type ListCommitsResponse = Message<"async_commit_hook.v1.ListCommitsRespo
  * Use `create(ListCommitsResponseSchema)` to create a new message.
  */
 export const ListCommitsResponseSchema: GenMessage<ListCommitsResponse> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 17);
+  messageDesc(file_async_commit_hook_v1_ach, 18);
 
 /**
  * @generated from message async_commit_hook.v1.GetChangesRequest
@@ -570,7 +602,7 @@ export type GetChangesRequest = Message<"async_commit_hook.v1.GetChangesRequest"
  * Use `create(GetChangesRequestSchema)` to create a new message.
  */
 export const GetChangesRequestSchema: GenMessage<GetChangesRequest> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 18);
+  messageDesc(file_async_commit_hook_v1_ach, 19);
 
 /**
  * @generated from message async_commit_hook.v1.GetChangesResponse
@@ -607,7 +639,7 @@ export type GetChangesResponse = Message<"async_commit_hook.v1.GetChangesRespons
  * Use `create(GetChangesResponseSchema)` to create a new message.
  */
 export const GetChangesResponseSchema: GenMessage<GetChangesResponse> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 19);
+  messageDesc(file_async_commit_hook_v1_ach, 20);
 
 /**
  * @generated from message async_commit_hook.v1.ListRunsRequest
@@ -632,6 +664,16 @@ export type ListRunsRequest = Message<"async_commit_hook.v1.ListRunsRequest"> & 
    * @generated from field: uint32 limit = 4;
    */
   limit: number;
+
+  /**
+   * @generated from field: string branch = 5;
+   */
+  branch: string;
+
+  /**
+   * @generated from field: string worktree_id = 6;
+   */
+  worktreeId: string;
 };
 
 /**
@@ -639,7 +681,7 @@ export type ListRunsRequest = Message<"async_commit_hook.v1.ListRunsRequest"> & 
  * Use `create(ListRunsRequestSchema)` to create a new message.
  */
 export const ListRunsRequestSchema: GenMessage<ListRunsRequest> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 20);
+  messageDesc(file_async_commit_hook_v1_ach, 21);
 
 /**
  * @generated from message async_commit_hook.v1.ListRunsResponse
@@ -661,7 +703,7 @@ export type ListRunsResponse = Message<"async_commit_hook.v1.ListRunsResponse"> 
  * Use `create(ListRunsResponseSchema)` to create a new message.
  */
 export const ListRunsResponseSchema: GenMessage<ListRunsResponse> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 21);
+  messageDesc(file_async_commit_hook_v1_ach, 22);
 
 /**
  * @generated from message async_commit_hook.v1.GetRunRequest
@@ -678,7 +720,7 @@ export type GetRunRequest = Message<"async_commit_hook.v1.GetRunRequest"> & {
  * Use `create(GetRunRequestSchema)` to create a new message.
  */
 export const GetRunRequestSchema: GenMessage<GetRunRequest> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 22);
+  messageDesc(file_async_commit_hook_v1_ach, 23);
 
 /**
  * @generated from message async_commit_hook.v1.GetRunResponse
@@ -695,7 +737,7 @@ export type GetRunResponse = Message<"async_commit_hook.v1.GetRunResponse"> & {
  * Use `create(GetRunResponseSchema)` to create a new message.
  */
 export const GetRunResponseSchema: GenMessage<GetRunResponse> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 23);
+  messageDesc(file_async_commit_hook_v1_ach, 24);
 
 /**
  * @generated from message async_commit_hook.v1.GetLogsRequest
@@ -727,7 +769,7 @@ export type GetLogsRequest = Message<"async_commit_hook.v1.GetLogsRequest"> & {
  * Use `create(GetLogsRequestSchema)` to create a new message.
  */
 export const GetLogsRequestSchema: GenMessage<GetLogsRequest> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 24);
+  messageDesc(file_async_commit_hook_v1_ach, 25);
 
 /**
  * @generated from message async_commit_hook.v1.GetLogsResponse
@@ -754,7 +796,7 @@ export type GetLogsResponse = Message<"async_commit_hook.v1.GetLogsResponse"> & 
  * Use `create(GetLogsResponseSchema)` to create a new message.
  */
 export const GetLogsResponseSchema: GenMessage<GetLogsResponse> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 25);
+  messageDesc(file_async_commit_hook_v1_ach, 26);
 
 /**
  * @generated from message async_commit_hook.v1.GetFailuresRequest
@@ -771,7 +813,7 @@ export type GetFailuresRequest = Message<"async_commit_hook.v1.GetFailuresReques
  * Use `create(GetFailuresRequestSchema)` to create a new message.
  */
 export const GetFailuresRequestSchema: GenMessage<GetFailuresRequest> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 26);
+  messageDesc(file_async_commit_hook_v1_ach, 27);
 
 /**
  * @generated from message async_commit_hook.v1.GetFailuresResponse
@@ -788,7 +830,7 @@ export type GetFailuresResponse = Message<"async_commit_hook.v1.GetFailuresRespo
  * Use `create(GetFailuresResponseSchema)` to create a new message.
  */
 export const GetFailuresResponseSchema: GenMessage<GetFailuresResponse> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 27);
+  messageDesc(file_async_commit_hook_v1_ach, 28);
 
 /**
  * @generated from message async_commit_hook.v1.CompareRequest
@@ -810,7 +852,7 @@ export type CompareRequest = Message<"async_commit_hook.v1.CompareRequest"> & {
  * Use `create(CompareRequestSchema)` to create a new message.
  */
 export const CompareRequestSchema: GenMessage<CompareRequest> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 28);
+  messageDesc(file_async_commit_hook_v1_ach, 29);
 
 /**
  * @generated from message async_commit_hook.v1.CompareResponse
@@ -857,7 +899,7 @@ export type CompareResponse = Message<"async_commit_hook.v1.CompareResponse"> & 
  * Use `create(CompareResponseSchema)` to create a new message.
  */
 export const CompareResponseSchema: GenMessage<CompareResponse> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 29);
+  messageDesc(file_async_commit_hook_v1_ach, 30);
 
 /**
  * @generated from message async_commit_hook.v1.AcknowledgeRequest
@@ -874,7 +916,7 @@ export type AcknowledgeRequest = Message<"async_commit_hook.v1.AcknowledgeReques
  * Use `create(AcknowledgeRequestSchema)` to create a new message.
  */
 export const AcknowledgeRequestSchema: GenMessage<AcknowledgeRequest> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 30);
+  messageDesc(file_async_commit_hook_v1_ach, 31);
 
 /**
  * @generated from message async_commit_hook.v1.AcknowledgeResponse
@@ -887,7 +929,7 @@ export type AcknowledgeResponse = Message<"async_commit_hook.v1.AcknowledgeRespo
  * Use `create(AcknowledgeResponseSchema)` to create a new message.
  */
 export const AcknowledgeResponseSchema: GenMessage<AcknowledgeResponse> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 31);
+  messageDesc(file_async_commit_hook_v1_ach, 32);
 
 /**
  * @generated from message async_commit_hook.v1.RerunRequest
@@ -909,7 +951,7 @@ export type RerunRequest = Message<"async_commit_hook.v1.RerunRequest"> & {
  * Use `create(RerunRequestSchema)` to create a new message.
  */
 export const RerunRequestSchema: GenMessage<RerunRequest> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 32);
+  messageDesc(file_async_commit_hook_v1_ach, 33);
 
 /**
  * @generated from message async_commit_hook.v1.RerunResponse
@@ -926,7 +968,7 @@ export type RerunResponse = Message<"async_commit_hook.v1.RerunResponse"> & {
  * Use `create(RerunResponseSchema)` to create a new message.
  */
 export const RerunResponseSchema: GenMessage<RerunResponse> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 33);
+  messageDesc(file_async_commit_hook_v1_ach, 34);
 
 /**
  * @generated from message async_commit_hook.v1.CancelRequest
@@ -943,7 +985,7 @@ export type CancelRequest = Message<"async_commit_hook.v1.CancelRequest"> & {
  * Use `create(CancelRequestSchema)` to create a new message.
  */
 export const CancelRequestSchema: GenMessage<CancelRequest> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 34);
+  messageDesc(file_async_commit_hook_v1_ach, 35);
 
 /**
  * @generated from message async_commit_hook.v1.CancelResponse
@@ -956,7 +998,66 @@ export type CancelResponse = Message<"async_commit_hook.v1.CancelResponse"> & {
  * Use `create(CancelResponseSchema)` to create a new message.
  */
 export const CancelResponseSchema: GenMessage<CancelResponse> = /*@__PURE__*/
-  messageDesc(file_async_commit_hook_v1_ach, 35);
+  messageDesc(file_async_commit_hook_v1_ach, 36);
+
+/**
+ * @generated from message async_commit_hook.v1.GetReportRequest
+ */
+export type GetReportRequest = Message<"async_commit_hook.v1.GetReportRequest"> & {
+  /**
+   * @generated from field: string run_id = 1;
+   */
+  runId: string;
+
+  /**
+   * @generated from field: string report_id = 2;
+   */
+  reportId: string;
+
+  /**
+   * @generated from field: int64 offset = 3;
+   */
+  offset: bigint;
+
+  /**
+   * @generated from field: uint32 limit = 4;
+   */
+  limit: number;
+};
+
+/**
+ * Describes the message async_commit_hook.v1.GetReportRequest.
+ * Use `create(GetReportRequestSchema)` to create a new message.
+ */
+export const GetReportRequestSchema: GenMessage<GetReportRequest> = /*@__PURE__*/
+  messageDesc(file_async_commit_hook_v1_ach, 37);
+
+/**
+ * @generated from message async_commit_hook.v1.GetReportResponse
+ */
+export type GetReportResponse = Message<"async_commit_hook.v1.GetReportResponse"> & {
+  /**
+   * @generated from field: string text = 1;
+   */
+  text: string;
+
+  /**
+   * @generated from field: int64 next_offset = 2;
+   */
+  nextOffset: bigint;
+
+  /**
+   * @generated from field: bool complete = 3;
+   */
+  complete: boolean;
+};
+
+/**
+ * Describes the message async_commit_hook.v1.GetReportResponse.
+ * Use `create(GetReportResponseSchema)` to create a new message.
+ */
+export const GetReportResponseSchema: GenMessage<GetReportResponse> = /*@__PURE__*/
+  messageDesc(file_async_commit_hook_v1_ach, 38);
 
 /**
  * @generated from enum async_commit_hook.v1.ExecutionState
@@ -1111,6 +1212,14 @@ export const LocalService: GenService<{
     methodKind: "unary";
     input: typeof GetLogsRequestSchema;
     output: typeof GetLogsResponseSchema;
+  },
+  /**
+   * @generated from rpc async_commit_hook.v1.LocalService.GetReport
+   */
+  getReport: {
+    methodKind: "unary";
+    input: typeof GetReportRequestSchema;
+    output: typeof GetReportResponseSchema;
   },
   /**
    * @generated from rpc async_commit_hook.v1.LocalService.GetFailures

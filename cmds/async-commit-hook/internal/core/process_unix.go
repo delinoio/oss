@@ -38,7 +38,11 @@ func processRows() ([]processRow, error) {
 		pid, _ := strconv.Atoi(f[0])
 		ppid, _ := strconv.Atoi(f[1])
 		group, _ := strconv.Atoi(f[2])
-		rows = append(rows, processRow{pid, ppid, group, strings.Join(f[4:], " "), f[3]})
+		birth, err := preciseBirth(pid)
+		if err != nil {
+			continue
+		}
+		rows = append(rows, processRow{pid, ppid, group, birth, f[3]})
 	}
 	return rows, nil
 }
@@ -70,7 +74,7 @@ func startProcess(c *exec.Cmd) (*managedProcess, error) {
 	if e != nil {
 		p = Process{PID: c.Process.Pid, Group: c.Process.Pid}
 	}
-	return &managedProcess{cmd: c, identity: p, tracked: map[int]Process{}}, nil
+	return &managedProcess{cmd: c, identity: p, tracked: map[int]Process{p.PID: p}}, nil
 }
 func (p *managedProcess) sample() error {
 	rows, e := processRows()
@@ -80,8 +84,17 @@ func (p *managedProcess) sample() error {
 	for changed := true; changed; {
 		changed = false
 		for _, r := range rows {
-			_, parent := p.tracked[r.ppid]
-			if r.group == p.identity.Group || r.ppid == p.identity.PID || parent {
+			parentRecord, parent := p.tracked[r.ppid]
+			if parent {
+				parent = false
+				for _, row := range rows {
+					if row.pid == parentRecord.PID && row.birth == parentRecord.Birth {
+						parent = true
+						break
+					}
+				}
+			}
+			if r.group == p.identity.Group || parent {
 				if _, ok := p.tracked[r.pid]; !ok {
 					p.tracked[r.pid] = Process{PID: r.pid, Birth: r.birth, Group: r.group}
 					changed = true
@@ -124,6 +137,15 @@ func (p *managedProcess) terminate() error {
 	}
 	return E("process-reconciliation-failed", fmt.Sprintf("owned process group %d remains active; exclusive replacement is blocked", p.identity.Group), 3)
 }
+func (p *managedProcess) snapshot() Process {
+	result := p.identity
+	result.Members = nil
+	for _, member := range p.tracked {
+		member.Members = nil
+		result.Members = append(result.Members, member)
+	}
+	return result
+}
 func (p *managedProcess) close() {}
 func ReconcileProcess(p Process) error {
 	if p.PID <= 0 {
@@ -131,9 +153,24 @@ func ReconcileProcess(p Process) error {
 	}
 	current, e := ProcessIdentity(p.PID)
 	if e == nil && p.Birth != "" && current.Birth != p.Birth {
+		// A reused leader/group is never owned by this attempt. Reconcile only
+		// descendants whose independent persisted birth identities still match.
+		for _, member := range p.Members {
+			if ProcessAlive(member) {
+				_ = syscall.Kill(member.PID, syscall.SIGKILL)
+			}
+		}
+		for _, member := range p.Members {
+			if ProcessAlive(member) {
+				return E("process-reconciliation-failed", "an owned descendant remains active", 3)
+			}
+		}
 		return nil
 	}
 	m := &managedProcess{identity: p, tracked: map[int]Process{}}
+	for _, member := range p.Members {
+		m.tracked[member.PID] = member
+	}
 	return m.terminate()
 }
 func Detached(c *exec.Cmd) { c.SysProcAttr = &syscall.SysProcAttr{Setsid: true} }

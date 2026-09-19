@@ -48,6 +48,14 @@ func (s *Service) Compare(id, previous string) (Comparison, error) {
 		out.Reason = "comparison requires retained completed evidence"
 		return out, nil
 	}
+	for _, run := range []Run{p, r} {
+		for _, c := range run.Checks {
+			if c.Log.ID != "" && s.ValidateEvidence(run.ID, c) != nil {
+				out.Reason = "comparison evidence is missing or changed"
+				return out, nil
+			}
+		}
+	}
 	old := map[string]Failure{}
 	for _, f := range Failures(p) {
 		old[f.ID] = f
@@ -80,7 +88,29 @@ func (s *Service) Prune(dry bool, age int, maxBytes int64) (PruneResult, error) 
 	if age < 0 || maxBytes < 0 {
 		return out, E("invalid-retention", "retention limits must be nonnegative", 2)
 	}
-	rows, e := s.Store.DB.Query("SELECT id FROM runs WHERE state NOT IN ('queued','preparing','running','collecting','expired') ORDER BY seq ASC")
+	lock, e := TryLock(filepath.Join(s.Store.Root, "locks", "retention.lock"))
+	if e != nil {
+		return out, e
+	}
+	if lock == nil {
+		return out, E("retention-busy", "another retention operation is active", 3)
+	}
+	defer lock.Close()
+	protected := map[string]bool{}
+	active, e := s.Store.Pending()
+	if e != nil {
+		return out, e
+	}
+	for _, id := range active {
+		r, err := s.Store.Run(id)
+		if err != nil {
+			return out, err
+		}
+		for _, c := range r.Checks {
+			protected[c.InheritedFrom] = true
+		}
+	}
+	rows, e := s.Store.DB.Query("SELECT id FROM runs WHERE state NOT IN ('queued','preparing','running','collecting') ORDER BY seq ASC")
 	if e != nil {
 		return out, e
 	}
@@ -101,6 +131,9 @@ func (s *Service) Prune(dry bool, age int, maxBytes int64) (PruneResult, error) 
 	items := []candidate{}
 	var total int64
 	for _, id := range ids {
+		if protected[id] {
+			continue
+		}
 		r, e := s.Store.Run(id)
 		if e != nil {
 			return out, e

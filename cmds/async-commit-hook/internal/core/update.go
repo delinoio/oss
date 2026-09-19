@@ -105,7 +105,7 @@ func extractExecutable(archive []byte, windows bool) ([]byte, error) {
 			return nil, e
 		}
 		for _, f := range r.File {
-			if f.Name != name || !f.Mode().IsRegular() {
+			if f.Name != name || !f.Mode().IsRegular() || out != nil {
 				return nil, E("update-archive-invalid", "archive must contain only ach.exe", 3)
 			}
 			reader, e := f.Open()
@@ -332,11 +332,15 @@ func (s *Service) applyUpdate(j UpdateJournal) error {
 	if e != nil || Hash(b) != j.SHA256 {
 		return E("update-candidate-invalid", "prepared candidate is unavailable or changed", 3)
 	}
+	// Journal the next operation before moving the original. Recovery also handles a
+	// crash between the move and the candidate replacement.
+	j.Phase = "original-backed-up"
+	if e = AtomicWrite(filepath.Join(s.Paths.Control, "update.json"), Encode(j), 0600); e != nil {
+		return e
+	}
 	if e = os.Rename(j.Executable, j.Backup); e != nil {
 		return Wrap("update-backup-failed", e)
 	}
-	j.Phase = "original-backed-up"
-	_ = AtomicWrite(filepath.Join(s.Paths.Control, "update.json"), Encode(j), 0600)
 	if e = replaceFile(j.Candidate, j.Executable); e != nil {
 		if rollback := os.Rename(j.Backup, j.Executable); rollback != nil {
 			return E("update-recovery-required", "replacement and rollback failed; restore the recorded binary backup", 3)

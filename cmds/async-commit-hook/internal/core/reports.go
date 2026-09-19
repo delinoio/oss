@@ -3,6 +3,8 @@ package core
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -48,6 +50,17 @@ func (r *Redactor) Write(b []byte) (int, error) {
 	return len(b), r.err
 }
 func (r *Redactor) flush(final bool) {
+	if len(r.secrets) == 0 {
+		_, r.err = r.out.Write(r.pending)
+		r.pending = nil
+		return
+	}
+	var safe bytes.Buffer
+	defer func() {
+		if r.err == nil && safe.Len() > 0 {
+			_, r.err = r.out.Write(safe.Bytes())
+		}
+	}()
 	for len(r.pending) > 0 {
 		if !final && len(r.pending) < r.max {
 			return
@@ -59,10 +72,10 @@ func (r *Redactor) flush(final bool) {
 			}
 		}
 		if longest > 0 {
-			_, r.err = io.WriteString(r.out, "[REDACTED]")
+			safe.WriteString("[REDACTED]")
 			r.pending = r.pending[longest:]
 		} else {
-			_, r.err = r.out.Write(r.pending[:1])
+			safe.WriteByte(r.pending[0])
 			r.pending = r.pending[1:]
 		}
 		if r.err != nil {
@@ -173,7 +186,7 @@ func parseGoTest(b []byte, check, command, logID string) ([]Failure, error) {
 			if len(output[key]) > 65536 {
 				output[key] = output[key][len(output[key])-65536:]
 			}
-		case "run":
+		case "run", "start":
 			tests[key] = false
 		case "pass", "skip", "fail":
 			terminal = true
@@ -181,7 +194,7 @@ func parseGoTest(b []byte, check, command, logID string) ([]Failure, error) {
 			if event.Action == "fail" {
 				out = append(out, Failure{ID: Hash([]byte(check + "/go/" + key)), Check: check, Test: key, Command: command, Message: strings.TrimSpace(output[key]), LogID: logID})
 			}
-		case "start", "pause", "cont", "bench":
+		case "pause", "cont", "bench":
 		default:
 			return nil, E("report-malformed", "unknown Go test JSON action", 1)
 		}
@@ -220,7 +233,12 @@ func (s *Service) ValidateEvidence(run string, c Check) error {
 		if e != nil {
 			return e
 		}
-		f, e := os.Open(path)
+		root, e := os.OpenRoot(filepath.Dir(path))
+		if e != nil {
+			return e
+		}
+		f, e := root.Open(filepath.Base(path))
+		root.Close()
 		if e != nil {
 			return e
 		}
@@ -229,9 +247,10 @@ func (s *Service) ValidateEvidence(run string, c Check) error {
 			f.Close()
 			return E("evidence-missing", "evidence is unavailable or changed", 1)
 		}
-		b, e := io.ReadAll(f)
+		h := sha256.New()
+		_, e = io.Copy(h, f)
 		f.Close()
-		if e != nil || Hash(b) != v.SHA256 {
+		if e != nil || hex.EncodeToString(h.Sum(nil)) != v.SHA256 {
 			return E("evidence-integrity", "evidence failed integrity verification", 1)
 		}
 	}
@@ -261,6 +280,29 @@ func (s *Service) Logs(run, check string, offset int64, limit int) (LogPage, err
 	if id == "" {
 		return LogPage{Complete: selected.State.Terminal()}, nil
 	}
+	return s.evidencePage(run, id, offset, limit, selected.State.Terminal())
+}
+func (s *Service) Report(run, id string, offset int64, limit int) (LogPage, error) {
+	r, err := s.Store.Run(run)
+	if err != nil {
+		return LogPage{}, err
+	}
+	for _, c := range r.Checks {
+		for _, report := range c.Reports {
+			if report.ID == id {
+				if c.InheritedFrom != "" {
+					run = c.InheritedFrom
+				}
+				return s.evidencePage(run, id, offset, limit, true)
+			}
+		}
+	}
+	return LogPage{}, E("report-not-found", "select a report owned by this execution", 2)
+}
+func (s *Service) evidencePage(run, id string, offset int64, limit int, terminal bool) (LogPage, error) {
+	if offset < 0 || limit < 1 || limit > 1024*1024 {
+		return LogPage{}, E("invalid-evidence-range", "offset must be nonnegative and limit 1..1048576", 2)
+	}
 	path, e := s.Store.EvidencePath(run, id)
 	if e != nil {
 		return LogPage{}, e
@@ -283,5 +325,5 @@ func (s *Service) Logs(run, check string, offset int64, limit int) (LogPage, err
 		return LogPage{}, e
 	}
 	b, e := io.ReadAll(io.LimitReader(f, int64(limit)))
-	return LogPage{Text: string(b), NextOffset: offset + int64(len(b)), Complete: selected.State.Terminal() && offset+int64(len(b)) >= info.Size()}, e
+	return LogPage{Text: string(b), NextOffset: offset + int64(len(b)), Complete: terminal && offset+int64(len(b)) >= info.Size()}, e
 }

@@ -126,6 +126,9 @@ func Run(ctx context.Context, args []string, in io.Reader, out, diagnostics io.W
 		return emit(out, diagnostics, o.has("json"), map[string]any{"version": core.Version, "schema_version": 1, "api_version": 1}, nil, 0)
 	}
 	if command == "agent-guide" {
+		if o.has("json") {
+			return emit(out, diagnostics, true, map[string]string{"guide": core.AgentGuide}, nil, 0)
+		}
 		fmt.Fprint(out, core.AgentGuide)
 		return 0
 	}
@@ -135,7 +138,6 @@ func Run(ctx context.Context, args []string, in io.Reader, out, diagnostics io.W
 	}
 	if p := o.flags["config"]; p != "" {
 		paths.Config, e = filepath.Abs(p)
-		paths.Control = filepath.Join(filepath.Dir(paths.Config), "control")
 		if e != nil {
 			return emit(out, diagnostics, o.has("json"), nil, e, 0)
 		}
@@ -145,6 +147,13 @@ func Run(ctx context.Context, args []string, in io.Reader, out, diagnostics io.W
 		return emit(out, diagnostics, o.has("json"), nil, e, 0)
 	}
 	defer s.Close()
+	if command != "internal" && command != "mcp" && command != "self-update" {
+		_, leave, err := s.Enter("cli")
+		if err != nil {
+			return emit(out, diagnostics, o.has("json"), nil, err, 0)
+		}
+		defer leave()
+	}
 	repo := o.get("repo", ".")
 	id := o.flags["run"]
 	var result any

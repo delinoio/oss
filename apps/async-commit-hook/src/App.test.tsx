@@ -1,17 +1,30 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { create } from "@bufbuild/protobuf";
-import { ExecutionState, FailureSchema } from "@delinoio/async-commit-hook-api-client";
+import {
+  ExecutionState,
+  FailureSchema,
+} from "@delinoio/async-commit-hook-api-client";
 import { expect, it, vi } from "vitest";
 import { Confirm, FailureList, Status } from "./App";
 import { readConnection, describeError } from "./connection";
 it("renders hostile report content as inert text", () => {
-  const failure = create(FailureSchema, { id: "f", check: "test", message: "<script>alert('x')</script>" });
+  const failure = create(FailureSchema, {
+    id: "f",
+    check: "test",
+    message: "<script>alert('x')</script>",
+  });
   const { container } = render(<FailureList failures={[failure]} />);
   expect(container.querySelector("script")).toBeNull();
   expect(screen.getByText("<script>alert('x')</script>")).toBeTruthy();
 });
 it("communicates every important outcome without relying on color", () => {
-  render(<><Status state={ExecutionState.INTERRUPTED} /><Status state={ExecutionState.EXPIRED} /><Status state={ExecutionState.RUNNING} /></>);
+  render(
+    <>
+      <Status state={ExecutionState.INTERRUPTED} />
+      <Status state={ExecutionState.EXPIRED} />
+      <Status state={ExecutionState.RUNNING} />
+    </>,
+  );
   expect(screen.getByText(/Interrupted/)).toBeTruthy();
   expect(screen.getByText(/Evidence expired/)).toBeTruthy();
   expect(screen.getByText(/Running/)).toBeTruthy();
@@ -24,9 +37,27 @@ it("consumes pairing fragments without leaving credentials in history", () => {
   expect(describeError(new Error("fetch failed"))).toMatch(/local network/);
 });
 it("supports dialog cancellation and restores focus", () => {
-  HTMLDialogElement.prototype.showModal = vi.fn(); HTMLDialogElement.prototype.close = vi.fn();
-  const onClose = vi.fn(); const prior = document.createElement("button"); document.body.append(prior); prior.focus();
-  const { container, unmount } = render(<Confirm title="Cancel execution?" onClose={onClose} onConfirm={async () => { }}>Details</Confirm>);
-  fireEvent(container.querySelector("dialog")!, new Event("cancel", { bubbles: true, cancelable: true }));
-  expect(onClose).toHaveBeenCalled(); unmount(); expect(document.activeElement).toBe(prior); prior.remove();
+  HTMLDialogElement.prototype.showModal = vi.fn();
+  HTMLDialogElement.prototype.close = vi.fn();
+  const onClose = vi.fn();
+  const prior = document.createElement("button");
+  document.body.append(prior);
+  prior.focus();
+  const { container, unmount } = render(
+    <Confirm
+      title="Cancel execution?"
+      onClose={onClose}
+      onConfirm={async () => {}}
+    >
+      Details
+    </Confirm>,
+  );
+  fireEvent(
+    container.querySelector("dialog")!,
+    new Event("cancel", { bubbles: true, cancelable: true }),
+  );
+  expect(onClose).toHaveBeenCalled();
+  unmount();
+  expect(document.activeElement).toBe(prior);
+  prior.remove();
 });

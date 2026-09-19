@@ -76,7 +76,7 @@ func DefaultPaths() (Paths, error) {
 	if err != nil {
 		return Paths{}, err
 	}
-	return Paths{Config: config, State: filepath.Join(home, ".local", "share", "async-commit-hook"), Control: filepath.Join(filepath.Dir(config), "control")}, nil
+	return Paths{Config: config, State: filepath.Join(home, ".local", "share", "async-commit-hook"), Control: filepath.Join(home, ".config", "async-commit-hook", "control")}, nil
 }
 func ReadPersonal(paths Paths) (Personal, error) {
 	p := Personal{Version: 1, Mode: Daemon, APIPort: 46309, StateDir: paths.State, Credentials: map[string]Credential{}}

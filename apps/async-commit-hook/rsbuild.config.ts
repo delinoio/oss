@@ -5,5 +5,11 @@ export default defineConfig({
   source: { entry: { index: "./src/main.tsx" } },
   html: { template: "./index.html" },
   server: { host: "localhost", port: 46308, strictPort: true },
-  output: { sourceMap: false, filename: { js: "assets/[name].[contenthash:8].js", css: "assets/[name].[contenthash:8].css" } },
+  output: {
+    sourceMap: false,
+    filename: {
+      js: "assets/[name].[contenthash:8].js",
+      css: "assets/[name].[contenthash:8].css",
+    },
+  },
 });

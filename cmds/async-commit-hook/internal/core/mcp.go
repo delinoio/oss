@@ -32,7 +32,13 @@ func (s *Service) MCP(ctx context.Context) error {
 	}
 	for operation, description := range descriptions {
 		operation := operation
-		mcp.AddTool(server, &mcp.Tool{Name: "ach_" + operation, Description: description}, func(ctx context.Context, _ *mcp.CallToolRequest, in MCPInput) (*mcp.CallToolResult, Output, error) {
+		mcp.AddTool(server, &mcp.Tool{Name: "ach_" + operation, Description: description, OutputSchema: map[string]any{
+			// OpenCode 1.1.x rejects the boolean schema inferred for an interface.
+			// An empty schema object has the same JSON Schema meaning. Keep this
+			// compatibility shape until all supported clients accept boolean schemas.
+			"type": "object", "required": []string{"schema_version"},
+			"properties": map[string]any{"schema_version": map[string]any{"type": "integer", "enum": []int{1}}, "result": map[string]any{}, "error": map[string]any{"type": "object"}},
+		}}, func(ctx context.Context, _ *mcp.CallToolRequest, in MCPInput) (*mcp.CallToolResult, Output, error) {
 			if in.Repo == "" {
 				in.Repo = "."
 			}

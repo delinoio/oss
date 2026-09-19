@@ -56,6 +56,10 @@ func (s *Service) Enter(kind string) (Component, func(), error) {
 		return Component{}, nil, E("update-recovery-required", "an update is pending; use ach self-update --recover before starting services", 3)
 	}
 	l, e := TryLock(filepath.Join(s.Paths.Control, "lifecycle.lock"))
+	for attempt := 0; l == nil && e == nil && attempt < 100; attempt++ {
+		time.Sleep(10 * time.Millisecond)
+		l, e = TryLock(filepath.Join(s.Paths.Control, "lifecycle.lock"))
+	}
 	if e != nil {
 		return Component{}, nil, e
 	}
@@ -63,6 +67,9 @@ func (s *Service) Enter(kind string) (Component, func(), error) {
 		return Component{}, nil, E("lifecycle-busy", "another startup or update owns the lifecycle; retry", 3)
 	}
 	defer l.Close()
+	if _, err := os.Stat(filepath.Join(s.Paths.Control, "update.json")); err == nil {
+		return Component{}, nil, E("update-recovery-required", "an update is pending; use ach self-update --recover", 3)
+	}
 	active, e := s.Active()
 	if e != nil {
 		return Component{}, nil, e

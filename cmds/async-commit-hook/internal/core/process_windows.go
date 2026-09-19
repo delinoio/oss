@@ -39,7 +39,7 @@ func ProcessAlive(p Process) bool {
 	}
 	defer windows.CloseHandle(h)
 	v, e := windows.WaitForSingleObject(h, 0)
-	return e == nil && v == windows.WAIT_TIMEOUT
+	return e == nil && v == uint32(windows.WAIT_TIMEOUT)
 }
 func startProcess(c *exec.Cmd) (*managedProcess, error) {
 	job, e := windows.CreateJobObject(nil, nil)
@@ -89,7 +89,10 @@ func (p *managedProcess) terminate() error {
 	if e := windows.TerminateJobObject(p.job, 1); e != nil {
 		return e
 	}
-	var info windows.JOBOBJECT_BASIC_ACCOUNTING_INFORMATION
+	var info struct {
+		TotalUserTime, TotalKernelTime, ThisPeriodTotalUserTime, ThisPeriodTotalKernelTime int64
+		TotalPageFaultCount, TotalProcesses, ActiveProcesses, TotalTerminatedProcesses     uint32
+	}
 	for i := 0; i < 200; i++ {
 		e := windows.QueryInformationJobObject(p.job, windows.JobObjectBasicAccountingInformation, uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info)), nil)
 		if e != nil {
@@ -112,3 +115,5 @@ func ReconcileProcess(p Process) error {
 func Detached(c *exec.Cmd) {
 	c.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS, HideWindow: true}
 }
+
+func (p *managedProcess) snapshot() Process { return p.identity }

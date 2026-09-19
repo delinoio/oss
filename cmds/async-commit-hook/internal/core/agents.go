@@ -103,7 +103,7 @@ func (s *Service) Agent(client, scope, repo string, remove bool) (InstallResult,
 			return InstallResult{}, E("agent-conflict", "Codex already has an unowned async-commit-hook MCP entry", 2)
 		}
 		if !remove {
-			entry = start + "[mcp_servers.async-commit-hook]\ncommand = " + string(Encode(executable)) + "\nargs = [\"mcp\"]\n" + end
+			entry = start + "[mcp_servers.async-commit-hook]\ncommand = " + string(Encode(executable)) + "\nargs = " + string(Encode([]string{"mcp", "--config", s.Paths.Config})) + "\n" + end
 			updated = []byte(strings.TrimRight(text, "\n") + "\n" + entry)
 		} else {
 			updated = []byte(text)
@@ -134,9 +134,9 @@ func (s *Service) Agent(client, scope, repo string, remove bool) (InstallResult,
 			if value.Find("/"+parent) == nil {
 				patch = append(patch, map[string]any{"op": "add", "path": "/" + parent, "value": map[string]any{}})
 			}
-			m := map[string]any{"command": executable, "args": []string{"mcp"}, "type": "stdio"}
+			m := map[string]any{"command": executable, "args": []string{"mcp", "--config", s.Paths.Config}, "type": "stdio"}
 			if client == "opencode" {
-				m = map[string]any{"type": "local", "command": []string{executable, "mcp"}, "enabled": true}
+				m = map[string]any{"type": "local", "command": []string{executable, "mcp", "--config", s.Paths.Config}, "enabled": true}
 			}
 			entry = string(Encode(m))
 			patch = append(patch, map[string]any{"op": "add", "path": pointer, "value": m})

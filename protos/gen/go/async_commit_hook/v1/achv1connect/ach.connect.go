@@ -54,6 +54,8 @@ const (
 	LocalServiceGetRunProcedure = "/async_commit_hook.v1.LocalService/GetRun"
 	// LocalServiceGetLogsProcedure is the fully-qualified name of the LocalService's GetLogs RPC.
 	LocalServiceGetLogsProcedure = "/async_commit_hook.v1.LocalService/GetLogs"
+	// LocalServiceGetReportProcedure is the fully-qualified name of the LocalService's GetReport RPC.
+	LocalServiceGetReportProcedure = "/async_commit_hook.v1.LocalService/GetReport"
 	// LocalServiceGetFailuresProcedure is the fully-qualified name of the LocalService's GetFailures
 	// RPC.
 	LocalServiceGetFailuresProcedure = "/async_commit_hook.v1.LocalService/GetFailures"
@@ -79,6 +81,7 @@ type LocalServiceClient interface {
 	ListRuns(context.Context, *connect.Request[v1.ListRunsRequest]) (*connect.Response[v1.ListRunsResponse], error)
 	GetRun(context.Context, *connect.Request[v1.GetRunRequest]) (*connect.Response[v1.GetRunResponse], error)
 	GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.GetLogsResponse], error)
+	GetReport(context.Context, *connect.Request[v1.GetReportRequest]) (*connect.Response[v1.GetReportResponse], error)
 	GetFailures(context.Context, *connect.Request[v1.GetFailuresRequest]) (*connect.Response[v1.GetFailuresResponse], error)
 	Compare(context.Context, *connect.Request[v1.CompareRequest]) (*connect.Response[v1.CompareResponse], error)
 	Acknowledge(context.Context, *connect.Request[v1.AcknowledgeRequest]) (*connect.Response[v1.AcknowledgeResponse], error)
@@ -151,6 +154,12 @@ func NewLocalServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(localServiceMethods.ByName("GetLogs")),
 			connect.WithClientOptions(opts...),
 		),
+		getReport: connect.NewClient[v1.GetReportRequest, v1.GetReportResponse](
+			httpClient,
+			baseURL+LocalServiceGetReportProcedure,
+			connect.WithSchema(localServiceMethods.ByName("GetReport")),
+			connect.WithClientOptions(opts...),
+		),
 		getFailures: connect.NewClient[v1.GetFailuresRequest, v1.GetFailuresResponse](
 			httpClient,
 			baseURL+LocalServiceGetFailuresProcedure,
@@ -195,6 +204,7 @@ type localServiceClient struct {
 	listRuns         *connect.Client[v1.ListRunsRequest, v1.ListRunsResponse]
 	getRun           *connect.Client[v1.GetRunRequest, v1.GetRunResponse]
 	getLogs          *connect.Client[v1.GetLogsRequest, v1.GetLogsResponse]
+	getReport        *connect.Client[v1.GetReportRequest, v1.GetReportResponse]
 	getFailures      *connect.Client[v1.GetFailuresRequest, v1.GetFailuresResponse]
 	compare          *connect.Client[v1.CompareRequest, v1.CompareResponse]
 	acknowledge      *connect.Client[v1.AcknowledgeRequest, v1.AcknowledgeResponse]
@@ -247,6 +257,11 @@ func (c *localServiceClient) GetLogs(ctx context.Context, req *connect.Request[v
 	return c.getLogs.CallUnary(ctx, req)
 }
 
+// GetReport calls async_commit_hook.v1.LocalService.GetReport.
+func (c *localServiceClient) GetReport(ctx context.Context, req *connect.Request[v1.GetReportRequest]) (*connect.Response[v1.GetReportResponse], error) {
+	return c.getReport.CallUnary(ctx, req)
+}
+
 // GetFailures calls async_commit_hook.v1.LocalService.GetFailures.
 func (c *localServiceClient) GetFailures(ctx context.Context, req *connect.Request[v1.GetFailuresRequest]) (*connect.Response[v1.GetFailuresResponse], error) {
 	return c.getFailures.CallUnary(ctx, req)
@@ -283,6 +298,7 @@ type LocalServiceHandler interface {
 	ListRuns(context.Context, *connect.Request[v1.ListRunsRequest]) (*connect.Response[v1.ListRunsResponse], error)
 	GetRun(context.Context, *connect.Request[v1.GetRunRequest]) (*connect.Response[v1.GetRunResponse], error)
 	GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.GetLogsResponse], error)
+	GetReport(context.Context, *connect.Request[v1.GetReportRequest]) (*connect.Response[v1.GetReportResponse], error)
 	GetFailures(context.Context, *connect.Request[v1.GetFailuresRequest]) (*connect.Response[v1.GetFailuresResponse], error)
 	Compare(context.Context, *connect.Request[v1.CompareRequest]) (*connect.Response[v1.CompareResponse], error)
 	Acknowledge(context.Context, *connect.Request[v1.AcknowledgeRequest]) (*connect.Response[v1.AcknowledgeResponse], error)
@@ -351,6 +367,12 @@ func NewLocalServiceHandler(svc LocalServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(localServiceMethods.ByName("GetLogs")),
 		connect.WithHandlerOptions(opts...),
 	)
+	localServiceGetReportHandler := connect.NewUnaryHandler(
+		LocalServiceGetReportProcedure,
+		svc.GetReport,
+		connect.WithSchema(localServiceMethods.ByName("GetReport")),
+		connect.WithHandlerOptions(opts...),
+	)
 	localServiceGetFailuresHandler := connect.NewUnaryHandler(
 		LocalServiceGetFailuresProcedure,
 		svc.GetFailures,
@@ -401,6 +423,8 @@ func NewLocalServiceHandler(svc LocalServiceHandler, opts ...connect.HandlerOpti
 			localServiceGetRunHandler.ServeHTTP(w, r)
 		case LocalServiceGetLogsProcedure:
 			localServiceGetLogsHandler.ServeHTTP(w, r)
+		case LocalServiceGetReportProcedure:
+			localServiceGetReportHandler.ServeHTTP(w, r)
 		case LocalServiceGetFailuresProcedure:
 			localServiceGetFailuresHandler.ServeHTTP(w, r)
 		case LocalServiceCompareProcedure:
@@ -454,6 +478,10 @@ func (UnimplementedLocalServiceHandler) GetRun(context.Context, *connect.Request
 
 func (UnimplementedLocalServiceHandler) GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.GetLogsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("async_commit_hook.v1.LocalService.GetLogs is not implemented"))
+}
+
+func (UnimplementedLocalServiceHandler) GetReport(context.Context, *connect.Request[v1.GetReportRequest]) (*connect.Response[v1.GetReportResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("async_commit_hook.v1.LocalService.GetReport is not implemented"))
 }
 
 func (UnimplementedLocalServiceHandler) GetFailures(context.Context, *connect.Request[v1.GetFailuresRequest]) (*connect.Response[v1.GetFailuresResponse], error) {

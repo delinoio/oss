@@ -272,6 +272,7 @@ type Check struct {
 	Diagnostics   []*Diagnostic          `protobuf:"bytes,8,rep,name=diagnostics,proto3" json:"diagnostics,omitempty"`
 	Failures      []*Failure             `protobuf:"bytes,9,rep,name=failures,proto3" json:"failures,omitempty"`
 	Command       string                 `protobuf:"bytes,10,opt,name=command,proto3" json:"command,omitempty"`
+	Reports       []*Report              `protobuf:"bytes,11,rep,name=reports,proto3" json:"reports,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -376,6 +377,73 @@ func (x *Check) GetCommand() string {
 	return ""
 }
 
+func (x *Check) GetReports() []*Report {
+	if x != nil {
+		return x.Reports
+	}
+	return nil
+}
+
+type Report struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Size          uint64                 `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Report) Reset() {
+	*x = Report{}
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Report) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Report) ProtoMessage() {}
+
+func (x *Report) ProtoReflect() protoreflect.Message {
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Report.ProtoReflect.Descriptor instead.
+func (*Report) Descriptor() ([]byte, []int) {
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Report) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Report) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Report) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
 type Run struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -401,7 +469,7 @@ type Run struct {
 
 func (x *Run) Reset() {
 	*x = Run{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[3]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -413,7 +481,7 @@ func (x *Run) String() string {
 func (*Run) ProtoMessage() {}
 
 func (x *Run) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[3]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -426,7 +494,7 @@ func (x *Run) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Run.ProtoReflect.Descriptor instead.
 func (*Run) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{3}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Run) GetId() string {
@@ -560,7 +628,7 @@ type Worktree struct {
 
 func (x *Worktree) Reset() {
 	*x = Worktree{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[4]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -572,7 +640,7 @@ func (x *Worktree) String() string {
 func (*Worktree) ProtoMessage() {}
 
 func (x *Worktree) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[4]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -585,7 +653,7 @@ func (x *Worktree) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Worktree.ProtoReflect.Descriptor instead.
 func (*Worktree) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{4}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Worktree) GetId() string {
@@ -627,7 +695,7 @@ type Repository struct {
 
 func (x *Repository) Reset() {
 	*x = Repository{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[5]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -639,7 +707,7 @@ func (x *Repository) String() string {
 func (*Repository) ProtoMessage() {}
 
 func (x *Repository) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[5]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -652,7 +720,7 @@ func (x *Repository) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Repository.ProtoReflect.Descriptor instead.
 func (*Repository) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{5}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Repository) GetId() string {
@@ -686,7 +754,7 @@ type Branch struct {
 
 func (x *Branch) Reset() {
 	*x = Branch{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[6]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -698,7 +766,7 @@ func (x *Branch) String() string {
 func (*Branch) ProtoMessage() {}
 
 func (x *Branch) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[6]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -711,7 +779,7 @@ func (x *Branch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Branch.ProtoReflect.Descriptor instead.
 func (*Branch) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{6}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Branch) GetName() string {
@@ -739,7 +807,7 @@ type Commit struct {
 
 func (x *Commit) Reset() {
 	*x = Commit{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[7]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -751,7 +819,7 @@ func (x *Commit) String() string {
 func (*Commit) ProtoMessage() {}
 
 func (x *Commit) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[7]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -764,7 +832,7 @@ func (x *Commit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Commit.ProtoReflect.Descriptor instead.
 func (*Commit) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{7}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Commit) GetId() string {
@@ -796,7 +864,7 @@ type GetVersionRequest struct {
 
 func (x *GetVersionRequest) Reset() {
 	*x = GetVersionRequest{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[8]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -808,7 +876,7 @@ func (x *GetVersionRequest) String() string {
 func (*GetVersionRequest) ProtoMessage() {}
 
 func (x *GetVersionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[8]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -821,7 +889,7 @@ func (x *GetVersionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVersionRequest.ProtoReflect.Descriptor instead.
 func (*GetVersionRequest) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{8}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{9}
 }
 
 type GetVersionResponse struct {
@@ -834,7 +902,7 @@ type GetVersionResponse struct {
 
 func (x *GetVersionResponse) Reset() {
 	*x = GetVersionResponse{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[9]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -846,7 +914,7 @@ func (x *GetVersionResponse) String() string {
 func (*GetVersionResponse) ProtoMessage() {}
 
 func (x *GetVersionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[9]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -859,7 +927,7 @@ func (x *GetVersionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVersionResponse.ProtoReflect.Descriptor instead.
 func (*GetVersionResponse) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{9}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetVersionResponse) GetApiVersion() uint32 {
@@ -886,7 +954,7 @@ type PairRequest struct {
 
 func (x *PairRequest) Reset() {
 	*x = PairRequest{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[10]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -898,7 +966,7 @@ func (x *PairRequest) String() string {
 func (*PairRequest) ProtoMessage() {}
 
 func (x *PairRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[10]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -911,7 +979,7 @@ func (x *PairRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PairRequest.ProtoReflect.Descriptor instead.
 func (*PairRequest) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{10}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *PairRequest) GetCode() string {
@@ -938,7 +1006,7 @@ type PairResponse struct {
 
 func (x *PairResponse) Reset() {
 	*x = PairResponse{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[11]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -950,7 +1018,7 @@ func (x *PairResponse) String() string {
 func (*PairResponse) ProtoMessage() {}
 
 func (x *PairResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[11]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -963,7 +1031,7 @@ func (x *PairResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PairResponse.ProtoReflect.Descriptor instead.
 func (*PairResponse) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{11}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *PairResponse) GetBrowserId() string {
@@ -988,7 +1056,7 @@ type ListRepositoriesRequest struct {
 
 func (x *ListRepositoriesRequest) Reset() {
 	*x = ListRepositoriesRequest{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[12]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1000,7 +1068,7 @@ func (x *ListRepositoriesRequest) String() string {
 func (*ListRepositoriesRequest) ProtoMessage() {}
 
 func (x *ListRepositoriesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[12]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1013,7 +1081,7 @@ func (x *ListRepositoriesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRepositoriesRequest.ProtoReflect.Descriptor instead.
 func (*ListRepositoriesRequest) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{12}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{13}
 }
 
 type ListRepositoriesResponse struct {
@@ -1025,7 +1093,7 @@ type ListRepositoriesResponse struct {
 
 func (x *ListRepositoriesResponse) Reset() {
 	*x = ListRepositoriesResponse{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[13]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1037,7 +1105,7 @@ func (x *ListRepositoriesResponse) String() string {
 func (*ListRepositoriesResponse) ProtoMessage() {}
 
 func (x *ListRepositoriesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[13]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1050,7 +1118,7 @@ func (x *ListRepositoriesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRepositoriesResponse.ProtoReflect.Descriptor instead.
 func (*ListRepositoriesResponse) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{13}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListRepositoriesResponse) GetRepositories() []*Repository {
@@ -1069,7 +1137,7 @@ type ListBranchesRequest struct {
 
 func (x *ListBranchesRequest) Reset() {
 	*x = ListBranchesRequest{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[14]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1081,7 +1149,7 @@ func (x *ListBranchesRequest) String() string {
 func (*ListBranchesRequest) ProtoMessage() {}
 
 func (x *ListBranchesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[14]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1094,7 +1162,7 @@ func (x *ListBranchesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBranchesRequest.ProtoReflect.Descriptor instead.
 func (*ListBranchesRequest) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{14}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListBranchesRequest) GetWorktreeId() string {
@@ -1113,7 +1181,7 @@ type ListBranchesResponse struct {
 
 func (x *ListBranchesResponse) Reset() {
 	*x = ListBranchesResponse{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[15]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1125,7 +1193,7 @@ func (x *ListBranchesResponse) String() string {
 func (*ListBranchesResponse) ProtoMessage() {}
 
 func (x *ListBranchesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[15]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1138,7 +1206,7 @@ func (x *ListBranchesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBranchesResponse.ProtoReflect.Descriptor instead.
 func (*ListBranchesResponse) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{15}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListBranchesResponse) GetBranches() []*Branch {
@@ -1159,7 +1227,7 @@ type ListCommitsRequest struct {
 
 func (x *ListCommitsRequest) Reset() {
 	*x = ListCommitsRequest{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[16]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1171,7 +1239,7 @@ func (x *ListCommitsRequest) String() string {
 func (*ListCommitsRequest) ProtoMessage() {}
 
 func (x *ListCommitsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[16]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1184,7 +1252,7 @@ func (x *ListCommitsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCommitsRequest.ProtoReflect.Descriptor instead.
 func (*ListCommitsRequest) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{16}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListCommitsRequest) GetWorktreeId() string {
@@ -1217,7 +1285,7 @@ type ListCommitsResponse struct {
 
 func (x *ListCommitsResponse) Reset() {
 	*x = ListCommitsResponse{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[17]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1229,7 +1297,7 @@ func (x *ListCommitsResponse) String() string {
 func (*ListCommitsResponse) ProtoMessage() {}
 
 func (x *ListCommitsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[17]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1242,7 +1310,7 @@ func (x *ListCommitsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCommitsResponse.ProtoReflect.Descriptor instead.
 func (*ListCommitsResponse) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{17}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListCommitsResponse) GetCommits() []*Commit {
@@ -1263,7 +1331,7 @@ type GetChangesRequest struct {
 
 func (x *GetChangesRequest) Reset() {
 	*x = GetChangesRequest{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[18]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1275,7 +1343,7 @@ func (x *GetChangesRequest) String() string {
 func (*GetChangesRequest) ProtoMessage() {}
 
 func (x *GetChangesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[18]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1288,7 +1356,7 @@ func (x *GetChangesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetChangesRequest.ProtoReflect.Descriptor instead.
 func (*GetChangesRequest) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{18}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GetChangesRequest) GetWorktreeId() string {
@@ -1325,7 +1393,7 @@ type GetChangesResponse struct {
 
 func (x *GetChangesResponse) Reset() {
 	*x = GetChangesResponse{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[19]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1337,7 +1405,7 @@ func (x *GetChangesResponse) String() string {
 func (*GetChangesResponse) ProtoMessage() {}
 
 func (x *GetChangesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[19]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1350,7 +1418,7 @@ func (x *GetChangesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetChangesResponse.ProtoReflect.Descriptor instead.
 func (*GetChangesResponse) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{19}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *GetChangesResponse) GetBase() string {
@@ -1394,13 +1462,15 @@ type ListRunsRequest struct {
 	Inbox         bool                   `protobuf:"varint,2,opt,name=inbox,proto3" json:"inbox,omitempty"`
 	Cursor        string                 `protobuf:"bytes,3,opt,name=cursor,proto3" json:"cursor,omitempty"`
 	Limit         uint32                 `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
+	Branch        string                 `protobuf:"bytes,5,opt,name=branch,proto3" json:"branch,omitempty"`
+	WorktreeId    string                 `protobuf:"bytes,6,opt,name=worktree_id,json=worktreeId,proto3" json:"worktree_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListRunsRequest) Reset() {
 	*x = ListRunsRequest{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[20]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1412,7 +1482,7 @@ func (x *ListRunsRequest) String() string {
 func (*ListRunsRequest) ProtoMessage() {}
 
 func (x *ListRunsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[20]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1425,7 +1495,7 @@ func (x *ListRunsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRunsRequest.ProtoReflect.Descriptor instead.
 func (*ListRunsRequest) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{20}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ListRunsRequest) GetRepositoryId() string {
@@ -1456,6 +1526,20 @@ func (x *ListRunsRequest) GetLimit() uint32 {
 	return 0
 }
 
+func (x *ListRunsRequest) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *ListRunsRequest) GetWorktreeId() string {
+	if x != nil {
+		return x.WorktreeId
+	}
+	return ""
+}
+
 type ListRunsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Runs          []*Run                 `protobuf:"bytes,1,rep,name=runs,proto3" json:"runs,omitempty"`
@@ -1466,7 +1550,7 @@ type ListRunsResponse struct {
 
 func (x *ListRunsResponse) Reset() {
 	*x = ListRunsResponse{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[21]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1478,7 +1562,7 @@ func (x *ListRunsResponse) String() string {
 func (*ListRunsResponse) ProtoMessage() {}
 
 func (x *ListRunsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[21]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1491,7 +1575,7 @@ func (x *ListRunsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRunsResponse.ProtoReflect.Descriptor instead.
 func (*ListRunsResponse) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{21}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ListRunsResponse) GetRuns() []*Run {
@@ -1517,7 +1601,7 @@ type GetRunRequest struct {
 
 func (x *GetRunRequest) Reset() {
 	*x = GetRunRequest{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[22]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1529,7 +1613,7 @@ func (x *GetRunRequest) String() string {
 func (*GetRunRequest) ProtoMessage() {}
 
 func (x *GetRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[22]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1542,7 +1626,7 @@ func (x *GetRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRunRequest.ProtoReflect.Descriptor instead.
 func (*GetRunRequest) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{22}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *GetRunRequest) GetRunId() string {
@@ -1561,7 +1645,7 @@ type GetRunResponse struct {
 
 func (x *GetRunResponse) Reset() {
 	*x = GetRunResponse{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[23]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1573,7 +1657,7 @@ func (x *GetRunResponse) String() string {
 func (*GetRunResponse) ProtoMessage() {}
 
 func (x *GetRunResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[23]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1586,7 +1670,7 @@ func (x *GetRunResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRunResponse.ProtoReflect.Descriptor instead.
 func (*GetRunResponse) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{23}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *GetRunResponse) GetRun() *Run {
@@ -1608,7 +1692,7 @@ type GetLogsRequest struct {
 
 func (x *GetLogsRequest) Reset() {
 	*x = GetLogsRequest{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[24]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1620,7 +1704,7 @@ func (x *GetLogsRequest) String() string {
 func (*GetLogsRequest) ProtoMessage() {}
 
 func (x *GetLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[24]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1633,7 +1717,7 @@ func (x *GetLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLogsRequest.ProtoReflect.Descriptor instead.
 func (*GetLogsRequest) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{24}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GetLogsRequest) GetRunId() string {
@@ -1675,7 +1759,7 @@ type GetLogsResponse struct {
 
 func (x *GetLogsResponse) Reset() {
 	*x = GetLogsResponse{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[25]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1687,7 +1771,7 @@ func (x *GetLogsResponse) String() string {
 func (*GetLogsResponse) ProtoMessage() {}
 
 func (x *GetLogsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[25]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1700,7 +1784,7 @@ func (x *GetLogsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLogsResponse.ProtoReflect.Descriptor instead.
 func (*GetLogsResponse) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{25}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *GetLogsResponse) GetText() string {
@@ -1733,7 +1817,7 @@ type GetFailuresRequest struct {
 
 func (x *GetFailuresRequest) Reset() {
 	*x = GetFailuresRequest{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[26]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1745,7 +1829,7 @@ func (x *GetFailuresRequest) String() string {
 func (*GetFailuresRequest) ProtoMessage() {}
 
 func (x *GetFailuresRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[26]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1758,7 +1842,7 @@ func (x *GetFailuresRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFailuresRequest.ProtoReflect.Descriptor instead.
 func (*GetFailuresRequest) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{26}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *GetFailuresRequest) GetRunId() string {
@@ -1777,7 +1861,7 @@ type GetFailuresResponse struct {
 
 func (x *GetFailuresResponse) Reset() {
 	*x = GetFailuresResponse{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[27]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1789,7 +1873,7 @@ func (x *GetFailuresResponse) String() string {
 func (*GetFailuresResponse) ProtoMessage() {}
 
 func (x *GetFailuresResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[27]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1802,7 +1886,7 @@ func (x *GetFailuresResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFailuresResponse.ProtoReflect.Descriptor instead.
 func (*GetFailuresResponse) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{27}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *GetFailuresResponse) GetFailures() []*Failure {
@@ -1822,7 +1906,7 @@ type CompareRequest struct {
 
 func (x *CompareRequest) Reset() {
 	*x = CompareRequest{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[28]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1834,7 +1918,7 @@ func (x *CompareRequest) String() string {
 func (*CompareRequest) ProtoMessage() {}
 
 func (x *CompareRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[28]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1847,7 +1931,7 @@ func (x *CompareRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompareRequest.ProtoReflect.Descriptor instead.
 func (*CompareRequest) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{28}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *CompareRequest) GetRunId() string {
@@ -1879,7 +1963,7 @@ type CompareResponse struct {
 
 func (x *CompareResponse) Reset() {
 	*x = CompareResponse{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[29]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1891,7 +1975,7 @@ func (x *CompareResponse) String() string {
 func (*CompareResponse) ProtoMessage() {}
 
 func (x *CompareResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[29]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1904,7 +1988,7 @@ func (x *CompareResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompareResponse.ProtoReflect.Descriptor instead.
 func (*CompareResponse) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{29}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *CompareResponse) GetAvailable() bool {
@@ -1965,7 +2049,7 @@ type AcknowledgeRequest struct {
 
 func (x *AcknowledgeRequest) Reset() {
 	*x = AcknowledgeRequest{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[30]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1977,7 +2061,7 @@ func (x *AcknowledgeRequest) String() string {
 func (*AcknowledgeRequest) ProtoMessage() {}
 
 func (x *AcknowledgeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[30]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1990,7 +2074,7 @@ func (x *AcknowledgeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcknowledgeRequest.ProtoReflect.Descriptor instead.
 func (*AcknowledgeRequest) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{30}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *AcknowledgeRequest) GetRunId() string {
@@ -2008,7 +2092,7 @@ type AcknowledgeResponse struct {
 
 func (x *AcknowledgeResponse) Reset() {
 	*x = AcknowledgeResponse{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[31]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2020,7 +2104,7 @@ func (x *AcknowledgeResponse) String() string {
 func (*AcknowledgeResponse) ProtoMessage() {}
 
 func (x *AcknowledgeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[31]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2033,7 +2117,7 @@ func (x *AcknowledgeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcknowledgeResponse.ProtoReflect.Descriptor instead.
 func (*AcknowledgeResponse) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{31}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{32}
 }
 
 type RerunRequest struct {
@@ -2046,7 +2130,7 @@ type RerunRequest struct {
 
 func (x *RerunRequest) Reset() {
 	*x = RerunRequest{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[32]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2058,7 +2142,7 @@ func (x *RerunRequest) String() string {
 func (*RerunRequest) ProtoMessage() {}
 
 func (x *RerunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[32]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2071,7 +2155,7 @@ func (x *RerunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RerunRequest.ProtoReflect.Descriptor instead.
 func (*RerunRequest) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{32}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *RerunRequest) GetRunId() string {
@@ -2097,7 +2181,7 @@ type RerunResponse struct {
 
 func (x *RerunResponse) Reset() {
 	*x = RerunResponse{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[33]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2109,7 +2193,7 @@ func (x *RerunResponse) String() string {
 func (*RerunResponse) ProtoMessage() {}
 
 func (x *RerunResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[33]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2122,7 +2206,7 @@ func (x *RerunResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RerunResponse.ProtoReflect.Descriptor instead.
 func (*RerunResponse) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{33}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *RerunResponse) GetRunId() string {
@@ -2141,7 +2225,7 @@ type CancelRequest struct {
 
 func (x *CancelRequest) Reset() {
 	*x = CancelRequest{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[34]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2153,7 +2237,7 @@ func (x *CancelRequest) String() string {
 func (*CancelRequest) ProtoMessage() {}
 
 func (x *CancelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[34]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2166,7 +2250,7 @@ func (x *CancelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelRequest.ProtoReflect.Descriptor instead.
 func (*CancelRequest) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{34}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *CancelRequest) GetRunId() string {
@@ -2184,7 +2268,7 @@ type CancelResponse struct {
 
 func (x *CancelResponse) Reset() {
 	*x = CancelResponse{}
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[35]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2196,7 +2280,7 @@ func (x *CancelResponse) String() string {
 func (*CancelResponse) ProtoMessage() {}
 
 func (x *CancelResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[35]
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2209,7 +2293,135 @@ func (x *CancelResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelResponse.ProtoReflect.Descriptor instead.
 func (*CancelResponse) Descriptor() ([]byte, []int) {
-	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{35}
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{36}
+}
+
+type GetReportRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	ReportId      string                 `protobuf:"bytes,2,opt,name=report_id,json=reportId,proto3" json:"report_id,omitempty"`
+	Offset        int64                  `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
+	Limit         uint32                 `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetReportRequest) Reset() {
+	*x = GetReportRequest{}
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetReportRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetReportRequest) ProtoMessage() {}
+
+func (x *GetReportRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetReportRequest.ProtoReflect.Descriptor instead.
+func (*GetReportRequest) Descriptor() ([]byte, []int) {
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *GetReportRequest) GetRunId() string {
+	if x != nil {
+		return x.RunId
+	}
+	return ""
+}
+
+func (x *GetReportRequest) GetReportId() string {
+	if x != nil {
+		return x.ReportId
+	}
+	return ""
+}
+
+func (x *GetReportRequest) GetOffset() int64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+func (x *GetReportRequest) GetLimit() uint32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type GetReportResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
+	NextOffset    int64                  `protobuf:"varint,2,opt,name=next_offset,json=nextOffset,proto3" json:"next_offset,omitempty"`
+	Complete      bool                   `protobuf:"varint,3,opt,name=complete,proto3" json:"complete,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetReportResponse) Reset() {
+	*x = GetReportResponse{}
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetReportResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetReportResponse) ProtoMessage() {}
+
+func (x *GetReportResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_async_commit_hook_v1_ach_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetReportResponse.ProtoReflect.Descriptor instead.
+func (*GetReportResponse) Descriptor() ([]byte, []int) {
+	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *GetReportResponse) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *GetReportResponse) GetNextOffset() int64 {
+	if x != nil {
+		return x.NextOffset
+	}
+	return 0
+}
+
+func (x *GetReportResponse) GetComplete() bool {
+	if x != nil {
+		return x.Complete
+	}
+	return false
 }
 
 var File_async_commit_hook_v1_ach_proto protoreflect.FileDescriptor
@@ -2230,7 +2442,7 @@ const file_async_commit_hook_v1_ach_proto_rawDesc = "" +
 	"\amessage\x18\x05 \x01(\tR\amessage\x12\x12\n" +
 	"\x04file\x18\x06 \x01(\tR\x04file\x12\x12\n" +
 	"\x04line\x18\a \x01(\x05R\x04line\x12\x15\n" +
-	"\x06log_id\x18\b \x01(\tR\x05logId\"\x89\x03\n" +
+	"\x06log_id\x18\b \x01(\tR\x05logId\"\xc1\x03\n" +
 	"\x05Check\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12:\n" +
@@ -2242,9 +2454,14 @@ const file_async_commit_hook_v1_ach_proto_rawDesc = "" +
 	"\vdiagnostics\x18\b \x03(\v2 .async_commit_hook.v1.DiagnosticR\vdiagnostics\x129\n" +
 	"\bfailures\x18\t \x03(\v2\x1d.async_commit_hook.v1.FailureR\bfailures\x12\x18\n" +
 	"\acommand\x18\n" +
-	" \x01(\tR\acommandB\f\n" +
+	" \x01(\tR\acommand\x126\n" +
+	"\areports\x18\v \x03(\v2\x1c.async_commit_hook.v1.ReportR\areportsB\f\n" +
 	"\n" +
-	"_exit_code\"\xc8\x04\n" +
+	"_exit_code\"@\n" +
+	"\x06Report\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
+	"\x04size\x18\x03 \x01(\x04R\x04size\"\xc8\x04\n" +
 	"\x03Run\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\bsequence\x18\x02 \x01(\x04R\bsequence\x12#\n" +
@@ -2324,12 +2541,15 @@ const file_async_commit_hook_v1_ach_proto_rawDesc = "" +
 	"\n" +
 	"merge_base\x18\x03 \x01(\tR\tmergeBase\x12\x12\n" +
 	"\x04diff\x18\x04 \x01(\tR\x04diff\x12\x1c\n" +
-	"\ttruncated\x18\x05 \x01(\bR\ttruncated\"z\n" +
+	"\ttruncated\x18\x05 \x01(\bR\ttruncated\"\xb3\x01\n" +
 	"\x0fListRunsRequest\x12#\n" +
 	"\rrepository_id\x18\x01 \x01(\tR\frepositoryId\x12\x14\n" +
 	"\x05inbox\x18\x02 \x01(\bR\x05inbox\x12\x16\n" +
 	"\x06cursor\x18\x03 \x01(\tR\x06cursor\x12\x14\n" +
-	"\x05limit\x18\x04 \x01(\rR\x05limit\"b\n" +
+	"\x05limit\x18\x04 \x01(\rR\x05limit\x12\x16\n" +
+	"\x06branch\x18\x05 \x01(\tR\x06branch\x12\x1f\n" +
+	"\vworktree_id\x18\x06 \x01(\tR\n" +
+	"worktreeId\"b\n" +
 	"\x10ListRunsResponse\x12-\n" +
 	"\x04runs\x18\x01 \x03(\v2\x19.async_commit_hook.v1.RunR\x04runs\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
@@ -2376,7 +2596,17 @@ const file_async_commit_hook_v1_ach_proto_rawDesc = "" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\"&\n" +
 	"\rCancelRequest\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\"\x10\n" +
-	"\x0eCancelResponse*\x96\x03\n" +
+	"\x0eCancelResponse\"t\n" +
+	"\x10GetReportRequest\x12\x15\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1b\n" +
+	"\treport_id\x18\x02 \x01(\tR\breportId\x12\x16\n" +
+	"\x06offset\x18\x03 \x01(\x03R\x06offset\x12\x14\n" +
+	"\x05limit\x18\x04 \x01(\rR\x05limit\"d\n" +
+	"\x11GetReportResponse\x12\x12\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\x12\x1f\n" +
+	"\vnext_offset\x18\x02 \x01(\x03R\n" +
+	"nextOffset\x12\x1a\n" +
+	"\bcomplete\x18\x03 \x01(\bR\bcomplete*\x96\x03\n" +
 	"\x0eExecutionState\x12\x1f\n" +
 	"\x1bEXECUTION_STATE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16EXECUTION_STATE_QUEUED\x10\x01\x12\x1d\n" +
@@ -2391,8 +2621,7 @@ const file_async_commit_hook_v1_ach_proto_rawDesc = "" +
 	"\x1bEXECUTION_STATE_INTERRUPTED\x10\n" +
 	"\x12\x1b\n" +
 	"\x17EXECUTION_STATE_SKIPPED\x10\v\x12\x1b\n" +
-	"\x17EXECUTION_STATE_EXPIRED\x10\f2\xac\n" +
-	"\n" +
+	"\x17EXECUTION_STATE_EXPIRED\x10\f2\x8a\v\n" +
 	"\fLocalService\x12_\n" +
 	"\n" +
 	"GetVersion\x12'.async_commit_hook.v1.GetVersionRequest\x1a(.async_commit_hook.v1.GetVersionResponse\x12M\n" +
@@ -2404,7 +2633,8 @@ const file_async_commit_hook_v1_ach_proto_rawDesc = "" +
 	"GetChanges\x12'.async_commit_hook.v1.GetChangesRequest\x1a(.async_commit_hook.v1.GetChangesResponse\x12Y\n" +
 	"\bListRuns\x12%.async_commit_hook.v1.ListRunsRequest\x1a&.async_commit_hook.v1.ListRunsResponse\x12S\n" +
 	"\x06GetRun\x12#.async_commit_hook.v1.GetRunRequest\x1a$.async_commit_hook.v1.GetRunResponse\x12V\n" +
-	"\aGetLogs\x12$.async_commit_hook.v1.GetLogsRequest\x1a%.async_commit_hook.v1.GetLogsResponse\x12b\n" +
+	"\aGetLogs\x12$.async_commit_hook.v1.GetLogsRequest\x1a%.async_commit_hook.v1.GetLogsResponse\x12\\\n" +
+	"\tGetReport\x12&.async_commit_hook.v1.GetReportRequest\x1a'.async_commit_hook.v1.GetReportResponse\x12b\n" +
 	"\vGetFailures\x12(.async_commit_hook.v1.GetFailuresRequest\x1a).async_commit_hook.v1.GetFailuresResponse\x12V\n" +
 	"\aCompare\x12$.async_commit_hook.v1.CompareRequest\x1a%.async_commit_hook.v1.CompareResponse\x12b\n" +
 	"\vAcknowledge\x12(.async_commit_hook.v1.AcknowledgeRequest\x1a).async_commit_hook.v1.AcknowledgeResponse\x12P\n" +
@@ -2424,96 +2654,102 @@ func file_async_commit_hook_v1_ach_proto_rawDescGZIP() []byte {
 }
 
 var file_async_commit_hook_v1_ach_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_async_commit_hook_v1_ach_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
+var file_async_commit_hook_v1_ach_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
 var file_async_commit_hook_v1_ach_proto_goTypes = []any{
 	(ExecutionState)(0),              // 0: async_commit_hook.v1.ExecutionState
 	(*Diagnostic)(nil),               // 1: async_commit_hook.v1.Diagnostic
 	(*Failure)(nil),                  // 2: async_commit_hook.v1.Failure
 	(*Check)(nil),                    // 3: async_commit_hook.v1.Check
-	(*Run)(nil),                      // 4: async_commit_hook.v1.Run
-	(*Worktree)(nil),                 // 5: async_commit_hook.v1.Worktree
-	(*Repository)(nil),               // 6: async_commit_hook.v1.Repository
-	(*Branch)(nil),                   // 7: async_commit_hook.v1.Branch
-	(*Commit)(nil),                   // 8: async_commit_hook.v1.Commit
-	(*GetVersionRequest)(nil),        // 9: async_commit_hook.v1.GetVersionRequest
-	(*GetVersionResponse)(nil),       // 10: async_commit_hook.v1.GetVersionResponse
-	(*PairRequest)(nil),              // 11: async_commit_hook.v1.PairRequest
-	(*PairResponse)(nil),             // 12: async_commit_hook.v1.PairResponse
-	(*ListRepositoriesRequest)(nil),  // 13: async_commit_hook.v1.ListRepositoriesRequest
-	(*ListRepositoriesResponse)(nil), // 14: async_commit_hook.v1.ListRepositoriesResponse
-	(*ListBranchesRequest)(nil),      // 15: async_commit_hook.v1.ListBranchesRequest
-	(*ListBranchesResponse)(nil),     // 16: async_commit_hook.v1.ListBranchesResponse
-	(*ListCommitsRequest)(nil),       // 17: async_commit_hook.v1.ListCommitsRequest
-	(*ListCommitsResponse)(nil),      // 18: async_commit_hook.v1.ListCommitsResponse
-	(*GetChangesRequest)(nil),        // 19: async_commit_hook.v1.GetChangesRequest
-	(*GetChangesResponse)(nil),       // 20: async_commit_hook.v1.GetChangesResponse
-	(*ListRunsRequest)(nil),          // 21: async_commit_hook.v1.ListRunsRequest
-	(*ListRunsResponse)(nil),         // 22: async_commit_hook.v1.ListRunsResponse
-	(*GetRunRequest)(nil),            // 23: async_commit_hook.v1.GetRunRequest
-	(*GetRunResponse)(nil),           // 24: async_commit_hook.v1.GetRunResponse
-	(*GetLogsRequest)(nil),           // 25: async_commit_hook.v1.GetLogsRequest
-	(*GetLogsResponse)(nil),          // 26: async_commit_hook.v1.GetLogsResponse
-	(*GetFailuresRequest)(nil),       // 27: async_commit_hook.v1.GetFailuresRequest
-	(*GetFailuresResponse)(nil),      // 28: async_commit_hook.v1.GetFailuresResponse
-	(*CompareRequest)(nil),           // 29: async_commit_hook.v1.CompareRequest
-	(*CompareResponse)(nil),          // 30: async_commit_hook.v1.CompareResponse
-	(*AcknowledgeRequest)(nil),       // 31: async_commit_hook.v1.AcknowledgeRequest
-	(*AcknowledgeResponse)(nil),      // 32: async_commit_hook.v1.AcknowledgeResponse
-	(*RerunRequest)(nil),             // 33: async_commit_hook.v1.RerunRequest
-	(*RerunResponse)(nil),            // 34: async_commit_hook.v1.RerunResponse
-	(*CancelRequest)(nil),            // 35: async_commit_hook.v1.CancelRequest
-	(*CancelResponse)(nil),           // 36: async_commit_hook.v1.CancelResponse
+	(*Report)(nil),                   // 4: async_commit_hook.v1.Report
+	(*Run)(nil),                      // 5: async_commit_hook.v1.Run
+	(*Worktree)(nil),                 // 6: async_commit_hook.v1.Worktree
+	(*Repository)(nil),               // 7: async_commit_hook.v1.Repository
+	(*Branch)(nil),                   // 8: async_commit_hook.v1.Branch
+	(*Commit)(nil),                   // 9: async_commit_hook.v1.Commit
+	(*GetVersionRequest)(nil),        // 10: async_commit_hook.v1.GetVersionRequest
+	(*GetVersionResponse)(nil),       // 11: async_commit_hook.v1.GetVersionResponse
+	(*PairRequest)(nil),              // 12: async_commit_hook.v1.PairRequest
+	(*PairResponse)(nil),             // 13: async_commit_hook.v1.PairResponse
+	(*ListRepositoriesRequest)(nil),  // 14: async_commit_hook.v1.ListRepositoriesRequest
+	(*ListRepositoriesResponse)(nil), // 15: async_commit_hook.v1.ListRepositoriesResponse
+	(*ListBranchesRequest)(nil),      // 16: async_commit_hook.v1.ListBranchesRequest
+	(*ListBranchesResponse)(nil),     // 17: async_commit_hook.v1.ListBranchesResponse
+	(*ListCommitsRequest)(nil),       // 18: async_commit_hook.v1.ListCommitsRequest
+	(*ListCommitsResponse)(nil),      // 19: async_commit_hook.v1.ListCommitsResponse
+	(*GetChangesRequest)(nil),        // 20: async_commit_hook.v1.GetChangesRequest
+	(*GetChangesResponse)(nil),       // 21: async_commit_hook.v1.GetChangesResponse
+	(*ListRunsRequest)(nil),          // 22: async_commit_hook.v1.ListRunsRequest
+	(*ListRunsResponse)(nil),         // 23: async_commit_hook.v1.ListRunsResponse
+	(*GetRunRequest)(nil),            // 24: async_commit_hook.v1.GetRunRequest
+	(*GetRunResponse)(nil),           // 25: async_commit_hook.v1.GetRunResponse
+	(*GetLogsRequest)(nil),           // 26: async_commit_hook.v1.GetLogsRequest
+	(*GetLogsResponse)(nil),          // 27: async_commit_hook.v1.GetLogsResponse
+	(*GetFailuresRequest)(nil),       // 28: async_commit_hook.v1.GetFailuresRequest
+	(*GetFailuresResponse)(nil),      // 29: async_commit_hook.v1.GetFailuresResponse
+	(*CompareRequest)(nil),           // 30: async_commit_hook.v1.CompareRequest
+	(*CompareResponse)(nil),          // 31: async_commit_hook.v1.CompareResponse
+	(*AcknowledgeRequest)(nil),       // 32: async_commit_hook.v1.AcknowledgeRequest
+	(*AcknowledgeResponse)(nil),      // 33: async_commit_hook.v1.AcknowledgeResponse
+	(*RerunRequest)(nil),             // 34: async_commit_hook.v1.RerunRequest
+	(*RerunResponse)(nil),            // 35: async_commit_hook.v1.RerunResponse
+	(*CancelRequest)(nil),            // 36: async_commit_hook.v1.CancelRequest
+	(*CancelResponse)(nil),           // 37: async_commit_hook.v1.CancelResponse
+	(*GetReportRequest)(nil),         // 38: async_commit_hook.v1.GetReportRequest
+	(*GetReportResponse)(nil),        // 39: async_commit_hook.v1.GetReportResponse
 }
 var file_async_commit_hook_v1_ach_proto_depIdxs = []int32{
 	0,  // 0: async_commit_hook.v1.Check.state:type_name -> async_commit_hook.v1.ExecutionState
 	1,  // 1: async_commit_hook.v1.Check.diagnostics:type_name -> async_commit_hook.v1.Diagnostic
 	2,  // 2: async_commit_hook.v1.Check.failures:type_name -> async_commit_hook.v1.Failure
-	0,  // 3: async_commit_hook.v1.Run.state:type_name -> async_commit_hook.v1.ExecutionState
-	3,  // 4: async_commit_hook.v1.Run.checks:type_name -> async_commit_hook.v1.Check
-	1,  // 5: async_commit_hook.v1.Run.diagnostics:type_name -> async_commit_hook.v1.Diagnostic
-	5,  // 6: async_commit_hook.v1.Repository.worktrees:type_name -> async_commit_hook.v1.Worktree
-	6,  // 7: async_commit_hook.v1.ListRepositoriesResponse.repositories:type_name -> async_commit_hook.v1.Repository
-	7,  // 8: async_commit_hook.v1.ListBranchesResponse.branches:type_name -> async_commit_hook.v1.Branch
-	8,  // 9: async_commit_hook.v1.ListCommitsResponse.commits:type_name -> async_commit_hook.v1.Commit
-	4,  // 10: async_commit_hook.v1.ListRunsResponse.runs:type_name -> async_commit_hook.v1.Run
-	4,  // 11: async_commit_hook.v1.GetRunResponse.run:type_name -> async_commit_hook.v1.Run
-	2,  // 12: async_commit_hook.v1.GetFailuresResponse.failures:type_name -> async_commit_hook.v1.Failure
-	2,  // 13: async_commit_hook.v1.CompareResponse.new_failures:type_name -> async_commit_hook.v1.Failure
-	2,  // 14: async_commit_hook.v1.CompareResponse.continuing_failures:type_name -> async_commit_hook.v1.Failure
-	2,  // 15: async_commit_hook.v1.CompareResponse.resolved_failures:type_name -> async_commit_hook.v1.Failure
-	9,  // 16: async_commit_hook.v1.LocalService.GetVersion:input_type -> async_commit_hook.v1.GetVersionRequest
-	11, // 17: async_commit_hook.v1.LocalService.Pair:input_type -> async_commit_hook.v1.PairRequest
-	13, // 18: async_commit_hook.v1.LocalService.ListRepositories:input_type -> async_commit_hook.v1.ListRepositoriesRequest
-	15, // 19: async_commit_hook.v1.LocalService.ListBranches:input_type -> async_commit_hook.v1.ListBranchesRequest
-	17, // 20: async_commit_hook.v1.LocalService.ListCommits:input_type -> async_commit_hook.v1.ListCommitsRequest
-	19, // 21: async_commit_hook.v1.LocalService.GetChanges:input_type -> async_commit_hook.v1.GetChangesRequest
-	21, // 22: async_commit_hook.v1.LocalService.ListRuns:input_type -> async_commit_hook.v1.ListRunsRequest
-	23, // 23: async_commit_hook.v1.LocalService.GetRun:input_type -> async_commit_hook.v1.GetRunRequest
-	25, // 24: async_commit_hook.v1.LocalService.GetLogs:input_type -> async_commit_hook.v1.GetLogsRequest
-	27, // 25: async_commit_hook.v1.LocalService.GetFailures:input_type -> async_commit_hook.v1.GetFailuresRequest
-	29, // 26: async_commit_hook.v1.LocalService.Compare:input_type -> async_commit_hook.v1.CompareRequest
-	31, // 27: async_commit_hook.v1.LocalService.Acknowledge:input_type -> async_commit_hook.v1.AcknowledgeRequest
-	33, // 28: async_commit_hook.v1.LocalService.Rerun:input_type -> async_commit_hook.v1.RerunRequest
-	35, // 29: async_commit_hook.v1.LocalService.Cancel:input_type -> async_commit_hook.v1.CancelRequest
-	10, // 30: async_commit_hook.v1.LocalService.GetVersion:output_type -> async_commit_hook.v1.GetVersionResponse
-	12, // 31: async_commit_hook.v1.LocalService.Pair:output_type -> async_commit_hook.v1.PairResponse
-	14, // 32: async_commit_hook.v1.LocalService.ListRepositories:output_type -> async_commit_hook.v1.ListRepositoriesResponse
-	16, // 33: async_commit_hook.v1.LocalService.ListBranches:output_type -> async_commit_hook.v1.ListBranchesResponse
-	18, // 34: async_commit_hook.v1.LocalService.ListCommits:output_type -> async_commit_hook.v1.ListCommitsResponse
-	20, // 35: async_commit_hook.v1.LocalService.GetChanges:output_type -> async_commit_hook.v1.GetChangesResponse
-	22, // 36: async_commit_hook.v1.LocalService.ListRuns:output_type -> async_commit_hook.v1.ListRunsResponse
-	24, // 37: async_commit_hook.v1.LocalService.GetRun:output_type -> async_commit_hook.v1.GetRunResponse
-	26, // 38: async_commit_hook.v1.LocalService.GetLogs:output_type -> async_commit_hook.v1.GetLogsResponse
-	28, // 39: async_commit_hook.v1.LocalService.GetFailures:output_type -> async_commit_hook.v1.GetFailuresResponse
-	30, // 40: async_commit_hook.v1.LocalService.Compare:output_type -> async_commit_hook.v1.CompareResponse
-	32, // 41: async_commit_hook.v1.LocalService.Acknowledge:output_type -> async_commit_hook.v1.AcknowledgeResponse
-	34, // 42: async_commit_hook.v1.LocalService.Rerun:output_type -> async_commit_hook.v1.RerunResponse
-	36, // 43: async_commit_hook.v1.LocalService.Cancel:output_type -> async_commit_hook.v1.CancelResponse
-	30, // [30:44] is the sub-list for method output_type
-	16, // [16:30] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	4,  // 3: async_commit_hook.v1.Check.reports:type_name -> async_commit_hook.v1.Report
+	0,  // 4: async_commit_hook.v1.Run.state:type_name -> async_commit_hook.v1.ExecutionState
+	3,  // 5: async_commit_hook.v1.Run.checks:type_name -> async_commit_hook.v1.Check
+	1,  // 6: async_commit_hook.v1.Run.diagnostics:type_name -> async_commit_hook.v1.Diagnostic
+	6,  // 7: async_commit_hook.v1.Repository.worktrees:type_name -> async_commit_hook.v1.Worktree
+	7,  // 8: async_commit_hook.v1.ListRepositoriesResponse.repositories:type_name -> async_commit_hook.v1.Repository
+	8,  // 9: async_commit_hook.v1.ListBranchesResponse.branches:type_name -> async_commit_hook.v1.Branch
+	9,  // 10: async_commit_hook.v1.ListCommitsResponse.commits:type_name -> async_commit_hook.v1.Commit
+	5,  // 11: async_commit_hook.v1.ListRunsResponse.runs:type_name -> async_commit_hook.v1.Run
+	5,  // 12: async_commit_hook.v1.GetRunResponse.run:type_name -> async_commit_hook.v1.Run
+	2,  // 13: async_commit_hook.v1.GetFailuresResponse.failures:type_name -> async_commit_hook.v1.Failure
+	2,  // 14: async_commit_hook.v1.CompareResponse.new_failures:type_name -> async_commit_hook.v1.Failure
+	2,  // 15: async_commit_hook.v1.CompareResponse.continuing_failures:type_name -> async_commit_hook.v1.Failure
+	2,  // 16: async_commit_hook.v1.CompareResponse.resolved_failures:type_name -> async_commit_hook.v1.Failure
+	10, // 17: async_commit_hook.v1.LocalService.GetVersion:input_type -> async_commit_hook.v1.GetVersionRequest
+	12, // 18: async_commit_hook.v1.LocalService.Pair:input_type -> async_commit_hook.v1.PairRequest
+	14, // 19: async_commit_hook.v1.LocalService.ListRepositories:input_type -> async_commit_hook.v1.ListRepositoriesRequest
+	16, // 20: async_commit_hook.v1.LocalService.ListBranches:input_type -> async_commit_hook.v1.ListBranchesRequest
+	18, // 21: async_commit_hook.v1.LocalService.ListCommits:input_type -> async_commit_hook.v1.ListCommitsRequest
+	20, // 22: async_commit_hook.v1.LocalService.GetChanges:input_type -> async_commit_hook.v1.GetChangesRequest
+	22, // 23: async_commit_hook.v1.LocalService.ListRuns:input_type -> async_commit_hook.v1.ListRunsRequest
+	24, // 24: async_commit_hook.v1.LocalService.GetRun:input_type -> async_commit_hook.v1.GetRunRequest
+	26, // 25: async_commit_hook.v1.LocalService.GetLogs:input_type -> async_commit_hook.v1.GetLogsRequest
+	38, // 26: async_commit_hook.v1.LocalService.GetReport:input_type -> async_commit_hook.v1.GetReportRequest
+	28, // 27: async_commit_hook.v1.LocalService.GetFailures:input_type -> async_commit_hook.v1.GetFailuresRequest
+	30, // 28: async_commit_hook.v1.LocalService.Compare:input_type -> async_commit_hook.v1.CompareRequest
+	32, // 29: async_commit_hook.v1.LocalService.Acknowledge:input_type -> async_commit_hook.v1.AcknowledgeRequest
+	34, // 30: async_commit_hook.v1.LocalService.Rerun:input_type -> async_commit_hook.v1.RerunRequest
+	36, // 31: async_commit_hook.v1.LocalService.Cancel:input_type -> async_commit_hook.v1.CancelRequest
+	11, // 32: async_commit_hook.v1.LocalService.GetVersion:output_type -> async_commit_hook.v1.GetVersionResponse
+	13, // 33: async_commit_hook.v1.LocalService.Pair:output_type -> async_commit_hook.v1.PairResponse
+	15, // 34: async_commit_hook.v1.LocalService.ListRepositories:output_type -> async_commit_hook.v1.ListRepositoriesResponse
+	17, // 35: async_commit_hook.v1.LocalService.ListBranches:output_type -> async_commit_hook.v1.ListBranchesResponse
+	19, // 36: async_commit_hook.v1.LocalService.ListCommits:output_type -> async_commit_hook.v1.ListCommitsResponse
+	21, // 37: async_commit_hook.v1.LocalService.GetChanges:output_type -> async_commit_hook.v1.GetChangesResponse
+	23, // 38: async_commit_hook.v1.LocalService.ListRuns:output_type -> async_commit_hook.v1.ListRunsResponse
+	25, // 39: async_commit_hook.v1.LocalService.GetRun:output_type -> async_commit_hook.v1.GetRunResponse
+	27, // 40: async_commit_hook.v1.LocalService.GetLogs:output_type -> async_commit_hook.v1.GetLogsResponse
+	39, // 41: async_commit_hook.v1.LocalService.GetReport:output_type -> async_commit_hook.v1.GetReportResponse
+	29, // 42: async_commit_hook.v1.LocalService.GetFailures:output_type -> async_commit_hook.v1.GetFailuresResponse
+	31, // 43: async_commit_hook.v1.LocalService.Compare:output_type -> async_commit_hook.v1.CompareResponse
+	33, // 44: async_commit_hook.v1.LocalService.Acknowledge:output_type -> async_commit_hook.v1.AcknowledgeResponse
+	35, // 45: async_commit_hook.v1.LocalService.Rerun:output_type -> async_commit_hook.v1.RerunResponse
+	37, // 46: async_commit_hook.v1.LocalService.Cancel:output_type -> async_commit_hook.v1.CancelResponse
+	32, // [32:47] is the sub-list for method output_type
+	17, // [17:32] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_async_commit_hook_v1_ach_proto_init() }
@@ -2528,7 +2764,7 @@ func file_async_commit_hook_v1_ach_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_async_commit_hook_v1_ach_proto_rawDesc), len(file_async_commit_hook_v1_ach_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   36,
+			NumMessages:   39,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

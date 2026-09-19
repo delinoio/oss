@@ -53,7 +53,10 @@ func hookPath(ctx context.Context, root, kind string) (string, error) {
 		}
 	}
 	if dir == "" {
-		dir, e = Git(ctx, root, "rev-parse", "--path-format=absolute", "--git-path", "hooks")
+		command := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "--path-format=absolute", "--git-path", "hooks")
+		raw, err := command.Output()
+		e = err
+		dir = strings.TrimSpace(string(raw))
 		if e != nil {
 			return "", e
 		}
@@ -120,7 +123,7 @@ func (s *Service) Hook(ctx context.Context, repo string, prePush, remove bool) (
 		if kind == "pre-push" {
 			args = "pre-push \"$@\""
 		}
-		body := []byte("#!/bin/sh\n# ach-owned v1: remove with ach hooks uninstall\nexec " + quoteSh(executable) + " " + args + "\n")
+		body := []byte("#!/bin/sh\n# ach-owned v1: remove with ach hooks uninstall\nexec " + quoteSh(executable) + " " + args + " --config " + quoteSh(s.Paths.Config) + "\n")
 		if e = os.MkdirAll(filepath.Dir(path), 0755); e != nil {
 			return out, e
 		}

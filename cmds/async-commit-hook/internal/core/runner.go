@@ -37,7 +37,7 @@ func (s *Service) claim(r Run, c Check) (bool, error) {
 					_, err := tx.Exec("UPDATE checks SET cancel='replaced' WHERE id=?", c.ID)
 					return err
 				}
-				if _, err := tx.Exec("UPDATE checks SET cancel='replaced' WHERE group_key=? AND id<>? AND run_id IN (SELECT id FROM runs WHERE seq<?) AND state IN ('preparing','running','collecting')", c.Group, c.ID, r.Sequence); err != nil {
+				if _, err := tx.Exec("UPDATE checks SET cancel='replaced' WHERE group_key=? AND id<>? AND run_id IN (SELECT id FROM runs WHERE seq<?) AND state IN ('queued','preparing','running','collecting')", c.Group, c.ID, r.Sequence); err != nil {
 					return err
 				}
 			}
@@ -50,7 +50,7 @@ func (s *Service) claim(r Run, c Check) (bool, error) {
 			}
 			if c.Policy == Queue {
 				var earlier int
-				if err := tx.QueryRow("SELECT count(*) FROM checks c JOIN runs r ON c.run_id=r.id WHERE c.group_key=? AND r.seq<? AND c.state='queued' AND c.cancel=''", c.Group, r.Sequence).Scan(&earlier); err != nil {
+				if err := tx.QueryRow("SELECT count(*) FROM checks c JOIN runs r ON c.run_id=r.id WHERE c.group_key=? AND r.seq<? AND c.state='queued' AND c.cancel='' AND NOT EXISTS (SELECT 1 FROM json_each(r.record, '$.config.checks') cfg, json_each(cfg.value, '$.depends_on') dep LEFT JOIN checks d ON d.run_id=c.run_id AND d.name=dep.value WHERE cfg.key=c.name AND dep.type='text' AND (d.state IS NULL OR d.state<>'passed'))", c.Group, r.Sequence).Scan(&earlier); err != nil {
 					return err
 				}
 				if earlier > 0 {
@@ -143,6 +143,11 @@ loop:
 		case <-ticker.C:
 			if err = p.sample(); err != nil {
 				s.Log.Error("process.sample_failed", "run_id", r.ID, "check_id", c.ID, "code", "process-reconciliation-failed")
+			}
+			c.Process = p.snapshot()
+			if saveErr := s.Store.SaveCheck(c); saveErr != nil {
+				_ = p.terminate()
+				cancel = Interrupted
 			}
 			if reason := s.Store.Cancellation(c.ID); reason != "" && !terminated {
 				cancel = reason
@@ -286,6 +291,7 @@ func (s *Service) RunOne(id string) error {
 	active := map[string]bool{}
 	done := make(chan string, len(r.Checks))
 	var wg sync.WaitGroup
+	defer wg.Wait()
 	for {
 		current, e := s.Store.Run(id)
 		if e != nil {
@@ -361,7 +367,7 @@ func (s *Service) RunOne(id string) error {
 		if c.State != Skipped {
 			applicable++
 		}
-		if !c.Optional && c.State != Passed && c.State != Skipped {
+		if c.State == Cancelled || c.State == Replaced || c.State == Interrupted || (!c.Optional && c.State != Passed && c.State != Skipped) {
 			r.State = c.State
 		}
 	}
@@ -400,7 +406,7 @@ func (s *Service) Work(ctx context.Context, persistent bool, component string) e
 		}
 		if ctx.Err() != nil {
 			stopping = true
-			force = true
+			force = force || !persistent
 		}
 		if force {
 			for id := range active {
@@ -433,10 +439,20 @@ func (s *Service) Work(ctx context.Context, persistent bool, component string) e
 		select {
 		case id := <-done:
 			delete(active, id)
+			if s.Personal.Retention.MaxAgeDays > 0 || s.Personal.Retention.MaxBytes > 0 {
+				if _, err := s.Prune(false, s.Personal.Retention.MaxAgeDays, s.Personal.Retention.MaxBytes); err != nil {
+					s.Log.Error("retention.failed", "code", "retention-failed")
+				}
+			}
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
 	wg.Wait()
+	if s.Personal.Retention.MaxAgeDays > 0 || s.Personal.Retention.MaxBytes > 0 {
+		if _, err := s.Prune(false, s.Personal.Retention.MaxAgeDays, s.Personal.Retention.MaxBytes); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
