@@ -39,6 +39,12 @@ pub async fn start(
     // reconciliation.
     let (events, mut receiver) = tokio::sync::mpsc::unbounded_channel();
     let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+        // Linux reports opens/reads from our own metadata and input snapshots.
+        // Feeding those back into discovery cancels live work and creates a
+        // perpetual rescan loop. Only filesystem mutations can invalidate work.
+        if event.as_ref().is_ok_and(|event| event.kind.is_access()) {
+            return;
+        }
         let _ = events.send(event);
     })?;
     watcher.watch(root, RecursiveMode::Recursive)?;

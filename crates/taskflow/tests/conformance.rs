@@ -1123,6 +1123,52 @@ async fn wait_lines(path: &Path, prefix: &str, count: usize) {
 }
 
 #[tokio::test]
+async fn reading_session_files_does_not_cancel_or_requeue_work() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    drop(listener);
+    let directory = fixture(json!({"check": {
+        "command": command(&["paced", "events", &address, "500"]),
+        "input": ["source"], "watch": {"debounce": "20ms"}
+    }}));
+    std::fs::write(directory.path().join("source"), "unchanged").unwrap();
+    profile(directory.path(), &["check"]);
+    let root = directory.path().to_path_buf();
+    let token = CancellationToken::new();
+    let stop = token.clone();
+    let session = tokio::spawn(async move {
+        taskflow::session::start(&root, "default", RunOptions::default(), stop).await
+    });
+    let events = directory.path().join("events");
+    wait_lines(&events, "start", 1).await;
+    for _ in 0..20 {
+        for name in ["taskflow.yml", "source"] {
+            std::fs::read(directory.path().join(name)).unwrap();
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    wait_lines(&events, "end", 1).await;
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !runner::previous(directory.path(), "app#check").is_some_and(|r| r.success()) {
+            tokio::time::sleep(Duration::from_millis(15)).await;
+        }
+    })
+    .await
+    .expect("read-only events must allow the task to complete");
+    token.cancel();
+    assert!(session.await.unwrap().unwrap().success);
+    let records = std::fs::read_to_string(events).unwrap();
+    assert_eq!(
+        records
+            .lines()
+            .filter(|line| line.starts_with("start"))
+            .count(),
+        1,
+        "{records}"
+    );
+}
+
+#[tokio::test]
 async fn scenario_17_queue_skip_restart_own_real_exclusive_processes() {
     for (overlap, expected_starts) in [("queue", 2), ("skip", 1), ("restart", 2)] {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

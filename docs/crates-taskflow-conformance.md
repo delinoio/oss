@@ -36,6 +36,8 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 
 Additional invariants include unknown/duplicate configuration rejection, schema freshness, stale/partial CI receipt rejection, required artifact accounting, cache path traversal rejection before mutation, masked stored logs, and service failure cancelling other running checks before returning.
 
+`reading_session_files_does_not_cancel_or_requeue_work` verifies that metadata/input reads cannot cancel or repeat a live task. Linux access notifications from discovery and hashing must not be treated as mutations.
+
 ## Storage
 Fixtures use temporary directories and containers with UUID-v7 names. They do not replace repository credentials or identity material. Generated `dist` and `.taskflow` content is ignored and not committed.
 
