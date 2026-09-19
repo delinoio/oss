@@ -10207,6 +10207,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "base64 0.22.1",
+ "cargo-platform 0.3.3",
  "chrono",
  "chrono-tz",
  "clap",

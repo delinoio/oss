@@ -44,6 +44,83 @@ fn helper() -> PathBuf {
 }
 
 #[tokio::test]
+async fn cargo_target_selectors_follow_the_selected_platform() {
+    let directory = fixture(json!({}));
+    files::atomic_write(
+        &directory.path().join("Cargo.toml"),
+        b"[workspace]\nmembers=['a','b']\nresolver='2'\n",
+    )
+    .unwrap();
+    for name in ["a", "b"] {
+        let mut manifest = format!("[package]\nname='{name}'\nversion='0.1.0'\nedition='2021'\n");
+        if name == "a" {
+            manifest.push_str(
+                "[target.'cfg(all(windows, target_arch = \
+                 \"x86_64\"))'.build-dependencies]\nrenamed={package='b',path='../b'}\n",
+            );
+        }
+        files::atomic_write(
+            &directory.path().join(name).join("Cargo.toml"),
+            manifest.as_bytes(),
+        )
+        .unwrap();
+        files::atomic_write(
+            &directory.path().join(name).join("src/lib.rs"),
+            b"pub fn value() {}\n",
+        )
+        .unwrap();
+        let dependencies = if name == "a" {
+            json!([{"task":"build","from":"buildDependencies"}])
+        } else {
+            json!([])
+        };
+        files::atomic_write(&directory.path().join(name).join("taskflow.yml"),
+            serde_yaml::to_string(&json!({"version":1,"project":name,"tasks":{"build":{"command":command(&["version"]),"dependsOn":dependencies}}})).unwrap().as_bytes()).unwrap();
+    }
+    taskflow::discover::output_tool(
+        directory.path(),
+        &["cargo", "generate-lockfile", "--offline"],
+        &[],
+    )
+    .await
+    .unwrap();
+    let workspace = Workspace::discover(directory.path()).await.unwrap();
+    assert!(workspace.complete(), "{:?}", workspace.coverage);
+    assert!(workspace
+        .edges
+        .iter()
+        .any(|edge| edge.condition.is_some() && edge.name == "renamed"));
+    for os in [config::Os::Linux, config::Os::Macos, config::Os::Windows] {
+        for arch in [config::Arch::X64, config::Arch::Arm64] {
+            let g = Graph::build(workspace.clone().select_platform(Some(os), Some(arch))).unwrap();
+            assert_eq!(
+                g.prerequisites("a#build"),
+                if os == config::Os::Windows && arch == config::Arch::X64 {
+                    vec!["b#build"]
+                } else {
+                    vec![]
+                },
+                "{os:?} {arch:?}"
+            );
+        }
+    }
+    // An explicit Cargo compilation target is independent of the host running
+    // Cargo and takes precedence over the execution-platform default.
+    let path = directory.path().join("taskflow.yml");
+    let mut config: Value = serde_yaml::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    config["workspace"] = json!({"cargoTarget":"x86_64-pc-windows-msvc"});
+    std::fs::write(&path, serde_yaml::to_string(&config).unwrap()).unwrap();
+    let g = Graph::build(
+        Workspace::discover(directory.path())
+            .await
+            .unwrap()
+            .select_platform(Some(config::Os::Linux), Some(config::Arch::Arm64)),
+    )
+    .unwrap();
+    assert_eq!(g.prerequisites("a#build"), ["b#build"]);
+}
+
+#[tokio::test]
 #[ignore = "native adapter conformance requires pnpm and Go in addition to Rust"]
 async fn scenarios_12_13_14_21_23_24_native_workspaces_aliases_and_conditions() {
     let root = tempfile::tempdir().unwrap();

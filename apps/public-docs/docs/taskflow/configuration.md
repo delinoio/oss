@@ -29,7 +29,11 @@ adapters remains one project. Unconfigured projects have query IDs beginning wit
 pnpm uses native membership and lockfile resolution; Cargo uses versioned metadata;
 Go uses modules, workspaces, and replacements. Alias names, dependency kinds, and
 resolved local identities remain visible in queries. Cargo feature options and
-optional `cargoTarget` select the metadata configuration. Incomplete metadata is
+optional `cargoTarget` select the metadata configuration. Conditional Cargo
+dependencies select prerequisites only when active for the task platform. An
+explicit `cargoTarget` takes precedence; otherwise TaskFlow uses the matching
+Rust compiler host target or GNU Linux, Apple Darwin, and Windows MSVC defaults
+for another selected platform. Incomplete metadata is
 reported and expands affected selection conservatively. A prerequisite selector
 with unresolved metadata cannot execute until an explicit `install: true`
 prerequisite prepares dependencies and TaskFlow refreshes metadata. Merely querying

@@ -23,6 +23,8 @@ Developers run explicit native commands locally or in managed development sessio
 ### Discovery and queries
 pnpm lockfile metadata, versioned Cargo metadata, and Go workspace/module metadata supply resolved identities and conditions. Preserve aliases, renames, dependency kinds, replacements, and supported target/feature conditions. Unsupported or incomplete relationships are diagnosed; affected selection is conservative and unresolved prerequisite selectors fail closed. Discovery never installs dependencies implicitly. Explicit installation prerequisites can repair unavailable metadata before replanning.
 
+Cargo target conditions remain visible on project edges but only active conditions select task prerequisites. Evaluate them with Cargo's platform parser and rustc cfg output. Explicit `workspace.cargoTarget` selects the compilation target independently of the execution host; otherwise use the matching rustc host target or the selected platform's GNU Linux, Apple Darwin, or Windows MSVC target for x64/arm64. Unavailable target cfg metadata makes selector coverage incomplete.
+
 Keep project relationships separate from task prerequisites and artifact relationships. Queries expose projects/tasks, forward/reverse closure, paths, file ownership, matching inputs, and explanations. Git selection includes both sides of renames and deleted files. Graph generations invalidate obsolete executions after configuration changes.
 
 An explicit `--head` requires `--base` or `--affected` and cannot be combined with `--changed`; comparison endpoints must never be silently ignored in favor of a direct run.

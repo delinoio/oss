@@ -22,6 +22,8 @@ pub struct ProjectEdge {
     pub to: String,
     pub kind: DependencyKind,
     pub condition: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_platforms: Option<BTreeSet<String>>,
     pub name: String,
     pub resolved: String,
 }
@@ -61,6 +63,62 @@ pub fn locate_root(start: &Path) -> Result<PathBuf> {
         }
     }
     Ok(nearest.unwrap_or(start))
+}
+
+async fn cargo_platforms(
+    directory: &Path,
+    explicit: Option<&str>,
+) -> Result<BTreeMap<String, (String, Vec<cargo_platform::Cfg>)>> {
+    async fn cfg(directory: &Path, target: &str) -> Result<Vec<cargo_platform::Cfg>> {
+        let bytes = output_tool(
+            directory,
+            &["rustc", "--print", "cfg", "--target", target],
+            &[],
+        )
+        .await?;
+        std::str::from_utf8(&bytes)?
+            .lines()
+            .map(|line| Ok(line.parse()?))
+            .collect()
+    }
+    let host = output_tool(directory, &["rustc", "-vV"], &[]).await?;
+    let host = std::str::from_utf8(&host)?
+        .lines()
+        .find_map(|line| line.strip_prefix("host: "))
+        .context("rustc did not report its host target")?
+        .to_owned();
+    let host_cfg = cfg(directory, &host).await?;
+    let mut targets = BTreeMap::from([(host.clone(), host_cfg.clone())]);
+    let mut platforms = BTreeMap::new();
+    for (os, suffix) in [
+        (config::Os::Linux, "unknown-linux-gnu"),
+        (config::Os::Macos, "apple-darwin"),
+        (config::Os::Windows, "pc-windows-msvc"),
+    ] {
+        for (arch, rust_arch) in [
+            (config::Arch::X64, "x86_64"),
+            (config::Arch::Arm64, "aarch64"),
+        ] {
+            let native = host_cfg
+                .contains(&format!("target_os=\"{}\"", config::enum_name(&os)).parse()?)
+                && host_cfg.contains(&format!("target_arch=\"{rust_arch}\"").parse()?);
+            let target = explicit.map(str::to_owned).unwrap_or_else(|| {
+                if native {
+                    host.clone()
+                } else {
+                    format!("{rust_arch}-{suffix}")
+                }
+            });
+            if !targets.contains_key(&target) {
+                targets.insert(target.clone(), cfg(directory, &target).await?);
+            }
+            platforms.insert(
+                format!("{}-{}", config::enum_name(&os), config::enum_name(&arch)),
+                (target.clone(), targets[&target].clone()),
+            );
+        }
+    }
+    Ok(platforms)
 }
 
 impl Workspace {
@@ -330,6 +388,7 @@ impl Workspace {
                             to,
                             kind,
                             condition: None,
+                            active_platforms: None,
                             name: name.clone(),
                             resolved: resolved
                                 .and_then(|v| v.get("version"))
@@ -369,7 +428,7 @@ impl Workspace {
             ]);
         }
         let full = metadata_owned(directory, &args, &[]).await;
-        let (data, complete) = match full {
+        let (data, mut complete) = match full {
             Ok(data) => (data, true),
             Err(_) => {
                 args.push("--no-deps".into());
@@ -380,6 +439,29 @@ impl Workspace {
                     false,
                 )
             }
+        };
+        let has_conditions = data
+            .pointer("/resolve/nodes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .flat_map(|node| node["deps"].as_array().into_iter().flatten())
+            .flat_map(|dep| dep["dep_kinds"].as_array().into_iter().flatten())
+            .any(|kind| kind["target"].is_string());
+        let platforms = if has_conditions {
+            match cargo_platforms(directory, self.config.workspace.cargo_target.as_deref()).await {
+                Ok(platforms) => platforms,
+                Err(_) => {
+                    complete = false;
+                    tracing::warn!(
+                        code = "cargo-target-cfg-unavailable",
+                        "Cargo target cfg metadata is unavailable; native selectors cannot execute"
+                    );
+                    BTreeMap::new()
+                }
+            }
+        } else {
+            BTreeMap::new()
         };
         let mut native_ids = BTreeMap::new();
         for package in data
@@ -451,6 +533,17 @@ impl Workspace {
                         to: to.clone(),
                         kind: kind_id,
                         condition: kind["target"].as_str().map(str::to_owned),
+                        active_platforms: kind["target"]
+                            .as_str()
+                            .map(|condition| -> Result<_> {
+                                let condition: cargo_platform::Platform = condition.parse()?;
+                                Ok(platforms
+                                    .iter()
+                                    .filter(|(_, (target, cfg))| condition.matches(target, cfg))
+                                    .map(|(platform, _)| platform.clone())
+                                    .collect())
+                            })
+                            .transpose()?,
                         name: dep["name"]
                             .as_str()
                             .context("Cargo dependency alias missing")?
@@ -469,7 +562,8 @@ impl Workspace {
             message: if complete {
                 "Cargo format-v1 resolved features and target conditions"
             } else {
-                "Membership only: Cargo dependencies must be prepared by an explicit prerequisite"
+                "Cargo resolution or target cfg unavailable: prepare native metadata before \
+                 executing selectors"
             }
             .into(),
         });
@@ -547,6 +641,7 @@ impl Workspace {
                         from: source.clone(),
                         to: to.clone(),
                         kind: DependencyKind::Dependencies,
+                        active_platforms: None,
                         name: name.into(),
                         resolved: require["Version"].as_str().unwrap_or("workspace").into(),
                         condition: Some(

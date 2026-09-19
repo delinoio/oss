@@ -95,6 +95,15 @@ impl Graph {
                             );
                             for edge in &graph.workspace.edges {
                                 if edge.from == node.project && kinds.contains(edge.kind) {
+                                    if edge.active_platforms.as_ref().is_some_and(|platforms| {
+                                        !platforms.contains(&node.task.platform.key())
+                                    }) {
+                                        graph.explanations.push(format!(
+                                            "{} skips inactive native condition {:?} for {}",
+                                            node.id, edge.condition, edge.to
+                                        ));
+                                        continue;
+                                    }
                                     let candidate = reference(&edge.to, &selector.task);
                                     if graph.tasks.contains_key(&candidate) {
                                         selected.push(candidate);
