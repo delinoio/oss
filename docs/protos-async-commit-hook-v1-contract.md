@@ -41,3 +41,5 @@ Run pages apply repository, worktree and branch filters before cursor pagination
 Evidence text pages replace invalid UTF-8 sequences with U+FFFD before serialization. Offsets count original stored bytes. The byte limit may extend by at most three bytes to complete a valid UTF-8 rune; an incomplete rune at the end of an active log is deferred until more bytes arrive or the check finishes. Concatenating pages preserves valid source text. Rendering never rewrites stored evidence or its integrity digest.
 
 Changes diff text is normalized to valid UTF-8 after applying its 2 MiB raw-byte limit. Invalid path/content bytes and a final cut rune become U+FFFD; normalization never changes the truncation decision.
+
+Failure summary fields are bounded to 4 KiB and summaries share a 1 MiB JSON budget per run, below the 8 MiB Connect response limit. Truncation has a stable diagnostic; complete report bodies remain paginated evidence.

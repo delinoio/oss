@@ -222,6 +222,7 @@ func (s *Store) Run(id string) (Run, error) {
 	}
 	defer rows.Close()
 	r.Checks = []Check{}
+	failureBudget := runFailureBytes
 	for rows.Next() {
 		var c Check
 		if err = rows.Scan(&b, &state); err != nil {
@@ -231,6 +232,7 @@ func (s *Store) Run(id string) (Run, error) {
 			return r, err
 		}
 		c.State = state
+		failureBudget -= boundCheckFailures(&c, failureBudget)
 		r.Checks = append(r.Checks, c)
 	}
 	return r, rows.Err()
@@ -243,6 +245,13 @@ func (s *Store) SaveRun(r Run) error {
 	return s.Transaction(func(tx *sql.Tx) error { return saveRun(tx, r) })
 }
 func saveCheck(tx *sql.Tx, c Check) error {
+	if len(c.Failures) > 0 {
+		var used int
+		if err := tx.QueryRow("SELECT COALESCE(SUM(MAX(length(CAST(json_extract(record,'$.failures') AS BLOB))-1,0)),0) FROM checks WHERE run_id=(SELECT run_id FROM checks WHERE id=?) AND id<>?", c.ID, c.ID).Scan(&used); err != nil {
+			return err
+		}
+		boundCheckFailures(&c, max(0, runFailureBytes-used))
+	}
 	_, err := tx.Exec("UPDATE checks SET record=?,state=? WHERE id=?", Encode(c), c.State, c.ID)
 	return err
 }
