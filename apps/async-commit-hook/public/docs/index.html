@@ -155,7 +155,9 @@ required = true</pre
           Applicable checks are required unless optional=true. Dependencies
           share the isolated run workspace. A failed dependency blocks
           dependents while independent checks continue. Use named preparation
-          commands for dependencies. Cycles, missing dependencies, unsupported
+          commands for dependencies. Every prerequisite must apply on each OS
+          where its dependent runs; an empty OS list means all supported systems.
+          Cycles, missing dependencies, unsupported
           versions and invalid declarations fail validation.
         </p>
         <p>

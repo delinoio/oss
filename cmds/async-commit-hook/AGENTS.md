@@ -1,6 +1,7 @@
 # async-commit-hook command ownership
 
 - The common application service owns scheduling, final validation, acknowledgement, retention and comparison. CLI, Connect and MCP adapters must not implement competing decisions.
+- Validate every dependency edge across all supported OS values: prerequisites must apply wherever the dependent applies, including optional prerequisites; empty OS lists mean all platforms.
 - Aggregate check outcomes independently of names/order: interrupted, cancelled, replaced, expired, failed, blocked, then passed. Optional failed/blocked outcomes do not fail the run; lifecycle loss remains visible, and no applicable checks is failed.
 - Pre-push `run-and-wait` renews terminal nonpassing attempts and waits for existing unfinished attempts; `wait` never submits work.
 - Pre-push hashes terminal evidence outside SQLite transactions, then reselects the latest attempt and compares its full metadata snapshot in a short immediate transaction before reuse or replacement insertion. Concurrent clients reuse one pending attempt without blocking unrelated workers during file I/O.

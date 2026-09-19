@@ -204,6 +204,15 @@ func (p *Project) Validate() error {
 		}
 		p.Checks[name] = c
 	}
+	for name, c := range p.Checks {
+		for _, dependency := range c.DependsOn {
+			for _, platform := range []string{"darwin", "linux", "windows"} {
+				if c.Applies(platform) && !p.Checks[dependency].Applies(platform) {
+					return E("invalid-dependency", name+": prerequisite "+dependency+" does not apply on "+platform, 2)
+				}
+			}
+		}
+	}
 	_, err := p.Order()
 	return err
 }
