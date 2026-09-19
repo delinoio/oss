@@ -69,11 +69,13 @@ export function createPublicContentValidator(routeIds) {
     /(?:^|[\s("'`>])file:\/\/(?:[^\/\s"'`<>]+)?\/[^\s"'`<>]*/iu,
   ];
 
-  return function containsProhibitedPublicContent(contents, pageUrl) {
-    const renderedText = decodeHTML(contents
+  return function containsProhibitedPublicContent(contents, pageUrl, { stylesheet = false } = {}) {
+    // CSS is not rendered prose: valid generated font/asset paths must be
+    // resolved against the stylesheet URL before applying path restrictions.
+    const renderedText = stylesheet ? "" : decodeHTML(contents
       .replace(/<(?:script|style)\b[^>]*>[\s\S]*?<\/(?:script|style)>/giu, " ")
       .replace(/<[^>]*>/gu, " ")).replace(/\s+/gu, " ");
-    const comments = decodeHTML([...contents.matchAll(/<!--([\s\S]*?)-->/gu)]
+    const comments = decodeHTML([...contents.matchAll(stylesheet ? /\/\*([\s\S]*?)\*\//gu : /<!--([\s\S]*?)-->/gu)]
       .map(([, comment]) => comment).join(" "));
     if (forbiddenCredentials.some((pattern) => pattern.test(contents) || pattern.test(renderedText) || pattern.test(comments))) return true;
     if (forbiddenPaths.some((pattern) => pattern.test(renderedText) || pattern.test(comments))) return true;

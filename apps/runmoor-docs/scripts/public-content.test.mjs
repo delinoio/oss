@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
@@ -14,9 +14,7 @@ const temporaryDirectory = mkdtempSync(path.join(tmpdir(), "runmoor-docs-content
 after(() => rmSync(temporaryDirectory, { recursive: true, force: true }));
 const outputDirectory = path.join(temporaryDirectory, "doc_build");
 mkdirSync(outputDirectory);
-for (const entry of readdirSync(buildDirectory)) {
-  if (entry.endsWith(".html")) copyFileSync(path.join(buildDirectory, entry), path.join(outputDirectory, entry));
-}
+cpSync(buildDirectory, outputDirectory, { recursive: true });
 const indexFile = path.join(outputDirectory, "index.html");
 const original = readFileSync(indexFile, "utf8");
 
@@ -32,6 +30,43 @@ function validatePage(contents) {
     timeout: 10_000,
   });
 }
+
+const stylesheetFile = path.join(outputDirectory, "static", "css", "fixture.css");
+for (const [name, css] of [
+  ["credential userinfo", '.private { background: url("https://reader:fixture-value@example.com/image.png") }'],
+  ["credential query", '.private { background: url("https://example.com/image.png?code=fixture-value") }'],
+  ["credential fragment", '.private { background: url("https://example.com/#/callback?oauth_code=fixture-value") }'],
+  ["private file", '.private { background: url("file:///etc/private.png") }'],
+  ["repository path", '.private { background: url("../../../servers/runmoor/private.png") }'],
+  ["CSS import", '@import "../../../servers/runmoor/private.css";'],
+]) {
+  test(`emitted stylesheet rejects ${name} without exposing the value`, () => {
+    writeFileSync(stylesheetFile, css);
+    try {
+      const result = validateFixture('<link rel="stylesheet" href="/static/css/fixture.css">');
+      assert.equal(result.error, undefined);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /static\/css\/fixture\.css contains prohibited public content/u);
+      assert.doesNotMatch(result.stdout + result.stderr, /fixture-value|reader|private\.(?:png|css)/u);
+    } finally {
+      rmSync(stylesheetFile);
+    }
+  });
+}
+
+test("emitted stylesheets preserve generated fonts, public assets, and external resources", () => {
+  writeFileSync(stylesheetFile, `
+    @font-face { font-family: public; src: url(../media/font.woff2) }
+    .public { background-image: url("/assets/logo.svg") }
+    @import "https://example.com/theme.css";
+  `);
+  try {
+    const result = validateFixture('<link rel="stylesheet" href="/static/css/fixture.css">');
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    rmSync(stylesheetFile);
+  }
+});
 
 function removeLinks(contents, className, href) {
   return contents.replace(/<a\b[^>]*>[\s\S]*?<\/a>/giu, (anchor) => {

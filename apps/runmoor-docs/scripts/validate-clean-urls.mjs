@@ -24,13 +24,13 @@ const validatorOrigin = "https://runmoor.delino.io";
 const failures = [];
 const containsProhibitedPublicContent = createPublicContentValidator(requiredHeadings.keys());
 
-async function collectHtmlFiles(directory) {
+async function collectPublicationFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = [];
   for (const entry of entries) {
     const filename = path.join(directory, entry.name);
-    if (entry.isDirectory()) files.push(...await collectHtmlFiles(filename));
-    else if (entry.name.endsWith(".html")) files.push(filename);
+    if (entry.isDirectory()) files.push(...await collectPublicationFiles(filename));
+    else if (/\.(?:html|css)$/u.test(entry.name)) files.push(filename);
   }
   return files;
 }
@@ -88,25 +88,17 @@ function classRegions(contents, tag, className) {
   return regions;
 }
 
-const htmlFiles = await collectHtmlFiles(outputDir);
-const contentsByFile = new Map(await Promise.all(htmlFiles.map(async (file) => [file, await readFile(file, "utf8")])));
+const publicationFiles = await collectPublicationFiles(outputDir);
+const contentsByFile = new Map(await Promise.all(publicationFiles.map(async (file) => [file, await readFile(file, "utf8")])));
 
 for (const [file, contents] of contentsByFile) {
   const relativeFile = path.relative(outputDir, file).split(path.sep).join("/");
   const pageUrl = new URL(`/${relativeFile}`, validatorOrigin);
-  if (containsProhibitedPublicContent(contents, pageUrl)) {
+  const stylesheet = file.endsWith(".css");
+  if (containsProhibitedPublicContent(contents, pageUrl, { stylesheet })) {
     // Never echo the rejected content or URL into public CI logs.
     failures.push(`${relativeFile} contains prohibited public content`);
     continue;
-  }
-  const renderedText = decodeHTML(contents
-    .replace(/<(?:script|style)\b[^>]*>[\s\S]*?<\/(?:script|style)>/giu, " ")
-    .replace(/<[^>]*>/gu, " ")).replace(/\s+/gu, " ");
-  if (containsAffirmativeReleaseClaim(renderedText)) {
-    failures.push(`${relativeFile} contains an unsupported release claim`);
-  }
-  if (/^runmoor(?:\/|\.html$)/u.test(relativeFile)) {
-    failures.push(`${relativeFile} retains a legacy route artifact`);
   }
   for (const link of resolveLinks(resourceTargets(contents), pageUrl)) {
     if (link.origin !== validatorOrigin) continue;
@@ -115,6 +107,16 @@ for (const [file, contents] of contentsByFile) {
     } else if (link.pathname.endsWith(".html")) {
       failures.push(`${relativeFile} links to non-clean route ${link.pathname}`);
     }
+  }
+  if (stylesheet) continue;
+  const renderedText = decodeHTML(contents
+    .replace(/<(?:script|style)\b[^>]*>[\s\S]*?<\/(?:script|style)>/giu, " ")
+    .replace(/<[^>]*>/gu, " ")).replace(/\s+/gu, " ");
+  if (containsAffirmativeReleaseClaim(renderedText)) {
+    failures.push(`${relativeFile} contains an unsupported release claim`);
+  }
+  if (/^runmoor(?:\/|\.html$)/u.test(relativeFile)) {
+    failures.push(`${relativeFile} retains a legacy route artifact`);
   }
   for (const link of links(contents, pageUrl)) {
     if (link.origin !== validatorOrigin) continue;
