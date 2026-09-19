@@ -344,8 +344,7 @@ impl Graph {
                 let absolute = files::within(&project.directory, &project.directory.join(&anchor))?;
                 for (path, owner) in &owners {
                     ensure!(
-                        owner == &node.id
-                            || !(absolute.starts_with(path) || path.starts_with(&absolute)),
+                        owner == &node.id || !output_paths_overlap(&absolute, path)?,
                         "overlapping output ownership: {owner} and {}",
                         node.id
                     );
@@ -384,4 +383,33 @@ impl Graph {
         }
         Ok(())
     }
+}
+
+// Missing output names still share ownership when the destination filesystem
+// treats them as aliases. Probe only empty names in an isolated sibling tree;
+// never create or rename the declared outputs during graph validation.
+fn output_paths_overlap(left: &Path, right: &Path) -> Result<bool> {
+    let mut parent = std::path::PathBuf::new();
+    for (left, right) in left.components().zip(right.components()) {
+        if left != right {
+            let (std::path::Component::Normal(left_name), std::path::Component::Normal(right_name)) =
+                (left, right)
+            else {
+                return Ok(false);
+            };
+            let existing = parent
+                .ancestors()
+                .find(|path| path.is_dir())
+                .context("output path has no existing directory ancestor")?;
+            let probe = tempfile::Builder::new()
+                .prefix(".taskflow-restore-ownership-")
+                .tempdir_in(existing)?;
+            std::fs::create_dir(probe.path().join(left_name))?;
+            if !probe.path().join(right_name).try_exists()? {
+                return Ok(false);
+            }
+        }
+        parent.push(left.as_os_str());
+    }
+    Ok(true)
 }

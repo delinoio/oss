@@ -4263,3 +4263,53 @@ async fn uncached_output_digests_are_not_limited_by_artifact_size() {
     );
     assert_ne!(result.results["app#build"].output, artifact.output_digest);
 }
+
+#[tokio::test]
+async fn output_ownership_uses_destination_filesystem_aliases() {
+    for (first, second) in [("Build", "build"), ("é", "e\u{301}")] {
+        for cross_project in [false, true] {
+            let root = fixture(
+                json!({"a":{"command":command(&["version"]),"output":[format!("nested/{first}")]}}),
+            );
+            std::fs::create_dir(root.path().join("nested")).unwrap();
+            let probe = tempfile::tempdir_in(root.path().join("nested")).unwrap();
+            std::fs::create_dir(probe.path().join(first)).unwrap();
+            let aliases = probe.path().join(second).exists();
+            let mut ws = Workspace::discover(root.path()).await.unwrap();
+            let task: config::Task = serde_json::from_value(
+                json!({"command":command(&["version"]),"output":[format!("{second}/child")]}),
+            )
+            .unwrap();
+            if cross_project {
+                let mut project = ws.projects["app"].clone();
+                project.id = "nested".into();
+                project.directory = project.directory.join("nested");
+                let config = project.config.as_mut().unwrap();
+                config.project = "nested".into();
+                config.tasks = BTreeMap::from([("b".into(), task)]);
+                ws.projects.insert(project.id.clone(), project);
+            } else {
+                let mut task = task;
+                task.output = Some(vec![format!("nested/{second}/child")]);
+                ws.projects
+                    .get_mut("app")
+                    .unwrap()
+                    .config
+                    .as_mut()
+                    .unwrap()
+                    .tasks
+                    .insert("b".into(), task);
+            }
+            let result = Graph::build(ws);
+            if aliases {
+                assert!(
+                    format!("{:#}", result.unwrap_err()).contains("overlapping output ownership")
+                );
+            } else {
+                result.unwrap();
+            }
+            assert!(!root.path().join("nested").join(first).exists());
+            assert!(!root.path().join("nested").join(second).exists());
+        }
+    }
+}
