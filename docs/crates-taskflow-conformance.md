@@ -243,3 +243,5 @@ The real Go flag suite also compares `-failfast` and `-failfast=false` across tw
 `shard_partitions_reuse_unsharded_prerequisite_cache_keys` runs separate suite partitions and proves their shared ordinary prerequisite executes only once, while suite cache identities remain partitioned.
 
 `mixed_subscriptions_preserve_trigger_defaults_and_explicit_overrides` injects a file change followed by a timer tick during an active execution, checking preserved queued causes and explicit queue/skip/restart overrides.
+
+`shard_deadlines_leave_docker_cleanup_available` times out inventory and unit processes through an isolated Docker CLI fixture and verifies awaited removal still executes after the task deadline, with code 124 and a reaped CLI child.

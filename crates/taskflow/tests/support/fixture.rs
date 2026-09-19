@@ -27,6 +27,15 @@ fn main() {
                 println!("\"{endpoint}\"");
             }
             "run" => {
+                if std::env::var("DOCKER_CONTEXT").as_deref() == Ok("deadline-fixture") {
+                    if args.last().unwrap() == "inventory" {
+                        println!("{{\"version\":1,\"tests\":[{{\"id\":\"aa\"}}]}}");
+                    } else {
+                        write("unit.pid", std::process::id().to_string().as_bytes());
+                        std::thread::sleep(Duration::from_secs(30));
+                    }
+                    return;
+                }
                 if std::env::var("DOCKER_CONTEXT").as_deref() == Ok("forwarding-fixture") {
                     let flags: Vec<_> = args.windows(2).filter(|pair| pair[0] == "--env").map(|pair| pair[1].as_str()).collect();
                     assert!(flags.contains(&"TFLOW_CLI_VALUE"), "CLI override missing: {flags:?}");
@@ -52,6 +61,11 @@ fn main() {
                 std::thread::sleep(Duration::from_secs(30));
             }
             "rm" | "ps" => {
+                if std::env::var("DOCKER_CONTEXT").as_deref() == Ok("deadline-fixture") {
+                    let mut log = fs::OpenOptions::new().create(true).append(true).open("cleanup-events").unwrap();
+                    writeln!(log, "{}", args[1]).unwrap();
+                    return;
+                }
                 if std::env::var("DOCKER_CONTEXT").as_deref() == Ok("forwarding-fixture") { return; }
                 if std::env::var("DOCKER_CONTEXT").as_deref() == Ok("cleanup-fixture") {
                     assert_eq!(std::env::var("DOCKER_HOST").unwrap(), "unix:///selected.sock");

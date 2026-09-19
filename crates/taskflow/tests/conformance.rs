@@ -5069,3 +5069,49 @@ async fn shard_partitions_reuse_unsharded_prerequisite_cache_keys() {
         "prepare\n"
     );
 }
+
+#[tokio::test]
+async fn shard_deadlines_leave_docker_cleanup_available() {
+    for list in ["inventory", "slow-inventory"] {
+        let root = fixture(
+            json!({"suite":{"command":["fixture","unit"],"input":[],"output":[],"timeout":"2s","shard":{"adapter":"generic","count":1,"list":["fixture",list],"run":["fixture","unit"]},"platform":{"executor":"docker","os":"linux","image":"fixture@sha256:0000000000000000000000000000000000000000000000000000000000000000"}}}),
+        );
+        let tools = tempfile::tempdir().unwrap();
+        std::fs::hard_link(
+            helper(),
+            tools.path().join(if cfg!(windows) {
+                "docker.exe"
+            } else {
+                "docker"
+            }),
+        )
+        .unwrap();
+        let path = std::env::join_paths(
+            std::iter::once(tools.path().to_path_buf())
+                .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+        )
+        .unwrap();
+        let output = tokio::time::timeout(
+            Duration::from_secs(10),
+            tokio::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+                .current_dir(root.path())
+                .args(["--json", "run", "suite", "--quiet"])
+                .env("PATH", path)
+                .env("DOCKER_CONTEXT", "deadline-fixture")
+                .output(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(!output.status.success());
+        let result: runner::RunResult = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(result.results["app#suite"].exit_code, 124, "{output:?}");
+        let cleanup = std::fs::read_to_string(root.path().join("cleanup-events")).unwrap();
+        assert!(cleanup.lines().count() >= if list == "inventory" { 2 } else { 1 });
+        let pid = std::fs::read_to_string(root.path().join("unit.pid"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(!pid_alive(pid));
+    }
+}

@@ -39,7 +39,12 @@ pub fn host_environment(environment: &BTreeMap<String, String>) -> BTreeMap<Stri
 }
 impl Container {
     pub async fn cleanup(&mut self) -> Result<()> {
-        self.cleanup_inner().await.context(CleanupFailure)
+        // Task deadlines stop new work, never the cleanup that proves container
+        // absence. Each cleanup subprocess retains its own metadata deadline.
+        process::DEADLINE
+            .scope(None, self.cleanup_inner())
+            .await
+            .context(CleanupFailure)
     }
 
     async fn cleanup_inner(&mut self) -> Result<()> {
