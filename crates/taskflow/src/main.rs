@@ -50,8 +50,23 @@ async fn main() {
             } else {
                 eprintln!("tflow: {error}");
             }
-            1
+            if error.is::<taskflow::process::Cancelled>() {
+                130
+            } else {
+                1
+            }
         }
     };
     std::process::exit(code);
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn cancellation_identity_survives_context_without_reclassifying_other_errors() {
+        let cancelled =
+            anyhow::Error::new(taskflow::process::Cancelled).context("native metadata unavailable");
+        assert!(cancelled.is::<taskflow::process::Cancelled>());
+        assert!(!anyhow::anyhow!("real configuration failure").is::<taskflow::process::Cancelled>());
+    }
 }

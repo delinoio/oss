@@ -328,6 +328,7 @@ impl Workspace {
         let data = metadata(directory, &args, &[]).await;
         let (items, complete) = match data {
             Ok(value) if value.is_array() => (value.as_array().unwrap().clone(), true),
+            Err(error) if crate::process::aborts_discovery(&error) => return Err(error),
             _ => {
                 // Membership comes from pnpm itself even before a lockfile exists.
                 // No names or declared version ranges are treated as resolved edges.
@@ -339,6 +340,7 @@ impl Workspace {
                 .await;
                 let mut members = match membership {
                     Ok(v) => v.as_array().cloned().unwrap_or_default(),
+                    Err(error) if crate::process::aborts_discovery(&error) => return Err(error),
                     Err(_) => vec![],
                 };
                 if members.is_empty() {
@@ -477,6 +479,7 @@ impl Workspace {
         let full = metadata_owned(directory, &args, &[]).await;
         let (data, mut complete) = match full {
             Ok(data) => (data, true),
+            Err(error) if crate::process::aborts_discovery(&error) => return Err(error),
             Err(_) => {
                 args.push("--no-deps".into());
                 (
@@ -498,6 +501,7 @@ impl Workspace {
         let platforms = if has_conditions {
             match cargo_platforms(directory, self.config.workspace.cargo_target.as_deref()).await {
                 Ok(platforms) => platforms,
+                Err(error) if crate::process::aborts_discovery(&error) => return Err(error),
                 Err(_) => {
                     complete = false;
                     tracing::warn!(
@@ -667,9 +671,13 @@ impl Workspace {
             let source = modules[declaration["Module"]["Path"].as_str().unwrap()].clone();
             let args = ["go", "list", "-mod=readonly", "-m", "-json", "all"];
             let output = output_tool(&path, &args, &environment).await;
-            let Ok(output) = output else {
-                complete = false;
-                continue;
+            let output = match output {
+                Ok(output) => output,
+                Err(error) if crate::process::aborts_discovery(&error) => return Err(error),
+                Err(_) => {
+                    complete = false;
+                    continue;
+                }
             };
             let resolved: Vec<Value> = serde_json::Deserializer::from_slice(&output)
                 .into_iter()

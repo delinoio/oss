@@ -54,6 +54,8 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 
 The library regression `invalidation_at_each_publication_boundary_preserves_previous_entry` checks cancellation and failed input validation before object publication, before entry replacement, and after replacement under the exclusive cache lock, with and without a previous entry.
 
+`cli_metadata_cancellation_returns_130_without_fallback` sends SIGINT to the real CLI while its Cargo metadata child is running, checks code 130 and child reaping, and proves no membership fallback starts.
+
 Additional invariants include unknown/duplicate configuration rejection, schema freshness, stale/partial CI receipt rejection, required artifact accounting, cache path traversal rejection before mutation, masked stored logs, and service failure cancelling other running checks before returning.
 
 `grouped_tasks_only_receive_their_declared_secrets` passes a CI-style credential union to a real CLI run: only the declaring task receives the credential, and persisted output remains masked.

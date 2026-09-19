@@ -260,12 +260,29 @@ async fn capture_output(
     cancel: &CancellationToken,
 ) -> Result<CapturedOutput> {
     let (output, status) = capture_owned(directory, command, shell, environment, cancel).await?;
+    if status.cancelled() {
+        return Err(Cancelled.into());
+    }
     ensure!(
-        status.code == 0 && !status.cancelled(),
+        status.code == 0,
         "native command failed (exit {})",
         status.code
     );
     Ok(output)
+}
+
+/// A completed ownership cleanup whose command was cancelled by its operator.
+#[derive(Debug)]
+pub struct Cancelled;
+impl std::fmt::Display for Cancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("command cancelled")
+    }
+}
+impl std::error::Error for Cancelled {}
+
+pub(crate) fn aborts_discovery(error: &anyhow::Error) -> bool {
+    error.is::<Cancelled>() || error.is::<CleanupFailure>()
 }
 
 #[derive(Debug)]
@@ -295,6 +312,9 @@ async fn capture_owned(
     environment: &BTreeMap<String, String>,
     cancel: &CancellationToken,
 ) -> Result<(CapturedOutput, ProcessExit)> {
+    if cancel.is_cancelled() {
+        return Err(Cancelled.into());
+    }
     let mut child = OwnedProcess::spawn(directory, command, shell, Some(environment))?;
     let stdout = child.child.stdout.take().unwrap();
     let stderr = child.child.stderr.take().unwrap();

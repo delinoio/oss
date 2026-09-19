@@ -4611,3 +4611,49 @@ async fn readiness_cancellation_and_deadlines_await_probe_owners() {
         }
     }
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn cli_metadata_cancellation_returns_130_without_fallback() {
+    let root = fixture(json!({}));
+    std::fs::write(root.path().join("Cargo.toml"), "[workspace]\nmembers=[]\n").unwrap();
+    let tools = tempfile::tempdir().unwrap();
+    std::fs::hard_link(helper(), tools.path().join("cargo")).unwrap();
+    let path = std::env::join_paths(
+        std::iter::once(tools.path().to_path_buf())
+            .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
+    let child = tokio::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+        .arg("--root")
+        .arg(root.path())
+        .args(["--json", "check"])
+        .env("PATH", path)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    wait_lines(&root.path().join("metadata.pid"), "", 1).await;
+    nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(child.id().unwrap() as i32),
+        nix::sys::signal::Signal::SIGINT,
+    )
+    .unwrap();
+    let output = tokio::time::timeout(Duration::from_secs(10), child.wait_with_output())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(130), "{output:?}");
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("command cancelled"));
+    assert_eq!(
+        std::fs::read_to_string(root.path().join("metadata-calls")).unwrap(),
+        "metadata\n"
+    );
+    let pid = std::fs::read_to_string(root.path().join("metadata.pid"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(!pid_alive(pid));
+}
