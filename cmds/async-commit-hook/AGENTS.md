@@ -36,6 +36,7 @@
 - Retain pending-run failures with per-run exponential retry delays from one second to one minute; never hot-loop reconciliation or release an unproven scheduling claim. On-demand workers wait for pending retry work and stop promptly on shutdown.
 - Resume interrupted preparation only when every local check is provably unclaimed and unstarted under the run lock; remove its partial workspace first. A claimed check remains interruption recovery, never an automatic replay.
 - Release verification and replacement follow `docs/cmds-async-commit-hook-release-contract.md`; never weaken the pinned workflow identity or package-manager ownership checks.
+- Apply the same failure field and aggregate response budgets to synthesized diagnostics; reserve a stable truncation notice so omitted failures remain visible.
 - Bound structured failure fields and the aggregate per-run summaries before persistence and on legacy reads; disclose truncation and preserve complete paginated report evidence.
 - JUnit identities include suite ancestry and deterministic sibling/test/failure occurrences; namespace persisted report failures by report kind/path to prevent duplicate comparison and UI keys.
 - Windows updater helper cleanup survives replacement-journal removal; retain digest/birth-scoped cleanup metadata until a later launch confirms exit and removes the exact helper.

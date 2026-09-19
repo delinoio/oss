@@ -18,7 +18,14 @@ func Failures(r Run) []Failure {
 			out = append(out, Failure{ID: Hash([]byte(c.Name + "/diagnostic/" + d.Code)), Check: c.Name, Command: r.Config.Checks[c.Name].Command, Message: d.Message, LogID: c.Log.ID})
 		}
 	}
-	return out
+	// Diagnostics are synthesized on read and therefore do not pass through
+	// SaveCheck's summary limits. Reserve space to disclose aggregate omission.
+	notice := Failure{ID: Hash([]byte("run/failure-summaries-truncated")), Message: "Structured failure summaries were truncated; inspect check diagnostics and paginated evidence for full details."}
+	bounded, _, truncated := boundFailures(out, runFailureBytes-len(Encode(notice))-1)
+	if truncated {
+		bounded = append(bounded, notice)
+	}
+	return bounded
 }
 func (s *Service) Compare(id, previous string) (Comparison, error) {
 	r, e := s.Store.Run(id)
