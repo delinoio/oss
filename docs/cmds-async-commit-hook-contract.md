@@ -110,6 +110,8 @@ Commit browsing normalizes invalid subject bytes for display and protobuf/JSON t
 Branch-list responses likewise normalize display labels at the API boundary while preserving raw Git refs and their commit object IDs.
 Repository/worktree listing names, display paths and branch labels use the same valid-UTF-8 transport boundary. Raw database paths and stable IDs are unchanged; source access continues to resolve the registered worktree ID through its original path.
 
+Go test JSON accepts individual events within the 64 MiB report limit, including a final event without a newline and CRLF separators. Line traversal references the already bounded input without a second event buffer. Invalid or truncated JSON and incomplete tests still fail validation.
+
 Go test JSON collection keeps at most 64 KiB of chronological output per active test in lazily allocated circular buffers. Appends copy only new bytes; terminal events release their buffers after failure summaries are materialized. Complete redacted report evidence is preserved.
 
 Retention ages are accepted only in the inclusive range 0..106751 days, with zero meaning indefinite retention. Personal configuration and CLI/shared-service pruning reject larger values before any duration conversion or mutation. Byte quotas remain nonnegative int64 values.

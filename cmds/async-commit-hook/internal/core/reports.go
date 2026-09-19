@@ -1,7 +1,6 @@
 package core
 
 import (
-	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
@@ -244,19 +243,19 @@ func parseJUnit(b []byte, check, command, logID string) ([]Failure, error) {
 	return out, nil
 }
 func parseGoTest(b []byte, check, command, logID string) ([]Failure, error) {
-	scanner := bufio.NewScanner(bytes.NewReader(b))
-	scanner.Buffer(make([]byte, 4096), 4*1024*1024)
 	out := []Failure{}
 	seen := false
 	terminal := false
 	output := map[string]*reportOutputTail{}
 	tests := map[string]bool{}
-	for scanner.Scan() {
-		if len(bytes.TrimSpace(scanner.Bytes())) == 0 {
+	// The report is already bounded. Slice its lines without imposing a
+	// smaller event limit or allocating a second copy of a large JSON line.
+	for line := range bytes.SplitSeq(b, []byte{'\n'}) {
+		if len(bytes.TrimSpace(line)) == 0 {
 			continue
 		}
 		var event struct{ Action, Package, Test, Output string }
-		if e := json.Unmarshal(scanner.Bytes(), &event); e != nil || event.Action == "" {
+		if e := json.Unmarshal(line, &event); e != nil || event.Action == "" {
 			return nil, E("report-malformed", "invalid Go test JSON event", 1)
 		}
 		seen = true
@@ -281,7 +280,7 @@ func parseGoTest(b []byte, check, command, logID string) ([]Failure, error) {
 			return nil, E("report-malformed", "unknown Go test JSON action", 1)
 		}
 	}
-	if scanner.Err() != nil || !seen || !terminal {
+	if !seen || !terminal {
 		return nil, E("report-malformed", "Go test report is empty, truncated or incomplete", 1)
 	}
 	for _, done := range tests {

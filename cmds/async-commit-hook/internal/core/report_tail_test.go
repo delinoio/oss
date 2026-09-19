@@ -56,3 +56,30 @@ func TestReportOutputTailWrapAndOversizedEvents(t *testing.T) {
 		}
 	}
 }
+
+func TestGoReportAcceptsLargeSingleEvents(t *testing.T) {
+	for _, action := range []string{"pass", "fail"} {
+		t.Run(action, func(t *testing.T) {
+			body := strings.Repeat("x", 5*1024*1024) + "END-MARKER"
+			event, err := json.Marshal(map[string]string{"Action": "output", "Package": "p", "Test": "large", "Output": body})
+			if err != nil {
+				t.Fatal(err)
+			}
+			report := append([]byte(`{"Action":"run","Package":"p","Test":"large"}`+"\r\n"), event...)
+			report = append(report, []byte("\r\n"+`{"Action":"`+action+`","Package":"p","Test":"large"}`)...)
+			failures, err := ParseReport(GoTest, report, "test", "go test -json", "log")
+			if err != nil {
+				t.Fatal("valid large event rejected", err)
+			}
+			if action == "pass" && len(failures) != 0 {
+				t.Fatal(failures)
+			}
+			if action == "fail" && (len(failures) != 1 || !strings.HasSuffix(failures[0].Message, "END-MARKER") || len(failures[0].Message) > reportOutputLimit) {
+				t.Fatal("large event lost bounded failure tail")
+			}
+			if _, err = ParseReport(GoTest, report[:len(report)-1], "test", "go test -json", "log"); err == nil {
+				t.Fatal("truncated final event accepted")
+			}
+		})
+	}
+}
