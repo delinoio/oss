@@ -658,6 +658,19 @@ func (m *Manager) prepare(ctx context.Context, id string) {
 		driver, er := m.Drivers(r.Backend)
 		e = er
 		if e == nil {
+			// A stop or lifecycle event may commit while JIT registration is in
+			// flight, before the worker context receives cancellation. Keep the
+			// returned registration journaled, but never provision from stale intent.
+			s = m.Store.View()
+			r = s.Runners[id]
+			if r == nil || r.Forced || r.Phase != Preparing {
+				m.Log.Info("runner_preparation_cancelled", "pool", p.Spec.Name, "runner", id)
+				return
+			}
+			if e = ctx.Err(); e != nil {
+				m.failPreparation(id, e)
+				return
+			}
 			e = driver.Prepare(ctx, c, p.Spec, *r, s, jit, func(h Handle) error {
 				return m.Store.Update(func(s *Snapshot) error { s.Runners[id].Handle = h; return nil })
 			})
