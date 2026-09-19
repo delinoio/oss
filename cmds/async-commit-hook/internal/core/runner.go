@@ -274,6 +274,31 @@ func (s *Service) runOne(ctx context.Context, id string) error {
 	if err != nil || r.State.Terminal() {
 		return err
 	}
+	if r.State == Preparing || r.State == Running {
+		unstarted := true
+		for _, c := range r.Checks {
+			// A preparing check was already claimed and may have spawned a
+			// process before persisting its identity. Only queued/skipped and
+			// explicitly inherited results prove no local command started.
+			if c.InheritedFrom == "" && (c.Process.PID != 0 || c.StartedAt != nil || (c.State != Queued && c.State != Skipped)) {
+				unstarted = false
+			}
+		}
+		if unstarted {
+			if err = os.RemoveAll(filepath.Join(s.Store.Root, "workspaces", r.ID)); err != nil {
+				r.Diagnostics = append(r.Diagnostics, Diagnostic{Code: "workspace-cleanup-failed", Message: "unstarted recovery could not remove the partial owned workspace"})
+				if saveErr := s.Store.SaveRun(r); saveErr != nil {
+					return saveErr
+				}
+				return E("workspace-cleanup-failed", "unstarted workspace recovery failed", 3)
+			}
+			r.State = Queued
+			if err = s.Store.SaveRun(r); err != nil {
+				return err
+			}
+			s.Log.Info("run.preparation_recovered", "run_id", r.ID)
+		}
+	}
 	if r.State != Queued {
 		for _, c := range r.Checks {
 			if !c.State.Terminal() {

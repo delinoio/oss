@@ -63,3 +63,5 @@ Update project index, protocol/client/app contracts and AGENTS when public behav
 - [Repository defaults](repository-defaults.md)
 
 Repository/worktree listings discover the current checkout branch on access, including detached HEAD. A missing or mismatched worktree is unavailable and retains its last recorded label; historical execution branches never change with later checkouts.
+
+Crash recovery resumes a preparing/running request when all local checks are still queued or skipped with no process identity or start timestamp (inherited results are already complete). Under the run ownership lock it removes partial source, resets the run to queued and prepares fresh committed source. A claimed/preparing check is ambiguous and remains interrupted; it is never automatically replayed.
