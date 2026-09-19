@@ -429,6 +429,12 @@ Cancellation handlers are installed before owned child work. Native cancellation
 fixtures synchronize on actual child readiness rather than assuming startup time.
 
 Offline checks never pass a report with no target execution.
+Policy checks retain unknown findings for unsupported accesses, uncovered
+workspace paths, and lexical aliases, even with only deny rules configured.
+Known absolute external paths remain usable for literal access-boundary checks
+without implying snapshot or cache coverage. Parent-component aliases are not
+lexically collapsed across possible symlinks: absent trustworthy identity,
+unmatched aliases make the policy inconclusive rather than passing.
 Imported baseline executions use the `baseline` role for evidence-reference
 closure. Their historical operational failures affect comparison certainty but
 never become errors or cleanup recipients of the current invocation. Current

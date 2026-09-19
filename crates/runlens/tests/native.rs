@@ -556,6 +556,52 @@ fn historical_baseline_errors_do_not_become_current_exit_codes() {
 }
 #[test]
 #[cfg(unix)]
+fn deny_only_policy_cannot_pass_unresolved_path_aliases() {
+    let root = repository("read");
+    fs::create_dir(root.path().join("sub")).unwrap();
+    fs::create_dir(root.path().join("private")).unwrap();
+    fs::write(root.path().join("private/input"), "private contents").unwrap();
+    fs::write(
+        root.path().join("runlens.toml"),
+        "schema_version = 1\n[policy]\ndeny_reads = [\"private/**\"]\n",
+    )
+    .unwrap();
+    let observed = invoke(
+        root.path(),
+        &[
+            "run",
+            "--save",
+            "alias.json",
+            "--",
+            fixture(),
+            "read",
+            "sub/../private/input",
+        ],
+    );
+    assert!(
+        observed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&observed.stderr)
+    );
+    let result = invoke(root.path(), &["policy", "check", "alias.json", "--json"]);
+    assert!(
+        matches!(result.status.code(), Some(4 | 5)),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let value: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_ne!(value["verdict"], "passed");
+    assert!(
+        value["findings"]
+            .as_object()
+            .unwrap()
+            .values()
+            .any(|finding| finding["code"] == "unknown-evidence"
+                || finding["code"] == "read-boundary")
+    );
+}
+#[test]
+#[cfg(unix)]
 fn non_unicode_environment_entries_do_not_abort_observation() {
     use std::{ffi::OsString, os::unix::ffi::OsStringExt};
 

@@ -360,6 +360,21 @@ pub fn policy(
         }
         for entry in execution.accesses.iter() {
             let (path, access) = entry?;
+            // Lexical aliases containing `..` may cross symlinks, so collapsing
+            // them cannot safely prove filesystem identity. Uncovered workspace
+            // paths are uncertain too. Ordinary absolute external paths (such as
+            // the executable) can still be checked against literal boundaries;
+            // cache coverage separately requires their missing snapshot evidence.
+            if access.unsupported
+                || path.split('/').any(|part| matches!(part, "." | ".."))
+                || !access.in_scope && (path == "${workspace}" || path.starts_with("${workspace}/"))
+            {
+                result.finding(
+                    FindingCode::UnknownEvidence,
+                    Classification::Unknown,
+                    vec![evidence(execution, Some(&path), EvidenceSource::Access)],
+                )?;
+            }
             if (access.read || access.read_directory)
                 && (matches(&deny_read, &rules.deny_reads, &path)
                     || allow_read.as_ref().is_some_and(|set| {
