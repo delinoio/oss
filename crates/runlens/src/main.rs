@@ -556,13 +556,17 @@ fn print_analysis(result: analysis::Analysis, output: Output, check: bool) -> Re
             println!("{limitation}");
         }
     }
-    Ok(if check && result.verdict != Some(Verdict::Passed) {
-        if result.verdict == Some(Verdict::Inconclusive) {
-            4
+    Ok(
+        if result.verdict == Some(Verdict::Inconclusive)
+            || check && result.verdict != Some(Verdict::Passed)
+        {
+            if result.verdict == Some(Verdict::Inconclusive) {
+                4
+            } else {
+                5
+            }
         } else {
-            5
-        }
-    } else {
-        0
-    })
+            0
+        },
+    )
 }
