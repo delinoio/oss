@@ -626,7 +626,15 @@ impl Workspace {
         } else {
             "off".into()
         };
-        let environment = [("GOTOOLCHAIN", "local"), ("GOWORK", work.as_str())];
+        let environment = [
+            ("GOTOOLCHAIN", "local"),
+            ("GOWORK", work.as_str()),
+            ("GOPROXY", "off"),
+            // Override private-module proxy bypass as well as public downloads.
+            ("GONOPROXY", "none"),
+            ("GOSUMDB", "off"),
+            ("GOVCS", "*:off"),
+        ];
         let mut paths = vec![];
         if manifest.file_name().unwrap() == "go.work" {
             let data = metadata(directory, &["go", "work", "edit", "-json"], &environment).await?;

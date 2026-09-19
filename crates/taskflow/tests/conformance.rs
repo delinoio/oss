@@ -2567,3 +2567,79 @@ async fn completed_tasks_keep_edits_while_an_independent_wave_task_runs() {
         session.await.unwrap().unwrap();
     }
 }
+
+#[test]
+#[ignore = "requires Go"]
+fn go_metadata_queries_do_not_contact_module_proxies() {
+    use std::{
+        io::{Read, Write},
+        sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    listener.set_nonblocking(true).unwrap();
+    let stop = Arc::new(AtomicBool::new(false));
+    let requests = Arc::new(AtomicUsize::new(0));
+    let stopped = stop.clone();
+    let received = requests.clone();
+    let server = std::thread::spawn(move || {
+        while !stopped.load(Ordering::Relaxed) {
+            if let Ok((mut stream, _)) = listener.accept() {
+                received.fetch_add(1, Ordering::Relaxed);
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(1)))
+                    .unwrap();
+                let _ = stream.read(&mut [0; 4096]);
+                let _ = stream.write_all(
+                    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                );
+            } else {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+    });
+    let directory = fixture(json!({}));
+    let modules = tempfile::tempdir().unwrap();
+    files::atomic_write(
+        &directory.path().join("go.mod"),
+        b"module example.test/local\n\ngo 1.25.0\n\nrequire example.test/missing v1.2.3\n",
+    )
+    .unwrap();
+    let mut outputs = vec![];
+    for bypass in ["none", "*"] {
+        outputs.push(
+            std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+                .current_dir(directory.path())
+                .args(["--json", "check"])
+                .env("GOPROXY", &endpoint)
+                .env("GOMODCACHE", modules.path())
+                .env("GOPRIVATE", "example.test")
+                .env("GONOPROXY", bypass)
+                .output()
+                .unwrap(),
+        );
+    }
+    stop.store(true, Ordering::Relaxed);
+    server.join().unwrap();
+    assert_eq!(
+        requests.load(Ordering::Relaxed),
+        0,
+        "discovery must not download module metadata"
+    );
+    for output in outputs {
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["coverage"][0]["complete"], false);
+    }
+    assert!(!walkdir::WalkDir::new(modules.path())
+        .into_iter()
+        .filter_map(Result::ok)
+        .any(|entry| matches!(
+            entry.path().extension().and_then(|s| s.to_str()),
+            Some("mod" | "zip" | "info")
+        )));
+}

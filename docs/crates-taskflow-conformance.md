@@ -129,3 +129,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `cargo_member_commands_discover_the_implicit_workspace_root` launches the CLI from a Cargo member, verifies the root development profile and native prerequisite tasks, and checks that Cargo-excluded standalone packages remain independent. Root location uses Cargo's offline workspace lookup without dependency resolution.
 
 `completed_tasks_keep_edits_while_an_independent_wave_task_runs` gates an independent slow task after a watched task has fully exited. Both skip and restart policies must retain the completed task's input change until its reserved wave is available; wave membership alone is not an executing task.
+
+`go_metadata_queries_do_not_contact_module_proxies` runs real CLI queries with a cold isolated module cache and a recording loopback proxy, including an inherited private-module bypass. Missing dependencies yield incomplete coverage without requests or downloaded module metadata.
