@@ -59,6 +59,44 @@ func TestWarmRetirementPreservesDemand(t *testing.T) {
 		t.Fatalf("retired busy/demanded runner: %v", got)
 	}
 }
+
+func TestCappedDemandDoesNotChurnWarmRunners(t *testing.T) {
+	for _, oldGeneration := range []bool{false, true} {
+		s := schedulingState(t)
+		s.Config.Host.MaxRunners = 2
+		s.Pools["a"].Spec.MinIdle = 1
+		s.Pools["b"].Demand = 10
+		s.Pools["b"].Spec.MaxRunners = 1
+		s.Runners["warm"] = &Runner{ID: "warm", PoolID: "a", Phase: Idle, Resources: Resources{1, 128}}
+		pool := "b"
+		if oldGeneration {
+			old := *s.Pools["b"]
+			old.ID, old.Phase, old.Spec.ScaleSet = "old", Draining, "old-remote"
+			s.Pools["old"] = &old
+			pool = "old"
+		}
+		s.Runners["busy"] = &Runner{ID: "busy", PoolID: pool, Phase: Busy, Resources: Resources{1, 128}}
+		for tick := 0; tick < 3; tick++ {
+			if got := retirementCandidates(s); len(got) != 0 {
+				t.Fatalf("capped demand evicted warm capacity (old=%t): %v", oldGeneration, got)
+			}
+			if got := Schedule(s); len(got) != 0 {
+				t.Fatalf("capped pool admitted excess capacity: %v", got)
+			}
+			s.Cursor++
+		}
+		// Once the pool cap permits demand to use that slot, warm capacity must
+		// still yield without terminating the existing busy execution.
+		s.Pools["b"].Spec.MaxRunners = 2
+		if got := retirementCandidates(s); len(got) != 1 || got[0] != "warm" {
+			t.Fatalf("admissible demand did not displace idle capacity: %v", got)
+		}
+		delete(s.Runners, "warm")
+		if got := Schedule(s); len(got) != 1 || got[0] != "b" {
+			t.Fatalf("released slot did not satisfy demand: %v", got)
+		}
+	}
+}
 func TestImagePreparationSharesTwoVMLimit(t *testing.T) {
 	s := schedulingState(t)
 	s.Pools["a"].Spec.Backend = Tart

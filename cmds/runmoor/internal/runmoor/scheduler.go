@@ -118,7 +118,7 @@ func retirementCandidates(s Snapshot) []string {
 	needDemand := false
 	for id, p := range s.Pools {
 		n, _ := liveCount(s, id)
-		if eligible(s, p) && n < p.Demand {
+		if eligible(s, p) && n < p.Demand && logicalCount(s, p.Spec.Name) < p.Spec.MaxRunners {
 			needDemand = true
 		}
 	}
