@@ -41,6 +41,7 @@
 
 - Normalize arbitrary Git commit-subject bytes into valid UTF-8 for display/transport while preserving commit and parent object IDs.
 - Branch-list transport labels also normalize invalid Git bytes to valid UTF-8 without changing the referenced commit IDs or raw Git refs.
+- Repository/worktree transport names, paths and branch labels must be valid UTF-8; preserve raw database paths for filesystem/Git access and use IDs for API selection.
 
 - Collect Go test output in lazily grown bounded tails; appending an event must not copy the entire retained tail. Release per-test output after terminal events while preserving failure text.
 

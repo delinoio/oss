@@ -314,9 +314,9 @@ func (a *API) ListRepositories(context.Context, *connect.Request[pb.ListReposito
 	}
 	out := &pb.ListRepositoriesResponse{}
 	for _, r := range repos {
-		v := &pb.Repository{Id: r.ID, Name: r.Name}
+		v := &pb.Repository{Id: r.ID, Name: strings.ToValidUTF8(r.Name, "\uFFFD")}
 		for _, w := range r.Worktrees {
-			v.Worktrees = append(v.Worktrees, &pb.Worktree{Id: w.ID, Path: w.Path, Branch: w.Branch, Available: w.Available})
+			v.Worktrees = append(v.Worktrees, &pb.Worktree{Id: w.ID, Path: strings.ToValidUTF8(w.Path, "\uFFFD"), Branch: strings.ToValidUTF8(w.Branch, "\uFFFD"), Available: w.Available})
 		}
 		out.Repositories = append(out.Repositories, v)
 	}
