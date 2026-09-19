@@ -209,7 +209,10 @@ func parseJUnit(b []byte, check, command, logID string) ([]Failure, error) {
 				test = attrs["name"]
 				class = attrs["classname"]
 				file = attrs["file"]
-				line, _ = strconv.Atoi(attrs["line"])
+				line = 0
+				if parsed, err := strconv.ParseInt(attrs["line"], 10, 32); err == nil && parsed > 0 {
+					line = int(parsed)
+				}
 				key := string(Encode([]any{suites, "testcase", class, test}))
 				occurrences[key]++
 				testOccurrence = occurrences[key]

@@ -48,6 +48,7 @@
 - Apply the same failure field and aggregate response budgets to synthesized diagnostics; reserve a stable truncation notice so omitted failures remain visible.
 - Bound structured failure fields and the aggregate per-run summaries before persistence and on legacy reads; disclose truncation and preserve complete paginated report evidence.
 - Synthesized diagnostic identities include check, code, original message and occurrence among identical diagnostics; compute IDs before display truncation.
+- Structured source lines are positive int32 values (1..2147483647); omit malformed, nonpositive or overflowing report locations as zero before persistence and on legacy/API reads, retaining the report failure itself.
 - JUnit identities include suite ancestry and deterministic sibling/test/failure occurrences; namespace persisted report failures by report kind/path to prevent duplicate comparison and UI keys.
 - Windows updater helper cleanup survives replacement-journal removal; retain digest/birth-scoped cleanup metadata until a later launch confirms exit and removes the exact helper.
 - Update helpers revalidate the exact prepared journal under the lifecycle lock after waiting for their parent; a recovered or replaced journal must never be replayed from memory.

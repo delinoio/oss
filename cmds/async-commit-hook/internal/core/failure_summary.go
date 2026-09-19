@@ -8,6 +8,14 @@ import (
 const failureFieldBytes = 4096
 const runFailureBytes = 1024 * 1024
 
+// Unknown, nonpositive and out-of-range source locations are omitted.
+func failureLine(line int) int32 {
+	if line < 1 || line > 1<<31-1 {
+		return 0
+	}
+	return int32(line)
+}
+
 func failureText(s string) (string, bool) {
 	clean := strings.ToValidUTF8(s, "�")
 	if len(clean) <= failureFieldBytes {
@@ -26,6 +34,7 @@ func failureText(s string) (string, bool) {
 func boundFailures(in []Failure, budget int) (out []Failure, used int, truncated bool) {
 	out = []Failure{}
 	for _, f := range in {
+		f.Line = int(failureLine(f.Line))
 		for _, field := range []*string{&f.Check, &f.Test, &f.Command, &f.Message, &f.File} {
 			value, cut := failureText(*field)
 			*field = value

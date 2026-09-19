@@ -242,7 +242,7 @@ func diagnostics(in []Diagnostic) []*pb.Diagnostic {
 func wireFailures(in []Failure) []*pb.Failure {
 	out := []*pb.Failure{}
 	for _, f := range in {
-		out = append(out, &pb.Failure{Id: f.ID, Check: f.Check, Test: f.Test, Command: f.Command, Message: f.Message, File: f.File, Line: int32(f.Line), LogId: f.LogID})
+		out = append(out, &pb.Failure{Id: f.ID, Check: f.Check, Test: f.Test, Command: f.Command, Message: f.Message, File: f.File, Line: failureLine(f.Line), LogId: f.LogID})
 	}
 	return out
 }
