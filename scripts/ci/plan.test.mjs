@@ -41,6 +41,29 @@ test("Runmoor source and release scripts do not rebuild DevHud desktop/mobile", 
   }
 });
 
+test("Runmoor docs select their checks and shared inputs force the workspace", () => {
+  const id = "node-runmoor-docs-test";
+  for (const event of [Event.PullRequest, Event.Push]) {
+    const paths = ["apps/runmoor-docs/docs/install.md"];
+    assert.deepEqual(selected(event, paths), ["repository-environment", id]);
+    assert.equal(planJobs(event, paths).forced[id], false);
+    for (const path of [".nvmrc", "pnpm-lock.yaml", "scripts/run-rspress-port.mjs"]) {
+      const plan = planJobs(event, [path]);
+      assert.equal(plan.jobs[id], true, path);
+      assert.equal(plan.forced[id], true, path);
+    }
+    for (const path of ["docs/apps-runmoor-docs-foundation.md", "docs/project-runmoor.md"]) {
+      assert.deepEqual(selected(event, [path]), ["repository-environment"]);
+    }
+    const needs = results(event, paths);
+    assert.equal(validateResults(needs), true);
+    for (const result of ["failure", "cancelled", "skipped"]) {
+      needs[id].result = result;
+      assert.throws(() => validateResults(needs), new RegExp(id, "u"));
+    }
+  }
+});
+
 test("workspace, shared, runtime, and external contract inputs select their owners", () => {
   for (const [path, ids] of [
     ["apps/mpapp/App.tsx", ["node-mpapp-test", "node-mpapp-lint"]],

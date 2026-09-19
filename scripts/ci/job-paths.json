@@ -46,16 +46,19 @@
       "apps/mpapp/.env.example",
       "apps/nodeup-docs/**",
       "apps/public-docs/**",
+      "apps/runmoor-docs/**",
       "docs/README.md",
       "docs/apps-binpm-docs-foundation.md",
       "docs/apps-devhud-admin-contract.md",
       "docs/apps-devhud-foundation.md",
       "docs/apps-nodeup-docs-foundation.md",
       "docs/apps-public-docs-foundation.md",
+      "docs/apps-runmoor-docs-foundation.md",
       "docs/project-binpm.md",
       "docs/project-devhud.md",
       "docs/project-nodeup.md",
       "docs/project-public-docs.md",
+      "docs/project-runmoor.md",
       "docs/repository-environment-contract.md",
       "docs/servers-devhud-api-contract.md",
       "go.mod",
@@ -181,6 +184,22 @@
     "workspace": "binpm-docs",
     "workspacePaths": [
       "apps/binpm-docs/**"
+    ]
+  },
+  "node-runmoor-docs-test": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "apps/runmoor-docs/**",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "scripts/run-rspress-port.mjs",
+      "turbo.json"
+    ],
+    "workspace": "runmoor-docs",
+    "workspacePaths": [
+      "apps/runmoor-docs/**"
     ]
   },
   "node-nodeup-docs-test": {
