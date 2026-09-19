@@ -2751,7 +2751,7 @@ async fn docker_service_cleanup_failure_survives_session_cancellation() {
             std::fs::write(path, serde_yaml::to_string(&config).unwrap()).unwrap();
         }
         let tools = tempfile::tempdir().unwrap();
-        std::fs::copy(helper(), tools.path().join("docker")).unwrap();
+        std::fs::hard_link(helper(), tools.path().join("docker")).unwrap();
         let paths = std::iter::once(tools.path().to_path_buf())
             .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap()))
             .collect::<Vec<_>>();
@@ -3168,7 +3168,10 @@ fn notification_paths_survive_concurrent_file_removal() {
 async fn docker_context_cannot_override_a_validated_local_host() {
     let directory = fixture(json!({}));
     let tools = tempfile::tempdir().unwrap();
-    std::fs::copy(
+    // Link the already-closed executable: parallel subprocess creation can
+    // transiently retain a writer to a freshly copied binary on Linux (ETXTBSY).
+    // Both temporary directories use the same filesystem.
+    std::fs::hard_link(
         helper(),
         tools.path().join(if cfg!(windows) {
             "docker.exe"
@@ -3754,7 +3757,10 @@ async fn session_revalidates_provided_prerequisite_outputs() {
 async fn docker_cleanup_reuses_the_validated_launch_environment() {
     let directory = fixture(json!({}));
     let tools = tempfile::tempdir().unwrap();
-    std::fs::copy(
+    // Link the already-closed executable: parallel subprocess creation can
+    // transiently retain a writer to a freshly copied binary on Linux (ETXTBSY).
+    // Both temporary directories use the same filesystem.
+    std::fs::hard_link(
         helper(),
         tools.path().join(if cfg!(windows) {
             "docker.exe"
