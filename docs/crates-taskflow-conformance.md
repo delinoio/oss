@@ -135,3 +135,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `docker_service_cleanup_failure_survives_session_cancellation` injects Docker removal and absence-check failures through an isolated CLI fixture. Ctrl+C must still reap its real child and return a cleanup failure instead of a successful session. No real daemon is interrupted.
 
 `partial_outputs_cannot_be_exported_or_restored_as_artifacts` retains local uncached partial output support while rejecting CI export, artifact capture, and restoration before undeclared neighboring inputs can be transferred or replaced.
+
+`readiness_commands_use_the_configured_shell` releases a readiness-dependent check only after the service's explicit interpreter runs its probe, then verifies the server process is reaped on cancellation.

@@ -650,6 +650,7 @@ async fn run_task(
             let ready = wait_ready(
                 &mut process,
                 readiness,
+                task.shell.as_deref(),
                 &project.directory,
                 &values,
                 &cancel,
@@ -968,6 +969,7 @@ pub async fn stream_log(
 async fn wait_ready(
     process: &mut OwnedProcess,
     readiness: &Readiness,
+    shell: Option<&[String]>,
     directory: &Path,
     environment: &BTreeMap<String, String>,
     cancel: &CancellationToken,
@@ -997,11 +999,15 @@ async fn wait_ready(
                     .send()
                     .await
                     .is_ok_and(|r| r.status().is_success()),
-                Readiness::Command { command, .. } => {
-                    crate::process::capture_with_env(directory, command, environment, cancel)
-                        .await
-                        .is_ok()
-                }
+                Readiness::Command { command, .. } => crate::process::capture_with_shell(
+                    directory,
+                    command,
+                    shell,
+                    environment,
+                    cancel,
+                )
+                .await
+                .is_ok(),
             }
         };
         let ready = tokio::select! { _ = cancel.cancelled() => anyhow::bail!("service readiness cancelled"), result = tokio::time::timeout_at(deadline, check) => result.context("service readiness timed out")? };

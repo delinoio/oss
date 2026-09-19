@@ -2771,3 +2771,30 @@ async fn partial_outputs_cannot_be_exported_or_restored_as_artifacts() {
         "new private input"
     );
 }
+
+#[tokio::test]
+async fn readiness_commands_use_the_configured_shell() {
+    let directory = fixture(json!({
+        "server":{"command":command(&["sleep","server.pid"]),"input":[],"service":true,"shell":[helper(),"shell"],"readiness":{"type":"command","command":"version","timeout":"15s"}},
+        "check":{"command":command(&["record","events","ready"]),"input":[],"dependsOn":[{"task":"server","waitFor":"ready"}]}
+    }));
+    profile(directory.path(), &["check"]);
+    let root = directory.path().to_path_buf();
+    let stop = CancellationToken::new();
+    let cancel = stop.clone();
+    let session = tokio::spawn(async move {
+        taskflow::session::start(&root, "default", RunOptions::default(), cancel).await
+    });
+    wait_lines(&directory.path().join("events"), "ready", 1).await;
+    stop.cancel();
+    session.await.unwrap().unwrap();
+    assert_eq!(
+        std::fs::read_to_string(directory.path().join("shell-events")).unwrap(),
+        "version\n"
+    );
+    let pid = std::fs::read_to_string(directory.path().join("server.pid"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(!pid_alive(pid));
+}

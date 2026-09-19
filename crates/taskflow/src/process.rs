@@ -217,7 +217,7 @@ pub async fn capture_with_env(
     capture_with_shell(directory, command, None, environment, cancel).await
 }
 
-async fn capture_with_shell(
+pub(crate) async fn capture_with_shell(
     directory: &Path,
     command: &Command,
     shell: Option<&[String]>,
