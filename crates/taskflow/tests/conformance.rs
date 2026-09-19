@@ -1244,6 +1244,34 @@ fn profile(directory: &Path, tasks: &[&str]) {
 }
 
 #[test]
+fn shard_preflight_preserves_explicit_metadata_bootstrap() {
+    let directory = fixture(json!({
+        "install":{"command":["cargo","generate-lockfile","--offline"],"install":true},
+        "test":{"command":command(&["version"]),"dependsOn":["install",{"task":"test","from":"dependencies"}],
+            "shard":{"adapter":"generic","count":4,"list":command(&["inventory"]),"run":command(&["shard"])}}
+    }));
+    files::atomic_write(
+        &directory.path().join("Cargo.toml"),
+        b"[package]\nname='bootstrap-fixture'\nversion='0.1.0'\nedition='2021'\n",
+    )
+    .unwrap();
+    files::atomic_write(&directory.path().join("src/lib.rs"), b"pub fn value() {}\n").unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+        .arg("--root")
+        .arg(directory.path())
+        .args(["run", "test", "--shard", "0/4"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(directory.path().join("Cargo.lock").exists());
+}
+
+#[test]
 fn invalid_shard_selection_cannot_execute_prerequisites() {
     for shard in [
         Value::Null,

@@ -143,16 +143,7 @@ impl Default for RunOptions {
     }
 }
 
-pub async fn run_plan(
-    graph: Arc<Graph>,
-    plan: Plan,
-    options: RunOptions,
-    cancel: CancellationToken,
-) -> Result<RunResult> {
-    ensure!(
-        plan.generation == graph.workspace.generation,
-        "execution plan is stale"
-    );
+pub fn validate_shard_selection(graph: &Graph, plan: &Plan, options: &RunOptions) -> Result<()> {
     if let Some((index, count)) = options.shard {
         ensure!(count > 0 && index < count, "invalid shard index/count");
         let pending: Vec<_> = plan
@@ -175,6 +166,20 @@ pub async fn run_plan(
             );
         }
     }
+    Ok(())
+}
+
+pub async fn run_plan(
+    graph: Arc<Graph>,
+    plan: Plan,
+    options: RunOptions,
+    cancel: CancellationToken,
+) -> Result<RunResult> {
+    ensure!(
+        plan.generation == graph.workspace.generation,
+        "execution plan is stale"
+    );
+    validate_shard_selection(&graph, &plan, &options)?;
     for id in &plan.order {
         ensure!(
             !graph.unresolved.contains(id),

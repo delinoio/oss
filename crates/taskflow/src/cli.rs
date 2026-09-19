@@ -441,6 +441,7 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
         } => {
             let mut options = execution.options(cli.os, cli.arch)?;
             let mut plan = selection.plan(&graph).await?;
+            runner::validate_shard_selection(&graph, &plan, &options)?;
             if plan.order.iter().any(|id| graph.unresolved.contains(id)) {
                 let installs: Vec<_> = plan
                     .order
@@ -453,10 +454,14 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
                     "unresolved native metadata requires an explicit install: true prerequisite"
                 );
                 let bootstrap = Plan::create(&graph, &installs, &[], false)?;
+                let mut bootstrap_options = options.clone();
+                // The complete requested plan passed shard preflight above.
+                // Installation prepares metadata and always executes in full.
+                bootstrap_options.shard = None;
                 let result = runner::run_plan(
                     graph.clone(),
                     bootstrap,
-                    options.clone(),
+                    bootstrap_options,
                     cancel.child_token(),
                 )
                 .await?;
