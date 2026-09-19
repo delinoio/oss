@@ -39,3 +39,5 @@ Run pages apply repository, worktree and branch filters before cursor pagination
 `ListRunsRequest.detached=true` selects exactly the empty stored branch and rejects a simultaneous named branch. An empty branch with `detached=false` leaves branches unfiltered, preserving existing clients and the cross-branch inbox. Cursors include this discriminator.
 
 Evidence text pages replace invalid UTF-8 sequences with U+FFFD before serialization. Offsets count original stored bytes. The byte limit may extend by at most three bytes to complete a valid UTF-8 rune; an incomplete rune at the end of an active log is deferred until more bytes arrive or the check finishes. Concatenating pages preserves valid source text. Rendering never rewrites stored evidence or its integrity digest.
+
+Changes diff text is normalized to valid UTF-8 after applying its 2 MiB raw-byte limit. Invalid path/content bytes and a final cut rune become U+FFFD; normalization never changes the truncation decision.

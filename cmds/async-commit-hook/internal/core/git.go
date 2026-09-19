@@ -303,10 +303,12 @@ func Diff(ctx context.Context, path, ref, base string) (Changes, error) {
 	if waitErr != nil && len(data) <= 2*1024*1024 {
 		return out, E("git-diff-failed", "could not read committed diff", 3)
 	}
-	out.Diff = string(data)
-	if len(out.Diff) > 2*1024*1024 {
-		out.Diff = out.Diff[:2*1024*1024]
+	if len(data) > 2*1024*1024 {
+		data = data[:2*1024*1024]
 		out.Truncated = true
 	}
+	// Git paths/content may contain arbitrary bytes, and the byte budget may
+	// split a rune. Normalize only after deciding truncation from raw bytes.
+	out.Diff = strings.ToValidUTF8(string(data), "\uFFFD")
 	return out, e
 }
