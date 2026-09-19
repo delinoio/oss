@@ -189,15 +189,49 @@ pub fn input_state(
     task: &crate::config::Task,
 ) -> Result<BTreeMap<String, String>> {
     let mut result = BTreeMap::new();
-    for entry in walkdir::WalkDir::new(&ws.root).follow_links(false).into_iter().filter_entry(|e| {
-        if matches!(e.file_name().to_str(), Some(".git" | ".taskflow")) { return false; }
-        !ignored_directory(e.path()) || task.input.iter().flatten().any(|input| matches!(input, Input::Pattern(p) if !p.starts_with('!') && e.file_name().to_str().is_some_and(|name| p.contains(name))))
-    }) {
+    let explicit_roots: Vec<_> = task
+        .input
+        .iter()
+        .flatten()
+        .filter_map(|input| {
+            let Input::Pattern(pattern) = input else {
+                return None;
+            };
+            if pattern.starts_with('!') {
+                return None;
+            }
+            // A literal directory prefix safely prunes unrelated trees. Wildcards
+            // and escaped literals need conservative traversal until full matching
+            // can inspect the file; a directory-name substring is not a glob test.
+            if pattern.contains('\\') {
+                return Some(ws.root.clone());
+            }
+            Some(normalize(&project.directory.join(output_anchor(pattern))))
+        })
+        .collect();
+    for entry in walkdir::WalkDir::new(&ws.root)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|entry| {
+            if matches!(entry.file_name().to_str(), Some(".git" | ".taskflow")) {
+                return false;
+            }
+            !ignored_directory(entry.path())
+                || explicit_roots.iter().any(|prefix| {
+                    prefix.starts_with(entry.path()) || entry.path().starts_with(prefix)
+                })
+        })
+    {
         let entry = entry?;
-        if !entry.file_type().is_file() && !entry.file_type().is_symlink() { continue; }
+        if !entry.file_type().is_file() && !entry.file_type().is_symlink() {
+            continue;
+        }
         if input_matches(project, task, entry.path())? {
             within(&ws.root, entry.path())?;
-            result.insert(slash(entry.path().strip_prefix(&ws.root)?), input_file_state(entry.path())?);
+            result.insert(
+                slash(entry.path().strip_prefix(&ws.root)?),
+                input_file_state(entry.path())?,
+            );
         }
     }
     for path in &ws.metadata_files {

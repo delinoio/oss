@@ -165,3 +165,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `log_write_failure_awaits_both_streams_and_cleanup` gives the real output drainer a read-only log descriptor and delays its sibling stream. Both owners settle before the awaited cleanup future runs; an unverified removal takes precedence over the log error. Finite tasks, shard commands, and failed readiness use this same completion path.
 
 `finite_timeouts_fail_while_operator_cancellation_remains_distinct` compares deadline expiry with explicit cancellation using real parent/child processes. It asserts distinct outcomes and exit codes, timeout diagnostics, blocked dependents, absent success cache entries, and completed cleanup.
+
+`explicit_wildcard_inputs_include_ignored_directories_in_cache_and_watch` exercises star, globstar, character-class, and brace patterns against `dist/manifest.json`. Each form participates in snapshots, cache invalidation, and live watch reruns.

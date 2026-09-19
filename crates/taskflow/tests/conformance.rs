@@ -3470,3 +3470,68 @@ async fn finite_timeouts_fail_while_operator_cancellation_remains_distinct() {
         }
     }
 }
+
+#[tokio::test]
+async fn explicit_wildcard_inputs_include_ignored_directories_in_cache_and_watch() {
+    for pattern in [
+        "*/manifest.json",
+        "**/manifest.json",
+        "[dt]ist/manifest.json",
+        "{dist,target}/manifest.json",
+    ] {
+        let root = fixture(json!({
+            "build":{"command":command(&["copy","dist/manifest.json","out"]),"input":[pattern],"output":["out"],"cache":true,"tools":{"fixture":command(&["version"])},"watch":{}},
+            "barrier":{"command":command(&["record","barrier","ready"]),"input":[]}
+        }));
+        profile(root.path(), &["build", "barrier"]);
+        files::atomic_write(&root.path().join("dist/manifest.json"), b"first").unwrap();
+        let g = graph(root.path()).await;
+        let snapshot = files::input_state(
+            &g.workspace,
+            &g.workspace.projects["app"],
+            &g.tasks["app#build"].task,
+        )
+        .unwrap();
+        assert!(snapshot.contains_key("dist/manifest.json"), "{pattern}");
+        assert_eq!(
+            run(g.clone(), &["build"]).await.results["app#build"].outcome,
+            Outcome::Executed
+        );
+        assert_eq!(
+            run(g.clone(), &["build"]).await.results["app#build"].outcome,
+            Outcome::LocalCache
+        );
+        files::atomic_write(&root.path().join("dist/manifest.json"), b"second").unwrap();
+        assert_eq!(
+            run(g, &["build"]).await.results["app#build"].outcome,
+            Outcome::Executed
+        );
+        let token = CancellationToken::new();
+        let stop = token.clone();
+        let directory = root.path().to_path_buf();
+        let session = tokio::spawn(async move {
+            taskflow::session::start(
+                &directory,
+                "default",
+                RunOptions {
+                    quiet: true,
+                    ..RunOptions::default()
+                },
+                stop,
+            )
+            .await
+        });
+        wait_lines(&root.path().join("barrier"), "ready", 1).await;
+        files::atomic_write(&root.path().join("dist/manifest.json"), b"watched").unwrap();
+        let changed = tokio::time::timeout(Duration::from_secs(15), async {
+            while std::fs::read(root.path().join("out")).unwrap_or_default() != b"watched" {
+                assert!(!session.is_finished(), "session failed before watch update");
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await;
+        token.cancel();
+        session.await.unwrap().unwrap();
+        changed.unwrap();
+    }
+}

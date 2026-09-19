@@ -24,6 +24,7 @@
 - Preserve completed, cancelled, and timed-out process reasons separately; finite deadlines produce failed receipts with code 124, while operator cancellation remains code 130.
 - Every child belongs to a process-tree/container owner; replacement waits for reaping. Tests must assert actual cleanup. Service shutdown must await all owners and propagate every unverified process/container cleanup as failure.
 - Apply overlap policies to per-task execution ownership, not to membership in an unfinished wave.
+- Explicit positive input globs may traverse otherwise ignored trees; prune only using conservative literal directory prefixes, never directory-name substrings. Reserved .git and .taskflow trees remain excluded.
 - Watch invalidation consumes filesystem mutations, never access notifications from metadata discovery or input hashing. Metadata notifications must confirm a changed or invalid graph before cancelling the active generation; identical rewrites preserve live work.
 - Canonicalize watcher roots and event paths before graph matching, including deleted paths through their existing ancestors and Windows path prefixes.
 - Notification path normalization must tolerate concurrent removal while preserving broken-link and permission errors; do not separate existence checks from canonicalization. Windows resolution checks deletion state on the same handle after obtaining its final path, so NTFS deletion-storage paths never become notification identities.
