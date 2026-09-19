@@ -214,6 +214,14 @@ impl Execution {
 }
 impl Selection {
     async fn plan(&self, graph: &Graph) -> Result<Plan> {
+        ensure!(
+            self.head.is_none() || self.base.is_some() || self.affected,
+            "--head requires --base or --affected"
+        );
+        ensure!(
+            self.head.is_none() || self.changed.is_empty(),
+            "--head cannot be combined with --changed"
+        );
         let affected = self.affected || self.base.is_some() || !self.changed.is_empty();
         ensure!(
             affected || !self.tasks.is_empty(),

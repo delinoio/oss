@@ -1137,6 +1137,28 @@ fn profile(directory: &Path, tasks: &[&str]) {
 }
 
 #[test]
+fn standalone_head_never_becomes_a_direct_run() {
+    let directory = fixture(json!({"deploy": {
+        "command": command(&["write", "deployed", "unexpected"]), "effect":"external"
+    }}));
+    for flags in [
+        vec!["--head", "HEAD"],
+        vec!["--affected", "--head", "HEAD", "--changed", "source"],
+    ] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .arg("--root")
+            .arg(directory.path())
+            .args(["run", "deploy"])
+            .args(flags)
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("--head"));
+        assert!(!directory.path().join("deployed").exists());
+    }
+}
+
+#[test]
 fn check_rejects_invalid_readiness_before_starting_processes() {
     for readiness in [
         json!({"type":"command", "command":[], "timeout":"5s"}),

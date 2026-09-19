@@ -25,6 +25,8 @@ pnpm lockfile metadata, versioned Cargo metadata, and Go workspace/module metada
 
 Keep project relationships separate from task prerequisites and artifact relationships. Queries expose projects/tasks, forward/reverse closure, paths, file ownership, matching inputs, and explanations. Git selection includes both sides of renames and deleted files. Graph generations invalidate obsolete executions after configuration changes.
 
+An explicit `--head` requires `--base` or `--affected` and cannot be combined with `--changed`; comparison endpoints must never be silently ignored in favor of a direct run.
+
 ### Execution
 `check`, `query`, `plan`, `run`, `start`, `result unchanged`, `cache`, and `ci export` are public commands. Machine output is versioned JSON on stdout; logs go to stderr. Direct, own-input, prerequisite, and schedule causes remain distinct. An unchanged report removes only propagation from its source. Cache reuse and output restoration are execution outcomes, not unconditional claims that dependents are unchanged.
 

@@ -28,7 +28,8 @@ declared paths; they do not add execution ordering.
 Direct requests preserve their own execution cause. `--base` or repeated `--changed`
 paths select affected work and filter it by the supplied task names. Git selection
 includes deleted files, both sides of renames, and untracked files when comparing
-the working tree. `--head` selects a committed comparison endpoint. `--affected`
+the working tree. `--head` selects a committed comparison endpoint and requires
+`--base` or `--affected`; it cannot be combined with `--changed`. `--affected`
 without a base compares the working tree with `HEAD`.
 
 Shared prerequisites execute once. `--jobs` limits parallel commands, while named
