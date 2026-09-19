@@ -34,3 +34,7 @@
 - Update `docs/project-derun.md` and `docs/cmds-derun-foundation.md` whenever derun command contracts change.
 - Update `docs/project-ttl.md` and `docs/cmds-ttl-foundation.md` whenever TTL compiler command shape, cache backend, or runtime boundaries change.
 - Update `docs/project-ttl.md` and `docs/cmds-ttl-language-contract.md` whenever TTL syntax/type/invalidation/code-generation contracts change.
+
+### async-commit-hook
+- `cmds/async-commit-hook` implements `ach`; follow `docs/cmds-async-commit-hook-contract.md`.
+- Preserve durable receipts, isolated committed source, cross-worker queue ownership, strict gate semantics, descendant-safe cancellation and source-independent history. Tests use temporary config/state/repositories, never real user configuration.
