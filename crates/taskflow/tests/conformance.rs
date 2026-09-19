@@ -3785,3 +3785,47 @@ async fn shard_timeouts_and_cancellation_preserve_receipt_reasons() {
         }
     }
 }
+
+#[tokio::test]
+async fn affected_selection_rejects_unknown_task_filters() {
+    let directory = fixture(
+        json!({"check":{"command":command(&["write","started","unexpected"]),"input":["source"]}}),
+    );
+    let g = graph(directory.path()).await;
+    for changes in [vec![], vec![PathBuf::from("source")]] {
+        for requests in [
+            vec!["chek"],
+            vec!["other#check"],
+            vec!["check", "app#missing"],
+        ] {
+            let requests: Vec<_> = requests.into_iter().map(String::from).collect();
+            assert!(Plan::create(&g, &requests, &changes, true)
+                .unwrap_err()
+                .to_string()
+                .contains("unknown requested task"));
+        }
+    }
+    for request in ["check", "app#check"] {
+        assert!(Plan::create(&g, &[request.into()], &[], true)
+            .unwrap()
+            .order
+            .is_empty());
+        assert_eq!(
+            Plan::create(&g, &[request.into()], &[PathBuf::from("source")], true)
+                .unwrap()
+                .order,
+            ["app#check"]
+        );
+    }
+    for verb in ["plan", "run"] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .arg("--root")
+            .arg(directory.path())
+            .args([verb, "chek", "--changed", "source"])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("unknown requested task"));
+    }
+    assert!(!directory.path().join("started").exists());
+}

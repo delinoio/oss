@@ -55,6 +55,14 @@ impl Plan {
                 causes.entry(id).or_default().insert(Cause::Direct);
             }
         } else {
+            for request in requests {
+                ensure!(
+                    graph.tasks.contains_key(request)
+                        || (!request.contains('#')
+                            && graph.tasks.values().any(|node| node.name == *request)),
+                    "unknown requested task: {request}"
+                );
+            }
             let mut owners = BTreeSet::new();
             for path in changes {
                 let path = files::within(&graph.workspace.root, &graph.workspace.root.join(path))?;

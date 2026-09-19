@@ -6,6 +6,7 @@
 - Unknown graph coverage expands affected selection conservatively, but unresolved prerequisite selection fails closed. Scope native selector completeness to the owning projects of each adapter invocation.
 - Native Cargo selectors evaluate preserved target conditions with Cargo's platform parser and rustc cfg metadata for the selected platform; explicit cargoTarget takes precedence over execution-platform defaults.
 - Unix input cache state includes permissions, including file-link target permissions; portable CI structure fingerprints remain content-based.
+- Validate every affected-mode task filter before intersecting it with changes; a typo must fail even for an empty affected set.
 - Never collapse direct/input/schedule causes into a prerequisite cause. Cancellation and invalidation prohibit cache publication.
 - Before staging artifact contents, probe every path prefix on the destination filesystem to reject case/Unicode aliases and unsupported names without mutating outputs.
 - Output restoration must validate the complete entry and containment before mutation. Secrets must be masked before persistence.

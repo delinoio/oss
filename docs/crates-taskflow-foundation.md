@@ -17,7 +17,7 @@ Developers run explicit native commands locally or in managed development sessio
 - Projects without configuration remain queryable using path-based IDs but have no inferred commands. Canonical directories merge adapter discoveries; distinct directories cannot share an explicit ID.
 - Explicit positive input globs opt matching descendants of ignored generated/dependency directories back into input snapshots and watching, including wildcard-only directory components. `.git`, `.taskflow`, and temporary `.taskflow-restore-*` trees remain reserved exclusions.
 - Paths are project-relative. Inputs may reference other files inside the workspace. Outputs must remain inside their owning project and cannot overlap another owner's outputs.
-- Direct task references must exist. Native dependency selectors select direct neighbors of the requested kinds, skip task-less neighbors with an explanation, and do not traverse task-less intermediates. Task cycles fail validation.
+- Direct task references and every affected-mode task filter must exist, even when no changed file selects a task. Native dependency selectors select direct neighbors of the requested kinds, skip task-less neighbors with an explanation, and do not traverse task-less intermediates. Task cycles fail validation.
 - A service prerequisite requires explicit readiness waiting. `with` activates companions without implying readiness or completion ordering.
 - Cache is opt-in. Service, scheduled, external-side-effect, and secret-consuming tasks are uncached. Cacheable tasks explicitly declare inputs, outputs (including an explicitly empty list for checks), relevant environment, and tool identities.
 
