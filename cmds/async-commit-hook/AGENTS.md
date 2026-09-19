@@ -33,6 +33,7 @@
 - Use synchronization barriers, not elapsed-time assertions, to prove asynchronous behavior in integration tests. Run `go test -race ./cmds/async-commit-hook/...` for lifecycle changes, and the root Go suite after generating administrator assets.
 - Inspect Codex MCP ownership through parsed TOML keys, including equivalent quoted/escaped/dotted forms; validate the merged document before any backup, ownership or skill publication while preserving unrelated text.
 - Agent integration tests use isolated settings and preserve unrelated entries and comments. Keep the object-form MCP output schema compatible with supported clients.
+- Ordinary hook uninstall visits post-commit and pre-push without a repeated opt-in flag, deletes ownership for already-missing owned hooks, skips unrelated hooks and refuses modified owned files. Installation still requires explicit pre-push opt-in.
 - Reinstall unchanged product-owned hooks using the current executable/configuration, backing up and atomically replacing stale bodies. Persist both exact versions before refresh so retries/removal recover interrupted publication; preserve user edits.
 - Failed hook publication or ownership persistence rolls back only the newly created, identity-and-content-matching file; concurrent edits remain untouched with a rollback conflict diagnostic.
 - Worker-correctness fixtures must distinguish injected failures from deadlock watchdog expiry; allow native shell cold startup under CI load instead of imposing an undocumented command-startup SLA.

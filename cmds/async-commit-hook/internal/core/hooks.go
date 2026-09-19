@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"os"
@@ -81,7 +82,7 @@ func (s *Service) Hook(ctx context.Context, repo string, prePush, remove bool) (
 		return nil, e
 	}
 	kinds := []string{"post-commit"}
-	if prePush {
+	if prePush || remove {
 		kinds = append(kinds, "pre-push")
 	}
 	out := []InstallResult{}
@@ -105,14 +106,19 @@ func (s *Service) Hook(ctx context.Context, repo string, prePush, remove bool) (
 			command = quoteSh(executable) + " pre-push --config " + quoteSh(s.Paths.Config)
 		}
 		if remove {
-			if os.IsNotExist(readErr) {
-				continue
+			if errors.Is(ownedErr, sql.ErrNoRows) {
+				continue // Unrelated hooks are outside the uninstall scope.
 			}
-			if ownedErr != nil || !ownsHookContents(owned, old) {
-				return out, E("hook-conflict", "hook changed or is not product-owned; preserve it and remove the ach integration manually: "+path, 2)
+			if ownedErr != nil {
+				return out, ownedErr
 			}
-			if e = os.Remove(path); e != nil {
-				return out, e
+			if !os.IsNotExist(readErr) {
+				if !ownsHookContents(owned, old) {
+					return out, E("hook-conflict", "owned hook changed; preserve it and remove the ach integration manually: "+path, 2)
+				}
+				if e = os.Remove(path); e != nil {
+					return out, e
+				}
 			}
 			_, e = s.Store.DB.Exec("DELETE FROM installations WHERE id=?", id)
 			if e != nil {

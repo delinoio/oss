@@ -31,7 +31,7 @@ plan | doctor                Inspect committed configuration and diagnose local 
 compare                      Compare --run ID [--previous ID]
 rerun                        Rerun --run ID [--failed] in a fresh workspace
 ui                           Print a paired connection URL [--run ID]
-hooks install | uninstall    Preserve existing hooks; --pre-push explicitly enables the push gate
+hooks install | uninstall    Install with --pre-push to enable the gate; uninstall removes all owned hooks
 agent install | uninstall    --client codex|claude-code|opencode [--scope user|project]
 agent-guide                  Print the supplied validation skill
 daemon start | status | stop Stop drains; --force requests cancellation

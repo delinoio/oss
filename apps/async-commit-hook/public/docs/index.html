@@ -523,7 +523,9 @@ brew upgrade async-commit-hook</pre
         <p>
           For cleanup failures, inspect doctor and the affected run before
           retrying prune. Product-owned hook/agent entries can be removed with
-          their uninstall commands; edited or unrelated files are preserved. For
+          their uninstall commands; edited or unrelated files are preserved.
+          <code>ach hooks uninstall</code> removes both installed hooks, including
+          an opted-in pre-push hook; no additional flag is required. For
           support, include version, OS, stable diagnostic codes and a redacted
           description in
           <a href="https://github.com/delinoio/oss/issues">GitHub Issues</a>.
