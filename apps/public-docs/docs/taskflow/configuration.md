@@ -111,3 +111,5 @@ use the same image and architecture. Remote Docker daemons are not supported.
 
 Continue with [Commands and sessions](commands), [Caching and secrets](cache), or
 [Sharding and CI](ci).
+
+On Unix, filesystem names cannot contain literal backslashes because TaskFlow artifact paths use portable separators. Rename these files before selecting them as inputs or outputs.

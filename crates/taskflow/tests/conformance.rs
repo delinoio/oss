@@ -4835,3 +4835,26 @@ async fn outputless_cached_prerequisites_preserve_semantic_result_identity() {
         );
     }
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn unix_backslash_paths_cannot_alias_directory_paths() {
+    let root = fixture(json!({"check":{"command":command(&["version"]),"output":["out"]}}));
+    std::fs::create_dir_all(root.path().join("a")).unwrap();
+    std::fs::write(root.path().join("a/b"), "directory file").unwrap();
+    std::fs::write(root.path().join(r"a\b"), "literal file").unwrap();
+    let g = graph(root.path()).await;
+    let project = &g.workspace.projects["app"];
+    let task = &g.tasks["app#check"].task;
+    assert!(files::input_state(&g.workspace, project, task)
+        .unwrap_err()
+        .to_string()
+        .contains("literal backslashes"));
+    std::fs::create_dir_all(root.path().join("out/a")).unwrap();
+    std::fs::write(root.path().join("out/a/b"), "directory output").unwrap();
+    std::fs::write(root.path().join(r"out/a\b"), "literal output").unwrap();
+    assert!(cache::snapshot(project, task)
+        .unwrap_err()
+        .to_string()
+        .contains("literal backslashes"));
+}

@@ -15,10 +15,17 @@ pub fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 pub fn slash(path: &Path) -> Result<String> {
-    Ok(path
+    let path = path
         .to_str()
-        .context("TaskFlow paths must be valid UTF-8")?
-        .replace('\\', "/"))
+        .context("TaskFlow paths must be valid UTF-8")?;
+    // Artifact paths use portable separators. A Unix backslash is a literal
+    // filename byte, so replacing it would merge two distinct identities.
+    #[cfg(unix)]
+    ensure!(
+        !path.contains('\\'),
+        "TaskFlow Unix paths cannot contain literal backslashes"
+    );
+    Ok(path.replace('\\', "/"))
 }
 pub fn normalize(path: &Path) -> PathBuf {
     let mut result = PathBuf::new();
