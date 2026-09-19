@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -72,6 +73,24 @@ func servicePath() string {
 	}
 	return filepath.Join(base, "systemd", "user", "runmoor.service")
 }
+
+func unloadLaunchd(ctx context.Context, domain, unit string, exec CommandExecutor) error {
+	if _, err := exec.Run(ctx, "launchctl", []string{"bootout", domain, unit}, minimalEnv(), nil); err == nil {
+		return nil
+	}
+	// A failed bootout is not proof that launchd forgot the definition. Probe
+	// the exact service separately, and accept only launchctl's service-not-found
+	// exit status (113), with its GUI domain still reachable. Never parse stderr.
+	_, err := exec.Run(ctx, "launchctl", []string{"print", domain + "/" + serviceLabel}, minimalEnv(), nil)
+	var status interface{ ExitCode() int }
+	if errors.As(err, &status) && status.ExitCode() == 113 {
+		if _, err := exec.Run(ctx, "launchctl", []string{"print", domain}, minimalEnv(), nil); err == nil {
+			return nil
+		}
+	}
+	return problem(ErrDependency, "Cannot confirm that launchd unloaded the Runmoor service.", "Check the logged-in launchd user session and retry service stop or uninstall; the service definition has been preserved.")
+}
+
 func Service(ctx context.Context, action, path string, c Config, exec CommandExecutor) error {
 	unit := servicePath()
 	uid := strconv.Itoa(os.Getuid())
@@ -146,7 +165,9 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 			}
 		}
 		if runtime.GOOS == "darwin" {
-			_, _ = exec.Run(ctx, "launchctl", []string{"bootout", domain, unit}, minimalEnv(), nil)
+			if e := unloadLaunchd(ctx, domain, unit, exec); e != nil {
+				return e
+			}
 		} else {
 			if e := run("systemctl", "--user", "disable", "--now", "runmoor.service"); e != nil {
 				return e

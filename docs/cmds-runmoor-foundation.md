@@ -68,6 +68,8 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 
 launchd and systemd user services invoke the same foreground manager and drain control path. Definitions contain executable/config references only, never copied credential values. File credential references are recommended for restart persistence. A manager-only failure must not implicitly kill detached live work. Install does not overwrite existing definitions; uninstall preserves configuration, images and unresolved state.
 
+A launchd bootout failure is returned as a safe dependency error and leaves the plist intact unless a separate exact-service query returns service-not-found and the GUI domain remains reachable. An arbitrary query failure or a still-loaded definition cannot count as a successful stop or uninstall.
+
 ## Storage
 
 - Config: `$XDG_CONFIG_HOME/runmoor/config.toml`, otherwise `~/.config/runmoor/config.toml`.
