@@ -115,3 +115,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `cargo_ci_blueprints_are_independent_of_checkout_paths` compares complete serialized CI blueprints from two identical Cargo workspaces at different absolute paths. Resolved local edges use stable project identities, while native manifests preserve version/configuration binding.
 
 `service_timeout_shuts_down_and_reaps_the_session` verifies the task deadline both before readiness and after a service becomes ready, including cleanup of another running check.
+
+`input_permission_changes_invalidate_cached_success` removes executable permission from a cached command input, both directly and through a file symlink. The next run must fail execution instead of reusing success. Task keys include Unix input modes; portable CI structure manifests remain content-based.

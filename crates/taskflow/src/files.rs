@@ -185,13 +185,27 @@ pub fn input_state(
         if !entry.file_type().is_file() && !entry.file_type().is_symlink() { continue; }
         if input_matches(project, task, entry.path())? {
             within(&ws.root, entry.path())?;
-            result.insert(slash(entry.path().strip_prefix(&ws.root)?), file_state(entry.path())?);
+            result.insert(slash(entry.path().strip_prefix(&ws.root)?), input_file_state(entry.path())?);
         }
     }
     for path in &ws.metadata_files {
-        result.insert(slash(path.strip_prefix(&ws.root)?), file_state(path)?);
+        result.insert(slash(path.strip_prefix(&ws.root)?), input_file_state(path)?);
     }
     Ok(result)
+}
+
+fn input_file_state(path: &Path) -> Result<String> {
+    let state = file_state(path)?;
+    #[cfg(unix)]
+    if path.is_file() {
+        use std::os::unix::fs::PermissionsExt;
+        // Follow file links: the target's mode controls command execution too.
+        // Keep portable CI structure fingerprints content-only; task input keys
+        // already include the execution platform and must include its modes.
+        let mode = std::fs::metadata(path)?.permissions().mode() & 0o7777;
+        return Ok(format!("{mode:o}:{state}"));
+    }
+    Ok(state)
 }
 pub fn output_anchor(pattern: &str) -> PathBuf {
     let literal = pattern.split(['*', '?', '[', '{']).next().unwrap_or("");

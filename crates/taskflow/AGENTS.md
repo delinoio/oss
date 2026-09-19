@@ -5,6 +5,7 @@
 - Never replace native dependency resolution with package-name matching or generate compiler actions.
 - Unknown graph coverage expands affected selection conservatively, but unresolved prerequisite selection fails closed. Scope native selector completeness to the owning projects of each adapter invocation.
 - Native Cargo selectors evaluate preserved target conditions with Cargo's platform parser and rustc cfg metadata for the selected platform; explicit cargoTarget takes precedence over execution-platform defaults.
+- Unix input cache state includes permissions, including file-link target permissions; portable CI structure fingerprints remain content-based.
 - Never collapse direct/input/schedule causes into a prerequisite cause. Cancellation and invalidation prohibit cache publication.
 - Output restoration must validate the complete entry and containment before mutation. Secrets must be masked before persistence.
 - Strip workspace-designated secret variables from every task that does not declare them, including tasks grouped into one CI unit.

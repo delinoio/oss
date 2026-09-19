@@ -2250,3 +2250,31 @@ fn pid_alive(pid: u32) -> bool {
         live
     }
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn input_permission_changes_invalidate_cached_success() {
+    use std::os::unix::fs::PermissionsExt;
+    for linked in [false, true] {
+        let input = if linked { "launcher" } else { "script" };
+        let directory = fixture(
+            json!({"build":{"command":[format!("./{input}")],"input":[input],"output":["out"],"cache":true,"tools":{"fixture":command(&["version"])}}}),
+        );
+        let script = directory.path().join("script");
+        std::fs::write(&script, "#!/bin/sh\nprintf built > out\n").unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        if linked {
+            std::os::unix::fs::symlink("script", directory.path().join("launcher")).unwrap();
+        }
+        let g = graph(directory.path()).await;
+        assert!(run(g.clone(), &["build"]).await.success);
+        assert_eq!(
+            run(g.clone(), &["build"]).await.results["app#build"].outcome,
+            Outcome::LocalCache
+        );
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let result = run(g, &["build"]).await;
+        assert!(!result.success, "{result:?}");
+        assert_eq!(result.results["app#build"].outcome, Outcome::Failed);
+    }
+}

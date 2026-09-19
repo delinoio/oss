@@ -19,7 +19,7 @@ tasks:
       node: [node, --version]
 ```
 
-Keys include configuration, input contents and deletions, manifests and lockfiles,
+Keys include configuration, input contents, Unix permissions and deletions, manifests and lockfiles,
 declared environment, tool output, execution platform/image, and prerequisite
 results. Required outputs must exist and match their snapshot. Deleted or modified
 outputs are restored from a verified entry or rebuilt. An unchanged lockfile does
