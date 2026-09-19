@@ -1,0 +1,287 @@
+package core
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"encoding/xml"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+)
+
+// Redactor holds enough suffix bytes to recognize a secret split between writes.
+// Nothing from the held suffix reaches disk until it is known to be safe.
+type Redactor struct {
+	mu      sync.Mutex
+	out     io.Writer
+	secrets []string
+	pending []byte
+	max     int
+	err     error
+}
+
+func NewRedactor(w io.Writer, secrets []string) *Redactor {
+	r := &Redactor{out: w}
+	for _, s := range secrets {
+		if s != "" {
+			r.secrets = append(r.secrets, s)
+			if len(s) > r.max {
+				r.max = len(s)
+			}
+		}
+	}
+	return r
+}
+func (r *Redactor) Write(b []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.err != nil {
+		return 0, r.err
+	}
+	r.pending = append(r.pending, b...)
+	r.flush(false)
+	return len(b), r.err
+}
+func (r *Redactor) flush(final bool) {
+	for len(r.pending) > 0 {
+		if !final && len(r.pending) < r.max {
+			return
+		}
+		longest := 0
+		for _, s := range r.secrets {
+			if bytes.HasPrefix(r.pending, []byte(s)) && len(s) > longest {
+				longest = len(s)
+			}
+		}
+		if longest > 0 {
+			_, r.err = io.WriteString(r.out, "[REDACTED]")
+			r.pending = r.pending[longest:]
+		} else {
+			_, r.err = r.out.Write(r.pending[:1])
+			r.pending = r.pending[1:]
+		}
+		if r.err != nil {
+			return
+		}
+	}
+}
+func (r *Redactor) Close() error { r.mu.Lock(); defer r.mu.Unlock(); r.flush(true); return r.err }
+func Redact(b []byte, secrets []string) []byte {
+	var out bytes.Buffer
+	r := NewRedactor(&out, secrets)
+	_, _ = r.Write(b)
+	_ = r.Close()
+	return out.Bytes()
+}
+
+func ParseReport(kind ReportKind, b []byte, check, command, logID string) ([]Failure, error) {
+	switch kind {
+	case JUnit:
+		return parseJUnit(b, check, command, logID)
+	case GoTest:
+		return parseGoTest(b, check, command, logID)
+	}
+	return nil, E("invalid-report-kind", "unsupported report kind", 2)
+}
+func parseJUnit(b []byte, check, command, logID string) ([]Failure, error) {
+	d := xml.NewDecoder(bytes.NewReader(b))
+	out := []Failure{}
+	suite := ""
+	test := ""
+	class := ""
+	file := ""
+	line := 0
+	sawRoot := false
+	declaredFailures := 0
+	for {
+		token, e := d.Token()
+		if errors.Is(e, io.EOF) {
+			break
+		}
+		if e != nil {
+			return nil, E("report-malformed", "JUnit XML cannot be parsed", 1)
+		}
+		switch t := token.(type) {
+		case xml.Directive:
+			return nil, E("report-malformed", "XML directives are not supported", 1)
+		case xml.StartElement:
+			attrs := map[string]string{}
+			for _, a := range t.Attr {
+				attrs[a.Name.Local] = a.Value
+			}
+			switch t.Name.Local {
+			case "testsuites", "testsuite":
+				sawRoot = true
+				if t.Name.Local == "testsuite" {
+					suite = attrs["name"]
+				}
+				for _, k := range []string{"failures", "errors"} {
+					if v, err := strconv.Atoi(attrs[k]); err == nil && v > declaredFailures {
+						declaredFailures = v
+					}
+				}
+			case "testcase":
+				test = attrs["name"]
+				class = attrs["classname"]
+				file = attrs["file"]
+				line, _ = strconv.Atoi(attrs["line"])
+			case "failure", "error":
+				var body string
+				if e = d.DecodeElement(&body, &t); e != nil {
+					return nil, E("report-malformed", "invalid JUnit failure", 1)
+				}
+				identity := suite + "/" + class + "/" + test
+				message := strings.TrimSpace(attrs["message"] + "\n" + body)
+				out = append(out, Failure{ID: Hash([]byte(check + "/junit/" + identity)), Check: check, Test: identity, Command: command, Message: message, File: file, Line: line, LogID: logID})
+			}
+		}
+	}
+	if !sawRoot {
+		return nil, E("report-malformed", "JUnit report has no testsuite root", 1)
+	}
+	if declaredFailures > 0 && len(out) == 0 {
+		out = append(out, Failure{ID: Hash([]byte(check + "/junit/summary")), Check: check, Command: command, Message: "JUnit summary reports failures without test details", LogID: logID})
+	}
+	return out, nil
+}
+func parseGoTest(b []byte, check, command, logID string) ([]Failure, error) {
+	scanner := bufio.NewScanner(bytes.NewReader(b))
+	scanner.Buffer(make([]byte, 4096), 4*1024*1024)
+	out := []Failure{}
+	seen := false
+	terminal := false
+	output := map[string]string{}
+	tests := map[string]bool{}
+	for scanner.Scan() {
+		if len(bytes.TrimSpace(scanner.Bytes())) == 0 {
+			continue
+		}
+		var event struct{ Action, Package, Test, Output string }
+		if e := json.Unmarshal(scanner.Bytes(), &event); e != nil || event.Action == "" {
+			return nil, E("report-malformed", "invalid Go test JSON event", 1)
+		}
+		seen = true
+		key := event.Package + "/" + event.Test
+		switch event.Action {
+		case "output":
+			output[key] += event.Output
+			if len(output[key]) > 65536 {
+				output[key] = output[key][len(output[key])-65536:]
+			}
+		case "run":
+			tests[key] = false
+		case "pass", "skip", "fail":
+			terminal = true
+			tests[key] = true
+			if event.Action == "fail" {
+				out = append(out, Failure{ID: Hash([]byte(check + "/go/" + key)), Check: check, Test: key, Command: command, Message: strings.TrimSpace(output[key]), LogID: logID})
+			}
+		case "start", "pause", "cont", "bench":
+		default:
+			return nil, E("report-malformed", "unknown Go test JSON action", 1)
+		}
+	}
+	if scanner.Err() != nil || !seen || !terminal {
+		return nil, E("report-malformed", "Go test report is empty, truncated or incomplete", 1)
+	}
+	for _, done := range tests {
+		if !done {
+			return nil, E("report-incomplete", "Go test report contains unfinished tests", 1)
+		}
+	}
+	return out, nil
+}
+func (s *Service) SaveEvidence(run, name string, b []byte) (Evidence, error) {
+	id := ID()
+	path, e := s.Store.EvidencePath(run, id)
+	if e != nil {
+		return Evidence{}, e
+	}
+	if e = AtomicWrite(path, b, 0600); e != nil {
+		return Evidence{}, e
+	}
+	return Evidence{ID: id, Name: name, SHA256: Hash(b), Size: int64(len(b))}, nil
+}
+func (s *Service) ValidateEvidence(run string, c Check) error {
+	if c.InheritedFrom != "" {
+		run = c.InheritedFrom
+	}
+	if c.Log.ID == "" {
+		return E("evidence-missing", "log evidence is absent", 1)
+	}
+	all := append([]Evidence{c.Log}, c.Reports...)
+	for _, v := range all {
+		path, e := s.Store.EvidencePath(run, v.ID)
+		if e != nil {
+			return e
+		}
+		f, e := os.Open(path)
+		if e != nil {
+			return e
+		}
+		info, e := f.Stat()
+		if e != nil || !info.Mode().IsRegular() || info.Size() != v.Size {
+			f.Close()
+			return E("evidence-missing", "evidence is unavailable or changed", 1)
+		}
+		b, e := io.ReadAll(f)
+		f.Close()
+		if e != nil || Hash(b) != v.SHA256 {
+			return E("evidence-integrity", "evidence failed integrity verification", 1)
+		}
+	}
+	return nil
+}
+func (s *Service) Logs(run, check string, offset int64, limit int) (LogPage, error) {
+	if offset < 0 || limit < 1 || limit > 1024*1024 {
+		return LogPage{}, E("invalid-log-range", "offset must be nonnegative and limit 1..1048576", 2)
+	}
+	r, e := s.Store.Run(run)
+	if e != nil {
+		return LogPage{}, e
+	}
+	var selected *Check
+	for i := range r.Checks {
+		if r.Checks[i].Name == check || r.Checks[i].ID == check {
+			selected = &r.Checks[i]
+		}
+	}
+	if selected == nil {
+		return LogPage{}, E("check-not-found", "select a check from this run", 2)
+	}
+	if selected.InheritedFrom != "" {
+		run = selected.InheritedFrom
+	}
+	id := selected.Log.ID
+	if id == "" {
+		return LogPage{Complete: selected.State.Terminal()}, nil
+	}
+	path, e := s.Store.EvidencePath(run, id)
+	if e != nil {
+		return LogPage{}, e
+	}
+	root, e := os.OpenRoot(filepath.Dir(path))
+	if e != nil {
+		return LogPage{}, E("evidence-missing", "log evidence is unavailable", 1)
+	}
+	defer root.Close()
+	f, e := root.Open(filepath.Base(path))
+	if e != nil {
+		return LogPage{}, E("evidence-missing", "log evidence is unavailable", 1)
+	}
+	defer f.Close()
+	info, e := f.Stat()
+	if e != nil || !info.Mode().IsRegular() {
+		return LogPage{}, E("evidence-invalid", "log is not a regular file", 3)
+	}
+	if _, e = f.Seek(offset, io.SeekStart); e != nil {
+		return LogPage{}, e
+	}
+	b, e := io.ReadAll(io.LimitReader(f, int64(limit)))
+	return LogPage{Text: string(b), NextOffset: offset + int64(len(b)), Complete: selected.State.Terminal() && offset+int64(len(b)) >= info.Size()}, e
+}
