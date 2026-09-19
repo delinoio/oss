@@ -138,6 +138,15 @@ func (s *Service) Prune(dry bool, age int, maxBytes int64) (PruneResult, error) 
 		if e != nil {
 			return out, e
 		}
+		if r.State == Expired {
+			// A crash after the tombstone commit may leave files to reclaim. Completed
+			// tombstones have nothing left to prune and must not accumulate diagnostics.
+			_, evidenceErr := os.Lstat(filepath.Join(s.Store.Root, "evidence", id))
+			_, workspaceErr := os.Lstat(filepath.Join(s.Store.Root, "workspaces", id))
+			if os.IsNotExist(evidenceErr) && os.IsNotExist(workspaceErr) {
+				continue
+			}
+		}
 		var size int64
 		_ = filepath.WalkDir(filepath.Join(s.Store.Root, "evidence", id), func(_ string, d os.DirEntry, e error) error {
 			if e == nil && !d.IsDir() {
@@ -152,7 +161,7 @@ func (s *Service) Prune(dry bool, age int, maxBytes int64) (PruneResult, error) 
 		total += size
 	}
 	for _, item := range items {
-		expired := age > 0 && time.Since(item.run.CreatedAt) > time.Duration(age)*24*time.Hour
+		expired := item.run.State == Expired || age > 0 && time.Since(item.run.CreatedAt) > time.Duration(age)*24*time.Hour
 		over := maxBytes > 0 && total > maxBytes
 		if !expired && !over {
 			continue
@@ -165,17 +174,28 @@ func (s *Service) Prune(dry bool, age int, maxBytes int64) (PruneResult, error) 
 		}
 		// Persist a terminal tombstone before deleting evidence. Later gates must still select this attempt.
 		r := item.run
-		r.State = Expired
-		r.Diagnostics = append(r.Diagnostics, Diagnostic{Code: "evidence-expired", Message: "retention removed this attempt's evidence"})
-		if e = s.Store.SaveRun(r); e != nil {
-			return out, e
+		if r.State != Expired {
+			r.State = Expired
+			r.Diagnostics = append(r.Diagnostics, Diagnostic{Code: "evidence-expired", Message: "retention removed this attempt's evidence"})
+			if e = s.Store.SaveRun(r); e != nil {
+				return out, e
+			}
 		}
 		for _, dir := range []string{"evidence", "workspaces"} {
 			if e = os.RemoveAll(filepath.Join(s.Store.Root, dir, r.ID)); e != nil {
 				d := Diagnostic{Code: "retention-cleanup-failed", Message: "owned files could not be removed for run " + r.ID}
 				out.Diagnostics = append(out.Diagnostics, d)
-				r.Diagnostics = append(r.Diagnostics, d)
-				_ = s.Store.SaveRun(r)
+				found := false
+				for _, old := range r.Diagnostics {
+					if old == d {
+						found = true
+						break
+					}
+				}
+				if !found {
+					r.Diagnostics = append(r.Diagnostics, d)
+					_ = s.Store.SaveRun(r)
+				}
 			}
 		}
 	}

@@ -29,6 +29,8 @@ Pre-push parses every actual branch-update object ID from stdin, ignores tags/de
 ## Storage
 SQLite WAL with foreign keys, transactional claims and durable accepted ordering. User-only state includes registry, attempts, checks, coordination, browser hashes, acknowledgements and diagnostics. Logs/reports are owned files with integrity metadata. Indefinite retention is default; pruning protects active work and retains authoritative expired-attempt records. Original-repository removal never deletes results.
 
+Repeated pruning skips reclaimed expired records without appending diagnostics. If a crash leaves owned files after the expiry commit, pruning resumes their cleanup without adding another expiry diagnostic.
+
 ## Security
 Allowlisted system context plus declared inputs only. Credential references resolve locally; raw credentials/full environments never enter metadata. Streaming redaction covers chunk boundaries and report fields. Local state is account-restricted. Cancellation verifies process identity; cleanup is confined to owned paths. API security is specified in the protocol contract. A workspace isolates source, not hostile commands.
 

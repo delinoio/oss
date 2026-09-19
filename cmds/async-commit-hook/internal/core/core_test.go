@@ -252,6 +252,29 @@ func TestPruneCannotResurrectSuccess(t *testing.T) {
 	if e != nil || gate.Passed || gate.State != Expired {
 		t.Fatalf("resurrected result: %+v %v", gate, e)
 	}
+	before, _ := s.Store.Run(r.ID)
+	for _, dry := range []bool{true, false, false} {
+		result, err := s.Prune(dry, 1, 0)
+		if err != nil || len(result.RunIDs) != 0 {
+			t.Fatalf("repeated tombstone: %+v %v", result, err)
+		}
+	}
+	// Resume cleanup after a crash between persisting expiry and deleting files.
+	orphan := filepath.Join(s.Store.Root, "evidence", r.ID)
+	if err := os.MkdirAll(orphan, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(orphan, "leftover"), []byte("evidence"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.Prune(false, 0, 0)
+	if err != nil || len(result.RunIDs) != 1 {
+		t.Fatalf("cleanup not resumed: %+v %v", result, err)
+	}
+	after, _ := s.Store.Run(r.ID)
+	if !bytes.Equal(Encode(before), Encode(after)) {
+		t.Fatal("tombstone changed during repeated pruning")
+	}
 }
 func TestAgentPreservesUnrelatedSettings(t *testing.T) {
 	s, repo := fixture(t, "version=1\n")
