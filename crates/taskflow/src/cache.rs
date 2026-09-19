@@ -201,6 +201,7 @@ fn snapshot_inner(project: &Project, task: &Task, capture: bool) -> Result<Vec<F
         }
     }
     entries.sort_by(|a, b| a.path.cmp(&b.path));
+    validate_links(project, &anchors(task)?, &entries)?;
     Ok(entries)
 }
 // Windows records file and directory links distinctly, including dangling
@@ -378,29 +379,8 @@ impl Artifact {
                 "cache entry outside declared outputs"
             );
         }
-        let links: Vec<_> = self
-            .files
-            .iter()
-            .filter(|entry| matches!(entry.content, Content::Link { .. }))
-            .map(|entry| Path::new(&entry.path))
-            .collect();
+        validate_links(project, &roots, &self.files)?;
         let seen: BTreeSet<_> = self.files.iter().map(|entry| entry.path.as_str()).collect();
-        let contents: BTreeMap<_, _> = self
-            .files
-            .iter()
-            .map(|entry| (Path::new(&entry.path), &entry.content))
-            .collect();
-        for link in &links {
-            let Content::Link { target, .. } = contents[link] else {
-                unreachable!()
-            };
-            validate_link_target(
-                project,
-                &roots,
-                &contents,
-                &link.parent().unwrap().join(target),
-            )?;
-        }
         for root in roots {
             ensure!(
                 seen.contains(files::slash(&root)?.as_str()),
@@ -551,6 +531,24 @@ fn link_components(path: &Path) -> Result<VecDeque<PathBuf>> {
             _ => bail!("cache link must have a relative target"),
         })
         .collect()
+}
+
+fn validate_links(project: &Project, roots: &[PathBuf], entries: &[FileRecord]) -> Result<()> {
+    let contents: BTreeMap<_, _> = entries
+        .iter()
+        .map(|entry| (Path::new(&entry.path), &entry.content))
+        .collect();
+    for (path, content) in &contents {
+        if let Content::Link { target, .. } = content {
+            validate_link_target(
+                project,
+                roots,
+                &contents,
+                &path.parent().unwrap().join(target),
+            )?;
+        }
+    }
+    Ok(())
 }
 
 fn validate_link_target(

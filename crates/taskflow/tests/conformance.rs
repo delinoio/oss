@@ -4858,3 +4858,28 @@ async fn unix_backslash_paths_cannot_alias_directory_paths() {
         .to_string()
         .contains("literal backslashes"));
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn captured_output_link_chains_never_leave_the_project() {
+    let root =
+        fixture(json!({"check":{"command":command(&["version"]),"input":[],"output":["out"]}}));
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join("out")).unwrap();
+    std::fs::write(root.path().join("source"), "inside").unwrap();
+    std::os::unix::fs::symlink(outside.path(), root.path().join("bridge")).unwrap();
+    std::os::unix::fs::symlink(root.path(), outside.path().join("back")).unwrap();
+    // The final target is internal, but reaching it crosses an external prefix.
+    std::os::unix::fs::symlink("../bridge/back/source", root.path().join("out/link")).unwrap();
+    let g = graph(root.path()).await;
+    let project = &g.workspace.projects["app"];
+    let task = &g.tasks["app#check"].task;
+    assert!(cache::snapshot(project, task).is_err());
+    assert!(cache::output_state(project, task).is_err());
+    let result = run(g.clone(), &["check"]).await;
+    assert!(!result.success);
+    std::fs::remove_file(root.path().join("out/link")).unwrap();
+    std::os::unix::fs::symlink("../source", root.path().join("out/link")).unwrap();
+    assert!(cache::snapshot(project, task).is_ok());
+    assert!(cache::output_state(project, task).is_ok());
+}

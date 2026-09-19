@@ -20,7 +20,7 @@
 - Strip workspace-designated secret variables from every task that does not declare them, including tasks grouped into one CI unit.
 - Graph validation rejects remote credential references in every task environment declaration before execution; runtime validation also checks CLI overrides.
 - Environment scoping, precedence, masking, fingerprints, runtime retention, and transport credential exclusion use the host's environment-name comparison; Windows names follow its ordinal case-insensitive rules.
-- Cache link validation follows archive link chains and existing filesystem ancestors before processing parent components; lexical containment alone cannot authorize restoration.
+- Output capture, local hashing, and cache restoration validate the same link chains. Cache link validation follows archive link chains and existing filesystem ancestors before processing parent components; lexical containment alone cannot authorize restoration.
 - Cache link records use portable separators; Windows link creation converts targets to native separators before invoking the filesystem API.
 - Local cache publication rechecks cancellation and inputs under its exclusive lock before and after entry replacement; invalidation restores the previous binding before readers resume, and rollback failures remain failures.
 - Local cache readers, writers, and cleaning share a process-safe cache lock outside the removable cache tree; never hold it during commands or network operations.
