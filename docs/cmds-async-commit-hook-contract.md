@@ -24,6 +24,8 @@ Gate identity is repository, exact commit and configuration/execution fingerprin
 
 Pre-push parses every actual branch-update object ID from stdin, ignores tags/deletions, and applies block (default), wait or run-and-wait. Hook/agent installation preserves unrelated data, records ownership, backs up edits and refuses conflicts.
 
+`run-and-wait` submits a fresh attempt when the latest compatible result is terminal but nonpassing, including expired or missing evidence. It waits for an existing unfinished attempt without duplicating it; `wait` never submits work.
+
 ## Storage
 SQLite WAL with foreign keys, transactional claims and durable accepted ordering. User-only state includes registry, attempts, checks, coordination, browser hashes, acknowledgements and diagnostics. Logs/reports are owned files with integrity metadata. Indefinite retention is default; pruning protects active work and retains authoritative expired-attempt records. Original-repository removal never deletes results.
 

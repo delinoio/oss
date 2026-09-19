@@ -124,6 +124,72 @@ func TestPrePushAllTipsUsesExactSHA(t *testing.T) {
 	}
 }
 
+func TestPrePushRunAndWaitRepairsTerminalEvidence(t *testing.T) {
+	for _, state := range []State{Failed, Cancelled, Interrupted, Expired, Passed, Queued} {
+		t.Run(string(state), func(t *testing.T) {
+			s, repo := fixture(t, "version=1\n[checks.test]\ncommand=\"true\"\n")
+			r := runFixture(t, s, repo)
+			r.State = state
+			if err := s.Store.SaveRun(r); err != nil {
+				t.Fatal(err)
+			}
+			if state == Passed {
+				path, err := s.Store.EvidencePath(r.ID, r.Checks[0].Log.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if state == Queued {
+				c := r.Checks[0]
+				c.State = Queued
+				if err := s.Store.SaveCheck(c); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, leave, err := s.Enter("daemon")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer leave()
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			done := make(chan error, 1)
+			go func() {
+				for {
+					ids, err := s.Store.Pending()
+					if err != nil {
+						done <- err
+						return
+					}
+					if len(ids) > 0 {
+						done <- s.RunOne(ids[0])
+						return
+					}
+					select {
+					case <-ctx.Done():
+						done <- ctx.Err()
+						return
+					case <-time.After(10 * time.Millisecond):
+					}
+				}
+			}()
+			input := fmt.Sprintf("refs/heads/test %s refs/heads/test %s\n", r.Commit, strings.Repeat("0", 40))
+			gates, err := s.PrePush(ctx, repo, strings.NewReader(input), PushRun)
+			cancel()
+			workerErr := <-done
+			if err != nil || workerErr != nil || len(gates) != 1 || !gates[0].Passed {
+				t.Fatalf("gate=%+v err=%v worker=%v", gates, err, workerErr)
+			}
+			if (gates[0].RunID == r.ID) != (state == Queued) {
+				t.Fatal("wrong attempt reused")
+			}
+		})
+	}
+}
+
 func TestNamedGroupCoordinatesAcrossRepositories(t *testing.T) {
 	s, repo := fixture(t, "version=1\n[checks.test]\ncommand=\"sleep 0.15\"\npolicy=\"queue\"\ngroup=\"shared-tool\"\n")
 	clone := filepath.Join(t.TempDir(), "other")

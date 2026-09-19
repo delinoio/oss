@@ -45,7 +45,7 @@ func (s *Service) PrePush(ctx context.Context, repo string, input io.Reader, ove
 		}
 		if !gate.Passed {
 			id := gate.RunID
-			if id == "" && policy == PushRun {
+			if policy == PushRun && (id == "" || gate.State.Terminal()) {
 				receipt, err := s.Submit(ctx, repo, sha, false)
 				if err != nil {
 					return out, err
