@@ -26,6 +26,11 @@ const stableRouteIds = [
   "/derun",
   "/with-watch",
   "/nodeup",
+  "/taskflow",
+  "/taskflow/configuration",
+  "/taskflow/commands",
+  "/taskflow/cache",
+  "/taskflow/ci",
 ];
 
 const outputDir = path.resolve("doc_build");
@@ -84,6 +89,11 @@ function attributeValue(match) {
 }
 
 const requiredHeadings = new Map([
+  ["/taskflow", ["TaskFlow", "Build from source", "First task", "Guides"]],
+  ["/taskflow/configuration", ["TaskFlow Configuration", "Native discovery", "Commands and dependencies", "Inputs and outputs", "Execution controls"]],
+  ["/taskflow/commands", ["TaskFlow Commands and Sessions", "Queries and execution", "Reporting unchanged", "Development sessions"]],
+  ["/taskflow/cache", ["TaskFlow Caching and Secrets", "Local reuse and restoration", "Environment and secrets", "R2 and S3-compatible storage"]],
+  ["/taskflow/ci", ["TaskFlow Sharding and CI", "Test adapters", "GitHub Actions export", "Trust and external effects"]],
   ["/runmoor", ["Runmoor", "Guides"]],
   ["/runmoor/install", ["Install and Verify Runmoor"]],
   ["/runmoor/configuration", ["Runmoor Configuration"]],
@@ -102,6 +112,7 @@ const requiredHeadings = new Map([
   ["/devhud/releases", ["DevHud Releases"]],
 ]);
 const requiredLinks = new Map([
+  ["/taskflow", ["/taskflow/configuration", "/taskflow/commands", "/taskflow/cache", "/taskflow/ci"]],
   ["/runmoor", ["/runmoor/install", "/runmoor/configuration", "/runmoor/commands", "/runmoor/docker", "/runmoor/tart", "/runmoor/operations"]],
   ["/devhud", ["/devhud/install", "/devhud/privacy", "/devhud/security", "/devhud/support"]],
   ["/devhud/install", ["/devhud/releases", "/devhud/security", "/devhud/support"]],

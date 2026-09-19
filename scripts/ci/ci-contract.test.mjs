@@ -371,3 +371,27 @@ test("local CI commands are documented by repository contracts", () => {
   for (const command of ["pnpm ci:workflows", "pnpm ci:contracts", "pnpm ci:release-fixtures"]) assert.ok(contract.includes(command), command);
   for (const command of ["test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:security", "test:adapters"]) assert.ok(project.includes(command), command);
 });
+
+test("TaskFlow owns native platform and local Docker/S3 conformance without publication", () => {
+  const native = workflow.jobs["taskflow-conformance"];
+  assert.deepEqual(native.strategy.matrix.include.map(({ id }) => id), [
+    "macos-x64", "macos-arm64", "linux-x64", "linux-arm64", "windows-x64", "windows-arm64",
+  ]);
+  assert.deepEqual(workflow.jobs["taskflow-docker"].strategy.matrix.runner, ["ubuntu-22.04", "ubuntu-24.04-arm"]);
+  for (const id of ["taskflow-conformance", "taskflow-docker"]) {
+    const job = workflow.jobs[id];
+    assert.equal(job.if, undefined);
+    assert.ok(step(job, "filter"));
+    assert.ok(step(job, "gate"));
+    assert.match(step(job, "filter").with.filters, /crates\/taskflow\/\*\*/u);
+    const text = JSON.stringify(job);
+    assert.doesNotMatch(text, /secrets\.|contents.*write|gh release|docker push/u);
+    assert.match(text, /cargo test --locked -p taskflow/u);
+  }
+  const nativeText = JSON.stringify(native);
+  assert.match(nativeText, /--include-ignored/u);
+  assert.match(nativeText, /TFLOW_ACTIONLINT/u);
+  const dockerText = JSON.stringify(workflow.jobs["taskflow-docker"]);
+  assert.match(dockerText, /minio\/minio@sha256:[a-f0-9]{64}/u);
+  assert.match(dockerText, /node@sha256:[a-f0-9]{64}/u);
+});

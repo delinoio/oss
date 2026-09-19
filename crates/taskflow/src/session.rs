@@ -16,12 +16,11 @@ use crate::{
     graph::{reference, Graph},
     plan::{Cause, Plan},
     runner::{self, Receipt, RunOptions, RunResult, Services},
-    schedule::CronClock,
+    schedule::{CronClock, IntervalClock},
 };
 
 struct Timer {
-    every: Option<Duration>,
-    next: Instant,
+    interval: Option<IntervalClock>,
     cron: Option<CronClock>,
 }
 struct Pending {
@@ -106,8 +105,8 @@ pub async fn start(
             if !invalid && !reload {
                 let now = Instant::now();
                 for (id, timer) in &mut timers {
-                    let tick = if let Some(every) = timer.every {
-                        if now >= timer.next { timer.next = now + every; true } else { false }
+                    let tick = if let Some(interval) = &mut timer.interval {
+                        interval.tick(now)
                     } else { timer.cron.as_mut().is_some_and(|c| c.tick(chrono::Utc::now())) };
                     if tick { enqueue(&graph, &options, &mut pending, &active_tasks, id, Cause::Schedule, now); }
                 }
@@ -296,8 +295,7 @@ fn timers(graph: &Graph, active: &BTreeSet<String>) -> Result<BTreeMap<String, T
             timers.insert(
                 id.clone(),
                 Timer {
-                    every,
-                    next: Instant::now() + every.unwrap_or(Duration::ZERO),
+                    interval: every.map(|period| IntervalClock::new(period, Instant::now())),
                     cron,
                 },
             );

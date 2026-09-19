@@ -371,6 +371,8 @@ Coverage expectations:
 - `devhud-oci`: builds both API and sweeper OCI layouts for amd64/arm64 and validates non-root execution, embedded migrations, and SPDX SBOMs without pushing.
 - `devhud-supply-chain`: validates installer, Native Messaging host, extension ZIP, updater/key-rotation signature, SBOM, and provenance fixtures.
 - `devhud-release-contracts`: runs deterministic static/dry Node tests for the reusable private candidate, exact public release identity, configuration failure, signing/preflight failure, review retry, channel ordering, rollback, and redaction contracts without exercising publication.
+- `taskflow-conformance`: runs graph/cache/session/sharding and generated-workflow conformance plus Clippy on macOS, Linux, and Windows x64/arm64.
+- `taskflow-docker`: runs immutable local Linux container and S3-compatible cache fixtures on x64/arm64 without credentials or publication.
 - `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
 - The DevHud release-contract job also validates the internal operations runbook, repository workflow contract, and read-only CEF review workflow through `scripts/release/devhud-operations.test.mjs`.
 

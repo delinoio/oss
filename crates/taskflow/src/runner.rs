@@ -727,7 +727,7 @@ async fn publish(
     let valid = |receipt: &mut Receipt| -> Result<bool> {
         if cancel.is_cancelled() {
             receipt.outcome = Outcome::Cancelled;
-        } else if !(task.install && !task.cache)
+        } else if (!task.install || task.cache)
             && files::input_state(&graph.workspace, project, task)? != *inputs
         {
             receipt.outcome = Outcome::Invalidated;

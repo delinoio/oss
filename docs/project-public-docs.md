@@ -15,8 +15,9 @@ Provide the Rspress-based public documentation site for user-facing product and 
 ## Cross-Domain Invariants
 - Rspress clean routes, navigation, sidebar, and docs structure must stay aligned with documented contracts.
 - User-facing content changes should be versioned alongside relevant contract updates.
-- Public project pages currently exposed as in-site top-level navigation sections include `devhud`, `cargo-mono`, `derun`, `with-watch`, and `runmoor`. DevHud's stable child routes are `/devhud/install`, `/devhud/guide`, `/devhud/privacy`, `/devhud/security`, `/devhud/support`, `/devhud/admin`, and `/devhud/releases`.
+- Public project pages currently exposed as in-site top-level navigation sections include `devhud`, `cargo-mono`, `derun`, `with-watch`, `runmoor`, and `taskflow`. DevHud's stable child routes are `/devhud/install`, `/devhud/guide`, `/devhud/privacy`, `/devhud/security`, `/devhud/support`, `/devhud/admin`, and `/devhud/releases`.
 - Runmoor preview routes cover `/runmoor` plus `install`, `configuration`, `commands`, `docker`, `tart`, and `operations` children.
+- TaskFlow routes cover `/taskflow` plus `/taskflow/configuration`, `/taskflow/commands`, `/taskflow/cache`, and `/taskflow/ci`.
 - `/devhud` is built privately with the release candidate and published only after the updater and other coordinated DevHud channels are public; the final release verification checks the public page before GA. Publication injects and validates the configured official App Store, Google Play, and Chrome Web Store listing links into every generated text asset, with the exact destinations verified in `/devhud/install`, without treating those public identifiers as credentials.
 - Nodeup and binpm are major projects exposed from this Rspress surface through external top-level navigation links to `https://nodeup.delino.io` and `https://binpm.delino.io`.
 - The legacy `/nodeup` route remains supported as a lightweight compatibility handoff page to `https://nodeup.delino.io`.

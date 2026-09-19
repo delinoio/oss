@@ -387,6 +387,17 @@ async fn scenario_09_native_go_rust_vitest_and_jest_sharding() {
     .unwrap();
     let result = run(graph(go.path()).await, &["test"]).await;
     assert!(result.success, "{result:?}");
+    taskflow::discover::output_tool(go.path(), &["go", "test", "./..."], &[])
+        .await
+        .unwrap();
+    let (inventory, reports) = shard::read_reports(
+        &go.path()
+            .join(".taskflow/runs")
+            .join(&result.results["app#test"].execution),
+    )
+    .unwrap();
+    assert_eq!(inventory.tests.len(), 2);
+    assert!(shard::aggregate(&inventory, 2, &reports).unwrap());
     let rust = fixture(
         json!({"test":{"command":["cargo","test"],"input":["src/**"],"output":[],"shard":{"adapter":"libtest","count":2}}}),
     );
@@ -405,6 +416,22 @@ async fn scenario_09_native_go_rust_vitest_and_jest_sharding() {
     .unwrap();
     let result = run(graph(rust.path()).await, &["test"]).await;
     assert!(result.success, "{result:?}");
+    taskflow::discover::output_tool(rust.path(), &["cargo", "test", "--offline"], &[])
+        .await
+        .unwrap();
+    let (inventory, reports) = shard::read_reports(
+        &rust
+            .path()
+            .join(".taskflow/runs")
+            .join(&result.results["app#test"].execution),
+    )
+    .unwrap();
+    assert_eq!(
+        inventory.tests.len(),
+        3,
+        "two libtests and one doctest unit"
+    );
+    assert!(shard::aggregate(&inventory, 2, &reports).unwrap());
     for (adapter, version) in [("vitest", "4.1.11"), ("jest", "29.7.0")] {
         let command = if adapter == "vitest" {
             vec!["pnpm", "exec", adapter, "run"]
@@ -442,6 +469,21 @@ async fn scenario_09_native_go_rust_vitest_and_jest_sharding() {
         .unwrap();
         let result = run(graph(js.path()).await, &["test"]).await;
         assert!(result.success, "{adapter}: {result:?}");
+        taskflow::discover::output_tool(js.path(), &command, &[])
+            .await
+            .unwrap();
+        let (inventory, reports) = shard::read_reports(
+            &js.path()
+                .join(".taskflow/runs")
+                .join(&result.results["app#test"].execution),
+        )
+        .unwrap();
+        assert_eq!(
+            inventory.tests.len(),
+            2,
+            "each JS fixture has two test files"
+        );
+        assert!(shard::aggregate(&inventory, 3, &reports).unwrap());
     }
 }
 
@@ -1243,4 +1285,112 @@ async fn untrusted_ci_never_contacts_the_remote_cache() {
             .await
             .is_err()
     );
+}
+
+#[tokio::test]
+async fn scenario_09_ci_shards_reject_partial_success_and_gate_secret_mapping() {
+    let directory = fixture(
+        json!({"test":{"command":command(&["version"]),"input":[],"output":[],"secrets":["BUILD_AUTH"],"shard":{"adapter":"generic","count":4,"list":command(&["inventory"]),"run":command(&["shard"])}}}),
+    );
+    let path = directory.path().join("taskflow.yml");
+    let mut value: Value = serde_yaml::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let platform = config::Platform::default();
+    let (os, arch) = platform.resolved();
+    value["tasks"]["test"]["platform"] = json!({"os":os,"arch":arch});
+    value["ci"] = json!({"revision":"1111111111111111111111111111111111111111","rust":"nightly-2026-01-01","runners":{platform.key():"self-hosted"}});
+    std::fs::write(&path, serde_yaml::to_string(&value).unwrap()).unwrap();
+    let g = graph(directory.path()).await;
+    let blueprint = taskflow::ci::Blueprint::new(&g, vec!["test".into()]).unwrap();
+    assert_eq!(blueprint.units.len(), 4);
+    let plan = taskflow::ci::prepare(directory.path(), &blueprint, None)
+        .await
+        .unwrap();
+    let storage = tempfile::tempdir().unwrap();
+    for unit in &blueprint.units {
+        let runner = tempfile::tempdir().unwrap();
+        std::fs::copy(&path, runner.path().join("taskflow.yml")).unwrap();
+        let result = taskflow::ci::execute(
+            runner.path(),
+            &blueprint,
+            plan.clone(),
+            &unit.id,
+            storage.path(),
+            &storage.path().join(&unit.id).join("bundle.json"),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert!(result.success);
+    }
+    assert_eq!(
+        taskflow::ci::aggregate(&blueprint, &plan, storage.path()).unwrap()["success"],
+        true
+    );
+    let bundle_path = storage
+        .path()
+        .join(&blueprint.units[0].id)
+        .join("bundle.json");
+    let mut partial: Value = serde_json::from_slice(&std::fs::read(&bundle_path).unwrap()).unwrap();
+    partial["shards"] = json!({});
+    std::fs::write(bundle_path, serde_json::to_vec(&partial).unwrap()).unwrap();
+    assert!(taskflow::ci::aggregate(&blueprint, &plan, storage.path()).is_err());
+    taskflow::ci::export(
+        &g,
+        vec!["test".into()],
+        Path::new(".github/workflows/taskflow.yml"),
+    )
+    .unwrap();
+    let workflow: Value = serde_yaml::from_slice(
+        &std::fs::read(directory.path().join(".github/workflows/taskflow.yml")).unwrap(),
+    )
+    .unwrap();
+    for unit in &blueprint.units {
+        let step = workflow["jobs"][&unit.id]["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["name"] == "Execute graph unit")
+            .unwrap();
+        let mapping = step["env"]["BUILD_AUTH"].as_str().unwrap();
+        assert!(
+            mapping.contains("secrets.BUILD_AUTH")
+                && mapping.contains("!= 'pull_request'")
+                && mapping.contains("!= 'pull_request_target'")
+        );
+    }
+}
+
+#[test]
+fn scenario_16_five_field_cron_uses_conventional_weekdays_and_day_union() {
+    let now = std::time::Instant::now();
+    let period = Duration::from_secs(5);
+    let mut interval = taskflow::schedule::IntervalClock::new(period, now);
+    assert!(!interval.tick(now));
+    assert!(interval.tick(now + period));
+    assert!(interval.tick(now + period * 100));
+    assert!(
+        !interval.tick(now + period * 100),
+        "missed ticks must not burst"
+    );
+    let date = |s: &str| {
+        chrono::DateTime::parse_from_rfc3339(s)
+            .unwrap()
+            .with_timezone(&chrono::Utc)
+    };
+    let mut monday = taskflow::schedule::CronClock::new("0 0 1 * 1", "UTC").unwrap();
+    assert!(monday.tick(date("2026-09-21T00:00:00Z")));
+    assert!(!monday.tick(date("2026-09-22T00:00:00Z")));
+    assert!(monday.tick(date("2026-10-01T00:00:00Z")));
+    let mut weekend = taskflow::schedule::CronClock::new("0 0 * * 5-7", "UTC").unwrap();
+    for day in [
+        "2026-09-25T00:00:00Z",
+        "2026-09-26T00:00:00Z",
+        "2026-09-27T00:00:00Z",
+    ] {
+        assert!(weekend.tick(date(day)));
+    }
+    assert!(!weekend.tick(date("2026-09-28T00:00:00Z")));
+    assert!(taskflow::schedule::CronClock::new("0 0 * * MON-FRI", "UTC")
+        .unwrap()
+        .tick(date("2026-09-21T00:00:00Z")));
 }

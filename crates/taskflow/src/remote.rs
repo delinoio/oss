@@ -178,6 +178,9 @@ impl Remote {
             "AWS4-HMAC-SHA256 Credential={}/{scope}, SignedHeaders={names}, Signature={signature}",
             self.key
         );
+        let mut authorization = reqwest::header::HeaderValue::from_str(&authorization)
+            .context("invalid remote authorization metadata")?;
+        authorization.set_sensitive(true);
         let mut request = self
             .client
             .request(method.clone(), url)
@@ -186,6 +189,9 @@ impl Remote {
             .header("authorization", authorization)
             .body(bytes);
         if let Some(token) = &self.token {
+            let mut token = reqwest::header::HeaderValue::from_str(token)
+                .context("invalid remote session metadata")?;
+            token.set_sensitive(true);
             request = request.header("x-amz-security-token", token);
         }
         let mut response = request

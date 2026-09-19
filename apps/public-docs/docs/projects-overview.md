@@ -19,3 +19,4 @@ This page provides a high-level public catalog of projects in the Delino OSS mon
 Authoritative implementation contracts are maintained in the repository's internal project documents.
 Use this public catalog for orientation, and use internal project docs for precise engineering and operational details.
 Standalone project documentation links are canonical entry points for Nodeup and binpm public guidance.
+- [`TaskFlow`](taskflow): Source-distributed task engine with native workspace discovery, development sessions, caching, and CI test sharding.

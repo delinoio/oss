@@ -17,12 +17,12 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 | 3–5 | `scenarios_03_04_05_18_unchanged_preserves_independent_causes` covers chained, direct, own-input, and multiple prerequisite causes. |
 | 6–7 | `scenario_06_streaming_secret_masking_handles_all_boundaries`, `scenarios_06_07_dotenv_precedence_disable_and_persisted_masking`, and CLI query masking. |
 | 8 | `scenarios_08_15_16_19_watch_and_timer_companions_preserve_server` uses a real TCP server. |
-| 9 | Generic and Go/libtest/Vitest/Jest suites, deterministic assignment/aggregate rejection, and `cached_shards_retain_complete_accounting_evidence`. |
+| 9 | Generic and Go/libtest/Vitest/Jest suites compared with unsharded commands, deterministic assignment/aggregate rejection, `cached_shards_retain_complete_accounting_evidence`, and `scenario_09_ci_shards_reject_partial_success_and_gate_secret_mapping`. |
 | 10 | `scenario_10_local_docker_execution_uses_explicit_platform_and_cleans_container`. |
 | 11 | `scenarios_11_22_26_ci_units_transfer_artifacts_and_preserve_causes` executes separate fresh directories and validates generated YAML with actionlint. |
 | 12–14 | `scenarios_12_13_14_21_23_24_native_workspaces_aliases_and_conditions` covers native membership/exclusion, Cargo virtual root, mixed workspace, aliases, renames, kinds, config-less projects, duplicate IDs, and task-less neighbors; explicit missing/cycles are checked by `scenario_26_queries_cycles_missing_references_and_output_ownership`. |
 | 15 | Watch/server fixture and `scenarios_15_19_21_live_invalid_configuration_recovers_atomically`. |
-| 16 | Real interval companion plus explicit-time cron/DST tests in `scenarios_09_16_shard_accounting_and_cron_dst`. |
+| 16 | Real interval companion, explicit-time interval/weekday/day-union tests, and cron/DST tests in `scenarios_09_16_shard_accounting_and_cron_dst`. |
 | 17 | `scenario_17_queue_skip_restart_own_real_exclusive_processes` and `scenario_17_cancellation_reaps_process_tree_and_never_caches`. |
 | 18 | Independent cause tests and watched/scheduled companions with unchanged prerequisites. |
 | 19 | Shared prerequisite/companion first-run deduplication, subscription shutdown, and `server_readiness_failure_reaps_concurrent_work_before_returning`. |
@@ -68,6 +68,8 @@ The `taskflow-conformance` CI job covers macOS/Linux/Windows x64/arm64 and exclu
 
 ## Validation evidence and limits
 The implementation session exercised real macOS arm64 host execution, Linux arm64 containers through Docker, loopback MinIO, pnpm/Cargo/Go discovery, all four native shard adapters, source-build CLI/schema, generated-workflow actionlint, root Rust tests, and public-docs build/route checks. Committed CI definitions are not evidence that remote platform jobs have already executed. Windows and other host architectures require their conformance results before a release support claim. Registry/service availability failures must be reported as failed or unavailable validation, never counted as passes.
+
+A local full Windows GNU cross-check was unavailable because the host lacks the MinGW C compiler required by the TLS dependency. The Windows process-owner source was type-checked separately for the Windows target; this is not a substitute for native execution evidence.
 
 ## Dependencies and Integrations
 See `docs/repository-workflow-contract.md` and the TaskFlow engine contract. No existing application workflow is migrated to TaskFlow.

@@ -39,6 +39,8 @@ Shared companions are reference-counted by live owners; prerequisite and initial
 
 Intervals use monotonic time. Cron uses five fields, IANA zones, UTC by default, no catch-up bursts, and once per repeated local wall-clock minute. `every` and `cron` are mutually exclusive. Configuration reads and one-shot runs never activate subscriptions.
 
+Cron weekdays use 0 or 7 for Sunday, 1–6 for Monday–Saturday, and named weekdays. Restricted day-of-month and day-of-week fields form a union. Interval and cron decision functions accept explicit times so missed ticks and DST can be tested without sleeping.
+
 ### Shards and CI
 Go top-level tests, Rust libtest items (plus one doctest unit), and Vitest/Jest files are supported inventories. Generic adapters exchange versioned JSON inventory, selected-ID files, and results. Assignment is deterministic and optionally duration-balanced. Missing, duplicate, failed, and cancelled units prevent a false aggregate success.
 
