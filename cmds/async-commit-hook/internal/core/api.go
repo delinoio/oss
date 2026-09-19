@@ -284,12 +284,18 @@ func (a *API) worktree(id string) (string, error) {
 	if !ValidID(id) {
 		return "", E("invalid-worktree-id", "expected UUID v7", 2)
 	}
-	var path string
-	e := a.s.Store.DB.QueryRow("SELECT path FROM worktrees WHERE id=?", id).Scan(&path)
-	if e != nil {
-		return "", E("worktree-unavailable", "registered worktree is unavailable", 2)
+	var path, repository string
+	e := a.s.Store.DB.QueryRow("SELECT path,repository_id FROM worktrees WHERE id=?", id).Scan(&path, &repository)
+	if e == nil {
+		common, root, _, discoverErr := Discover(context.Background(), path)
+		if discoverErr == nil {
+			r, w, registeredErr := a.s.Store.Registered(common, root)
+			if registeredErr == nil && r.ID == repository && w.ID == id {
+				return path, nil
+			}
+		}
 	}
-	return path, nil
+	return "", E("worktree-unavailable", "registered worktree is unavailable", 2)
 }
 func (a *API) GetVersion(context.Context, *connect.Request[pb.GetVersionRequest]) (*connect.Response[pb.GetVersionResponse], error) {
 	return connect.NewResponse(&pb.GetVersionResponse{ApiVersion: 1, Version: Version}), nil

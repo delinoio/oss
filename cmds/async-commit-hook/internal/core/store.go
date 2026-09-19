@@ -55,8 +55,8 @@ func OpenStore(root string) (*Store, error) {
 		return fail(E("unsupported-state-version", "state database requires a compatible ach version; restore a backup rather than converting it", 3))
 	}
 	_, err = db.Exec(`
-CREATE TABLE IF NOT EXISTS repositories(id TEXT PRIMARY KEY, common_dir TEXT UNIQUE NOT NULL, name TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS worktrees(id TEXT PRIMARY KEY, repository_id TEXT NOT NULL REFERENCES repositories(id), path TEXT UNIQUE NOT NULL, branch TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS repositories(id TEXT PRIMARY KEY, common_dir TEXT NOT NULL, name TEXT NOT NULL, local_identity TEXT NOT NULL, UNIQUE(common_dir,local_identity));
+CREATE TABLE IF NOT EXISTS worktrees(id TEXT PRIMARY KEY, repository_id TEXT NOT NULL REFERENCES repositories(id), path TEXT NOT NULL, branch TEXT NOT NULL, UNIQUE(repository_id,path));
 CREATE TABLE IF NOT EXISTS runs(seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE NOT NULL, repo TEXT NOT NULL REFERENCES repositories(id), worktree TEXT NOT NULL, commit_oid TEXT NOT NULL, fingerprint TEXT NOT NULL, branch TEXT NOT NULL, state TEXT NOT NULL, ack TEXT, automatic_key TEXT UNIQUE, record BLOB NOT NULL);
 CREATE INDEX IF NOT EXISTS run_gate ON runs(repo,commit_oid,fingerprint,seq DESC);
 CREATE TABLE IF NOT EXISTS checks(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id), name TEXT NOT NULL, group_key TEXT NOT NULL, policy TEXT NOT NULL, state TEXT NOT NULL, cancel TEXT NOT NULL DEFAULT '', record BLOB NOT NULL, UNIQUE(run_id,name));
@@ -67,6 +67,9 @@ CREATE TABLE IF NOT EXISTS components(id TEXT PRIMARY KEY, kind TEXT NOT NULL, p
 CREATE TABLE IF NOT EXISTS installations(id TEXT PRIMARY KEY, record BLOB NOT NULL);
 PRAGMA user_version=1;`)
 	if err != nil {
+		return fail(err)
+	}
+	if err = s.migrateRegistry(); err != nil {
 		return fail(err)
 	}
 	if err = PrivateFile(path); err != nil {
@@ -87,17 +90,21 @@ func (s *Store) Transaction(fn func(*sql.Tx) error) error {
 	return tx.Commit()
 }
 func (s *Store) Register(common, path, branch string) (Repository, Worktree, error) {
+	identity, err := repositoryIdentity(common, true)
+	if err != nil {
+		return Repository{}, Worktree{}, err
+	}
 	r := Repository{ID: ID(), CommonDir: common, Name: filepath.Base(path)}
 	w := Worktree{ID: ID(), Path: path, Branch: branch, Available: true}
-	err := s.Transaction(func(tx *sql.Tx) error {
-		if _, err := tx.Exec("INSERT INTO repositories(id,common_dir,name) VALUES(?,?,?) ON CONFLICT(common_dir) DO NOTHING", r.ID, common, r.Name); err != nil {
+	err = s.Transaction(func(tx *sql.Tx) error {
+		if _, err := tx.Exec("INSERT INTO repositories(id,common_dir,name,local_identity) VALUES(?,?,?,?) ON CONFLICT(common_dir,local_identity) DO NOTHING", r.ID, common, r.Name, identity); err != nil {
 			return err
 		}
-		if err := tx.QueryRow("SELECT id,name FROM repositories WHERE common_dir=?", common).Scan(&r.ID, &r.Name); err != nil {
+		if err := tx.QueryRow("SELECT id,name FROM repositories WHERE common_dir=? AND local_identity=?", common, identity).Scan(&r.ID, &r.Name); err != nil {
 			return err
 		}
 		w.RepositoryID = r.ID
-		if _, err := tx.Exec("INSERT INTO worktrees(id,repository_id,path,branch) VALUES(?,?,?,?) ON CONFLICT(path) DO UPDATE SET branch=excluded.branch", w.ID, r.ID, path, branch); err != nil {
+		if _, err := tx.Exec("INSERT INTO worktrees(id,repository_id,path,branch) VALUES(?,?,?,?) ON CONFLICT(repository_id,path) DO UPDATE SET branch=excluded.branch", w.ID, r.ID, path, branch); err != nil {
 			return err
 		}
 		return tx.QueryRow("SELECT id FROM worktrees WHERE path=? AND repository_id=?", path, r.ID).Scan(&w.ID)
@@ -105,9 +112,13 @@ func (s *Store) Register(common, path, branch string) (Repository, Worktree, err
 	return r, w, err
 }
 func (s *Store) Registered(common, path string) (Repository, Worktree, error) {
+	identity, err := repositoryIdentity(common, false)
+	if err != nil {
+		return Repository{}, Worktree{}, err
+	}
 	r := Repository{CommonDir: common}
 	w := Worktree{Path: path, Available: true}
-	err := s.DB.QueryRow("SELECT r.id,r.name,w.id,w.branch FROM repositories r JOIN worktrees w ON w.repository_id=r.id WHERE r.common_dir=? AND w.path=?", common, path).Scan(&r.ID, &r.Name, &w.ID, &w.Branch)
+	err = s.DB.QueryRow("SELECT r.id,r.name,w.id,w.branch FROM repositories r JOIN worktrees w ON w.repository_id=r.id WHERE r.common_dir=? AND r.local_identity=? AND w.path=?", common, identity, path).Scan(&r.ID, &r.Name, &w.ID, &w.Branch)
 	w.RepositoryID = r.ID
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, w, E("repository-unregistered", "run ach init in this worktree to explicitly trust its committed commands", 2)
@@ -115,20 +126,23 @@ func (s *Store) Registered(common, path string) (Repository, Worktree, error) {
 	return r, w, err
 }
 func (s *Store) Repositories() ([]Repository, error) {
-	rows, err := s.DB.Query("SELECT r.id,r.common_dir,r.name,w.id,w.path,w.branch FROM repositories r LEFT JOIN worktrees w ON w.repository_id=r.id ORDER BY r.name,w.path")
+	rows, err := s.DB.Query("SELECT r.id,r.common_dir,r.name,r.local_identity,w.id,w.path,w.branch FROM repositories r LEFT JOIN worktrees w ON w.repository_id=r.id ORDER BY r.name,w.path")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []Repository{}
 	index := map[string]int{}
+	identities := map[string]string{}
 	for rows.Next() {
 		r := Repository{}
 		w := Worktree{}
-		if err = rows.Scan(&r.ID, &r.CommonDir, &r.Name, &w.ID, &w.Path, &w.Branch); err != nil {
+		var identity string
+		if err = rows.Scan(&r.ID, &r.CommonDir, &r.Name, &identity, &w.ID, &w.Path, &w.Branch); err != nil {
 			return nil, err
 		}
 		w.RepositoryID = r.ID
+		identities[r.ID] = identity
 		i, ok := index[r.ID]
 		if !ok {
 			i = len(out)
@@ -147,7 +161,8 @@ func (s *Store) Repositories() ([]Repository, error) {
 		for j := range out[i].Worktrees {
 			w := &out[i].Worktrees[j]
 			common, root, branch, discoverErr := Discover(context.Background(), w.Path)
-			w.Available = discoverErr == nil && common == out[i].CommonDir && root == w.Path
+			identity, identityErr := repositoryIdentity(common, false)
+			w.Available = discoverErr == nil && identityErr == nil && identity == identities[out[i].ID] && common == out[i].CommonDir && root == w.Path
 			if w.Available {
 				w.Branch = branch
 			}
