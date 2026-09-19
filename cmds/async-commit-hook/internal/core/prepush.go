@@ -35,6 +35,12 @@ func (s *Service) PrePush(ctx context.Context, repo string, input io.Reader, ove
 		if e != nil {
 			return out, e
 		}
+		// Pushed refs can differ from the checkout (or use an explicit SHA).
+		// This labels newly accepted history; exact-commit gate reuse is unchanged.
+		plan.Branch = strings.TrimPrefix(remoteRef, "refs/heads/")
+		if strings.HasPrefix(localRef, "refs/heads/") {
+			plan.Branch = strings.TrimPrefix(localRef, "refs/heads/")
+		}
 		policy := override
 		if policy == "" {
 			policy = plan.Config.PrePush

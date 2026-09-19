@@ -275,6 +275,9 @@ ach ack --run &lt;id&gt;</pre
           wait). Run-and-wait reuses an unfinished attempt and renews failed,
           cancelled, interrupted, expired, or missing evidence. Block and wait
           never submit work. A missing result or expired wait never permits a push.
+          New attempts appear under the pushed local branch; pushes from HEAD or
+          an explicit commit use the destination branch. Reused attempts retain
+          their original history, and branch labels do not change commit validation.
         </p>
       </section>
       <section id="commands">
