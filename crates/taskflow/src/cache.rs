@@ -71,6 +71,7 @@ pub enum Content {
     Directory,
     Link {
         target: String,
+        directory: bool,
     },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,6 +126,7 @@ pub fn snapshot(project: &Project, task: &Task) -> Result<Vec<FileRecord>> {
                 ensure!(!target.is_absolute(), "cache output links must be relative");
                 Content::Link {
                     target: files::slash(&target),
+                    directory: link_is_directory(path)?,
                 }
             } else if entry.file_type().is_dir() {
                 Content::Directory
@@ -158,6 +160,21 @@ pub fn snapshot(project: &Project, task: &Task) -> Result<Vec<FileRecord>> {
     }
     entries.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(entries)
+}
+// Windows records file and directory links distinctly, including dangling
+// links.
+fn link_is_directory(path: &Path) -> Result<bool> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileTypeExt;
+        Ok(std::fs::symlink_metadata(path)?
+            .file_type()
+            .is_symlink_dir())
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(path.is_dir())
+    }
 }
 pub fn output_digest(entries: &[FileRecord]) -> Result<String> {
     Ok(files::digest(&serde_json::to_vec(entries)?))
@@ -224,7 +241,7 @@ impl Artifact {
                         "invalid cache file content"
                     );
                 }
-                Content::Link { target } => {
+                Content::Link { target, .. } => {
                     ensure!(!Path::new(target).is_absolute(), "absolute cache link");
                     links.push(path);
                 }
@@ -244,7 +261,7 @@ impl Artifact {
             .map(|entry| (Path::new(&entry.path), &entry.content))
             .collect();
         for link in &links {
-            let Content::Link { target } = contents[link] else {
+            let Content::Link { target, .. } = contents[link] else {
                 unreachable!()
             };
             validate_link_target(
@@ -308,12 +325,13 @@ impl Artifact {
             }
         }
         for entry in &self.files {
-            if let Content::Link { target } = &entry.content {
+            if let Content::Link { target, directory } = &entry.content {
+                let _ = directory;
                 let path = staged.join(&entry.path);
                 #[cfg(unix)]
                 std::os::unix::fs::symlink(target, &path)?;
                 #[cfg(windows)]
-                if path.parent().unwrap().join(target).is_dir() {
+                if *directory {
                     std::os::windows::fs::symlink_dir(target, &path)?;
                 } else {
                     std::os::windows::fs::symlink_file(target, &path)?;
@@ -386,7 +404,7 @@ fn validate_link_target(
             continue;
         }
         let candidate = resolved.join(part);
-        if let Some(Content::Link { target }) = contents.get(candidate.as_path()) {
+        if let Some(Content::Link { target, .. }) = contents.get(candidate.as_path()) {
             followed += 1;
             ensure!(followed <= 40, "cache link cycle or excessive link depth");
             let mut expansion = link_components(Path::new(target))?;

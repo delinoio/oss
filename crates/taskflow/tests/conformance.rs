@@ -1589,6 +1589,7 @@ async fn cache_rejects_links_through_external_ancestors_before_mutation() {
             cache::FileRecord {
                 path: "out/result".into(),
                 content: cache::Content::Link {
+                    directory: false,
                     target: target.into(),
                 },
             },
@@ -1597,6 +1598,7 @@ async fn cache_rejects_links_through_external_ancestors_before_mutation() {
             artifact.files.push(cache::FileRecord {
                 path: "out/alias".into(),
                 content: cache::Content::Link {
+                    directory: false,
                     target: "../shared".into(),
                 },
             });
@@ -1604,6 +1606,7 @@ async fn cache_rejects_links_through_external_ancestors_before_mutation() {
             artifact.files.push(cache::FileRecord {
                 path: "out/cycle".into(),
                 content: cache::Content::Link {
+                    directory: false,
                     target: "cycle".into(),
                 },
             });
@@ -1632,12 +1635,14 @@ async fn cache_rejects_links_through_external_ancestors_before_mutation() {
         cache::FileRecord {
             path: "out/alias".into(),
             content: cache::Content::Link {
+                directory: false,
                 target: "../shared".into(),
             },
         },
         cache::FileRecord {
             path: "out/result".into(),
             content: cache::Content::Link {
+                directory: false,
                 target: "alias/file".into(),
             },
         },
@@ -2034,4 +2039,39 @@ async fn libtest_ids_distinguish_workspace_packages() {
         .iter()
         .any(|test| test.id == "beta@0.1.0:test:shared::same_name"));
     assert!(shard::aggregate(&inventory, 2, &reports).unwrap());
+}
+
+#[tokio::test]
+async fn cache_restores_directory_links_outside_output_roots() {
+    let directory =
+        fixture(json!({"build":{"command":command(&["version"]),"input":[],"output":["out/**"]}}));
+    std::fs::create_dir_all(directory.path().join("shared")).unwrap();
+    std::fs::write(directory.path().join("shared/value"), "retained").unwrap();
+    std::fs::create_dir_all(directory.path().join("out")).unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("../shared", directory.path().join("out/link")).unwrap();
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_dir("../shared", directory.path().join("out/link")).unwrap();
+    let g = graph(directory.path()).await;
+    let project = &g.workspace.projects["app"];
+    let task = &g.tasks["app#build"].task;
+    let artifact =
+        cache::Artifact::capture("key".into(), "app#build".into(), project, task).unwrap();
+    assert!(artifact.files.iter().any(|entry| matches!(
+        entry.content,
+        cache::Content::Link {
+            directory: true,
+            ..
+        }
+    )));
+    std::fs::remove_dir_all(directory.path().join("out")).unwrap();
+    artifact.restore("key", "app#build", project, task).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(directory.path().join("out/link/value")).unwrap(),
+        "retained"
+    );
+    assert_eq!(
+        cache::output_state(project, task).unwrap(),
+        artifact.output_digest
+    );
 }

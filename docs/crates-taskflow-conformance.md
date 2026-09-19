@@ -107,3 +107,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 - [Issue #898](https://github.com/delinoio/oss/issues/898)
 
 `libtest_ids_distinguish_workspace_packages` executes two Cargo packages with identically named integration targets and tests. Inventory IDs include stable package name/version identity, preserving complete shard accounting without checkout paths.
+
+`cache_restores_directory_links_outside_output_roots` restores a directory symlink into a project-local tree outside the owned outputs. Cache link records retain the original directory/file type; older records lacking type information are rejected rather than guessed from the staging tree.
