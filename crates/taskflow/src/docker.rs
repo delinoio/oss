@@ -29,8 +29,10 @@ impl std::error::Error for CleanupFailure {}
 pub fn host_environment(environment: &BTreeMap<String, String>) -> BTreeMap<String, String> {
     let mut values = environment.clone();
     for key in ["DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"] {
-        if let Ok(value) = std::env::var(key) {
-            crate::environment::insert(&mut values, key.into(), value);
+        if crate::environment::get(&values, key).is_none() {
+            if let Ok(value) = std::env::var(key) {
+                crate::environment::insert(&mut values, key.into(), value);
+            }
         }
     }
     values

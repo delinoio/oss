@@ -4186,3 +4186,51 @@ fn check_rejects_nul_in_every_shell_argument() {
         assert!(!output.status.success());
     }
 }
+
+#[test]
+fn docker_host_environment_preserves_resolved_precedence() {
+    const CHILD: &str = "TFLOW_TEST_DOCKER_PRECEDENCE";
+    if std::env::var_os(CHILD).is_some() {
+        let directory = fixture(
+            json!({"task":{"command":["unused"], "env":{"DOCKER_CONTEXT":"task-context"}}}),
+        );
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let g = runtime.block_on(graph(directory.path()));
+        let env = taskflow::environment::Environment::build(
+            &g.workspace,
+            &g.workspace.projects["app"],
+            &g.tasks["app#task"].task,
+            &BTreeMap::from([("DOCKER_HOST".into(), "unix:///cli.sock".into())]),
+            false,
+        )
+        .unwrap();
+        let values = taskflow::docker::host_environment(&env.values);
+        assert_eq!(values["DOCKER_HOST"], "unix:///cli.sock");
+        assert_eq!(values["DOCKER_CONTEXT"], "task-context");
+        assert_eq!(values["DOCKER_CONFIG"], "inherited-config");
+        let missing = taskflow::docker::host_environment(&BTreeMap::new());
+        assert_eq!(missing["DOCKER_HOST"], "unix:///inherited.sock");
+        if cfg!(windows) {
+            let values = taskflow::docker::host_environment(&BTreeMap::from([(
+                "docker_host".into(),
+                "unix:///lower.sock".into(),
+            )]));
+            assert_eq!(values["docker_host"], "unix:///lower.sock");
+            assert!(!values.contains_key("DOCKER_HOST"));
+        }
+        return;
+    }
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "docker_host_environment_preserves_resolved_precedence",
+            "--nocapture",
+        ])
+        .env(CHILD, "1")
+        .env("DOCKER_HOST", "unix:///inherited.sock")
+        .env("DOCKER_CONTEXT", "inherited-context")
+        .env("DOCKER_CONFIG", "inherited-config")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+}
