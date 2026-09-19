@@ -41,7 +41,7 @@ const UPDATE_SCHEDULER_RESUME_GAP: Duration = Duration::from_secs(2);
 
 #[derive(Clone)]
 pub struct NativeBridgeState {
-    pending_auth_callback: Arc<Mutex<Option<String>>>,
+    pending_auth_callback: Arc<Mutex<AuthCallbackState>>,
     pending_deck_link: Arc<Mutex<Option<String>>>,
     session_origins: Arc<Mutex<SessionOrigins>>,
     #[cfg(desktop)]
@@ -127,6 +127,12 @@ struct SessionOrigins {
     logto_issuer: Option<url::Url>,
 }
 
+#[derive(Default)]
+struct AuthCallbackState {
+    epoch: u32,
+    pending: Option<String>,
+}
+
 impl Default for NativeBridgeState {
     fn default() -> Self {
         #[cfg(desktop)]
@@ -148,7 +154,7 @@ impl Default for NativeBridgeState {
                 .ok()
         };
         Self {
-            pending_auth_callback: Arc::new(Mutex::new(None)),
+            pending_auth_callback: Arc::new(Mutex::new(AuthCallbackState::default())),
             pending_deck_link: Arc::new(Mutex::new(None)),
             session_origins: Arc::new(Mutex::new(SessionOrigins {
                 api_origin: DEFAULT_API_ORIGIN.to_string(),
@@ -666,16 +672,16 @@ impl NativeBridgeState {
     }
 
     #[allow(dead_code)]
-    pub fn offer_auth_callback(&self, candidate: &str) -> bool {
+    pub fn offer_auth_callback(&self, candidate: &str) -> Option<u32> {
         if !is_auth_callback(candidate) {
-            return false;
+            return None;
         }
         let mut pending = self
             .pending_auth_callback
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *pending = Some(candidate.to_string());
-        true
+        pending.pending = Some(candidate.to_string());
+        Some(pending.epoch)
     }
 
     pub fn offer_deck_link(&self, candidate: &str) -> bool {
@@ -707,6 +713,7 @@ impl NativeBridgeState {
         self.pending_auth_callback
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .pending
             .take()
     }
 
@@ -714,6 +721,7 @@ impl NativeBridgeState {
         self.pending_auth_callback
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .pending
             .clone()
     }
 
@@ -746,7 +754,7 @@ impl NativeBridgeState {
         )
     }
 
-    fn configure_session_origins(&self, request: &Value) -> Result<bool, String> {
+    fn configure_session_origins(&self, request: &Value) -> Result<(bool, u32), String> {
         let api_origin = request
             .get("apiOrigin")
             .and_then(Value::as_str)
@@ -763,13 +771,25 @@ impl NativeBridgeState {
             None if origins.api_origin == api_origin => origins.logto_issuer.clone(),
             None => None,
         };
+        let api_origin_changed = origins.api_origin != api_origin;
         let next = SessionOrigins {
             api_origin,
             logto_issuer,
         };
         let changed = *origins != next;
         *origins = next;
-        Ok(changed)
+        let mut callbacks = self
+            .pending_auth_callback
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if api_origin_changed {
+            // Callback URLs do not identify the API-origin session that issued
+            // them. Clearing the slot and advancing its epoch under one native
+            // transition fences callbacks that race an origin rekey.
+            callbacks.epoch = callbacks.epoch.wrapping_add(1);
+            callbacks.pending = None;
+        }
+        Ok((changed, callbacks.epoch))
     }
 
     #[cfg(desktop)]
@@ -1507,10 +1527,12 @@ pub fn handle_native_bridge_request(
         "shortcuts.commit" => commit_staged_shortcuts(request, state),
         "shortcuts.rollback" => Ok(rollback_staged_shortcuts(state)),
         "shortcuts.suspend" => Ok(suspend_shortcuts(state)),
-        "session.configure-origins" => Ok(json!({
-            "kind": "session-network-policy",
-            "changed": state.configure_session_origins(request)?
-        })),
+        "session.configure-origins" => {
+            let (changed, auth_callback_epoch) = state.configure_session_origins(request)?;
+            Ok(
+                json!({ "kind": "session-network-policy", "changed": changed, "authCallbackEpoch": auth_callback_epoch }),
+            )
+        }
         "lifecycle.open-external" => {
             validate_external_request(request)?;
             Err("unsupported".to_string())
@@ -2643,18 +2665,32 @@ mod tests {
     }
 
     #[test]
-    fn pending_callback_is_bounded_and_consumed_once() {
+    fn api_origin_change_atomically_retires_pending_callbacks() {
         let state = NativeBridgeState::default();
-        assert!(state.offer_auth_callback("devhud://auth/callback?state=one"));
-        assert!(state.offer_auth_callback("devhud://auth/callback?state=two"));
+        assert_eq!(
+            state.offer_auth_callback("devhud://auth/callback?state=one"),
+            Some(0)
+        );
+        assert_eq!(
+            state.offer_auth_callback("devhud://auth/callback?state=two"),
+            Some(0)
+        );
         let peek = json!({ "operation": "auth.peek-pending-callback" });
         let peeked = handle_native_bridge_request(&peek, &state).expect("peek callback");
         assert_eq!(peeked["url"], "devhud://auth/callback?state=two");
+        let policy = handle_native_bridge_request(
+            &json!({ "operation": "session.configure-origins", "apiOrigin": "https://custom.example" }),
+            &state,
+        )
+        .expect("configure custom origin");
+        assert_eq!(policy["authCallbackEpoch"], 1);
         let request = json!({ "operation": "auth.take-pending-callback" });
-        let first = handle_native_bridge_request(&request, &state).expect("callback");
-        assert_eq!(first["url"], "devhud://auth/callback?state=two");
-        let second = handle_native_bridge_request(&request, &state).expect("empty callback");
-        assert!(second["url"].is_null());
+        let cleared = handle_native_bridge_request(&request, &state).expect("cleared callback");
+        assert!(cleared["url"].is_null());
+        assert_eq!(
+            state.offer_auth_callback("devhud://auth/callback?state=new"),
+            Some(1)
+        );
     }
 
     #[test]

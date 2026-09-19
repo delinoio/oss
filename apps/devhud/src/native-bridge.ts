@@ -236,7 +236,7 @@ export type NativeBridgeRequestV1 = NativeBridgeRequestV1Base
 
 export type NativeBridgeResponseV1 =
   | { readonly kind: "runtime"; readonly snapshot: RuntimeSnapshot }
-  | { readonly kind: "session-network-policy"; readonly changed: boolean }
+  | { readonly kind: "session-network-policy"; readonly changed: boolean; readonly authCallbackEpoch?: number }
   | { readonly kind: "auth-callback"; readonly url: string | null }
   | { readonly kind: "deck-link"; readonly deckId: string | null }
   | { readonly kind: "shortcut-status"; readonly platform: NativeShortcutPlatform; readonly permission: NativeShortcutPermission; readonly bindings: DesktopShortcutBindings; readonly error: ShortcutValidationCode | null }
@@ -259,7 +259,7 @@ export type NativeBridgeResponseV1 =
 
 export type NativeBridgeEventV1 =
   | { readonly version: typeof NativeBridgeVersion; readonly kind: "lifecycle"; readonly state: LifecycleState }
-  | { readonly version: typeof NativeBridgeVersion; readonly kind: "auth-callback"; readonly url: string }
+  | { readonly version: typeof NativeBridgeVersion; readonly kind: "auth-callback"; readonly url: string; readonly authCallbackEpoch?: number }
   | { readonly version: typeof NativeBridgeVersion; readonly kind: "deck-link"; readonly deckId: string }
   | { readonly version: typeof NativeBridgeVersion; readonly kind: "shortcut-triggered"; readonly action: ShortcutActionId }
   | { readonly version: typeof NativeBridgeVersion; readonly kind: "shortcut-status"; readonly platform: NativeShortcutPlatform; readonly permission: NativeShortcutPermission; readonly bindings: DesktopShortcutBindings; readonly error: ShortcutValidationCode | null }
@@ -550,7 +550,7 @@ export const nativeBridge: NativeBridgeV1 = {
     if (request.operation.startsWith("widgets.")) validateWidgetRequest(request as Extract<NativeBridgeRequestV1, { readonly operation: `widgets.${string}` }>);
     if (!window.__TAURI_INTERNALS__) {
       if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: await browserSnapshot() };
-      if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false, authCallbackEpoch: 0 };
       if (request.operation === "auth.peek-pending-callback") return { kind: "auth-callback", url: null };
       if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
       if (request.operation === "deck.peek-pending-link" || request.operation === "deck.take-pending-link") return { kind: "deck-link", deckId: null };

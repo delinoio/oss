@@ -152,7 +152,7 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin, onModa
       {identity.status === "authenticated" && !identity.accountError && identity.account !== null && <Card className="account-section account-danger" aria-label={copy.dangerZone}><h3>{copy.dangerZone}</h3><p>{copy.deleteAccountSummary}</p><Button ref={deleteTrigger} variant="danger" onClick={() => setConfirmDelete(true)} disabled={modalConfirmationOpen}>{copy.deleteAccount}</Button></Card>}
     </div>
     </div>
-    <Dialog open={deleteConfirmationOpen} role="alertdialog" title={copy.deleteAccountConfirmTitle} initialFocusRef={cancelDelete} returnFocusRef={deleteTrigger} onClose={() => setConfirmDelete(false)}><p>{copy.deleteAccountConfirmSummary}</p><div className="actions"><Button ref={cancelDelete} onClick={() => setConfirmDelete(false)}>{copy.cancel}</Button><Button variant="danger" onClick={() => { setConfirmDelete(false); invoke(identity.deleteAccount); }}>{copy.deleteAccount}</Button></div></Dialog>
+    <Dialog open={deleteConfirmationOpen} role="alertdialog" title={copy.deleteAccountConfirmTitle} descriptionId="delete-account-confirmation-summary" initialFocusRef={cancelDelete} returnFocusRef={deleteTrigger} onClose={() => setConfirmDelete(false)}><p id="delete-account-confirmation-summary">{copy.deleteAccountConfirmSummary}</p><div className="actions"><Button ref={cancelDelete} onClick={() => setConfirmDelete(false)}>{copy.cancel}</Button><Button variant="danger" onClick={() => { setConfirmDelete(false); invoke(identity.deleteAccount); }}>{copy.deleteAccount}</Button></div></Dialog>
   </>;
 }
 

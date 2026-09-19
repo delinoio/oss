@@ -95,6 +95,7 @@ interface BoundaryProps extends PropsWithChildren {
   readonly platform: RuntimePlatform;
   readonly bridge: NativeBridgeV1;
   readonly onCallbackConsumed: (url: string) => void;
+  readonly onAuthCallbackEpoch?: (epoch: number) => void;
   readonly onDeckLinkPolicyReady?: () => void;
   readonly onContinueLocally: () => void;
   readonly onLoggedOut: () => void;
@@ -141,7 +142,7 @@ export function DevHudServiceBoundary(props: BoundaryProps) {
   </QueryClientProvider></TransportProvider>;
 }
 
-function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onCallbackConsumed, onDeckLinkPolicyReady, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset, identityRecoveryGeneration = 0 }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
+function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onCallbackConsumed, onAuthCallbackEpoch, onDeckLinkPolicyReady, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset, identityRecoveryGeneration = 0 }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
   const storage = getLocalStorage();
   const queryClient = useQueryClient();
   const transport = useTransport();
@@ -318,13 +319,14 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     let cancelled = false;
     void bridge.request({ operation: "session.configure-origins", apiOrigin }).then((response) => {
       if (cancelled || response.kind !== "session-network-policy") return;
+      if (response.authCallbackEpoch !== undefined) onAuthCallbackEpoch?.(response.authCallbackEpoch);
       if (response.changed) location.reload();
       else setNetworkReady(true);
     }).catch((reason) => {
       if (!cancelled && !continueLocallyRef.current) { setStatus("error"); setError(safeError(reason)); }
     });
     return () => { cancelled = true; };
-  }, [active, apiOrigin, bootstrapAttempt, bridge]);
+  }, [active, apiOrigin, bootstrapAttempt, bridge, onAuthCallbackEpoch]);
 
   useEffect(() => {
     if (!active || !online || !networkReady || !bootstrapQuery.data) return;
@@ -655,6 +657,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     setSettingsReady(false);
     resetDesktopShortcuts();
     setSettingsError(null);
+    setImportDiff(null);
+    setConflict(null);
     setDeckAccessSuspended(false);
     applySettings(!hasGuestSettings(storage) && initialAppearance ? { ...guest, appearance: initialAppearance } : guest);
     applyRevision(0n);

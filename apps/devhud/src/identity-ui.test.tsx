@@ -219,6 +219,8 @@ describe("identity UI", () => {
     trigger.focus();
     fireEvent.click(trigger);
     const dialog = await screen.findByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle });
+    const summary = within(dialog).getByText(messages.en.deleteAccountConfirmSummary);
+    expect(dialog.getAttribute("aria-describedby")).toBe(summary.id);
     const cancel = within(dialog).getByRole("button", { name: messages.en.cancel });
     const confirm = within(dialog).getByRole("button", { name: messages.en.deleteAccount });
     await waitFor(() => expect(document.activeElement).toBe(cancel));

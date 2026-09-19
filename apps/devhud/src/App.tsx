@@ -114,19 +114,6 @@ function capabilitiesFor(runtime: RuntimeSnapshot): RuntimeCapabilities {
 function browserNotificationsSupported(): boolean { return typeof Notification !== "undefined"; }
 function browserNotificationPermission(): NotificationPermission { return !browserNotificationsSupported() || Notification.permission === "default" ? NotificationPermission.NotDetermined : Notification.permission === "granted" ? NotificationPermission.Authorized : NotificationPermission.Denied; }
 
-async function drainPendingAuthCallback(bridge: NativeBridgeV1): Promise<boolean> {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const callback = await bridge.request({ operation: "auth.take-pending-callback" });
-      if (callback.kind === "auth-callback") return true;
-    } catch {
-      // A policy switch may race a native callback delivery. Retry once before
-      // making the new identity boundary eligible to receive that callback.
-    }
-  }
-  return false;
-}
-
 export function App({ bridge = nativeBridge, initialRuntime, initialContentState = defaultContentState, nativeMessaging }: AppProps) {
   const storage = getLocalStorage();
   const [preferences, setPreferences] = useState<Preferences>(() => readPreferences(storage));
@@ -166,6 +153,8 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const externalAttempt = useRef(0);
   const identitySession = useRef<IdentitySession | null>(null);
   const apiOriginChangeInFlight = useRef(false);
+  const authCallbackEpoch = useRef<number | null>(null);
+  const acceptAuthCallbackEpoch = useCallback((epoch: number) => { authCallbackEpoch.current = epoch; }, []);
   const deckLinkTakeInFlight = useRef(false);
   const updaterApprovalOpenRef = useRef(false);
   const screenModalConfirmationOpenRef = useRef(false);
@@ -243,9 +232,10 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       if (event.version !== 1) return;
       if (event.kind === "lifecycle") setLifecycle(event.state);
       if (event.kind === "auth-callback") {
-        // Callbacks are native-queued. Do not associate one received while the
-        // old identity is being cleared with the boundary for the new origin.
-        if (!apiOriginChangeInFlight.current) setAuthCallback(event.url);
+        // A native API-origin transition clears callbacks and advances this
+        // epoch atomically. A delayed event from the prior boundary must never
+        // be associated with the rekeyed identity session.
+        if (!apiOriginChangeInFlight.current && (event.authCallbackEpoch === undefined || event.authCallbackEpoch === authCallbackEpoch.current)) setAuthCallback(event.url);
       }
       if (event.kind === "deck-link") peekPendingDeckLink();
       if (event.kind === "shortcut-triggered") {
@@ -468,23 +458,16 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       setApiChangeError("policy");
       return;
     }
-    if (!await drainPendingAuthCallback(bridge)) {
-      // Do not expose an old-origin callback to the new identity boundary. The
-      // old preference remains authoritative while the native policy is restored.
-      try {
-        const restoredPolicy = await bridge.request({ operation: "session.configure-origins", apiOrigin: preferences.apiOrigin });
-        if (restoredPolicy.kind === "session-network-policy" && restoredPolicy.changed) location.reload();
-      } catch {
-        location.reload();
-      }
+    if (policy.kind !== "session-network-policy") {
       setIdentityRecoveryGeneration((current) => current + 1);
       apiOriginChangeInFlight.current = false;
       setApiChangeError("policy");
       return;
     }
+    if (policy.authCallbackEpoch !== undefined) acceptAuthCallbackEpoch(policy.authCallbackEpoch);
     update({ apiOrigin: normalized });
     apiOriginChangeInFlight.current = false;
-    if (policy.kind === "session-network-policy" && policy.changed) location.reload();
+    if (policy.changed) location.reload();
   };
   const requestNotifications = async () => {
     setNotificationRequestFailed(false);
@@ -515,11 +498,11 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const externalMessageIsError = externalMessage !== "opened";
 
   const NativeMessagingBoundary = nativeMessaging?.Boundary;
-  const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={preferences.apiOrigin} apiOrigin={preferences.apiOrigin} active online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onCallbackConsumed={clearConsumedAuthCallback} onDeckLinkPolicyReady={markDeckLinkPolicyReady} onContinueLocally={finishOnboarding} onLoggedOut={() => { realqaController.current?.reset(); setRequestedCapture(null); setSurface(SurfaceId.Account); }} initialAppearance={{ theme: preferences.theme, language: preferences.language }} identitySessionRef={identitySession} identityRecoveryGeneration={identityRecoveryGeneration}><UrlMappingDraftProvider><DeckPollingBoundary bridge={bridge} active={lifecycle === LifecycleState.Active} online={online} language={language}><SynchronizedAppearanceBoundary onAppearance={(appearance) => update({ theme: appearance.theme, language: appearance.language })} />{runtime.platform === RuntimePlatform.Desktop && NativeMessagingBoundary && <NativeMessagingBoundary />}{content}</DeckPollingBoundary></UrlMappingDraftProvider></DevHudServiceBoundary> : content;
+  const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={preferences.apiOrigin} apiOrigin={preferences.apiOrigin} active online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onCallbackConsumed={clearConsumedAuthCallback} onAuthCallbackEpoch={acceptAuthCallbackEpoch} onDeckLinkPolicyReady={markDeckLinkPolicyReady} onContinueLocally={finishOnboarding} onLoggedOut={() => { realqaController.current?.reset(); setRequestedCapture(null); setSurface(SurfaceId.Account); }} initialAppearance={{ theme: preferences.theme, language: preferences.language }} identitySessionRef={identitySession} identityRecoveryGeneration={identityRecoveryGeneration}><UrlMappingDraftProvider><DeckPollingBoundary bridge={bridge} active={lifecycle === LifecycleState.Active} online={online} language={language}><SynchronizedAppearanceBoundary onAppearance={(appearance) => update({ theme: appearance.theme, language: appearance.language })} />{runtime.platform === RuntimePlatform.Desktop && NativeMessagingBoundary && <NativeMessagingBoundary />}{content}</DeckPollingBoundary></UrlMappingDraftProvider></DevHudServiceBoundary> : content;
 
   if (runtimeState.kind !== ContentStateKind.Ready) return <main className="standalone-shell" data-devhud-ready="true"><ContentStateView state={runtimeState} copy={copy} onRetry={() => location.reload()} /></main>;
 
-  if (onboarding) return boundary(<main className="standalone-shell" data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "loading"}><FirstRunIdentity copy={copy} apiOrigin={preferences.apiOrigin} onApiOrigin={applyApiOrigin} onComplete={finishOnboarding} apiChangeError={apiChangeError ? copy.apiChangeFailed : null} /></main>);
+  if (onboarding) return boundary(<main className="standalone-shell" data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "loading"}><FirstRunIdentity copy={copy} apiOrigin={preferences.apiOrigin} onApiOrigin={applyApiOrigin} onComplete={finishOnboarding} apiChangeError={apiChangeError === "policy" ? copy.apiChangePolicyFailed : apiChangeError === "cleanup" ? copy.apiChangeFailed : null} /></main>);
 
   const moreCurrent = surface === SurfaceId.Realqa || surface === SurfaceId.Diagnostics;
   const navigate = (nextSurface: SurfaceId) => {

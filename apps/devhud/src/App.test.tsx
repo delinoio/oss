@@ -397,7 +397,28 @@ describe("native App state", () => {
     expect(document.activeElement).toBe(screen.getByRole("textbox", { name: messages.en.apiOrigin }));
   });
 
-  it("retries callback draining before persisting the new origin", async () => {
+  it("preserves policy-failure copy during first-run API-origin changes", async () => {
+    localStorage.removeItem("devhud.shell.onboarding.v1");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const bridge = bridgeWith(async (request) => {
+      if (request.operation === "session.configure-origins") {
+        if (request.apiOrigin === "https://custom.example") throw new Error("policy-configuration-failed");
+        return { kind: "session-network-policy", changed: false, authCallbackEpoch: 0 };
+      }
+      if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+      if (request.operation === "secure.purge") return { kind: "ok" };
+      throw new Error(`unexpected operation ${request.operation}`);
+    });
+
+    render(<App bridge={bridge} initialRuntime={mobileRuntime} />);
+    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).getByRole("button", { name: messages.en.applyApiOrigin }));
+
+    await waitFor(() => expect(within(document.querySelector(".api-origin-editor") as HTMLElement).getByRole("alert").textContent).toBe(messages.en.apiChangePolicyFailed));
+  });
+
+  it("persists an origin after its native callback boundary is atomically configured", async () => {
     let authenticated = true;
     vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
       getAccessToken: async () => "fixture-access-token",
@@ -416,12 +437,11 @@ describe("native App state", () => {
       logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
       logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
     }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
-    let callbackDrainAttempts = 0;
+    let callbackDrains = 0;
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
-      if (value.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      if (value.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false, authCallbackEpoch: value.apiOrigin === "https://custom.example" ? 1 : 0 };
       if (value.operation === "auth.take-pending-callback") {
-        callbackDrainAttempts += 1;
-        if (callbackDrainAttempts === 2) throw new Error("post-policy-callback-discard-failed");
+        callbackDrains += 1;
         return { kind: "auth-callback", url: null };
       }
       if (value.operation === "secure.purge") return { kind: "ok" };
@@ -437,38 +457,11 @@ describe("native App state", () => {
 
     await waitFor(() => expect(JSON.parse(localStorage.getItem("devhud.shell.preferences.v1") ?? "null").apiOrigin).toBe("https://custom.example"));
     expect(screen.queryByText(messages.en.apiChangePolicyFailed)).toBeNull();
-    expect(callbackDrainAttempts).toBe(3);
+    expect(callbackDrains).toBe(1);
     await waitFor(() => expect(identityClient.createIdentitySession).toHaveBeenCalledTimes(2));
   });
 
-  it("restores the old policy when both post-policy callback drains fail", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
-    let callbackDrainAttempts = 0;
-    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
-      if (value.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
-      if (value.operation === "auth.take-pending-callback") {
-        callbackDrainAttempts += 1;
-        if (callbackDrainAttempts > 1) throw new Error("callback-drain-unavailable");
-        return { kind: "auth-callback", url: null };
-      }
-      if (value.operation === "secure.purge") return { kind: "ok" };
-      throw new Error(`unexpected operation ${value.operation}`);
-    });
-
-    render(<App bridge={bridgeWith(request)} initialRuntime={mobileRuntime} />);
-    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
-    fireEvent.change(screen.getByRole("textbox", { name: messages.en.apiOrigin }), { target: { value: "https://custom.example" } });
-    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
-    fireEvent.click(within(await screen.findByRole("dialog", { name: messages.en.apiChangeConfirmTitle })).getByRole("button", { name: messages.en.applyApiOrigin }));
-
-    await waitFor(() => expect(within(document.querySelector(".api-origin-editor") as HTMLElement).getByRole("alert").textContent).toBe(messages.en.apiChangePolicyFailed));
-    expect(JSON.parse(localStorage.getItem("devhud.shell.preferences.v1") ?? "null").apiOrigin).toBe("https://devhud.api.delino.io");
-    expect(callbackDrainAttempts).toBe(3);
-    const policyCalls = request.mock.calls.map(([value]) => value).filter((value) => value.operation === "session.configure-origins");
-    expect(policyCalls.at(-1)).toEqual({ operation: "session.configure-origins", apiOrigin: "https://devhud.api.delino.io" });
-  });
-
-  it("quarantines callbacks received while changing the API origin policy", async () => {
+  it("rejects delayed callbacks from the old native origin policy", async () => {
     const listeners: Array<(event: NativeBridgeEventV1) => void> = [];
     const handleCallback = vi.fn(async () => {});
     const session = {
@@ -497,9 +490,9 @@ describe("native App state", () => {
         if (value.operation === "session.configure-origins") {
           if (value.apiOrigin === "https://custom.example" && switchPolicyPending) {
             switchPolicyPending = false;
-            return new Promise((resolve) => { completePolicy = () => resolve({ kind: "session-network-policy", changed: false }); });
+            return new Promise((resolve) => { completePolicy = () => { pendingCallback = null; resolve({ kind: "session-network-policy", changed: false, authCallbackEpoch: 1 }); }; });
           }
-          return { kind: "session-network-policy", changed: false };
+          return { kind: "session-network-policy", changed: false, authCallbackEpoch: value.apiOrigin === "https://custom.example" ? 1 : 0 };
         }
         if (value.operation === "auth.take-pending-callback") {
           const url = pendingCallback;
@@ -522,12 +515,13 @@ describe("native App state", () => {
     await waitFor(() => expect(completePolicy).toBeTypeOf("function"));
 
     pendingCallback = "devhud://auth/callback?code=old&state=old";
-    act(() => listeners[0]({ version: 1, kind: "auth-callback", url: pendingCallback as string }));
+    act(() => listeners[0]({ version: 1, kind: "auth-callback", url: pendingCallback as string, authCallbackEpoch: 0 }));
     await act(async () => { completePolicy?.(); });
 
     await waitFor(() => expect(JSON.parse(localStorage.getItem("devhud.shell.preferences.v1") ?? "null").apiOrigin).toBe("https://custom.example"));
     await waitFor(() => expect(identityClient.createIdentitySession).toHaveBeenCalledTimes(2));
     expect(pendingCallback).toBeNull();
+    act(() => listeners[0]({ version: 1, kind: "auth-callback", url: "devhud://auth/callback?code=late&state=old", authCallbackEpoch: 0 }));
     expect(handleCallback).not.toHaveBeenCalled();
   });
 
