@@ -52,6 +52,8 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 
 `pending_cancellation_uses_operator_exit_code`, `check_rejects_nul_in_every_shell_argument`, and `docker_host_environment_preserves_resolved_precedence` cover pre-start/pending cancellation, malformed shell prefixes, and isolated inherited/task/CLI environment precedence. Scenario 25 also exercises session input and schedule propagation after unchanged prerequisites.
 
+The library regression `invalidation_at_each_publication_boundary_preserves_previous_entry` checks cancellation and failed input validation before object publication, before entry replacement, and after replacement under the exclusive cache lock, with and without a previous entry.
+
 Additional invariants include unknown/duplicate configuration rejection, schema freshness, stale/partial CI receipt rejection, required artifact accounting, cache path traversal rejection before mutation, masked stored logs, and service failure cancelling other running checks before returning.
 
 `grouped_tasks_only_receive_their_declared_secrets` passes a CI-style credential union to a real CLI run: only the declaring task receives the credential, and persisted output remains masked.

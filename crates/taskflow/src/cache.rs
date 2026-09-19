@@ -599,20 +599,72 @@ pub fn encode(artifact: &Artifact) -> Result<Vec<u8>> {
 }
 pub fn store(root: &Path, artifact: &Artifact) -> Result<Vec<u8>> {
     let bytes = encode(artifact)?;
+    store_encoded_if(root, &artifact.key, &bytes, || Ok(true))?;
+    Ok(bytes)
+}
+
+pub(crate) fn store_if(
+    root: &Path,
+    artifact: &Artifact,
+    valid: impl FnMut() -> Result<bool>,
+) -> Result<bool> {
+    store_encoded_if(root, &artifact.key, &encode(artifact)?, valid)
+}
+
+#[derive(Debug)]
+pub(crate) struct PublicationRollbackFailure;
+impl std::fmt::Display for PublicationRollbackFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("local cache publication rollback failed")
+    }
+}
+impl std::error::Error for PublicationRollbackFailure {}
+
+fn store_encoded_if(
+    root: &Path,
+    key: &str,
+    bytes: &[u8],
+    mut valid: impl FnMut() -> Result<bool>,
+) -> Result<bool> {
     let _lock = lock(root, CacheLock::Exclusive)?;
-    let object = files::digest(&bytes);
+    if !valid()? {
+        return Ok(false);
+    }
+    let object = files::digest(bytes);
     files::atomic_write(
         &root
             .join(".taskflow/cache/objects")
             .join(format!("{object}.json")),
-        &bytes,
+        bytes,
     )?;
-    files::atomic_write(
-        &entry_path(root, &artifact.key),
-        &serde_json::to_vec(&Entry { version: 1, object })?,
-    )?;
-    Ok(bytes)
+    if !valid()? {
+        return Ok(false);
+    }
+    let entry = entry_path(root, key);
+    let previous = match std::fs::read(&entry) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
+    };
+    files::atomic_write(&entry, &serde_json::to_vec(&Entry { version: 1, object })?)?;
+    // Readers cannot observe the replacement until this lock is released. If
+    // cancellation or input invalidation wins during synchronous publication,
+    // restore the previous binding before exposing the cache again.
+    let accepted = valid();
+    if !matches!(accepted, Ok(true)) {
+        match previous {
+            Some(bytes) => files::atomic_write(&entry, &bytes),
+            None => remove_path(&entry),
+        }
+        .context(PublicationRollbackFailure)?;
+        tracing::info!(
+            code = "cache-publication-rolled-back",
+            "Discarded invalidated local cache publication"
+        );
+    }
+    accepted
 }
+
 pub fn load(root: &Path, key: &str) -> Result<Option<Artifact>> {
     let _lock = read_lock(root)?;
     let path = entry_path(root, key);
@@ -645,4 +697,46 @@ pub fn valid_hash(value: &str) -> bool {
         && value
             .bytes()
             .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+}
+
+#[cfg(test)]
+mod publication_tests {
+    use super::*;
+
+    #[test]
+    fn invalidation_at_each_publication_boundary_preserves_previous_entry() {
+        for previous in [false, true] {
+            for stop_at in 1..=3 {
+                for fail_check in [false, true] {
+                    let root = tempfile::tempdir().unwrap();
+                    let key = files::digest(b"task");
+                    if previous {
+                        store_encoded_if(root.path(), &key, b"old", || Ok(true)).unwrap();
+                    }
+                    let before = std::fs::read(entry_path(root.path(), &key)).ok();
+                    let cancel = tokio_util::sync::CancellationToken::new();
+                    let mut calls = 0;
+                    let result = store_encoded_if(root.path(), &key, b"new", || {
+                        calls += 1;
+                        if calls == stop_at {
+                            cancel.cancel();
+                        }
+                        if calls == 3 {
+                            // Exercise rollback after the entry's atomic replace,
+                            // while cache readers are still excluded by the lock.
+                            assert_ne!(std::fs::read(entry_path(root.path(), &key)).ok(), before);
+                        }
+                        if cancel.is_cancelled() && fail_check {
+                            anyhow::bail!("input snapshot unavailable");
+                        }
+                        Ok(!cancel.is_cancelled())
+                    });
+                    assert_eq!(result.is_err(), fail_check);
+                    assert!(!result.unwrap_or(false));
+                    assert_eq!(calls, stop_at);
+                    assert_eq!(std::fs::read(entry_path(root.path(), &key)).ok(), before);
+                }
+            }
+        }
+    }
 }

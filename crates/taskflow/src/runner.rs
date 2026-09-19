@@ -308,7 +308,8 @@ pub async fn run_plan(
                         // exit. Unverified cleanup still overrides cancellation.
                         let cancelled = token.is_cancelled()
                             && !error.is::<crate::docker::CleanupFailure>()
-                            && !error.is::<crate::process::CleanupFailure>();
+                            && !error.is::<crate::process::CleanupFailure>()
+                            && !error.is::<cache::PublicationRollbackFailure>();
                         // Detailed native stderr already passes through the masker;
                         // engine errors contain identifiers and stable context only.
                         let node = &graph.tasks[&id];
@@ -601,7 +602,13 @@ async fn run_task(
                 // Restoration and report writes are synchronous. Cancellation
                 // can arrive from a signal or session owner while they run.
                 ensure!(!cancel.is_cancelled(), "task cancelled during cache reuse");
-                cache::store(&graph.workspace.root, &artifact)?;
+                ensure!(
+                    cache::store_if(&graph.workspace.root, &artifact, || {
+                        Ok(!cancel.is_cancelled()
+                            && files::input_state(&graph.workspace, project, task)? == inputs)
+                    })?,
+                    "task invalidated during cache publication"
+                );
                 ensure!(
                     !cancel.is_cancelled(),
                     "task cancelled during cache publication"
@@ -909,7 +916,9 @@ async fn publish(
         if !valid(receipt)? {
             return Ok(());
         }
-        cache::store(&graph.workspace.root, &artifact)?;
+        if !cache::store_if(&graph.workspace.root, &artifact, || valid(receipt))? {
+            return Ok(());
+        }
     }
     if valid(receipt)? {
         persist(&graph.workspace.root, receipt)?;

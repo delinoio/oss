@@ -21,6 +21,7 @@
 - Environment scoping, precedence, masking, fingerprints, runtime retention, and transport credential exclusion use the host's environment-name comparison; Windows names follow its ordinal case-insensitive rules.
 - Cache link validation follows archive link chains and existing filesystem ancestors before processing parent components; lexical containment alone cannot authorize restoration.
 - Cache link records use portable separators; Windows link creation converts targets to native separators before invoking the filesystem API.
+- Local cache publication rechecks cancellation and inputs under its exclusive lock before and after entry replacement; invalidation restores the previous binding before readers resume, and rollback failures remain failures.
 - Local cache readers, writers, and cleaning share a process-safe cache lock outside the removable cache tree; never hold it during commands or network operations.
 - Reject semantically invalid local entries before remote fallback selection; valid JSON alone never blocks a compatible remote artifact.
 - Cache verification checks artifact identity, content digests, paths, and shard accounting independently of current configuration, rejecting descendants of every non-directory record; restoration additionally validates project ownership and link containment.
