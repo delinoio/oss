@@ -14,6 +14,9 @@ The command runs in a temporary checkout, never by changing or rerunning it in y
 
 Configure preparation steps explicitly. Every step must succeed before the target starts. A missing dependency or credential is a setup failure, not a reason to copy the user's environment.
 
+Global read/write policy boundaries also apply to preparation steps. Input/output
+declarations and baseline new-access checks apply to the target command.
+
 Without a baseline, success means clean execution and applicable configured checks passed. It does **not** establish equivalence to your current worktree.
 
 A baseline must use the same source revision and working-tree inclusion policy as the clean run. Different source selections make the comparison inconclusive, even when observed file contents match.

@@ -313,9 +313,12 @@ pub fn policy(
     let deny_write = config::patterns(&rules.deny_writes)?;
     let mut result = Analysis::new(AnalysisKind::Policy);
     target_quality(&mut result, report)?;
-    for execution in report.targets() {
-        quality(&mut result, execution)?;
-        if rules.require_inputs || rules.require_outputs {
+    for execution in report.current_executions() {
+        let target = execution.role == Role::Target;
+        if target {
+            quality(&mut result, execution)?;
+        }
+        if target && (rules.require_inputs || rules.require_outputs) {
             let command = execution
                 .command
                 .name
@@ -332,7 +335,7 @@ pub fn policy(
                 rules.require_outputs,
             )?;
         }
-        let previous = baseline.and_then(|report| {
+        let previous = baseline.filter(|_| target).and_then(|report| {
             report.targets().find(|old| {
                 old.command.name == execution.command.name
                     && old.command.argv == execution.command.argv
@@ -351,7 +354,7 @@ pub fn policy(
                 )?;
             }
         }
-        if baseline.is_some() && previous.is_none() {
+        if target && baseline.is_some() && previous.is_none() {
             result.finding(
                 FindingCode::UnknownEvidence,
                 Classification::Unknown,

@@ -555,6 +555,82 @@ fn historical_baseline_errors_do_not_become_current_exit_codes() {
     }
 }
 #[test]
+fn preparation_obeys_global_policy_boundaries_in_clean_and_repeat() {
+    let root = repository("read");
+    fs::write(root.path().join("private.txt"), "private").unwrap();
+    fs::write(root.path().join("result.txt"), "stable output").unwrap();
+    git(root.path(), &["add", "."]);
+    git(root.path(), &["commit", "-qm", "preparation fixtures"]);
+    let tool = fixture().replace('\\', "/");
+    for (index, (prepare, policy, code)) in [
+        (
+            format!("[{tool:?}, \"read\", \"private.txt\"]"),
+            "deny_reads = [\"private.txt\"]",
+            "read-boundary",
+        ),
+        (
+            format!("[{tool:?}, \"read\", \"private.txt\"]"),
+            "allow_reads = [\"input.txt\", \"${home}/**\", \"/**\", \"C:/**\"]",
+            "read-boundary",
+        ),
+        (
+            format!("[{tool:?}, \"read-write\"]"),
+            "deny_writes = [\"out/**\"]",
+            "write-boundary",
+        ),
+        (
+            format!("[{tool:?}, \"read-write\"]"),
+            "allow_writes = [\"result.txt\"]",
+            "write-boundary",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        fs::write(
+            root.path().join("runlens.toml"),
+            format!(
+                r#"schema_version = 1
+[commands.build]
+argv = [{tool:?}, "read"]
+prepare = [{prepare}]
+inputs = ["input.txt"]
+outputs = ["result.txt"]
+[policy]
+{policy}
+"#
+            ),
+        )
+        .unwrap();
+        for mode in ["clean", "repeat"] {
+            let name = format!("preparation-{index}-{mode}.json");
+            let result = invoke(root.path(), &["verify", mode, "build", "--save", &name]);
+            assert_eq!(
+                result.status.code(),
+                Some(5),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            let value = parse(root.path(), &name);
+            let preparation_ids = value["executions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|e| e["role"] == "preparation")
+                .map(|e| &e["id"])
+                .collect::<Vec<_>>();
+            assert!(value["findings"].as_object().unwrap().values().any(|f| {
+                f["code"] == code
+                    && f["evidence"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|e| preparation_ids.contains(&&e["execution_id"]))
+            }));
+        }
+    }
+}
+#[test]
 #[cfg(unix)]
 fn deny_only_policy_cannot_pass_unresolved_path_aliases() {
     let root = repository("read");

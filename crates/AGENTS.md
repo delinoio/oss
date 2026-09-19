@@ -166,4 +166,5 @@
 - Offline path queries follow the report's OS syntax, including Windows drive and UNC paths; do not reinterpret Unix literal backslashes as separators.
 - Combined clean/repeat verdicts preserve definite failures ahead of inconclusive results and passes; an incomplete baseline cannot erase a policy violation.
 - Preserve imported baseline executions as historical evidence with the baseline role; only current target/preparation errors determine invocation exit status or receive current cleanup failures.
+- Apply global read/write policy boundaries to current preparation and target executions. Target input/output declarations and baseline new-access comparisons remain target-scoped.
 - Retained evidence maps share a process-wide memory threshold, including repeat rounds and supplied reports. Cancellation handlers must be registered before owned child work. Reject known macOS restrictive code-signing flags and restricted segments by bounded passive inspection; never invoke the target to discover its version.

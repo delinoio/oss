@@ -429,6 +429,10 @@ Cancellation handlers are installed before owned child work. Native cancellation
 fixtures synchronize on actual child readiness rather than assuming startup time.
 
 Offline checks never pass a report with no target execution.
+Global allow/deny read/write boundaries cover both current preparation and target
+executions, including snapshot-proven writes. Target input/output coverage and
+baseline new-access comparisons remain target-scoped; imported historical
+baseline records are evidence, not new preparation work.
 Policy checks retain unknown findings for unsupported accesses, uncovered
 workspace paths, and lexical aliases, even with only deny rules configured.
 Known absolute external paths remain usable for literal access-boundary checks
