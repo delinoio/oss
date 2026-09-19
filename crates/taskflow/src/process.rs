@@ -79,10 +79,11 @@ impl OwnedProcess {
     ) -> Result<ProcessExit> {
         let deadline = tokio::time::sleep(timeout.unwrap_or(Duration::from_secs(365 * 86400)));
         tokio::pin!(deadline);
-        let status = tokio::select! {
-            result = self.child.wait() => Some(result?),
-            _ = cancel.cancelled() => None,
-            _ = &mut deadline => None,
+        let (status, reason) = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => (None, ExitReason::Cancelled),
+            result = self.child.wait() => (Some(result?), ExitReason::Completed),
+            _ = &mut deadline => (None, ExitReason::TimedOut),
         };
         if let Some(status) = status {
             // A finite command may leave descendants with inherited pipes. Reap the
@@ -90,13 +91,17 @@ impl OwnedProcess {
             self.kill_tree();
             Ok(ProcessExit {
                 code: status.code().unwrap_or(1),
-                cancelled: false,
+                reason,
             })
         } else {
             self.terminate().await?;
             Ok(ProcessExit {
-                code: 130,
-                cancelled: true,
+                code: if reason == ExitReason::TimedOut {
+                    124
+                } else {
+                    130
+                },
+                reason,
             })
         }
     }
@@ -162,7 +167,18 @@ impl Drop for OwnedProcess {
 #[derive(Debug, Clone, Copy)]
 pub struct ProcessExit {
     pub code: i32,
-    pub cancelled: bool,
+    pub reason: ExitReason,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExitReason {
+    Completed,
+    Cancelled,
+    TimedOut,
+}
+impl ProcessExit {
+    pub fn cancelled(self) -> bool {
+        self.reason == ExitReason::Cancelled
+    }
 }
 
 pub fn argv(command: &Command, shell: Option<&[String]>) -> Vec<String> {
@@ -252,7 +268,7 @@ async fn capture_output(
     let output = out.await??;
     let errors = err.await??;
     ensure!(
-        status.code == 0 && !status.cancelled,
+        status.code == 0 && !status.cancelled(),
         "native command failed (exit {})",
         status.code
     );

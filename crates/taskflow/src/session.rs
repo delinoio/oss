@@ -202,7 +202,7 @@ pub async fn start(
                 event = service_receiver.recv() => {
                     if let Some((id, status)) = event {
                         services.controls.lock().unwrap().remove(&id);
-                        if active_set.contains(&id) && !status.cancelled { anyhow::bail!("service {id} exited ({}); shutting down session", status.code); }
+                        if active_set.contains(&id) && !status.cancelled() { anyhow::bail!("service {id} exited ({}); shutting down session", status.code); }
                     }
                 }
                 Some(result) = waves.join_next(), if !waves.is_empty() => {

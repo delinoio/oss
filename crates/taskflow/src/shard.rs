@@ -861,7 +861,7 @@ async fn run_unit(
     .await?;
     reaped?;
     let status = waited?;
-    Ok(if status.cancelled {
+    Ok(if status.cancelled() {
         UnitStatus::Cancelled
     } else if status.code == 0 {
         UnitStatus::Passed

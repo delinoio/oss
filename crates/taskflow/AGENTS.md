@@ -21,6 +21,7 @@
 - Cache verification checks artifact identity, content digests, paths, and shard accounting independently of current configuration; restoration additionally validates project ownership and link containment.
 - Do not close the detached Unix descendant cleanup gap using process-group tests or periodic PID enumeration; require ownership evidence for setsid/setpgid and double-fork descendants on macOS and Linux.
 - Output-drain failures must still await both stream owners and container removal/absence verification before returning; unverified cleanup takes precedence over log errors.
+- Preserve completed, cancelled, and timed-out process reasons separately; finite deadlines produce failed receipts with code 124, while operator cancellation remains code 130.
 - Every child belongs to a process-tree/container owner; replacement waits for reaping. Tests must assert actual cleanup. Service shutdown must await all owners and propagate every unverified process/container cleanup as failure.
 - Apply overlap policies to per-task execution ownership, not to membership in an unfinished wave.
 - Watch invalidation consumes filesystem mutations, never access notifications from metadata discovery or input hashing. Metadata notifications must confirm a changed or invalid graph before cancelling the active generation; identical rewrites preserve live work.

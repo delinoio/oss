@@ -20,7 +20,7 @@ use crate::{
     files,
     graph::Graph,
     plan::{Cause, Plan},
-    process::{OwnedProcess, ProcessExit},
+    process::{ExitReason, OwnedProcess, ProcessExit},
     remote::Remote,
 };
 
@@ -317,7 +317,11 @@ pub async fn run_plan(
                                     id.clone(),
                                     ProcessExit {
                                         code: if cancelled { 130 } else { 1 },
-                                        cancelled,
+                                        reason: if cancelled {
+                                            ExitReason::Cancelled
+                                        } else {
+                                            ExitReason::Completed
+                                        },
                                     },
                                 ));
                             }
@@ -714,14 +718,10 @@ async fn run_task(
             let waited = process.wait(&stop, remaining).await;
             let mut result = waited.as_ref().copied().unwrap_or(ProcessExit {
                 code: 1,
-                cancelled: false,
+                reason: ExitReason::Completed,
             });
-            if result.cancelled && !stop.is_cancelled() {
+            if result.reason == ExitReason::TimedOut {
                 tracing::warn!(task = %event_id, code = "service-timeout", "Service exceeded its timeout");
-                result = ProcessExit {
-                    code: 124,
-                    cancelled: false,
-                };
             }
             // Reap every owner before propagating any failure. In particular,
             // cancellation is not successful cleanup without daemon verification.
@@ -736,7 +736,7 @@ async fn run_task(
                 tracing::error!(task = %event_id, code = "service-container-cleanup-failed", "Failed to confirm container removal");
                 result = ProcessExit {
                     code: 1,
-                    cancelled: false,
+                    reason: ExitReason::Completed,
                 };
             }
             let _ = events.send((event_id, result));
@@ -776,7 +776,9 @@ async fn run_task(
         version: 1,
         task: id.into(),
         execution: execution.clone(),
-        outcome: if status.cancelled || cancel.is_cancelled() {
+        outcome: if status.reason == ExitReason::TimedOut {
+            Outcome::Failed
+        } else if status.cancelled() || cancel.is_cancelled() {
             Outcome::Cancelled
         } else if status.code != 0 {
             Outcome::Failed
@@ -791,7 +793,7 @@ async fn run_task(
         causes,
         duration_ms: started.elapsed().as_millis() as u64,
         exit_code: status.code,
-        diagnostic: None,
+        diagnostic: (status.reason == ExitReason::TimedOut).then(|| "task timeout elapsed".into()),
     };
     if receipt.success() {
         let unchanged = if result_file.exists() {

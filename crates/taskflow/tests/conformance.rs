@@ -2979,7 +2979,7 @@ async fn setup_cancellation_preserves_receipts_and_service_events() {
             assert!(!directory.path().join("executed").exists());
             if service {
                 let (_, event) = receiver.try_recv().unwrap();
-                assert!(event.cancelled);
+                assert!(event.cancelled());
                 assert_eq!(event.code, 130);
             }
             services.shutdown().await.unwrap();
@@ -3398,6 +3398,75 @@ async fn cache_restore_rejects_filesystem_aliases_before_replacing_outputs() {
                 .file_name()
                 .to_string_lossy()
                 .starts_with(".taskflow-restore-")));
+        }
+    }
+}
+
+#[tokio::test]
+async fn finite_timeouts_fail_while_operator_cancellation_remains_distinct() {
+    for cancelled in [false, true] {
+        let root = fixture(json!({
+            "slow":{"command":command(&["sleep","parent.pid","child.pid"]),"input":[],"output":[],"cache":true,"tools":{"fixture":command(&["version"])},"timeout":"2s"},
+            "dependent":{"command":command(&["write","dependent","unexpected"]),"input":[],"dependsOn":["slow"]}
+        }));
+        let g = graph(root.path()).await;
+        let plan = Plan::create(&g, &["dependent".into()], &[], false).unwrap();
+        let token = CancellationToken::new();
+        let execution = tokio::spawn(runner::run_plan(
+            g,
+            plan,
+            RunOptions {
+                quiet: true,
+                ..RunOptions::default()
+            },
+            token.clone(),
+        ));
+        if cancelled {
+            tokio::time::timeout(Duration::from_secs(10), async {
+                while !root.path().join("child.pid").exists() {
+                    assert!(
+                        !execution.is_finished(),
+                        "task exited before cancellation barrier"
+                    );
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+            token.cancel();
+        }
+        let result = tokio::time::timeout(Duration::from_secs(10), execution)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let receipt = &result.results["app#slow"];
+        assert!(!result.success);
+        assert_eq!(
+            receipt.outcome,
+            if cancelled {
+                Outcome::Cancelled
+            } else {
+                Outcome::Failed
+            }
+        );
+        assert_eq!(receipt.exit_code, if cancelled { 130 } else { 124 });
+        assert_eq!(
+            receipt.diagnostic.as_deref(),
+            if cancelled {
+                None
+            } else {
+                Some("task timeout elapsed")
+            }
+        );
+        assert!(!root.path().join("dependent").exists());
+        assert!(!cache::entry_path(root.path(), &receipt.key).exists());
+        for name in ["parent.pid", "child.pid"] {
+            let pid = std::fs::read_to_string(root.path().join(name))
+                .unwrap()
+                .parse()
+                .unwrap();
+            assert!(!pid_alive(pid), "{name} survived task completion");
         }
     }
 }
