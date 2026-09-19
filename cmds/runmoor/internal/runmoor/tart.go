@@ -120,7 +120,7 @@ func (t *TartDriver) validateSealed(ctx context.Context, c Config, im *Image, in
 	if v.Running || v.State == "suspended" {
 		return problem(ErrImage, "A sealed base image must remain stopped.", "Stop external access to the base and prepare a new clean revision.")
 	}
-	digest, e := imageDigest(c, im.VM)
+	digest, e := imageDigest(ctx, c, im.VM)
 	if e != nil {
 		return e
 	}
@@ -385,15 +385,41 @@ func (t *TartDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapshot
 	}
 	return nil
 }
-func imageDigest(c Config, vm string) (string, error) {
+
+// Keep file reads bounded and hide os.File.WriteTo so io.CopyBuffer cannot
+// bypass cancellation checks while hashing a multi-gigabyte VM disk.
+type imageDigestReader struct {
+	ctx context.Context
+	src io.Reader
+}
+
+func (r imageDigestReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	n, err := r.src.Read(p)
+	if cancelled := r.ctx.Err(); cancelled != nil {
+		return n, cancelled
+	}
+	return n, err
+}
+
+func imageDigest(ctx context.Context, c Config, vm string) (string, error) {
 	h := sha256.New()
+	buf := make([]byte, 64<<10)
 	for _, name := range []string{"config.json", "nvram.bin", "disk.img"} {
+		if e := ctx.Err(); e != nil {
+			return "", e
+		}
 		f, e := os.Open(filepath.Join(vmPath(c, vm), name))
 		if e != nil {
 			return "", problem(ErrImage, "Prepared image files are incomplete.", "Prepare a standalone Tart macOS image before sealing.")
 		}
-		_, e = io.Copy(h, f)
+		_, e = io.CopyBuffer(h, imageDigestReader{ctx: ctx, src: f}, buf)
 		ce := f.Close()
+		if cancelled := ctx.Err(); cancelled != nil {
+			return "", cancelled
+		}
 		if e != nil || ce != nil {
 			return "", problem(ErrImage, "Cannot hash the prepared image.", "Check disk integrity and retry sealing.")
 		}

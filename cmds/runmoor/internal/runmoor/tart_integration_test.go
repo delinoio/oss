@@ -93,7 +93,7 @@ func TestTartIntegration(t *testing.T) {
 	if e = other.Cleanup(ctx, c, r, s.View()); e != nil {
 		t.Fatal(e)
 	}
-	digest, e := imageDigest(c, im.VM)
+	digest, e := imageDigest(ctx, c, im.VM)
 	if e != nil || digest != im.Digest {
 		t.Fatal("sealed base changed during clone execution")
 	}

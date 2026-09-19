@@ -246,7 +246,7 @@ func TestTartImageLifecycleAndCredentialBoundary(t *testing.T) {
 	if e = driver.Cleanup(ctx, c, r, snap); e != nil {
 		t.Fatal(e)
 	}
-	digest, e := imageDigest(c, im.VM)
+	digest, e := imageDigest(ctx, c, im.VM)
 	if e != nil || digest != im.Digest {
 		t.Fatal("base mutated during job lifecycle")
 	}

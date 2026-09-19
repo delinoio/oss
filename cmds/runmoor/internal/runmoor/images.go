@@ -114,7 +114,7 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 		if e = m.Tart.Stop(ctx, c, r, s); e != nil {
 			return nil, m.imageFailure(im.ID, e)
 		}
-		digest, e := imageDigest(c, im.VM)
+		digest, e := imageDigest(ctx, c, im.VM)
 		if e != nil {
 			return nil, m.imageFailure(im.ID, e)
 		}
