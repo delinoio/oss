@@ -358,7 +358,7 @@ func (a *API) GetChanges(ctx context.Context, r *connect.Request[pb.GetChangesRe
 	return connect.NewResponse(&pb.GetChangesResponse{Base: v.Base, Head: v.Head, MergeBase: v.MergeBase, Diff: v.Diff, Truncated: v.Truncated}), nil
 }
 func (a *API) ListRuns(_ context.Context, r *connect.Request[pb.ListRunsRequest]) (*connect.Response[pb.ListRunsResponse], error) {
-	page, e := a.s.Store.ListFiltered(r.Msg.RepositoryId, r.Msg.WorktreeId, r.Msg.Branch, r.Msg.Inbox, r.Msg.Cursor, int(r.Msg.Limit))
+	page, e := a.s.Store.ListFiltered(r.Msg.RepositoryId, r.Msg.WorktreeId, r.Msg.Branch, r.Msg.Detached, r.Msg.Inbox, r.Msg.Cursor, int(r.Msg.Limit))
 	if e != nil {
 		return nil, apiError(e)
 	}

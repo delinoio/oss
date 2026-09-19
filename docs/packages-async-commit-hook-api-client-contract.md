@@ -10,6 +10,7 @@ TypeScript, protobuf-es and Connect Query generated from async_commit_hook.v1.
 The ach static application and protocol maintainers.
 
 ## Interfaces and Contracts
+Run-list requests use the generated `detached` boolean to select detached executions; an empty branch alone means unfiltered branches. Retain this discriminator in query keys and cursor requests.
 Export versioned messages, enums, services and namespaced query bindings. No independent gate implementation or implicit persistence. Generate committed src/gen; compile ignored dist before consumers build.
 
 ## Storage

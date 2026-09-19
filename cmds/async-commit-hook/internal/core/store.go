@@ -271,10 +271,10 @@ func (s *Store) Ack(id string) error {
 	})
 }
 func (s *Store) List(repo string, inbox bool, cursor string, limit int) (Page, error) {
-	return s.ListFiltered(repo, "", "", inbox, cursor, limit)
+	return s.ListFiltered(repo, "", "", false, inbox, cursor, limit)
 }
-func (s *Store) ListFiltered(repo, worktree, branch string, inbox bool, cursor string, limit int) (Page, error) {
-	if len(branch) > 1024 || (worktree != "" && !ValidID(worktree)) {
+func (s *Store) ListFiltered(repo, worktree, branch string, detached, inbox bool, cursor string, limit int) (Page, error) {
+	if len(branch) > 1024 || (worktree != "" && !ValidID(worktree)) || (detached && branch != "") {
 		return Page{}, E("invalid-run-filter", "invalid branch or worktree", 2)
 	}
 	if limit == 0 {
@@ -284,7 +284,7 @@ func (s *Store) ListFiltered(repo, worktree, branch string, inbox bool, cursor s
 		return Page{}, E("invalid-page-size", "page size must be 1..200", 2)
 	}
 	upper := int64(1<<63 - 1)
-	scope := repo + "/" + strconv.FormatBool(inbox) + "/" + worktree + "/" + branch
+	scope := repo + "/" + strconv.FormatBool(inbox) + "/" + worktree + "/" + branch + "/" + strconv.FormatBool(detached)
 	if cursor != "" {
 		b, e := base64.RawURLEncoding.DecodeString(cursor)
 		if e != nil {
@@ -309,7 +309,7 @@ func (s *Store) ListFiltered(repo, worktree, branch string, inbox bool, cursor s
 		q += " AND worktree=?"
 		args = append(args, worktree)
 	}
-	if branch != "" {
+	if branch != "" || detached {
 		q += " AND branch=?"
 		args = append(args, branch)
 	}

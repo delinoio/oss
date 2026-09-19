@@ -434,7 +434,7 @@ function Workspace({
   );
 }
 
-function RunList({
+export function RunList({
   repository,
   worktree,
   branch,
@@ -461,6 +461,7 @@ function RunList({
       repositoryId: repository,
       worktreeId: worktree,
       branch,
+      detached: !inbox && worktree !== "" && branch === "",
       inbox,
       cursor,
       limit: 50,

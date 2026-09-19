@@ -5,7 +5,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ExecutionState, LocalService, RunSchema } from "@delinoio/async-commit-hook-api-client";
 import { expect, it, vi } from "vitest";
-import { RunDetail } from "./App";
+import { RunDetail, RunList } from "./App";
 
 it.each([
   ExecutionState.QUEUED, ExecutionState.PREPARING, ExecutionState.RUNNING,
@@ -31,4 +31,18 @@ it.each([
   else expect(acknowledge).not.toHaveBeenCalled();
   unmount();
   client.clear();
+});
+
+it.each([false, true])("distinguishes detached checks from an unfiltered inbox (%s)", async (inbox) => {
+  const listRuns = vi.fn((_request: { branch: string; detached: boolean; inbox: boolean }) => ({ runs: [] }));
+  const transport = createRouterTransport((router) => router.service(LocalService, { listRuns }));
+  const client = new QueryClient();
+  const { unmount } = render(
+    <QueryClientProvider client={client}><TransportProvider transport={transport}>
+      <RunList repository="repo" worktree="worktree" branch="" inbox={inbox} onSelect={() => {}} focusRun="" cursor="" setCursor={() => {}} />
+    </TransportProvider></QueryClientProvider>,
+  );
+  await waitFor(() => expect(listRuns).toHaveBeenCalledOnce());
+  expect(listRuns.mock.calls[0]?.[0]).toMatchObject({ branch: "", detached: !inbox, inbox });
+  unmount(); client.clear();
 });

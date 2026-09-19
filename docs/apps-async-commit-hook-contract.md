@@ -11,6 +11,7 @@ Developers using current desktop Chrome/Edge; local results are never uploaded t
 
 ## Interfaces and Contracts
 The acknowledgement action stays disabled while an execution is queued, preparing, running or collecting; only completed results may be acknowledged.
+Selecting Detached HEAD in Checks shows detached executions only. Inbox spans branches in the selected worktree; switching a filter resets its cursor.
 Repository/worktree and branch navigation; Changes, Commits, Checks, Inbox; run detail, logs, failures and comparison. Explicit acknowledgement, rerun and cancellation. No configuration authoring or arbitrary commands. Changes use configured base, local origin/HEAD, then explicit selection; compare the merge base without fetching.
 
 Pairing receives a single-use five-minute code through a URL fragment or user entry. Remove the fragment after reading. Persist browser authorization per local installation; show revocation, network permission denial, unpaired/disconnected and version errors. Missing data, empty/loading, queued/running, failed/cancelled/interrupted states have actionable next steps. Keyboard, focus, screen-reader and non-color status behavior are required.

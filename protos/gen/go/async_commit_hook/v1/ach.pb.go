@@ -1457,13 +1457,15 @@ func (x *GetChangesResponse) GetTruncated() bool {
 }
 
 type ListRunsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RepositoryId  string                 `protobuf:"bytes,1,opt,name=repository_id,json=repositoryId,proto3" json:"repository_id,omitempty"`
-	Inbox         bool                   `protobuf:"varint,2,opt,name=inbox,proto3" json:"inbox,omitempty"`
-	Cursor        string                 `protobuf:"bytes,3,opt,name=cursor,proto3" json:"cursor,omitempty"`
-	Limit         uint32                 `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
-	Branch        string                 `protobuf:"bytes,5,opt,name=branch,proto3" json:"branch,omitempty"`
-	WorktreeId    string                 `protobuf:"bytes,6,opt,name=worktree_id,json=worktreeId,proto3" json:"worktree_id,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	RepositoryId string                 `protobuf:"bytes,1,opt,name=repository_id,json=repositoryId,proto3" json:"repository_id,omitempty"`
+	Inbox        bool                   `protobuf:"varint,2,opt,name=inbox,proto3" json:"inbox,omitempty"`
+	Cursor       string                 `protobuf:"bytes,3,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	Limit        uint32                 `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
+	Branch       string                 `protobuf:"bytes,5,opt,name=branch,proto3" json:"branch,omitempty"`
+	WorktreeId   string                 `protobuf:"bytes,6,opt,name=worktree_id,json=worktreeId,proto3" json:"worktree_id,omitempty"`
+	// Select detached executions (empty stored branch), not all branches.
+	Detached      bool `protobuf:"varint,7,opt,name=detached,proto3" json:"detached,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1538,6 +1540,13 @@ func (x *ListRunsRequest) GetWorktreeId() string {
 		return x.WorktreeId
 	}
 	return ""
+}
+
+func (x *ListRunsRequest) GetDetached() bool {
+	if x != nil {
+		return x.Detached
+	}
+	return false
 }
 
 type ListRunsResponse struct {
@@ -2541,7 +2550,7 @@ const file_async_commit_hook_v1_ach_proto_rawDesc = "" +
 	"\n" +
 	"merge_base\x18\x03 \x01(\tR\tmergeBase\x12\x12\n" +
 	"\x04diff\x18\x04 \x01(\tR\x04diff\x12\x1c\n" +
-	"\ttruncated\x18\x05 \x01(\bR\ttruncated\"\xb3\x01\n" +
+	"\ttruncated\x18\x05 \x01(\bR\ttruncated\"\xcf\x01\n" +
 	"\x0fListRunsRequest\x12#\n" +
 	"\rrepository_id\x18\x01 \x01(\tR\frepositoryId\x12\x14\n" +
 	"\x05inbox\x18\x02 \x01(\bR\x05inbox\x12\x16\n" +
@@ -2549,7 +2558,8 @@ const file_async_commit_hook_v1_ach_proto_rawDesc = "" +
 	"\x05limit\x18\x04 \x01(\rR\x05limit\x12\x16\n" +
 	"\x06branch\x18\x05 \x01(\tR\x06branch\x12\x1f\n" +
 	"\vworktree_id\x18\x06 \x01(\tR\n" +
-	"worktreeId\"b\n" +
+	"worktreeId\x12\x1a\n" +
+	"\bdetached\x18\a \x01(\bR\bdetached\"b\n" +
 	"\x10ListRunsResponse\x12-\n" +
 	"\x04runs\x18\x01 \x03(\v2\x19.async_commit_hook.v1.RunR\x04runs\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +

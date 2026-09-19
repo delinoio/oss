@@ -160,6 +160,8 @@ message ListRunsRequest {
   uint32 limit = 4;
   string branch = 5;
   string worktree_id = 6;
+  // Select detached executions (empty stored branch), not all branches.
+  bool detached = 7;
 }
 message ListRunsResponse {
   repeated Run runs = 1;

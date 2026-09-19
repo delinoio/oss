@@ -22,3 +22,4 @@
 
 ### async-commit-hook
 - `protos/async_commit_hook/v1` owns package `async_commit_hook.v1`; follow `docs/protos-async-commit-hook-v1-contract.md`. Generate Go bindings and the isolated ach TypeScript client reproducibly. No arbitrary command or filesystem endpoint.
+- Its run-list detached filter must distinguish an empty stored branch from omitted filtering and participate in cursor scope.
