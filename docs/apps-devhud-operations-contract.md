@@ -12,7 +12,7 @@ The private candidate is never public-ready until the complete signed inventory 
 
 CI never builds a signed private candidate and never publishes. It receives no release secrets, uploads no store or release payload, pushes no OCI layout, deploys no service or documentation, changes no updater state, and creates no tag or GitHub Release. SPDX SBOMs and provenance are generated only as local validation evidence. Release workflow behavior is evaluated by deterministic fixtures. Run `pnpm ci:workflows`, `pnpm ci:contracts`, and `pnpm ci:release-fixtures` locally; package-local commands are listed in the applicable README files.
 
-The immutable desktop pin gate includes the x64 and arm64 Sharun 3.2.1 AppImage helper bundles, including their launchers, and their exact SHA-256 digests. Every AppImage build downloads the selected asset, verifies it in memory, and supplies only the verified bytes to the bundler through a loopback-only endpoint; no remote helper-bundle URL reaches the packaging subprocess.
+The immutable desktop pin gate includes the x64 and arm64 Sharun 3.2.1 AppImage helper bundles, including their launchers, and their exact SHA-256 digests. Every AppImage build downloads the selected asset, verifies it in memory, stages the verified executable in a private temporary directory, and injects an app-owned AppImage file mapping for `sharun` before packaging. The upstream packager preserves that existing executable; its separate helper-library archive retains its own checksum validation. Ambient `SHARUN_LINK` and `SKIP_INTEGRITY_CHECKS` overrides are removed, and staging is deleted after the packaging child finishes or fails. No remote helper-bundle URL reaches the packaging subprocess.
 
 ## Release preparation and approval
 

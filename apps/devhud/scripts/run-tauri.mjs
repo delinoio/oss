@@ -52,7 +52,7 @@ try {
   );
   if (environment.DEVHUD_PACKAGE_KIND === "linux-appimage") {
     verifiedAppImageSharun = await prepareVerifiedAppImageSharun();
-    environment = { ...environment, SHARUN_LINK: verifiedAppImageSharun.url };
+    args.push("--config", JSON.stringify(verifiedAppImageSharun.config));
   }
   const targetDirectory = workspaceCargoTargetDirectory();
   stageNativeMessagingHost({ release: command === "build", targetDirectory });
@@ -95,7 +95,7 @@ try {
       await verifiedAppImageSharun.close();
     } catch (error) {
       console.error(
-        `devhud: failed to close the verified AppImage launcher server: ${error.message}`,
+        `devhud: failed to remove the verified AppImage launcher staging: ${error.message}`,
       );
       process.exitCode = 1;
     }
