@@ -147,16 +147,16 @@ async fn managed_git(
             // contain local paths and never enters logs or saved reports.
             let text = String::from_utf8_lossy(&bytes);
             #[cfg(all(windows, feature = "test-support"))]
-            if std::env::var_os("RUNLENS_TEST_GIT_DIAGNOSTICS").is_some() && !text.is_empty() {
-                if let Some(root) = &diagnostic_root {
-                    if let Ok(redactor) = crate::privacy::Redactor::new(
-                        root,
-                        &[root],
-                        &crate::config::Redaction::default(),
-                    ) {
-                        eprintln!("Git fixture diagnostic: {}", redactor.text(&text));
-                    }
-                }
+            if std::env::var_os("RUNLENS_TEST_GIT_DIAGNOSTICS").is_some()
+                && !text.is_empty()
+                && let Some(root) = &diagnostic_root
+                && let Ok(redactor) = crate::privacy::Redactor::new(
+                    root,
+                    &[root],
+                    &crate::config::Redaction::default(),
+                )
+            {
+                eprintln!("Git fixture diagnostic: {}", redactor.text(&text));
             }
             if text.contains("dubious ownership") || text.contains("unsafe repository") {
                 GitFailure::Ownership
