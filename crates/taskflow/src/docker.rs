@@ -144,24 +144,23 @@ pub async fn prepare(
     execution: &str,
     cancel: &CancellationToken,
 ) -> Result<(Command, Container)> {
-    let endpoint = if let Ok(host) = std::env::var("DOCKER_HOST") {
-        host
-    } else {
-        let bytes = process::capture_with_env(
-            root,
-            &Command::Argv(vec![
-                "docker".into(),
-                "context".into(),
-                "inspect".into(),
-                "--format".into(),
-                "{{json .Endpoints.docker.Host}}".into(),
-            ]),
-            environment,
-            cancel,
-        )
-        .await?;
-        serde_json::from_slice::<String>(&bytes)?
-    };
+    // Ask the same CLI with the same environment that will launch the task.
+    // Its selected context can override DOCKER_HOST, and the synthetic default
+    // context incorporates DOCKER_HOST when no named context takes precedence.
+    let bytes = process::capture_with_env(
+        root,
+        &Command::Argv(vec![
+            "docker".into(),
+            "context".into(),
+            "inspect".into(),
+            "--format".into(),
+            "{{json .Endpoints.docker.Host}}".into(),
+        ]),
+        environment,
+        cancel,
+    )
+    .await?;
+    let endpoint = serde_json::from_slice::<String>(&bytes)?;
     ensure!(
         endpoint.starts_with("unix://") || endpoint.starts_with("npipe://"),
         "Docker execution requires a local daemon socket"

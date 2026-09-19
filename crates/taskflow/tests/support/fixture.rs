@@ -10,7 +10,12 @@ fn main() {
     if Path::new(&args[0]).file_stem().unwrap() == "docker" {
         // Fault injection owns a CLI process, never a real Docker daemon.
         match args[1].as_str() {
-            "context" => println!("\"unix:///taskflow-fixture\""),
+            "context" => {
+                let endpoint = if std::env::var("DOCKER_CONTEXT").as_deref() == Ok("remote-fixture") {
+                    "tcp://remote.invalid:2375"
+                } else { "unix:///taskflow-fixture" };
+                println!("\"{endpoint}\"");
+            }
             "run" => {
                 write("docker-start", std::process::id().to_string().as_bytes());
                 std::thread::sleep(Duration::from_secs(30));

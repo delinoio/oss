@@ -3092,3 +3092,54 @@ fn notification_paths_survive_concurrent_file_removal() {
         }
     });
 }
+
+#[tokio::test]
+async fn docker_context_cannot_override_a_validated_local_host() {
+    let directory = fixture(json!({}));
+    let tools = tempfile::tempdir().unwrap();
+    std::fs::copy(
+        helper(),
+        tools.path().join(if cfg!(windows) {
+            "docker.exe"
+        } else {
+            "docker"
+        }),
+    )
+    .unwrap();
+    let paths: Vec<_> = std::iter::once(tools.path().to_path_buf())
+        .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap()))
+        .collect();
+    let mut environment: BTreeMap<String, String> = std::env::vars().collect();
+    // Remove inherited spellings as well: Windows environment names ignore case.
+    environment.retain(|key, _| {
+        !["PATH", "DOCKER_HOST", "DOCKER_CONTEXT"]
+            .iter()
+            .any(|name| key.eq_ignore_ascii_case(name))
+    });
+    environment.insert(
+        "PATH".into(),
+        std::env::join_paths(paths)
+            .unwrap()
+            .to_string_lossy()
+            .into(),
+    );
+    environment.insert("DOCKER_HOST".into(), "unix:///local.sock".into());
+    environment.insert("DOCKER_CONTEXT".into(), "remote-fixture".into());
+    let task: config::Task = serde_json::from_value(json!({"command":["unused"]})).unwrap();
+    let error = taskflow::docker::prepare(
+        directory.path(),
+        directory.path(),
+        &task,
+        &environment,
+        &uuid::Uuid::now_v7().to_string(),
+        &CancellationToken::new(),
+    )
+    .await
+    .err()
+    .unwrap();
+    assert!(
+        error.to_string().contains("local daemon socket"),
+        "{error:#}"
+    );
+    assert!(!directory.path().join("docker-start").exists());
+}

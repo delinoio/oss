@@ -24,5 +24,6 @@
 - Native Go shard arguments use an explicit flag/value contract; reject unknown or selection/output flags before inventory execution.
 - Maintain schema freshness and numbered issue #898 conformance scenarios. Report unavailable platform/service evidence accurately.
 - Keep `docs/crates-taskflow-conformance.md`, the native/Docker CI matrices, and their centralized `scripts/ci/job-paths.json` ownership synchronized. CI result bundles must prove complete task, artifact, and shard accounting against the exact plan; secret transport is forbidden for PR jobs.
+- Validate the effective Docker context endpoint with the exact launch environment; a local DOCKER_HOST cannot authorize an overriding remote context.
 - Probe tools inside the selected Docker image. Docker result reporting must use a container-compatible helper, never the host binary. Remote publication stages content before rechecking cancellation/input state, and session failures await all child owners before returning.
 - Existing repository workflows are not migrated and the crate remains unpublished.
