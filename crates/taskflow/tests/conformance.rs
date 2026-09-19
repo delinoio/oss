@@ -4372,3 +4372,52 @@ async fn docker_forwards_cli_overrides_to_tasks_tools_and_shards() {
         }
     }
 }
+
+#[tokio::test]
+async fn directory_notifications_rescan_descendant_inputs() {
+    let root = fixture(
+        json!({"check":{"command":command(&["record","events","check"]),"input":["src/*.rs","!src/ignored.rs"],"watch":{}}}),
+    );
+    profile(root.path(), &["check"]);
+    files::atomic_write(&root.path().join("src/main.rs"), b"first").unwrap();
+    let g = graph(root.path()).await;
+    let project = &g.workspace.projects["app"];
+    let task = &g.tasks["app#check"].task;
+    assert!(!files::input_matches(project, task, &project.directory.join("src")).unwrap());
+    assert!(files::input_event_may_match(
+        project,
+        task,
+        &project.directory.join("src")
+    ));
+    assert!(!files::input_event_may_match(
+        project,
+        task,
+        &project.directory.join("unrelated")
+    ));
+    assert!(!files::input_event_may_match(
+        project,
+        task,
+        &project.directory.join(".taskflow")
+    ));
+    let cancel = CancellationToken::new();
+    let stop = cancel.clone();
+    let directory = root.path().to_path_buf();
+    let session = tokio::spawn(async move {
+        taskflow::session::start(&directory, "default", RunOptions::default(), stop).await
+    });
+    wait_lines(&root.path().join("events"), "check", 1).await;
+    std::fs::rename(root.path().join("src"), root.path().join("moved")).unwrap();
+    wait_lines(&root.path().join("events"), "check", 2).await;
+    std::fs::rename(root.path().join("moved"), root.path().join("src")).unwrap();
+    wait_lines(&root.path().join("events"), "check", 3).await;
+    std::fs::remove_dir_all(root.path().join("src")).unwrap();
+    wait_lines(&root.path().join("events"), "check", 4).await;
+    cancel.cancel();
+    session.await.unwrap().unwrap();
+    assert!(!files::input_matches(project, task, &project.directory.join("src")).unwrap());
+    assert!(files::input_event_may_match(
+        project,
+        task,
+        &project.directory.join("src")
+    ));
+}

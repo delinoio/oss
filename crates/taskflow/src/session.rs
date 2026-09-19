@@ -189,7 +189,7 @@ pub async fn start(
                                     for id in &active_set {
                                         let node = &graph.tasks[id];
                                         let Some(watch) = &node.task.watch else { continue; };
-                                        if files::input_matches(&graph.workspace.projects[&node.project], &node.task, &path)? {
+                                        if files::input_event_may_match(&graph.workspace.projects[&node.project], &node.task, &path) {
                                             let snapshot = files::input_state(&graph.workspace, &graph.workspace.projects[&node.project], &node.task)?;
                                             if observed.get(id) != Some(&snapshot) {
                                                 observed.insert(id.clone(), snapshot);

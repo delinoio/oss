@@ -44,6 +44,8 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 
 `docker_forwards_cli_overrides_to_tasks_tools_and_shards` observes Docker argv and resolved values through a local CLI fixture for finite tasks, tool probes, inventory, and shard execution, excluding ambient values and sibling credentials.
 
+`directory_notifications_rescan_descendant_inputs` covers directory-only notifications and real rename, move-in, and removal of a tree whose files match `src/*.rs`. Exact filtered snapshots suppress irrelevant and self-output changes.
+
 Additional invariants include unknown/duplicate configuration rejection, schema freshness, stale/partial CI receipt rejection, required artifact accounting, cache path traversal rejection before mutation, masked stored logs, and service failure cancelling other running checks before returning.
 
 `grouped_tasks_only_receive_their_declared_secrets` passes a CI-style credential union to a real CLI run: only the declaring task receives the credential, and persisted output remains masked.

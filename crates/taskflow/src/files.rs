@@ -120,6 +120,33 @@ pub fn relative_to(project: &Path, path: &Path) -> String {
     relative.push(path.strip_prefix(common).unwrap());
     slash(&relative)
 }
+/// A directory notification may represent mutations to any descendant, and a
+/// removed directory cannot be identified with a metadata query. Use positive
+/// literal roots only to decide whether to rescan; the snapshot applies exact
+/// globs, negative patterns, and output exclusions before enqueueing work.
+pub fn input_event_may_match(project: &Project, task: &crate::config::Task, path: &Path) -> bool {
+    if path
+        .components()
+        .any(|part| part.as_os_str().to_str().is_some_and(reserved_name))
+    {
+        return false;
+    }
+    let overlaps = |root: &Path| path.starts_with(root) || root.starts_with(path);
+    if task.input.is_none() {
+        return overlaps(&project.directory);
+    }
+    task.input.iter().flatten().any(|input| match input {
+        Input::Auto(auto) => auto.auto && overlaps(&project.directory),
+        Input::Pattern(pattern) if !pattern.starts_with('!') => {
+            // Backslashes are glob escapes on some hosts. Preserve coverage
+            // without guessing a narrower literal directory interpretation.
+            pattern.contains('\\')
+                || overlaps(&normalize(&project.directory.join(output_anchor(pattern))))
+        }
+        _ => false,
+    })
+}
+
 pub fn input_matches(project: &Project, task: &crate::config::Task, path: &Path) -> Result<bool> {
     if path
         .components()
