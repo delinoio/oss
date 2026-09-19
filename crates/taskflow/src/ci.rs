@@ -817,6 +817,7 @@ mod tests {
             key: "key".into(),
             task: task.into(),
             output_digest: "digest".into(),
+            result_identity: None,
             files: vec![cache::FileRecord {
                 path: "out".into(),
                 content: cache::Content::File {

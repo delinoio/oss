@@ -456,7 +456,7 @@ async fn run_task(
         .iter()
         .map(|(id, r)| (id, &r.output))
         .collect();
-    let key = files::digest(&serde_json::to_vec(&(
+    let result_key = files::digest(&serde_json::to_vec(&(
         1,
         id,
         task,
@@ -465,8 +465,13 @@ async fn run_task(
         &tools,
         &prerequisite_outputs,
         task.platform.key(),
-        options.shard,
+        None::<(usize, usize)>,
     ))?);
+    let key = if options.shard.is_some() {
+        files::digest(&serde_json::to_vec(&(&result_key, options.shard))?)
+    } else {
+        result_key.clone()
+    };
     let old = previous(&graph.workspace.root, id);
     let remote = if task.cache {
         graph
@@ -580,9 +585,9 @@ async fn run_task(
                     outcome: source,
                     changed: old
                         .as_ref()
-                        .is_none_or(|r| r.output != artifact.output_digest),
+                        .is_none_or(|r| r.output != artifact.result_output()),
                     key,
-                    output: artifact.output_digest.clone(),
+                    output: artifact.result_output().into(),
                     causes,
                     duration_ms: started.elapsed().as_millis() as u64,
                     exit_code: 0,
@@ -678,6 +683,9 @@ async fn run_task(
             log.clone(),
         )
         .await?;
+        // Shard selection partitions cache storage, not the semantic identity
+        // of the tested input version passed to downstream tasks and CI jobs.
+        receipt.output = result_key;
         publish(graph, id, &mut receipt, &inputs, remote.as_ref(), &cancel).await?;
         return Ok(receipt);
     }
@@ -890,7 +898,12 @@ async fn publish(
                     .join(&receipt.execution),
             )?);
         }
-        receipt.output = artifact.output_digest.clone();
+        if artifact.files.is_empty() {
+            // Checks may preserve an older semantic identity via unchanged.
+            artifact.result_identity = Some(receipt.output.clone());
+        } else {
+            receipt.output = artifact.output_digest.clone();
+        }
         let staged = if let Some(remote) = remote {
             tokio::select! {
                 biased;

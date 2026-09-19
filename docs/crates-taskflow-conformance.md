@@ -58,6 +58,8 @@ The library regression `invalidation_at_each_publication_boundary_preserves_prev
 
 `non_utf8_paths_never_collapse_into_cache_identities` creates two Unix filenames with distinct invalid bytes, invalid output/root names, and a valid Japanese filename; identities fail explicitly instead of collapsing distinct paths.
 
+`outputless_cached_prerequisites_preserve_semantic_result_identity` covers cached checks and shards, input changes, historical cache restoration, downstream cache invalidation, unchanged suppression, and rejection of legacy empty-snapshot identities.
+
 Additional invariants include unknown/duplicate configuration rejection, schema freshness, stale/partial CI receipt rejection, required artifact accounting, cache path traversal rejection before mutation, masked stored logs, and service failure cancelling other running checks before returning.
 
 `grouped_tasks_only_receive_their_declared_secrets` passes a CI-style credential union to a real CLI run: only the declaring task receives the credential, and persisted output remains masked.

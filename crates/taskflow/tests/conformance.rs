@@ -4738,3 +4738,100 @@ fn check_rejects_invalid_task_environment_before_execution() {
     .unwrap();
     valid.validate().unwrap();
 }
+
+#[tokio::test]
+async fn outputless_cached_prerequisites_preserve_semantic_result_identity() {
+    for kind in ["check", "unchanged", "shard"] {
+        let mut check = json!({"command":command(&[if kind == "unchanged" { "unchanged" } else { "record" },"events","check"]),"input":["source"],"output":[],"cache":true,"tools":{"fixture":command(&["version"])}});
+        if kind == "shard" {
+            check["shard"] = json!({"adapter":"generic","count":2,"list":command(&["inventory"]),"run":command(&["shard"])});
+        }
+        let root = fixture(
+            json!({"check":check,"build":{"command":command(&["copy","source","result"]),"input":[],"output":["result"],"dependsOn":["check"],"cache":true,"tools":{"fixture":command(&["version"])}}}),
+        );
+        std::fs::write(root.path().join("source"), "first").unwrap();
+        let g = graph(root.path()).await;
+        let first = run(g.clone(), &["build"]).await;
+        assert!(first.success, "{first:?}");
+        assert_eq!(
+            first.results["app#check"].output,
+            first.results["app#check"].key
+        );
+        let hit = run(g.clone(), &["build"]).await;
+        assert_eq!(hit.results["app#check"].outcome, Outcome::LocalCache);
+        assert_eq!(hit.results["app#build"].outcome, Outcome::LocalCache);
+        for value in ["second", "first"] {
+            std::fs::write(root.path().join("source"), value).unwrap();
+            let plan = Plan::create(&g, &[], &[PathBuf::from("source")], true).unwrap();
+            let result = runner::run_plan(
+                g.clone(),
+                plan,
+                RunOptions::default(),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+            assert!(result.success, "{kind}: {result:?}");
+            if kind == "unchanged" {
+                assert_eq!(
+                    result.results["app#check"].output,
+                    first.results["app#check"].output
+                );
+                assert_eq!(result.results["app#build"].outcome, Outcome::Suppressed);
+            } else {
+                assert!(result.results["app#check"].changed, "{kind}: {result:?}");
+                assert_eq!(
+                    result.results["app#check"].output,
+                    result.results["app#check"].key
+                );
+                assert_eq!(
+                    result.results["app#build"].outcome,
+                    if value == "second" {
+                        Outcome::Executed
+                    } else {
+                        Outcome::Restored
+                    }
+                );
+                assert_eq!(
+                    std::fs::read_to_string(root.path().join("result")).unwrap(),
+                    value
+                );
+            }
+        }
+        if kind == "shard" {
+            let mut keys = BTreeSet::new();
+            for index in 0..2 {
+                let plan = Plan::create(&g, &["check".into()], &[], false).unwrap();
+                let result = runner::run_plan(
+                    g.clone(),
+                    plan,
+                    RunOptions {
+                        shard: Some((index, 2)),
+                        ..Default::default()
+                    },
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+                assert!(result.success, "{result:?}");
+                assert_eq!(
+                    result.results["app#check"].output,
+                    first.results["app#check"].output
+                );
+                keys.insert(result.results["app#check"].key.clone());
+            }
+            assert_eq!(
+                keys.len(),
+                2,
+                "cache entries still partition shard selections"
+            );
+        }
+        let key = &first.results["app#check"].key;
+        let mut legacy = cache::load(root.path(), key).unwrap().unwrap();
+        legacy.result_identity = None;
+        assert!(
+            legacy.validate_integrity(key).is_err(),
+            "old empty snapshot identities must miss"
+        );
+    }
+}

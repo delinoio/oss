@@ -52,6 +52,8 @@ pub struct Artifact {
     pub key: String,
     pub task: String,
     pub output_digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_identity: Option<String>,
     pub files: Vec<FileRecord>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shards: Option<(crate::shard::Inventory, Vec<crate::shard::ShardResults>)>,
@@ -261,12 +263,21 @@ impl Artifact {
         let files = snapshot(project, task)?;
         Ok(Self {
             version: 1,
+            result_identity: files.is_empty().then(|| key.clone()),
             key,
             task: id,
             output_digest: output_digest(&files)?,
             files,
             shards: None,
         })
+    }
+
+    /// Outputless tasks have a semantic result even though their file snapshot
+    /// is empty. Keep that identity distinct from the snapshot checksum.
+    pub fn result_output(&self) -> &str {
+        self.result_identity
+            .as_deref()
+            .unwrap_or(&self.output_digest)
     }
 
     /// Check the immutable artifact without requiring the current project
@@ -285,6 +296,14 @@ impl Artifact {
         ensure!(
             self.output_digest == output_digest(&self.files)?,
             "cache output digest mismatch"
+        );
+        ensure!(
+            if self.files.is_empty() {
+                self.result_identity.as_deref().is_some_and(valid_hash)
+            } else {
+                self.result_identity.is_none()
+            },
+            "invalid or missing outputless cache result identity"
         );
         if let Some((inventory, reports)) = &self.shards {
             let count = reports

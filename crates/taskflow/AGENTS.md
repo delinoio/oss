@@ -10,6 +10,7 @@
 - Never collapse direct/input/schedule causes into a prerequisite cause. Cancellation and invalidation prohibit cache publication.
 - Graph output ownership compares missing names using the destination filesystem's actual case/Unicode equivalence, including cross-project ancestors; probes must never mutate declared outputs.
 - Before staging artifact contents, probe every path prefix on the destination filesystem to reject case/Unicode aliases and unsupported names without mutating outputs.
+- Outputless cached tasks retain a validated semantic result identity separately from the empty file-snapshot digest, including historical cache hits and unchanged reports; sharded result identity must include the tested input version.
 - Local output hashing streams file content without artifact transfer limits; version its digest domain independently of encoded payloads. Capture and transport remain bounded.
 - Output restoration must validate the complete entry and containment before mutation. Secrets must be masked before persistence.
 - Validate both CI export destinations through existing filesystem ancestors before writing either workflow or blueprint.
