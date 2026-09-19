@@ -524,13 +524,14 @@ impl Task {
                 let pattern = pattern.strip_prefix('!').unwrap_or(pattern);
                 // Reject rooted/drive-relative Windows paths on every host too:
                 // configuration must retain project-relative meaning in CI.
+                let rooted = pattern.starts_with(['/', '\\']);
+                let drive = pattern
+                    .as_bytes()
+                    .first()
+                    .is_some_and(u8::is_ascii_alphabetic)
+                    && pattern.as_bytes().get(1) == Some(&b':');
                 ensure!(
-                    !pattern.starts_with(['/', '\\'])
-                        && !(pattern
-                            .as_bytes()
-                            .first()
-                            .is_some_and(u8::is_ascii_alphabetic)
-                            && pattern.as_bytes().get(1) == Some(&b':')),
+                    !(rooted || drive),
                     "input patterns must be project-relative"
                 );
                 globset::Glob::new(pattern).context("invalid input glob")?;
