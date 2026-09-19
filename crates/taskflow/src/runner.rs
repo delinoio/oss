@@ -481,6 +481,10 @@ async fn run_task(
                 );
                 let before = cache::output_state(project, task).ok();
                 if before.as_deref() != Some(&artifact.output_digest) {
+                    ensure!(
+                        files::input_state(&graph.workspace, project, task)? == inputs,
+                        "inputs changed before cache restoration"
+                    );
                     artifact.restore(&key, id, project, task)?;
                     source = Outcome::Restored;
                 }
