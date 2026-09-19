@@ -25,7 +25,18 @@ impl Container {
     pub async fn cleanup(&mut self) -> Result<()> {
         // Cleanup must remain available after the task/session token is cancelled.
         let cleanup_token = CancellationToken::new();
-        let environment: BTreeMap<String, String> = std::env::vars().collect();
+        let environment: BTreeMap<String, String> = [
+            "PATH",
+            "HOME",
+            "USERPROFILE",
+            "SystemRoot",
+            "DOCKER_HOST",
+            "DOCKER_CONTEXT",
+            "DOCKER_CONFIG",
+        ]
+        .into_iter()
+        .filter_map(|name| std::env::var(name).ok().map(|value| (name.into(), value)))
+        .collect();
         let result = process::capture_with_env(
             Path::new("."),
             &Command::Argv(vec![
@@ -91,7 +102,24 @@ impl Drop for Container {
                     command.env(key, value);
                 }
             }
-            let _ = command.status();
+            // Destructors cannot await the async owner, but they must not hang
+            // indefinitely if the local daemon has stopped responding.
+            if let Ok(mut child) = command.spawn() {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+                loop {
+                    match child.try_wait() {
+                        Ok(Some(_)) => break,
+                        Ok(None) if std::time::Instant::now() < deadline => {
+                            std::thread::sleep(std::time::Duration::from_millis(20))
+                        }
+                        _ => {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            break;
+                        }
+                    }
+                }
+            }
         }
     }
 }
