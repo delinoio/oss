@@ -3485,6 +3485,8 @@ async fn explicit_wildcard_inputs_include_ignored_directories_in_cache_and_watch
         }));
         profile(root.path(), &["build", "barrier"]);
         files::atomic_write(&root.path().join("dist/manifest.json"), b"first").unwrap();
+        let internal = root.path().join(".taskflow-restore-fixture/manifest.json");
+        files::atomic_write(&internal, b"internal").unwrap();
         let g = graph(root.path()).await;
         let snapshot = files::input_state(
             &g.workspace,
@@ -3493,6 +3495,13 @@ async fn explicit_wildcard_inputs_include_ignored_directories_in_cache_and_watch
         )
         .unwrap();
         assert!(snapshot.contains_key("dist/manifest.json"), "{pattern}");
+        assert!(!snapshot.contains_key(".taskflow-restore-fixture/manifest.json"));
+        assert!(!files::input_matches(
+            &g.workspace.projects["app"],
+            &g.tasks["app#build"].task,
+            &internal
+        )
+        .unwrap());
         assert_eq!(
             run(g.clone(), &["build"]).await.results["app#build"].outcome,
             Outcome::Executed

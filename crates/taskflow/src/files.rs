@@ -78,6 +78,9 @@ pub fn canonical_path(path: &Path) -> Result<PathBuf> {
     }
     Ok(path.to_path_buf())
 }
+fn reserved_name(name: &str) -> bool {
+    matches!(name, ".git" | ".taskflow") || name.starts_with(".taskflow-restore-")
+}
 pub fn ignored_directory(path: &Path) -> bool {
     path.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
         n.starts_with(".taskflow-restore-")
@@ -120,7 +123,7 @@ pub fn relative_to(project: &Path, path: &Path) -> String {
 pub fn input_matches(project: &Project, task: &crate::config::Task, path: &Path) -> Result<bool> {
     if path
         .components()
-        .any(|c| c.as_os_str() == ".taskflow" || c.as_os_str() == ".git")
+        .any(|component| component.as_os_str().to_str().is_some_and(reserved_name))
     {
         return Ok(false);
     }
@@ -213,7 +216,7 @@ pub fn input_state(
         .follow_links(false)
         .into_iter()
         .filter_entry(|entry| {
-            if matches!(entry.file_name().to_str(), Some(".git" | ".taskflow")) {
+            if entry.file_name().to_str().is_some_and(reserved_name) {
                 return false;
             }
             !ignored_directory(entry.path())
