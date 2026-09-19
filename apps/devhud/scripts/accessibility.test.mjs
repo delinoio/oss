@@ -10,6 +10,7 @@ const app = readFileSync(join(appRoot, "src/App.tsx"), "utf8");
 const diagnosticsUi = readFileSync(join(appRoot, "src/diagnostics-ui.tsx"), "utf8");
 const identityUi = readFileSync(join(appRoot, "src/identity-ui.tsx"), "utf8");
 const foundation = readFileSync(join(appRoot, "src/ui-foundation.tsx"), "utf8");
+const realqa = readFileSync(join(appRoot, "src/realqa-ui.tsx"), "utf8");
 const deckUi = readFileSync(join(appRoot, "src/deck-ui.tsx"), "utf8");
 const icons = readFileSync(join(appRoot, "src/ui-icons.tsx"), "utf8");
 const main = readFileSync(join(appRoot, "src/main.tsx"), "utf8");
@@ -84,6 +85,16 @@ test("RealQA annotation text uses CSP-compatible static font styling", () => {
   assert.match(styles, /\.annotation-text\{font-family:"DevHud RealQA Noto Sans KR";font-kerning:none\}/u);
 });
 
+test("RealQA uses the shared state primitives and remains readable at narrow and zoomed layouts", () => {
+  assert.match(realqa, /import \{ Button, Card, Dialog, PageHeader, Sheet, StatePanel, StatusBadge/u);
+  for (const primitive of ["<PageHeader", "<Card", "<Button", "<StatusBadge", "<StatePanel", "<Dialog", "<Sheet"]) assert(realqa.includes(primitive), `RealQA must use ${primitive}`);
+  assert.match(realqa, /realqaPolicyQuota/u);
+  assert.doesNotMatch(realqa, /(?:used bytes|quota meter|quota percentage|<progress)/iu);
+  assert.match(styles, /\.ui-dialog,\.ui-sheet\s*\{[^}]*max-height:calc\(100vh - var\(--ui-overlay-top\) - var\(--ui-overlay-bottom\)\)/u);
+  assert.match(styles, /@media\(max-width:700px\)\{[^}]*\.capture-actions \.ui-button\{width:100%;min-width:0/u);
+  assert.match(styles, /\.draft-list\{[^}]*minmax\(15rem,1fr\)/u);
+});
+
 test("form-control boundaries meet non-text contrast in light and dark themes", () => {
   for (const block of themeBlocks) {
     const line = customColor(block, "--line");
@@ -93,6 +104,18 @@ test("form-control boundaries meet non-text contrast in light and dark themes", 
       `${line} does not provide a sufficient boundary against ${surface}`,
     );
   }
+});
+
+test("action Button variants remain legible and distinguishable on hover", () => {
+  assert.match(styles, /\.actions button:not\(\.ui-button\)\s*\{/u);
+  assert.match(styles, /\.ui-button-danger:hover\s*\{[^}]*background:var\(--error\);[^}]*box-shadow:0 0 0 2px var\(--line\)/u);
+  assert.match(styles, /\.ui-button-danger:active\s*\{\s*box-shadow:inset 0 0 0 2px var\(--line\)/u);
+  assert.match(styles, /html\[data-theme="dark"\] \.ui-button-danger\s*\{\s*color:var\(--devhud-background\)/u);
+  for (const block of themeBlocks) {
+    assert(contrastRatio(customColor(block, "--text"), customColor(block, "--surface-muted")) >= 4.5);
+  }
+  assert(contrastRatio("#ffffff", customColor(themeBlocks[0], "--error")) >= 4.5);
+  assert(contrastRatio(customColor(themeBlocks[1], "--devhud-background"), customColor(themeBlocks[1], "--error")) >= 4.5);
 });
 
 test("Diagnostics disclosures preserve exact text selection and fit contracted responsive viewports", () => {

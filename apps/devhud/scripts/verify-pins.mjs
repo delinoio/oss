@@ -70,15 +70,15 @@ const CANONICAL_DOWNLOAD_CEF = {
 };
 const CANONICAL_APPIMAGE_SHARUN = {
   repository: "https://github.com/pkgforge-dev/Anylinux-sharun",
-  version: "3.0.0",
+  version: "3.2.1",
   assets: {
     arm64: {
       name: "sharun-aarch64",
-      sha256: "414bf636f8a76d5144357e4e64f351f7518f5da727f1c9626c16c48150d8dcdc",
+      sha256: "5b52dd95eccb1ce36f93473ada846fa25d2ab9ae97b48e9716a7403eb0ea05c9",
     },
     x64: {
       name: "sharun-x86_64",
-      sha256: "2f1a73799dceb7f1b682118bf714308ba38a18e10ebdbdb09078dac9337508d8",
+      sha256: "5d9becfeada8a6ec31e841fa08358dbd23198f541629bfdf72b73f0f60c86ace",
     },
   },
 };
@@ -362,6 +362,12 @@ assert(
   "download-cef lockfile checksum changed",
 );
 assert(
+  Object.values(pins.appImage?.sharun?.assets ?? {}).every(
+    (asset) => typeof asset?.name === "string" && !asset.name.endsWith(".tar"),
+  ),
+  "AppImage sharun launcher pins must reference executable assets, not helper archives",
+);
+assert(
   JSON.stringify(pins.appImage?.sharun) === JSON.stringify(CANONICAL_APPIMAGE_SHARUN),
   "AppImage sharun launcher pins changed",
 );
@@ -505,5 +511,5 @@ for (const [name, version] of Object.entries({
 assert(pnpmLock.includes("apps/devhud:"), "DevHUD is absent from pnpm-lock.yaml");
 
 console.log(
-  `devhud: verified Tauri ${TAURI_REVISION}, six CEF platform pins, and two AppImage launcher pins`,
+  `devhud: verified Tauri ${TAURI_REVISION}, six CEF platform pins, and two AppImage Sharun helper-bundle pins`,
 );
