@@ -522,16 +522,8 @@ impl Task {
         for input in self.input.iter().flatten() {
             if let Input::Pattern(pattern) = input {
                 let pattern = pattern.strip_prefix('!').unwrap_or(pattern);
-                // Reject rooted/drive-relative Windows paths on every host too:
-                // configuration must retain project-relative meaning in CI.
-                let rooted = pattern.starts_with(['/', '\\']);
-                let drive = pattern
-                    .as_bytes()
-                    .first()
-                    .is_some_and(u8::is_ascii_alphabetic)
-                    && pattern.as_bytes().get(1) == Some(&b':');
                 ensure!(
-                    !(rooted || drive),
+                    project_relative(pattern),
                     "input patterns must be project-relative"
                 );
                 globset::Glob::new(pattern).context("invalid input glob")?;
@@ -543,7 +535,7 @@ impl Task {
                 "invalid output pattern"
             );
             ensure!(
-                !Path::new(output).is_absolute()
+                project_relative(output)
                     && !output
                         .split(['/', '\\'])
                         .any(|v| v == ".." || v == ".taskflow" || v == ".git"),
@@ -578,4 +570,13 @@ pub fn validate_command(command: &Command) -> Result<()> {
         ),
     }
     Ok(())
+}
+
+// Apply portable path rules before host-specific Path parsing so a
+// configuration cannot change ownership when exported to a different operating
+// system.
+fn project_relative(path: &str) -> bool {
+    !path.starts_with(['/', '\\'])
+        && !(path.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
+            && path.as_bytes().get(1) == Some(&b':'))
 }

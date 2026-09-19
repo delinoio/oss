@@ -4104,3 +4104,33 @@ async fn pending_cancellation_uses_operator_exit_code() {
         assert!(!directory.path().join("unexpected").exists());
     }
 }
+
+#[test]
+fn check_rejects_windows_rooted_outputs_on_every_host() {
+    for path in [
+        "C:/build/**",
+        r"C:\build\**",
+        r"\\server\share\build",
+        r"\build",
+        "C:build",
+    ] {
+        let directory = fixture(json!({"build":{"command":command(&["version"]),"output":[path]}}));
+        for args in [
+            vec!["check"],
+            vec!["ci", "export", "build", "--output", "workflow.yml"],
+        ] {
+            let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+                .current_dir(directory.path())
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(!output.status.success(), "{path}");
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("app#build"),
+                "{output:?}"
+            );
+            let error = config::load(&directory.path().join("taskflow.yml")).unwrap_err();
+            assert!(format!("{error:#}").contains("output must stay inside the project"));
+        }
+    }
+}

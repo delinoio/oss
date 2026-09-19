@@ -34,6 +34,8 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 | 25 | `scenario_25_external_effect_survives_unchanged_prerequisite`. |
 | 26 | Query, cycle, path, input/owner, and clean distributed CI fixtures. |
 
+`check_rejects_windows_rooted_outputs_on_every_host` rejects drive, UNC, rooted, and drive-relative output paths before checking or CI export on every host.
+
 Additional invariants include unknown/duplicate configuration rejection, schema freshness, stale/partial CI receipt rejection, required artifact accounting, cache path traversal rejection before mutation, masked stored logs, and service failure cancelling other running checks before returning.
 
 `grouped_tasks_only_receive_their_declared_secrets` passes a CI-style credential union to a real CLI run: only the declaring task receives the credential, and persisted output remains masked.
