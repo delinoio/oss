@@ -121,3 +121,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `unchanged_metadata_notifications_do_not_cancel_live_work` rewrites identical configuration bytes during an exclusive process. Delayed/coalesced metadata notifications must not cancel or repeat that process. Changed generations include native metadata bytes and cancel the complete old execution wave before replacement.
 
 `go_sharding_preserves_separated_flag_values_and_package_failures` uses real Go coverage, shuffle, and vet arguments across a passing root and failing child package. Unsupported flags and selection/output overrides fail configuration validation rather than losing positional values.
+
+`partial_output_globs_preserve_neighboring_inputs_and_watch_changes` verifies that a partial JavaScript output glob preserves neighboring JSON inputs for affected selection and watching, while matching outputs and exact output directory descendants cannot self-trigger their producer.

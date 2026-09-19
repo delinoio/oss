@@ -2386,3 +2386,48 @@ async fn go_sharding_preserves_separated_flag_values_and_package_failures() {
             && r.status == shard::UnitStatus::Failed));
     assert!(!shard::aggregate(&inventory, 2, &reports).unwrap());
 }
+
+#[tokio::test]
+async fn partial_output_globs_preserve_neighboring_inputs_and_watch_changes() {
+    let directory = fixture(
+        json!({"check":{"command":command(&["record","events","run"]),"input":["generated/**"],"output":["generated/*.js"],"watch":{"debounce":"20ms"}}}),
+    );
+    files::atomic_write(&directory.path().join("generated/config.json"), b"initial").unwrap();
+    files::atomic_write(&directory.path().join("generated/output.js"), b"output").unwrap();
+    profile(directory.path(), &["check"]);
+    let g = graph(directory.path()).await;
+    let task = &g.tasks["app#check"].task;
+    let project = &g.workspace.projects["app"];
+    let state = files::input_state(&g.workspace, project, task).unwrap();
+    assert!(state.contains_key("generated/config.json"));
+    assert!(!state.contains_key("generated/output.js"));
+    let plan = Plan::create(&g, &[], &["generated/config.json".into()], true).unwrap();
+    assert!(plan.causes.contains_key("app#check"));
+    let mut exact = task.clone();
+    exact.output = Some(vec!["generated".into()]);
+    assert!(!files::input_matches(
+        project,
+        &exact,
+        &project.directory.join("generated/config.json")
+    )
+    .unwrap());
+    let root = directory.path().to_path_buf();
+    let token = CancellationToken::new();
+    let stop = token.clone();
+    let session = tokio::spawn(async move {
+        taskflow::session::start(&root, "default", RunOptions::default(), stop).await
+    });
+    let events = directory.path().join("events");
+    wait_lines(&events, "run", 1).await;
+    std::fs::write(directory.path().join("generated/config.json"), "changed").unwrap();
+    wait_lines(&events, "run", 2).await;
+    std::fs::write(
+        directory.path().join("generated/output.js"),
+        "changed output",
+    )
+    .unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    token.cancel();
+    session.await.unwrap().unwrap();
+    assert_eq!(std::fs::read_to_string(events).unwrap().lines().count(), 2);
+}

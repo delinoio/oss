@@ -146,7 +146,8 @@ pub fn input_matches(project: &Project, task: &crate::config::Task, path: &Path)
         .output
         .iter()
         .flatten()
-        .any(|output| path.starts_with(normalize(&project.directory.join(output_anchor(output)))))
+        .filter(|output| !output.contains(['*', '?', '[', '{']) && !output.starts_with('!'))
+        .any(|output| path.starts_with(normalize(&project.directory.join(output))))
     {
         return Ok(false);
     }
