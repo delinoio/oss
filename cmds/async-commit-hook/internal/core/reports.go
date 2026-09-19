@@ -246,8 +246,9 @@ func parseGoTest(b []byte, check, command, logID string) ([]Failure, error) {
 	out := []Failure{}
 	seen := false
 	terminal := false
-	output := map[string]*reportOutputTail{}
-	tests := map[string]bool{}
+	output := map[[2]string]*reportOutputTail{}
+	tests := map[[2]string]bool{}
+	occurrences := map[[2]string]int{}
 	// The report is already bounded. Slice its lines without imposing a
 	// smaller event limit or allocating a second copy of a large JSON line.
 	for line := range bytes.SplitSeq(b, []byte{'\n'}) {
@@ -259,7 +260,7 @@ func parseGoTest(b []byte, check, command, logID string) ([]Failure, error) {
 			return nil, E("report-malformed", "invalid Go test JSON event", 1)
 		}
 		seen = true
-		key := event.Package + "/" + event.Test
+		key := [2]string{event.Package, event.Test}
 		switch event.Action {
 		case "output":
 			if output[key] == nil {
@@ -271,8 +272,12 @@ func parseGoTest(b []byte, check, command, logID string) ([]Failure, error) {
 		case "pass", "skip", "fail":
 			terminal = true
 			tests[key] = true
+			// Count every completed iteration, including passes, so repairing an
+			// earlier failure does not renumber a later repeated test failure.
+			occurrences[key]++
 			if event.Action == "fail" {
-				out = append(out, Failure{ID: Hash([]byte(check + "/go/" + key)), Check: check, Test: key, Command: command, Message: strings.TrimSpace(output[key].String()), LogID: logID})
+				id := Hash(Encode([]any{check, "go", key, occurrences[key]}))
+				out = append(out, Failure{ID: id, Check: check, Test: event.Package + "/" + event.Test, Command: command, Message: strings.TrimSpace(output[key].String()), LogID: logID})
 			}
 			delete(output, key)
 		case "pause", "cont", "bench":

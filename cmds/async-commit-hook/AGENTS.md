@@ -53,6 +53,7 @@
 - Repository/worktree transport names, paths and branch labels must be valid UTF-8; preserve raw database paths for filesystem/Git access and use IDs for API selection.
 
 - Accept Go test JSON events up to the bounded report size; slice the existing report lines without a smaller scanner token limit or a second full event buffer.
+- Go test failure IDs include separate package/test identity and a deterministic completed-iteration occurrence, counting pass/skip as well as fail; messages never determine identity.
 - Collect Go test output in lazily grown bounded tails; appending an event must not copy the entire retained tail. Release per-test output after terminal events while preserving failure text.
 
 - Bound CLI wait timeouts to 0..9223372036 seconds before conversion to time.Duration; zero expires the query immediately and never cancels work.

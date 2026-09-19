@@ -112,6 +112,8 @@ Repository/worktree listing names, display paths and branch labels use the same 
 
 Go test JSON accepts individual events within the 64 MiB report limit, including a final event without a newline and CRLF separators. Line traversal references the already bounded input without a second event buffer. Invalid or truncated JSON and incomplete tests still fail validation.
 
+Go test failure IDs encode the check, separate package/test identity and occurrence among completed iterations of that test. Passed and skipped iterations also advance the counter, so fixing an earlier iteration preserves a later failure's identity. Package-level failures remain separate, messages are excluded, and declared report kind/path still namespace persisted IDs. Existing stored IDs are not rewritten; comparisons across this parser upgrade can show old identities resolved and new ones added once.
+
 Go test JSON collection keeps at most 64 KiB of chronological output per active test in lazily allocated circular buffers. Appends copy only new bytes; terminal events release their buffers after failure summaries are materialized. Complete redacted report evidence is preserved.
 
 Retention ages are accepted only in the inclusive range 0..106751 days, with zero meaning indefinite retention. Personal configuration and CLI/shared-service pruning reject larger values before any duration conversion or mutation. Byte quotas remain nonnegative int64 values.
