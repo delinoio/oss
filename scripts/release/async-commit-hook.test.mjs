@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync} from 'node:fs';
+import {readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
@@ -60,6 +60,38 @@ test('shell installer rejects invalid signature and checksum before publishing a
    const result=spawnSync('sh',['apps/async-commit-hook/public/install.sh'],{cwd:root,env:{...process.env,PATH:bin+':'+process.env.PATH,ACH_INSTALL_DIR:destination,TEST_ASSETS:assets,TEST_SIGNATURE_EXIT:signatureExit},encoding:'utf8'});
    assert.equal(result.status===0,success,result.stderr);
    if(success) assert.equal(readFileSync(join(destination,'ach'),'utf8'),'fixture');
+  }
+ } finally {rmSync(directory,{recursive:true,force:true});}
+});
+
+test('shell installer selects the requested version and rejects invalid arguments before downloads', () => {
+ const directory=mkdtempSync(join(tmpdir(),'ach-installer-version-'));
+ try {
+  const bin=join(directory,'tools'), requests=join(directory,'requests');mkdirSync(bin);
+  writeFileSync(join(bin,'cosign'),'#!/bin/sh\nexit 0\n',{mode:0o755});
+  writeFileSync(join(bin,'curl'),'#!/bin/sh\nprintf "%s\\n" "$@" > "$TEST_REQUESTS"\nexit 77\n',{mode:0o755});
+  const defaultVersion=JSON.parse(read('packaging/async-commit-hook/release-metadata.json')).version;
+  for(const [args,environment,version] of [
+   [[],undefined,defaultVersion],
+   [[], '0.2.0','0.2.0'],
+   [['--version','0.3.0'], '0.2.0','0.3.0'],
+   [['--version','0.4.0'], 'invalid','0.4.0'],
+   [['--version'],undefined,null],
+   [['--version',''],undefined,null],
+   [['--version','0.1'],undefined,null],
+   [['--version','01.2.3'],undefined,null],
+   [['--version','0.1.0;touch'],undefined,null],
+   [['--unknown'],undefined,null],
+   [['0.2.0'],undefined,null],
+   [['--version','0.2.0','extra'],undefined,null],
+  ]) {
+   rmSync(requests,{force:true});
+   const result=spawnSync('sh',['apps/async-commit-hook/public/install.sh',...args],{
+    cwd:root,encoding:'utf8',env:{...process.env,PATH:bin+':'+process.env.PATH,ACH_VERSION:environment,TEST_REQUESTS:requests},
+   });
+   assert.equal(result.status,version?77:2,`${JSON.stringify(args)}: ${result.stderr}`);
+   if(version) assert.ok(readFileSync(requests,'utf8').includes(`/async-commit-hook@v${version}/ach-`));
+   else assert.equal(existsSync(requests),false,'invalid arguments started a download');
   }
  } finally {rmSync(directory,{recursive:true,force:true});}
 });

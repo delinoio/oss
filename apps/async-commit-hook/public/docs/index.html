@@ -48,6 +48,13 @@ Invoke-WebRequest https://ach.delino.io/install.ps1 -OutFile install-ach.ps1
 ./install-ach.ps1 -Version 0.1.0</pre
         >
         <p>
+          The shell installer's <code>--version</code> option selects the exact
+          release and overrides <code>ACH_VERSION</code>. Without either value,
+          it uses the installer's bundled version. Use a three-part version such
+          as <code>0.1.0</code>; invalid or unknown arguments stop installation
+          before downloading.
+        </p>
+        <p>
           Download the platform archive, SHA256SUMS and Sigstore bundles from
           the versioned GitHub release if installing manually. Verify the signed
           checksum manifest and archive before extraction. The expected OIDC

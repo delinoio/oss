@@ -2,8 +2,18 @@
 # Download, verify, then install. Requires Git, curl, tar, and cosign v3+.
 set -eu
 version=${ACH_VERSION:-0.1.0}
-case "$version" in *[!0-9.]*|'') echo 'ACH_VERSION must be MAJOR.MINOR.PATCH' >&2; exit 2;; esac
-printf '%s\n' "$version" | awk '/^[0-9]+\.[0-9]+\.[0-9]+$/ {ok=1} END {exit !ok}' || exit 2
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --version)
+      [ "$#" -ge 2 ] || { echo '--version requires MAJOR.MINOR.PATCH' >&2; exit 2; }
+      version=$2
+      shift 2
+      ;;
+    *) echo "Unknown argument: $1. Usage: sh install.sh [--version MAJOR.MINOR.PATCH]" >&2; exit 2;;
+  esac
+done
+case "$version" in *[!0-9.]*|'') echo 'Version must be MAJOR.MINOR.PATCH' >&2; exit 2;; esac
+printf '%s\n' "$version" | awk '/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/ {ok=1} END {exit !ok}' || { echo 'Version must be MAJOR.MINOR.PATCH' >&2; exit 2; }
 for tool in curl tar cosign git; do command -v "$tool" >/dev/null || { echo "Required tool missing: $tool" >&2; exit 2; }; done
 case "$(uname -s)" in Darwin) platform=darwin;; Linux) platform=linux;; *) echo 'Use install.ps1 on Windows.' >&2; exit 2;; esac
 case "$(uname -m)" in x86_64|amd64) arch=amd64;; arm64|aarch64) arch=arm64;; *) echo 'Unsupported architecture' >&2; exit 2;; esac

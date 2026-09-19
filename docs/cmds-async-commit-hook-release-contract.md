@@ -11,6 +11,7 @@ Direct-install users, Homebrew users and authorized release maintainers. The own
 
 ## Interfaces and Contracts
 `packaging/async-commit-hook/release-metadata.json`, the Go version constant and both package versions must match. Release identity is `async-commit-hook@v<MAJOR.MINOR.PATCH>`. Archives are named `ach-<goos>-<goarch>.tar.gz` or `ach-windows-<goarch>.zip`.
+The shell installer accepts `--version MAJOR.MINOR.PATCH`, overriding `ACH_VERSION` and then the bundled default. Both installers require canonical three-part numeric versions without leading zeroes. Missing values, unknown shell arguments and malformed versions fail before any download or installation work.
 
 `scripts/release/build-async-commit-hook.py --validate` checks versions and the exact six-target set. `--output <empty-directory>` cross-builds all targets, assembles archives, copies the public installers, generates `async-commit-hook.rb`, `compatibility.json` and `SHA256SUMS`. This local dry run neither signs nor publishes. Compatibility output explicitly records unsigned/unpublished status and the real-machine exclusion.
 
