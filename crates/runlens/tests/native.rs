@@ -434,6 +434,55 @@ fn clean_policy_failures_survive_inconclusive_baselines() {
     }
 }
 #[test]
+#[cfg(unix)]
+fn non_unicode_environment_entries_do_not_abort_observation() {
+    use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+
+    let root = repository("read");
+    for args in [
+        vec![
+            "run",
+            "--save",
+            "direct.json",
+            "--",
+            fixture(),
+            "read",
+            "input.txt",
+            "ENVIRONMENT-SECRET-CANARY",
+        ],
+        vec!["verify", "clean", "build", "--save", "clean.json"],
+    ] {
+        let output = Command::new(binary())
+            .args(args)
+            .env(
+                OsString::from_vec(b"RUNLENS_INVALID_\xff".to_vec()),
+                "NONUNICODE-KEY-CANARY",
+            )
+            .env(
+                "RUNLENS_INVALID_VALUE",
+                OsString::from_vec(b"NONUNICODE-VALUE-\xff".to_vec()),
+            )
+            .env("RUNLENS_SECRET", "ENVIRONMENT-SECRET-CANARY")
+            .current_dir(root.path())
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("CANARY"));
+    }
+    for name in ["direct.json", "clean.json"] {
+        let bytes = fs::read_to_string(root.path().join(name)).unwrap();
+        assert!(!bytes.contains("CANARY"));
+        assert!(!bytes.contains("NONUNICODE-VALUE"));
+        assert!(runlens::report::read(&root.path().join(name)).is_ok());
+    }
+    let report = parse(root.path(), "direct.json");
+    assert_eq!(report["executions"][0]["command"]["argv"][3], "[redacted]");
+}
+#[test]
 fn cache_policy_and_overflow_fail_closed() {
     let root = repository("read-write");
     let recorded = run(root.path(), "report.json", "read-write");

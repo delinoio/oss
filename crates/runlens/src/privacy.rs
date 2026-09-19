@@ -24,7 +24,10 @@ pub struct Redactor {
 impl Redactor {
     pub fn new(root: &Path, temporary: &[&Path], config: &Redaction) -> Result<Self> {
         let sensitive_flag = Regex::new(r"(?i)(token|password|passwd|secret|credential|authorization|api[-_]?key|private[-_]?key)").expect("static expression");
-        let secret_values = std::env::vars()
+        let secret_values = std::env::vars_os()
+            // OS environments may contain non-Unicode entries. Only valid strings
+            // can match the textual evidence that this redactor serializes.
+            .filter_map(|(key, value)| Some((key.into_string().ok()?, value.into_string().ok()?)))
             .filter(|(key, _)| {
                 sensitive_flag.is_match(key) || config.environment_names.contains(key)
             })

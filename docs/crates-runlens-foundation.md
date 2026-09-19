@@ -352,6 +352,10 @@ never an installed product command. Native integration tests exercise subprocess
 tracing, ignored output receipts, command failure, timeout, cancellation, lingering
 children, finite stdin forwarding, clean/repeat source isolation, privacy canaries,
 explicit persistence, offline analysis/export, overflow, and protected macOS tools.
+Unix privacy regressions include non-Unicode environment keys and values in direct
+and clean execution. Ambient redaction enumerates OS strings without panicking and
+retains textual secret masking for Unicode entries; environment values are never
+serialized.
 Linux native CI additionally compiles and executes a static musl child on the
 glibc host to verify seccomp coverage; cross compilation cannot satisfy that test.
 
