@@ -3,6 +3,8 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
+  existsSync,
+  statSync,
   linkSync,
   mkdirSync,
   mkdtempSync,
@@ -277,7 +279,7 @@ for (const [architecture, assetName] of [
   ["arm64", "sharun-aarch64"],
   ["x64", "sharun-x86_64"],
 ]) {
-  test(`serves only a digest-verified ${architecture} Linux AppImage launcher`, async () => {
+  test(`stages only a digest-verified ${architecture} Linux AppImage launcher`, async () => {
     const bytes = Buffer.from(`verified ${architecture} sharun fixture`);
     const pin = fixtureSharunPin(bytes);
     const prepared = await prepareVerifiedAppImageSharun(
@@ -292,15 +294,24 @@ for (const [architecture, assetName] of [
       pin,
     );
     try {
-      assert.match(prepared.url, /^http:\/\/127\.0\.0\.1:\d+\/sharun$/u);
-      const response = await fetch(prepared.url);
-      assert.equal(response.status, 200);
-      assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
+      const launcher = prepared.config.bundle.linux.appimage.files.sharun;
+      assert.deepEqual(Object.keys(prepared.config.bundle.linux.appimage.files), ["sharun"]);
+      assert.deepEqual(readFileSync(launcher), bytes);
+      if (process.platform !== "win32") assert.equal(statSync(launcher).mode & 0o777, 0o755);
     } finally {
       await prepared.close();
     }
+    assert.equal(existsSync(prepared.config.bundle.linux.appimage.files.sharun), false);
   });
 }
+
+test("AppImage builds reject ambient helper download and integrity overrides", () => {
+  const environment = desktopTauriEnvironment("build", ["--bundles", "appimage"], "linux", {
+    SHARUN_LINK: "https://example.com/unverified", SKIP_INTEGRITY_CHECKS: "1",
+  });
+  assert.equal(environment.SHARUN_LINK, undefined);
+  assert.equal(environment.SKIP_INTEGRITY_CHECKS, undefined);
+});
 
 test("rejects a Linux AppImage launcher whose digest does not match", async () => {
   const expected = Buffer.from("expected sharun fixture");
