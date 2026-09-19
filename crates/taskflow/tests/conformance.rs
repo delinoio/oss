@@ -3537,7 +3537,17 @@ async fn finite_timeouts_fail_while_operator_cancellation_remains_distinct() {
                 .unwrap()
                 .parse()
                 .unwrap();
-            assert!(!pid_alive(pid), "{name} survived task completion");
+            // Pipe EOF and the direct-child wait are complete, but an orphaned
+            // grandchild's PID can remain a zombie until the OS reaper runs.
+            // Require observable PID removal within a bound instead of racing
+            // that external reaper with the receipt notification.
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while pid_alive(pid) {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .unwrap_or_else(|_| panic!("{name} ({pid}) survived task completion"));
         }
     }
 }

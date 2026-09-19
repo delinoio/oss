@@ -187,3 +187,5 @@ The distributed artifact fixture also corrupts terminal-unit file digests, paths
 `libtest_rejects_custom_harnesses_only_for_selected_targets` selects standard library and integration tests beside unselected custom harnesses in both the same and another package. A selected custom harness with a quoted TOML key is rejected before invocation. Harness scope follows [Cargo target declarations](https://doc.rust-lang.org/cargo/reference/cargo-targets.html#the-harness-field).
 
 `readiness_endpoint_validation_does_not_require_a_running_service` accepts IPv4, bracketed IPv6, hostnames, and HTTP(S) paths without resolving or connecting during validation.
+
+The finite deadline/cancellation fixture requires both real PIDs to disappear within five seconds after receipt delivery. Owned pipes have already reached EOF and the direct child has been waited; the bound accommodates asynchronous OS reaping of orphaned zombie grandchildren, rather than asserting PID disappearance in the same scheduler instant. Surviving processes still fail the test. This does not extend detached-descendant ownership coverage.
