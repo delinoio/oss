@@ -5,6 +5,7 @@ import { DiagnosticArchitecture, DiagnosticComponent, DiagnosticPlatform, Diagno
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
+import { deckPollingCancellationGeneration } from "./deck-polling-cancellation";
 import { DiagnosticsCorrelationsKey, DiagnosticsStorageKey } from "./diagnostics";
 import * as identityClient from "./identity-client";
 import type { IdentitySession } from "./identity-client";
@@ -285,6 +286,7 @@ describe("native App state", () => {
 
   it("rejects insecure custom APIs and confirms a secure API change before clearing its session", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const cancellationGeneration = deckPollingCancellationGeneration();
     const transitionOperations: string[] = [];
     let pendingCallback: string | null = "devhud://auth/callback?code=old&state=old";
     let completeCustomOriginPolicy: (() => void) | undefined;
@@ -302,7 +304,11 @@ describe("native App state", () => {
         pendingCallback = null;
         return { kind: "auth-callback", url };
       }
-      if (value.operation === "secure.purge") { transitionOperations.push("purge-session"); return { kind: "ok" }; }
+      if (value.operation === "secure.purge") {
+        expect(deckPollingCancellationGeneration()).toBeGreaterThan(cancellationGeneration);
+        transitionOperations.push("purge-session");
+        return { kind: "ok" };
+      }
       throw new Error(`unexpected operation ${value.operation}`);
     });
 
@@ -404,6 +410,8 @@ describe("native App state", () => {
     await waitFor(() => expect(within(document.querySelector(".api-origin-editor") as HTMLElement).getByRole("alert").textContent).toBe(messages.en.apiChangeFailed));
     expect(callbackDrains).toBe(2);
     expect(pendingCallback).toBeNull();
+    await waitFor(() => expect(identityClient.createIdentitySession).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("button", { name: messages.en.signIn })).toBeTruthy();
   });
 
   it("reports API-origin policy configuration failures without persisting the new origin", async () => {

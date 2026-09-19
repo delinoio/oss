@@ -54,6 +54,8 @@ private class MissingWidgetCredentialException : Exception()
 )
 class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     private var pendingAuthCallback: String? = null
+    private var pendingAuthCallbackEpoch: Int? = null
+    private var authCallbackTransactionEpoch: Int? = null
     private var authCallbackQuarantined = false
     private var pendingDiagnosticsCleanup: Uri? = null
     private var diagnosticsCleanupReleaseOnly = false
@@ -119,6 +121,9 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val validIssuer = (issuer.scheme == "https" || (issuer.scheme == "http" && loopback)) && issuer.query == null && issuer.fragment == null && issuer.userInfo == null
         val sameOrigin = destination.scheme == issuer.scheme && destination.host == issuer.host && destination.port == issuer.port && destination.userInfo == null && destination.fragment == null
         if (!validIssuer || !sameOrigin) throw IllegalArgumentException("issuer")
+        val callbackEpoch = args.getInt("authCallbackEpoch")
+        require(callbackEpoch >= 0)
+        authCallbackTransactionEpoch = callbackEpoch
         activity.startActivity(Intent(Intent.ACTION_VIEW, destination).addCategory(Intent.CATEGORY_BROWSABLE))
         invoke.resolve(JSObject().put("kind", "ok"))
     }
@@ -269,6 +274,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
             return
         }
         pendingAuthCallback = candidate
+        pendingAuthCallbackEpoch = authCallbackTransactionEpoch
     }
 
     private fun isAuthCallback(candidate: String): Boolean {
@@ -280,10 +286,12 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     private fun takeAuthCallback(invoke: Invoke) {
         val callback = pendingAuthCallback
         val response = JSObject().put("kind", "auth-callback").put("url", callback)
+        pendingAuthCallbackEpoch?.let { response.put("authCallbackEpoch", it) }
         if (callback != null && activity.intent?.dataString == callback) {
             activity.intent = Intent(activity.intent).setData(null)
         }
         pendingAuthCallback = null
+        pendingAuthCallbackEpoch = null
         invoke.resolve(response)
     }
 
@@ -293,6 +301,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
             activity.intent = Intent(activity.intent).setData(null)
         }
         pendingAuthCallback = null
+        pendingAuthCallbackEpoch = null
         invoke.resolve(JSObject().put("kind", "ok"))
     }
 
@@ -304,12 +313,15 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
                 activity.intent = Intent(activity.intent).setData(null)
             }
             pendingAuthCallback = null
+            pendingAuthCallbackEpoch = null
         }
         invoke.resolve(JSObject().put("kind", "ok"))
     }
 
     private fun peekAuthCallback(invoke: Invoke) {
-        invoke.resolve(JSObject().put("kind", "auth-callback").put("url", pendingAuthCallback))
+        val response = JSObject().put("kind", "auth-callback").put("url", pendingAuthCallback)
+        pendingAuthCallbackEpoch?.let { response.put("authCallbackEpoch", it) }
+        invoke.resolve(response)
     }
 
     private fun openExternal(invoke: Invoke) {

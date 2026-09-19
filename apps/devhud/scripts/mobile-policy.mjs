@@ -66,6 +66,10 @@ export function assertAndroidNativeBridge(androidNativeBridgeInput) {
   const cleanupPendingDiagnosticsExport = androidNativeBridge.match(/private fun cleanupPendingDiagnosticsExport\(\): Boolean[\s\S]*?(?=\n    private fun hasPersistedDiagnosticsWriteGrant)/u)?.[0] ?? "";
   const clearAuthCallback = androidNativeBridge.match(/private fun clearAuthCallback\(invoke: Invoke\)[\s\S]*?(?=\n    private fun peekAuthCallback)/u)?.[0] ?? "";
   const quarantineAuthCallback = androidNativeBridge.match(/private fun quarantineAuthCallback\(invoke: Invoke\)[\s\S]*?(?=\n    private fun peekAuthCallback)/u)?.[0] ?? "";
+  const openAuthenticationBrowser = androidNativeBridge.match(/private fun openAuthenticationBrowser\(invoke: Invoke\)[\s\S]*?(?=\n    private fun exportDiagnostics)/u)?.[0] ?? "";
+  const captureAuthCallback = androidNativeBridge.match(/private fun captureAuthCallback\(intent: Intent\?\)[\s\S]*?(?=\n    private fun isAuthCallback)/u)?.[0] ?? "";
+  const takeAuthCallback = androidNativeBridge.match(/private fun takeAuthCallback\(invoke: Invoke\)[\s\S]*?(?=\n    private fun clearAuthCallback)/u)?.[0] ?? "";
+  const peekAuthCallback = androidNativeBridge.match(/private fun peekAuthCallback\(invoke: Invoke\)[\s\S]*?(?=\n    private fun openExternal)/u)?.[0] ?? "";
   const removeSecure = androidNativeBridge.match(/private fun removeSecure\(invoke: Invoke\)[\s\S]*?(?=\n    private fun removeGitHubPatScope)/u)?.[0] ?? "";
   const removeGitHubPatScope = androidNativeBridge.match(/private fun removeGitHubPatScope[\s\S]*?(?=\n    private fun reconcileGitHubPats)/u)?.[0] ?? "";
   const reconcileGitHubPats = androidNativeBridge.match(/private fun reconcileGitHubPats[\s\S]*?(?=\n    private fun purgeSecure)/u)?.[0] ?? "";
@@ -93,6 +97,10 @@ export function assertAndroidNativeBridge(androidNativeBridgeInput) {
   assert(androidNativeBridge.includes("manager.activeNotifications") && androidNativeBridge.includes("it.notification.group == deckId"), "Android Deck cancellation must remove every associated notification");
   assert(androidNativeBridge.includes("activity.intent = Intent(activity.intent).setData(null)"), "Android consumed auth callbacks must be removed from the activity intent");
   assert(androidNativeBridge.includes("peekAuthCallback") && androidNativeBridge.includes("pendingAuthCallback"), "Android auth callback inspection must be non-destructive");
+  assert(openAuthenticationBrowser.includes('args.getInt("authCallbackEpoch")') && openAuthenticationBrowser.includes("authCallbackTransactionEpoch = callbackEpoch"), "Android browser launches must retain their callback epoch");
+  assert(captureAuthCallback.includes("pendingAuthCallbackEpoch = authCallbackTransactionEpoch"), "Android callbacks must retain the browser-launch epoch");
+  assert(takeAuthCallback.includes('response.put("authCallbackEpoch", it)') && peekAuthCallback.includes('response.put("authCallbackEpoch", it)'), "Android callback reads must expose their captured epoch");
+  assert(clearAuthCallback.includes("pendingAuthCallbackEpoch = null") && quarantineAuthCallback.includes("pendingAuthCallbackEpoch = null"), "Android callback invalidation must clear captured epoch metadata");
   assert(androidNativeBridge.includes('\"auth.clear-pending-callback\" -> clearAuthCallback(invoke)') && clearAuthCallback.includes("pendingAuthCallback = null") && clearAuthCallback.includes("Intent(activity.intent).setData(null)"), "Android origin rekeys must clear the plugin callback and matching activity intent");
   assert(androidNativeBridge.includes('\"auth.quarantine-pending-callback\" -> quarantineAuthCallback(invoke)') && androidNativeBridge.includes("private var authCallbackQuarantined = false") && quarantineAuthCallback.includes("authCallbackQuarantined = invoke.getArgs().getBoolean(\"quarantined\")") && quarantineAuthCallback.includes("pendingAuthCallback = null") && androidNativeBridge.includes("if (authCallbackQuarantined)"), "Android origin rekeys must quarantine callbacks through renderer reload");
   assert(exportDiagnostics.includes("if (diagnosticsExportPickerActive)") && exportDiagnostics.indexOf("if (diagnosticsExportPickerActive)") < exportDiagnostics.indexOf("diagnosticsExportPickerActive = true"), "Android diagnostics exports must reject a concurrent picker before reserving another one");

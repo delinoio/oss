@@ -103,6 +103,7 @@ interface BoundaryProps extends PropsWithChildren {
   readonly identitySessionRef?: RefObject<IdentitySession | null>;
   readonly identityRecoveryGeneration?: number;
   readonly identityRecoveryGenerationRef?: MutableRefObject<number>;
+  readonly prepareApiOriginChangeRef?: MutableRefObject<(() => Promise<void>) | null>;
 }
 
 export function DevHudServiceBoundary(props: BoundaryProps) {
@@ -143,7 +144,7 @@ export function DevHudServiceBoundary(props: BoundaryProps) {
   </QueryClientProvider></TransportProvider>;
 }
 
-function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onCallbackConsumed, onAuthCallbackEpoch, onDeckLinkPolicyReady, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset, identityRecoveryGeneration = 0, identityRecoveryGenerationRef }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
+function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onCallbackConsumed, onAuthCallbackEpoch, onDeckLinkPolicyReady, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset, identityRecoveryGeneration = 0, identityRecoveryGenerationRef, prepareApiOriginChangeRef }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
   const storage = getLocalStorage();
   const queryClient = useQueryClient();
   const transport = useTransport();
@@ -182,6 +183,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const signInPendingRef = useRef(false);
   const callbackHandled = useRef<string | null>(null);
   const invalidSessionCleanupRef = useRef<Promise<void> | null>(null);
+  const pendingDeletionCleanupRef = useRef<Promise<void> | null>(null);
   const irrecoverableCleanupPendingRef = useRef(false);
   const continueLocallyRef = useRef(false);
   const githubPatReconciliationRef = useRef<Promise<boolean> | null>(null);
@@ -268,22 +270,48 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     return cleanup;
   }
 
-  async function cleanPendingDeletion(): Promise<void> {
+  function cleanPendingDeletion(): Promise<void> {
+    if (pendingDeletionCleanupRef.current !== null) return pendingDeletionCleanupRef.current;
     invalidateDeckPolling();
     setDeckAccessSuspended(true);
-    const releaseDiagnosticWrites = beginDiagnosticWriteSuppression(storage);
-    try {
-      const localCleanupComplete = clearAllContractedLocalData(storage);
+    let cleanup: Promise<void>;
+    cleanup = (async () => {
+      const releaseDiagnosticWrites = beginDiagnosticWriteSuppression(storage);
       try {
-        await bridge.request({ operation: "secure.purge", scope: "account-deletion", profileId: await sessionProfileId(apiOrigin) });
-        setDeletionCleanupFailed(!localCleanupComplete);
-      } catch {
-        setDeletionCleanupFailed(true);
+        const localCleanupComplete = clearAllContractedLocalData(storage);
+        try {
+          await bridge.request({ operation: "secure.purge", scope: "account-deletion", profileId: await sessionProfileId(apiOrigin) });
+          setDeletionCleanupFailed(!localCleanupComplete);
+        } catch {
+          setDeletionCleanupFailed(true);
+        }
+      } finally {
+        releaseDiagnosticWrites();
       }
-    } finally {
-      releaseDiagnosticWrites();
-    }
+    })();
+    pendingDeletionCleanupRef.current = cleanup;
+    void cleanup.then(
+      () => { if (pendingDeletionCleanupRef.current === cleanup) pendingDeletionCleanupRef.current = null; },
+      () => { if (pendingDeletionCleanupRef.current === cleanup) pendingDeletionCleanupRef.current = null; },
+    );
+    return cleanup;
   }
+
+  useEffect(() => {
+    if (!prepareApiOriginChangeRef) return;
+    const prepareApiOriginChange = async () => {
+      // Invalidate continuations before waiting: a deletion that has not yet
+      // entered cleanup must not start one after the origin transition begins.
+      recoveryGenerationRef.current += 1;
+      invalidateDeckPolling();
+      setDeckAccessSuspended(true);
+      await pendingDeletionCleanupRef.current;
+    };
+    prepareApiOriginChangeRef.current = prepareApiOriginChange;
+    return () => {
+      if (prepareApiOriginChangeRef.current === prepareApiOriginChange) prepareApiOriginChangeRef.current = null;
+    };
+  }, [prepareApiOriginChangeRef, recoveryGenerationRef]);
 
   async function clearIrrecoverableAccount(): Promise<void> {
     invalidateDeckPolling();
@@ -423,14 +451,18 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   useEffect(() => {
     if (!callbackUrl || callbackHandled.current === callbackUrl || session === null) return;
     callbackHandled.current = callbackUrl;
+    const operationRecoveryGeneration = recoveryGenerationRef.current;
     void (async () => {
       await session.handleCallback(callbackUrl);
+      if (recoveryGenerationRef.current !== operationRecoveryGeneration) return;
       const pending = await bridge.request({ operation: "auth.take-pending-callback" });
       if (pending.kind !== "auth-callback" || pending.url !== callbackUrl) throw new Error("auth-callback-unavailable");
+      if (recoveryGenerationRef.current !== operationRecoveryGeneration) return;
       onCallbackConsumed(callbackUrl);
       setStatus("authenticated");
       setError(null);
     })().catch((reason) => {
+      if (recoveryGenerationRef.current !== operationRecoveryGeneration) return;
       callbackHandled.current = null;
       setStatus("error");
       setError(safeError(reason));

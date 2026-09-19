@@ -696,12 +696,21 @@ impl NativeBridgeState {
         Some((transaction_epoch, pending.epoch))
     }
 
-    pub fn begin_auth_callback_transaction(&self) {
+    pub fn begin_auth_callback_transaction(&self) -> u32 {
         let mut pending = self
             .pending_auth_callback
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         pending.transaction_epoch = Some(pending.epoch);
+        pending.epoch
+    }
+
+    #[cfg(target_os = "android")]
+    fn auth_callback_policy_epoch(&self) -> u32 {
+        self.pending_auth_callback
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .epoch
     }
 
     pub fn offer_deck_link(&self, candidate: &str) -> bool {
@@ -1679,7 +1688,7 @@ pub fn handle_native_bridge_request(
 #[cfg(mobile)]
 #[tauri::command]
 pub async fn native_bridge_v1<R: tauri::Runtime>(
-    request: Value,
+    mut request: Value,
     state: tauri::State<'_, NativeBridgeState>,
     app: tauri::AppHandle<R>,
 ) -> Result<Value, String> {
@@ -1718,6 +1727,12 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         validate_auth_browser_request(&request, &state)?;
         #[cfg(target_os = "ios")]
         state.begin_auth_callback_transaction();
+        #[cfg(target_os = "android")]
+        {
+            // Android owns the callback slot in its plugin, so hand it the
+            // launch epoch before the browser can return a deep link.
+            request["authCallbackEpoch"] = json!(state.begin_auth_callback_transaction());
+        }
     }
     if operation == "session.configure-origins" {
         let (changed, auth_callback_epoch, api_origin_changed) =
@@ -1739,7 +1754,14 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         if operation == "secure.purge" && purge_clears_diagnostics(&request) {
             clear_diagnostic_logs()?;
         }
-        return crate::native_plugin::request(&app, &request);
+        let mut response = crate::native_plugin::request(&app, &request)?;
+        #[cfg(target_os = "android")]
+        if matches!(operation, "auth.peek-pending-callback" | "auth.take-pending-callback")
+            && response.get("authCallbackEpoch").and_then(Value::as_u64).is_some()
+        {
+            response["authCallbackPolicyEpoch"] = json!(state.auth_callback_policy_epoch());
+        }
+        return Ok(response);
     }
     handle_native_bridge_request(&request, &state)
 }
