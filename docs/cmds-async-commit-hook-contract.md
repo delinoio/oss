@@ -14,6 +14,8 @@ Commands: init; config validate; run; status; wait; logs; check; inbox; ack; fai
 
 JSON responses carry schema_version=1. Exit codes: 0 operation success (gates only when passing), 1 failed/incomplete validation, 2 invalid usage/configuration, 3 runner/storage error, 4 wait expiration. Diagnostics use stable codes on stderr. Wait expiration never cancels work.
 
+Acknowledgement accepts only terminal runs, atomically with its idempotent timestamp. Premature calls return `acknowledgement-premature` without modifying inbox visibility; queries never acknowledge results.
+
 Project TOML has version, optional diff_base, pre_push policy, and named checks. Checks declare command, depends_on, operating systems, shell, optional status, environment references, report declarations and scheduling policy/group. Personal TOML owns mode, api_port, state_dir, credentials and retention. Unknown fields/versions, cycles, absent dependencies and unsafe report paths fail validation. Accepted configuration and non-secret inputs are frozen; secrets are resolved from references and never fingerprinted by value.
 
 Registration is keyed by canonical Git common directory, not remote URL; each worktree has a separate ID. Automatic submission is idempotent, explicit attempts are not. Durable receipt precedes detached processing. Each run uses independent committed source with managed hooks disabled. Submodules and LFS are unsupported and diagnosed before execution.

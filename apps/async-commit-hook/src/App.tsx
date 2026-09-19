@@ -553,7 +553,7 @@ function RunList({
   );
 }
 
-function RunDetail({
+export function RunDetail({
   id,
   onBack,
   onSelect,
@@ -622,7 +622,7 @@ function RunDetail({
         </div>
         <div className="actions">
           <button
-            disabled={Boolean(run.acknowledgedAt) || ack.isPending}
+            disabled={active(run.state) || run.state === ExecutionState.UNSPECIFIED || Boolean(run.acknowledgedAt) || ack.isPending}
             onClick={async () => {
               try {
                 await ack.mutateAsync({ runId: id });

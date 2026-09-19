@@ -1,0 +1,34 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { create } from "@bufbuild/protobuf";
+import { createRouterTransport } from "@connectrpc/connect";
+import { TransportProvider } from "@connectrpc/connect-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ExecutionState, LocalService, RunSchema } from "@delinoio/async-commit-hook-api-client";
+import { expect, it, vi } from "vitest";
+import { RunDetail } from "./App";
+
+it.each([
+  ExecutionState.QUEUED, ExecutionState.PREPARING, ExecutionState.RUNNING,
+  ExecutionState.COLLECTING, ExecutionState.UNSPECIFIED, ExecutionState.FAILED,
+])("acknowledges only completed results (state %s)", async (state) => {
+  const acknowledge = vi.fn(() => ({}));
+  const transport = createRouterTransport((router) => router.service(LocalService, {
+    getRun: () => ({ run: create(RunSchema, { id: "run", state }) }),
+    acknowledge,
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const { unmount } = render(
+    <QueryClientProvider client={client}>
+      <TransportProvider transport={transport}>
+        <RunDetail id="run" onBack={() => {}} onSelect={() => {}} />
+      </TransportProvider>
+    </QueryClientProvider>,
+  );
+  const button = await screen.findByRole("button", { name: "Acknowledge" }) as HTMLButtonElement;
+  expect(button.disabled).toBe(state !== ExecutionState.FAILED);
+  fireEvent.click(button);
+  if (state === ExecutionState.FAILED) await waitFor(() => expect(acknowledge).toHaveBeenCalledOnce());
+  else expect(acknowledge).not.toHaveBeenCalled();
+  unmount();
+  client.clear();
+});

@@ -2,6 +2,7 @@
 
 - The package owns development on fixed port 46308, tests and static production builds. The root entry delegates to this package.
 - Use the generated Connect Query descriptors for server state. Filter lists on the server before applying their scoped cursors.
+- Disable acknowledgement until an execution is terminal; opening or waiting for a result never acknowledges it.
 - Render source, logs, report data and failure diagnostics as inert text. Do not use HTML interpretation or remote telemetry.
 - Pairing codes are short-lived URL fragments or explicit user input. Remove fragments immediately; keep results only in in-memory query caches.
 - Preserve keyboard navigation, dialog focus restoration, status words and recoverable network/version/authentication states.

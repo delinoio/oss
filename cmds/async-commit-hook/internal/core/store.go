@@ -258,8 +258,17 @@ func (s *Store) Ack(id string) error {
 	if _, err := s.Run(id); err != nil {
 		return err
 	}
-	_, err := s.DB.Exec("UPDATE runs SET ack=COALESCE(ack,?) WHERE id=?", time.Now().UTC().Format(time.RFC3339Nano), id)
-	return err
+	return s.Transaction(func(tx *sql.Tx) error {
+		var state State
+		if err := tx.QueryRow("SELECT state FROM runs WHERE id=?", id).Scan(&state); err != nil {
+			return err
+		}
+		if !state.Terminal() {
+			return E("acknowledgement-premature", "wait for the execution to finish before acknowledging its result", 2)
+		}
+		_, err := tx.Exec("UPDATE runs SET ack=COALESCE(ack,?) WHERE id=?", time.Now().UTC().Format(time.RFC3339Nano), id)
+		return err
+	})
 }
 func (s *Store) List(repo string, inbox bool, cursor string, limit int) (Page, error) {
 	return s.ListFiltered(repo, "", "", inbox, cursor, limit)

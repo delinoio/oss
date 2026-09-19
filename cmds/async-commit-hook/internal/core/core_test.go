@@ -210,15 +210,22 @@ func TestAcknowledgementIdempotencyAndAutomaticDedup(t *testing.T) {
 	if r.AcknowledgedAt != nil {
 		t.Fatal("read acknowledged")
 	}
-	if e = s.Store.Ack(a.RunID); e != nil {
-		t.Fatal(e)
+	for _, state := range []State{Queued, Preparing, Running, Collecting} {
+		r.State = state
+		if err := s.Store.SaveRun(r); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Store.Ack(r.ID); err == nil {
+			t.Fatal("acknowledged unfinished run")
+		}
+		stored, _ := s.Store.Run(r.ID)
+		if stored.AcknowledgedAt != nil {
+			t.Fatal("premature ack was persisted")
+		}
 	}
-	r, _ = s.Store.Run(a.RunID)
-	first := *r.AcknowledgedAt
-	_ = s.Store.Ack(a.RunID)
-	r, _ = s.Store.Run(a.RunID)
-	if !first.Equal(*r.AcknowledgedAt) {
-		t.Fatal("ack changed timestamp")
+	r.State = Queued
+	if err := s.Store.SaveRun(r); err != nil {
+		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
 	defer cancel()
@@ -228,6 +235,30 @@ func TestAcknowledgementIdempotencyAndAutomaticDedup(t *testing.T) {
 	r, _ = s.Store.Run(a.RunID)
 	if r.State != Queued {
 		t.Fatal("wait cancelled execution")
+	}
+	r.State = Failed
+	if err := s.Store.SaveRun(r); err != nil {
+		t.Fatal(err)
+	}
+	page, err := s.Store.List("", true, "", 50)
+	if err != nil || len(page.Runs) != 1 {
+		t.Fatal("completed failure missing from inbox", err)
+	}
+	if err := s.Store.Ack(r.ID); err != nil {
+		t.Fatal(err)
+	}
+	r, _ = s.Store.Run(r.ID)
+	first := *r.AcknowledgedAt
+	if err := s.Store.Ack(r.ID); err != nil {
+		t.Fatal(err)
+	}
+	r, _ = s.Store.Run(r.ID)
+	if !first.Equal(*r.AcknowledgedAt) {
+		t.Fatal("ack changed timestamp")
+	}
+	page, err = s.Store.List("", true, "", 50)
+	if err != nil || len(page.Runs) != 0 {
+		t.Fatal("acknowledged failure remains in inbox", err)
 	}
 }
 func TestPruneCannotResurrectSuccess(t *testing.T) {

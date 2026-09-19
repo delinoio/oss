@@ -242,7 +242,7 @@ ach ack --run &lt;id&gt;</pre
         </p>
         <p>
           Acknowledgement is shared by CLI, MCP and web, is explicit and
-          idempotent, and never changes validation. Reading does not
+          idempotent, accepts completed results only, and never changes validation. Reading does not
           acknowledge. <code>ach inbox --repo .</code> includes pending work and
           completed results needing review.
         </p>
