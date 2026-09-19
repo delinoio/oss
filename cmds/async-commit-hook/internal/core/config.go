@@ -274,11 +274,21 @@ func (c Command) SelectedShell(osName string) Shell {
 }
 func Hash(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }
 func Fingerprint(p Project, env map[string]string) string {
+	// Whitelist execution inputs instead of hashing the entire configuration.
+	// Keep the old default-policy serialization slot constant for compatibility
+	// with existing v1 default-config digests; the selected push policy and diff
+	// base never influence execution identity. Full settings remain in Run.Config.
+	type executionConfig struct {
+		Version int                `json:"version"`
+		PrePush PushPolicy         `json:"pre_push"`
+		Checks  map[string]Command `json:"checks"`
+	}
+	execution := executionConfig{p.Version, PushBlock, p.Checks}
 	return Hash(Encode(struct {
-		Project     Project
+		Project     executionConfig
 		Environment map[string]string
 		OS, Arch    string
-	}{p, env, runtime.GOOS, runtime.GOARCH}))
+	}{execution, env, runtime.GOOS, runtime.GOARCH}))
 }
 func PublicEnvironment(p Project) (map[string]string, error) {
 	values := map[string]string{}
