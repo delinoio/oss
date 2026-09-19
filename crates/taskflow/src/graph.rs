@@ -7,7 +7,7 @@ use anyhow::{bail, ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::{Dependency, Task, WaitFor},
+    config::{Dependency, Executor, Os, Task, WaitFor},
     discover::Workspace,
     files,
 };
@@ -62,6 +62,11 @@ impl Graph {
             if let Some(config) = &project.config {
                 for (name, task) in &config.tasks {
                     let id = reference(&project.id, name);
+                    ensure!(
+                        task.platform.executor != Executor::Docker
+                            || task.platform.resolved().0 == Os::Linux,
+                        "{id}: Docker requires Linux after applying platform defaults"
+                    );
                     if let Some(remote) = &graph.workspace.config.remote {
                         crate::environment::validate_remote_inputs(remote, task, &BTreeMap::new())
                             .map_err(|error| {

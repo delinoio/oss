@@ -452,7 +452,7 @@ impl Task {
         }
         if self.platform.executor == Executor::Docker {
             ensure!(
-                self.platform.os == Some(Os::Linux),
+                self.platform.os.is_none_or(|os| os == Os::Linux),
                 "Docker requires platform.os: linux"
             );
             let image = self

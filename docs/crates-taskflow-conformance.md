@@ -177,3 +177,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `shard_timeouts_and_cancellation_preserve_receipt_reasons` exercises generic exchange and native command inventories, including empty shards. Deadlines and cancellation retain codes 124/130 and complete failed/cancelled accounting even when no generic result file is written.
 
 `affected_selection_rejects_unknown_task_filters` validates qualified and unqualified filters independently of changed-file selection, including mixed valid/invalid requests and public plan/run preflight. Valid unaffected requests still produce an empty plan.
+
+`docker_platform_validation_applies_cli_defaults_first` checks omitted, Linux, and non-Linux task OS values against all CLI OS defaults without starting Docker or task processes.

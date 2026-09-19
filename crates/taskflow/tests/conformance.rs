@@ -3829,3 +3829,31 @@ async fn affected_selection_rejects_unknown_task_filters() {
     }
     assert!(!directory.path().join("started").exists());
 }
+
+#[test]
+fn docker_platform_validation_applies_cli_defaults_first() {
+    for declared in [None, Some("linux"), Some("windows")] {
+        let mut platform = json!({"executor":"docker","image":"fixture@sha256:0000000000000000000000000000000000000000000000000000000000000000"});
+        if let Some(os) = declared {
+            platform["os"] = json!(os);
+        }
+        let directory = fixture(
+            json!({"build":{"command":command(&["write","started","unexpected"]),"platform":platform}}),
+        );
+        for selected in ["linux", "windows", "macos"] {
+            let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+                .arg("--root")
+                .arg(directory.path())
+                .args(["--os", selected, "check"])
+                .output()
+                .unwrap();
+            assert_eq!(
+                output.status.success(),
+                declared.unwrap_or(selected) == "linux",
+                "declared={declared:?}, selected={selected}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        assert!(!directory.path().join("started").exists());
+    }
+}
