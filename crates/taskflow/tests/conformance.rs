@@ -4969,6 +4969,15 @@ async fn dangling_input_links_track_target_deletion_and_recreation() {
         std::fs::write(root.path().join("target-file"), "second").unwrap();
         assert_ne!(snapshot().unwrap()["link"], first["link"]);
         std::fs::remove_file(root.path().join("link")).unwrap();
+        std::os::unix::fs::symlink(root.path().join("target-file"), root.path().join("link"))
+            .unwrap();
+        assert!(
+            snapshot().is_ok(),
+            "internal absolute links may use a filesystem alias for the root"
+        );
+        std::fs::remove_file(root.path().join("target-file")).unwrap();
+        assert!(snapshot().unwrap()["link"].ends_with(":missing"));
+        std::fs::remove_file(root.path().join("link")).unwrap();
         std::os::unix::fs::symlink("../missing-outside", root.path().join("link")).unwrap();
         assert!(
             snapshot().is_err(),

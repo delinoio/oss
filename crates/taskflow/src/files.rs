@@ -281,12 +281,25 @@ fn validate_input_link(root: &Path, path: &Path) -> Result<()> {
                 ensure!(links <= 40, "input link cycle or excessive link depth");
                 let target = std::fs::read_link(&candidate)?;
                 let mut expanded = if target.is_absolute() {
-                    resolved = root.to_path_buf();
-                    parts(
-                        target
-                            .strip_prefix(root)
-                            .context("input link escapes workspace")?,
-                    )?
+                    slash(&target)?;
+                    // macOS /var and /private/var can name the same workspace.
+                    // Enter at the first canonical workspace prefix, then keep
+                    // all remaining components for ordinary link validation.
+                    let mut entry = None;
+                    for prefix in target.ancestors().collect::<Vec<_>>().into_iter().rev() {
+                        match prefix.canonicalize() {
+                            Ok(canonical) if canonical.starts_with(root) => {
+                                entry = Some((canonical, prefix));
+                                break;
+                            }
+                            Ok(_) => {}
+                            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                            Err(error) => return Err(error.into()),
+                        }
+                    }
+                    let (canonical, prefix) = entry.context("input link escapes workspace")?;
+                    resolved = canonical;
+                    parts(target.strip_prefix(prefix)?)?
                 } else {
                     parts(&target)?
                 };

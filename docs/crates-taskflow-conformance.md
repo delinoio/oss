@@ -236,7 +236,7 @@ The real Go flag suite also compares `-failfast` and `-failfast=false` across tw
 
 `input_digest_uses_bounded_reads_and_preserves_sha256_identity` checks the input reader buffer bound, reference digest parity, and regular/file-link identities.
 
-`dangling_input_links_track_target_deletion_and_recreation` runs automatic and explicit inputs through present, deleted, and recreated file-link targets while rejecting missing external targets and cycles.
+`dangling_input_links_track_target_deletion_and_recreation` runs automatic and explicit inputs through present, deleted, and recreated file-link targets while rejecting missing external targets and cycles. Absolute internal links retain filesystem root aliases, including macOS `/var` and `/private/var`, before and after target deletion.
 
 `ready_service_identity_invalidates_cached_consumers` restarts a real service with identical and changed inputs and verifies dependent cache reuse only for the identical service identity.
 
