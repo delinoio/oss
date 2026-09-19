@@ -30,6 +30,7 @@ Gate identity is repository, exact commit and configuration/execution fingerprin
 Declared report output paths have a single owner across the graph (case-insensitively for portability). Before each check starts, its previous report files are removed with root-confined operations; committed or prerequisite-generated files cannot satisfy that check's required evidence. Unsafe output cleanup fails the check before command execution. Commands sharing a workspace must respect each other's declared output ownership; the workspace is not a sandbox against deliberately interfering commands.
 
 Pre-push parses every actual branch-update object ID from stdin, ignores tags/deletions, and applies block (default), wait or run-and-wait. Hook/agent installation preserves unrelated data, records ownership, backs up edits and refuses conflicts.
+Hook write/sync/close or ownership-save failures remove the newly created file after checking its file identity and exact written contents. Retrying installation after a transient database failure remains idempotent. Concurrently edited/replaced hooks are preserved with a rollback-conflict diagnostic; successfully installed earlier hooks remain owned.
 
 Project-scoped agent install/uninstall resolves `--repo` to the registered worktree root, including when invoked from a nested directory or linked worktree. User-scoped integration paths remain independent of the current repository.
 

@@ -140,20 +140,47 @@ func (s *Service) Hook(ctx context.Context, repo string, prePush, remove bool) (
 		if e != nil {
 			return out, e
 		}
-		_, e = f.Write(body)
+		created, e := f.Stat()
+		if e != nil {
+			_ = f.Close()
+			return out, e
+		}
+		n, e := f.Write(body)
 		if e == nil {
 			e = f.Sync()
 		}
-		_ = f.Close()
+		closeErr := f.Close()
+		if e == nil {
+			e = closeErr
+		}
 		if e != nil {
-			return out, e
+			return out, errors.Join(e, rollbackCreatedHook(path, created, body[:n]))
 		}
 		if e = s.saveInstallation(Installation{ID: id, Path: path, Hash: Hash(body), Kind: "hook"}); e != nil {
-			return out, e
+			return out, errors.Join(e, rollbackCreatedHook(path, created, body))
 		}
 		out = append(out, InstallResult{Installed: true, Path: path})
 	}
 	return out, nil
+}
+
+func rollbackCreatedHook(path string, created os.FileInfo, body []byte) error {
+	current, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	// A concurrently replaced or edited hook is no longer ours to remove.
+	if !current.Mode().IsRegular() || !os.SameFile(created, current) || Hash(contents) != Hash(body) {
+		return E("hook-rollback-conflict", "hook changed during failed installation; preserve it and inspect manually: "+path, 3)
+	}
+	return os.Remove(path)
 }
 
 func hookExample(kind, command string) string {
