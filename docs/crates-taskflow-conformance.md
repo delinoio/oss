@@ -108,7 +108,7 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 
 `libtest_ids_distinguish_workspace_packages` executes two Cargo packages with identically named integration targets and tests. Inventory IDs include stable package name/version identity, preserving complete shard accounting without checkout paths.
 
-`cache_restores_directory_links_outside_output_roots` restores a directory symlink into a project-local tree outside the owned outputs. Cache link records retain the original directory/file type; older records lacking type information are rejected rather than guessed from the staging tree.
+`cache_restores_directory_links_outside_output_roots` restores a directory symlink into a project-local tree outside the owned outputs. Cache link records retain the original directory/file type; older records lacking type information are rejected rather than guessed from the staging tree. It checks portable archive targets, native filesystem targets, successful traversal, and the restored digest. Windows link creation converts portable slashes to native separators because relative reparse targets otherwise remain untraversable.
 
 `unrelated_native_metadata_does_not_block_resolved_selectors` discovers two independent Cargo workspaces, one lacking its lockfile. Coverage records name their owning projects: only selectors in the unresolved workspace require preparation, while global affected selection remains conservative.
 

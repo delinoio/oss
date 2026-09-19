@@ -331,10 +331,16 @@ impl Artifact {
                 #[cfg(unix)]
                 std::os::unix::fs::symlink(target, &path)?;
                 #[cfg(windows)]
-                if *directory {
-                    std::os::windows::fs::symlink_dir(target, &path)?;
-                } else {
-                    std::os::windows::fs::symlink_file(target, &path)?;
+                {
+                    // CreateSymbolicLinkW preserves relative target separators. Keep the
+                    // artifact portable, but use native separators at the Windows boundary
+                    // so the resulting link can be traversed by filesystem operations.
+                    let target = target.replace('/', "\\");
+                    if *directory {
+                        std::os::windows::fs::symlink_dir(target, &path)?;
+                    } else {
+                        std::os::windows::fs::symlink_file(target, &path)?;
+                    }
                 }
             }
         }

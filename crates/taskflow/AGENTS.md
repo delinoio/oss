@@ -10,6 +10,7 @@
 - Output restoration must validate the complete entry and containment before mutation. Secrets must be masked before persistence.
 - Strip workspace-designated secret variables from every task that does not declare them, including tasks grouped into one CI unit.
 - Cache link validation follows archive link chains and existing filesystem ancestors before processing parent components; lexical containment alone cannot authorize restoration.
+- Cache link records use portable separators; Windows link creation converts targets to native separators before invoking the filesystem API.
 - Local cache readers, writers, and cleaning share a process-safe cache lock outside the removable cache tree; never hold it during commands or network operations.
 - Every child belongs to a process-tree/container owner; replacement waits for reaping. Tests must assert actual cleanup. Service shutdown must await all owners and propagate every unverified process/container cleanup as failure.
 - Apply overlap policies to per-task execution ownership, not to membership in an unfinished wave.

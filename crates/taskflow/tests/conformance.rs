@@ -2052,21 +2052,29 @@ async fn cache_restores_directory_links_outside_output_roots() {
     #[cfg(unix)]
     std::os::unix::fs::symlink("../shared", directory.path().join("out/link")).unwrap();
     #[cfg(windows)]
-    std::os::windows::fs::symlink_dir("../shared", directory.path().join("out/link")).unwrap();
+    std::os::windows::fs::symlink_dir(
+        Path::new("..").join("shared"),
+        directory.path().join("out/link"),
+    )
+    .unwrap();
     let g = graph(directory.path()).await;
     let project = &g.workspace.projects["app"];
     let task = &g.tasks["app#build"].task;
     let artifact =
         cache::Artifact::capture("key".into(), "app#build".into(), project, task).unwrap();
     assert!(artifact.files.iter().any(|entry| matches!(
-        entry.content,
+        &entry.content,
         cache::Content::Link {
+            target,
             directory: true,
-            ..
-        }
+        } if target == "../shared"
     )));
     std::fs::remove_dir_all(directory.path().join("out")).unwrap();
     artifact.restore("key", "app#build", project, task).unwrap();
+    assert_eq!(
+        std::fs::read_link(directory.path().join("out/link")).unwrap(),
+        Path::new("..").join("shared")
+    );
     assert_eq!(
         std::fs::read_to_string(directory.path().join("out/link/value")).unwrap(),
         "retained"
