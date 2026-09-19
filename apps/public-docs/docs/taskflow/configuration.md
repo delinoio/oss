@@ -90,7 +90,7 @@ Omitted outputs make CI keep dependent tasks in the same job.
 | `cache` | Opt-in task result reuse; default `false`. |
 | `env`, `envInputs`, `secrets`, `tools` | Environment, masking, and cache-key contracts. |
 | `resources` | Names of exclusive locks shared across tasks and invocations. |
-| `timeout` | Maximum command duration such as `15m`. |
+| `timeout` | Maximum command duration such as `15m`; for services this includes readiness and serving time, and expiry stops the session. |
 | `platform.os` | `macos`, `linux`, or `windows`. |
 | `platform.arch` | `x64` or `arm64`. |
 | `platform.executor` | `host` (default) or `docker`. |

@@ -612,6 +612,12 @@ async fn run_task(
         task.shell.as_deref(),
         Some(&values),
     )?;
+    let process_started = Instant::now();
+    let timeout = task
+        .timeout
+        .as_ref()
+        .map(|s| config::duration(s))
+        .transpose()?;
     let stdout = tokio::spawn(stream_log(
         process.child.stdout.take().unwrap(),
         log.clone(),
@@ -629,15 +635,22 @@ async fn run_task(
     tracing::info!(task = id, execution = %execution, causes = ?causes, "Task started");
     if task.service {
         if let Some(readiness) = &task.readiness {
-            if let Err(error) = wait_ready(
+            let ready = wait_ready(
                 &mut process,
                 readiness,
                 &project.directory,
                 &values,
                 &cancel,
-            )
-            .await
-            {
+            );
+            let result = if let Some(timeout) = timeout {
+                tokio::time::timeout(timeout.saturating_sub(process_started.elapsed()), ready)
+                    .await
+                    .context("service timeout elapsed before readiness")
+                    .and_then(|result| result)
+            } else {
+                ready.await
+            };
+            if let Err(error) = result {
                 process.terminate().await?;
                 stdout.await??;
                 stderr.await??;
@@ -660,10 +673,19 @@ async fn run_task(
         let events = services.events.clone();
         let join = tokio::spawn(async move {
             let _locks = locks;
-            let result = process.wait(&stop, None).await.unwrap_or(ProcessExit {
+            let remaining =
+                timeout.map(|duration| duration.saturating_sub(process_started.elapsed()));
+            let mut result = process.wait(&stop, remaining).await.unwrap_or(ProcessExit {
                 code: 1,
                 cancelled: false,
             });
+            if result.cancelled && !stop.is_cancelled() {
+                tracing::warn!(task = %event_id, code = "service-timeout", "Service exceeded its timeout");
+                result = ProcessExit {
+                    code: 124,
+                    cancelled: false,
+                };
+            }
             let _ = stdout.await;
             let _ = stderr.await;
             if let Some(mut docker) = docker {

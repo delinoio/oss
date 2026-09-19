@@ -2185,3 +2185,68 @@ async fn cargo_ci_blueprints_are_independent_of_checkout_paths() {
     }
     assert_eq!(blueprints[0], blueprints[1]);
 }
+
+#[tokio::test]
+async fn service_timeout_shuts_down_and_reaps_the_session() {
+    for ready in [true, false] {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let unavailable = listener.local_addr().unwrap().to_string();
+        drop(listener);
+        let readiness = if ready {
+            json!({"type":"command","command":command(&["version"]),"timeout":"15s"})
+        } else {
+            json!({"type":"tcp","address":unavailable,"timeout":"15s"})
+        };
+        let directory = fixture(json!({
+            "server":{"command":command(&["sleep","server-pid"]),"input":[],"service":true,"timeout":"2s","readiness":readiness},
+            "check":{"command":command(&["sleep","check-pid"]),"input":[]}
+        }));
+        profile(directory.path(), &["server", "check"]);
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            taskflow::session::start(
+                directory.path(),
+                "default",
+                RunOptions {
+                    jobs: 2,
+                    ..RunOptions::default()
+                },
+                CancellationToken::new(),
+            ),
+        )
+        .await
+        .expect("service timeout must stop the session");
+        assert!(result.is_err());
+        for name in ["server-pid", "check-pid"] {
+            let pid: u32 = std::fs::read_to_string(directory.path().join(name))
+                .unwrap()
+                .parse()
+                .unwrap();
+            assert!(!pid_alive(pid), "{name} survived service timeout");
+        }
+    }
+}
+
+fn pid_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), None).is_ok()
+    }
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::{
+            Foundation::CloseHandle,
+            System::Threading::{
+                GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+            },
+        };
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return false;
+        }
+        let mut code = 0;
+        let live = GetExitCodeProcess(handle, &mut code) != 0 && code == 259;
+        CloseHandle(handle);
+        live
+    }
+}

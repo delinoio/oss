@@ -91,3 +91,5 @@ Configuration, result protocol, cache format, adapter coverage, lifecycle, and C
 - Remote cache publication stages an unreachable content-addressed object, then rechecks inputs/cancellation before committing its entry manifest. Interrupted object uploads never become cache hits. Restore validates all contents before staging and retains rollback state if replacement recovery fails.
 - Query JSON masks designated values as well as command logs. `--show-secrets` applies only to live task output. Internal diagnostics pass through the same designation mask before persistence.
 - Public source installation (`cargo build --release --locked -p taskflow --bin tflow` in a checkout) and the standard Cargo binary output location are supported user workflows. The crate remains `publish = false`; no public binary release is implied.
+
+Service task timeouts cover process startup through readiness and continued service execution. Expiry is a service failure that tears down the session; explicit owner cancellation remains a normal shutdown.

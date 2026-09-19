@@ -113,3 +113,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `unrelated_native_metadata_does_not_block_resolved_selectors` discovers two independent Cargo workspaces, one lacking its lockfile. Coverage records name their owning projects: only selectors in the unresolved workspace require preparation, while global affected selection remains conservative.
 
 `cargo_ci_blueprints_are_independent_of_checkout_paths` compares complete serialized CI blueprints from two identical Cargo workspaces at different absolute paths. Resolved local edges use stable project identities, while native manifests preserve version/configuration binding.
+
+`service_timeout_shuts_down_and_reaps_the_session` verifies the task deadline both before readiness and after a service becomes ready, including cleanup of another running check.
