@@ -478,3 +478,8 @@ wall-clock samples, respectively:
 - default/10000: [0.107657, 0.155794, 0.185924, 0.156072, 0.158571] / [1.551664, 1.567362, 1.564183, 1.579052, 1.548858].
 - spill/1000: [0.010908, 0.018206, 0.017826, 0.01799, 0.017968] / [0.465465, 0.463071, 0.45484, 0.467986, 0.463957].
 - limit/1000: [0.01074, 0.021563, 0.022467, 0.021864, 0.021398] / [0.237434, 0.268534, 0.204042, 0.20277, 0.201333].
+
+Every Git metadata/source operation uses a fresh private HOME and an empty regular
+global-config file within it. Native Windows arm64 Git rejects `NUL` for this
+purpose; real files avoid platform null-device behavior without loading user
+configuration. Reused internal config files must remain empty regular files.

@@ -78,7 +78,29 @@ pub fn isolated_environment(root: &Path, names: &[String]) -> Result<Vec<(OsStri
     }
     Ok(env)
 }
-fn git(root: &Path, environment: &[(OsString, OsString)]) -> Process {
+fn git(root: &Path, environment: &[(OsString, OsString)]) -> Result<Process> {
+    let home = environment
+        .iter()
+        .find(|(name, _)| name == "HOME")
+        .map(|(_, value)| PathBuf::from(value))
+        .ok_or_else(|| Error::input("Git preparation requires an isolated home"))?;
+    // Native Windows arm64 Git rejects NUL as a global config file. An empty
+    // regular file inside the private home is portable and never loads user
+    // configuration. Keep it private even when Git changes null-device support.
+    let empty_config = home.join(".runlens-empty-gitconfig");
+    match fs::File::create_new(&empty_config) {
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            if !fs::symlink_metadata(&empty_config)
+                .is_ok_and(|metadata| metadata.is_file() && metadata.len() == 0)
+            {
+                return Err(Error::input(
+                    "isolated Git configuration is not an empty regular file",
+                ));
+            }
+        }
+        Err(_) => return Err(Error::storage()),
+    }
     let mut command = Process::new("git");
     #[cfg(windows)]
     let directory = PathBuf::from(crate::privacy::normalized(root));
@@ -89,10 +111,7 @@ fn git(root: &Path, environment: &[(OsString, OsString)]) -> Process {
         .env_clear()
         .envs(environment.iter().map(|(k, v)| (k, v)))
         .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env(
-            "GIT_CONFIG_GLOBAL",
-            if cfg!(windows) { "NUL" } else { "/dev/null" },
-        )
+        .env("GIT_CONFIG_GLOBAL", empty_config)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_CONFIG_COUNT", "0")
         .arg("-c")
@@ -100,7 +119,7 @@ fn git(root: &Path, environment: &[(OsString, OsString)]) -> Process {
         .arg("-c")
         .arg("core.hooksPath=/dev/null")
         .stdin(Stdio::null());
-    command
+    Ok(command)
 }
 async fn managed_git(
     command: Process,
@@ -108,8 +127,6 @@ async fn managed_git(
     cancel: &CancellationToken,
 ) -> Result<Vec<u8>> {
     use tokio::io::AsyncReadExt;
-    #[cfg(all(windows, feature = "test-support"))]
-    let diagnostic_root = command.get_current_dir().map(Path::to_owned);
     let mut command = tokio::process::Command::from(command);
     command.stderr(Stdio::piped());
     if capture {
@@ -146,18 +163,6 @@ async fn managed_git(
             // Only a bounded classification escapes this scope. Git text can
             // contain local paths and never enters logs or saved reports.
             let text = String::from_utf8_lossy(&bytes);
-            #[cfg(all(windows, feature = "test-support"))]
-            if std::env::var_os("RUNLENS_TEST_GIT_DIAGNOSTICS").is_some()
-                && !text.is_empty()
-                && let Some(root) = &diagnostic_root
-                && let Ok(redactor) = crate::privacy::Redactor::new(
-                    root,
-                    &[root],
-                    &crate::config::Redaction::default(),
-                )
-            {
-                eprintln!("Git fixture diagnostic: {}", redactor.text(&text));
-            }
             if text.contains("dubious ownership") || text.contains("unsafe repository") {
                 GitFailure::Ownership
             } else if text.contains("not a git repository") {
@@ -233,7 +238,7 @@ async fn git_output(
     env: &[(OsString, OsString)],
     cancel: &CancellationToken,
 ) -> Result<Vec<u8>> {
-    let mut command = git(root, env);
+    let mut command = git(root, env)?;
     command.args(args);
     managed_git(command, true, cancel).await
 }
@@ -279,7 +284,7 @@ async fn run_git(
     environment: &[(OsString, OsString)],
     cancel: &CancellationToken,
 ) -> Result<()> {
-    let mut command = git(root, environment);
+    let mut command = git(root, environment)?;
     command.args(args).stdout(Stdio::null());
     managed_git(command, false, cancel).await.map(|_| ())
 }
@@ -387,7 +392,7 @@ async fn include_worktree(
 ) -> Result<()> {
     let patch = temporary.join("tracked.patch");
     let file = fs::File::create(&patch).map_err(|_| Error::storage())?;
-    let mut command = git(root, env);
+    let mut command = git(root, env)?;
     command
         .args([
             "diff",
