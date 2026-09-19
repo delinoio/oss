@@ -35,6 +35,7 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 - Resume revalidates credentials, backend/image and resource conditions. Reload validates the candidate before accepting one new generation. Existing jobs retain original generation/configuration/deadlines. Changed or removed pools drain; a replacement using the same remote identity waits for old ownership to retire. Storage relocation is not a live reload operation. Reload serializes with image operations and cannot clear an already requested manager stop.
 - Lifecycle transitions, reservation publication, GitHub ownership, and cleanup progress are persisted. Restart reconciles actual Docker/Tart resources and GitHub registrations, preserves verified live work, resumes cleanup idempotently, and quarantines ambiguous state. Reservations are not released until termination is confirmed. No automatic GitHub job rerun is performed.
 - Persisted job deadlines continue across manager restart, sleep and connectivity loss. Active preparation/jobs request OS sleep inhibition; idle warm capacity alone does not. Failure warns and continues without changing system policy or promising protection from lid closure, forced sleep, shutdown or power loss.
+- Image removal retains sleep inhibition through external cleanup and its durable completion, including interrupted removal pending recovery.
 
 ### Docker
 

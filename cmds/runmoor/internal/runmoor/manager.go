@@ -202,7 +202,7 @@ func (m *Manager) step() error {
 		}
 	}
 	for _, im := range s.Images {
-		if im.Phase == ImageOpen {
+		if im.Phase == ImageOpen || im.Phase == ImageRemoving {
 			active = true
 		}
 	}

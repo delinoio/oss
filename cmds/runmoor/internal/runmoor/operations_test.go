@@ -214,6 +214,34 @@ func (p *failingPower) Set(active bool) *Problem {
 	return nil
 }
 func (p *failingPower) Release() {}
+func TestPendingImageRemovalKeepsSleepInhibitionUntilDurableCompletion(t *testing.T) {
+	_, s := fixtureStore(t)
+	m := NewManager(s, "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer m.cancel()
+	power := &failingPower{}
+	m.Power = power
+	if err := s.Update(func(s *Snapshot) error {
+		s.Images["removing"] = &Image{ID: "removing", Phase: ImageRemoving}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.step(); err != nil {
+		t.Fatal(err)
+	}
+	if !power.active || s.View().PowerProblem == nil {
+		t.Fatal("pending image mutation lost its sleep inhibitor")
+	}
+	if err := s.Update(func(s *Snapshot) error { delete(s.Images, "removing"); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.step(); err != nil {
+		t.Fatal(err)
+	}
+	if power.active || s.View().PowerProblem != nil {
+		t.Fatal("completed removal retained its inhibitor or warning")
+	}
+}
 func TestPowerFailureRemainsWarningAndJobsKeepRunning(t *testing.T) {
 	m, _, _, driver, pool := testManager(t)
 	id := seedRunner(t, m, pool, Busy)
