@@ -151,3 +151,5 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 `docker_context_cannot_override_a_validated_local_host` injects a remote selected context alongside a local `DOCKER_HOST` and verifies rejection before container launch. Endpoint validation delegates precedence to Docker using the exact launch environment.
 
 `check_rejects_remote_credentials_in_every_project_task` exercises CLI preflight across unselected child tasks, all three environment declaration forms, all transport credential references, and host-specific name casing, including remote mode `off`.
+
+`ci_export_rejects_symlink_destinations_before_writing_either_file` rejects external parent, workflow-leaf, and blueprint-leaf links without creating or replacing either output; an ordinary missing nested destination remains supported.

@@ -3207,3 +3207,71 @@ async fn check_rejects_remote_credentials_in_every_project_task() {
         }
     }
 }
+
+#[tokio::test]
+async fn ci_export_rejects_symlink_destinations_before_writing_either_file() {
+    for linked in ["directory", "workflow", "blueprint"] {
+        let directory = fixture(
+            json!({"check":{"command":command(&["version"]),"input":[],"platform":{"os":config::host_os(),"arch":config::host_arch()}}}),
+        );
+        let external = tempfile::tempdir().unwrap();
+        let path = directory.path().join("taskflow.yml");
+        let mut cfg: Value = serde_yaml::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        cfg["ci"] = json!({"revision":"1111111111111111111111111111111111111111","rust":"nightly-2026-01-01","runners":{config::Platform::default().key():"self-hosted"}});
+        std::fs::write(path, serde_yaml::to_string(&cfg).unwrap()).unwrap();
+        let parent = directory.path().join(".github/workflows");
+        std::fs::create_dir_all(parent.parent().unwrap()).unwrap();
+        if linked == "directory" {
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(external.path(), &parent).unwrap();
+            #[cfg(windows)]
+            std::os::windows::fs::symlink_dir(external.path(), &parent).unwrap();
+        } else {
+            std::fs::create_dir(&parent).unwrap();
+            let name = if linked == "workflow" {
+                "ci.yml"
+            } else {
+                "ci.taskflow.json"
+            };
+            std::fs::write(external.path().join(name), "sentinel").unwrap();
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(external.path().join(name), parent.join(name)).unwrap();
+            #[cfg(windows)]
+            std::os::windows::fs::symlink_file(external.path().join(name), parent.join(name))
+                .unwrap();
+        }
+        let g = graph(directory.path()).await;
+        let error = taskflow::ci::export(
+            &g,
+            vec!["check".into()],
+            Path::new(".github/workflows/ci.yml"),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("escapes workspace"), "{error:#}");
+        for name in ["ci.yml", "ci.taskflow.json"] {
+            if external.path().join(name).exists() {
+                assert_eq!(
+                    std::fs::read_to_string(external.path().join(name)).unwrap(),
+                    "sentinel"
+                );
+            }
+            assert!(!parent.join(name).exists() || parent.join(name).is_symlink());
+        }
+    }
+    let directory = fixture(
+        json!({"check":{"command":command(&["version"]),"input":[],"platform":{"os":config::host_os(),"arch":config::host_arch()}}}),
+    );
+    let mut ws = Workspace::discover(directory.path()).await.unwrap();
+    ws.config.ci = Some(serde_json::from_value(json!({"revision":"1111111111111111111111111111111111111111","rust":"nightly-2026-01-01","runners":{config::Platform::default().key():"self-hosted"}})).unwrap());
+    taskflow::ci::export(
+        &Graph::build(ws).unwrap(),
+        vec!["check".into()],
+        Path::new("new/nested/ci.yml"),
+    )
+    .unwrap();
+    assert!(directory.path().join("new/nested/ci.yml").is_file());
+    assert!(directory
+        .path()
+        .join("new/nested/ci.taskflow.json")
+        .is_file());
+}

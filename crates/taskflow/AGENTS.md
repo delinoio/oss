@@ -8,6 +8,7 @@
 - Unix input cache state includes permissions, including file-link target permissions; portable CI structure fingerprints remain content-based.
 - Never collapse direct/input/schedule causes into a prerequisite cause. Cancellation and invalidation prohibit cache publication.
 - Output restoration must validate the complete entry and containment before mutation. Secrets must be masked before persistence.
+- Validate both CI export destinations through existing filesystem ancestors before writing either workflow or blueprint.
 - CI output transfer requires exact files/directories or complete directory trees even for uncached tasks; reject partial ownership before export, capture, or restoration.
 - Strip workspace-designated secret variables from every task that does not declare them, including tasks grouped into one CI unit.
 - Graph validation rejects remote credential references in every task environment declaration before execution; runtime validation also checks CLI overrides.

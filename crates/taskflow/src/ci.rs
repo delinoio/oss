@@ -320,15 +320,17 @@ fn merge_groups(groups: &mut BTreeMap<String, BTreeSet<String>>, a: &str, b: &st
 pub fn export(graph: &Graph, targets: Vec<String>, output: &Path) -> Result<()> {
     let blueprint = Blueprint::new(graph, targets)?;
     let ci = graph.workspace.config.ci.as_ref().unwrap();
-    let blueprint_path = output.with_extension("taskflow.json");
-    let blueprint_relative = files::relative_to(
+    // Resolve and validate both destinations before either artifact is written.
+    // Existing parent links must not redirect exports outside the workspace.
+    let workflow_path = files::within(&graph.workspace.root, &graph.workspace.root.join(output))?;
+    let blueprint_path = files::within(
         &graph.workspace.root,
-        &graph.workspace.root.join(&blueprint_path),
-    );
-    ensure!(
-        !blueprint_relative.starts_with("../"),
-        "workflow and blueprint must be inside the workspace"
-    );
+        &graph
+            .workspace
+            .root
+            .join(output.with_extension("taskflow.json")),
+    )?;
+    let blueprint_relative = files::relative_to(&graph.workspace.root, &blueprint_path);
     let binary = ".taskflow/tools/source/target/release/tflow";
     let mut jobs = serde_json::Map::new();
     let runner = ci
@@ -420,14 +422,8 @@ pub fn export(graph: &Graph, targets: Vec<String>, output: &Path) -> Result<()> 
         json!({"runs-on":runner,"needs":needs,"if":"always()","steps":finish}),
     );
     let workflow = json!({"name":"TaskFlow","on":{"push":{},"pull_request":{},"workflow_dispatch":{}},"permissions":{"contents":"read"},"jobs":jobs});
-    files::atomic_write(
-        &graph.workspace.root.join(&blueprint_path),
-        &serde_json::to_vec_pretty(&blueprint)?,
-    )?;
-    files::atomic_write(
-        &graph.workspace.root.join(output),
-        serde_yaml::to_string(&workflow)?.as_bytes(),
-    )
+    files::atomic_write(&blueprint_path, &serde_json::to_vec_pretty(&blueprint)?)?;
+    files::atomic_write(&workflow_path, serde_yaml::to_string(&workflow)?.as_bytes())
 }
 
 pub async fn prepare(root: &Path, blueprint: &Blueprint, base: Option<&str>) -> Result<CiPlan> {
