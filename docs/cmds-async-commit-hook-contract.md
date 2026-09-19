@@ -61,3 +61,5 @@ Update project index, protocol/client/app contracts and AGENTS when public behav
 ## References
 - [Project](project-async-commit-hook.md)
 - [Repository defaults](repository-defaults.md)
+
+Repository/worktree listings discover the current checkout branch on access, including detached HEAD. A missing or mismatched worktree is unavailable and retains its last recorded label; historical execution branches never change with later checkouts.

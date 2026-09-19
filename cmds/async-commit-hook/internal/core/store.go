@@ -129,8 +129,6 @@ func (s *Store) Repositories() ([]Repository, error) {
 			return nil, err
 		}
 		w.RepositoryID = r.ID
-		_, err = os.Stat(filepath.Join(w.Path, ".git"))
-		w.Available = err == nil
 		i, ok := index[r.ID]
 		if !ok {
 			i = len(out)
@@ -139,7 +137,23 @@ func (s *Store) Repositories() ([]Repository, error) {
 		}
 		out[i].Worktrees = append(out[i].Worktrees, w)
 	}
-	return out, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	if err = rows.Close(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		for j := range out[i].Worktrees {
+			w := &out[i].Worktrees[j]
+			common, root, branch, discoverErr := Discover(context.Background(), w.Path)
+			w.Available = discoverErr == nil && common == out[i].CommonDir && root == w.Path
+			if w.Available {
+				w.Branch = branch
+			}
+		}
+	}
+	return out, nil
 }
 func insertRun(tx *sql.Tx, r *Run, auto string) error {
 	var automatic any
