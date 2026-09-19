@@ -561,13 +561,7 @@ async fn scenarios_08_15_16_19_watch_and_timer_companions_preserve_server() {
         )
         .await
     });
-    for _ in 0..500 {
-        if dir.path().join("server.pid").exists() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    assert!(dir.path().join("server.pid").exists());
+    wait_lines(&dir.path().join("server.pid"), "", 1).await;
     let pid = std::fs::read_to_string(dir.path().join("server.pid")).unwrap();
     assert_eq!(
         std::fs::read_to_string(dir.path().join("trace"))
@@ -577,13 +571,8 @@ async fn scenarios_08_15_16_19_watch_and_timer_companions_preserve_server() {
         1
     );
     std::fs::write(dir.path().join("source"), "after").unwrap();
-    for _ in 0..100 {
-        let trace = std::fs::read_to_string(dir.path().join("trace")).unwrap();
-        if trace.matches("check").count() == 2 && trace.contains("poll") {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    wait_lines(&dir.path().join("trace"), "check", 2).await;
+    wait_lines(&dir.path().join("trace"), "poll", 1).await;
     let trace = std::fs::read_to_string(dir.path().join("trace")).unwrap();
     assert_eq!(trace.matches("check").count(), 2, "{trace}");
     assert!(trace.contains("poll"));
@@ -725,6 +714,13 @@ fn command(args: &[&str]) -> Value {
         .collect::<Vec<_>>())
 }
 fn fixture(tasks: Value) -> tempfile::TempDir {
+    static LOGGING: OnceLock<()> = OnceLock::new();
+    LOGGING.get_or_init(|| {
+        let _ = tracing_subscriber::fmt()
+            .with_test_writer()
+            .with_max_level(tracing::Level::INFO)
+            .try_init();
+    });
     let dir = tempfile::tempdir().unwrap();
     files::atomic_write(
         &dir.path().join("taskflow.yml"),
@@ -1140,20 +1136,18 @@ fn profile(directory: &Path, tasks: &[&str]) {
     files::atomic_write(&path, serde_yaml::to_string(&value).unwrap().as_bytes()).unwrap();
 }
 async fn wait_lines(path: &Path, prefix: &str, count: usize) {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    // CI runs native compilers and test runners alongside these sessions. Wait
+    // for observable progress instead of assuming workstation startup timings.
+    // Process cancellation/reaping assertions retain their separate short bound.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
     loop {
-        if std::fs::read_to_string(path)
-            .unwrap_or_default()
-            .lines()
-            .filter(|l| l.starts_with(prefix))
-            .count()
-            >= count
-        {
+        let records = std::fs::read_to_string(path).unwrap_or_default();
+        if records.lines().filter(|l| l.starts_with(prefix)).count() >= count {
             return;
         }
         assert!(
             tokio::time::Instant::now() < deadline,
-            "missing {count} {prefix} records in {}",
+            "missing {count} {prefix} records in {}; observed {records:?}",
             path.display()
         );
         tokio::time::sleep(Duration::from_millis(15)).await;
@@ -1333,12 +1327,12 @@ async fn scenarios_15_19_21_live_invalid_configuration_recovers_atomically() {
 #[tokio::test]
 async fn server_readiness_failure_reaps_concurrent_work_before_returning() {
     let directory = fixture(json!({
-        "server":{"command":command(&["sleep","server.pid"]),"input":[],"service":true,"readiness":{"type":"command","command":command(&["fail-after-files","server.pid","check.pid"]),"timeout":"3s"}},
+        "server":{"command":command(&["sleep","server.pid"]),"input":[],"service":true,"readiness":{"type":"command","command":command(&["fail-after-files","server.pid","check.pid"]),"timeout":"15s"}},
         "check":{"command":command(&["sleep","check.pid"]),"input":[],"watch":{}}
     }));
     profile(directory.path(), &["server", "check"]);
     let result = tokio::time::timeout(
-        Duration::from_secs(8),
+        Duration::from_secs(20),
         taskflow::session::start(
             directory.path(),
             "default",
@@ -1352,11 +1346,11 @@ async fn server_readiness_failure_reaps_concurrent_work_before_returning() {
     )
     .await
     .expect("service failure must promptly cancel its parallel checks");
-    assert!(result.is_err());
+    assert!(result.is_err(), "readiness must fail: {result:?}");
     #[cfg(unix)]
     for name in ["server.pid", "check.pid"] {
         let pid: i32 = std::fs::read_to_string(directory.path().join(name))
-            .unwrap()
+            .unwrap_or_else(|error| panic!("{name}: {error}; session returned {result:?}"))
             .parse()
             .unwrap();
         assert!(

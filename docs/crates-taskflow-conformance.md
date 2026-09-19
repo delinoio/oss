@@ -42,6 +42,8 @@ Additional invariants include unknown/duplicate configuration rejection, schema 
 
 The native JS sharding fixture executes files under a directory containing spaces, compares recorded file executions against the unsharded run, and prints masked task logs on failure. Validated file selectors are project-relative so Windows canonical path prefixes do not become JS filename filters.
 
+Session fixtures await observable PID/record markers with a bounded 60-second startup allowance for concurrent native builds. Readiness failure permits 15 seconds for both children to start, with five additional seconds for cleanup. Ordinary shutdown tests retain their five-second bound; failures include structured engine logs and observed records instead of relying on fixed short startup sleeps.
+
 ## Storage
 Fixtures use temporary directories and containers with UUID-v7 names. They do not replace repository credentials or identity material. Generated `dist` and `.taskflow` content is ignored and not committed.
 
