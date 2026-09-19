@@ -3857,3 +3857,47 @@ fn docker_platform_validation_applies_cli_defaults_first() {
         assert!(!directory.path().join("started").exists());
     }
 }
+
+#[test]
+fn check_rejects_absolute_input_patterns_on_every_host() {
+    let directory = fixture(json!({}));
+    let absolute = directory
+        .path()
+        .join("source")
+        .to_string_lossy()
+        .into_owned();
+    for path in [
+        absolute.as_str(),
+        "/workspace/source",
+        "C:/workspace/**",
+        r"C:\workspace\**",
+        r"\\server\share\**",
+        r"\rooted\**",
+        "C:relative",
+    ] {
+        for negative in [false, true] {
+            let pattern = format!("{}{path}", if negative { "!" } else { "" });
+            let config = json!({"version":1,"project":"app","tasks":{"check":{"command":command(&["version"]),"input":[pattern]}}});
+            std::fs::write(
+                directory.path().join("taskflow.yml"),
+                serde_yaml::to_string(&config).unwrap(),
+            )
+            .unwrap();
+            let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+                .arg("--root")
+                .arg(directory.path())
+                .arg("check")
+                .output()
+                .unwrap();
+            assert!(!output.status.success(), "{pattern}");
+            let error = config::load(&directory.path().join("taskflow.yml")).unwrap_err();
+            assert!(format!("{error:#}").contains("project-relative"));
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("app#check"),
+                "{pattern}"
+            );
+        }
+    }
+    let task: config::Task = serde_json::from_value(json!({"command":["unused"],"input":["../sibling/**","!../sibling/generated/**","./source"]})).unwrap();
+    task.validate().unwrap();
+}
