@@ -444,9 +444,9 @@ ach rerun --run &lt;interrupted-id&gt; --failed</pre
           Normal stop drains active work; force cancels owned checks. No
           OS-login service is installed. Unstarted requests recover on the next
           worker/daemon startup. Interrupted commands are recorded and never
-          automatically replayed. Cancellation remains incomplete until owned
-          descendants stop. Do not kill unrelated processes based only on an old
-          PID.
+          automatically replayed. Cancellation reconciles tracked descendants;
+          the known Unix daemonization limitation below still applies. Do not
+          kill unrelated processes based only on an old PID.
         </p>
         <h3>Port, storage and source failures</h3>
         <p>
@@ -505,6 +505,12 @@ brew upgrade async-commit-hook</pre
       </section>
       <section id="compatibility">
         <h2>Compatibility and validation evidence</h2>
+        <p>
+          Known Unix limitation: self-daemonizing child processes can outlive
+          a completed check or cancellation, allowing a replacement to overlap
+          with an earlier child. Full descendant-lifetime guarantees remain
+          incomplete. Avoid self-daemonizing checks until this is fixed.
+        </p>
         <p>
           Configuration, state, CLI JSON and local API start at version 1. The
           release artifacts target macOS 13+, Windows 10 22H2+ and Ubuntu 22.04

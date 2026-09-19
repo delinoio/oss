@@ -10,6 +10,8 @@ The owner approved exactly two changes to the original acceptance criteria: the 
 
 One requested validation remains pending: desktop Edge could not be launched because it is not installed/available through this environment's browser tools. The owner was asked whether to connect Edge or explicitly exclude that validation. No answer or additional exclusion is assumed. Chrome and automated accessibility tests passed. Accordingly, this document does not claim every original validation step is complete.
 
+The third PR repair pass also confirmed an unresolved product defect: a Unix descendant that daemonizes and reparents before the first ownership sample can survive successful reconciliation. Full descendant-safe cancellation/replacement is therefore incomplete. This is not an owner-approved exclusion; review thread `PRRT_kwDORRAKg86j9n3x` remains open.
+
 ## Requirement-to-evidence matrix
 
 Paths in the implementation column are relative to `cmds/async-commit-hook/internal/core` unless otherwise stated. Named Go tests are committed under that directory or `cmds/async-commit-hook/integration`.
@@ -21,7 +23,7 @@ Paths in the implementation column are relative to `cmds/async-commit-hook/inter
 | Trust registration, worktrees and clones | `store.go`, `git.go`, `service.go` | `TestWorktreeIdentityAndSeparateClone`; common-dir identity and per-worktree IDs, separate clones remain separate | Passed |
 | Safe hooks and durable receipts | `hooks.go`, CLI submission, `Start` | `TestPostCommitDetachedModesAndWaitExpiry` proves Git returns before a barrier-controlled command in both modes; dedup/idempotency and atomic concurrent initialization tests; native/custom/Lefthook ownership tests | Passed |
 | Source isolation, unsupported sources, recursive-hook prevention | `git.go` raw-blob materialization, managed hooks/flag | Committed source survives dirty worktree and branch switching; `TestSourceRefusesSubmoduleAndLFSBeforeCommands`, `TestRawCheckoutDoesNotInvokeSourceFilters`; workspace cleanup assertions | Passed |
-| Group parallel/queue/replace and descendants | `runner.go`, process adapters, transactional check claims | FIFO across independent workers; named groups across repositories; replacement reaps child before new start; PID birth mismatch does not signal unrelated process | Passed locally; all adapters cross-built |
+| Group parallel/queue/replace and descendants | `runner.go`, process adapters, transactional check claims | FIFO, named groups, observed-child replacement and PID birth checks pass; the third repair pass reproduced an unobserved daemonized descendant surviving reconciliation | Incomplete: Unix daemonization ownership remains unresolved; all adapters cross-built |
 | Daemon/on-demand parity, startup, drain/force, viewer isolation | `lifecycle.go`, `api.go`, `Work` | Six concurrent starts converge to one daemon; `TestDrainAndForcedStop`, `TestTemporaryViewerExitLeavesWorkerAndHistory`; query-only MCP starts no daemon | Passed |
 | Recovery, no replay, storage failures | `RunOne`, process identity snapshots, lifecycle locks | `TestRecoveryInterruptsWithoutReplayAndPIDReuse`, `TestStorageFailureReapsOwnedCommands`; pending requests recover through worker startup | Passed |
 | SQLite records, evidence, retention and unavailable source | `store.go`, `query.go`, owned artifact files | `TestPruneCannotResurrectSuccess`, active inherited-evidence retention, dry-run and expired tombstones; source availability is exposed separately from history | Passed |
@@ -109,3 +111,25 @@ After the repairs, `go test -p 1 ./...`, async-commit-hook unit/integration race
 Initial root Go runs exposed existing Runmoor shell-startup timing failures. Its guest-validation correctness fixture now allows 15 seconds while the dedicated transport timeout remains 50 ms; focused ordinary/race tests and the final serial root suite passed. The independent runner-startup fixture also failed intermittently before that successful root run; its production startup semantics were not changed.
 
 The two owner-approved completion amendments and the pending Edge validation above remain unchanged. These local checks do not claim that the subsequent hosted CI run has completed.
+
+## Third PR #901 repair pass
+
+The incoming head `3d71383e` had no merge conflicts or failing hosted checks; the prior Windows, release-fixture and OCI failures passed in CI run `35425813089`. Twelve new bot findings were inspected. Eleven were repaired in separate commits; the Unix process-ownership finding remains unresolved as recorded above.
+
+| Repaired finding | Regression evidence |
+| --- | --- |
+| UTF-8 evidence page boundaries | `TestEvidencePagesPreserveRunesAndIncompleteLiveTail` and the API serialization fixture cover small/default limits, Korean/emoji, invalid bytes and later completion of a live partial rune. |
+| Git diff transport bytes | `TestChangesNormalizesRawGitBytesAfterTruncation` covers invalid content/path bytes and a valid rune split by the 2 MiB byte cap; Connect JSON/protobuf fields remain valid. |
+| Automatic context deduplication | `TestAutomaticDeduplicationIncludesExecutionContext` verifies public input changes create a fresh compatible attempt, secret value changes do not, and explicit submissions remain distinct. |
+| Current worktree branch | `TestRepositoryListingObservesCurrentWorktreeBranch` switches/deletes branches, detaches HEAD and preserves historical branch labels. |
+| Raw source streaming | `TestWorkspaceStreamsManyAndLargeRawBlobsInOneBatch` instruments real Git, verifies exactly one batch for 256 files and a large binary blob, and checks exact content, symlinks and executable permissions. Existing filter/LFS/submodule tests still pass. |
+| Unstarted preparation recovery | `TestRecoveryResumesOnlyEntirelyUnclaimedRuns` resumes preparing/running requests with untouched checks, discards partial workspaces and interrupts claimed checks without replay. |
+| Structured failure bounds | `TestLargeJUnitSummariesStayReadableWithinRunBudget` collects a report larger than 8 MiB, caps summaries across two checks, serializes both detail/failure responses under the transport cap and retrieves full report-tail evidence. |
+| Reused checkout paths | `TestExplicitRegistrationAfterCheckoutPathReusePreservesHistory` covers identical/different common-directory paths, explicit trust, stale API IDs and preserved history. `TestLegacyPathRegistryUpgradePreservesIDsAndRequiresExplicitTrust` verifies migration and foreign-key enforcement. |
+| Persistence failure propagation | `TestCheckPersistenceFailureReleasesWorkerForReconciliation` injects SQLite failures for running/collecting/passed writes, checks worker lock release and confirms restart interruption. Permanent-storage-failure tests still pass. |
+| Windows helper cleanup | `TestUpdateHelperCleanupSurvivesSuccessfulJournalRemoval` preserves live/changed helpers, retains retry metadata and removes authenticated exited helpers on a later open. Windows executable targets cross-compiled; this pass did not execute Windows locally. |
+| Terminal detail polling | The frontend timer test observes running-to-passed polling stop and later explicit invalidation. A manual refresh action remains available. |
+
+Passed: `go test ./cmds/async-commit-hook/...`, `go test -race ./cmds/async-commit-hook/...`, `go test -p 1 ./...`, `go vet ./...`, package-local frontend `pnpm test` (14 component tests plus typecheck/build/static checks), root `pnpm test` (all 12 selected Turbo tasks), protocol lint/breaking/freshness, 30 CI contracts, workflow lint and six unsigned `0.1.0` release archive builds under `/tmp/ach-pr901-repair3-release`. Generated repository-owned `dist` output is removed before delivery. No signing, release, tap update or deployment was performed.
+
+The separate temporary Unix daemonization reproduction intentionally failed with `daemonized descendant survived successful ownership reconciliation`. It ran through a Go overlay without adding a passing or skipped test that would imply this defect is fixed, and explicitly killed the reproduced child on cleanup. Passing committed tests above therefore do not establish the missing Unix lifetime guarantee. The next required work is a supported process-ownership backend and proof of descendant termination across reparenting, cancellation, replacement and recovery, including macOS 13; the supported OS range and original requirement were not relaxed. Edge verification remains pending as before.
