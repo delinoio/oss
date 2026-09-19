@@ -822,7 +822,7 @@ async fn run_unit(
         command = prepared.0;
         container = Some(prepared.1);
     }
-    let mut child = OwnedProcess::spawn(directory, &command, None, Some(&env))?;
+    let mut child = OwnedProcess::spawn(directory, &command, task.shell.as_deref(), Some(&env))?;
     let stdout = tokio::spawn(crate::runner::stream_log(
         child.child.stdout.take().unwrap(),
         log.clone(),

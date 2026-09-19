@@ -214,7 +214,17 @@ pub async fn capture_with_env(
     environment: &BTreeMap<String, String>,
     cancel: &CancellationToken,
 ) -> Result<Vec<u8>> {
-    let mut child = OwnedProcess::spawn(directory, command, None, Some(environment))?;
+    capture_with_shell(directory, command, None, environment, cancel).await
+}
+
+async fn capture_with_shell(
+    directory: &Path,
+    command: &Command,
+    shell: Option<&[String]>,
+    environment: &BTreeMap<String, String>,
+    cancel: &CancellationToken,
+) -> Result<Vec<u8>> {
+    let mut child = OwnedProcess::spawn(directory, command, shell, Some(environment))?;
     let stdout = child.child.stdout.take().unwrap();
     let stderr = child.child.stderr.take().unwrap();
     let out = tokio::spawn(read_bounded(stdout));
@@ -239,7 +249,14 @@ pub async fn capture_task(
     cancel: &CancellationToken,
 ) -> Result<Vec<u8>> {
     if task.platform.executor == crate::config::Executor::Host {
-        return capture_with_env(directory, command, environment, cancel).await;
+        return capture_with_shell(
+            directory,
+            command,
+            task.shell.as_deref(),
+            environment,
+            cancel,
+        )
+        .await;
     }
     let mut probe = task.clone();
     probe.command = command.clone();

@@ -2431,3 +2431,24 @@ async fn partial_output_globs_preserve_neighboring_inputs_and_watch_changes() {
     session.await.unwrap().unwrap();
     assert_eq!(std::fs::read_to_string(events).unwrap().lines().count(), 2);
 }
+
+#[tokio::test]
+async fn generic_shard_inventory_and_execution_use_the_configured_shell() {
+    let directory = fixture(
+        json!({"test":{"command":command(&["version"]),"input":[],"output":[],"shell":[helper(),"shell"],"shard":{"adapter":"generic","count":2,"list":"inventory","run":"shard"}}}),
+    );
+    let result = run(graph(directory.path()).await, &["test"]).await;
+    assert!(result.success, "{result:?}");
+    let log = std::fs::read_to_string(directory.path().join("shell-events")).unwrap();
+    assert_eq!(log.lines().filter(|line| *line == "inventory").count(), 1);
+    assert_eq!(log.lines().filter(|line| *line == "shard").count(), 2);
+    let (inventory, reports) = shard::read_reports(
+        &directory
+            .path()
+            .join(".taskflow/runs")
+            .join(&result.results["app#test"].execution),
+    )
+    .unwrap();
+    assert_eq!(inventory.tests.len(), 3);
+    assert!(shard::aggregate(&inventory, 2, &reports).unwrap());
+}

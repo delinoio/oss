@@ -6,7 +6,15 @@ fn write(path: &str, content: &[u8]) {
     fs::rename(staged, path).unwrap();
 }
 fn main() {
-    let args: Vec<_> = std::env::args().collect();
+    let mut args: Vec<_> = std::env::args().collect();
+    if args[1] == "shell" {
+        // A portable test interpreter: neither OS default shell understands
+        // these inventory/run expressions without the explicit shell setting.
+        assert_eq!(args.len(), 3);
+        let mut log = fs::OpenOptions::new().create(true).append(true).open("shell-events").unwrap();
+        writeln!(log, "{}", args[2]).unwrap();
+        args.remove(1);
+    }
     match args[1].as_str() {
         "version" => println!("taskflow-fixture-1"),
         "copy" => { write(&args[3], &fs::read(&args[2]).unwrap()); }
