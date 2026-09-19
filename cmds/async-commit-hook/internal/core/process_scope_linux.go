@@ -129,3 +129,5 @@ func recoverScope(s processScope, dir string) error {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+func scopeHasSurvivors(_ processScope) (bool, error) { return true, nil }

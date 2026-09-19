@@ -161,3 +161,13 @@ A Linux supervisor that is itself forcibly killed before recording completion lo
 While local ownership repairs were running, incoming-head CI run `35427897838` finished with Windows Go failures in the collecting/passed variants of `TestCheckPersistenceFailureReleasesWorkerForReconciliation`. Native PowerShell startup exceeded that fixture's 15-second context budget; surrounding successful checks took up to about 25 seconds. The collecting case returned the intended injected SQLite error after its watchdog expired, while the passed case was cancelled before reaching the target write. No product timeout or storage logic caused this failure.
 
 The separate CI repair gives this correctness fixture a two-minute deadlock watchdog and requires the returned error to contain the injected SQLite failure, preserving proof that the intended branch executed. It does not add a command runtime timeout or relax the storage, lock-release, process-cleanup and interruption assertions. Focused local ordinary/race execution and Windows test-binary cross-compilation validate the edit; native Windows execution remains hosted CI evidence, not a claimed local result.
+
+
+### Independent supervisor lifecycle integration
+
+Final integration inspection found that an independently surviving supervisor also needs an account lifecycle lease. The follow-up repair registers it before the start barrier under the existing account lock. Worker disappearance cannot make active commands invisible to mode/port/state changes or self-update. If the supervisor itself dies, backend or changed-boot proof remains required; a dead owner PID alone does not remove its lease. Retention clears proven inactive leases before deleting their ownership journals.
+
+`TestSupervisorLeaseBlocksConfigurationWithoutWorker` covers rejection of configuration changes and updates with only a supervisor registered, later lease reclamation, and safe journal pruning. The macOS supervisor-death test now asserts that living coalition descendants retain that lease; the Linux lost-subreaper test asserts the same conservative behavior without a completion record. Focused race tests passed for these cases, detached replacement, storage failures and retention.
+
+
+After lifecycle integration, the full async-commit-hook race suite, `go test -p 1 ./...`, `go vet ./...`, and focused Linux arm64 container lifecycle/retention tests passed again. The final six-target unsigned archive build uses `/tmp/ach-pr901-repair4-complete-release`; product version remains `0.1.0`. Public release, signing, Homebrew publication and deployment remain unexecuted. Generated `dist` directories are removed before delivery.

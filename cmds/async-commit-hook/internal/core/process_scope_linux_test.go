@@ -20,6 +20,16 @@ func TestScopeLostSubreaperFailsClosedUntilBootChanges(t *testing.T) {
 	}
 	p := s.Owner
 	p.ScopeDir = dir
+	service, _ := fixture(t, "version=1\n[checks.test]\ncommand=\"true\"\n")
+	_, leave, err := service.enterProcess("check-supervisor", p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer leave()
+	active, err := service.Active()
+	if err != nil || len(active) != 1 {
+		t.Fatal("lost supervisor released its account lease", err)
+	}
 	if err = ReconcileProcess(p); err == nil {
 		t.Fatal("lost subreaper released its claim")
 	}

@@ -33,15 +33,25 @@ func TestScopeRecoveryAfterSupervisorDeath(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = recoverScope(scope, p.identity.ScopeDir) })
+	s, _ := fixture(t, "version=1\n[checks.test]\ncommand=\"true\"\n")
+	_, leave, err := s.enterProcess("check-supervisor", p.identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer leave()
 	if err = syscall.Kill(p.identity.PID, syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
 	<-p.done
+	active, err := s.Active()
+	if err != nil || len(active) != 1 {
+		t.Fatal("dead supervisor with live descendants lost its account lease", err)
+	}
 	if err = ReconcileProcess(p.snapshot()); err != nil {
 		t.Fatal(err)
 	}
-	active, err := coalitionActive(scope.Coalition)
-	if err != nil || active != 0 || ProcessAlive(child) {
+	remaining, err := coalitionActive(scope.Coalition)
+	if err != nil || remaining != 0 || ProcessAlive(child) {
 		t.Fatal("recovery did not drain the supervisor's entire coalition", err)
 	}
 }

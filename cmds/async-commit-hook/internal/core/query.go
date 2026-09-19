@@ -96,6 +96,14 @@ func (s *Service) Prune(dry bool, age int, maxBytes int64) (PruneResult, error) 
 		return out, E("retention-busy", "another retention operation is active", 3)
 	}
 	defer lock.Close()
+	// A worker can die after its supervisor proved completion. Clear that
+	// inactive account lease before pruning its journal so future starts can
+	// still distinguish completed ownership from missing proof.
+	if !dry {
+		if _, e = s.Active(); e != nil {
+			return out, e
+		}
+	}
 	protected := map[string]bool{}
 	active, e := s.Store.Pending()
 	if e != nil {

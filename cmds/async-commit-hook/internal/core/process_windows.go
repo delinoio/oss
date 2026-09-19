@@ -120,3 +120,5 @@ func (p *managedProcess) snapshot() Process { return p.identity }
 
 func (p *managedProcess) resume() error { return nil }
 func (p *managedProcess) wait() error   { return p.cmd.Wait() }
+
+func supervisorLeaseActive(p Process) (bool, error) { return ProcessAlive(p), nil }

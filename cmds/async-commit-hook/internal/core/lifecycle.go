@@ -48,13 +48,39 @@ func (s *Service) Active() ([]Component, error) {
 		if json.Unmarshal(b, &c) != nil {
 			return nil, E("component-record-invalid", "invalid lifecycle record; run ach doctor", 3)
 		}
-		if ProcessAlive(c.Process) {
+		alive := ProcessAlive(c.Process)
+		if c.Kind == "check-supervisor" {
+			var err error
+			alive, err = supervisorLeaseActive(c.Process)
+			if err != nil {
+				return nil, err
+			}
+			if !alive {
+				// Proof is final: this stopped supervisor cannot launch again.
+				// Remove its stale lease before retention can remove the journal.
+				if _, err = s.Store.DB.Exec("DELETE FROM components WHERE id=?", c.ID); err != nil {
+					return nil, err
+				}
+				if err = os.Remove(filepath.Join(s.Paths.Control, entry.Name())); err != nil && !os.IsNotExist(err) {
+					return nil, err
+				}
+			}
+		}
+		if alive {
 			out = append(out, c)
 		}
 	}
 	return out, nil
 }
 func (s *Service) Enter(kind string) (Component, func(), error) {
+	p, err := ProcessIdentity(os.Getpid())
+	if err != nil {
+		return Component{}, nil, err
+	}
+	return s.enterProcess(kind, p)
+}
+
+func (s *Service) enterProcess(kind string, p Process) (Component, func(), error) {
 	if _, err := os.Stat(filepath.Join(s.Paths.Control, "update.json")); err == nil {
 		return Component{}, nil, E("update-recovery-required", "an update is pending; use ach self-update --recover before starting services", 3)
 	}
@@ -81,10 +107,6 @@ func (s *Service) Enter(kind string) (Component, func(), error) {
 		if c.ConfigHash != s.configHash() {
 			return Component{}, nil, E("configuration-active", "stop all checks and servers using the previous mode, port and state directory before applying configuration changes", 2)
 		}
-	}
-	p, e := ProcessIdentity(os.Getpid())
-	if e != nil {
-		return Component{}, nil, e
 	}
 	c := Component{ID: ID(), Kind: kind, Process: p, ConfigHash: s.configHash(), StateDir: s.Store.Root}
 	path := filepath.Join(s.Paths.Control, c.ID+".json")

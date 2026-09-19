@@ -414,3 +414,26 @@ func reconcileScope(dir string, started bool) error {
 	}
 	return recoverScope(scope, dir)
 }
+
+// A dead supervisor is not proof of dead descendants. Account lifecycle guards
+// retain this lease until the backend or a changed boot identity proves it safe.
+func supervisorLeaseActive(p Process) (bool, error) {
+	scope, err := readScope(p.ScopeDir)
+	if err != nil {
+		return false, scopeError()
+	}
+	boot, err := bootIdentity()
+	if err != nil {
+		return false, err
+	}
+	if boot != scope.Boot {
+		return false, nil
+	}
+	if ProcessAlive(p) {
+		return true, nil
+	}
+	if scope.Complete || !scope.Started {
+		return false, nil
+	}
+	return scopeHasSurvivors(scope)
+}

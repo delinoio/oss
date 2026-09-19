@@ -291,3 +291,54 @@ func TestReplaceReapsDaemonizedDescendantsBeforeNextStarts(t *testing.T) {
 		t.Fatal("replacement state not recorded", err)
 	}
 }
+
+func TestSupervisorLeaseBlocksConfigurationWithoutWorker(t *testing.T) {
+	s, _ := fixture(t, "version=1\n[checks.test]\ncommand=\"true\"\n")
+	c := exec.Command("sh", "-c", "sleep 30")
+	c.Env = []string{"PATH=/usr/bin:/bin"}
+	p, err := startProcess(c, filepath.Join(t.TempDir(), "scope"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.close()
+	lease, leave, err := s.enterProcess("check-supervisor", p.identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer leave()
+	if err = p.resume(); err != nil {
+		t.Fatal(err)
+	}
+	// No worker component was registered: its independent supervisor is the
+	// only account-level ownership record, as after sudden worker death.
+	active, err := s.Active()
+	if err != nil || len(active) != 1 || active[0].ID != lease.ID {
+		t.Fatal("supervisor lease missing", err)
+	}
+	if _, err = s.SelfUpdate(context.Background(), "0.1.0"); err == nil {
+		t.Fatal("active supervisor allowed update")
+	}
+	s.Personal.APIPort++
+	if _, cleanup, err := s.Enter("worker"); err == nil {
+		cleanup()
+		t.Fatal("active supervisor allowed config change")
+	}
+	if err = p.terminate(); err != nil {
+		t.Fatal(err)
+	}
+	active, err = s.Active()
+	if err != nil || len(active) != 0 {
+		t.Fatal("finished supervisor lease not reclaimed", err)
+	}
+	if err = os.RemoveAll(p.identity.ScopeDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Active(); err != nil {
+		t.Fatal("reclaimed journal left a stale account lease", err)
+	}
+	_, cleanup, err := s.Enter("worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanup()
+}

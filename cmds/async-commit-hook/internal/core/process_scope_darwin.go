@@ -172,3 +172,11 @@ func recoverScope(s processScope, dir string) error {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+func scopeHasSurvivors(s processScope) (bool, error) {
+	if s.Coalition == 0 {
+		return false, scopeError()
+	}
+	n, err := coalitionActive(s.Coalition)
+	return n > 0, err
+}

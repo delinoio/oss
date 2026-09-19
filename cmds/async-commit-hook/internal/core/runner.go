@@ -125,6 +125,19 @@ func (s *Service) execute(ctx context.Context, r Run, c Check, workspace string)
 		return s.finishCheck(c, Failed, "command-start-failed", "cannot start selected shell; run ach doctor")
 	}
 	defer p.close()
+	if runtime.GOOS != "windows" {
+		_, leave, leaseErr := s.enterProcess("check-supervisor", p.identity)
+		if leaseErr != nil {
+			return leaseErr
+		}
+		defer func() {
+			// Keep the account lease if descendant reconciliation failed, even
+			// when the original run worker is about to disappear.
+			if p.terminate() == nil {
+				leave()
+			}
+		}()
+	}
 	c.Process = p.identity
 	c.State = Running
 	t := time.Now().UTC()
