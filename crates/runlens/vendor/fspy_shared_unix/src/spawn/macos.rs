@@ -1,0 +1,25 @@
+//! Runlens patch: preserve the executable, including unsupported system children.
+//! Remove this patch only when upstream provides a no-substitution capability.
+use std::{convert::Infallible, ffi::OsStr, os::unix::ffi::OsStrExt, path::Path};
+use crate::{exec::{Exec, append_path_env, ensure_env}, payload::{EncodedPayload, PAYLOAD_ENV_NAME}};
+
+pub struct PreExec(Infallible);
+impl PreExec { pub const fn run(&self) -> nix::Result<()> { match self.0 {} } }
+
+pub fn unsupported(path: &Path) -> bool {
+    // Canonicalization catches aliases into SIP-protected system locations.
+    let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
+    ["/bin", "/sbin", "/usr/bin", "/usr/sbin", "/System"].iter().any(|root| path.starts_with(root))
+}
+
+pub fn handle_exec(command: &mut Exec, payload: &EncodedPayload) -> nix::Result<Option<PreExec>> {
+    let path = Path::new(OsStr::from_bytes(&command.program));
+    if unsupported(path) {
+        // The caller records UNSUPPORTED before this child executes unchanged.
+        // Do not remove user-supplied injection configuration or substitute a tool.
+        return Ok(None);
+    }
+    append_path_env(&mut command.envs, &b"DYLD_INSERT_LIBRARIES"[..], payload.payload.preload_path.as_os_str().as_bytes());
+    ensure_env(&mut command.envs, PAYLOAD_ENV_NAME, payload.encoded_string)?;
+    Ok(None)
+}

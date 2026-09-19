@@ -1,5 +1,6 @@
 [workspace]
 resolver = "2"
+exclude = ["crates/runlens"]
 members = [
     "apps/devhud/src-tauri",
     "crates/devhud-native-messaging-host",

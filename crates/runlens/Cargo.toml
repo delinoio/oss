@@ -1,0 +1,243 @@
+[workspace]
+resolver = "3"
+members = [".", "vendor/*"]
+default-members = ["."]
+
+[package]
+name = "runlens"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+fspy = { path = "vendor/fspy" }
+clap = { version = "4.5.53", features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+toml = "1.0.0"
+thiserror = "2"
+tokio = { version = "1.48.0", features = ["rt-multi-thread", "macros", "signal", "time", "process", "io-util"] }
+tokio-util = "0.7.17"
+tracing = "0.1.43"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+uuid = { version = "1.18.1", features = ["v7", "serde"] }
+sha2 = "0.11.0"
+hex = "0.4.3"
+rusqlite = { version = "0.39.0", features = ["bundled"] }
+globset = "0.4.18"
+tempfile = "3.14.0"
+regex = "1.11.3"
+walkdir = "2.5.0"
+which = "8.0.0"
+libc = "0.2.185"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Console", "Win32_Security"] }
+
+[workspace.package]
+authors = ["Vite+ Authors"]
+edition = "2024"
+license = "MIT"
+publish = false
+rust-version = "1.89.0"
+
+[workspace.lints.rust]
+absolute_paths_not_starting_with_crate = "warn"
+non_ascii_idents = "warn"
+unit_bindings = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)', 'cfg(coverage_nightly)'] }
+tail_expr_drop_order = "warn"
+unsafe_op_in_unsafe_fn = "warn"
+unused_unsafe = "warn"
+long_running_const_eval = "allow"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+# restriction
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+undocumented_unsafe_blocks = "warn"
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+cargo_common_metadata = "allow"
+multiple_crate_versions = "allow"
+# The task scheduling workflow is a single-threaded async task, so Send bounds are unnecessary.
+future_not_send = "allow"
+
+[workspace.dependencies]
+allocator-api2 = { version = "0.2", default-features = false }
+anstream = "1.0.0"
+anyhow = "1.0.103"
+assert2 = "0.4.0"
+assertables = "10.0.0"
+async-trait = "0.1.89"
+base64 = "0.22.1"
+wincode = "0.6.0"
+bindgen = "0.72.1"
+bitflags = "2.10.0"
+brush-parser = "0.4.0"
+bstr = { version = "1.12.0", default-features = false }
+bump-scope = { version = "2", default-features = false }
+bumpalo = "3.17.0"
+bytemuck = "1.23.0"
+cargo-platform = "=0.3.2"
+cc = "1.2.39"
+clap = "4.5.53"
+color-eyre = "0.6.5"
+compact_str = "0.9.0"
+constcat = "0.6.1"
+copy_dir = "0.1.3"
+cow-utils = "0.1.3"
+cp_r = "0.5.2"
+crossterm = "0.29.0"
+csv-async = "1.3.1"
+ctor = "1.0"
+ctrlc = "3.5.2"
+derive_more = "2.0.1"
+diff-struct = "0.5.3"
+directories = "6.0.0"
+elf = { version = "0.8.0", default-features = false }
+materialized_artifact = { path = "vendor/materialized_artifact" }
+materialized_artifact_macros = { path = "vendor/materialized_artifact_macros" }
+flate2 = "1.0.35"
+fspy = { path = "vendor/fspy" }
+fspy_benchmark_launcher = { path = "vendor/fspy_benchmark_launcher", artifact = "bin" }
+fspy_benchmark_target = { path = "vendor/fspy_benchmark_target", artifact = "bin" }
+fspy_client_unix = { path = "vendor/fspy_client_unix" }
+fspy_detours_sys = { path = "vendor/fspy_detours_sys" }
+fspy_preload_unix = { path = "vendor/fspy_preload_unix", artifact = "cdylib" }
+fspy_preload_windows = { path = "vendor/fspy_preload_windows", artifact = "cdylib" }
+fspy_seccomp_unotify = { path = "vendor/fspy_seccomp_unotify" }
+fspy_shm = { path = "vendor/fspy_shm" }
+fspy_shared = { path = "vendor/fspy_shared" }
+fspy_shared_unix = { path = "vendor/fspy_shared_unix" }
+futures = "0.3.31"
+futures-util = "0.3.31"
+globset = "0.4.18"
+getrandom = "0.4.2"
+itoa = "1.0.17"
+jsonc-parser = "0.32.0"
+libc = "0.2.185"
+linux-raw-sys = { version = "0.12", default-features = false }
+libtest-mimic = "0.8.2"
+memmap2 = "0.9.11"
+monostate = "1.0.2"
+napi = "3"
+napi-build = "2"
+napi-derive = "3"
+fspy_ipc_str = { path = "vendor/fspy_ipc_str" }
+nix = "0.31.2"
+ntapi = "0.4.1"
+nucleo-matcher = "0.3.1"
+omnipath = "0.1.6"
+once_cell = "1.19"
+os_str_bytes = "7.1.1"
+ouroboros = "0.18.5"
+owo-colors = "4.1.0"
+passfd = { git = "https://github.com/polachok/passfd", rev = "d55881752c16aced1a49a75f9c428d38d3767213", default-features = false }
+notify = "8.0.0"
+path-clean = "1.0.1"
+pathdiff = "0.2.3"
+petgraph = "0.8.2"
+phf = "0.13.0"
+portable-pty = "0.9.0"
+pretty_assertions = "1.4.1"
+proc-macro2 = "1"
+pty_terminal = { path = "vendor/pty_terminal" }
+pty_terminal_test = { path = "vendor/pty_terminal_test" }
+pty_terminal_test_client = { path = "vendor/pty_terminal_test_client" }
+quote = "1"
+ratatui = "0.30.0"
+rayon = "1.10.0"
+ref-cast = "1.0.24"
+regex = "1.11.3"
+rusqlite = "0.39.0"
+rustc-hash = "2.1.1"
+# SeccompAction::UserNotif (SECCOMP_RET_USER_NOTIF) was added after the latest published release (v0.5.0)
+seccompiler = { git = "https://github.com/rust-vmm/seccompiler", rev = "08587106340b8e3cb361c7561411510039436857" }
+serde = "1.0.219"
+serde_json = "1.0.140"
+serde_norway = "0.9.42"
+sha2 = "0.11.0"
+shell-escape = "0.1.5"
+fspy_nostd = { path = "vendor/fspy_nostd" }
+fspy_nostd_alloc = { path = "vendor/fspy_nostd_alloc" }
+similar = "3.0.0"
+smallvec = "2.0.0-alpha.12"
+static_cell = "2"
+snapshot_test = { path = "vendor/snapshot_test" }
+socket_ipc = { path = "vendor/socket_ipc" }
+stackalloc = "1.2.1"
+subprocess_test = { path = "vendor/subprocess_test" }
+supports-color = "3.0.1"
+syn = "2"
+syscalls = { version = "0.8.0", default-features = false }
+tar = "0.4.45"
+tempfile = "3.14.0"
+test-log = "0.2.18"
+thiserror = "2"
+tokio = "1.48.0"
+tokio-util = "0.7.17"
+toml = "1.0.0"
+tracing = "0.1.43"
+tracing-error = "0.2.1"
+tracing-subscriber = "0.3.19"
+ts-rs = { version = "12.0.0" }
+tui-term = "0.3.1"
+twox-hash = "2.1.1"
+uuid = "1.18.1"
+vec1 = "1.12.1"
+vt_glob = { path = "vendor/vt_glob" }
+vt_graph_ser = { path = "vendor/vt_graph_ser" }
+vt_path = { path = "vendor/vt_path" }
+vt_powershell = { path = "vendor/vt_powershell" }
+vt_select = { path = "vendor/vt_select" }
+vt_shell = { path = "vendor/vt_shell" }
+vt_str = { path = "vendor/vt_str" }
+vt = { path = "vendor/vt" }
+vt_bin = { path = "vendor/vt_bin" }
+vt_client = { path = "vendor/vt_client" }
+vt_client_napi = { path = "vendor/vt_client_napi", artifact = "cdylib" }
+vt_graph = { path = "vendor/vt_graph" }
+vt_ipc_shared = { path = "vendor/vt_ipc_shared" }
+vt_plan = { path = "vendor/vt_plan" }
+vt_server = { path = "vendor/vt_server" }
+vt_workspace = { path = "vendor/vt_workspace" }
+vt100 = "0.16.2"
+wax = "0.7.0"
+which = "8.0.0"
+widestring = "1.2.0"
+winapi = "0.3.9"
+windows-sys = "0.61"
+winsafe = { version = "0.0.27" }
+xxhash-rust = "0.8.15"
+ntest = "0.9.5"
+terminal_size = "0.4"
+zstd = "0.13"
+
+[workspace.metadata.cargo-shear]
+ignored = [
+  # These are artifact dependencies. They are not directly `use`d in Rust code.
+  "fspy_preload_unix",
+  "fspy_preload_windows",
+  "vt_client_napi",
+]
+
+[features]
+test-support = []
+
+[[bin]]
+name = "runlens"
+path = "src/main.rs"
+
+[[bin]]
+name = "runlens-test-command"
+path = "tests/fixtures/command.rs"
+required-features = ["test-support"]

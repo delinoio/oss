@@ -1,0 +1,64 @@
+#![cfg_attr(target_os = "windows", feature(windows_process_extensions_main_thread_handle))]
+
+pub mod error;
+
+#[cfg(not(target_env = "musl"))]
+mod ipc;
+
+#[cfg(unix)]
+#[path = "./unix/mod.rs"]
+mod os_impl;
+
+#[cfg(target_os = "windows")]
+#[path = "./windows/mod.rs"]
+mod os_impl;
+
+
+mod command;
+mod lifecycle;
+
+use std::{io, process::ExitStatus};
+
+pub use command::Command;
+pub use error::TrackingIncomplete;
+pub use fspy_shared::ipc::{AccessMode, PathAccess};
+use futures_util::future::BoxFuture;
+pub use os_impl::PathAccessIterable;
+
+use tokio::process::{ChildStderr, ChildStdin, ChildStdout};
+
+/// The result of a tracked child process upon its termination.
+pub struct ChildTermination {
+    /// Runlens: collection also includes lifecycle failures and remaining children.
+    pub lifecycle_incomplete: bool,
+    /// The exit status of the child process.
+    pub status: ExitStatus,
+    /// The path accesses captured from the child process, or the reason
+    /// they cannot be trusted to be all of them.
+    pub path_accesses: Result<PathAccessIterable, TrackingIncomplete>,
+}
+
+pub struct TrackedChild {
+    /// The handle for writing to the child's standard input (stdin), if it has
+    /// been captured.
+    pub stdin: Option<ChildStdin>,
+
+    /// The handle for reading from the child's standard output (stdout), if it
+    /// has been captured.
+    pub stdout: Option<ChildStdout>,
+
+    /// The handle for reading from the child's standard error (stderr), if it
+    /// has been captured.
+    pub stderr: Option<ChildStderr>,
+
+    /// The future that resolves to exit status and path accesses when the process exits.
+    pub wait_handle: BoxFuture<'static, io::Result<ChildTermination>>,
+
+    /// A duplicated process handle of the child, captured before the tokio `Child`
+    /// is moved into the background wait task. This is an independently owned handle
+    /// (via `DuplicateHandle`) so it remains valid even after tokio closes its copy.
+    /// Callers can use this to assign the process to a Win32 Job Object.
+    #[cfg(windows)]
+    pub process_handle: std::os::windows::io::OwnedHandle,
+}
+
