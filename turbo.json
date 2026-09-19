@@ -7,11 +7,13 @@
         "buf.yaml",
         "protos/devhud/v1/**",
         "package.json",
-        "pnpm-lock.yaml"
+        "pnpm-lock.yaml",
+        "protos/async_commit_hook/v1/**"
       ],
       "outputs": [
         "protos/gen/**",
-        "packages/devhud-api-client/src/gen/**"
+        "packages/devhud-api-client/src/gen/**",
+        "packages/async-commit-hook-api-client/src/gen/**"
       ]
     },
     "dev": {
@@ -66,7 +68,7 @@
         "doc_build/**"
       ]
     },
-    "build":{
+    "build": {
       "dependsOn": [
         "^build",
         "build:api"
@@ -112,6 +114,27 @@
     "lint": {
       "dependsOn": [
         "^lint"
+      ]
+    },
+    "async-commit-hook#dev": {
+      "dependsOn": [
+        "^build"
+      ],
+      "cache": false,
+      "persistent": true,
+      "env": []
+    },
+    "async-commit-hook#test": {
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/scripts/spawn-dev-server.mjs",
+        "$TURBO_ROOT$/scripts/dev-environment/process.mjs"
+      ],
+      "outputs": [
+        "dist/**"
       ]
     }
   }

@@ -94,6 +94,7 @@ enum ProjectId {
   Rustia = "rustia",
   PublicDocs = "public-docs",
   DevHud = "devhud",
+  AsyncCommitHook = "async-commit-hook",
 }
 ```
 
@@ -358,6 +359,7 @@ Coverage expectations:
 - `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter nodeup-docs test`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`.
 - `ci-contracts`: validates workflow syntax and the repository CI contract with the checked-in Go `actionlint` tool and Node fixtures.
+- `async-commit-hook`: follows the central change plan, runs Go race tests, app/client tests, protocol freshness and release fixtures, and builds all six unsigned target archives. Shared setup actions restore caches; only successful main validation saves them.
 - `devhud-frontend`, `devhud-extension`, and `devhud-admin`: run package-local type, lint, unit, component, accessibility, and deterministic frontend/package builds.
 - `devhud-protocol`: runs schema formatting, lint, compatibility, and generated-freshness checks; Go binding tests; and TypeScript client lint, tests, and build on Ubuntu.
 - `devhud-api`: runs package-local Go format, vet, unit, PostgreSQL migration, integration, API, and sweeper conformance.
@@ -427,6 +429,15 @@ Release automation baseline:
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
 - After addressing pull request review comments and pushing updates, resolve the corresponding review threads.
 - If a project splits into multiple deployables, the project index must include path ownership and integration boundaries, and component-level domain docs must exist.
+
+### async-commit-hook Contract
+
+- Project ID `async-commit-hook` owns `cmds/async-commit-hook`, `apps/async-commit-hook`, `protos/async_commit_hook/v1` and `packages/async-commit-hook-api-client`; only executable `ach` is distributed.
+- Follow `docs/project-async-commit-hook.md` and its domain contracts. Issue #897 applies with the owner's recorded exclusions of actual six-target machine validation and actual public publication.
+- `release-async-commit-hook.yml` is manual-only from `main`, defaults to unsigned nonpublishing dry-run artifacts, and follows `docs/cmds-async-commit-hook-release-contract.md`. Ordinary CI must never sign or publish ach artifacts, mutate the Homebrew tap or deploy Pages.
+- CLI/MCP/Connect share one core, exact-commit latest-compatible-attempt validation and explicit per-run acknowledgements. Never resurrect old successful evidence after pruning.
+- State, reports and logs remain local and account-owned; no telemetry. User commands require explicit repository trust. Cancellation must reconcile owned descendants before releasing exclusive scheduling groups.
+- Development uses frontend 46308 and local API 46309 with conflict failure; root DevHud development remains unchanged.
 
 ### Runmoor Contract
 
