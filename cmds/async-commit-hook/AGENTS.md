@@ -10,6 +10,7 @@
 - Stream NUL-delimited Git tree records directly into validation/materialization, retaining no full listing or entry slice; bound one record to 1 MiB and kill/reap readers on failure.
 - Committed source is streamed through one validated raw Git blob batch per workspace, with bounded buffers. Never enable original hooks, filters, submodules or LFS implicitly. Hook installation discovery must not use the execution helper's disabled-hooks override.
 - Read committed project configuration through a 1 MiB plus one-byte stream limit before parsing; terminate and reap oversized Git readers rather than buffering the full blob.
+- Raw LFS detection inspects the complete candidate only below the upstream 1024-byte cutoff and requires valid version, SHA-256 OID, nonnegative size and extension syntax; header-only examples remain ordinary source.
 - LFS declaration checks ignore attribute comments and pattern text, match exact filter values, and retain independent raw-pointer rejection before commands start.
 - Stream committed attribute files one at a time with a 1 MiB per-file limit plus one overflow byte; reject overflow before accepting a run and reap the Git reader.
 - Connect rerun returns its durable run ID with an optional startup diagnostic after post-acceptance startup failure; only pre-acceptance failures are transport errors.

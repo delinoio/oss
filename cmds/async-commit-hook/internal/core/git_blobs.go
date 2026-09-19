@@ -2,7 +2,6 @@ package core
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"io"
 	"os"
@@ -54,13 +53,16 @@ func materializeBlobs(ctx context.Context, dir string, owned *os.Root, sha strin
 		if err != nil || size < 0 {
 			return E("git-object-unavailable", "invalid committed object size", 3)
 		}
-		prefix, err := reader.Peek(int(min(size, int64(len("version https://git-lfs.github.com/spec/v1\n")))))
-		if err != nil {
-			return E("git-object-unavailable", "truncated committed object", 3)
+		if size > 0 && size < lfsPointerCutoff {
+			candidate, err := reader.Peek(int(size))
+			if err != nil {
+				return E("git-object-unavailable", "truncated committed object", 3)
+			}
+			if isLFSPointer(candidate) {
+				return E("lfs-unsupported", "Git LFS pointer source is unsupported", 2)
+			}
 		}
-		if bytes.HasPrefix(prefix, []byte("version https://git-lfs.github.com/spec/v1\n")) {
-			return E("lfs-unsupported", "Git LFS pointer source is unsupported", 2)
-		}
+
 		path := filepath.FromSlash(entry.Path)
 		if err = owned.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			return err
