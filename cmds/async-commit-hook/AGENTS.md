@@ -25,6 +25,7 @@
 - Worker-correctness fixtures must distinguish injected failures from deadlock watchdog expiry; allow native shell cold startup under CI load instead of imposing an undocumented command-startup SLA.
 - Shared runner security tests must use syntax for the selected native shell, retaining Windows PowerShell coverage rather than running POSIX fixtures under PowerShell.
 - Project agent installation and removal resolve any supplied subdirectory to its registered Git worktree root; linked worktrees retain independent integration paths.
+- Working-tree configuration validation resolves `--repo` through Git discovery, including nested directories and linked worktrees, before reading the selected root's uncommitted file.
 - Repository listings resolve the current checkout branch, including detached HEAD, without rewriting historical run branches.
 - Propagate every check state persistence failure to the run worker; never discard an execution error and leave a claimed check unscheduled.
 - Unexpected storage/worker exits must cancel and reap owned commands even when SQLite can no longer record a cancellation. A normal daemon stop still drains.

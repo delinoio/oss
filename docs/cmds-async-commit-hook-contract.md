@@ -10,6 +10,8 @@ Go; macOS 13+, Windows 10 22H2+, Ubuntu 22.04 LTS+, each amd64/arm64. Default sh
 One developer OS account, explicitly trusted repositories and linked worktrees, humans and local coding agents.
 
 ## Interfaces and Contracts
+`config validate` resolves the supplied repository directory to its Git worktree root and validates that worktree's current authoring file, including uncommitted edits. Nested `.config` files do not override the root file; linked worktrees use their own configuration. Run/plan validation remains commit-pinned.
+
 Commands: init; config validate; run; status; wait; logs; check; inbox; ack; failures; plan; doctor; compare; rerun; cancel; ui; hooks install/uninstall; agent install/uninstall; agent-guide; daemon start/status/stop; browser list/revoke; mcp; pre-push; prune; self-update; version.
 
 JSON responses carry schema_version=1. Exit codes: 0 operation success (gates only when passing), 1 failed/incomplete validation, 2 invalid usage/configuration, 3 runner/storage error, 4 wait expiration. Diagnostics use stable codes on stderr. Wait expiration never cancels work.

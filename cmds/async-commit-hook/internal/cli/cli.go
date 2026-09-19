@@ -174,7 +174,12 @@ func Run(ctx context.Context, args []string, in io.Reader, out, diagnostics io.W
 			break
 		}
 		var b []byte
-		b, e = os.ReadFile(filepath.Join(repo, core.ProjectFile))
+		var root string
+		_, root, _, e = core.Discover(ctx, repo)
+		if e != nil {
+			break
+		}
+		b, e = os.ReadFile(filepath.Join(root, core.ProjectFile))
 		if e == nil {
 			result, e = core.ParseProject(b)
 		}
