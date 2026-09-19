@@ -173,3 +173,5 @@ Final integration inspection found that an independently surviving supervisor al
 After lifecycle integration, the full async-commit-hook race suite, `go test -p 1 ./...`, `go vet ./...`, and focused Linux arm64 container lifecycle/retention tests passed again. The final six-target unsigned archive build uses `/tmp/ach-pr901-repair4-complete-release`; product version remains `0.1.0`. Public release, signing, Homebrew publication and deployment remain unexecuted. Generated `dist` directories are removed before delivery.
 
 Four additional incoming-head reviews were first visible in the final inventory. They are handled without another status poll. `TestEnvironmentSecrecyConflictsRejectedBeforeAcceptance` rejects cross-check secret/public conflicts, including case variants, preserves consistent shared declarations and proves no run is accepted into SQLite.
+
+`TestCommitSubjectsNormalizeDisplayWithoutChangingObjectIDs` writes a real Git commit with invalid UTF-8, verifies raw Git still returns those bytes, and marshals the actual ListCommits protobuf/JSON response while preserving both object IDs and valid Korean/emoji text.

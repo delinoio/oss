@@ -31,3 +31,5 @@
 - Repository trust requires the common-directory local UUID as well as its canonical path. Reused paths need explicit initialization; preserve historical IDs and reject source access through stale worktree registrations.
 
 - Reject conflicting secret/public classifications for an environment name across the complete project graph, using case-insensitive names for Windows portability, before reading public snapshot inputs.
+
+- Normalize arbitrary Git commit-subject bytes into valid UTF-8 for display/transport while preserving commit and parent object IDs.

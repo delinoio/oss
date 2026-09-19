@@ -218,7 +218,7 @@ func Commits(ctx context.Context, path, ref string, offset int) ([]Commit, error
 	for _, l := range strings.Split(v, "\n") {
 		p := strings.SplitN(l, "\t", 3)
 		if len(p) == 3 {
-			out = append(out, Commit{p[0], strings.Fields(p[1]), p[2]})
+			out = append(out, Commit{p[0], strings.Fields(p[1]), strings.ToValidUTF8(p[2], "\uFFFD")})
 		}
 	}
 	return out, nil
