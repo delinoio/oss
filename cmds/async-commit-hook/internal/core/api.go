@@ -333,7 +333,7 @@ func (a *API) ListBranches(ctx context.Context, r *connect.Request[pb.ListBranch
 	}
 	out := &pb.ListBranchesResponse{}
 	for _, v := range branches {
-		out.Branches = append(out.Branches, &pb.Branch{Name: v.Name, Commit: v.Commit})
+		out.Branches = append(out.Branches, &pb.Branch{Name: strings.ToValidUTF8(v.Name, "\uFFFD"), Commit: v.Commit})
 	}
 	return connect.NewResponse(out), nil
 }

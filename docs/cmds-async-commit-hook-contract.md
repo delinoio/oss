@@ -93,6 +93,7 @@ PR #901 thread `PRRT_kwDORRAKg86j9n3x` correctly identified the old sampling rac
 Environment secrecy is project-wide: declarations for the same case-insensitive environment name must agree on `secret`, including across checks and OS filters. Reject conflicts before collecting public inputs, fingerprinting or accepting a run.
 
 Commit browsing normalizes invalid subject bytes for display and protobuf/JSON transport; commit and parent IDs remain exact Git object IDs. Raw commit objects are unchanged.
+Branch-list responses likewise normalize display labels at the API boundary while preserving raw Git refs and their commit object IDs.
 
 Go test JSON collection keeps at most 64 KiB of chronological output per active test in lazily allocated circular buffers. Appends copy only new bytes; terminal events release their buffers after failure summaries are materialized. Complete redacted report evidence is preserved.
 
