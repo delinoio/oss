@@ -48,6 +48,7 @@ func TestReservationsIncludeDindAndUncertainResources(t *testing.T) {
 }
 func TestWarmRetirementPreservesDemand(t *testing.T) {
 	s := schedulingState(t)
+	s.Config.Host.MaxRunners = 3
 	s.Pools["a"].Spec.MinIdle = 2
 	s.Pools["b"].Demand = 1
 	s.Runners["warm"] = &Runner{ID: "warm", PoolID: "a", Phase: Idle}
@@ -129,8 +130,11 @@ func TestVMCappedDemandPreservesUnrelatedWarmCapacity(t *testing.T) {
 			}
 			delete(s.Images, "vm2")
 			delete(s.Runners, "vm2")
-			if got := retirementCandidates(s); len(got) != 1 || got[0] != "warm" {
-				t.Fatalf("admissible Tart demand did not displace warm capacity: %v", got)
+			if got := retirementCandidates(s); len(got) != 0 {
+				t.Fatalf("available VM slot needlessly displaced warm capacity: %v", got)
+			}
+			if got := Schedule(s); len(got) != 1 || got[0] != "b" {
+				t.Fatalf("available VM slot did not satisfy Tart demand: %v", got)
 			}
 		})
 	}
@@ -154,6 +158,7 @@ func TestVMCappedDemandCanRetireWarmVM(t *testing.T) {
 		t.Fatalf("released VM slot did not satisfy demand: %v", got)
 	}
 	// Docker demand can still displace warm Docker capacity at the VM ceiling.
+	s.Config.Host.MaxRunners = 3
 	s.Images["setup2"] = &Image{Phase: ImageOpen}
 	s.Pools["b"].Spec.Backend = Docker
 	if got := retirementCandidates(s); len(got) != 1 || got[0] != "docker" {
@@ -181,5 +186,98 @@ func TestBackoffAndRateLimit(t *testing.T) {
 	p := &Problem{RetryAt: time.Now().Add(2 * time.Minute)}
 	if retryDelay(0, p) < 119*time.Second {
 		t.Fatal("rate limit reset ignored")
+	}
+}
+
+func TestWarmVMRetirementAccountsForSelectedCapacity(t *testing.T) {
+	for _, tc := range []struct {
+		name                  string
+		demand, cpu           int
+		memory                int64
+		want                  int
+		samePool, poolLimited bool
+	}{
+		{name: "one demand", demand: 1, cpu: 1, memory: 128, want: 1},
+		{name: "two demands", demand: 2, cpu: 1, memory: 128, want: 2},
+		{name: "CPU needs both", demand: 1, cpu: 2, memory: 128, want: 2},
+		{name: "memory needs both", demand: 1, cpu: 1, memory: 256, want: 2},
+		{name: "same warm pool", demand: 1, cpu: 1, memory: 128, want: 1, samePool: true},
+		{name: "bounded by pool cap", demand: 10, cpu: 1, memory: 128, want: 1, poolLimited: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := schedulingState(t)
+			s.Config.Host.MaxRunners, s.Config.Host.CPU, s.Config.Host.MemoryMiB = 2, 2, 256
+			for _, p := range s.Pools {
+				p.Spec.Backend = Tart
+			}
+			s.Pools["a"].Spec.MinIdle, s.Pools["b"].Spec.MinIdle = 1, 1
+			s.Pools["c"].Demand = tc.demand
+			s.Pools["c"].Spec.Resources = Resources{CPU: tc.cpu, MemoryMiB: tc.memory}
+			if tc.poolLimited {
+				s.Pools["c"].Spec.MaxRunners = 1
+			}
+			s.Runners["warm-a"] = &Runner{ID: "warm-a", PoolID: "a", Phase: Idle, Backend: Tart, Resources: Resources{1, 128}}
+			s.Runners["warm-b"] = &Runner{ID: "warm-b", PoolID: "b", Phase: Idle, Backend: Tart, Resources: Resources{1, 128}}
+			if tc.samePool {
+				s.Runners["warm-b"].PoolID = "a"
+				s.Pools["a"].Spec.MinIdle, s.Pools["b"].Spec.MinIdle = 2, 0
+			}
+			got := retirementCandidates(s)
+			if len(got) != tc.want || got[0] != "warm-a" {
+				t.Fatalf("retired more or less than demand needs: %v", got)
+			}
+			if len(s.Runners) != 2 || s.Runners["warm-a"].Phase != Idle || s.Pools["a"].Spec.MinIdle == 0 {
+				t.Fatal("planning mutated the input snapshot")
+			}
+			for _, id := range got {
+				r := s.Runners[id]
+				r.Phase, r.RemoteRemoved = Cleaning, true
+			}
+			for tick := 0; tick < 3; tick++ {
+				if more := retirementCandidates(s); len(more) != 0 {
+					t.Fatalf("pending cleanup evicted another warm VM: %v", more)
+				}
+				if allocated := Schedule(s); len(allocated) != 0 {
+					t.Fatalf("planning released actual reservations early: %v", allocated)
+				}
+				s.Cursor++
+			}
+			for _, id := range got {
+				s.Runners[id].Terminated = true
+			}
+			allocated := Schedule(s)
+			want := min(tc.demand, s.Pools["c"].Spec.MaxRunners)
+			if len(allocated) != want || allocated[0] != "c" {
+				t.Fatalf("confirmed capacity did not satisfy demand: %v", allocated)
+			}
+		})
+	}
+}
+
+func TestAvailableDemandCapacityPreservesWarmRunners(t *testing.T) {
+	s := schedulingState(t)
+	s.Pools["a"].Spec.MinIdle = 1
+	s.Runners["warm"] = &Runner{ID: "warm", PoolID: "a", Phase: Idle, Backend: Docker, Resources: Resources{1, 128}}
+	s.Pools["b"].Demand = 1
+	if got := retirementCandidates(s); len(got) != 0 {
+		t.Fatalf("available capacity still evicted a minimum-idle runner: %v", got)
+	}
+	if got := Schedule(s); len(got) != 1 || got[0] != "b" {
+		t.Fatalf("available capacity did not serve demand: %v", got)
+	}
+}
+
+func TestDeregisteredRetirementDoesNotCountTowardWarmExcess(t *testing.T) {
+	s := schedulingState(t)
+	s.Pools["a"].Spec.MinIdle = 2
+	for _, id := range []string{"retiring", "warm-1", "warm-2"} {
+		s.Runners[id] = &Runner{ID: id, PoolID: "a", Phase: Idle, Backend: Docker, Resources: Resources{1, 128}}
+	}
+	s.Runners["retiring"].Phase, s.Runners["retiring"].RemoteRemoved = Cleaning, true
+	if got := retirementCandidates(s); len(got) != 0 {
+		t.Fatalf("pending retirement caused another minimum-idle eviction: %v", got)
+	}
+	if _, reserved, _ := usage(s); reserved != 3 {
+		t.Fatal("retirement planning released a reservation before termination")
 	}
 }

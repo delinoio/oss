@@ -1,6 +1,9 @@
 package runmoor
 
-import "sort"
+import (
+	"sort"
+	"strconv"
+)
 
 func usage(s Snapshot) (Resources, int, int) {
 	var r Resources
@@ -115,26 +118,48 @@ func Schedule(s Snapshot) []string {
 	return result
 }
 func retirementCandidates(s Snapshot) []string {
-	_, _, vms := usage(s)
-	needDocker, needTart := false, false
+	// Plan demand against available capacity and the capacity selected for
+	// retirement. Synthetic reservations stay in this private snapshot; actual
+	// allocation still retains every reservation until termination is confirmed.
+	future := s
+	future.Runners = make(map[string]*Runner, len(s.Runners))
+	future.Pools = make(map[string]*PoolState, len(s.Pools))
 	for id, p := range s.Pools {
-		n, _ := liveCount(s, id)
-		if eligible(s, p) && n < p.Demand && logicalCount(s, p.Spec.Name) < p.Spec.MaxRunners {
-			if p.Spec.Backend == Tart {
-				needTart = true
-			} else {
-				needDocker = true
+		copy := *p
+		copy.Spec.MinIdle = 0 // Only real demand may consume retirement capacity.
+		future.Pools[id] = &copy
+	}
+	for id, r := range s.Runners {
+		if r.Phase == Cleaning && r.RemoteRemoved {
+			// Already deregistered retirement must not evict more warm runners
+			// while local cleanup is still confirming termination.
+			continue
+		}
+		future.Runners[id] = r
+	}
+	planned := 0
+	reserveDemand := func() {
+		for _, pool := range Schedule(future) {
+			var id string
+			for {
+				id = "planned-demand-" + strconv.Itoa(planned)
+				planned++
+				if future.Runners[id] == nil {
+					break
+				}
 			}
+			p := future.Pools[pool]
+			future.Runners[id] = &Runner{PoolID: pool, Phase: Preparing, Backend: p.Spec.Backend, Resources: p.Spec.Cost()}
 		}
 	}
+	reserveDemand()
 	ids := []string{}
 	for id, r := range s.Runners {
-		if r.Phase == Idle {
+		if r.Phase == Idle && !r.Terminated {
 			ids = append(ids, id)
 		}
 	}
 	sort.Strings(ids)
-	retiring := map[string]int{}
 	var out []string
 	for _, id := range ids {
 		r := s.Runners[id]
@@ -142,13 +167,20 @@ func retirementCandidates(s Snapshot) []string {
 		if p == nil {
 			continue
 		}
-		count, busy := liveCount(s, p.ID)
+		count, busy := liveCount(future, p.ID)
 		// Retiring Docker capacity cannot release a slot at the Tart VM ceiling.
-		remainingVMs := vms
+		_, _, remainingVMs := usage(future)
 		if r.Backend == Tart && !r.Terminated {
 			remainingVMs--
 		}
-		needDemand := needDocker || (needTart && remainingVMs < 2)
+		needDemand := false
+		for pool, demand := range future.Pools {
+			n, _ := liveCount(future, pool)
+			if eligible(future, demand) && n < demand.Demand && logicalCount(future, demand.Spec.Name) < demand.Spec.MaxRunners && (demand.Spec.Backend != Tart || remainingVMs < 2) {
+				needDemand = true
+				break
+			}
+		}
 		target := p.Demand
 		if !needDemand && busy+p.Spec.MinIdle > target {
 			target = busy + p.Spec.MinIdle
@@ -156,9 +188,10 @@ func retirementCandidates(s Snapshot) []string {
 		if s.Paused || s.Stopping || p.Phase != Ready {
 			target = busy
 		}
-		if count-retiring[p.ID] > target {
+		if count > target {
 			out = append(out, id)
-			retiring[p.ID]++
+			delete(future.Runners, id)
+			reserveDemand()
 		}
 	}
 	return out
