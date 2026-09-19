@@ -113,6 +113,12 @@ func (s *Service) execute(ctx context.Context, r Run, c Check, workspace string)
 	}
 	defer f.Close()
 	redactor := NewRedactor(f, secrets)
+	finishUnstarted := func(state State, code, message string) error {
+		if diagnostic := finalizeCapturedLog(f, redactor, &c.Log); diagnostic != nil {
+			c.Diagnostics = append(c.Diagnostics, *diagnostic)
+		}
+		return s.finishCheck(c, state, code, message)
+	}
 	args := []string{"-c", command.Command}
 	if c.Shell == PowerShell || c.Shell == Pwsh {
 		args = []string{"-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command.Command}
@@ -124,8 +130,7 @@ func (s *Service) execute(ctx context.Context, r Run, c Check, workspace string)
 	cmd.Stdout = redactor
 	cmd.Stderr = redactor
 	if cancel := s.Store.Cancellation(c.ID); cancel != "" {
-		_ = redactor.Close()
-		return s.finishCheck(c, cancel, "", "")
+		return finishUnstarted(cancel, "", "")
 	}
 	scopeDir := filepath.Join(s.Store.Root, "evidence", r.ID, "processes", c.ID)
 	if runtime.GOOS != "windows" {
@@ -138,8 +143,7 @@ func (s *Service) execute(ctx context.Context, r Run, c Check, workspace string)
 	p, err := startProcess(cmd, scopeDir)
 	if err != nil {
 		s.Log.Error("process.owner_start_failed", "run_id", r.ID, "check_id", c.ID, "platform", runtime.GOOS, "error", err.Error())
-		_ = redactor.Close()
-		return s.finishCheck(c, Failed, "command-start-failed", "cannot start selected shell; run ach doctor")
+		return finishUnstarted(Failed, "command-start-failed", "cannot start selected shell; run ach doctor")
 	}
 	defer p.close()
 	if runtime.GOOS != "windows" {
@@ -223,20 +227,13 @@ loop:
 		_ = s.Store.SaveCheck(c)
 		return err
 	}
-	err = redactor.Close()
-	if err == nil {
-		err = f.Sync()
-	}
-	_ = f.Close()
+	diagnostic := finalizeCapturedLog(f, redactor, &c.Log)
 	c.State = Collecting
 	if saveErr := s.Store.SaveCheck(c); saveErr != nil {
 		return saveErr
 	}
-	if err != nil {
-		return s.finishCheck(c, Failed, "evidence-write-failed", "captured output could not be persisted")
-	}
-	if err = digestFile(logPath, &c.Log); err != nil {
-		return s.finishCheck(c, Failed, "evidence-read-failed", "captured output could not be verified")
+	if diagnostic != nil {
+		return s.finishCheck(c, Failed, diagnostic.Code, diagnostic.Message)
 	}
 	exit := 0
 	if waitErr != nil {
@@ -291,6 +288,26 @@ loop:
 	}
 	return s.finishCheck(c, state, "", "")
 }
+
+// Even a command that never starts owns an empty log. Finish its durable
+// bytes before terminal publication so comparison can verify that evidence.
+func finalizeCapturedLog(f *os.File, redactor *Redactor, evidence *Evidence) *Diagnostic {
+	err := redactor.Close()
+	if err == nil {
+		err = f.Sync()
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return &Diagnostic{Code: "evidence-write-failed", Message: "captured output could not be persisted"}
+	}
+	if err = digestFile(f.Name(), evidence); err != nil {
+		return &Diagnostic{Code: "evidence-read-failed", Message: "captured output could not be verified"}
+	}
+	return nil
+}
+
 func digestFile(path string, e *Evidence) error {
 	f, err := os.Open(path)
 	if err != nil {
