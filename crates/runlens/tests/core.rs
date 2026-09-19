@@ -1,5 +1,34 @@
 use runlens::{config, entries::Entries, model::*, privacy::Redactor, snapshot};
 #[test]
+fn executable_identity_rejects_path_replacement_with_matching_metadata() {
+    use std::io::Write;
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("executable");
+    std::fs::write(&path, b"first-image").unwrap();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let identity = runlens::platform::executable_identity(&path, &cancel).unwrap();
+    assert!(identity.revalidate(&path).is_ok());
+    let identity = runlens::platform::executable_identity(&path, &cancel).unwrap();
+    let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+    let mut replacement = tempfile::NamedTempFile::new_in(root.path()).unwrap();
+    replacement.write_all(b"other-image").unwrap();
+    replacement
+        .as_file()
+        .set_times(std::fs::FileTimes::new().set_modified(modified))
+        .unwrap();
+    replacement.persist(&path).unwrap();
+    assert_eq!(
+        identity.revalidate(&path).unwrap_err().code,
+        runlens::error::ErrorCode::Incomplete
+    );
+    let identity = runlens::platform::executable_identity(&path, &cancel).unwrap();
+    std::fs::write(&path, b"changed-size").unwrap();
+    assert_eq!(
+        identity.revalidate(&path).unwrap_err().code,
+        runlens::error::ErrorCode::Incomplete
+    );
+}
+#[test]
 fn spill_preserves_sorted_records_and_roundtrip() {
     let mut entries = Entries::<u32>::new(32);
     for index in (0..300).rev() {

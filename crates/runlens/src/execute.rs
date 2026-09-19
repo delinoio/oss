@@ -51,7 +51,7 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
     }
     let executable = platform::resolve(&request.command.argv[0], &request.environment, &cwd)?;
     platform::preflight(&executable)?;
-    let executable_sha256 = platform::executable_sha256(&executable, &request.cancellation);
+    let executable_identity = platform::executable_identity(&executable, &request.cancellation);
     if request.cancellation.is_cancelled() {
         return Err(Error::new(
             ErrorCode::Cancelled,
@@ -106,6 +106,12 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
     });
     let cancel = request.cancellation.child_token();
     let mut timed_out = false;
+    // Snapshots can take arbitrarily longer than executable inspection. Check
+    // the path again at the launch boundary, including newly protected images.
+    platform::preflight(&executable)?;
+    let executable_sha256 = executable_identity
+        .map(|identity| identity.revalidate(&executable))
+        .transpose()?;
     tracing::info!(execution_id=%id,stage="spawn","starting requested command");
     let child = native
         .spawn_in(

@@ -388,7 +388,12 @@ invalid input (exit 2) without partial output.
 ## Passive identity and failure boundaries
 
 Execution metadata includes the executable SHA-256 computed without invoking the
-target. Comparison requires known matching executable identity and OS metadata,
+target. The inspected file handle stays open through the before-snapshot; immediately
+before launch Runlens rechecks platform eligibility, pathname file identity, and
+metadata stability. A changed identity returns incomplete before launching the
+replacement. This is a launch-boundary race check, not an OS sandbox or a guarantee
+against a concurrent replacement after the final check.
+Comparison requires known matching executable identity and OS metadata,
 equal source revision metadata, and the same working-tree inclusion policy;
 redacted arguments cannot establish equivalence. Known restrictive Mach-O code
 signature flags and restricted segments are rejected by a bounded parser before

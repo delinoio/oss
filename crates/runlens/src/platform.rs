@@ -311,10 +311,33 @@ fn inspect_executable(program: &Path, depth: usize) -> Result<()> {
 }
 
 /// A passive executable identity: never run an extra tool-version command.
-pub fn executable_sha256(
+pub struct ExecutableIdentity {
+    handle: same_file::Handle,
+    metadata: std::fs::Metadata,
+    sha256: String,
+}
+impl ExecutableIdentity {
+    /// Keep the inspected handle alive so pathname replacement cannot reuse its
+    /// identity.
+    pub fn revalidate(self, path: &Path) -> Result<String> {
+        let unchanged = (|| {
+            let current = same_file::Handle::from_path(path).ok()?;
+            let metadata = current.as_file().metadata().ok()?;
+            Some(current == self.handle && crate::snapshot::same(&self.metadata, &metadata))
+        })();
+        if unchanged != Some(true) {
+            return Err(Error::new(
+                ErrorCode::Incomplete,
+                "executable changed before launch; retry with a stable executable",
+            ));
+        }
+        Ok(self.sha256)
+    }
+}
+pub fn executable_identity(
     path: &Path,
     cancel: &tokio_util::sync::CancellationToken,
-) -> Option<String> {
+) -> Option<ExecutableIdentity> {
     use sha2::{Digest, Sha256};
     let mut file = std::fs::File::open(path).ok()?;
     let before = file.metadata().ok()?;
@@ -331,8 +354,12 @@ pub fn executable_sha256(
         hash.update(&buffer[..count]);
     }
     let after = file.metadata().ok()?;
-    if before.len() != after.len() || before.modified().ok() != after.modified().ok() {
+    if !crate::snapshot::same(&before, &after) {
         return None;
     }
-    Some(hex::encode(hash.finalize()))
+    Some(ExecutableIdentity {
+        handle: same_file::Handle::from_file(file).ok()?,
+        metadata: after,
+        sha256: hex::encode(hash.finalize()),
+    })
 }

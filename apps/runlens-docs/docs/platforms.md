@@ -23,4 +23,6 @@ Linux artifacts target glibc hosts. Alpine/musl hosts are excluded. A statically
 
 Runlens supports finite noninteractive commands and supported child processes. Detached/background services, PTYs, interactive prompts, and persistent supervision are excluded. Directory membership, symlinks, missing paths, permission failures, and unstable files remain distinct observations.
 
+If an inspected executable changes while Runlens prepares its snapshot, Runlens refuses that launch with an incomplete diagnostic. Retry after the executable is stable. The final identity check does not provide a security boundary against concurrent replacement.
+
 Complete collection means completion within documented backend and snapshot coverage. It does not prove observation of every possible dependency. Environment reads, networking, clocks, randomness, detailed process timelines, and event ordering are not captured.

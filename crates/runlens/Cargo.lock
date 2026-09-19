@@ -1299,6 +1299,7 @@ dependencies = [
  "libc",
  "regex",
  "rusqlite",
+ "same-file",
  "schemars",
  "serde",
  "serde_json",
