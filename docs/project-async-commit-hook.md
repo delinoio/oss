@@ -20,6 +20,7 @@ Run trusted repository checks asynchronously against committed source, with dura
 - [Client contract](packages-async-commit-hook-api-client-contract.md)
 - [Requirements snapshot](cmds-async-commit-hook-requirements.md)
 - [Implementation evidence](cmds-async-commit-hook-evidence.md)
+- [Release and recovery contract](cmds-async-commit-hook-release-contract.md)
 
 ## Cross-Domain Invariants
 Issue #897 is normative, with two explicit owner amendments on 2026-09-19: actual six-target machine validation is excluded from this implementation, and public releases/deployments are prepared but not executed. Cross-compilation and local automated integration remain required. Never label an untested platform as integration-validated.

@@ -2564,12 +2564,40 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: node --test scripts/release/*.test.mjs
 
+  async-commit-hook:
+    name: Async commit hook contracts and integration
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: |
+          go test -race ./cmds/async-commit-hook/...
+          pnpm --filter async-commit-hook test
+          pnpm --filter @delinoio/async-commit-hook-api-client test
+          pnpm proto:check
+          node --test scripts/release/async-commit-hook.test.mjs
+          python3 scripts/release/build-async-commit-hook.py --output "$RUNNER_TEMP/ach-release"
+
   ci-result:
     name: CI Result
     runs-on: ubuntu-latest
     if: always()
     needs:
       - ci-contracts
+      - async-commit-hook
       - go-quality
       - go-test
       - repository-environment
