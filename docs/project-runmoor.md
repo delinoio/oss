@@ -22,6 +22,7 @@ Runmoor manages disposable, single-job GitHub Actions runners on one developer o
 ## Cross-Domain Invariants
 
 - Runmoor public guides are owned by the standalone Rspress app and deployed as Cloudflare Pages static output. Stable routes are `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, and `/operations`. The old public-docs `/runmoor` routes are removed without redirects or compatibility pages.
+- Standalone documentation validation preserves the credential and private-path publication safeguards previously applied by public-docs, while retaining public configuration placeholders and user-facing storage guidance. See `docs/apps-runmoor-docs-foundation.md`.
 - Package-local `pnpm dev` and root `pnpm dev:runmoor-docs` bind to `127.0.0.1:46309`; preview binds to `127.0.0.1:46271`. Both enforce the fixed address and fail on conflicts. The root entry point does not require the DevHud team environment.
 - Platforms: macOS 14+ Apple Silicon; Ubuntu 22.04+ amd64/arm64. Host and execution CPU architectures must match. Windows, Intel Macs, emulation, GHES, Kubernetes, cloud/remote Docker, and multi-computer management are excluded.
 - The manager runs on the host. No host job execution, reusable completed runners, public webhook server, dashboard, remote control API, telemetry, Prometheus, plugin API, or automatic update service exists.

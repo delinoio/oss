@@ -15,7 +15,7 @@ pnpm --filter runmoor-docs preview
 
 Package-local `pnpm dev` and root `pnpm dev:runmoor-docs` use `127.0.0.1:46309`. Production preview uses `127.0.0.1:46271`. Both commands keep their fixed loopback address, fail with recovery guidance if the port is occupied, and stop their server when interrupted.
 
-`pnpm test` builds the site and validates all seven route artifacts, article headings and links, main landmarks, clean internal URLs, and absence of legacy `/runmoor` route links. The routes are `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, and `/operations`.
+`pnpm test` builds the site and validates all seven route artifacts, article headings and links, main landmarks, clean internal URLs, absence of legacy `/runmoor` route links, and public-content restrictions. Regression tests inject synthetic credentials and private paths into temporary copies of the generated HTML and verify rejection without echoing the values. Valid public URLs, static assets, and documented credential placeholders remain supported. The routes are `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, and `/operations`.
 
 ## Cloudflare Pages
 

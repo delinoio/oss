@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { decodeHTML } from "entities";
+import { createPublicContentValidator } from "./public-content.mjs";
 
 const requiredHeadings = new Map([
   ["/", ["Runmoor", "Guides"]],
@@ -21,6 +22,7 @@ const outputDir = path.resolve("doc_build");
 const validatorOrigin = "https://runmoor.delino.io";
 const failures = [];
 const linkedRoutes = new Set();
+const containsProhibitedPublicContent = createPublicContentValidator(requiredHeadings.keys());
 
 async function collectHtmlFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -59,10 +61,16 @@ const contentsByFile = new Map(await Promise.all(htmlFiles.map(async (file) => [
 
 for (const [file, contents] of contentsByFile) {
   const relativeFile = path.relative(outputDir, file).split(path.sep).join("/");
+  const pageUrl = new URL(`/${relativeFile}`, validatorOrigin);
+  if (containsProhibitedPublicContent(contents, pageUrl)) {
+    // Never echo the rejected content or URL into public CI logs.
+    failures.push(`${relativeFile} contains prohibited public content`);
+    continue;
+  }
   if (/^runmoor(?:\/|\.html$)/u.test(relativeFile)) {
     failures.push(`${relativeFile} retains a legacy route artifact`);
   }
-  for (const link of links(contents, new URL(`/${relativeFile}`, validatorOrigin))) {
+  for (const link of links(contents, pageUrl)) {
     if (link.origin !== validatorOrigin) continue;
     if (/^\/runmoor(?:\/|(?:\.html)?$)/u.test(link.pathname)) {
       failures.push(`${relativeFile} links to legacy route ${link.pathname}`);

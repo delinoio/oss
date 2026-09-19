@@ -32,6 +32,7 @@
 ## Security
 - Preserve the preview verification limits, credential-reference guidance, signature verification steps, trusted-workload restrictions, and third-party licensing boundaries.
 - Do not publish internal credentials, private repository paths, or unsupported release claims.
+- The app-local public-content validator preserves the former public-docs credential/path safeguards. It rejects credential patterns and private filesystem/repository paths in rendered text and HTML comments, plus credential-bearing or forbidden HTML/CSS resource URLs after entity and URL decoding. Public route IDs and same-origin static assets remain permitted, as do documented environment/file credential placeholders and XDG paths. Rejections report the page and classification without echoing the rejected value.
 - Hosting credentials are managed outside the repository. Adding the app does not create a Cloudflare project, configure DNS, or publish the site.
 
 ## Logging
@@ -42,7 +43,7 @@
 - Development: package-local `pnpm dev` or root `pnpm dev:runmoor-docs`, independent of the DevHud team environment.
 - Build: `pnpm --filter runmoor-docs build`.
 - Preview: `pnpm --filter runmoor-docs preview`.
-- Validation: package-local `pnpm test` or `pnpm --filter runmoor-docs test`, building the site and validating route artifacts, required article headings and links, main landmarks, clean internal links, and absence of legacy route links.
+- Validation: package-local `pnpm test` or `pnpm --filter runmoor-docs test`, building the site and validating route artifacts, required article headings and links, main landmarks, clean internal links, absence of legacy route links, and public-content restrictions. The command also runs regression fixtures against temporary copies of the real generated HTML to prove rejection of credentials and internal paths without logging their values.
 - Preparation: `prepare:app` is an explicit no-op.
 - CI: `node-runmoor-docs-test` follows the frozen-install and Turbo affected-workspace checks and participates in `ci-result`.
 
