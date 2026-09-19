@@ -95,6 +95,8 @@ The implementation session exercised real macOS arm64 host execution, Linux arm6
 
 A local full Windows GNU cross-check was unavailable because the host lacks the MinGW C compiler required by the TLS dependency. The Windows process-owner source was type-checked separately for the Windows target; this is not a substitute for native execution evidence.
 
+Known unresolved lifecycle gap: the Unix owner currently signals a process group. A macOS reproduction that launches a child with `start_new_session=True`, closes its inherited pipes, and lets the parent finish leaves that child alive after `tflow run` reports success. The reproduction explicitly killed the surviving child afterward. Existing lifecycle conformance proves cleanup only while descendants remain in the owned group. Do not treat it as evidence for daemonized or independently regrouped descendants. PR #906 review thread `PRRT_kwDORRAKg86j-f4J` remains open until ownership and cleanup are implemented and exercised for these descendants on both Unix platforms; periodic PID enumeration cannot prove that a fast double fork never escaped. Linux subreaper adoption alone also does not establish the macOS guarantee, whose kqueue fork-tracking flags are unsupported.
+
 ## Dependencies and Integrations
 See `docs/repository-workflow-contract.md` and the TaskFlow engine contract. No existing application workflow is migrated to TaskFlow.
 

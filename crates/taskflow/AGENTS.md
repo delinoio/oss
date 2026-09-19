@@ -18,6 +18,7 @@
 - Cache link records use portable separators; Windows link creation converts targets to native separators before invoking the filesystem API.
 - Local cache readers, writers, and cleaning share a process-safe cache lock outside the removable cache tree; never hold it during commands or network operations.
 - Cache verification checks artifact identity, content digests, paths, and shard accounting independently of current configuration; restoration additionally validates project ownership and link containment.
+- Do not close the detached Unix descendant cleanup gap using process-group tests or periodic PID enumeration; require ownership evidence for setsid/setpgid and double-fork descendants on macOS and Linux.
 - Every child belongs to a process-tree/container owner; replacement waits for reaping. Tests must assert actual cleanup. Service shutdown must await all owners and propagate every unverified process/container cleanup as failure.
 - Apply overlap policies to per-task execution ownership, not to membership in an unfinished wave.
 - Watch invalidation consumes filesystem mutations, never access notifications from metadata discovery or input hashing. Metadata notifications must confirm a changed or invalid graph before cancelling the active generation; identical rewrites preserve live work.
