@@ -107,3 +107,5 @@
 - Non-root project configurations may declare project identity, tasks, and dotenv policy. Reject nondefault workspace/start and any remote/ci configuration instead of silently ignoring root-only policy. Diagnostics identify the child configuration and field without configuration values.
 
 - Generic shard result files share the structured-metadata byte limit with inventory output. Validate regular-file size and bound the actual read before JSON decoding so concurrent growth cannot bypass the cap.
+
+- Session-provided receipts retain their validated semantic identity but clear historical changed flags for each new wave, including ready services. Only results produced by the current wave propagate changes.

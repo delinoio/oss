@@ -337,7 +337,13 @@ fn provided_receipts(
             }
             valid
         })
-        .map(|(id, r)| (id.clone(), r.clone()))
+        .map(|(id, r)| {
+            // This receipt proves availability, not a new change in this wave.
+            // Keep the semantic identity for keys without replaying its old cause.
+            let mut reused = r.clone();
+            reused.changed = false;
+            (id.clone(), reused)
+        })
         .collect();
     // Output hashing can take time even without an await. Consume every known
     // service exit before supplying ready receipts to a newly spawned wave.

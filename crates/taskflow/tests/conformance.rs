@@ -7441,3 +7441,54 @@ async fn generic_shard_results_are_bounded_before_json_parsing() {
     );
     assert!(runner::previous(root.path(), "app#suite").is_none());
 }
+
+#[tokio::test]
+async fn reused_session_receipts_do_not_replay_historical_changes() {
+    for service in [false, true] {
+        let stable = if service {
+            json!({"command":command(&["sleep","stable.pid"]),"input":[],"service":true,"readiness":{"type":"command","command":command(&["version"]),"timeout":"10s"}})
+        } else {
+            json!({"command":command(&["record","stable-events","stable"]),"input":[],"output":["stable-events"]})
+        };
+        let stable_dependency = if service {
+            json!({"task":"stable","waitFor":"ready"})
+        } else {
+            json!("stable")
+        };
+        let directory = fixture(json!({
+            "trigger":{"command":command(&["unchanged","trigger-events","trigger"]),"input":["source"],"output":[],"watch":{"initial":false,"debounce":"20ms"}},
+            "stable":stable,
+            "consumer":{"command":command(&["record","consumer-events","consumer"]),"input":[],"output":[],"dependsOn":["trigger",stable_dependency]},
+            "audit":{"command":command(&["record","wave-events","wave"]),"input":[],"dependsOn":["consumer"],"effect":"external","watch":{} }
+        }));
+        profile(directory.path(), &["trigger", "audit"]);
+        let root = directory.path().to_path_buf();
+        let token = CancellationToken::new();
+        let stop = token.clone();
+        let session = tokio::spawn(async move {
+            taskflow::session::start(&root, "default", RunOptions::default(), stop).await
+        });
+        wait_lines(&directory.path().join("wave-events"), "wave", 1).await;
+        files::atomic_write(&directory.path().join("source"), b"new input").unwrap();
+        wait_lines(&directory.path().join("wave-events"), "wave", 2).await;
+        token.cancel();
+        let result = session.await.unwrap().unwrap();
+        assert!(result.success, "{result:?}");
+        assert_eq!(
+            result.results["app#consumer"].outcome,
+            Outcome::Suppressed,
+            "service={service}: {result:?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join("consumer-events")).unwrap(),
+            "consumer\n"
+        );
+        if service {
+            let pid = std::fs::read_to_string(directory.path().join("stable.pid"))
+                .unwrap()
+                .parse()
+                .unwrap();
+            assert!(!pid_alive(pid));
+        }
+    }
+}
