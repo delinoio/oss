@@ -716,3 +716,5 @@ Unix prelaunch descriptor checks enumerate the process descriptor directory and 
 Linux statfs/fstatfs reads, including libc statvfs/fstatvfs wrappers, record filesystem metadata input attempts without persisting capacity or filesystem data. Dynamic and static fixtures exercise present/missing external paths and write-only descriptors against deny-read policies.
 
 Conflict analysis matches Windows case aliases, including UNC paths and directory-read ancestors, and preserves each execution's stored key in evidence and usage results. Unix paths stay case-sensitive. Windows uses native ordinal comparison; other hosts retain explicit Unicode case-table uncertainty. Alias comparisons are capped at four million per analysis, returning partial findings and unknown evidence on exhaustion.
+
+Linux libc `execveat` is forwarded unchanged to inherited kernel collection. Relative paths, descriptor execution, no-follow errors and invalid flags preserve the child’s native semantics.

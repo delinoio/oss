@@ -195,7 +195,6 @@ mod linux_only {
         reason = "macro-generated code requires types from parent scope"
     )]
     use super::*;
-    use crate::client::convert::{PathAt, ToAbsolutePath};
 
     intercept!(execvpe(64): unsafe extern "C" fn(
         prog: *const libc::c_char,
@@ -232,38 +231,13 @@ mod linux_only {
         pathname: *const libc::c_char,
         argv: *const *mut libc::c_char,
         envp: *const *mut libc::c_char,
-        flags: c_int, // TODO: conform to semantics of flags
+        flags: c_int,
     ) -> libc::c_int {
-        #[expect(
-            clippy::no_effect_underscore_binding,
-            reason = "suppresses unused warning on *::original"
-        )]
-        let _unused = execveat::original;
-        let arena = fspy_nostd_alloc::pooled_bump();
-
-        // SAFETY: dirfd and pathname are valid arguments from the interposed execveat call.
-        let path = unsafe { PathAt::borrow_raw(dirfd, pathname) };
-        let abs_path = match path.to_absolute_path(&arena) {
-            Ok(None) => {
-                // SAFETY: forwarding the original arguments to the real execveat syscall
-                return unsafe { execveat::original()(dirfd, pathname, argv, envp, flags) };
-            }
-            Ok(Some(path)) => path,
-            Err(errno) => {
-                errno.set();
-                return -1;
-            }
-        };
-
-        // `abs_path` is a C string, so the exec receives a terminated
-        // pointer by construction rather than by convention.
-        handle_exec(
-            &arena,
-            ExecResolveConfig::search_path_disabled(),
-            abs_path.as_ptr().cast(),
-            argv.cast(),
-            envp.cast(),
-        )
+        // Linux's inherited seccomp collector observes execveat directly.
+        // Rewriting this as execve changes AT_SYMLINK_NOFOLLOW, AT_EMPTY_PATH,
+        // invalid flags and descriptor-relative lookup semantics. Forward the
+        // original call; remove only when adaptation preserves every operand.
+        unsafe { execveat::original()(dirfd, pathname, argv, envp, flags) }
     }
 
     intercept!(fexecve(64): unsafe extern "C" fn(

@@ -3831,3 +3831,47 @@ fn windows_conflict_aliases_preserve_concrete_evidence() {
         }
     }
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn libc_execveat_preserves_flags_and_descriptor_semantics() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("input.txt"), "input").unwrap();
+    std::os::unix::fs::symlink(fixture(), root.path().join("child")).unwrap();
+    for (flags, errno) in [
+        ("nofollow", Some(libc::ELOOP)),
+        ("invalid", Some(libc::EINVAL)),
+        ("normal", None),
+        ("empty", None),
+    ] {
+        let direct = Command::new(fixture())
+            .current_dir(root.path())
+            .args(["libc-execveat", "./child", flags])
+            .output()
+            .unwrap();
+        let traced = invoke(
+            root.path(),
+            &[
+                "run",
+                "--save",
+                &format!("{flags}.json"),
+                "--",
+                fixture(),
+                "libc-execveat",
+                "./child",
+                flags,
+            ],
+        );
+        assert!(traced.status.success(), "{flags}: {traced:?}");
+        assert_eq!(traced.stdout, direct.stdout, "{flags}");
+        if let Some(errno) = errno {
+            assert_eq!(traced.stdout, format!("{errno}\n").as_bytes());
+        } else {
+            assert_eq!(
+                parse(root.path(), &format!("{flags}.json"))["executions"][0]["accesses"]
+                    ["${workspace}/input.txt"]["read"],
+                true
+            );
+        }
+    }
+}

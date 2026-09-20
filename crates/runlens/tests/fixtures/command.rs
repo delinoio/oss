@@ -7,6 +7,44 @@ fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
         #[cfg(target_os = "linux")]
+        "libc-execveat" => {
+            let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            let argv = [path.as_ptr(), c"read".as_ptr(), std::ptr::null()];
+            unsafe extern "C" {
+                static environ: *const *const libc::c_char;
+            }
+            let flags = match args[2].as_str() {
+                "nofollow" => libc::AT_SYMLINK_NOFOLLOW,
+                "invalid" => 0x40000000,
+                "empty" => libc::AT_EMPTY_PATH,
+                _ => 0,
+            };
+            // SAFETY: live C strings and process environment. Success replaces
+            // this fixture; failures print only the kernel's numeric errno.
+            unsafe {
+                let fd = if flags == libc::AT_EMPTY_PATH {
+                    libc::open(path.as_ptr(), libc::O_RDONLY)
+                } else {
+                    libc::AT_FDCWD
+                };
+                libc::execveat(
+                    fd,
+                    if flags == libc::AT_EMPTY_PATH {
+                        c"".as_ptr()
+                    } else {
+                        path.as_ptr()
+                    },
+                    argv.as_ptr().cast(),
+                    environ.cast(),
+                    flags,
+                );
+            }
+            println!(
+                "{}",
+                std::io::Error::last_os_error().raw_os_error().unwrap()
+            );
+        }
+        #[cfg(target_os = "linux")]
         "execve-script" | "execveat-script" | "execveat-empty-script" => {
             let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
             let argv = [path.as_ptr(), std::ptr::null()];

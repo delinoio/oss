@@ -222,3 +222,5 @@
 - Preserve the help/version-only CLI, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`.
 - This scaffold has an explicitly approved crates.io publication contract; register it as a workspace and cargo-mono release target. Do not add domain commands implicitly.
 - Standalone crate packages must contain their own MIT license and pass process-level CLI tests and Cargo publish dry-run.
+
+- Runlens Linux libc execveat must preserve every original operand and flag; inherited kernel collection owns its observations.
