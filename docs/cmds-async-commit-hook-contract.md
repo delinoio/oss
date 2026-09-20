@@ -173,3 +173,5 @@ The local API carries worktree-scoped opaque branch identities separately from n
 Configured state paths use escaped absolute [SQLite file URIs](https://www.sqlite.org/uri.html), preserving literal URI punctuation and raw Unix filename bytes independently of fixed connection parameters. Database reopening retains the same file and durability settings.
 
 Go report completeness tracking removes completed package/test identities immediately. Repeated run/start events reactivate their identity, while the separate completed-occurrence map remains available for stable failure IDs across pass, skip and fail iterations.
+
+The running/collecting/passed persistence-failure fixture executes a deterministic test subprocess through the actual process ownership backend. It proves completed output before post-exit injected writes, worker lock release, process termination and interrupted recovery without depending on PowerShell cold startup. Production shell validation and native-shell integration coverage are unchanged.
