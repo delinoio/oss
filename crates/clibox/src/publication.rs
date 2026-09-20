@@ -471,8 +471,9 @@ mod tests {
                     ConvertStringSecurityDescriptorToSecurityDescriptorW, GetNamedSecurityInfoW,
                     SE_FILE_OBJECT,
                 },
-                SetFileSecurityW, DACL_SECURITY_INFORMATION, GROUP_SECURITY_INFORMATION,
-                OWNER_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION,
+                SetFileSecurityW, SetSecurityDescriptorControl, DACL_SECURITY_INFORMATION,
+                GROUP_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION,
+                PROTECTED_DACL_SECURITY_INFORMATION, SE_DACL_AUTO_INHERITED,
             },
         };
         fn security(path: &[u16]) -> Vec<u16> {
@@ -496,6 +497,16 @@ mod tests {
                 );
                 let mut text = std::ptr::null_mut();
                 let mut length = 0;
+                // SetNamedSecurityInfo records that the descriptor uses Windows'
+                // current inheritance model by adding AUTO_INHERITED, including
+                // to protected ACLs. It does not change access semantics:
+                // https://learn.microsoft.com/windows/win32/secauthz/automatic-propagation-of-inheritable-aces
+                // Compare owner/group, every ACE, and DACL protection exactly,
+                // excluding only this bookkeeping bit in the retrieved copy.
+                assert_ne!(
+                    SetSecurityDescriptorControl(descriptor, SE_DACL_AUTO_INHERITED, 0),
+                    0
+                );
                 assert_ne!(
                     ConvertSecurityDescriptorToStringSecurityDescriptorW(
                         descriptor,
