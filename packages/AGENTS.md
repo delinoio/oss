@@ -31,3 +31,4 @@
 - Accept LF and CRLF source manifests. Pack launcher text, README, and license as canonical UTF-8/LF and verify their exact canonical bytes across build/assembly operating systems; native executable bytes must never be normalized.
 - Require archive execute bits for Unix native binaries and the npm bin shim; Windows PE payloads must remain valid when packed from NTFS without POSIX execute bits. Pin Node's release-build architecture to the selected Rust target.
 - Finalize the executable header mode during tarball creation before recording integrity, independent of host filesystem permissions. Artifact verification must never repair or rewrite downloaded tarballs.
+- Build both Linux musl targets with the pinned Rust toolchain's `rust-lld` and self-contained runtime objects. Keep native-host and Alpine consumer execution gates; adding C dependencies requires revisiting this toolchain contract.

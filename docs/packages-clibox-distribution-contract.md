@@ -14,6 +14,7 @@ JavaScript developers using `pnpm add -D -E @delino/clibox` followed by `pnpm ex
 - The source workspace is private and contains no dependency on an unpublished binary package. Public manifests are generated explicitly, never by an install lifecycle hook.
 - The main package pins all eight optional dependencies to its exact version. Platform packages declare `os`, `cpu`, and, for Linux, `libc`.
 - Linux GNU binaries target the build runner baselines: glibc 2.35 on x64 and 2.39 on arm64. Alpine uses the separate musl builds.
+- Both musl targets use the pinned Rust toolchain's `rust-lld` with `-C link-self-contained=yes`, keeping startup objects and libc matched. The pure-Rust CLI has no system C-library dependency. Ubuntu's external musl linker is not used; release jobs execute each binary on its native host and exercise npm/pnpm consumers in Alpine.
 - Platform suffixes are `darwin-x64`, `darwin-arm64`, `win32-x64-msvc`, `win32-arm64-msvc`, `linux-x64-gnu`, `linux-arm64-gnu`, `linux-x64-musl`, and `linux-arm64-musl`; every name starts with `@delino/clibox-`.
 - Resolve OS/architecture from Node and distinguish Linux glibc/musl using the Node diagnostic report header. Do not log the report or its environment contents.
 - Resolve only the selected installed dependency, verify its version, and launch its executable without a shell, preserving argv, cwd, environment, stdio, exit code, and termination signals.
@@ -42,9 +43,9 @@ Packaging and publication report structured events containing action, package, t
 ## Dependencies and Integrations
 `Release Project` synchronizes the Cargo and npm source versions in one version-only commit. `release-clibox.yml` accepts the exact version tag or a manual dry run. Publication requires the exact tag at the selected source commit and a matching crates.io version. The guarded publish job explicitly installs npm `11.6.2` before checking the OIDC minimum of `11.5.1` and publishing; Node.js 24's bundled npm is not the publication version contract.
 
-The `CLIBOX_NPM_PUBLISH_ENABLED` repository variable defaults to disabled. During first release, the workflow still builds and validates all nine tarballs and uploads them as a CI artifact; its summary states that manual npm bootstrap remains pending. The maintainer publishes those exact tarballs, platform packages first and main last, with `npm publish <tarball> --access public`. After configuring all nine Trusted Publishers for `delinoio/oss` and `release-clibox.yml`, set the variable to `true`. Subsequent tagged releases use OIDC and npm provenance. A rerun reconciles already-published identical bytes. Never rebuild or edit an artifact during a partial publication retry; retain the complete verified artifact set.
+The `CLIBOX_NPM_PUBLISH_ENABLED` repository variable must be `true` for publication. All nine packages require a Trusted Publisher permitting publication from `delinoio/oss` and `release-clibox.yml`; tagged releases use OIDC and npm provenance. Leaving the variable unset or setting it to `false` limits the workflow to validated CI artifacts and reports publication as disabled. A rerun reconciles already-published identical bytes. Never rebuild or edit an artifact during a partial publication retry; retain the complete verified artifact set.
 
-Public package READMEs describe installation, supported platforms, and troubleshooting. Bootstrap steps, credentials, repository paths, and release internals stay in this document and the repository workflow contract.
+Public package READMEs describe installation, supported platforms, and troubleshooting. Publisher configuration, credentials, repository paths, and release internals stay in this document and the repository workflow contract.
 
 ## Change Triggers
 Keep the project index, Rust contract, package tests, CI path rules, release coordinator, workflows, and root/package AGENTS rules synchronized.
