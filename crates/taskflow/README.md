@@ -4,7 +4,8 @@ TaskFlow runs explicit commands using native project relationships, task prerequ
 declared inputs, and owned outputs. It provides the `tflow` CLI and a reusable Rust
 library. It leaves compilation and native incremental caches to Cargo, Go, and pnpm.
 
-The crate is unpublished. From a source checkout, build with:
+The crate is unpublished. Source builds require Rust and a platform C compiler.
+From a source checkout, build with:
 
 ```sh
 cargo build --locked --release -p taskflow --bin tflow

@@ -40,6 +40,10 @@ pub struct OwnedProcess {
     pub child: Child,
     pid: u32,
     cleaned: bool,
+    #[cfg(unix)]
+    supervisor: Option<tempfile::TempDir>,
+    #[cfg(unix)]
+    lease: Option<tokio::process::ChildStdin>,
     #[cfg(windows)]
     job: usize,
 }
@@ -52,14 +56,28 @@ impl OwnedProcess {
         environment: Option<&BTreeMap<String, String>>,
     ) -> Result<Self> {
         let args = argv(command, shell);
-        let mut builder = tokio::process::Command::new(&args[0]);
+        #[cfg(unix)]
+        let scope = unix_owner::prepare()?;
+        #[cfg(unix)]
+        let mut builder = {
+            let mut command = tokio::process::Command::new(scope.path().join("supervisor"));
+            command.arg("run").arg(scope.path()).args(&args);
+            command.stdin(Stdio::piped()).kill_on_drop(false);
+            command
+        };
+        #[cfg(windows)]
+        let mut builder = {
+            let mut command = tokio::process::Command::new(&args[0]);
+            command
+                .args(&args[1..])
+                .stdin(Stdio::null())
+                .kill_on_drop(true);
+            command
+        };
         builder
-            .args(&args[1..])
             .current_dir(directory)
-            .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
+            .stderr(Stdio::piped());
         if let Some(environment) = environment {
             builder.env_clear().envs(environment);
         }
@@ -77,12 +95,21 @@ impl OwnedProcess {
                     | windows_sys::Win32::System::Threading::CREATE_NEW_PROCESS_GROUP,
             );
         }
-        let child = builder.spawn().context("failed to spawn command")?;
+        let mut child = builder.spawn().context("failed to spawn command")?;
+        // Tokio Child::wait closes its stdin automatically. Keep the owner lease
+        // separately so waiting for normal completion does not cancel the task.
+        #[cfg(unix)]
+        let lease = child.stdin.take();
+        let _ = &mut child;
         let pid = child.id().context("spawned child has no process ID")?;
         let mut owned = Self {
             child,
             pid,
             cleaned: false,
+            #[cfg(unix)]
+            supervisor: Some(scope),
+            #[cfg(unix)]
+            lease,
             #[cfg(windows)]
             job: 0,
         };
@@ -109,8 +136,9 @@ impl OwnedProcess {
             _ = &mut deadline => (None, ExitReason::TimedOut),
         };
         if let Some(status) = status {
-            // A finite command may leave descendants with inherited pipes. Reap the
-            // group before awaiting EOF so those children cannot deadlock completion.
+            #[cfg(unix)]
+            self.verify_cleanup(status)?;
+            #[cfg(windows)]
             self.kill_tree();
             Ok(ProcessExit {
                 code: status.code().unwrap_or(1),
@@ -130,12 +158,16 @@ impl OwnedProcess {
     }
 
     pub async fn terminate(&mut self) -> Result<()> {
+        if self.cleaned {
+            return Ok(());
+        }
         #[cfg(unix)]
         {
-            let _ = nix::sys::signal::killpg(
-                nix::unistd::Pid::from_raw(self.pid as i32),
-                nix::sys::signal::Signal::SIGTERM,
-            );
+            // Closing this lease, including when the caller dies, asks the
+            // independent supervisor to terminate and prove its domain empty.
+            drop(self.lease.take());
+            let status = self.child.wait().await.context(CleanupFailure)?;
+            self.verify_cleanup(status)?;
         }
         #[cfg(windows)]
         unsafe {
@@ -144,9 +176,12 @@ impl OwnedProcess {
                 self.pid,
             );
         }
-        let _ = tokio::time::timeout(Duration::from_secs(2), self.child.wait()).await;
-        self.kill_tree();
-        let _ = self.child.wait().await;
+        #[cfg(windows)]
+        {
+            let _ = tokio::time::timeout(Duration::from_secs(2), self.child.wait()).await;
+            self.kill_tree();
+            let _ = self.child.wait().await;
+        }
         tracing::debug!(
             pid = self.pid,
             outcome = "reaped",
@@ -155,18 +190,33 @@ impl OwnedProcess {
         Ok(())
     }
 
+    #[cfg(unix)]
+    fn verify_cleanup(&mut self, status: std::process::ExitStatus) -> Result<()> {
+        let valid = self.supervisor.as_ref().is_some_and(|scope| {
+            status.code().is_some_and(|code| {
+                std::fs::read_to_string(scope.path().join("complete")).ok()
+                    == Some(format!("TFLOW_OWNER_V1 {code}\n"))
+            })
+        });
+        if !valid {
+            unix_owner::poison();
+            return Err(CleanupFailure.into());
+        }
+        self.cleaned = true;
+        tracing::debug!(
+            pid = self.pid,
+            outcome = "kernel-domain-empty",
+            "Owned process cleanup verified"
+        );
+        Ok(())
+    }
+
+    #[cfg(windows)]
     fn kill_tree(&mut self) {
         if self.cleaned {
             return;
         }
         self.cleaned = true;
-        #[cfg(unix)]
-        {
-            let _ = nix::sys::signal::killpg(
-                nix::unistd::Pid::from_raw(self.pid as i32),
-                nix::sys::signal::Signal::SIGKILL,
-            );
-        }
         #[cfg(windows)]
         if self.job != 0 {
             unsafe {
@@ -178,6 +228,36 @@ impl OwnedProcess {
 }
 impl Drop for OwnedProcess {
     fn drop(&mut self) {
+        #[cfg(unix)]
+        if !self.cleaned {
+            drop(self.lease.take());
+            // Drop cannot await Tokio, but it still retains ownership until the
+            // helper acknowledges cleanup. On exceptional helper failure keep
+            // its private journal and reject further launches in this process.
+            loop {
+                match self.child.try_wait() {
+                    Ok(Some(status)) => {
+                        let _ = self.verify_cleanup(status);
+                        break;
+                    }
+                    Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+                    Err(_) => {
+                        unix_owner::poison();
+                        break;
+                    }
+                }
+            }
+            if !self.cleaned {
+                if let Some(scope) = self.supervisor.take() {
+                    let _ = scope.keep();
+                }
+                tracing::error!(
+                    pid = self.pid,
+                    "Process ownership cleanup could not be verified; further launches disabled"
+                );
+            }
+        }
+        #[cfg(windows)]
         self.kill_tree();
         #[cfg(windows)]
         if self.job != 0 {
@@ -542,5 +622,37 @@ mod windows {
             }
             Ok(job as usize)
         }
+    }
+}
+
+#[cfg(unix)]
+mod unix_owner {
+    use std::{
+        os::unix::fs::PermissionsExt,
+        sync::atomic::{AtomicBool, Ordering},
+    };
+
+    use super::*;
+
+    static POISONED: AtomicBool = AtomicBool::new(false);
+
+    pub fn poison() {
+        POISONED.store(true, Ordering::SeqCst);
+    }
+
+    pub fn prepare() -> Result<tempfile::TempDir> {
+        ensure!(!POISONED.load(Ordering::SeqCst), CleanupFailure);
+        // A short private path is required by macOS sockaddr_un. User TMPDIR
+        // can exceed its limit before adding a single socket component.
+        let scope = tempfile::Builder::new()
+            .prefix("tflow-")
+            .tempdir_in("/tmp")?;
+        let path = scope.path().join("supervisor");
+        std::fs::write(
+            &path,
+            include_bytes!(concat!(env!("OUT_DIR"), "/taskflow-supervisor")),
+        )?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o500))?;
+        Ok(scope)
     }
 }

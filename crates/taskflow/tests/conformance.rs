@@ -5957,9 +5957,11 @@ async fn shard_partitions_reuse_unsharded_prerequisite_cache_keys() {
 
 #[tokio::test]
 async fn shard_deadlines_leave_docker_cleanup_available() {
+    // Allow native owner establishment and context probes under concurrent CI
+    // load, then expire while the fixture is still blocked for 30 seconds.
     for list in ["inventory", "slow-inventory"] {
         let root = fixture(
-            json!({"suite":{"command":["fixture","unit"],"input":[],"output":[],"timeout":"2s","shard":{"adapter":"generic","count":1,"list":["fixture",list],"run":["fixture","unit"]},"platform":{"executor":"docker","os":"linux","image":"fixture@sha256:0000000000000000000000000000000000000000000000000000000000000000"}}}),
+            json!({"suite":{"command":["fixture","unit"],"input":[],"output":[],"timeout":"10s","shard":{"adapter":"generic","count":1,"list":["fixture",list],"run":["fixture","unit"]},"platform":{"executor":"docker","os":"linux","image":"fixture@sha256:0000000000000000000000000000000000000000000000000000000000000000"}}}),
         );
         let tools = tempfile::tempdir().unwrap();
         std::fs::hard_link(
@@ -5977,7 +5979,7 @@ async fn shard_deadlines_leave_docker_cleanup_available() {
         )
         .unwrap();
         let output = tokio::time::timeout(
-            Duration::from_secs(10),
+            Duration::from_secs(30),
             tokio::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
                 .current_dir(root.path())
                 .args(["--json", "run", "suite", "--quiet"])
@@ -7469,8 +7471,34 @@ async fn reused_session_receipts_do_not_replay_historical_changes() {
             taskflow::session::start(&root, "default", RunOptions::default(), stop).await
         });
         wait_lines(&directory.path().join("wave-events"), "wave", 1).await;
+        let first = tokio::time::timeout(Duration::from_secs(60), async {
+            loop {
+                if let Some(receipt) =
+                    runner::previous(directory.path(), "app#audit").filter(|r| r.success())
+                {
+                    break receipt.execution;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
         files::atomic_write(&directory.path().join("source"), b"new input").unwrap();
         wait_lines(&directory.path().join("wave-events"), "wave", 2).await;
+        // Task output precedes native cleanup and receipt publication. Wait for
+        // the second completed wave before cancelling the owning session.
+        tokio::time::timeout(Duration::from_secs(60), async {
+            loop {
+                if runner::previous(directory.path(), "app#audit")
+                    .is_some_and(|r| r.success() && r.execution != first)
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
         token.cancel();
         let result = session.await.unwrap().unwrap();
         assert!(result.success, "{result:?}");
@@ -7539,4 +7567,127 @@ async fn resolved_graph_installs_refresh_before_newly_selected_work() {
         assert!(events.lines().any(|line| line == "new"), "{events}");
         assert!(events.lines().any(|line| line == "fresh-build"), "{events}");
     }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn unix_owners_reap_detached_descendants_before_returning() {
+    use taskflow::process::{ExitReason, OwnedProcess};
+    // The library API itself owns the helper; embedding applications need no
+    // CLI startup hook or process-wide subreaper. An unrelated command survives.
+    let mut unrelated = std::process::Command::new("/bin/sleep")
+        .arg("60")
+        .spawn()
+        .unwrap();
+    for detached in ["setsid", "setpgid"] {
+        for mode in ["complete", "cancel", "timeout", "drop"] {
+            let directory = tempfile::tempdir().unwrap();
+            let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = socket.local_addr().unwrap().to_string();
+            drop(socket);
+            let args: config::Command = serde_json::from_value(command(&[
+                "detached-root",
+                "leaf.pid",
+                &address,
+                detached,
+                if mode == "complete" { "exit" } else { "hold" },
+            ]))
+            .unwrap();
+            let mut owner = OwnedProcess::spawn(directory.path(), &args, None, None).unwrap();
+            let pid_path = directory.path().join("leaf.pid");
+            wait_lines(&pid_path, "", 1).await;
+            let pid: u32 = std::fs::read_to_string(&pid_path).unwrap().parse().unwrap();
+            let cancel = CancellationToken::new();
+            if mode == "cancel" {
+                cancel.cancel();
+            }
+            if mode == "drop" {
+                drop(owner);
+            } else {
+                let result = owner
+                    .wait(
+                        &cancel,
+                        (mode == "timeout").then_some(Duration::from_millis(1)),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    result.reason,
+                    match mode {
+                        "cancel" => ExitReason::Cancelled,
+                        "timeout" => ExitReason::TimedOut,
+                        _ => ExitReason::Completed,
+                    }
+                );
+                drop(owner);
+            }
+            // Binding immediately after completion is the useful lifecycle
+            // guarantee, independently of delayed zombie PID collection.
+            let _replacement = std::net::TcpListener::bind(&address).unwrap();
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+            while pid_alive(pid) && tokio::time::Instant::now() < deadline {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            assert!(!pid_alive(pid), "{detached}/{mode}: detached leaf survived");
+        }
+    }
+    assert!(unrelated.try_wait().unwrap().is_none());
+    unrelated.kill().unwrap();
+    unrelated.wait().unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn unix_owner_survives_cli_death_and_reaps_detached_children() {
+    let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = socket.local_addr().unwrap().to_string();
+    drop(socket);
+    let directory = fixture(
+        json!({"run":{"command":command(&["detached-root","leaf.pid",&address,"setsid","hold"]),"input":[]}}),
+    );
+    let mut cli = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+        .args(["--root", directory.path().to_str().unwrap(), "run", "run"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let pid_path = directory.path().join("leaf.pid");
+    wait_lines(&pid_path, "", 1).await;
+    let pid: u32 = std::fs::read_to_string(&pid_path).unwrap().parse().unwrap();
+    cli.kill().unwrap();
+    cli.wait().unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while pid_alive(pid) && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(!pid_alive(pid), "detached leaf survived controller death");
+    let _replacement = std::net::TcpListener::bind(&address).unwrap();
+    assert!(runner::previous(directory.path(), "app#run").is_none());
+}
+
+#[cfg(unix)]
+#[test]
+fn unix_supervisors_preserve_the_callers_output_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+    let directory =
+        fixture(json!({"write":{"command":command(&["write","out","data"]),"input":[]}}));
+    let result = std::process::Command::new("/bin/sh")
+        .args([
+            "-c",
+            "umask 027; exec \"$1\" --root \"$2\" run write",
+            "sh",
+            env!("CARGO_BIN_EXE_tflow"),
+            directory.path().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(result.status.success(), "{result:?}");
+    assert_eq!(
+        std::fs::metadata(directory.path().join("out"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o640
+    );
 }

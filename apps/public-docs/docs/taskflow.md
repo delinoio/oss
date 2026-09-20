@@ -7,7 +7,7 @@ relationships with tasks declared in `taskflow.yml`.
 ## Build from source
 
 TaskFlow currently ships as source. Clone the [Delino OSS repository](https://github.com/delinoio/oss),
-install Rust through rustup, and run this command from the checkout:
+install Rust through rustup and a platform C compiler, and run this command from the checkout:
 
 ```sh
 cargo build --locked --release -p taskflow --bin tflow
@@ -17,12 +17,16 @@ Add the generated `target/release` directory to your executable search path. The
 binary is `tflow` on macOS/Linux and `tflow.exe` on Windows. The checkout selects
 its Rust toolchain. There is no published Cargo package or prebuilt release yet.
 
-Host execution targets macOS, Linux, and Windows on x64 and arm64. Docker tasks
+Host execution targets macOS 13+, Linux, and Windows on x64 and arm64. Docker tasks
 run Linux containers through a local daemon. Install only the native tools your
 tasks use. pnpm discovery requires lockfile-query support (pnpm 10.23 or later).
 Native conformance fixtures exercise pnpm 10.26.2, Go 1.25, the selected Rust
 toolchain, Vitest 4.1.11, and Jest 29.7.0. Other command shapes may require the
 generic test adapter described in [Sharding and CI](taskflow/ci).
+
+Unix execution requires executable temporary storage. Linux requires a mounted proc filesystem, and
+macOS requires an available user launchd domain. TaskFlow reports an error when
+process ownership cannot be established or cleanup cannot be verified.
 
 ## First task
 

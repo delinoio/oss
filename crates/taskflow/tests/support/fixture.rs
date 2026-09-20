@@ -109,6 +109,37 @@ fn main() {
         args.drain(1..3);
     }
     match args[1].as_str() {
+        #[cfg(unix)]
+        "detached-root" => {
+            let pid_file = std::env::current_dir().unwrap().join(&args[2]);
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["detached-middle", pid_file.to_str().unwrap(), &args[3], &args[4]])
+                .status().unwrap();
+            assert!(status.success());
+            while !pid_file.exists() { std::thread::sleep(Duration::from_millis(5)); }
+            if args[5] == "hold" { std::thread::sleep(Duration::from_secs(60)); }
+        }
+        #[cfg(unix)]
+        "detached-middle" => {
+            use std::os::unix::process::CommandExt;
+            unsafe extern "C" { fn setsid() -> i32; }
+            assert!(unsafe { setsid() } > 0);
+            let mut leaf = std::process::Command::new(std::env::current_exe().unwrap());
+            leaf.args(["detached-leaf", &args[2], &args[3]])
+                .env_clear().current_dir("/")
+                .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+            if args[4] == "setsid" {
+                unsafe { leaf.pre_exec(|| { if setsid() < 0 { return Err(std::io::Error::last_os_error()); } Ok(()) }); }
+            } else { leaf.process_group(0); }
+            leaf.spawn().unwrap();
+            // Deliberately do not wait: root + middle both exit before cleanup.
+        }
+        #[cfg(unix)]
+        "detached-leaf" => {
+            let _socket = std::net::TcpListener::bind(&args[3]).unwrap();
+            write(&args[2], std::process::id().to_string().as_bytes());
+            std::thread::sleep(Duration::from_secs(60));
+        }
         "version" => println!("taskflow-fixture-1"),
         "version-streams" => {
             print!("{}", fs::read_to_string(&args[2]).unwrap());
