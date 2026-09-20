@@ -81,7 +81,7 @@ Provide these public command groups:
 | `runlens run -- <argv>` | Observe a directly supplied command. |
 | `runlens run --command <name>` | Observe a command declared in configuration. |
 | `runlens compare <left> <right>` | Compare saved reports. |
-| `runlens cache check <report> --command <name>` | Audit a report against declared inputs and outputs. |
+| `runlens cache check <report> --command <name>` | Audit a report against declared inputs and outputs after matching normalized argv, cwd, and any recorded name; mismatched or masked identities are inconclusive. Direct argv reports may bind when argv and cwd match. This remains an offline operation. |
 | `runlens receipt <report>` | Render an execution receipt. |
 | `runlens verify clean <name>` | Verify a configured command in a clean checkout. |
 | `runlens policy check <report>` | Check configured policies, optionally against `--baseline <report>`. |

@@ -348,17 +348,27 @@ async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
             command:
                 CacheCommand::Check {
                     report: path,
-                    command,
+                    command: name,
                     output,
                 },
         } => {
             let config = config::load(cli.config.as_deref(), &root)?;
             let command = config
                 .commands
-                .get(&command)
+                .get(&name)
                 .ok_or_else(|| Error::input("configured command was not found"))?;
+            let redactor = runlens::privacy::Redactor::new(&root, &[], &config.redaction)?;
+            let cwd = root.join(&command.cwd);
+            let cwd = cwd
+                .canonicalize()
+                .unwrap_or_else(|_| cwd.components().collect());
+            let expected = runlens::model::Identity {
+                name: Some(redactor.text(&name)),
+                argv: redactor.argv(&command.argv),
+                cwd: redactor.path(&cwd),
+            };
             print_analysis(
-                analysis::cache(&report::read(&path)?, command)?,
+                analysis::cache(&report::read(&path)?, command, &expected)?,
                 output,
                 true,
             )

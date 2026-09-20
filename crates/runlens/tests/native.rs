@@ -36,6 +36,75 @@ async fn tracing_initialization_failure_does_not_launch_the_target() {
 fn fixture() -> &'static str {
     env!("CARGO_BIN_EXE_runlens-test-command")
 }
+#[test]
+fn cache_declarations_require_the_selected_command_identity() {
+    let root = repository("read");
+    assert!(
+        invoke(
+            root.path(),
+            &["run", "--command", "build", "--save", "original.json"]
+        )
+        .status
+        .success()
+    );
+    let mut original = parse(root.path(), "original.json");
+    // Isolate identity from dependency coverage. This remains a valid report;
+    // an unrelated invocation must not borrow these empty observations.
+    original["executions"][0]["accesses"] = serde_json::json!({});
+    for (index, field, value, expected) in [
+        (0, "name", serde_json::json!("build"), 0),
+        (1, "name", serde_json::Value::Null, 0),
+        (2, "name", serde_json::json!("different"), 4),
+        (3, "argv", serde_json::json!([fixture(), "other"]), 4),
+        (
+            4,
+            "argv",
+            serde_json::json!(["different-executable", "read"]),
+            4,
+        ),
+        (5, "cwd", serde_json::json!("${workspace}/other"), 4),
+        (6, "argv", serde_json::json!([fixture(), "[redacted]"]), 4),
+    ] {
+        let mut report = original.clone();
+        report["executions"][0]["command"][field] = value;
+        let path = format!("identity-{index}.json");
+        fs::write(
+            root.path().join(&path),
+            serde_json::to_vec(&report).unwrap(),
+        )
+        .unwrap();
+        let output = invoke(
+            root.path(),
+            &["cache", "check", &path, "--command", "build", "--json"],
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(expected),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            result["verdict"],
+            if expected == 0 {
+                "passed"
+            } else {
+                "inconclusive"
+            }
+        );
+    }
+    // Even equal masking placeholders cannot establish equality.
+    let mut report: runlens::model::Report = serde_json::from_value(original).unwrap();
+    report.executions[0].command.argv[1] = "[redacted]".into();
+    let command = runlens::config::Command::direct(report.executions[0].command.argv.clone());
+    assert_eq!(
+        runlens::analysis::cache(&report, &command, &report.executions[0].command)
+            .unwrap()
+            .verdict,
+        Some(runlens::model::Verdict::Inconclusive)
+    );
+    assert!(!root.path().join("out").exists());
+}
 #[tokio::test]
 async fn clean_preflights_combined_execution_capacity_before_source_preparation() {
     use runlens::{clean, config, error::ErrorCode, model::MAX_EXECUTIONS};
@@ -808,7 +877,8 @@ fn offline_policy_and_cache_follow_windows_case_rules() {
         );
         let mut command = runlens::config::Command::direct(vec![]);
         command.inputs = vec!["private/**".into()];
-        let cache = runlens::analysis::cache(&report, &command).unwrap();
+        let cache =
+            runlens::analysis::cache(&report, &command, &report.executions[0].command).unwrap();
         let missed_private = cache.findings.iter().any(|entry| {
             let (_, finding) = entry.unwrap();
             finding.code == runlens::model::FindingCode::UndeclaredInput

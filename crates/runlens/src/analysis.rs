@@ -142,11 +142,30 @@ fn quality(result: &mut Analysis, execution: &Execution) -> Result<()> {
 fn matches(set: &globset::GlobSet, path: &str) -> bool {
     set.is_match(config::relative_pattern_path(path)) || set.is_match(path)
 }
-pub fn cache(report: &Report, command: &Command) -> Result<Analysis> {
+pub fn cache(report: &Report, command: &Command, expected: &Identity) -> Result<Analysis> {
     let mut result = Analysis::new(AnalysisKind::Cache);
     target_quality(&mut result, report)?;
     for execution in report.targets() {
         quality(&mut result, execution)?;
+        let recorded = &execution.command;
+        let identity_known = !expected.argv.is_empty()
+            && expected.argv == recorded.argv
+            && expected.cwd == recorded.cwd
+            && (recorded.name.is_none() || recorded.name == expected.name)
+            && expected
+                .argv
+                .iter()
+                .chain([&expected.cwd])
+                .chain(expected.name.iter())
+                .all(|value| !value.contains("[redacted]"));
+        if !identity_known {
+            result.finding(
+                FindingCode::UnknownEvidence,
+                Classification::Unknown,
+                vec![evidence(execution, None, EvidenceSource::Outcome)],
+            )?;
+            continue;
+        }
         coverage(&mut result, execution, command, true, true)?;
     }
     result.finish()?;
