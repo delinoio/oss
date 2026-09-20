@@ -99,3 +99,5 @@
 - Preserve Git raw old/new gitlink modes for affected selection. Submodule changes select intersecting positive input trees even without a checkout; ordinary missing files retain exact matching and wholly owned outputs remain excluded.
 
 - Docker named-pipe endpoints must use the literal local dot server; the npipe scheme alone does not prove locality. Reject remote authorities and malformed socket addresses before creating execution state.
+
+- Container result helpers use scoped temporary directories owned through cleanup, including tool probes and shard units. Auxiliary containers must not create permanent run directories; outer task results and logs remain retained.

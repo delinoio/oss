@@ -16,6 +16,7 @@ pub struct Container {
     cleaned: bool,
     directory: PathBuf,
     environment: BTreeMap<String, String>,
+    helper: Option<tempfile::TempDir>,
 }
 
 #[derive(Debug)]
@@ -87,6 +88,11 @@ impl Container {
                 "owned Docker container cleanup failed"
             );
             self.cleaned = true;
+        }
+        if let Some(helper) = self.helper.take() {
+            helper
+                .close()
+                .context("could not remove Docker result helper")?;
         }
         Ok(())
     }
@@ -164,7 +170,19 @@ pub async fn prepare(
         execution: execution.into(),
         result: crate::runner::TaskReported::Unchanged,
     })?;
-    let helper = root.join(format!(".taskflow/runs/{execution}/tflow-result"));
+    // Every probe and shard unit owns a separate container, but must not leave
+    // a permanent execution directory behind. Keep its helper in a scoped
+    // directory; only the outer task owns retained result/log state.
+    let helpers = root.join(".taskflow/docker-helpers");
+    std::fs::create_dir_all(&helpers)?;
+    let helper_owner = tempfile::Builder::new()
+        .prefix("container-")
+        .tempdir_in(&helpers)?;
+    let helper = helper_owner.path().join("tflow-result");
+    let container_helper = format!(
+        "/workspace/{}",
+        crate::files::slash(helper.strip_prefix(root)?)?
+    );
     let result_path = format!("/workspace/.taskflow/runs/{execution}/result.json");
     let script = format!(
         "#!/bin/sh\nset -eu\n[ \"$#\" = 2 ] && [ \"${{1-}}\" = result ] && [ \"${{2-}}\" = \
@@ -223,7 +241,7 @@ pub async fn prepare(
         "--env".into(),
         "TFLOW_EXECUTION_ID".into(),
         "--env".into(),
-        format!("TFLOW_BIN=/workspace/.taskflow/runs/{execution}/tflow-result"),
+        format!("TFLOW_BIN={container_helper}"),
     ]);
     for key in ["TFLOW_SHARD_INPUT", "TFLOW_SHARD_RESULT"] {
         if let Some(value) = crate::environment::get(environment, key) {
@@ -263,6 +281,7 @@ pub async fn prepare(
             cleaned: false,
             directory: root.to_path_buf(),
             environment: environment.clone(),
+            helper: Some(helper_owner),
         },
     ))
 }

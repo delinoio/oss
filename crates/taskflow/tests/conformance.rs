@@ -5258,6 +5258,20 @@ async fn docker_forwards_cli_overrides_to_tasks_tools_and_shards() {
             std::fs::read_to_string(root.path().join("received")).unwrap(),
             value
         );
+        assert_eq!(
+            std::fs::read_dir(root.path().join(".taskflow/docker-helpers"))
+                .unwrap()
+                .count(),
+            0
+        );
+        // Only two retained outer task runs per invocation, regardless of the
+        // number of tool probes, inventories, and shard containers.
+        assert_eq!(
+            std::fs::read_dir(root.path().join(".taskflow/runs"))
+                .unwrap()
+                .count(),
+            if value == "first" { 2 } else { 4 }
+        );
         let phases = std::fs::read_to_string(root.path().join(".taskflow/docker-phases")).unwrap();
         for phase in ["probe", "finite", "inventory", "shard"] {
             assert!(phases.contains(&format!("{phase}:{value}")), "{phases}");
@@ -5977,6 +5991,18 @@ async fn shard_deadlines_leave_docker_cleanup_available() {
         assert_eq!(output.status.code(), Some(124), "{output:?}");
         let result: runner::RunResult = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(result.results["app#suite"].exit_code, 124, "{output:?}");
+        assert_eq!(
+            std::fs::read_dir(root.path().join(".taskflow/docker-helpers"))
+                .unwrap()
+                .count(),
+            0
+        );
+        assert_eq!(
+            std::fs::read_dir(root.path().join(".taskflow/runs"))
+                .unwrap()
+                .count(),
+            1
+        );
         let cleanup = std::fs::read_to_string(root.path().join("cleanup-events")).unwrap();
         assert!(cleanup.lines().count() >= if list == "inventory" { 2 } else { 1 });
         let pid = std::fs::read_to_string(root.path().join("unit.pid"))
