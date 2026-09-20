@@ -40,7 +40,7 @@ test("OIDC is restricted to exact-tag enabled publication after the complete ver
   assert.equal(publish.env.CLIBOX_NPM_PUBLISH_ENABLED, "${{ vars.CLIBOX_NPM_PUBLISH_ENABLED }}");
   assert.ok(release.jobs.package.steps.find(({ run }) => run?.includes("publish.mjs") && !run.includes("--publish")));
   assert.doesNotMatch(JSON.stringify(release), /secrets\.|NODE_AUTH_TOKEN|NPM_TOKEN|contents":"write|action-gh-release|homebrew/u);
-  assert.match(source(".github/workflows/release-clibox.yml"), /npm bootstrap pending/u);
+  assert.match(source(".github/workflows/release-clibox.yml"), /npm publication disabled/u);
   const uploaded = release.jobs.package.steps.find(({ uses }) => uses?.startsWith("actions/upload-artifact@"));
   const downloaded = release.jobs.publish.steps.find(({ uses }) => uses?.startsWith("actions/download-artifact@"));
   assert.equal(uploaded.with.name, downloaded.with.name);
