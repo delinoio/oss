@@ -34,7 +34,7 @@ Strict static CSP; logs/source rendered as text; no remote logging/analytics. Co
 No automatic uploads or persistent result logging in the browser. Surface typed local diagnostics.
 
 ## Build and Test
-Package-local pnpm test, typecheck, component/accessibility tests, production build and route/security tests. Root development entry is pnpm dev:async-commit-hook.
+Package-local pnpm test, typecheck, component/accessibility tests, production build and route/security tests. Root development entry is pnpm dev:async-commit-hook. Vitest workers disable Node Web Storage so the DOM environment supplies isolated in-memory localStorage for authorization recovery tests. No Node storage file is configured; remove this compatibility flag when Vitest reliably overrides native storage globals.
 
 ## Dependencies and Integrations
 Generated @delinoio/async-commit-hook-api-client; Cloudflare Pages deployment is manual and not executed during this implementation.

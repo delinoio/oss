@@ -15,6 +15,7 @@
 - Public documentation and installers live under `public`; internal implementation contracts remain in `docs/`.
 - Keep shell installer `--version` behavior aligned with the public guide, validate all arguments before downloads, and preserve signature/checksum verification for every selected version.
 - Public recovery guidance must distinguish confirmed descendant cleanup from lost ownership proof: incomplete cancellation blocks replacement, and a forcibly killed Linux supervisor requires host-reboot recovery. Do not claim actual minimum-OS machine qualification from local tests or cross-builds.
+- Browser tests must use isolated jsdom storage, never Node file-backed Web Storage; retain the test-worker compatibility flag until Vitest overrides native storage consistently.
 - Run `pnpm test` from this directory after frontend changes. Generated `dist` is untracked and must be removed from the final worktree.
 
 - Run-list rows use the optional server check count, falling back to checks.length only for older responses; opening a row retrieves complete execution details.
