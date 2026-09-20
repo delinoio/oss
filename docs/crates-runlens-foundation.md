@@ -748,3 +748,10 @@ Directory changes depend on directory metadata: Unix chdir/fchdir attempts are
 reads resolved before cwd changes, including missing paths and renamed descriptors.
 They do not imply directory enumeration. Linux inherited seccomp also covers raw
 syscalls from static binaries; unresolved descriptor/path evidence stays incomplete.
+
+Comparison and baseline compatibility require a present matching source revision.
+Two absent revisions never bind source identity, including non-Git runs and failed
+Git discovery. Available differences remain inspectable, but comparisons and
+new-access absence claims are inconclusive; definite independent policy violations
+still fail. Native regression coverage uses separate non-Git workspaces and every
+one-sided/two-sided missing-revision combination.

@@ -168,7 +168,7 @@
 - Scope report envelope budgets to external parsing and restore them on failure; repeated access to validated internal evidence must not cumulatively spend that input budget.
 - Deserialize evidence under the shared process memory budget before spilling; do not force every small report map to allocate its own file handles.
 - Preflight conflict analysis against the aggregate limit of 65,536 cross-report target pairs before inspecting paths or creating findings; preparation executions do not count.
-- Comparison compatibility includes source revision and working-tree inclusion policy; identical observed bytes cannot make different source selections comparable.
+- Comparison compatibility requires a present matching source revision and matching working-tree inclusion policy; missing revisions and identical observed bytes cannot make unbound or different source selections comparable.
 - Offline cache and policy checks require at least one target independently of preparation records; historical-only reports cannot pass.
 - Audit declared input/output glob intersections independently of observed paths; bounded analysis exhaustion is inconclusive, never proof that declarations are disjoint.
 - Cache and policy input/output declarations bind to the selected command's normalized argv and working directory and any recorded name. A mismatched or redacted identity is inconclusive; reading config and reports must never execute a command.

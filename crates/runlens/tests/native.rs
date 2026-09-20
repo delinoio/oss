@@ -437,8 +437,9 @@ fn real_tracing_receipt_privacy_and_offline_queries() {
         ],
     ] {
         let result = invoke(root.path(), &args);
-        assert!(
-            result.status.success(),
+        assert_eq!(
+            result.status.code(),
+            Some(if args[0] == "compare" { 4 } else { 0 }),
             "{}",
             String::from_utf8_lossy(&result.stderr)
         );
@@ -4213,5 +4214,54 @@ fn directory_changes_are_read_attempts_before_cwd_changes() {
                 }
             }
         }
+    }
+}
+
+#[test]
+fn unknown_source_revisions_cannot_certify_baseline_absence() {
+    use runlens::{analysis, config::Policy, model::Verdict};
+    let left_root = tempfile::tempdir().unwrap();
+    let right_root = tempfile::tempdir().unwrap();
+    let mut reports = Vec::new();
+    for root in [&left_root, &right_root] {
+        fs::write(root.path().join("input.txt"), "same content").unwrap();
+        assert!(run(root.path(), "record.json", "read").status.success());
+        let report = runlens::report::read(&root.path().join("record.json")).unwrap();
+        assert!(report.executions[0].environment.source_revision.is_none());
+        reports.push(report);
+    }
+    let rules = Policy {
+        fail_new_accesses: true,
+        ..Default::default()
+    };
+    for (left, right) in [
+        (None, None),
+        (Some("a".repeat(40)), None),
+        (None, Some("a".repeat(40))),
+    ] {
+        reports[0].executions[0].environment.source_revision = left;
+        reports[1].executions[0].environment.source_revision = right;
+        assert!(!analysis::compatible(
+            &reports[0].executions[0],
+            &reports[1].executions[0]
+        ));
+        assert_eq!(
+            analysis::compare(&reports[0], &reports[1], &[])
+                .unwrap()
+                .verdict,
+            Some(Verdict::Inconclusive)
+        );
+        assert_eq!(
+            analysis::policy(
+                &reports[0],
+                &rules,
+                &Default::default(),
+                &Default::default(),
+                Some(&reports[1])
+            )
+            .unwrap()
+            .verdict,
+            Some(Verdict::Inconclusive)
+        );
     }
 }

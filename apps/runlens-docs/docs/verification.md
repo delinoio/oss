@@ -20,6 +20,7 @@ declarations and baseline new-access checks apply to the target command.
 Without a baseline, success means clean execution and applicable configured checks passed. It does **not** establish equivalence to your current worktree.
 
 A baseline must use the same source revision and working-tree inclusion policy as the clean run. Different source selections make the comparison inconclusive, even when observed file contents match.
+Both reports need a known source revision. Runs outside Git, or with failed revision discovery, remain valid receipts but cannot certify baseline compatibility, even when both revisions are missing.
 If the current run violates a policy, verification remains failed (exit 5) even when its baseline comparison is inconclusive. Without a definite failure, inconclusive evidence returns exit 4.
 
 When a command selects environment variables, reports retain their names only. Even identical names cannot establish that the values matched, so baseline comparison and repeated-output compatibility remain inconclusive. This also applies when the values happened to be equal; Runlens does not persist values or hashes of them as proof. A clean run without a baseline can still pass its execution and policy checks.
