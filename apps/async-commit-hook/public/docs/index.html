@@ -527,7 +527,9 @@ ach self-update --recover
 brew upgrade async-commit-hook</pre
         >
         <p>
-          Updates are explicit, refuse active checks/server processes, verify
+          Without <code>--version</code>, self-update selects the highest published
+          stable version and refuses a downgrade. Intentional rollback requires
+          an explicit version. Updates refuse active checks/server processes, verify
           signatures/checksums, back up state, and retain the previous
           executable. If the verified release executable is already byte-for-byte
           identical, self-update reports <code>up-to-date</code> without creating

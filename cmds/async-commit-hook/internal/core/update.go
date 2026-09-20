@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -22,8 +21,6 @@ import (
 	"github.com/sigstore/sigstore-go/pkg/root"
 	"github.com/sigstore/sigstore-go/pkg/verify"
 )
-
-var releaseVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 
 const ReleaseIdentity = "https://github.com/delinoio/oss/.github/workflows/release-async-commit-hook.yml@refs/heads/main"
 
@@ -231,31 +228,11 @@ func (s *Service) SelfUpdate(ctx context.Context, version string) (map[string]st
 	if strings.Contains(filepath.ToSlash(executable), "/Cellar/") || strings.Contains(filepath.ToSlash(executable), "/Homebrew/") {
 		return nil, E("homebrew-owned", "use brew upgrade async-commit-hook; package-owned files are not replaced", 2)
 	}
-	for page := 1; version == ""; page++ {
-		b, e := fetchRelease(ctx, fmt.Sprintf("https://api.github.com/repos/delinoio/oss/releases?per_page=100&page=%d", page), 8*1024*1024)
-		if e != nil {
-			return nil, e
-		}
-		var releases []struct {
-			Tag        string `json:"tag_name"`
-			Draft      bool   `json:"draft"`
-			Prerelease bool   `json:"prerelease"`
-		}
-		if e = json.Unmarshal(b, &releases); e != nil {
-			return nil, e
-		}
-		for _, r := range releases {
-			if !r.Draft && !r.Prerelease && strings.HasPrefix(r.Tag, "async-commit-hook@v") {
-				version = strings.TrimPrefix(r.Tag, "async-commit-hook@v")
-				break
-			}
-		}
-		if len(releases) < 100 {
-			break
-		}
-	}
-	if !releaseVersion.MatchString(version) {
-		return nil, E("invalid-release-version", "select an exact MAJOR.MINOR.PATCH with --version; no supported release found", 2)
+	version, e = selectUpdateVersion(version, Version, func(page int) ([]byte, error) {
+		return fetchRelease(ctx, fmt.Sprintf("https://api.github.com/repos/delinoio/oss/releases?per_page=100&page=%d", page), 8*1024*1024)
+	})
+	if e != nil {
+		return nil, e
 	}
 	asset := fmt.Sprintf("ach-%s-%s.tar.gz", runtime.GOOS, runtime.GOARCH)
 	if runtime.GOOS == "windows" {
