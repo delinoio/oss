@@ -307,7 +307,9 @@ func Run(ctx context.Context, args []string, in io.Reader, out, diagnostics io.W
 		address := s.WebURL(id)
 		if s.Personal.Mode == core.Daemon {
 			e = s.Start(core.Daemon)
-			result = map[string]string{"url": address}
+			if e == nil {
+				result = map[string]string{"url": address}
+			}
 		} else {
 			e = s.Serve(ctx, false, func() {
 				_ = emit(out, diagnostics, o.has("json"), map[string]string{"url": address, "state": "viewer-active; stop with Ctrl-C"}, nil, 0)

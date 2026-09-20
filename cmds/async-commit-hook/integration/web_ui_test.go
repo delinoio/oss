@@ -5,7 +5,9 @@ package integration
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -115,5 +117,41 @@ func TestBinaryServesLocalUIAndControlsWithoutPairing(t *testing.T) {
 	}
 	if result, code := invoke(t, config, repo, "browser", "list"); code != 2 || result.Error == nil || result.Error.Code != "browser-management-removed" {
 		t.Fatal(result, code)
+	}
+}
+
+func TestLocalUIPortConflictNeverPublishesAReadyURL(t *testing.T) {
+	for _, mode := range []string{"daemon", "on-demand"} {
+		t.Run(mode, func(t *testing.T) {
+			config, repo := setup(t, mode)
+			personal, err := core.ReadPersonal(core.Paths{Config: config})
+			if err != nil {
+				t.Fatal(err)
+			}
+			listener, err := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", personal.APIPort))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer listener.Close()
+			result, code := invoke(t, config, repo, "ui")
+			expected := "port-conflict"
+			if mode == "daemon" {
+				expected = "runner-start-failed"
+			}
+			if code != 3 || result.Error == nil || result.Error.Code != expected || result.Result != nil {
+				t.Fatal("failed server advertised readiness", code, result)
+			}
+			status, code := invoke(t, config, repo, "daemon", "status")
+			body, err := json.Marshal(status.Result)
+			var components []core.Component
+			if code != 0 || err != nil || json.Unmarshal(body, &components) != nil {
+				t.Fatal("port conflict left a remapped server", code, string(body), err)
+			}
+			for _, component := range components {
+				if component.Kind == "daemon" || component.Kind == "viewer" {
+					t.Fatal("port conflict left a remapped server", component.Kind)
+				}
+			}
+		})
 	}
 }
