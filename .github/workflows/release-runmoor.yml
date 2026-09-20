@@ -162,3 +162,16 @@ jobs:
             Live GitHub repository/organization and App/PAT compatibility and real Tart execution have not been certified.
             Verify SHA256SUMS and the accompanying Sigstore bundles before installation.
             Updates are manual. Docker/Tart are operator-installed; macOS/Xcode images are not included.
+
+  linux-packages:
+    name: Publish native Linux packages
+    needs: [plan, publish]
+    if: needs.plan.outputs.mode == 'publish'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-linux-packages.yml
+    with:
+      project: runmoor
+      version: ${{ needs.plan.outputs.version }}
+      revision: ${{ github.sha }}
+      mode: publish

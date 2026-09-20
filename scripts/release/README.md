@@ -38,3 +38,9 @@ These scripts are designed for use by release workflows:
 - `.github/workflows/release-devhud.yml` (manual `dry-run` or protected coordinated `release`, with an optional exact ancestor revision for retained-candidate recovery; see `docs/servers-devhud-release-controller-contract.md` for stable configuration names)
 
 Public release guidance is maintained at the stable `/devhud/releases` route of the configured public documentation site, with `/devhud/install` and `/devhud/security` companion routes.
+
+## Native Linux CLI repositories
+
+`linux-packages.mjs` verifies an already-published release, creates nFPM packages and signed APT/DNF metadata, and resumes publication from private R2 state. Use Actions → Publish Linux CLI packages on `main`, with the exact project, version without `v`, and 40-character tag commit. The default `dry-run` performs disposable signing and the full installation matrix. Select `publish` only for the same supported release identity when recovering its package publication. Existing GitHub assets and tags are never replaced.
+
+Build local tools with `docker build -f packaging/linux/Tools.Dockerfile -t delino-linux-package-tools .`. Generate disposable fixtures with `fixture.mjs` inside that image and use `smoke.mjs --fixture <output> --image <supported-image> --architecture amd64|arm64` to exercise package-manager install, update and remove. Production secrets are not needed. Full provisioning, key recovery, cache and Environment ownership are defined in `docs/repository-linux-packages-contract.md`.

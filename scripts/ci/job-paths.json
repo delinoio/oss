@@ -534,5 +534,15 @@
       "servers/devhud-api/internal/rpc/diagnostics.go",
       "turbo.json"
     ]
+  },
+  "linux-packages": {
+    "paths": [
+      ".github/workflows/release-*.yml",
+      "packaging/linux/**",
+      "scripts/release/linux-packages*",
+      "scripts/release/linux-packages/**",
+      "package.json",
+      "pnpm-lock.yaml"
+    ]
   }
 }

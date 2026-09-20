@@ -1555,6 +1555,40 @@ jobs:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
 
+  linux-packages:
+    needs: changes
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['linux-packages'] }}
+    name: Linux package repository (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: ubuntu-latest, arch: amd64}
+          - {runner: ubuntu-24.04-arm, arch: arm64}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - name: Build pinned package tools
+        run: docker build -f packaging/linux/Tools.Dockerfile -t delino-linux-package-tools .
+      - name: Verify publisher recovery and security contracts
+        run: node --test scripts/release/linux-packages.test.mjs
+      - name: Generate disposable signed package repositories
+        run: |
+          mkdir -p "$RUNNER_TEMP/package-fixture"
+          docker run --rm -v "$PWD:/workspace:ro" -v "$RUNNER_TEMP/package-fixture:/output" delino-linux-package-tools node scripts/release/linux-packages/fixture.mjs /output
+      - name: Verify native package lifecycle on supported distributions
+        env:
+          TEST_ARCH: ${{ matrix.arch }}
+        run: |
+          for image in ubuntu:22.04 ubuntu:24.04 ubuntu:26.04 debian:12 debian:13 fedora:43 fedora:44 registry.access.redhat.com/ubi9/ubi:latest registry.access.redhat.com/ubi10/ubi:latest rockylinux:9 rockylinux:10 almalinux:9 almalinux:10; do
+            node scripts/release/linux-packages/smoke.mjs --fixture "$RUNNER_TEMP/package-fixture" --image "$image" --architecture "$TEST_ARCH"
+          done
+
   ci-result:
     name: CI Result
     runs-on: ubuntu-latest
@@ -1588,6 +1622,7 @@ jobs:
       - devhud-oci
       - devhud-supply-chain
       - devhud-release-contracts
+      - linux-packages
     steps:
       - uses: actions/checkout@v6
         with:

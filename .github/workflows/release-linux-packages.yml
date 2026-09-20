@@ -1,0 +1,166 @@
+name: Publish Linux CLI packages
+
+on:
+  workflow_call:
+    inputs:
+      project: {required: true, type: string}
+      version: {required: true, type: string}
+      revision: {required: true, type: string}
+      mode: {required: true, type: string}
+  workflow_dispatch:
+    inputs:
+      project:
+        required: true
+        type: choice
+        options: [binpm, cargo-mono, nodeup, with-watch, derun, runmoor]
+      version:
+        description: Exact already-published version (no v prefix)
+        required: true
+        type: string
+      revision:
+        description: Exact lowercase 40-character release commit
+        required: true
+        type: string
+      mode:
+        required: true
+        default: dry-run
+        type: choice
+        options: [dry-run, publish]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - name: Validate closed release inputs
+        env:
+          RELEASE_PROJECT: ${{ inputs.project }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_REVISION: ${{ inputs.revision }}
+          RELEASE_MODE: ${{ inputs.mode }}
+        run: |
+          node --input-type=module <<'JS'
+          import { identity } from './scripts/release/linux-packages/model.mjs';
+          identity({ project: process.env.RELEASE_PROJECT, version: process.env.RELEASE_VERSION, revision: process.env.RELEASE_REVISION, mode: process.env.RELEASE_MODE });
+          JS
+      - uses: sigstore/cosign-installer@v4.1.1
+      - name: Build pinned repository tools
+        run: docker build -f packaging/linux/Tools.Dockerfile -t delino-linux-package-tools .
+      - name: Verify release and build disposable signed repositories
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PROJECT: ${{ inputs.project }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_REVISION: ${{ inputs.revision }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/package-fixture"
+          docker run --rm -v "$PWD:/workspace:ro" -v "$RUNNER_TEMP/package-fixture:/output" \
+            -v "$(command -v gh):/usr/local/bin/gh:ro" -v "$(command -v cosign):/usr/local/bin/cosign:ro" \
+            -e GH_TOKEN -e RELEASE_PROJECT -e RELEASE_VERSION -e RELEASE_REVISION \
+            delino-linux-package-tools bash -c 'node scripts/release/linux-packages.mjs --project "$RELEASE_PROJECT" --version "$RELEASE_VERSION" --revision "$RELEASE_REVISION" --mode dry-run --output /output'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-package-fixture-${{ inputs.project }}
+          path: ${{ runner.temp }}/package-fixture
+          retention-days: 2
+
+  install:
+    needs: validate
+    runs-on: ${{ matrix.host.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        host:
+          - {runner: ubuntu-latest, arch: amd64}
+          - {runner: ubuntu-24.04-arm, arch: arm64}
+        image: ['ubuntu:22.04', 'ubuntu:24.04', 'ubuntu:26.04', 'debian:12', 'debian:13', 'fedora:43', 'fedora:44', 'registry.access.redhat.com/ubi9/ubi:latest', 'registry.access.redhat.com/ubi10/ubi:latest', 'rockylinux:9', 'rockylinux:10', 'almalinux:9', 'almalinux:10']
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux-package-fixture-${{ inputs.project }}
+          path: ${{ runner.temp }}/package-fixture
+      - name: Verify install, upgrade, removal and signatures
+        env:
+          TEST_IMAGE: ${{ matrix.image }}
+          TEST_ARCH: ${{ matrix.host.arch }}
+        run: node scripts/release/linux-packages/smoke.mjs --fixture "$RUNNER_TEMP/package-fixture" --image "$TEST_IMAGE" --architecture "$TEST_ARCH"
+
+  publish:
+    needs: install
+    if: inputs.mode == 'publish'
+    runs-on: ubuntu-latest
+    environment: linux-packages
+    concurrency:
+      group: linux-package-repository
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-ci-node
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: sigstore/cosign-installer@v4.1.1
+      - name: Build pinned repository tools
+        run: docker build -f packaging/linux/Tools.Dockerfile -t delino-linux-package-tools .
+      - name: Publish verified native repositories
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PROJECT: ${{ inputs.project }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_REVISION: ${{ inputs.revision }}
+          LINUX_PACKAGES_R2_ACCOUNT_ID: ${{ vars.LINUX_PACKAGES_R2_ACCOUNT_ID }}
+          LINUX_PACKAGES_SIGNING_FINGERPRINT: ${{ vars.LINUX_PACKAGES_SIGNING_FINGERPRINT }}
+          LINUX_PACKAGES_R2_ACCESS_KEY_ID: ${{ secrets.LINUX_PACKAGES_R2_ACCESS_KEY_ID }}
+          LINUX_PACKAGES_R2_SECRET_ACCESS_KEY: ${{ secrets.LINUX_PACKAGES_R2_SECRET_ACCESS_KEY }}
+          LINUX_PACKAGES_SIGNING_SUBKEY: ${{ secrets.LINUX_PACKAGES_SIGNING_SUBKEY }}
+          LINUX_PACKAGES_SIGNING_PASSPHRASE: ${{ secrets.LINUX_PACKAGES_SIGNING_PASSPHRASE }}
+        run: |
+          docker run --rm -v "$PWD:/workspace:ro" \
+            -v "$(command -v gh):/usr/local/bin/gh:ro" -v "$(command -v cosign):/usr/local/bin/cosign:ro" \
+            -e GH_TOKEN -e RELEASE_PROJECT -e RELEASE_VERSION -e RELEASE_REVISION \
+            -e GITHUB_REPOSITORY -e GITHUB_REF -e GITHUB_ACTIONS -e GITHUB_EVENT_NAME \
+            -e LINUX_PACKAGES_R2_ACCOUNT_ID -e LINUX_PACKAGES_SIGNING_FINGERPRINT \
+            -e LINUX_PACKAGES_R2_ACCESS_KEY_ID -e LINUX_PACKAGES_R2_SECRET_ACCESS_KEY \
+            -e LINUX_PACKAGES_SIGNING_SUBKEY -e LINUX_PACKAGES_SIGNING_PASSPHRASE \
+            delino-linux-package-tools bash -c 'node scripts/release/linux-packages.mjs --project "$RELEASE_PROJECT" --version "$RELEASE_VERSION" --revision "$RELEASE_REVISION" --mode publish'
+
+  public-install:
+    needs: publish
+    runs-on: ${{ matrix.host.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        host:
+          - {runner: ubuntu-latest, arch: amd64}
+          - {runner: ubuntu-24.04-arm, arch: arm64}
+        image: ['ubuntu:22.04', 'ubuntu:24.04', 'ubuntu:26.04', 'debian:12', 'debian:13', 'fedora:43', 'fedora:44', 'registry.access.redhat.com/ubi9/ubi:latest', 'registry.access.redhat.com/ubi10/ubi:latest', 'rockylinux:9', 'rockylinux:10', 'almalinux:9', 'almalinux:10']
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - name: Install the exact public package
+        env:
+          TEST_IMAGE: ${{ matrix.image }}
+          TEST_ARCH: ${{ matrix.host.arch }}
+          RELEASE_PROJECT: ${{ inputs.project }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_REVISION: ${{ inputs.revision }}
+        run: node scripts/release/linux-packages/smoke.mjs --image "$TEST_IMAGE" --architecture "$TEST_ARCH" --project "$RELEASE_PROJECT" --version "$RELEASE_VERSION" --revision "$RELEASE_REVISION"
