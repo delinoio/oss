@@ -153,6 +153,7 @@
 
 ### clibox Rules
 
+- Preserve clap's generated missing-subcommand help for `run`, `port`, `clipboard`, and `wait` on stderr with exit code 2; keep root no-argument and explicit help output successful on stdout. Only generated help/version may bypass static redacted parser diagnostics.
 - Preserve help/version and the #919 `wait tcp`, `wait http`, and `wait file` contracts, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`.
 - Keep the explicitly approved crates.io publication, workspace, and cargo-mono release target. #916 utilities remain implemented and #917 retains its independently reserved command interfaces; do not add other domain commands implicitly.
 - Wait command kinds, HTTP methods, outcomes, and error classifications use enums. Poll immediately, delay only after unsuccessful attempts, clip all work/delays to monotonic deadlines, and cancel without target mutation or service termination.

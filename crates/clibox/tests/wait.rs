@@ -58,7 +58,6 @@ fn json(output: &Output, code: i32) -> Value {
 #[test]
 fn invalid_inputs_are_redacted_and_never_emit_json() {
     let invalid: Vec<Vec<&str>> = vec![
-        vec!["wait"],
         vec!["wait", "tcp"],
         vec!["wait", "file", ""],
         vec!["wait", "tcp", "localhost"],

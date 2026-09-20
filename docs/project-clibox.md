@@ -16,6 +16,7 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 
 ## Cross-Domain Invariants
 - The crate and command are `clibox`; the public npm entry point is `@delino/clibox`.
+- Cargo and npm show command-specific help on stderr with exit code 2 when `run`, `port`, `clipboard`, or `wait` is missing a subcommand. Root no-argument and explicit help remain successful stdout output; other invalid inputs retain redacted diagnostics.
 - Rust is explicitly selected instead of the repository's default Go language. Node.js 22+ is required only for the npm launcher; repository tooling uses Node.js 24.
 - The Cargo manifest, Cargo.lock, source npm manifest, nine generated npm packages, and executable version agree exactly.
 - macOS and Windows MSVC support x64/arm64; Linux supports x64/arm64 with separate glibc and musl packages.

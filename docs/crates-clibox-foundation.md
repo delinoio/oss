@@ -11,10 +11,11 @@ Developers invoking a pinned CLI in terminals, npm scripts, portable local workf
 
 ## Interfaces and Contracts
 - `clibox`, `clibox --help`, and `clibox -h` print help to stdout and exit successfully; `--version`/`-V` print `clibox <Cargo package version>`.
+- `clibox run`, `clibox port`, `clibox clipboard`, and `clibox wait` without a subcommand print the corresponding command's help on stderr, leave stdout empty, and exit 2. Explicit `--help`/`-h` for those commands prints help on stdout and exits 0. Preserve clap's generated `DisplayHelpOnMissingArgumentOrSubcommand` output without replacing it with a generic diagnostic.
 - `clibox wait tcp HOST:PORT [--timeout DURATION] [--interval DURATION] [--attempt-timeout DURATION] [--quiet | --json]`.
 - `clibox wait http URL [--method get|head] [--status CODE] [--timeout DURATION] [--interval DURATION] [--attempt-timeout DURATION] [--quiet | --json]`.
 - `clibox wait file PATH [--timeout DURATION] [--interval DURATION] [--quiet | --json]`.
-- Accept exactly one target. Missing, malformed, extra, unknown, or conflicting arguments exit 2 with static actionable English stderr diagnostics and no JSON. Never render clap's raw parser errors, which can contain sensitive argv. Help includes examples and command limitations. There is no public Rust library API.
+- Accept exactly one target. Missing targets and malformed, extra, unknown, or conflicting arguments exit 2 with static actionable English stderr diagnostics and no JSON. Only generated help/version output may bypass these diagnostics; never render clap's raw input-error diagnostics, which can contain sensitive argv. Help includes examples and command limitations. There is no public Rust library API.
 - Wait commands do not consume stdin, launch subsequent commands, reverse-wait, continuously monitor, or accept mixed/multiple targets.
 
 ### Utility commands
