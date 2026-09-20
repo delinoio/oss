@@ -80,3 +80,9 @@ test("Runlens lockfile and toolchain remain outside the root workspace", () => {
   assert.match(read("packaging/homebrew/templates/runlens.rb.tmpl"), /bin.install "runlens"/u);
   assert.doesNotMatch(read("packaging/homebrew/templates/runlens.rb.tmpl"), /cargo build|git clone/u);
 });
+
+test("Windows native validation checks malformed process attribute memory", () => {
+  const step = native.jobs.native.steps.find((step) => step.name === "Windows malformed process attributes regression");
+  assert.equal(step.if, "runner.os == 'Windows'");
+  assert.equal(step.run, "cargo test --locked --package fspy_preload_windows process_image_attributes_reject_malformed_memory_without_dereferencing");
+});

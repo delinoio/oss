@@ -158,3 +158,12 @@ Kernel seccomp collection covers statx and direct filesystem syscalls without
 reading C varargs. Native Linux zero/one/three/five-argument fixtures verify return
 values and read observations. Restore an interposer only if upstream can prove
 ABI-safe forwarding for both supported Linux architectures without missing calls.
+
+Windows process-image attribute parsing uses bounded ReadProcessMemory copies
+instead of references into caller memory. It validates list alignment, complete
+entry count, checked offsets, duplicate image attributes, UTF-16 byte alignment,
+and a 65,534-byte image bound. Invalid pointers or metadata mark collection
+incomplete while forwarding the original NT call. Native Windows CI exercises
+valid lists, short/overflow lengths, malformed image sizes and inaccessible
+pointers. Remove this patch only when upstream safely handles invalid user memory
+without preempting the NT syscall's own error handling.

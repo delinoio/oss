@@ -94,71 +94,98 @@ static DETOUR_NT_CREATE_USER_PROCESS: Detour<
     };
 
 unsafe fn handle_process_image(attribute_list: PPS_ATTRIBUTE_LIST) {
-    // SAFETY: NtCreateUserProcess requires its attribute list to remain valid for this call.
-    if let Some(image_path) = unsafe { read_process_image_attribute(attribute_list) } {
-        // Sender serialization completes before this call returns, so IpcPath does not retain
-        // the borrowed PS_ATTRIBUTE_IMAGE_NAME buffer past the NtCreateUserProcess call.
-        // SAFETY: accessing the global client which was initialized during DLL_PROCESS_ATTACH
-        unsafe { global_client() }
-            .send(PathAccess { mode: AccessMode::READ, path: IpcPath::from_wide(image_path) });
-    }
-}
-
-/// Find the kernel-facing executable name in an `NtCreateUserProcess` attribute list.
-///
-/// `PS_ATTRIBUTE_LIST` is a variable-length structure: `TotalLength` covers a fixed-size header
-/// followed by contiguous `PS_ATTRIBUTE` entries. Its Rust definition contains one placeholder
-/// element, so the actual entry count must be derived from `TotalLength`, not from the array type.
-///
-/// The returned slice borrows the caller's `PS_ATTRIBUTE_IMAGE_NAME` buffer and is valid only while
-/// the intercepted `NtCreateUserProcess` call is active.
-///
-/// # Safety
-///
-/// `attribute_list` and the image-name buffer it references must remain valid for the duration of
-/// the intercepted call, as required by `NtCreateUserProcess`.
-unsafe fn read_process_image_attribute<'a>(
-    attribute_list: PPS_ATTRIBUTE_LIST,
-) -> Option<&'a [u16]> {
-    // SAFETY: NtCreateUserProcess keeps a supplied attribute list valid for this call; a null
-    // optional pointer is parsed as None.
-    let attribute_list = unsafe { attribute_list.as_ref()? };
-
-    // Attributes is a trailing array. Subtract its byte offset to remove the header; the native API
-    // contract guarantees that the remaining bytes contain complete PS_ATTRIBUTE entries.
-    let attributes_offset = offset_of!(PS_ATTRIBUTE_LIST, Attributes);
-    let attribute_count =
-        (attribute_list.TotalLength - attributes_offset) / size_of::<PS_ATTRIBUTE>();
-
-    // The Rust field exposes the first placeholder entry as a reference; TotalLength describes how
-    // many contiguous entries follow it in the actual variable-length allocation.
-    let first_attribute = attribute_list.Attributes.first()?;
-    // SAFETY: TotalLength covers a contiguous variable-length tail starting at first_attribute.
-    let attributes: &[PS_ATTRIBUTE] =
-        unsafe { std::slice::from_raw_parts(std::ptr::from_ref(first_attribute), attribute_count) };
-    for attribute in attributes {
-        if attribute.Attribute != PS_ATTRIBUTE_IMAGE_NAME {
-            continue;
+    match read_process_image_attribute(attribute_list) {
+        Ok(image_path) => {
+            // SAFETY: the client is initialized before hooks are installed.
+            unsafe { global_client() }.send(PathAccess {
+                mode: AccessMode::READ, path: IpcPath::from_wide(&image_path),
+            });
         }
-
-        // Unlike a UNICODE_STRING, PS_ATTRIBUTE_IMAGE_NAME stores the path buffer directly in
-        // ValuePtr and stores its byte length in Size. It is the image path consumed by the kernel,
-        // so do not fall back to the separately spoofable process-parameter path.
-        // SAFETY: PS_ATTRIBUTE_IMAGE_NAME stores a valid UTF-16 pointer in ValuePtr for this call;
-        // a null pointer is parsed as None.
-        let image_path = unsafe { attribute.u.ValuePtr.cast::<u16>().as_ref()? };
-        // SAFETY: the attribute contract guarantees a valid UTF-16 buffer of Size bytes for this
-        // call. Size is the counted string length, so no NUL-terminator parsing is needed.
-        return Some(unsafe {
-            std::slice::from_raw_parts(
-                std::ptr::from_ref(image_path),
-                attribute.Size / size_of::<u16>(),
-            )
-        });
+        Err(()) => crate::windows::client::report_global_failure(),
     }
-
-    None
 }
+
+// The intercepted NT call may intentionally contain invalid user pointers. Do
+// not form Rust references or slices into that memory before the kernel checks
+// it. Copy bounded bytes through ReadProcessMemory, which fails on unreadable
+// pages, then parse only owned storage. The original syscall is always forwarded.
+fn read_process_image_attribute(attribute_list: PPS_ATTRIBUTE_LIST) -> Result<Vec<u16>, ()> {
+    const WORD: usize = size_of::<usize>();
+    const MAX_ATTRIBUTES: usize = 64;
+    const MAX_IMAGE_BYTES: usize = 65534;
+    const _: () = assert!(size_of::<PS_ATTRIBUTE>() == 4 * WORD);
+    let address = attribute_list as usize;
+    let offset = offset_of!(PS_ATTRIBUTE_LIST, Attributes);
+    if address == 0 || address % std::mem::align_of::<PS_ATTRIBUTE>() != 0 { return Err(()); }
+    let header = copy_process_bytes(address, WORD)?;
+    let total = usize::from_ne_bytes(header.try_into().map_err(|_| ())?);
+    let bytes = total.checked_sub(offset).ok_or(())?;
+    if bytes == 0 || bytes % size_of::<PS_ATTRIBUTE>() != 0
+        || bytes / size_of::<PS_ATTRIBUTE>() > MAX_ATTRIBUTES { return Err(()); }
+    address.checked_add(total).ok_or(())?;
+    let owned = copy_process_bytes(address, total)?;
+    if usize::from_ne_bytes(owned[..WORD].try_into().map_err(|_| ())?) != total { return Err(()); }
+    let mut image = None;
+    for attribute in owned[offset..].chunks_exact(size_of::<PS_ATTRIBUTE>()) {
+        let word = |index: usize| usize::from_ne_bytes(attribute[index * WORD..(index + 1) * WORD].try_into().unwrap());
+        if word(0) != PS_ATTRIBUTE_IMAGE_NAME { continue; }
+        let size = word(1);
+        let pointer = word(2);
+        if image.is_some() || size == 0 || size > MAX_IMAGE_BYTES || size % 2 != 0
+            || pointer == 0 || pointer % std::mem::align_of::<u16>() != 0 { return Err(()); }
+        pointer.checked_add(size).ok_or(())?;
+        let bytes = copy_process_bytes(pointer, size)?;
+        image = Some(bytes.chunks_exact(2).map(|pair| u16::from_ne_bytes([pair[0], pair[1]])).collect());
+    }
+    image.ok_or(())
+}
+
+fn copy_process_bytes(address: usize, size: usize) -> Result<Vec<u8>, ()> {
+    use winapi::um::{memoryapi::ReadProcessMemory, processthreadsapi::GetCurrentProcess};
+    let mut bytes = vec![0u8; size];
+    let mut copied = 0;
+    // SAFETY: the destination is initialized owned storage of exactly size
+    // bytes. The kernel validates the untrusted source address without Rust
+    // dereferencing it. The pseudo process handle requires no close.
+    let result = unsafe { ReadProcessMemory(GetCurrentProcess(), address as *const _,
+        bytes.as_mut_ptr().cast(), size, &mut copied) };
+    if result == 0 || copied != size { return Err(()); }
+    Ok(bytes)
+}
+
+#[cfg(test)]
+mod process_attribute_tests {
+    use super::*;
+
+    #[test]
+    fn process_image_attributes_reject_malformed_memory_without_dereferencing() {
+        assert!(read_process_image_attribute(std::ptr::null_mut()).is_err());
+        assert!(read_process_image_attribute(1usize as PPS_ATTRIBUTE_LIST).is_err());
+        // An aligned but inaccessible user address reaches ReadProcessMemory.
+        assert!(read_process_image_attribute(16usize as PPS_ATTRIBUTE_LIST).is_err());
+        let path = [b'C' as u16, b':' as u16, b'/' as u16, b'x' as u16];
+        let total = offset_of!(PS_ATTRIBUTE_LIST, Attributes) + size_of::<PS_ATTRIBUTE>();
+        let valid = [total, PS_ATTRIBUTE_IMAGE_NAME, path.len() * 2, path.as_ptr() as usize, 0];
+        let read = |words: &[usize]| read_process_image_attribute(words.as_ptr() as PPS_ATTRIBUTE_LIST);
+        assert_eq!(read(&valid).unwrap(), path);
+        for length in [0, 1, total - 1, usize::MAX, total + 64 * size_of::<PS_ATTRIBUTE>()] {
+            let mut words = valid;
+            words[0] = length;
+            assert!(read(&words).is_err(), "length={length}");
+        }
+        for size in [0, 1, 65536, usize::MAX] {
+            let mut words = valid;
+            words[2] = size;
+            assert!(read(&words).is_err(), "image size={size}");
+        }
+        for pointer in [0, 1, 16, usize::MAX - 1] {
+            let mut words = valid;
+            words[3] = pointer;
+            assert!(read(&words).is_err(), "image pointer={pointer}");
+        }
+    }
+}
+
 
 static DETOUR_NT_CREATE_FILE: Detour<
     unsafe extern "system" fn(

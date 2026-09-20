@@ -669,3 +669,8 @@ Clean/repeat distinguishes collection loss from a definite unsuccessful child:
 a zero-exit child with incomplete evidence is inconclusive (exit 4), while known
 child, policy, or output failures remain failed. Policy analysis still inspects
 retained partial evidence, including preparation evidence, after an early stop.
+
+Windows interception treats process-creation attribute pointers and lengths as
+untrusted even in the child process. Bounded kernel-assisted copies avoid Rust
+references to unreadable memory; parse failure preserves the original NT call
+and records incomplete collection instead of panicking the child.

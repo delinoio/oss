@@ -87,6 +87,10 @@ jobs:
         if: runner.os == 'Windows'
         working-directory: crates/runlens
         run: cargo test --locked --package fspy_preload_windows detours_long_results_preserve_setup_failures
+      - name: Windows malformed process attributes regression
+        if: runner.os == 'Windows'
+        working-directory: crates/runlens
+        run: cargo test --locked --package fspy_preload_windows process_image_attributes_reject_malformed_memory_without_dereferencing
       - name: Windows access classification regression
         working-directory: crates/runlens
         run: cargo test --locked --package fspy_shared --test windows_access
