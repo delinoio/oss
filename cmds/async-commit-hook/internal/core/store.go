@@ -29,11 +29,11 @@ func ValidID(id string) bool {
 	return e == nil && u.Version() == 7 && u.String() == id
 }
 func OpenStore(root string) (*Store, error) {
-	if err := PrivateDir(root); err != nil {
+	if err := stateDirectory(root); err != nil {
 		return nil, err
 	}
 	for _, d := range []string{"evidence", "workspaces", "locks", "backups"} {
-		if err := PrivateDir(filepath.Join(root, d)); err != nil {
+		if err := stateDirectory(filepath.Join(root, d)); err != nil {
 			return nil, err
 		}
 	}

@@ -117,3 +117,5 @@
 - Go report completeness tracking retains only active package/test identities; remove terminal pass/skip/fail entries while keeping occurrence counts for stable repeated-test failure IDs.
 
 - Storage-failure propagation fixtures re-exec a deterministic test helper through real process ownership, preserving injected SQLite errors, completed-output proof and interrupted recovery. Do not make these fixture watchdogs depend on shell-engine cold startup; native shell integration remains separately covered.
+
+- Configurable state roots and reserved state directories must already have account-only permissions or be created privately. Never chmod or replace the DACL of an existing directory merely because it was selected as state.

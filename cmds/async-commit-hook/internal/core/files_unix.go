@@ -23,6 +23,16 @@ func PrivateDir(path string) error {
 }
 func PrivateFile(path string) error { return os.Chmod(path, 0600) }
 
+func createStateDirectory(path string) error { return os.Mkdir(path, 0700) }
+
+func stateDirectoryPrivate(path string) (bool, error) {
+	var stat unix.Stat_t
+	if err := unix.Lstat(path, &stat); err != nil {
+		return false, err
+	}
+	return stat.Mode&unix.S_IFMT == unix.S_IFDIR && stat.Mode&07777 == 0700 && stat.Uid == uint32(os.Geteuid()), nil
+}
+
 type Lock struct{ f *os.File }
 
 func TryLock(path string) (*Lock, error) {

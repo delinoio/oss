@@ -72,6 +72,9 @@ func TestExplicitRegistrationAfterCheckoutPathReusePreservesHistory(t *testing.T
 
 func TestLegacyPathRegistryUpgradePreservesIDsAndRequiresExplicitTrust(t *testing.T) {
 	root := t.TempDir()
+	if err := PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
 	common := filepath.Join(root, "git")
 	if err := os.Mkdir(common, 0700); err != nil {
 		t.Fatal(err)

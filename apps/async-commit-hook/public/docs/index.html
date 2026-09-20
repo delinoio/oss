@@ -197,7 +197,11 @@ max_bytes = 0</pre
           to the new location. <code>ACH_CONFIG</code> or
           <code>--config PATH</code> selects another personal configuration for
           isolated environments. Retain one authoritative configuration for your
-          OS account.
+          OS account. Existing state directories must have account-only access
+          (mode 0700 on macOS/Linux or a protected current-user-only full-access
+          ACL on Windows). Startup preserves existing permissions and rejects
+          unsuitable directories. Choose a new dedicated state path or correct
+          permissions yourself before retrying.
         </p>
         <p>
           Only necessary system/tool context and explicitly declared inputs
