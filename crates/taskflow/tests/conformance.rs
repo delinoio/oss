@@ -6930,6 +6930,59 @@ async fn dangling_unix_output_links_fail_before_capture() {
 }
 
 #[tokio::test]
+async fn suppression_requires_current_environment_tools_and_inputs() {
+    for output in [Value::Null, json!([]), json!(["observed"])] {
+        let root = fixture(json!({
+            "produce":{"command":command(&["unchanged","events","produce"]),"input":["source"]},
+            "check":{"command":command(&["env","TFLOW_MODE","observed"]),"input":["own-input"],"output":output,"dependsOn":["produce"],"envInputs":["TFLOW_MODE"],"tools":{"fixture":command(&["version-streams","tool-version","tool-stderr"])}}
+        }));
+        std::fs::write(root.path().join("own-input"), "first").unwrap();
+        std::fs::write(root.path().join("tool-stderr"), "").unwrap();
+        let g = graph(root.path()).await;
+        let mut last_key = String::new();
+        for (mode, tool, input, expected) in [
+            ("old", "v1", "first", Outcome::Executed),
+            ("old", "v1", "first", Outcome::Suppressed),
+            ("new", "v1", "first", Outcome::Executed),
+            ("new", "v2", "first", Outcome::Executed),
+            ("new", "v2", "second", Outcome::Executed),
+            ("new", "v2", "second", Outcome::Suppressed),
+        ] {
+            std::fs::write(root.path().join("own-input"), input).unwrap();
+            std::fs::write(root.path().join("tool-version"), tool).unwrap();
+            let plan = Plan::create(&g, &[], &[PathBuf::from("source")], true).unwrap();
+            assert!(!plan.causes["app#check"].iter().any(Cause::independent));
+            let result = runner::run_plan(
+                g.clone(),
+                plan,
+                RunOptions {
+                    quiet: true,
+                    env: BTreeMap::from([("TFLOW_MODE".into(), mode.into())]),
+                    ..RunOptions::default()
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+            assert!(result.success, "{result:?}");
+            assert!(!result.results["app#produce"].changed);
+            let receipt = &result.results["app#check"];
+            assert_eq!(receipt.outcome, expected, "{result:?}");
+            assert_eq!(
+                std::fs::read_to_string(root.path().join("observed")).unwrap(),
+                mode
+            );
+            if expected == Outcome::Suppressed {
+                assert_eq!(receipt.key, last_key);
+            } else {
+                assert_ne!(receipt.key, last_key);
+            }
+            last_key = receipt.key.clone();
+        }
+    }
+}
+
+#[tokio::test]
 async fn outputless_suppression_requires_the_latest_attempt_to_succeed() {
     for output in [Value::Null, json!([])] {
         let root = fixture(json!({

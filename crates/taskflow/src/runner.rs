@@ -281,34 +281,6 @@ pub async fn run_plan(
                 continue;
             }
             let causes = &plan.causes[&id];
-            let previous = previous(&graph.workspace.root, &id);
-            let own_outputs_invalid = !graph.tasks[&id]
-                .task
-                .output
-                .as_ref()
-                .is_none_or(Vec::is_empty)
-                && !cache::output_state(
-                    &graph.workspace.projects[&graph.tasks[&id].project],
-                    &graph.tasks[&id].task,
-                )
-                .is_ok_and(|digest| {
-                    previous
-                        .as_ref()
-                        .is_some_and(|r| r.success() && r.output == digest)
-                });
-            if !causes.iter().any(Cause::independent)
-                && !prerequisites.values().any(|r| r.changed)
-                && !own_outputs_invalid
-                && previous.as_ref().is_some_and(Receipt::success)
-            {
-                let mut receipt = Receipt::skipped(&id, Outcome::Suppressed, causes.clone());
-                if let Some(previous) = previous {
-                    receipt.key = previous.key;
-                    receipt.output = previous.output;
-                }
-                record_completion(&mut results, &options, receipt);
-                continue;
-            }
             let graph = graph.clone();
             let causes = causes.clone();
             let options = options.clone();
@@ -622,6 +594,32 @@ async fn run_task(
         result_key,
         key,
     } = prepare_inputs(graph, id, prerequisites, options, &cancel).await?;
+    // Unchanged prerequisites remove only their propagated causes. A previous
+    // success cannot authorize suppression after this task's own environment,
+    // tools, inputs, configuration, or partition changed. Reuse the execution
+    // identity and validate outputs under the same task/resource locks.
+    if !causes.iter().any(Cause::independent)
+        && !prerequisites.values().any(|receipt| receipt.changed)
+    {
+        if let Some(baseline) = old.as_ref().filter(|baseline| {
+            baseline.key == key
+                && (task.output.as_ref().is_none_or(Vec::is_empty)
+                    || cache::output_state(project, task)
+                        .is_ok_and(|output| output == baseline.output))
+        }) {
+            crate::process::check_cancelled(&cancel)?;
+            persist(&graph.workspace.root, baseline)?;
+            let mut receipt = Receipt::skipped(id, Outcome::Suppressed, causes);
+            receipt.key = key;
+            receipt.output = baseline.output.clone();
+            tracing::info!(
+                task = id,
+                "Suppressed task with current identity and valid outputs"
+            );
+            return Ok(receipt);
+        }
+        tracing::info!(task = id, "Task baseline requires execution or restoration");
+    }
     let remote = if task.cache {
         graph
             .workspace
