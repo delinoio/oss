@@ -38,7 +38,7 @@ try {
     ensure(help.includes("Usage: clibox"), `${manager} help smoke failed`);
     for (const group of ["run", "port", "clipboard", "wait"]) {
       const missing = spawnSync(process.execPath, [launcher, group], { cwd: consumer, encoding: "utf8" });
-      ensure(missing.status === 2 && missing.stdout === "" && missing.stderr.includes(`Usage: clibox ${group}`) && missing.stderr.includes("Commands:"), `${manager} ${group} missing-subcommand help smoke failed`);
+      ensure(missing.status === 2 && missing.stdout === "" && missing.stderr.includes(`Usage: ${target.binary} ${group}`) && missing.stderr.includes("Commands:"), `${manager} ${group} missing-subcommand help smoke failed`);
     }
     const readyFile = path.join(consumer, "ready file");
     writeFileSync(readyFile, "");

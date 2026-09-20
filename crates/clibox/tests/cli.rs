@@ -1,4 +1,4 @@
-use std::process::Command;
+use std::{env::consts::EXE_SUFFIX, process::Command};
 
 #[test]
 fn help_and_no_arguments_succeed_on_stdout() {
@@ -49,7 +49,11 @@ fn missing_subcommands_show_command_help_on_stderr() {
         assert_eq!(output.status.code(), Some(2), "{group}");
         assert!(output.stdout.is_empty(), "{group}");
         let stderr = String::from_utf8(output.stderr).unwrap();
-        assert!(stderr.contains(&format!("Usage: clibox {group}")));
+        // clap derives usage from argv[0], including the Windows .exe suffix.
+        assert!(
+            stderr.contains(&format!("Usage: clibox{EXE_SUFFIX} {group}")),
+            "{stderr}"
+        );
         assert!(stderr.contains("Commands:"));
         for subcommand in subcommands {
             assert!(stderr.contains(&format!("  {subcommand} ")), "{stderr}");
