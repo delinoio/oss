@@ -8,6 +8,9 @@ import (
 // A configurable state path is not proof of ownership. Never repair an existing
 // directory's permissions: it may be the user's home or a shared directory.
 func stateDirectory(path string) error {
+	// A trailing separator must not make MkdirAll create the leaf with an
+	// inherited Windows ACL before createStateDirectory can protect it.
+	path = filepath.Clean(path)
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
