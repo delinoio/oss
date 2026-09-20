@@ -2726,3 +2726,31 @@ fn dynamic_linux_inline_syscalls_cannot_pass_external_write_denials() {
         check_removal_attempt(fixture(), "delete-raw-syscall", missing);
     }
 }
+
+#[test]
+#[cfg(target_os = "linux")]
+fn dynamic_linux_syscall_arities_preserve_results_and_observations() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("input.txt"), "input").unwrap();
+    let output = invoke(
+        root.path(),
+        &[
+            "run",
+            "--save",
+            "syscalls.json",
+            "--",
+            fixture(),
+            "syscall-arities",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report = parse(root.path(), "syscalls.json");
+    assert_eq!(
+        report["executions"][0]["accesses"]["${workspace}/input.txt"]["read"],
+        true
+    );
+}

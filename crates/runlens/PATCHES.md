@@ -151,3 +151,10 @@ static images. Preload alone misses inline kernel calls. The native dynamic
 inline-unlinkat fixture verifies external write-policy denial on both Linux
 architectures, including failed attempts. Remove this patch when upstream covers
 direct syscalls in all supported images independently of libc interposition.
+
+The generic libc syscall varargs interposer is removed: callers legally pass
+zero to six arguments, so unconditionally extracting six is undefined behavior.
+Kernel seccomp collection covers statx and direct filesystem syscalls without
+reading C varargs. Native Linux zero/one/three/five-argument fixtures verify return
+values and read observations. Restore an interposer only if upstream can prove
+ABI-safe forwarding for both supported Linux architectures without missing calls.

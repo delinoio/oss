@@ -5,6 +5,40 @@ fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
         #[cfg(target_os = "linux")]
+        "syscall-arities" => {
+            // SAFETY: each libc syscall receives precisely its documented
+            // arguments. A generic Rust varargs hook must never consume six.
+            unsafe {
+                assert_eq!(
+                    libc::syscall(libc::SYS_getpid),
+                    libc::getpid() as libc::c_long
+                );
+                assert!(libc::syscall(libc::SYS_gettid) > 0);
+                assert_eq!(libc::syscall(libc::SYS_close, -1), -1);
+                let fd = libc::syscall(
+                    libc::SYS_openat,
+                    libc::AT_FDCWD,
+                    c"input.txt".as_ptr(),
+                    libc::O_RDONLY,
+                );
+                assert!(fd >= 0);
+                assert_eq!(libc::syscall(libc::SYS_close, fd), 0);
+                let mut stat = std::mem::MaybeUninit::<libc::statx>::zeroed();
+                assert_eq!(
+                    libc::syscall(
+                        libc::SYS_statx,
+                        libc::AT_FDCWD,
+                        c"input.txt".as_ptr(),
+                        0,
+                        libc::STATX_SIZE,
+                        stat.as_mut_ptr()
+                    ),
+                    0
+                );
+                assert_eq!(stat.assume_init().stx_size, 5);
+            }
+        }
+        #[cfg(target_os = "linux")]
         "delete-raw-syscall" => {
             let path = std::ffi::CString::new(args[1].as_str()).unwrap();
             // SAFETY: live C pathname and scalar unlinkat arguments; bypass
