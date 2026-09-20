@@ -278,3 +278,5 @@
 - Runlens Windows NtDeleteFile must record attempted writes before deletion, including failed calls and external paths, without changing native results.
 
 - Runlens macOS readlink/readlinkat hooks record reads of the link itself, preserve buffers and native results, and never persist returned target text.
+
+- Runlens secret masking must cover overlapping matches in original text without leaking suffixes or rematching replacement markers; environment iteration order cannot affect privacy.

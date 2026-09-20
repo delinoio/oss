@@ -45,10 +45,7 @@ impl Redactor {
     }
 
     pub fn text(&self, value: &str) -> String {
-        let mut value = value.to_owned();
-        for secret in &self.secret_values {
-            value = value.replace(secret, "[redacted]");
-        }
+        let mut value = mask_secret_values(value, &self.secret_values);
         value = self.token.replace_all(&value, "[redacted]").into_owned();
         for rule in &self.rules {
             value = rule.replace_all(&value, "[redacted]").into_owned();
@@ -106,6 +103,38 @@ impl Redactor {
             .collect()
     }
 }
+fn mask_secret_values(value: &str, secrets: &[String]) -> String {
+    // Mark the union of matches in the original text, including overlapping
+    // occurrences of the same secret. Replacing strings sequentially can erase
+    // a later match and leak its suffix, or rematch the replacement marker.
+    let mut covered = vec![false; value.len()];
+    for secret in secrets.iter().filter(|secret| !secret.is_empty()) {
+        let mut start = 0;
+        while let Some(offset) = value[start..].find(secret) {
+            let begin = start + offset;
+            covered[begin..begin + secret.len()].fill(true);
+            start = begin + secret.chars().next().unwrap().len_utf8();
+        }
+    }
+    let mut result = String::with_capacity(value.len());
+    let mut start = 0;
+    while start < value.len() {
+        let hidden = covered[start];
+        let end = covered[start..]
+            .iter()
+            .position(|next| *next != hidden)
+            .map_or(value.len(), |offset| start + offset);
+        // Every boundary came from a UTF-8 string match, so slices remain valid.
+        result.push_str(if hidden {
+            "[redacted]"
+        } else {
+            &value[start..end]
+        });
+        start = end;
+    }
+    result
+}
+
 pub fn normalized(path: &Path) -> String {
     #[cfg(not(windows))]
     {
@@ -323,5 +352,30 @@ pub(crate) fn windows_query_eq(left: &str, right: &str) -> (bool, bool) {
             if chars.next().is_none() { first } else { c }
         };
         (left.chars().map(upper).eq(right.chars().map(upper)), true)
+    }
+}
+
+#[cfg(test)]
+mod secret_overlap_tests {
+    use super::*;
+    #[test]
+    fn secret_masking_covers_all_overlaps_without_rematching_markers() {
+        for values in [["abc", "abcdef"], ["abcdef", "abc"]] {
+            let values = values.into_iter().map(str::to_owned).collect::<Vec<_>>();
+            assert_eq!(
+                mask_secret_values("x abcdef y abc z", &values),
+                "x [redacted] y [redacted] z"
+            );
+        }
+        for (input, values, expected) in [
+            ("abcdef", vec!["abcde", "def"], "[redacted]"),
+            ("ababa", vec!["aba"], "[redacted]"),
+            ("é秘é秘é", vec!["é秘é"], "[redacted]"),
+            ("private", vec!["private", "redacted"], "[redacted]"),
+            ("unchanged", vec![""], "unchanged"),
+        ] {
+            let values = values.into_iter().map(str::to_owned).collect::<Vec<_>>();
+            assert_eq!(mask_secret_values(input, &values), expected);
+        }
     }
 }

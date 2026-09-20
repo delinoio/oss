@@ -5105,3 +5105,33 @@ fn macos_readlink_calls_retain_external_link_reads_without_target_text() {
         }
     }
 }
+
+#[test]
+fn overlapping_environment_secrets_leave_no_persisted_suffix() {
+    let root = tempfile::tempdir().unwrap();
+    let short = "overlap-canary";
+    let long = "overlap-canary-HIDDEN-SUFFIX";
+    let result = cli_command()
+        .current_dir(root.path())
+        .args([
+            "run",
+            "--save",
+            "secret.json",
+            "--",
+            fixture(),
+            "stdio",
+            long,
+        ])
+        .env("RUNLENS_SECRET_A", short)
+        .env("RUNLENS_SECRET_B", long)
+        .output()
+        .unwrap();
+    assert!(result.status.success(), "{result:?}");
+    let text = fs::read_to_string(root.path().join("secret.json")).unwrap();
+    assert!(!text.contains("HIDDEN-SUFFIX"));
+    assert!(!text.contains(short));
+    assert_eq!(
+        parse(root.path(), "secret.json")["executions"][0]["command"]["argv"][2],
+        "[redacted]"
+    );
+}

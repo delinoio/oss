@@ -823,3 +823,8 @@ records returned link text as another input. Native fixtures compare byte counts
 text and errors with untraced execution and enforce external read policies.
 Remove when upstream supplies equivalent macOS link-read coverage. Linux keeps
 its existing seccomp hooks to avoid recursive descriptor-path resolution.
+
+Secret-value masking uses the union of literal matches in the original text.
+Overlapping selected/sensitive environment values, repeated self-overlaps and
+Unicode matches cannot expose suffixes or depend on environment ordering;
+replacement markers are never matched again as secret values.
