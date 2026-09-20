@@ -132,6 +132,9 @@ pub struct RunOptions {
     pub provided: BTreeMap<String, Receipt>,
     pub services: Option<Arc<Services>>,
     pub task_cancellations: Arc<Mutex<BTreeMap<String, CancellationToken>>>,
+    /// Receipts become visible only after the task releases execution
+    /// ownership.
+    pub completions: Option<tokio::sync::mpsc::UnboundedSender<Receipt>>,
     pub shard: Option<(usize, usize)>,
     pub os: Option<config::Os>,
     pub arch: Option<config::Arch>,
@@ -148,6 +151,7 @@ impl Default for RunOptions {
             provided: BTreeMap::new(),
             services: None,
             task_cancellations: Arc::new(Mutex::new(BTreeMap::new())),
+            completions: None,
             shard: None,
             os: None,
             arch: None,
@@ -207,15 +211,16 @@ pub async fn run_plan(
     let mut results = BTreeMap::new();
     for (id, receipt) in &options.provided {
         if pending.remove(id) {
-            results.insert(id.clone(), receipt.clone());
+            record_completion(&mut results, &options, receipt.clone());
         }
     }
     let mut active = FuturesUnordered::new();
     while !pending.is_empty() || !active.is_empty() {
         if cancel.is_cancelled() {
             for id in std::mem::take(&mut pending) {
-                results.insert(
-                    id.clone(),
+                record_completion(
+                    &mut results,
+                    &options,
                     Receipt::skipped(&id, Outcome::Cancelled, plan.causes[&id].clone()),
                 );
             }
@@ -247,8 +252,9 @@ pub async fn run_plan(
                 .map(|p| (p.clone(), results[&p].clone()))
                 .collect();
             if prerequisites.values().any(|r| !r.success()) {
-                results.insert(
-                    id.clone(),
+                record_completion(
+                    &mut results,
+                    &options,
                     Receipt::skipped(&id, Outcome::Blocked, plan.causes[&id].clone()),
                 );
                 continue;
@@ -278,7 +284,7 @@ pub async fn run_plan(
                     receipt.key = previous.key;
                     receipt.output = previous.output;
                 }
-                results.insert(id, receipt);
+                record_completion(&mut results, &options, receipt);
                 continue;
             }
             let graph = graph.clone();
@@ -361,8 +367,8 @@ pub async fn run_plan(
                 (id, receipt)
             });
         }
-        if let Some((id, receipt)) = active.next().await {
-            results.insert(id, receipt);
+        if let Some((_, receipt)) = active.next().await {
+            record_completion(&mut results, &options, receipt);
         } else if !pending.is_empty() {
             // Skipped/blocked nodes may make another layer eligible without any
             // active child. The validated DAG guarantees progress on the next pass.
@@ -380,6 +386,17 @@ pub async fn run_plan(
         success: results.values().all(Receipt::success) && !cancel.is_cancelled(),
         results,
     })
+}
+
+fn record_completion(
+    results: &mut BTreeMap<String, Receipt>,
+    options: &RunOptions,
+    receipt: Receipt,
+) {
+    if let Some(completions) = &options.completions {
+        let _ = completions.send(receipt.clone());
+    }
+    results.insert(receipt.task.clone(), receipt);
 }
 
 fn critical_duration(graph: &Graph, id: &str, seen: &mut BTreeSet<String>) -> u64 {

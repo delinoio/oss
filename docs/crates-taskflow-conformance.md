@@ -263,3 +263,7 @@ The real Go flag suite also compares `-failfast` and `-failfast=false` across tw
 `libtest_cross_targets_require_generic_before_execution` validates both Cargo target argument forms and CLI preflight before any prerequisite runs, while keeping target commands valid through the generic protocol.
 
 `docker_digest_references_validate_the_complete_suffix` rejects extra digest separators, duplicate markers, absent names, uppercase digests, and invalid lengths before Docker launch; registry ports and image tags remain accepted.
+
+`overlap_replacements_finish_before_independent_waves_and_keep_latest_receipts` changes an input during a real exclusive process, exercises queue/restart before an unrelated gated task completes, and verifies that the old wave cannot overwrite the replacement receipt. `completed_tasks_keep_edits_while_an_independent_wave_task_runs` now requires the second execution before releasing the slow task for queue, skip, and restart.
+
+`new_waves_retain_prerequisite_causes_behind_active_consumers` changes a producer while its previous consumer is gated, proving the producer can finish promptly and the consumer retains a second run for that prerequisite change.

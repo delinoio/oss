@@ -126,9 +126,14 @@ fn main() {
             for byte in value.as_bytes() { stdout.write_all(&[*byte]).unwrap(); stdout.flush().unwrap(); std::thread::sleep(Duration::from_millis(1)); }
             if let Some(path) = args.get(3) { write(path, value.as_bytes()); }
         }
-        "gated" => {
+        "gated" | "gated-copy" => {
             write(&args[2], b"started");
             while !Path::new(&args[3]).exists() { std::thread::sleep(Duration::from_millis(10)); }
+            if args[1] == "gated-copy" {
+                write(&args[5], &fs::read(&args[4]).unwrap());
+                let mut log = fs::OpenOptions::new().create(true).append(true).open(&args[6]).unwrap();
+                writeln!(log, "consumed").unwrap();
+            }
         }
         "jest" if args.iter().any(|arg| arg == "--listTests") => {
             println!("[\"one.test.js\",\"two.test.js\"]");

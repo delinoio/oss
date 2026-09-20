@@ -2678,7 +2678,7 @@ async fn cargo_member_commands_discover_the_implicit_workspace_root() {
 
 #[tokio::test]
 async fn completed_tasks_keep_edits_while_an_independent_wave_task_runs() {
-    for overlap in ["skip", "restart"] {
+    for overlap in ["queue", "skip", "restart"] {
         let directory = fixture(json!({
             "fast":{"command":command(&["record","events","run"]),"input":["source"],"watch":{"debounce":"20ms"},"overlap":overlap},
             "slow":{"command":command(&["gated","slow-start","release"]),"input":[]}
@@ -2719,9 +2719,9 @@ async fn completed_tasks_keep_edits_while_an_independent_wave_task_runs() {
         .await
         .unwrap();
         std::fs::write(directory.path().join("source"), "changed").unwrap();
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        std::fs::write(directory.path().join("release"), "release").unwrap();
         wait_lines(&directory.path().join("events"), "run", 2).await;
+        assert!(running.lock().unwrap().contains_key("app#slow"));
+        std::fs::write(directory.path().join("release"), "release").unwrap();
         token.cancel();
         session.await.unwrap().unwrap();
     }
@@ -5580,4 +5580,117 @@ fn docker_digest_references_validate_the_complete_suffix() {
             .unwrap();
         assert_eq!(result.status.success(), accepted, "{image}: {result:?}");
     }
+}
+
+#[tokio::test]
+async fn overlap_replacements_finish_before_independent_waves_and_keep_latest_receipts() {
+    for overlap in ["queue", "restart"] {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        drop(listener);
+        let root = fixture(json!({
+            "fast":{"command":command(&["paced","events",&address,"900"]),"input":["source"],"watch":{"debounce":"20ms"},"overlap":overlap},
+            "slow":{"command":command(&["gated","slow-start","release"]),"input":[]}
+        }));
+        profile(root.path(), &["fast", "slow"]);
+        std::fs::write(root.path().join("source"), "first").unwrap();
+        let options = RunOptions {
+            jobs: 2,
+            ..Default::default()
+        };
+        let running = options.task_cancellations.clone();
+        let stop = CancellationToken::new();
+        let token = stop.clone();
+        let directory = root.path().to_owned();
+        let session = tokio::spawn(async move {
+            taskflow::session::start(&directory, "default", options, token).await
+        });
+        wait_lines(&root.path().join("events"), "start:", 1).await;
+        wait_lines(&root.path().join("slow-start"), "", 1).await;
+        std::fs::write(root.path().join("source"), "second").unwrap();
+        wait_lines(&root.path().join("events"), "start:", 2).await;
+        assert!(running.lock().unwrap().contains_key("app#slow"));
+        let latest = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if let Some(receipt) = runner::previous(root.path(), "app#fast") {
+                    if receipt.success()
+                        && receipt
+                            .causes
+                            .iter()
+                            .any(|cause| matches!(cause, Cause::Input { .. }))
+                    {
+                        break receipt;
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
+        // Complete the old wave last, then confirm its stale receipt cannot
+        // replace the latest run or release another wave's ownership.
+        std::fs::write(root.path().join("release"), "release").unwrap();
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while running.lock().unwrap().contains_key("app#slow") {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
+        stop.cancel();
+        let result = session.await.unwrap().unwrap();
+        assert_eq!(result.results["app#fast"].execution, latest.execution);
+        assert!(result.results["app#fast"].success());
+        let events = std::fs::read_to_string(root.path().join("events")).unwrap();
+        assert_eq!(
+            events
+                .lines()
+                .filter(|line| line.starts_with("start:"))
+                .count(),
+            2,
+            "{events}"
+        );
+        assert_eq!(
+            events
+                .lines()
+                .filter(|line| line.starts_with("end:"))
+                .count(),
+            if overlap == "queue" { 2 } else { 1 },
+            "{events}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn new_waves_retain_prerequisite_causes_behind_active_consumers() {
+    let root = fixture(json!({
+        "produce":{"command":command(&["copy","source","artifact"]),"input":["source"],"output":["artifact"],"watch":{"debounce":"20ms"}},
+        "consume":{"command":command(&["gated-copy","consumer-start","release","artifact","result","events"]),"dependsOn":["produce"],"input":[],"output":["result"],"watch":{"initial":false}}
+    }));
+    profile(root.path(), &["produce", "consume"]);
+    std::fs::write(root.path().join("source"), "first").unwrap();
+    let stop = CancellationToken::new();
+    let token = stop.clone();
+    let directory = root.path().to_owned();
+    let session = tokio::spawn(async move {
+        taskflow::session::start(&directory, "default", RunOptions::default(), token).await
+    });
+    wait_lines(&root.path().join("consumer-start"), "", 1).await;
+    std::fs::write(root.path().join("source"), "second").unwrap();
+    let updated = tokio::time::timeout(Duration::from_secs(10), async {
+        while std::fs::read_to_string(root.path().join("artifact")).unwrap_or_default() != "second"
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await;
+    std::fs::write(root.path().join("release"), "release").unwrap();
+    updated.unwrap();
+    wait_lines(&root.path().join("events"), "consumed", 2).await;
+    stop.cancel();
+    session.await.unwrap().unwrap();
+    assert_eq!(
+        std::fs::read_to_string(root.path().join("result")).unwrap(),
+        "second"
+    );
 }

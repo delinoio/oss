@@ -87,7 +87,9 @@ pub async fn start(
         let mut observed = snapshots(&graph, &active_set)?;
         let mut baseline_at = Instant::now();
         let mut results: BTreeMap<String, Receipt> = bootstrap_results;
-        let mut active_tasks = BTreeSet::new();
+        let mut active_tasks = BTreeMap::new();
+        let (completed, mut completions) = tokio::sync::mpsc::unbounded_channel();
+        let mut next_wave = 0u64;
         let mut generation_cancel = work_cancel.child_token();
         let mut reload = false;
         let mut invalid = false;
@@ -134,18 +136,24 @@ pub async fn start(
                     } else { timer.cron.as_mut().is_some_and(|c| c.tick(chrono::Utc::now())) };
                     if tick { enqueue(&graph, &options, &mut pending, id, Cause::Schedule, now); }
                 }
-                let due: BTreeSet<_> = pending.iter().filter(|(id, p)| p.due <= now && !active_tasks.contains(*id)).map(|(id, _)| id.clone()).collect();
+                let due: BTreeSet<_> = pending.iter().filter(|(id, p)| p.due <= now && !active_tasks.contains_key(*id)).map(|(id, _)| id.clone()).collect();
                 if !due.is_empty() {
                     let mut seeds: BTreeMap<String, BTreeSet<Cause>> = BTreeMap::new();
                     for id in &due {
                         let closure = graph.closure(&BTreeSet::from([id.clone()]), false, false);
-                        if closure.iter().any(|p| active_tasks.contains(p)) { continue; }
+                        if closure.iter().any(|p| active_tasks.contains_key(p)) { continue; }
                         seeds.insert(id.clone(), pending.remove(id).unwrap().causes);
                     }
                     if !seeds.is_empty() {
                         let propagation = graph.closure(&seeds.keys().cloned().collect(), true, false);
-                        for id in propagation {
-                            if active_set.contains(&id) && !graph.tasks[&id].task.service && !active_tasks.contains(&id) { seeds.entry(id).or_default(); }
+                        for id in &propagation {
+                            if !active_set.contains(id) || graph.tasks[id].task.service { continue; }
+                            let reserved = graph.closure(&BTreeSet::from([id.clone()]), false, false).iter().any(|p| active_tasks.contains_key(p));
+                            if reserved {
+                                for prerequisite in graph.prerequisites(id).into_iter().filter(|p| propagation.contains(p)) {
+                                    enqueue(&graph, &options, &mut pending, id, Cause::Prerequisite { task: prerequisite }, now);
+                                }
+                            } else { seeds.entry(id.clone()).or_default(); }
                         }
                         let plan = Plan::for_tasks(&graph, seeds.clone())?;
                         let selected: BTreeSet<_> = plan.order.iter().cloned().collect();
@@ -159,10 +167,26 @@ pub async fn start(
                             if !valid { tracing::info!(task = *id, code = "session-output-invalid", "Revalidating prerequisite before the next session wave"); }
                             valid
                         }).map(|(id, r)| (id.clone(), r.clone())).collect();
-                        active_tasks.extend(selected.clone());
+                        let wave_id = next_wave;
+                        next_wave += 1;
+                        active_tasks.extend(selected.iter().cloned().map(|id| (id, wave_id)));
+                        let (finished, mut task_results) = tokio::sync::mpsc::unbounded_channel();
+                        wave_options.completions = Some(finished);
+                        let completed = completed.clone();
                         let graph = graph.clone();
                         let token = generation_cancel.child_token();
-                        waves.spawn(async move { (selected, runner::run_plan(graph, plan, wave_options, token).await) });
+                        waves.spawn(async move {
+                            let run = runner::run_plan(graph, plan, wave_options, token);
+                            tokio::pin!(run);
+                            let result = loop {
+                                tokio::select! {
+                                    result = &mut run => break result,
+                                    Some(receipt) = task_results.recv() => { let _ = completed.send((wave_id, receipt)); }
+                                }
+                            };
+                            while let Ok(receipt) = task_results.try_recv() { let _ = completed.send((wave_id, receipt)); }
+                            (wave_id, selected, result)
+                        });
                     }
                 }
             }
@@ -218,14 +242,15 @@ pub async fn start(
                         if active_set.contains(&id) && !status.cancelled() { anyhow::bail!("service {id} exited ({}); shutting down session", status.code); }
                     }
                 }
+                Some((wave_id, receipt)) = completions.recv() => {
+                    complete_task(wave_id, receipt, &mut active_tasks, &mut results);
+                }
                 Some(result) = waves.join_next(), if !waves.is_empty() => {
-                    let (selected, wave) = result?;
-                    active_tasks.retain(|id| !selected.contains(id));
+                    let (wave_id, selected, wave) = result?;
                     match wave {
                         Ok(wave) => {
-                            for (id, receipt) in wave.results {
-                                if !receipt.success() { tracing::warn!(task = %id, outcome = ?receipt.outcome, "Session check failed; subscriptions remain active"); }
-                                results.insert(id, receipt);
+                            for receipt in wave.results.into_values() {
+                                complete_task(wave_id, receipt, &mut active_tasks, &mut results);
                             }
                         }
                         Err(error) => {
@@ -233,13 +258,18 @@ pub async fn start(
                             tracing::error!(error = %error, "Session wave failed; subscriptions remain active");
                         }
                     }
+                    active_tasks.retain(|_, owner| *owner != wave_id);
                     if selected.iter().any(|id| graph.tasks[id].task.service && results.get(id).is_some_and(|r| !r.success() && r.outcome != runner::Outcome::Cancelled)) { anyhow::bail!("service activation failed"); }
                 }
                 _ = tokio::time::sleep(Duration::from_millis(25)) => {}
             }
         }
         work_cancel.cancel();
-        while let Some(result) = waves.join_next().await { if let Ok((_, Ok(wave))) = result { results.extend(wave.results); } }
+        while let Some(result) = waves.join_next().await {
+            if let Ok((wave_id, _, Ok(wave))) = result {
+                for receipt in wave.results.into_values() { complete_task(wave_id, receipt, &mut active_tasks, &mut results); }
+            }
+        }
         Ok(RunResult { version: 1, success: results.values().all(Receipt::success), results })
     }.await;
     work_cancel.cancel();
@@ -251,6 +281,24 @@ pub async fn start(
     drop(watcher);
     cleanup?;
     result
+}
+
+fn complete_task(
+    wave_id: u64,
+    receipt: Receipt,
+    active: &mut BTreeMap<String, u64>,
+    results: &mut BTreeMap<String, Receipt>,
+) {
+    // A replaced execution may complete before an older unrelated wave. Never
+    // let that old wave release the new owner or overwrite its latest receipt.
+    if active.get(&receipt.task) != Some(&wave_id) {
+        return;
+    }
+    active.remove(&receipt.task);
+    if !receipt.success() {
+        tracing::warn!(task = %receipt.task, outcome = ?receipt.outcome, "Session check failed; subscriptions remain active");
+    }
+    results.insert(receipt.task.clone(), receipt);
 }
 
 fn roots(graph: &Graph, profile: &str) -> Result<BTreeSet<String>> {
@@ -367,7 +415,7 @@ fn enqueue(
     cause: Cause,
     due: Instant,
 ) {
-    // Wave membership reserves planned prerequisites until the wave completes;
+    // Pending prerequisites remain reserved until their individual receipt;
     // overlap applies only while this task itself still owns an execution.
     let running = options.task_cancellations.lock().unwrap().get(id).cloned();
     if let Some(token) = running {
