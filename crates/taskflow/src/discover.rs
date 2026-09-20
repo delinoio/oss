@@ -173,6 +173,9 @@ impl Workspace {
     }
 
     pub async fn discover(root: &Path) -> Result<Self> {
+        // Invalid inherited entries are an execution boundary failure, not an
+        // unavailable native adapter that membership fallback can conceal.
+        crate::environment::inherited()?;
         crate::files::slash(root)?;
         let root = root
             .canonicalize()

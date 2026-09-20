@@ -38,6 +38,8 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 
 `reserved_output_aliases_are_rejected_on_every_host` rejects ASCII case aliases of `.git`, `.taskflow`, and `.taskflow-restore-*` before task execution and during artifact integrity validation, including nested components. Similar ordinary names remain valid. The portable rule prevents a case-sensitive cache producer from authorizing internal-state paths on a case-insensitive consumer.
 
+`non_unicode_inherited_environment_is_rejected_without_panicking` launches the real CLI with invalid Unix environment names and values for check, query, plan, and run. Each returns an ordinary error without exposing entry bytes or executing the task. Native discovery, metadata capture, and task environment construction share fallible inherited-environment decoding.
+
 `cache_verify_rejects_misdirected_and_inconsistent_artifacts` also rejects validly encoded file records that declare descendants beneath another regular file, without restoring any output.
 
 `uncached_output_digests_are_not_limited_by_artifact_size` executes a task with an output larger than 512 MiB, confirms successful local identity tracking, and retains the artifact capture bound. Local and captured identities share the `output-state-v2` digest domain; previous payload-based digests become safe cache misses.

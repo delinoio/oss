@@ -10,6 +10,22 @@ use crate::{
     discover::{Project, Workspace},
 };
 
+pub(crate) fn inherited() -> Result<BTreeMap<String, String>> {
+    std::env::vars_os()
+        .map(|(key, value)| {
+            // Never include the entry bytes in this diagnostic: either half may
+            // contain a credential, and lossy conversion would change identity.
+            let key = key.into_string().map_err(|_| {
+                anyhow::anyhow!("inherited environment contains a non-Unicode name")
+            })?;
+            let value = value.into_string().map_err(|_| {
+                anyhow::anyhow!("inherited environment contains a non-Unicode value")
+            })?;
+            Ok((key, value))
+        })
+        .collect()
+}
+
 #[derive(Clone)]
 pub struct Environment {
     pub values: BTreeMap<String, String>,
@@ -39,7 +55,8 @@ impl Environment {
                 read_dotenv(&project.directory.join(".env"), &mut values)?;
             }
         }
-        for (key, value) in std::env::vars()
+        for (key, value) in inherited()?
+            .into_iter()
             .chain(task.env.clone())
             .chain(overrides.clone())
         {

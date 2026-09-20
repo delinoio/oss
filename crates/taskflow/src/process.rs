@@ -240,7 +240,7 @@ pub async fn capture(
     command: &Command,
     environment: &[(&str, &str)],
 ) -> Result<Vec<u8>> {
-    let mut env: BTreeMap<String, String> = std::env::vars().collect();
+    let mut env = crate::environment::inherited()?;
     for (key, value) in environment {
         crate::environment::insert(&mut env, (*key).into(), (*value).into());
     }

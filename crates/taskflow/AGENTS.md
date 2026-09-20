@@ -23,6 +23,7 @@
 - Configuration validation checks remote endpoint, bucket, namespace, region, and credential-reference syntax without reading credentials or using the network, including mode off.
 - Graph validation rejects remote credential references in every task environment declaration before execution; runtime validation also checks CLI overrides.
 - Environment scoping, precedence, masking, fingerprints, runtime retention, and transport credential exclusion use the host's environment-name comparison; Windows names follow its ordinal case-insensitive rules.
+- Read inherited environment entries with vars_os and reject non-Unicode names or values with a redacted error before native discovery; never panic or convert their bytes lossily.
 - Output capture, local hashing, and cache restoration validate the same link chains. Cache link validation follows archive link chains and existing filesystem ancestors before processing parent components; lexical containment alone cannot authorize restoration.
 - Cache link capture and intrinsic validation reject rooted and drive-prefixed targets on every host. Records reject empty targets, NUL, and nonportable backslashes.
 - Cache link records use portable separators; Windows link creation converts targets to native separators before invoking the filesystem API.

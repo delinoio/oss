@@ -4181,6 +4181,56 @@ async fn pending_cancellation_uses_operator_exit_code() {
 }
 
 #[test]
+#[cfg(unix)]
+fn non_unicode_inherited_environment_is_rejected_without_panicking() {
+    use std::os::unix::ffi::OsStringExt;
+
+    let directory =
+        fixture(json!({"build":{"command":command(&["record","unexpected","ran"]),"output":[]}}));
+    files::atomic_write(
+        &directory.path().join("Cargo.toml"),
+        b"[package]\nname='env-fixture'\nversion='0.1.0'\nedition='2021'\n",
+    )
+    .unwrap();
+    files::atomic_write(&directory.path().join("src/lib.rs"), b"").unwrap();
+    for invalid_name in [true, false] {
+        for args in [
+            vec!["check"],
+            vec!["query", "projects"],
+            vec!["plan", "build"],
+            vec!["run", "build"],
+        ] {
+            let invalid = std::ffi::OsString::from_vec(b"private-invalid-\xff".to_vec());
+            let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"));
+            if invalid_name {
+                child.env(&invalid, "private-value");
+            } else {
+                child.env("TFLOW_INVALID_UTF8", &invalid);
+            }
+            let output = child
+                .current_dir(directory.path())
+                .args(["--root", "."])
+                .args(&args)
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(1), "{args:?}: {output:?}");
+            let diagnostic = String::from_utf8(output.stderr).unwrap();
+            assert!(
+                diagnostic.contains(if invalid_name {
+                    "non-Unicode name"
+                } else {
+                    "non-Unicode value"
+                }),
+                "{diagnostic}"
+            );
+            assert!(!diagnostic.contains("private-"), "{diagnostic}");
+            assert!(!diagnostic.contains("panicked"), "{diagnostic}");
+            assert!(!directory.path().join("unexpected").exists());
+        }
+    }
+}
+
+#[test]
 fn reserved_output_aliases_are_rejected_on_every_host() {
     for path in [
         ".TASKFLOW/cache/**",
