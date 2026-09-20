@@ -229,6 +229,7 @@
 - Runlens frozen-source copies preserve a Windows symbolic link’s own directory/file reparse type even when its target does not exist.
 
 - Runlens Windows spawn must complete fallible setup before resuming the child; its existing Job and original child handle own the remaining lifecycle.
+- Runlens Unix native fixtures must isolate ambient runner descriptors at the test command boundary. Explicit inheritance fixtures re-enable their own descriptors and must continue to prove that production preserves the handles and rejects complete verification.
 
 ### clibox Rules
 

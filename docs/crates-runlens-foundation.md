@@ -735,3 +735,11 @@ injection and payload copying before resumption; removing a redundant duplicate
 does not change either native call's ABI or target ownership.
 
 The native source-selection regression asserts source/environment comparability independently of observed execution equivalence. Fresh processes may have different access sets despite the same HEAD; clean must fail on those observed deltas while reserving inconclusive for incompatible source policies or revisions. Test failures include the explicit offline comparison for diagnosis.
+
+Native Unix test commands mark ambient nonstandard descriptors close-on-exec
+before launching Runlens, because a cold Cargo build can otherwise leak its
+jobserver descriptors into fixtures. The boundary belongs to the test harness;
+production retains all caller descriptors and its conservative incomplete
+classification. A nested native harness with an injected descriptor verifies
+isolation, while explicit descriptor fixtures re-enable their selected handles
+and continue to require incomplete collection and non-passing policy checks.

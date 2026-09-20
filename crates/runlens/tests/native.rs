@@ -248,12 +248,88 @@ async fn clean_preflights_combined_execution_capacity_before_source_preparation(
         );
     }
 }
+fn cli_command() -> Command {
+    let command = Command::new(binary());
+    #[cfg(unix)]
+    let command = {
+        let mut command = command;
+        use std::os::unix::process::CommandExt;
+        // Cargo can leave jobserver descriptors inheritable after a cold build.
+        // Give ordinary CLI fixtures only their explicitly configured streams;
+        // descriptor tests add their own inheritance in a later pre_exec hook.
+        // Keep this test-only boundary while the runner can pass ambient FDs.
+        let directory = if cfg!(target_os = "linux") {
+            "/proc/self/fd"
+        } else {
+            "/dev/fd"
+        };
+        let descriptors: Vec<i32> = fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| {
+                entry
+                    .unwrap()
+                    .file_name()
+                    .to_str()
+                    .unwrap()
+                    .parse()
+                    .unwrap()
+            })
+            .filter(|&fd| fd > 2)
+            .collect();
+        // SAFETY: the child hook uses only async-signal-safe descriptor queries
+        // and updates. It does not close Rust's spawn-error pipe or caller files.
+        unsafe {
+            command.pre_exec(move || {
+                for &fd in &descriptors {
+                    let flags = libc::fcntl(fd, libc::F_GETFD);
+                    if flags == -1 {
+                        let error = std::io::Error::last_os_error();
+                        if error.raw_os_error() == Some(libc::EBADF) {
+                            continue;
+                        }
+                        return Err(error);
+                    }
+                    if libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) == -1 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                }
+                Ok(())
+            });
+        }
+        command
+    };
+    command
+}
+
+#[cfg(unix)]
+#[test]
+fn native_harness_excludes_ambient_runner_descriptors() {
+    use std::os::{fd::AsRawFd, unix::process::CommandExt};
+    let file = tempfile::tempfile().unwrap();
+    let source = file.as_raw_fd();
+    for case in [
+        "real_tracing_receipt_privacy_and_offline_queries",
+        "tracing_preserves_unset_and_selected_fspy_values_in_children",
+    ] {
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command.args(["--exact", case, "--nocapture"]);
+        // SAFETY: only async-signal-safe calls run between fork and exec. The
+        // nested harness receives an ambient file FD just as it can from a runner.
+        unsafe {
+            command.pre_exec(move || {
+                if libc::dup2(source, 80) == -1 || libc::fcntl(80, libc::F_SETFD, 0) == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let output = command.output().unwrap();
+        assert!(output.status.success(), "{case}: {output:?}");
+    }
+}
+
 fn invoke(root: &Path, args: &[&str]) -> Output {
-    Command::new(binary())
-        .args(args)
-        .current_dir(root)
-        .output()
-        .unwrap()
+    cli_command().args(args).current_dir(root).output().unwrap()
 }
 fn run(root: &Path, report: &str, mode: &str) -> Output {
     invoke(
@@ -451,7 +527,7 @@ fn clean_and_repeat_use_fresh_environments_without_worktree_changes() {
     let root = repository("env");
     fs::write(root.path().join("input.txt"), "uncommitted").unwrap();
     fs::write(root.path().join("ignored"), "ignored state").unwrap();
-    let output = Command::new(binary())
+    let output = cli_command()
         .args([
             "--log-level",
             "off",
@@ -619,7 +695,7 @@ fn selected_environment_names_do_not_prove_baseline_compatibility() {
     git(root.path(), &["add", "runlens.toml"]);
     git(root.path(), &["commit", "-qm", "select environment input"]);
     let execute = |args: &[&str], flavor: &str| {
-        Command::new(binary())
+        cli_command()
             .args(args)
             .env("RUNLENS_FLAVOR", flavor)
             .current_dir(root.path())
@@ -885,7 +961,7 @@ environment_names = ["CUSTOM_REDACT"]
     .unwrap();
     for (index, name) in ["CUSTOM_REDACT", "custom_redact"].iter().enumerate() {
         let saved = format!("redaction-{index}.json");
-        let result = Command::new(binary())
+        let result = cli_command()
             .current_dir(root.path())
             .env_remove("CUSTOM_REDACT")
             .env_remove("custom_redact")
@@ -1213,7 +1289,7 @@ fn non_unicode_environment_entries_do_not_abort_observation() {
         ],
         vec!["verify", "clean", "build", "--save", "clean.json"],
     ] {
-        let output = Command::new(binary())
+        let output = cli_command()
             .args(args)
             .env(
                 OsString::from_vec(b"RUNLENS_INVALID_\xff".to_vec()),
@@ -1301,7 +1377,11 @@ fn tracing_preserves_unset_and_selected_fspy_values_in_children() {
     for present in [false, true] {
         let label = if present { "present" } else { "absent" };
         for traced in [false, true] {
-            let mut command = Command::new(if traced { binary() } else { fixture() });
+            let mut command = if traced {
+                cli_command()
+            } else {
+                Command::new(fixture())
+            };
             if traced {
                 command.args(["run", "--", fixture()]);
             }
@@ -1335,7 +1415,7 @@ env = ["FSPY"]
     .unwrap();
     git(root.path(), &["add", "runlens.toml"]);
     git(root.path(), &["commit", "-qm", "select FSPY explicitly"]);
-    let output = Command::new(binary())
+    let output = cli_command()
         .args(["verify", "clean", "build"])
         .env("FSPY", "caller-selected")
         .current_dir(root.path())
@@ -1412,7 +1492,7 @@ fn cache_policy_and_overflow_fail_closed() {
 #[test]
 fn piped_stdin_is_forwarded_without_capture() {
     let root = tempfile::tempdir().unwrap();
-    let mut child = Command::new(binary())
+    let mut child = cli_command()
         .args([
             "--log-level",
             "off",
@@ -1555,7 +1635,7 @@ fn unicode_argv_and_directory_conflicts_keep_concrete_evidence() {
 fn cancellation_during_after_snapshot_retains_cancelled_status() {
     use std::io::BufRead;
     let root = tempfile::tempdir().unwrap();
-    let mut child = Command::new(binary())
+    let mut child = cli_command()
         .args([
             "--log-level",
             "info",
@@ -1602,7 +1682,7 @@ fn cancellation_during_after_snapshot_retains_cancelled_status() {
 #[test]
 fn cancellation_is_reaped_and_saved_as_incomplete() {
     let root = tempfile::tempdir().unwrap();
-    let mut child = Command::new(binary())
+    let mut child = cli_command()
         .args([
             "--log-level",
             "off",
@@ -1891,7 +1971,7 @@ fn many_execution_reports_remain_readable_with_few_file_descriptors() {
         serde_json::to_vec(&report).unwrap(),
     )
     .unwrap();
-    let mut command = Command::new(binary());
+    let mut command = cli_command();
     command
         .args(["receipt", "many.json", "--json"])
         .current_dir(root.path())
@@ -3385,7 +3465,7 @@ fn inherited_standard_files_preserve_io_but_cannot_certify_policy() {
              [\"**/standard-file\"]\n",
         )
         .unwrap();
-        let mut command = Command::new(binary());
+        let mut command = cli_command();
         command.current_dir(root.path()).args([
             "--log-level",
             "off",
@@ -3705,7 +3785,7 @@ fn inherited_nonstandard_descriptors_preserve_io_but_prevent_policy_pass() {
             "schema_version = 1\n[policy]\ndeny_writes = [\"**/descriptor-output\"]\n",
         )
         .unwrap();
-        let mut command = Command::new(binary());
+        let mut command = cli_command();
         command.current_dir(root.path()).args([
             "--log-level",
             "off",
@@ -3940,7 +4020,7 @@ fn path_exec_families_preserve_native_text_shell_fallback() {
                     path
                 }
             );
-            let traced = Command::new(binary())
+            let traced = cli_command()
                 .current_dir(root.path())
                 .env("PATH", root.path())
                 .args([
