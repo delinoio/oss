@@ -149,3 +149,5 @@
 - Windows cleanup fixtures retain the descendant's kernel handle before termination and require it to be signaled when cleanup returns. Check port release separately with bounded AddrInUse retries only after that proof; never use SO_REUSEADDR or PID reopening as cleanup evidence. Let descendants bind their own ephemeral sockets before atomically publishing readiness.
 
 - Persisted receipts are regular no-follow files capped at 1 MiB on publication and read. Invalid prior receipts cannot block scheduling or establish a successful baseline.
+
+- Local cache binding reads and rollback snapshots require no-follow regular files capped at 1 KiB; corrupt bindings cannot block fallback or repair. Object reads enforce their existing transfer bound on both metadata and actual bytes and reject special files.

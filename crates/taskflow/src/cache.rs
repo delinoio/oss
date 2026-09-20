@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 use crate::{config::Task, discover::Project, files};
 
 pub const MAX_CACHE_BYTES: usize = 512 * 1024 * 1024;
+const MAX_ENTRY_BYTES: u64 = 1024;
 
 enum CacheLock {
     Shared,
@@ -863,10 +864,22 @@ fn store_encoded_if(
         return Ok(false);
     }
     let entry = entry_path(root, key);
-    let previous = match std::fs::read(&entry) {
+    let previous = match files::read_regular_limited(&entry, MAX_ENTRY_BYTES) {
         Ok(bytes) => Some(bytes),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-        Err(error) => return Err(error.into()),
+        Err(error) => {
+            if !error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+            {
+                tracing::warn!(
+                    code = "invalid-cache-manifest",
+                    "Replacing unreadable local cache binding"
+                );
+            }
+            // A corrupt binding is not a rollback baseline. Atomic replacement
+            // repairs the leaf without following a link or opening a FIFO.
+            None
+        }
     };
     files::atomic_write(&entry, &serde_json::to_vec(&Entry { version: 1, object })?)?;
     // Readers cannot observe the replacement until this lock is released. If
@@ -890,10 +903,18 @@ fn store_encoded_if(
 pub fn load(root: &Path, key: &str) -> Result<Option<Artifact>> {
     let _lock = read_lock(root)?;
     let path = entry_path(root, key);
-    if !path.exists() {
-        return Ok(None);
-    }
-    let entry: Entry = serde_json::from_slice(&std::fs::read(path)?)?;
+    let bytes = match files::read_regular_limited(&path, MAX_ENTRY_BYTES) {
+        Ok(bytes) => bytes,
+        Err(error)
+            if error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) =>
+        {
+            return Ok(None)
+        }
+        Err(error) => return Err(error.context("invalid cache manifest")),
+    };
+    let entry: Entry = serde_json::from_slice(&bytes)?;
     ensure!(
         entry.version == 1 && valid_hash(&entry.object),
         "invalid cache manifest"
@@ -901,11 +922,8 @@ pub fn load(root: &Path, key: &str) -> Result<Option<Artifact>> {
     let file = root
         .join(".taskflow/cache/objects")
         .join(format!("{}.json", entry.object));
-    ensure!(
-        std::fs::metadata(&file)?.len() <= MAX_CACHE_BYTES as u64,
-        "cache object too large"
-    );
-    let bytes = std::fs::read(file)?;
+    let bytes = files::read_regular_limited(&file, MAX_CACHE_BYTES as u64)
+        .context("invalid cache object file")?;
     ensure!(
         files::digest(&bytes) == entry.object,
         "cache object digest mismatch"
@@ -924,6 +942,64 @@ pub fn valid_hash(value: &str) -> bool {
 #[cfg(test)]
 mod publication_tests {
     use super::*;
+
+    #[test]
+    fn local_cache_reads_reject_and_repair_unsafe_manifests() {
+        let root = tempfile::tempdir().unwrap();
+        let artifact = Artifact {
+            version: 1,
+            key: files::digest(b"key"),
+            task: "app#test".into(),
+            output_digest: files::digest(b"output"),
+            result_identity: None,
+            files: vec![],
+            shards: None,
+        };
+        let bytes = store(root.path(), &artifact).unwrap();
+        let path = entry_path(root.path(), &artifact.key);
+        std::fs::File::create(&path)
+            .unwrap()
+            .set_len(MAX_ENTRY_BYTES + 1)
+            .unwrap();
+        assert!(load(root.path(), &artifact.key).is_err());
+        store(root.path(), &artifact).unwrap();
+        assert!(load(root.path(), &artifact.key).unwrap().is_some());
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            std::fs::remove_file(&path).unwrap();
+            let native = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+            assert_eq!(unsafe { nix::libc::mkfifo(native.as_ptr(), 0o600) }, 0);
+            assert!(load(root.path(), &artifact.key).is_err());
+            store(root.path(), &artifact).unwrap();
+            assert!(load(root.path(), &artifact.key).unwrap().is_some());
+            let target = root.path().join("binding.json");
+            std::fs::rename(&path, &target).unwrap();
+            let original = std::fs::read(&target).unwrap();
+            std::os::unix::fs::symlink(&target, &path).unwrap();
+            assert!(load(root.path(), &artifact.key).is_err());
+            store(root.path(), &artifact).unwrap();
+            assert_eq!(std::fs::read(&target).unwrap(), original);
+            assert!(load(root.path(), &artifact.key).unwrap().is_some());
+        }
+        let object = root
+            .path()
+            .join(".taskflow/cache/objects")
+            .join(format!("{}.json", files::digest(&bytes)));
+        std::fs::File::create(&object)
+            .unwrap()
+            .set_len(MAX_CACHE_BYTES as u64 + 1)
+            .unwrap();
+        assert!(load(root.path(), &artifact.key).is_err());
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            std::fs::remove_file(&object).unwrap();
+            let native = std::ffi::CString::new(object.as_os_str().as_bytes()).unwrap();
+            assert_eq!(unsafe { nix::libc::mkfifo(native.as_ptr(), 0o600) }, 0);
+            assert!(load(root.path(), &artifact.key).is_err());
+        }
+    }
 
     fn capture_fixture(root: &Path) -> (Project, Task) {
         (
