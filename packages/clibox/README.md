@@ -59,6 +59,8 @@ Assignment escaping, variable references, PATH/NODE_PATH lists and platform-spec
 
 There is no shell-expression mode, dotenv loading or stored command preset. The child is awaited, and signal termination (including SIGINT) is not reported as success. Windows console interruption uses supported process-group CTRL_BREAK delivery.
 
+On Windows, `run env` also treats `$1` as an environment-variable reference and removes it when unset. Invoke `clibox text replace` directly when passing regex capture references; wrapping it in `run env` applies that extra conversion even after shell quoting.
+
 ### Inspect and terminate port owners
 
 ```sh

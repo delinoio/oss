@@ -10,13 +10,15 @@ const CLI: &str = env!("CARGO_BIN_EXE_clibox");
 const MARKER: &str = "CLIBOX_FIXTURE=";
 
 #[test]
-fn environment_delegates_transform_commands_without_reparsing_arguments() {
+fn environment_delegates_transform_commands_with_platform_variable_conversion() {
     for (arguments, expected) in [
         (
             vec![
                 "text", "replace", "(hello)", "$1 🦀", "--regex", "--text", "hello",
             ],
-            "hello 🦀",
+            // Windows run env applies cross-env's command-variable conversion,
+            // including numeric references; direct text replace keeps captures.
+            if cfg!(windows) { " 🦀" } else { "hello 🦀" },
         ),
         (vec!["text", "replace", "hello", "", "--text", "hello"], ""),
         (
@@ -30,6 +32,7 @@ fn environment_delegates_transform_commands_without_reparsing_arguments() {
             .args(["run", "env", "--"])
             .arg(CLI)
             .args(arguments)
+            .env_remove("1")
             .output()
             .unwrap();
         assert!(output.status.success(), "{:?}", output.stderr);

@@ -26,6 +26,8 @@ Compatibility is based on cross-env v10.1.0 commit `152ae6a85b5725ac3c725a8a3e47
 
 The child inherits cwd, stdio, and environment; assignments change only its environment. `--` ends the assignment prefix. Unlike cross-env, the command is required, already-tokenized child quotes/backslashes and empty arguments are preserved, and SIGINT termination is not mapped to success. Assignment escaping does not reparse the child command or its arguments; the documented Windows variable conversion still applies. Unix termination signals are forwarded and reproduced; Windows console cancellation is forwarded to the child process group using supported CTRL_BREAK delivery. Shell expressions, cross-env-shell, dotenv, and persisted presets are excluded.
 
+Windows command conversion includes numeric references such as `$1`; an unset variable becomes empty before the child runs. Integration fixtures must preserve this cross-env behavior when delegating transformation commands. Regex capture arguments should use direct `clibox text replace` invocation, whose parser and npm launcher preserve the received dollar references.
+
 ### Port ownership
 Inputs are space-separated decimal ports 1–65535, deduplicated. TCP LISTEN is the default; UDP includes bound sockets and `all` combines both. IPv4 and IPv6 local addresses are included. Lookup is scoped to the caller's OS visibility and Linux network/PID namespaces.
 
