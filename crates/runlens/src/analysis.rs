@@ -1311,7 +1311,9 @@ mod baseline_tests {
 
     #[test]
     fn exhausted_alias_search_cannot_prove_new_access() {
-        let mut baseline = Entries::default();
+        // This unit test shares a process with the global memory-limit fixture.
+        // Force disk storage so it cannot perturb that fixture's reservations.
+        let mut baseline = Entries::new(0);
         let read = Access {
             read: true,
             write: false,

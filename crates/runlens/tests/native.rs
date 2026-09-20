@@ -4524,6 +4524,11 @@ fn new_access_policy_uses_report_os_aliases_and_preserves_current_evidence() {
             for new_mode in [false, true] {
                 let mut baseline = template.clone();
                 baseline.executions[0].environment.os = os.into();
+                baseline.executions[0].environment.os_version = Some(if os == "linux" {
+                    "ubuntu:24.04".into()
+                } else {
+                    "10.0".into()
+                });
                 baseline.executions[0].accesses = Entries::default();
                 let read = Access {
                     read: true,
