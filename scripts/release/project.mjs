@@ -260,7 +260,7 @@ export async function waitForWorkflow({ identity, stage, request, now = Date.now
         requireValue(await tagRevision(identity.tag, request) === identity.revision, "Released tag no longer matches the source commit");
         const release = await request(`/repos/${repository}/releases/tags/${encodeURIComponent(identity.tag)}`);
         requireValue(release.status === 200 && release.body?.tag_name === identity.tag && release.body.draft === false && Array.isArray(release.body.assets) && release.body.assets.length > 0, "Successful workflow has no populated public release");
-        requireValue(release.body.prerelease === (identity.project === Project.Runmoor), "Unexpected release channel");
+        requireValue(release.body.prerelease === false, "Unexpected release channel");
         return { release_run_url: run_url, release_url: `https://github.com/${repository}/releases/tag/${encodeURIComponent(identity.tag)}` };
       }
     } else requireValue(now() - started < 10 * 60 * 1000, "Expected workflow did not start within ten minutes");

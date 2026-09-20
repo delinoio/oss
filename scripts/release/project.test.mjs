@@ -194,13 +194,13 @@ test("Waits poll pending runs, prefer the newest matching run and have deadlines
   await assert.rejects(waitForWorkflow({ identity, stage: "ci", request: async () => ({ status: 403 }) }), /inspect/u);
 });
 
-test("Downstream success requires the correct tag and populated public release channel", async () => {
+test("Downstream success requires the correct tag and populated public stable release", async () => {
   for (const project of [Project.Binpm, Project.Runmoor]) {
     const plan = { ...identity, project, tag: `${project}@v1.2.3` };
     const request = async (route) => {
       if (route.includes("/actions/")) return { status: 200, body: { workflow_runs: [run({ head_branch: plan.tag, path: `.github/workflows/release-${project}.yml` })] } };
       if (route.includes("/git/")) return { status: 200, body: { object: { type: "commit", sha: revision } } };
-      return { status: 200, body: { tag_name: plan.tag, draft: false, prerelease: project === Project.Runmoor, assets: [{ id: 1 }] } };
+      return { status: 200, body: { tag_name: plan.tag, draft: false, prerelease: false, assets: [{ id: 1 }] } };
     };
     const result = await waitForWorkflow({ identity: plan, stage: "release", request });
     assert.ok(result.release_url.endsWith(encodeURIComponent(plan.tag)));

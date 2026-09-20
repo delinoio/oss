@@ -22,6 +22,11 @@ test("Workflow keeps credentials, OIDC and actual signing out of every dry-run j
   assert.match(verifier, /"verify-blob", "--bundle"/u);
   assert.match(verifier, /"--certificate-oidc-issuer", "https:\/\/token.actions.githubusercontent.com"/u);
   const release = publish.steps.find((step) => step.uses?.startsWith("softprops/"));
-  assert.equal(release.with.prerelease, true);
+  assert.equal(release.with.draft, true);
+  assert.equal(release.with.prerelease, false);
   assert.equal(release.with.overwrite_files, false);
+  const publishStable = publish.steps.find((step) => step.name === "Publish stable release");
+  assert.match(publishStable.run, /gh release edit "\$RELEASE_TAG" --draft=false --prerelease=false/u);
+  assert.equal(publishStable.env.GH_TOKEN, "${{ github.token }}");
+  assert.ok(publish.steps.indexOf(release) < publish.steps.indexOf(publishStable));
 });

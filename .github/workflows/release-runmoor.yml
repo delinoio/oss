@@ -1,4 +1,4 @@
-name: Release Runmoor preview
+name: Release Runmoor
 
 on:
   push:
@@ -148,17 +148,23 @@ jobs:
             cosign sign-blob --yes --bundle "${artifact}.sigstore.json" "$artifact"
           done
           node scripts/release/runmoor.mjs verify --output dist --signed true --identity "https://github.com/${GITHUB_WORKFLOW_REF}"
-      - name: Publish preview release
+      - name: Create stable release draft
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.plan.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          prerelease: true
+          draft: true
+          prerelease: false
           overwrite_files: false
           fail_on_unmatched_files: true
           files: dist/*
           body: |
-            Runmoor preview for macOS 14+ arm64 and Ubuntu 22.04+ amd64/arm64.
+            Runmoor for macOS 14+ arm64 and Ubuntu 22.04+ amd64/arm64.
             Live GitHub repository/organization and App/PAT compatibility and real Tart execution have not been certified.
             Verify SHA256SUMS and the accompanying Sigstore bundles before installation.
             Updates are manual. Docker/Tart are operator-installed; macOS/Xcode images are not included.
+      - name: Publish stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+        run: gh release edit "$RELEASE_TAG" --draft=false --prerelease=false

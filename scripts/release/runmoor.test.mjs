@@ -12,12 +12,12 @@ const sourceTag = `runmoor@v${sourceVersion}`;
 const revision = "1".repeat(40);
 const entries = [
   { name: "runmoor", data: Buffer.from("test executable fixture"), mode: 0o755 },
-  { name: "README.md", data: Buffer.from("preview"), mode: 0o644 },
+  { name: "README.md", data: Buffer.from("stable release"), mode: 0o644 },
   { name: "LICENSE", data: Buffer.from("license"), mode: 0o644 },
 ];
-test("Runmoor publication binds source version, revision, ref and preview status", () => {
+test("Runmoor publication binds source version, revision, ref and stable release status", () => {
   const plan = releasePlan({ version: sourceVersion, revision, ref: "refs/heads/topic" });
-  assert.equal(plan.mode, "dry-run"); assert.equal(plan.prerelease, true);
+  assert.equal(plan.mode, "dry-run"); assert.equal(plan.prerelease, false);
   assert.equal(plan.tag, sourceTag); assert.equal(plan.signatures.length, 4);
   for (const fields of [
     { version: `v${sourceVersion}` }, { version: nextVersion }, { revision: "HEAD" },

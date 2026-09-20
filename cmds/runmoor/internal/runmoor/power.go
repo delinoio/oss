@@ -136,7 +136,7 @@ func platformCheck(ctx context.Context) error {
 		}
 		version, _ := strconv.ParseFloat(values["VERSION_ID"], 64)
 		if values["ID"] != "ubuntu" || version < 22.04 {
-			return problem(ErrPlatform, "This preview supports Ubuntu 22.04 or later.", "Use a supported Ubuntu host.")
+			return problem(ErrPlatform, "Runmoor supports Ubuntu 22.04 or later.", "Use a supported Ubuntu host.")
 		}
 		return nil
 	}

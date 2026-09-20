@@ -21,7 +21,7 @@ export function releasePlan({ version, revision, ref, mode = "dry-run" }) {
   const tag = `runmoor@v${version}`;
   if (ref?.startsWith("refs/tags/") && ref !== `refs/tags/${tag}`) throw new Error("Tag and source version do not match");
   if (mode === "publish" && ref !== "refs/heads/main" && ref !== `refs/tags/${tag}`) throw new Error("Publication requires main or the exact version tag");
-  return { schema_version: 1, project: "runmoor", version, revision, tag, mode, prerelease: true,
+  return { schema_version: 1, project: "runmoor", version, revision, tag, mode, prerelease: false,
     platforms, archives: archiveNames, checksums: "SHA256SUMS",
     signatures: [...archiveNames, "SHA256SUMS"].map((name) => `${name}.sigstore.json`),
     verification_gaps: ["Live GitHub repository/organization and App/PAT compatibility", "Real Tart local execution"],

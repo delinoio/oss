@@ -31,4 +31,4 @@
 - Keep unsupported platform implementations compilable so the repository's Windows Go CI remains intact.
 - Run `go test ./cmds/runmoor/...`, supported-host race tests, and `go vet ./cmds/runmoor/...`. Docker integration is opt-in with `RUNMOOR_DOCKER_TEST=1`; Tart integration is opt-in with `RUNMOOR_TART_TEST=1`. Ordinary tests never contact GitHub or install user services.
 - Publication must reject conflicting existing tags and existing releases before signing; uncertain remote status is a failure.
-- Release dry runs never obtain OIDC credentials, sign, publish, or produce pretend Sigstore evidence. Public releases remain prereleases until the verification gap is explicitly removed from the contract.
+- Release dry runs never obtain OIDC credentials, sign, publish, or produce pretend Sigstore evidence. Public releases use the stable channel while continuing to disclose the live GitHub and Tart verification gaps.

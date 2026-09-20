@@ -139,11 +139,11 @@ for (const [claim, prohibited] of releaseAvailabilityFixtures) {
   });
 }
 
-test("release claims inspect rendered text while preserving preview disclosures", () => {
+test("release claims inspect rendered text while preserving verification disclosures", () => {
   const rejected = validateFixture("<p><strong>beta</strong> channel is available.</p>");
   assert.equal(rejected.status, 1);
   assert.match(rejected.stderr, /index\.html contains an unsupported release claim/u);
-  const accepted = validateFixture("<p>Runmoor is a preview prerelease. No beta channel is available. Early-access channel is not supported.</p>");
+  const accepted = validateFixture("<p>Runmoor is released through the stable channel. Live GitHub compatibility is not certified. No beta channel is available. Early-access channel is not supported.</p>");
   assert.equal(accepted.status, 0, accepted.stderr);
 });
 
