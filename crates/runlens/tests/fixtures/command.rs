@@ -4,6 +4,32 @@ use std::{fs, process::Command, time::Duration};
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
+        #[cfg(windows)]
+        "windows-create-readonly"
+        | "windows-open-if-readonly"
+        | "windows-overwrite-readonly"
+        | "windows-open-readonly" => {
+            use std::os::windows::fs::OpenOptionsExt;
+            let mut options = fs::OpenOptions::new();
+            options.read(true).write(true).access_mode(0x8000_0000); // GENERIC_READ overrides access rights.
+            match args[0].as_str() {
+                "windows-create-readonly" => {
+                    options.create_new(true);
+                }
+                "windows-open-if-readonly" => {
+                    options.create(true);
+                }
+                "windows-overwrite-readonly" => {
+                    options.create(true).truncate(true);
+                }
+                _ => {}
+            }
+            let opened = options.open(&args[1]);
+            if args[0] == "windows-create-readonly" {
+                assert!(opened.is_ok());
+            }
+            // Failed attempts must also retain the disposition's write intent.
+        }
         "large-output" => {
             // Sparse output keeps this fixture cheap while ensuring the
             // after-snapshot has hashing work after its lifecycle log event.

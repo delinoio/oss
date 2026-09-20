@@ -83,9 +83,13 @@ jobs:
         working-directory: crates/runlens
         run: cargo test --locked --features test-support
       - name: Windows Detours setup failure regression
+        # Pure NT classification also runs on non-Windows native workers.
         if: runner.os == 'Windows'
         working-directory: crates/runlens
         run: cargo test --locked --package fspy_preload_windows detours_long_results_preserve_setup_failures
+      - name: Windows access classification regression
+        working-directory: crates/runlens
+        run: cargo test --locked --package fspy_shared --test windows_access
       - name: Release build
         working-directory: crates/runlens
         run: cargo build --locked --release --target ${{ matrix.target }} --bin runlens

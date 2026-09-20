@@ -36,6 +36,48 @@ async fn tracing_initialization_failure_does_not_launch_the_target() {
 fn fixture() -> &'static str {
     env!("CARGO_BIN_EXE_runlens-test-command")
 }
+#[cfg(windows)]
+#[test]
+fn windows_readonly_creation_dispositions_record_external_write_attempts() {
+    for mode in [
+        "windows-create-readonly",
+        "windows-open-if-readonly",
+        "windows-overwrite-readonly",
+        "windows-open-readonly",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        let path = external.path().join("creation-target");
+        if mode == "windows-open-readonly" {
+            fs::write(&path, "existing").unwrap();
+        }
+        let output = invoke(
+            root.path(),
+            &[
+                "run",
+                "--save",
+                "creation.json",
+                "--",
+                fixture(),
+                mode,
+                path.to_str().unwrap(),
+            ],
+        );
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report = parse(root.path(), "creation.json");
+        let accesses = report["executions"][0]["accesses"].as_object().unwrap();
+        let access = accesses
+            .iter()
+            .find(|(path, _)| path.ends_with("/creation-target"))
+            .unwrap()
+            .1;
+        assert_eq!(access["write"], mode != "windows-open-readonly");
+    }
+}
 #[test]
 fn cache_declarations_require_the_selected_command_identity() {
     let root = repository("read");

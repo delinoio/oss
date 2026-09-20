@@ -192,7 +192,16 @@ static DETOUR_NT_CREATE_FILE: Detour<
                 ea_length: ULONG,
             ) -> HFILE {
                 // SAFETY: intercepting file open to record access before forwarding to real function
-                unsafe { handle_open(desired_access, object_attributes) };
+                unsafe {
+                    handle_open(
+                        fspy_shared::windows_access::creation_mode(
+                            crate::windows::winapi_utils::access_mask_to_mode(desired_access),
+                            create_disposition,
+                            create_options,
+                        ),
+                        object_attributes,
+                    )
+                };
 
                 // SAFETY: calling the original NtCreateFile with all original arguments
                 unsafe {
@@ -238,7 +247,14 @@ static DETOUR_NT_OPEN_FILE: Detour<
             ) -> HFILE {
                 // SAFETY: intercepting file open to record access before forwarding to real function
                 unsafe {
-                    handle_open(desired_access, object_attributes);
+                    handle_open(
+                        fspy_shared::windows_access::creation_mode(
+                            crate::windows::winapi_utils::access_mask_to_mode(desired_access),
+                            1, // NtOpenFile has FILE_OPEN semantics.
+                            open_options,
+                        ),
+                        object_attributes,
+                    );
                 }
 
                 // SAFETY: calling the original NtOpenFile with all original arguments

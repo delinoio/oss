@@ -100,3 +100,10 @@ existing transaction-abort and UNSUPPORTED marker path while the child continues
 The Windows native workflow explicitly runs the checker regression with success,
 access/handle failures, and a real rejected DetourAttach call. Remove this patch
 when upstream preserves LONG error codes at all setup and teardown boundaries.
+
+Windows NtCreateFile classification includes creation, overwrite and supersede
+dispositions independently of DesiredAccess. Both create and open hooks include
+FILE_DELETE_ON_CLOSE. Unknown dispositions report unsupported evidence. Portable
+shared classification tests cover every disposition with read-only access and
+the non-mutating FILE_OPEN control. Remove this patch when upstream preserves
+these mutation attempts in its native open hooks.
