@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -64,6 +64,10 @@ try {
     mkdirSync(path.join(consumer, "checksums"));
     equal(invoke(["hash", "encode", "--input", "binary input.dat", "--format", "checksum", "--output", "checksums/sums"]), "", "Installed manifest output failed");
     equal(invoke(["hash", "verify", "--check", "checksums/sums", "--quiet"]), "", "Installed manifest-relative path verification failed");
+    for (const group of ["run", "port", "clipboard", "wait", "text", "time", "base64", "hash"]) {
+      const missing = spawnSync(process.execPath, [launcher, group], { cwd: consumer, encoding: "utf8" });
+      ensure(missing.status === 2 && missing.stdout === "" && missing.stderr.includes(`Usage: ${target.binary} ${group}`) && missing.stderr.includes("Commands:"), `${manager} ${group} missing-subcommand help smoke failed`);
+    }
     const readyFile = path.join(consumer, "ready file");
     writeFileSync(readyFile, "");
     const ready = JSON.parse(execFileSync(process.execPath, [launcher, "wait", "file", readyFile, "--json", "--timeout", "5s"], { cwd: consumer, encoding: "utf8" }));

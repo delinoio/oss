@@ -59,11 +59,13 @@ fn main() -> ExitCode {
         Err(error)
             if matches!(
                 error.kind(),
-                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
+                ErrorKind::DisplayHelp
+                    | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+                    | ErrorKind::DisplayVersion
             ) =>
         {
             return if error.print().is_ok() {
-                ExitCode::SUCCESS
+                ExitCode::from(error.exit_code() as u8)
             } else {
                 ExitCode::from(1)
             };

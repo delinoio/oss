@@ -2,7 +2,7 @@
 set -euo pipefail
 project=${1:?project required}
 target=${2:?target required}
-case "$project" in binpm|cargo-mono|nodeup|with-watch) ;; *) exit 2 ;; esac
+case "$project" in binpm|cargo-mono|nodeup|with-watch|clibox) ;; *) exit 2 ;; esac
 case "$target" in
   x86_64-unknown-linux-gnu) export RUSTFLAGS='-C target-cpu=x86-64'; export CFLAGS='-march=x86-64 -mtune=generic'; export CXXFLAGS="$CFLAGS" ;;
   aarch64-unknown-linux-gnu) export RUSTFLAGS='-C target-cpu=generic'; export CFLAGS='-march=armv8-a'; export CXXFLAGS="$CFLAGS" ;;

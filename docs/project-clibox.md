@@ -16,6 +16,7 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 
 ## Cross-Domain Invariants
 - The crate and command are `clibox`; the public npm entry point is `@delino/clibox`.
+- Cargo and npm show command-specific help on stderr with exit code 2 when `run`, `port`, `clipboard`, `wait`, `text`, `time`, `base64`, or `hash` is missing a subcommand. Root no-argument and explicit help remain successful stdout output; other invalid inputs retain redacted diagnostics.
 - Rust is explicitly selected instead of the repository's default Go language. Node.js 22+ is required only for the npm launcher; repository tooling uses Node.js 24.
 - The Cargo manifest, Cargo.lock, source npm manifest, nine generated npm packages, and executable version agree exactly.
 - macOS and Windows MSVC support x64/arm64; Linux supports x64/arm64 with separate glibc and musl packages.
@@ -29,7 +30,7 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 - Network checks run in Rust without external utilities. HTTPS verifies OS trust and hostname, negotiates HTTP/2 or HTTP/1.1, disables proxies/authentication/redirects, and finishes at response headers. Files are observed through metadata only.
 - Automated local fixtures and Linux/macOS/Windows process CI are the completion gate. All eight artifact checks and Alpine consumers remain required; musl crypto compilation uses target-native `musl-gcc` while final linking retains pinned self-contained `rust-lld`.
 - Automated parser, process, OS-adapter, and distribution tests are the completion gate. Real GUI, clipboard persistence, and application-wait verification remain follow-up work.
-- A docs website, Homebrew, and public GitHub Release binaries remain outside this project.
+- A dedicated docs website and Homebrew remain outside this project. The two GNU Linux binaries also ship as signed GitHub Release archives and stable APT/DNF packages under [the Linux package contract](repository-linux-packages-contract.md).
 
 ## Change Policy
 Update both domain contracts, this index, relevant AGENTS files, version synchronization, platform fixtures, and release workflows together when these boundaries change.
