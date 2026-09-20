@@ -57,10 +57,18 @@ func (s *Service) PrePush(ctx context.Context, repo string, input io.Reader, ove
 		if e != nil {
 			return out, e
 		}
+		// Selection may have durably accepted a new attempt. Publish its identity
+		// before startup, storage reads or waits can fail after acceptance.
+		out = append(out, gate)
+		gateIndex := len(out) - 1
 		if !gate.Passed {
 			id := gate.RunID
 			if policy == PushRun {
 				if e = s.Start(s.Personal.Mode); e != nil {
+					out[gateIndex].Diagnostics = append(out[gateIndex].Diagnostics, Diagnostic{
+						Code: "startup-failed", Message: "request was accepted but runner startup failed; it remains saved",
+						Hint: "Inspect ach status --run " + id + " and ach doctor; fix startup and retry this push to reuse the saved attempt.",
+					})
 					return out, e
 				}
 			}
@@ -80,7 +88,7 @@ func (s *Service) PrePush(ctx context.Context, repo string, input io.Reader, ove
 				}
 			}
 		}
-		out = append(out, gate)
+		out[gateIndex] = gate
 	}
 	if e := scanner.Err(); e != nil {
 		return out, Wrap("pre-push-read", e)

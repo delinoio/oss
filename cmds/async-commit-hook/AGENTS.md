@@ -107,3 +107,5 @@
 - Stream commit history in fixed pages of 100 without buffering Git stdout; drain long subjects while retaining at most a 4 KiB valid UTF-8 display prefix with an ellipsis. Parent headers are capped at 16 KiB and rejected whole on overflow, preserving exact ancestry for accepted records.
 
 - Windows materializes committed symlink entries as exact regular link-text files and sets managed core.symlinks=false, independent of privileges and source checkout settings. Include this fixed source representation in Windows fingerprints; reject legacy Windows preparation/rerun contexts rather than inherit native-link evidence. Unix links and fingerprints remain unchanged.
+
+- Pre-push appends a selected gate before any post-acceptance startup/read/wait operation. Startup errors retain its saved run ID, commit and state plus a startup-failed recovery diagnostic; retries reuse the pending attempt and prior tip results remain visible.
