@@ -80,6 +80,7 @@ impl Blueprint {
             .ci
             .as_ref()
             .context("CI export requires ci tool versions and runner mappings")?;
+        ci.validate_runners()?;
         ensure!(
             ci.revision.len() == 40
                 && ci

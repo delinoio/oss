@@ -322,6 +322,19 @@ pub struct CiConfig {
     pub runners: BTreeMap<String, String>,
 }
 
+impl CiConfig {
+    pub(crate) fn validate_runners(&self) -> Result<()> {
+        for (platform, runner) in &self.runners {
+            ensure!(
+                !runner.trim().is_empty() && !runner.chars().any(char::is_control),
+                "invalid CI runner mapping for {platform}: expected a nonblank label without \
+                 control characters"
+            );
+        }
+        Ok(())
+    }
+}
+
 fn yes() -> bool {
     true
 }
@@ -427,6 +440,9 @@ impl Config {
         ensure!(identifier(&self.project), "invalid project ID");
         if let Some(remote) = &self.remote {
             remote.validate()?;
+        }
+        if let Some(ci) = &self.ci {
+            ci.validate_runners()?;
         }
         for (name, task) in &self.tasks {
             ensure!(identifier(name), "invalid task ID {name}");

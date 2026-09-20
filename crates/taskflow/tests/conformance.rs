@@ -5973,3 +5973,53 @@ async fn new_waves_retain_prerequisite_causes_behind_active_consumers() {
         "second"
     );
 }
+
+#[tokio::test]
+async fn ci_export_rejects_blank_runner_mappings_before_writing() {
+    let directory =
+        fixture(json!({"build":{"command":command(&["version"]),"input":[],"output":[]}}));
+    let original = graph(directory.path()).await;
+    for label in ["", " ", "\t\n", "runner\0label"] {
+        for platform in [config::Platform::default().key(), "linux-x64".into()] {
+            let mut g = (*original).clone();
+            g.workspace.config.ci = Some(
+                serde_json::from_value(json!({
+                    "revision":"1111111111111111111111111111111111111111",
+                    "rust":"nightly-2026-01-01",
+                    "runners":{config::Platform::default().key():"self-hosted"}
+                }))
+                .unwrap(),
+            );
+            g.workspace
+                .config
+                .ci
+                .as_mut()
+                .unwrap()
+                .runners
+                .insert(platform, label.into());
+            assert!(g
+                .workspace
+                .config
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("runner mapping"));
+            let error =
+                taskflow::ci::export(&g, vec!["build".into()], Path::new("ci.yml")).unwrap_err();
+            assert!(error.to_string().contains("runner mapping"), "{error:#}");
+            assert!(!directory.path().join("ci.yml").exists());
+            assert!(!directory.path().join("ci.taskflow.json").exists());
+        }
+    }
+    let path = directory.path().join("taskflow.yml");
+    let mut cfg: Value = serde_yaml::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    cfg["ci"] = json!({"revision":"1111111111111111111111111111111111111111","rust":"nightly-2026-01-01","runners":{config::Platform::default().key():" "}});
+    std::fs::write(&path, serde_yaml::to_string(&cfg).unwrap()).unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+        .current_dir(directory.path())
+        .arg("check")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("runner mapping"));
+}
