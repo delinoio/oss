@@ -50,7 +50,7 @@ pub async fn start(
         if event.as_ref().is_ok_and(|event| event.kind.is_access()) {
             return;
         }
-        let _ = events.send(event);
+        let _ = events.send((Instant::now(), event));
     })?;
     watcher.watch(root, RecursiveMode::Recursive)?;
     let (service_events, mut service_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -85,6 +85,7 @@ pub async fn start(
         pending.retain(|id, _| !bootstrap_results.contains_key(id));
         let mut timers = timers(&graph, &active_set)?;
         let mut observed = snapshots(&graph, &active_set)?;
+        let mut baseline_at = Instant::now();
         let mut results: BTreeMap<String, Receipt> = bootstrap_results;
         let mut active_tasks = BTreeSet::new();
         let mut generation_cancel = work_cancel.child_token();
@@ -116,6 +117,7 @@ pub async fn start(
                             pending = initial(&graph, &active_set);
                             timers = self::timers(&graph, &active_set)?;
                             observed = snapshots(&graph, &active_set)?;
+                            baseline_at = Instant::now();
                             results.clear(); initial_done = false;
                         }
                         invalid = false;
@@ -175,7 +177,7 @@ pub async fn start(
             tokio::select! {
                 _ = work_cancel.cancelled() => break,
                 event = receiver.recv() => {
-                    if let Some(event) = event {
+                    if let Some((received_at, event)) = event {
                         match event {
                             Ok(event) => {
                                 for path in event.paths {
@@ -191,7 +193,10 @@ pub async fn start(
                                         let Some(watch) = &node.task.watch else { continue; };
                                         if files::input_event_may_match(&graph.workspace.projects[&node.project], &node.task, &path) {
                                             let snapshot = files::input_state(&graph.workspace, &graph.workspace.projects[&node.project], &node.task)?;
-                                            if observed.get(id) != Some(&snapshot) {
+                                            // Queued mutations can already be represented in the first
+                                            // snapshot. Preserve their input cause even with initial:false.
+                                            let before_baseline = received_at <= baseline_at && files::input_matches(&graph.workspace.projects[&node.project], &node.task, &path)?;
+                                            if before_baseline || observed.get(id) != Some(&snapshot) {
                                                 observed.insert(id.clone(), snapshot);
                                                 enqueue(&graph, &options, &mut pending, id, Cause::Input { path: files::relative_to(root, &path)? }, Instant::now() + config::duration(&watch.debounce)?);
                                             }

@@ -5430,3 +5430,82 @@ async fn git_revision_operands_cannot_be_diff_options() {
         }
     }
 }
+
+#[tokio::test]
+async fn queued_discovery_mutations_run_watchers_without_initial_execution() {
+    let root = fixture(
+        json!({"check":{"command":command(&["copy","source","observed"]),"input":["source"],"output":["observed"],"watch":{"initial":false,"debounce":"20ms"}}}),
+    );
+    profile(root.path(), &["check"]);
+    std::fs::write(root.path().join("Cargo.toml"), "[workspace]\nmembers=[]\n").unwrap();
+    std::fs::write(root.path().join("source"), "before").unwrap();
+    let tools = tempfile::tempdir().unwrap();
+    std::fs::hard_link(
+        helper(),
+        tools
+            .path()
+            .join(if cfg!(windows) { "cargo.exe" } else { "cargo" }),
+    )
+    .unwrap();
+    let path = std::env::join_paths(
+        std::iter::once(tools.path().to_path_buf())
+            .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
+    let mut environment: BTreeMap<String, String> = std::env::vars().collect();
+    environment.retain(|name, _| {
+        if cfg!(windows) {
+            !name.eq_ignore_ascii_case("PATH")
+        } else {
+            name != "PATH"
+        }
+    });
+    environment.insert("PATH".into(), path.into_string().unwrap());
+    environment.insert("TFLOW_METADATA_GATE".into(), "1".into());
+    let stop = CancellationToken::new();
+    let token = stop.clone();
+    let directory = root.path().to_owned();
+    let mut process = tokio::spawn(async move {
+        taskflow::process::capture_with_env(
+            &directory,
+            &config::Command::Argv(vec![
+                env!("CARGO_BIN_EXE_tflow").into(),
+                "--root".into(),
+                ".".into(),
+                "start".into(),
+            ]),
+            &environment,
+            &token,
+        )
+        .await
+    });
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !root.path().join("metadata.pid").exists() {
+            if process.is_finished() {
+                panic!(
+                    "session exited before metadata barrier: {:?}",
+                    (&mut process).await
+                );
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    std::fs::write(root.path().join("source"), "during-discovery").unwrap();
+    // Keep discovery behind a barrier while native notifications are delivered.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    files::atomic_write(&root.path().join(".taskflow/metadata.release"), b"release").unwrap();
+    let observed = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Ok(value) = std::fs::read_to_string(root.path().join("observed")) {
+                break value;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await;
+    stop.cancel();
+    assert!(process.await.unwrap().is_err());
+    assert_eq!(observed.unwrap(), "during-discovery");
+}

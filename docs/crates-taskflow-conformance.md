@@ -255,3 +255,5 @@ The real Go flag suite also compares `-failfast` and `-failfast=false` across tw
 `cache_rejects_nonportable_link_targets_on_every_host` rejects drive-absolute, drive-relative, rooted, UNC, and malformed serialized link targets before restoration changes outputs. Unix also rejects real internal links whose otherwise-relative names would become Windows drive prefixes during transfer.
 
 `git_revision_operands_cannot_be_diff_options` uses real commits and a rename to verify valid comparisons and worktree untracked selection. Library and CLI reject option-shaped or empty base/head operands, including an output-file option, without creating that file.
+
+`queued_discovery_mutations_run_watchers_without_initial_execution` gates native metadata behind a real subprocess, edits an input while discovery is blocked, then verifies that an initial-disabled watcher consumes the edit without a second mutation.

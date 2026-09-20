@@ -42,6 +42,7 @@
 - Reject absolute, rooted, and Windows drive-relative input and output patterns during configuration validation on every host, including negative patterns.
 - Explicit positive input globs may traverse otherwise ignored trees; prune only using conservative literal directory prefixes, never directory-name substrings. Reserved .git, .taskflow, and .taskflow-restore-* trees remain excluded.
 - Directory mutation notifications rescan every intersecting positive input root, even when the directory was deleted or does not itself match a glob; only a changed filtered snapshot enqueues work.
+- Timestamp delivered watcher events before discovery and preserve matching input causes queued before each baseline, including initial-disabled subscriptions.
 - Watch invalidation consumes filesystem mutations, never access notifications from metadata discovery or input hashing. Metadata notifications must confirm a changed or invalid graph before cancelling the active generation; identical rewrites preserve live work.
 - Filesystem identities are fallible UTF-8 paths; reject invalid bytes in roots, native projects, inputs, outputs, and link targets before matching, hashing, or serialization. Never use lossy conversion for identity keys. Reject literal Unix backslashes before separator normalization.
 - Canonicalize watcher roots and event paths before graph matching, including deleted paths through their existing ancestors and Windows path prefixes.
