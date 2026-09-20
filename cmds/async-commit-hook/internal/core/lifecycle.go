@@ -22,10 +22,11 @@ type Component struct {
 
 func (s *Service) configHash() string {
 	return Hash(Encode(struct {
-		Mode  Mode
-		Port  int
-		State string
-	}{s.Personal.Mode, s.Personal.APIPort, s.Personal.StateDir}))
+		Mode        Mode
+		Port        int
+		State       string
+		Credentials map[string]Credential
+	}{s.Personal.Mode, s.Personal.APIPort, s.Personal.StateDir, s.Personal.Credentials}))
 }
 func (s *Service) Active() ([]Component, error) {
 	entries, e := os.ReadDir(s.Paths.Control)
@@ -105,7 +106,7 @@ func (s *Service) enterProcess(kind string, p Process) (Component, func(), error
 	}
 	for _, c := range active {
 		if c.ConfigHash != s.configHash() {
-			return Component{}, nil, E("configuration-active", "stop all checks and servers using the previous mode, port and state directory before applying configuration changes", 2)
+			return Component{}, nil, E("configuration-active", "stop all checks and servers using the previous mode, port, state directory and credential references before applying configuration changes", 2)
 		}
 	}
 	c := Component{ID: ID(), Kind: kind, Process: p, ConfigHash: s.configHash(), StateDir: s.Store.Root}
@@ -127,7 +128,7 @@ func (s *Service) Start(mode Mode) error {
 	}
 	for _, c := range active {
 		if c.ConfigHash != s.configHash() {
-			return E("configuration-active", "stop existing processes before changing mode, port or state_dir", 2)
+			return E("configuration-active", "stop existing processes before changing mode, port, state_dir or credential references", 2)
 		}
 		if mode == Daemon && c.Kind == "daemon" {
 			var stop string

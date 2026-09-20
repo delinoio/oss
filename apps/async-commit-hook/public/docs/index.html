@@ -189,8 +189,9 @@ max_age_days = 0 # 0 means unlimited; maximum 106751 days
 max_bytes = 0</pre
         >
         <p>
-          Stop checks and server processes before changing mode, api_port or
-          state_dir. Mode changes preserve records when the same state directory
+          Stop checks and server processes before changing mode, api_port,
+          state_dir or credential references. Use the original configuration to stop
+          existing processes before applying these changes. Mode changes preserve records when the same state directory
           is used. Stop before relocating state and copy the complete directory
           to the new location. <code>ACH_CONFIG</code> or
           <code>--config PATH</code> selects another personal configuration for

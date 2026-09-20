@@ -129,3 +129,5 @@ Go test JSON collection keeps at most 64 KiB of chronological output per active 
 Retention ages are accepted only in the inclusive range 0..106751 days, with zero meaning indefinite retention. Personal configuration and CLI/shared-service pruning reject larger values before any duration conversion or mutation. Byte quotas remain nonnegative int64 values.
 
 The Connect run-list projection includes a total check count and execution metadata only; check arrays and diagnostics are returned by the detail endpoint. CLI/MCP run snapshots and gate decisions remain complete.
+
+Account lifecycle compatibility includes the complete personal credential reference map alongside mode, port and state directory. Changing a reference, including through another personal configuration file, returns `configuration-active` while an earlier owner remains. Stop components using the original configuration before changing references; equivalent maps remain compatible regardless of file path or key order. The hash never reads or includes resolved credential values.

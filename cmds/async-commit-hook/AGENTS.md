@@ -75,3 +75,5 @@
 - Bound retention ages to 0..106751 days in both personal configuration and the shared prune service before converting days to time.Duration or mutating evidence; zero remains indefinite retention.
 
 - Connect list projections omit check arrays and diagnostics and include total check_count; preserve complete check detail for GetRun and CLI/MCP so list size never multiplies by the graph size.
+
+- Account lifecycle compatibility includes personal credential reference mappings, never their resolved values. Reject reuse/startup under changed references while any old owner remains.
