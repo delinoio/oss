@@ -5289,3 +5289,77 @@ async fn either_subscription_can_request_one_initial_execution() {
         );
     }
 }
+
+#[tokio::test]
+async fn cache_rejects_nonportable_link_targets_on_every_host() {
+    let root = fixture(json!({"build":{"command":command(&["version"]),"output":["out/**"]}}));
+    files::atomic_write(&root.path().join("out/keep"), b"preserved").unwrap();
+    let g = graph(root.path()).await;
+    let project = &g.workspace.projects["app"];
+    let task = &g.tasks["app#build"].task;
+    let mut artifact = cache::Artifact::capture(
+        files::digest(b"portable-links"),
+        "app#build".into(),
+        project,
+        task,
+    )
+    .unwrap();
+    for target in [
+        "C:/temp",
+        "z:temp",
+        "/rooted",
+        "//server/share",
+        "\\rooted",
+        "\\\\server\\share",
+        "\\\\?\\C:\\temp",
+        "sub\\file",
+        "",
+        "bad\0target",
+    ] {
+        artifact.files = vec![
+            cache::FileRecord {
+                path: "out".into(),
+                content: cache::Content::Directory,
+            },
+            cache::FileRecord {
+                path: "out/link".into(),
+                content: cache::Content::Link {
+                    target: target.into(),
+                    directory: false,
+                },
+            },
+        ];
+        artifact.output_digest = cache::output_digest(&artifact.files).unwrap();
+        assert!(
+            artifact.validate_integrity(&artifact.key).is_err(),
+            "{target:?}"
+        );
+        assert!(
+            artifact
+                .restore(&artifact.key, "app#build", project, task)
+                .is_err(),
+            "{target:?}"
+        );
+        assert_eq!(
+            std::fs::read(root.path().join("out/keep")).unwrap(),
+            b"preserved"
+        );
+    }
+    #[cfg(unix)]
+    for target in ["C:/temp", "z:temp"] {
+        // These are real relative paths on Unix. Reject them at the producer
+        // before another platform can reinterpret their drive prefixes.
+        files::atomic_write(&root.path().join("out").join(target), b"internal").unwrap();
+        std::os::unix::fs::symlink(target, root.path().join("out/link")).unwrap();
+        for result in [
+            cache::snapshot(project, task).map(|_| ()),
+            cache::output_state(project, task).map(|_| ()),
+        ] {
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("portable relative"));
+        }
+        std::fs::remove_file(root.path().join("out/link")).unwrap();
+    }
+}

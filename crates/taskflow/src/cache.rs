@@ -139,10 +139,10 @@ fn snapshot_inner(project: &Project, task: &Task, capture: bool) -> Result<Vec<F
             files::within(&project.directory, path)?;
             let relative = files::slash(path.strip_prefix(&project.directory)?)?;
             let content = if entry.file_type().is_symlink() {
-                let target = std::fs::read_link(path)?;
-                ensure!(!target.is_absolute(), "cache output links must be relative");
+                let target = files::slash(&std::fs::read_link(path)?)?;
+                validate_portable_link(&target)?;
                 Content::Link {
-                    target: files::slash(&target)?,
+                    target,
                     directory: link_is_directory(path)?,
                 }
             } else if entry.file_type().is_dir() {
@@ -342,7 +342,7 @@ impl Artifact {
                     );
                 }
                 Content::Link { target, .. } => {
-                    ensure!(!Path::new(target).is_absolute(), "absolute cache link");
+                    validate_portable_link(target)?;
                     leaves.push(path);
                 }
                 Content::Directory => {}
@@ -520,6 +520,16 @@ impl Artifact {
         }
         Ok(())
     }
+}
+
+fn validate_portable_link(target: &str) -> Result<()> {
+    ensure!(
+        !target.is_empty()
+            && !target.contains(['\\', '\0'])
+            && crate::config::project_relative(target),
+        "cache link must have a portable relative target"
+    );
+    Ok(())
 }
 
 fn link_components(path: &Path) -> Result<VecDeque<PathBuf>> {

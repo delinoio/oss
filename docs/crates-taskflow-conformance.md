@@ -251,3 +251,5 @@ The real Go flag suite also compares `-failfast` and `-failfast=false` across tw
 `check_validates_remote_syntax_without_credentials` checks invalid endpoint, bucket, namespace, region, and credential-reference syntax in every access mode. Valid remote settings pass without credentials or network access, and diagnostics omit embedded endpoint secrets.
 
 `either_subscription_can_request_one_initial_execution` runs a real session across all nine absent/false/true watch and schedule combinations. Either initial flag requests exactly one run, while subscriptions that only disable initial execution remain idle.
+
+`cache_rejects_nonportable_link_targets_on_every_host` rejects drive-absolute, drive-relative, rooted, UNC, and malformed serialized link targets before restoration changes outputs. Unix also rejects real internal links whose otherwise-relative names would become Windows drive prefixes during transfer.
