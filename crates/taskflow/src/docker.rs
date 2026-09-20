@@ -134,6 +134,7 @@ pub async fn prepare(
     execution: &str,
     cancel: &CancellationToken,
 ) -> Result<(Command, Container)> {
+    task.platform.validate_ports()?;
     // Ask the same CLI with the same environment that will launch the task.
     // Its selected context can override DOCKER_HOST, and the synthetic default
     // context incorporates DOCKER_HOST when no named context takes precedence.
@@ -231,7 +232,6 @@ pub async fn prepare(
         }
     }
     for port in &task.platform.ports {
-        ensure!(!port.starts_with('-'), "invalid Docker port mapping");
         args.extend(["--publish".into(), port.clone()]);
     }
     args.push(

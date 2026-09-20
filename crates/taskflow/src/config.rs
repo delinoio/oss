@@ -233,6 +233,17 @@ pub enum Executor {
     Docker,
 }
 impl Platform {
+    pub(crate) fn validate_ports(&self) -> Result<()> {
+        ensure!(
+            self.ports.iter().all(|port| !port.trim().is_empty()
+                && !port.starts_with('-')
+                && !port.contains('\0')),
+            "invalid Docker port mapping: expected a nonblank, NUL-free value without an option \
+             prefix"
+        );
+        Ok(())
+    }
+
     pub fn resolved(&self) -> (Os, Arch) {
         (
             self.os.unwrap_or_else(host_os),
@@ -564,6 +575,7 @@ impl Task {
                 .context("invalid IANA timezone")?;
         }
         if self.platform.executor == Executor::Docker {
+            self.platform.validate_ports()?;
             ensure!(
                 self.platform.os.is_none_or(|os| os == Os::Linux),
                 "Docker requires platform.os: linux"

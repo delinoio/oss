@@ -6023,3 +6023,39 @@ async fn ci_export_rejects_blank_runner_mappings_before_writing() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("runner mapping"));
 }
+
+#[test]
+fn check_rejects_invalid_docker_ports_before_prerequisites() {
+    let image = format!("fixture@sha256:{}", "a".repeat(64));
+    for port in ["8080:80\0", "-p8080:80", "", " "] {
+        let directory = fixture(json!({
+            "prepare":{"command":command(&["write","unexpected","executed"]),"input":[]},
+            "container":{"command":["true"],"input":[],"dependsOn":["prepare"],"platform":{"executor":"docker","os":"linux","image":image,"ports":[port]}}
+        }));
+        let error = config::load(&directory.path().join("taskflow.yml")).unwrap_err();
+        assert!(format!("{error:#}").contains("Docker port mapping"));
+        for args in [vec!["check"], vec!["run", "container"]] {
+            let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+                .current_dir(directory.path())
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(!output.status.success());
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("app#container"),
+                "{output:?}"
+            );
+            assert!(!directory.path().join("unexpected").exists());
+        }
+    }
+    for port in [
+        "80",
+        "8080:80",
+        "127.0.0.1:3000:3000/tcp",
+        "[::1]:8080:80",
+        "8000-8010:8000-8010/udp",
+    ] {
+        let task: config::Task = serde_json::from_value(json!({"command":["true"],"platform":{"executor":"docker","os":"linux","image":image,"ports":[port]}})).unwrap();
+        task.validate().unwrap();
+    }
+}
