@@ -141,3 +141,5 @@ Update the project index, both domain contracts, relevant root/domain AGENTS rul
 - [Repository defaults](repository-defaults.md)
 
 GNU Linux releases use the pinned AlmaLinux 9/glibc 2.34 build boundary for both npm and stable APT/DNF distribution. The same executable bytes pass ELF compatibility checks before signed GitHub publication; see [native repository ownership](repository-linux-packages-contract.md). Musl remains a separate npm target and desktop tools remain optional user-installed runtime capabilities.
+
+The isolated Windows Ctrl+C test helper must explicitly clear inherited Ctrl+C-ignore state before spawning clibox, including under Git Bash release jobs. Keep this normalization confined to the test-owned process and include helper stdout/stderr on failure; production signal behavior is unchanged.
