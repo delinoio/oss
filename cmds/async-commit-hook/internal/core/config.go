@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -120,6 +121,15 @@ var checkName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,127}$`)
 var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 const maxProjectConfigBytes = 1024 * 1024
+
+// ReadProject bounds allocation before TOML parsing, including growing inputs.
+func ReadProject(r io.Reader) (Project, error) {
+	b, err := io.ReadAll(io.LimitReader(r, maxProjectConfigBytes+1))
+	if err != nil {
+		return Project{}, err
+	}
+	return ParseProject(b)
+}
 
 func ParseProject(b []byte) (Project, error) {
 	p := Project{}

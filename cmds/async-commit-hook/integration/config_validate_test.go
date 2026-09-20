@@ -41,3 +41,22 @@ func TestConfigValidateUsesSelectedWorktreeRoot(t *testing.T) {
 		t.Fatalf("primary configuration changed: %+v", out)
 	}
 }
+
+func TestConfigValidateRejectsHugeWorkingFile(t *testing.T) {
+	config, repo := setup(t, "on-demand")
+	file, err := os.OpenFile(filepath.Join(repo, core.ProjectFile), os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = file.Truncate(1 << 30)
+	closeErr := file.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if out, exit := invoke(t, config, repo, "config", "validate"); exit != 2 {
+		t.Fatalf("oversized working configuration: exit=%d result=%+v", exit, out)
+	}
+}

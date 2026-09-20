@@ -187,15 +187,19 @@ func Run(ctx context.Context, args []string, in io.Reader, out, diagnostics io.W
 			e = core.E("invalid-command", "use ach config validate", 2)
 			break
 		}
-		var b []byte
 		var root string
 		_, root, _, e = core.Discover(ctx, repo)
 		if e != nil {
 			break
 		}
-		b, e = os.ReadFile(filepath.Join(root, core.ProjectFile))
+		var file *os.File
+		file, e = os.Open(filepath.Join(root, core.ProjectFile))
 		if e == nil {
-			result, e = core.ParseProject(b)
+			result, e = core.ReadProject(file)
+			closeErr := file.Close()
+			if e == nil {
+				e = closeErr
+			}
 		}
 	case "run":
 		var receipt core.Receipt
