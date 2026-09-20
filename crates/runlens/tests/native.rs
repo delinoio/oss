@@ -3239,3 +3239,78 @@ fn linux_readlink_attempts_cannot_bypass_read_denials() {
         }
     }
 }
+
+#[test]
+fn stopped_clean_reports_retain_referenced_baseline_evidence() {
+    for (mode, expected) in [("fail", 5), ("overflow", 4)] {
+        let root = repository(mode);
+        let config_path = root.path().join("runlens.toml");
+        let config = fs::read_to_string(&config_path).unwrap();
+        fs::write(
+            &config_path,
+            format!(
+                "{config}\n[limits]\nmemory_bytes = 8192\ntotal_bytes = 8192\nmax_paths = 32\n"
+            ),
+        )
+        .unwrap();
+        let initial = invoke(
+            root.path(),
+            &["run", "--command", "build", "--save", "baseline.json"],
+        );
+        assert!(
+            matches!(initial.status.code(), Some(1 | 4)),
+            "{}",
+            String::from_utf8_lossy(&initial.stderr)
+        );
+        let baseline_path = root.path().join("baseline.json");
+        let mut baseline = runlens::report::read(&baseline_path).unwrap();
+        baseline.executions[0].environment.architecture = "different-architecture".into();
+        baseline.executions[0].outcome.collection_complete = false;
+        fs::write(&baseline_path, serde_json::to_vec(&baseline).unwrap()).unwrap();
+        let config = fs::read_to_string(&config_path).unwrap();
+        fs::write(
+            &config_path,
+            format!("{config}\n[policy]\nfail_new_accesses = true\n"),
+        )
+        .unwrap();
+        let output = invoke(
+            root.path(),
+            &[
+                "verify",
+                "clean",
+                "build",
+                "--baseline",
+                "baseline.json",
+                "--save",
+                "stopped.json",
+            ],
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(expected),
+            "{mode}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report = runlens::report::read(&root.path().join("stopped.json")).unwrap();
+        let historical = report
+            .executions
+            .iter()
+            .find(|execution| execution.id == baseline.executions[0].id)
+            .unwrap();
+        assert_eq!(historical.role, runlens::model::Role::Baseline);
+        assert_eq!(report.current_executions().count(), 1);
+        assert!(report.findings.iter().any(|entry| {
+            entry
+                .unwrap()
+                .1
+                .evidence
+                .iter()
+                .any(|item| item.execution_id == historical.id)
+        }));
+        assert!(
+            invoke(root.path(), &["receipt", "stopped.json", "--json"])
+                .status
+                .success()
+        );
+    }
+}

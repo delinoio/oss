@@ -688,3 +688,5 @@ Windows snapshot stability checks include volume serial number and file index fo
 Cache and required declaration audits check static input/output glob language intersections, including directory-root expansion and report-OS casing, even when no observed path lies in the intersection. The DFA construction and product traversal are bounded (8 MiB construction limits, 65,536 product states, four million byte transitions); exhaustion yields unknown evidence rather than passing. Witnesses must be nonempty UTF-8 paths without NUL.
 
 Linux kernel collection includes `readlink` and `readlinkat` attempts for dynamic/static targets, recording the link path rather than the returned target text. Empty-path descriptors resolve to the held link. Unresolvable caller arguments preserve the syscall and make evidence incomplete.
+
+Clean reports import supplied historical baseline executions on every completed report path, including stopped targets and incomplete collection. Policy findings therefore retain valid evidence references when explicitly saved, while historical outcomes remain excluded from current exit and cleanup classifications.

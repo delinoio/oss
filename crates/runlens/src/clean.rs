@@ -718,15 +718,6 @@ async fn verify_in(
             report.verification = merge_verdict(report.verification, comparison.verdict);
         } else if let Some(baseline) = baseline {
             let comparison = analysis::compare(baseline, &report, &[])?;
-            // Baseline findings can refer to the explicitly supplied baseline;
-            // include that metadata so every saved evidence reference is closed.
-            for execution in &baseline.executions {
-                if !report.executions.iter().any(|e| e.id == execution.id) {
-                    let mut execution = execution.clone();
-                    execution.role = Role::Baseline;
-                    report.executions.push(execution);
-                }
-            }
             merge_findings(&mut report, &comparison)?;
             let verdict = if comparison.verdict == Some(Verdict::Failed) {
                 Verdict::Failed
@@ -747,6 +738,17 @@ async fn verify_in(
         }
     } else if report.verification.is_none() {
         report.verification = Some(Verdict::Inconclusive);
+    }
+    // Policy findings can reference historical evidence even when preparation
+    // or target execution stopped early. Close those references on every path.
+    if let Some(baseline) = baseline {
+        for execution in &baseline.executions {
+            if !report.executions.iter().any(|e| e.id == execution.id) {
+                let mut execution = execution.clone();
+                execution.role = Role::Baseline;
+                report.executions.push(execution);
+            }
+        }
     }
     Ok(report)
 }
