@@ -2625,52 +2625,79 @@ async fn grouped_tasks_only_receive_their_declared_secrets() {
 
 #[tokio::test]
 async fn libtest_ids_distinguish_workspace_packages() {
-    let directory = fixture(
-        json!({"test":{"command":["cargo","test","--workspace","--tests","--offline"],"input":[],"output":[],"shard":{"adapter":"libtest","count":2}}}),
-    );
-    files::atomic_write(
-        &directory.path().join("Cargo.toml"),
-        b"[workspace]\nmembers=['alpha','beta']\nresolver='2'\n",
-    )
-    .unwrap();
-    for name in ["alpha", "beta"] {
+    for only_ignored in [false, true] {
+        let directory = fixture(
+            json!({"test":{"command":["cargo","test","--workspace","--tests","--offline"],"input":[],"output":[],"shard":{"adapter":"libtest","count":2}}}),
+        );
         files::atomic_write(
-            &directory.path().join(name).join("Cargo.toml"),
-            format!("[package]\nname='{name}'\nversion='0.1.0'\nedition='2021'\n").as_bytes(),
+            &directory.path().join("Cargo.toml"),
+            b"[workspace]\nmembers=['alpha','beta']\nresolver='2'\n",
         )
         .unwrap();
-        files::atomic_write(
-            &directory.path().join(name).join("tests/shared.rs"),
-            b"#[test] fn same_name() {}\n",
+        for name in ["alpha", "beta"] {
+            files::atomic_write(
+                &directory.path().join(name).join("Cargo.toml"),
+                format!("[package]\nname='{name}'\nversion='0.1.0'\nedition='2021'\n").as_bytes(),
+            )
+            .unwrap();
+            files::atomic_write(
+                &directory.path().join(name).join("tests/shared.rs"),
+                format!(
+                    "{}#[test] fn same_name() {{}}\n#[test] #[ignore] fn omitted_failure() {{ \
+                     panic!(\"must not execute\"); }}\n",
+                    if only_ignored { "#[ignore] " } else { "" }
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+        }
+        taskflow::discover::output_tool(
+            directory.path(),
+            &["cargo", "generate-lockfile", "--offline"],
+            &[],
+        )
+        .await
+        .unwrap();
+        let unsharded = taskflow::discover::output_tool(
+            directory.path(),
+            &["cargo", "test", "--workspace", "--tests", "--offline"],
+            &[],
+        )
+        .await
+        .unwrap();
+        assert!(String::from_utf8(unsharded)
+            .unwrap()
+            .contains(if only_ignored {
+                "2 ignored"
+            } else {
+                "1 ignored"
+            }));
+        let result = run(graph(directory.path()).await, &["test"]).await;
+        assert!(result.success, "{result:?}");
+        let (inventory, reports) = shard::read_reports(
+            &directory
+                .path()
+                .join(".taskflow/runs")
+                .join(&result.results["app#test"].execution),
         )
         .unwrap();
+        assert_eq!(inventory.tests.len(), if only_ignored { 0 } else { 2 });
+        assert!(
+            only_ignored
+                || inventory
+                    .tests
+                    .iter()
+                    .any(|test| test.id == "alpha@0.1.0:test:shared::same_name")
+        );
+        assert!(
+            only_ignored
+                || inventory
+                    .tests
+                    .iter()
+                    .any(|test| test.id == "beta@0.1.0:test:shared::same_name")
+        );
+        assert!(shard::aggregate(&inventory, 2, &reports).unwrap());
     }
-    taskflow::discover::output_tool(
-        directory.path(),
-        &["cargo", "generate-lockfile", "--offline"],
-        &[],
-    )
-    .await
-    .unwrap();
-    let result = run(graph(directory.path()).await, &["test"]).await;
-    assert!(result.success, "{result:?}");
-    let (inventory, reports) = shard::read_reports(
-        &directory
-            .path()
-            .join(".taskflow/runs")
-            .join(&result.results["app#test"].execution),
-    )
-    .unwrap();
-    assert_eq!(inventory.tests.len(), 2);
-    assert!(inventory
-        .tests
-        .iter()
-        .any(|test| test.id == "alpha@0.1.0:test:shared::same_name"));
-    assert!(inventory
-        .tests
-        .iter()
-        .any(|test| test.id == "beta@0.1.0:test:shared::same_name"));
-    assert!(shard::aggregate(&inventory, 2, &reports).unwrap());
 }
 
 #[tokio::test]

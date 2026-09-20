@@ -432,3 +432,5 @@ Validation for this repair passed root `cargo test --locked` on macOS arm64 with
 `previous_receipts_reject_unbounded_or_nonregular_state` verifies normal receipt reuse and rejection of oversized sparse files, links, and Unix FIFOs before scheduler reads can block. Receipts are capped at 1 MiB on write and on both metadata inspection and actual reads; unsupported versions or mismatched task IDs do not provide a baseline.
 
 `local_cache_reads_reject_and_repair_unsafe_manifests` covers oversized binding/object files and Unix FIFOs and links. Entry manifests have a 1 KiB bound; immutable artifact objects retain the 512 MiB transport bound with a capped reader. Cache publication discards unsafe rollback bindings and atomically repairs the leaf without changing a link target.
+
+`libtest_ids_distinguish_workspace_packages` now compares mixed and all-ignored real Cargo suites with unsharded runs. Ignored panic cases are absent from inventories and reports; all-ignored suites aggregate complete empty shards. The adapter obtains a second `--list --ignored` inventory because the normal libtest listing includes ignored cases even when normal execution omits them.

@@ -521,8 +521,37 @@ pub async fn inventory(
                     cancel,
                 )
                 .await?;
+                // --list includes #[ignore] cases even though the exact normal
+                // invocation would run zero tests and exit successfully.
+                let ignored = process::capture_task(
+                    &graph.workspace.root,
+                    directory,
+                    task,
+                    &Command::Argv(vec![
+                        binary.into(),
+                        "--list".into(),
+                        "--ignored".into(),
+                        "--format=terse".into(),
+                    ]),
+                    env,
+                    overrides,
+                    cancel,
+                )
+                .await?;
+                let ignored: BTreeSet<_> = std::str::from_utf8(&ignored)?
+                    .lines()
+                    .filter_map(|line| line.strip_suffix(": test"))
+                    .collect();
+                tracing::debug!(
+                    target,
+                    ignored = ignored.len(),
+                    "Excluded ignored libtest cases from runnable inventory"
+                );
                 for line in std::str::from_utf8(&names)?.lines() {
                     if let Some(name) = line.strip_suffix(": test") {
+                        if ignored.contains(name) {
+                            continue;
+                        }
                         let unit = format!(
                             "{package_name}@{version}:{}:{target}::{name}",
                             kinds

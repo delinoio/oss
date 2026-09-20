@@ -151,3 +151,5 @@
 - Persisted receipts are regular no-follow files capped at 1 MiB on publication and read. Invalid prior receipts cannot block scheduling or establish a successful baseline.
 
 - Local cache binding reads and rollback snapshots require no-follow regular files capped at 1 KiB; corrupt bindings cannot block fallback or repair. Object reads enforce their existing transfer bound on both metadata and actual bytes and reject special files.
+
+- Libtest runnable inventories subtract the ignored-only listing from the full listing. Never turn zero-executed ignored tests into passed units; all-ignored suites retain complete empty-shard accounting.
