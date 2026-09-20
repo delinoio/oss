@@ -29,7 +29,7 @@ Cargo target conditions remain visible on project edges but only active conditio
 
 Keep project relationships separate from task prerequisites and artifact relationships. Queries expose projects/tasks, forward/reverse closure, paths, file ownership, matching inputs, and explanations. Git selection includes both sides of renames and deleted files. Graph generations invalidate obsolete executions after configuration changes.
 
-An explicit `--head` requires `--base` or `--affected` and cannot be combined with `--changed`; comparison endpoints must never be silently ignored in favor of a direct run.
+Git comparison revisions must be nonempty and cannot start with `-`; validate both operands before launching Git so option-shaped values cannot change diff behavior. An explicit `--head` requires `--base` or `--affected` and cannot be combined with `--changed`; comparison endpoints must never be silently ignored in favor of a direct run.
 
 ### Execution
 `check`, `query`, `plan`, `run`, `start`, `result unchanged`, `cache`, and `ci export` are public commands. Machine output is versioned JSON on stdout; logs go to stderr. Direct, own-input, prerequisite, and schedule causes remain distinct. An unchanged report removes only propagation from its source. Cache reuse and output restoration are execution outcomes, not unconditional claims that dependents are unchanged.

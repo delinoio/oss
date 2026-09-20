@@ -222,6 +222,12 @@ pub async fn git_changes(
     base: &str,
     head: Option<&str>,
 ) -> Result<Vec<PathBuf>> {
+    for revision in std::iter::once(base).chain(head) {
+        ensure!(
+            !revision.is_empty() && !revision.starts_with('-'),
+            "Git revision must be nonempty and must not start with '-'"
+        );
+    }
     let mut args = vec!["git", "diff", "--name-only", "--no-renames", "-z", base];
     if let Some(head) = head {
         args.push(head);

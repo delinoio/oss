@@ -6,6 +6,7 @@
 - Unknown graph coverage expands affected selection conservatively, but unresolved prerequisite selection fails closed. Scope native selector completeness to the owning projects of each adapter invocation.
 - Native Cargo selectors evaluate preserved target conditions with Cargo's platform parser and rustc cfg metadata for the selected platform; explicit cargoTarget takes precedence over execution-platform defaults.
 - Unix input cache state includes permissions, including file-link target permissions; portable CI structure fingerprints remain content-based.
+- Reject empty or option-shaped Git base/head operands before launching diff so revisions cannot alter changed-file selection or write files.
 - Validate every affected-mode task filter before intersecting it with changes; a typo must fail even for an empty affected set.
 - Never collapse direct/input/schedule causes into a prerequisite cause. Cancellation and invalidation prohibit cache publication.
 - Declared output changes override task-reported unchanged; only a matching successful output baseline can suppress propagation.

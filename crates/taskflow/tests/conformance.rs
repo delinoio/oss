@@ -5363,3 +5363,67 @@ async fn cache_rejects_nonportable_link_targets_on_every_host() {
         std::fs::remove_file(root.path().join("out/link")).unwrap();
     }
 }
+
+#[tokio::test]
+async fn git_revision_operands_cannot_be_diff_options() {
+    let root = fixture(json!({"check":{"command":command(&["version"]),"input":["src/**"]}}));
+    let git = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .current_dir(root.path())
+            .args([
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.test",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "core.hooksPath=.git/no-hooks",
+            ])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+    };
+    git(&["init", "-q"]);
+    files::atomic_write(&root.path().join("src/old"), b"before").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-qm", "baseline"]);
+    git(&["mv", "src/old", "src/new"]);
+    git(&["commit", "-qm", "rename"]);
+    assert_eq!(
+        taskflow::plan::git_changes(root.path(), "HEAD~1", Some("HEAD"))
+            .await
+            .unwrap(),
+        [PathBuf::from("src/new"), PathBuf::from("src/old")]
+    );
+    files::atomic_write(&root.path().join("src/untracked"), b"untracked").unwrap();
+    assert_eq!(
+        taskflow::plan::git_changes(root.path(), "HEAD", None)
+            .await
+            .unwrap(),
+        [PathBuf::from("src/untracked")]
+    );
+    let destination = root.path().join("option-output");
+    let output_option = format!("--output={}", destination.display());
+    for operand in [output_option.as_str(), "--stat", "--no-index", ""] {
+        for (base, head) in [
+            (operand, None),
+            (operand, Some("HEAD")),
+            ("HEAD", Some(operand)),
+        ] {
+            let error = taskflow::plan::git_changes(root.path(), base, head)
+                .await
+                .unwrap_err();
+            assert!(error.to_string().contains("Git revision"), "{error:#}");
+            let mut cli = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"));
+            cli.current_dir(root.path())
+                .args(["plan", &format!("--base={base}")]);
+            if let Some(head) = head {
+                cli.arg(format!("--head={head}"));
+            }
+            assert!(!cli.output().unwrap().status.success());
+            assert!(!destination.exists());
+        }
+    }
+}
