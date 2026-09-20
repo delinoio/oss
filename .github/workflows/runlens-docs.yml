@@ -11,6 +11,12 @@ on:
 permissions:
   contents: read
 
+# Serialize the entire production workflow so an older, slower build cannot
+# enter deployment after a newer build. Dry runs never own this publication lock.
+concurrency:
+  group: runlens-docs-${{ !inputs.dry_run && github.ref == 'refs/heads/main' && 'production' || github.run_id }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -33,6 +39,14 @@ jobs:
     environment: runlens-docs-production
     runs-on: ubuntu-22.04
     steps:
+      - name: Require the current main revision
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const {data: ref} = await github.rest.git.getRef({...context.repo, ref: 'heads/main'});
+            if (ref.object.sha !== context.sha) {
+              core.setFailed('Documentation publication requires the current main revision.');
+            }
       - uses: actions/download-artifact@v8
         with:
           name: runlens-docs

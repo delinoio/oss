@@ -59,3 +59,8 @@ The guarded deploy job enters `runlens-docs-production` and
 receives the Cloudflare token/account configuration. The Pages project is
 `runlens-docs`; operators configure its custom domain as `runlens.delino.io`.
 No site is deployed as part of implementing or validating the PR.
+
+Production dispatches share one workflow-wide concurrency group with in-progress
+cancellation disabled. This serializes build through publication; dry runs use
+run-specific groups and cannot cancel production. Before deployment, the workflow
+requires its commit to equal current main, rejecting stale queued or rerun builds.

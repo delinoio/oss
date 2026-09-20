@@ -166,6 +166,8 @@
 
 - Runlens discovery links in public-docs navigation, home, and project catalog use `https://runlens.delino.io`; its guides remain owned by `apps/runlens-docs`.
 
+- Runlens documentation production dispatches serialize the full workflow, never share the dry-run concurrency group, and reject stale main revisions immediately before deployment.
+
 ### Native CLI package documentation
 
 - Follow `docs/repository-linux-packages-contract.md`. The shared public `/linux-packages` route owns APT/DNF setup and key verification; standalone CLI installation pages retain product-specific guidance.

@@ -14,6 +14,14 @@ test("Runlens production documentation requires an explicit main-branch dispatch
   assert.equal(docs.jobs.deploy.environment, "runlens-docs-production");
   assert.equal(docs.jobs.deploy.needs, "build");
   assert.doesNotMatch(JSON.stringify(docs.jobs.build), /secrets\.|pages deploy/u);
+  assert.deepEqual(docs.concurrency, {
+    group: "runlens-docs-${{ !inputs.dry_run && github.ref == 'refs/heads/main' && 'production' || github.run_id }}",
+    "cancel-in-progress": false,
+  });
+  const guard = docs.jobs.deploy.steps[0];
+  assert.equal(guard.uses, "actions/github-script@v8");
+  assert.match(guard.with.script, /ref\.object\.sha !== context\.sha/u);
+  assert.match(guard.with.script, /core\.setFailed/u);
 });
 test("Runlens uses native six-platform execution and separate minimum OS evidence", () => {
   assert.equal(native.jobs.native.strategy.matrix.include.length, 6);
