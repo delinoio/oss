@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { Bump, Project, Kind, bumpVersion, readVersion, versionChanges, sourceMetadata, git, prepareRelease, validateCommit, preflightVersion, pushReleaseTag, tagRevision, waitForCiWorkflow } from "./project.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
-const files = ["Cargo.lock", ...["binpm", "cargo-mono", "nodeup", "with-watch"].map((name) => `crates/${name}/Cargo.toml`), "cmds/derun/internal/version/version.go", "cmds/runmoor/internal/runmoor/types.go"];
+const files = ["Cargo.lock", "packages/clibox/package.json", ...["binpm", "cargo-mono", "nodeup", "with-watch", "clibox"].map((name) => `crates/${name}/Cargo.toml`), "cmds/derun/internal/version/version.go", "cmds/runmoor/internal/runmoor/types.go"];
 const sources = Object.fromEntries(files.map((file) => [file, readFileSync(path.join(root, file), "utf8")]));
 const read = (file) => sources[file];
 const bot = { name: "delino-release-bot[bot]", email: "123+delino-release-bot[bot]@users.noreply.github.com" };
@@ -23,7 +23,7 @@ for (const project of Object.values(Project)) for (const bump of Object.values(B
     assert.equal(plan.version, bumpVersion(plan.previous_version, bump));
     const updated = { ...sources, ...plan.changes };
     for (const candidate of Object.values(Project)) assert.equal(readVersion(candidate, (file) => updated[file]), candidate === project ? plan.version : readVersion(candidate, read));
-    assert.equal(Object.keys(plan.changes).length, plan.kind === Kind.Rust ? 2 : 1);
+    assert.equal(Object.keys(plan.changes).length, project === Project.Clibox ? 3 : plan.kind === Kind.Rust ? 2 : 1);
     if (plan.kind === Kind.Rust) {
       const before = sources["Cargo.lock"].split("[[package]]");
       const after = updated["Cargo.lock"].split("[[package]]");
@@ -51,6 +51,15 @@ test("Version planning rejects manifest/lock drift, duplicate or external entrie
     sources["Cargo.lock"].replace(entry, 'name = "another"\nversion = "0.1.0"'),
   ]) assert.throws(() => versionChanges(Project.Binpm, Bump.Patch, (file) => file === "Cargo.lock" ? lock : read(file)));
   assert.throws(() => versionChanges(Project.Binpm, Bump.Patch, (file) => file === "crates/binpm/Cargo.toml" ? '[package]\nname = "binpm"\nversion.workspace = true\n' : read(file)));
+});
+
+test("clibox releases synchronize Cargo and npm and reject npm drift before version writes", () => {
+  const plan = versionChanges(Project.Clibox, Bump.Minor, read);
+  assert.deepEqual(Object.keys(plan.changes).sort(), ["Cargo.lock", "crates/clibox/Cargo.toml", "packages/clibox/package.json"]);
+  assert.equal(JSON.parse(plan.changes["packages/clibox/package.json"]).version, plan.version);
+  const drift = (file) => file === "packages/clibox/package.json" ? read(file).replace(`"version": "${plan.previous_version}"`, '"version": "99.0.0"') : read(file);
+  assert.throws(() => versionChanges(Project.Clibox, Bump.Patch, drift), /versions disagree/u);
+  assert.throws(() => sourceMetadata({ project: Project.Clibox, event: "push", ref: `refs/tags/clibox@v${plan.previous_version}` }, drift), /versions disagree/u);
 });
 
 test("Downstream manual and tag metadata must agree with source before builds", () => {

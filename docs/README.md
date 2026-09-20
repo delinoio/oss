@@ -49,6 +49,11 @@ Each project must have one project index document and one or more domain contrac
 - `docs/project-cargo-mono.md`
 - `docs/crates-cargo-mono-foundation.md`
 
+### clibox
+- `docs/project-clibox.md`
+- `docs/crates-clibox-foundation.md`
+- `docs/packages-clibox-distribution-contract.md`
+
 ### nodeup
 - `docs/project-nodeup.md`
 - `docs/crates-nodeup-foundation.md`

@@ -1,0 +1,17 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/crates/clibox/**", "$TURBO_ROOT$/Cargo.toml", "$TURBO_ROOT$/Cargo.lock", "$TURBO_ROOT$/rust-toolchain"],
+      "outputs": []
+    },
+    "test:package": {
+      "cache": false,
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/crates/clibox/**", "$TURBO_ROOT$/Cargo.toml", "$TURBO_ROOT$/Cargo.lock", "$TURBO_ROOT$/rust-toolchain"],
+      "passThroughEnv": ["CARGO_HOME", "RUSTUP_HOME", "npm_execpath"],
+      "outputs": []
+    },
+    "package:npm": { "cache": false },
+    "publish:npm": { "cache": false }
+  }
+}

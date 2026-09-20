@@ -1,0 +1,236 @@
+name: Release clibox
+
+on:
+  push:
+    tags: ["clibox@v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact source version without v prefix
+        required: true
+      dry_run:
+        description: Build and validate without npm publication
+        type: choice
+        options: ["true", "false"]
+        default: "true"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-clibox
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.source.outputs.version }}
+      dry_run: ${{ steps.source.outputs.dry_run }}
+      revision: ${{ steps.source.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Validate exact release identity
+        id: source
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REQUESTED_DRY_RUN: ${{ inputs.dry_run }}
+          NPM_ENABLED: ${{ vars.CLIBOX_NPM_PUBLISH_ENABLED }}
+        run: |
+          node --input-type=module <<'JS'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          import { sourceMetadata, Project } from './scripts/release/project.mjs';
+          import { revision } from './packages/clibox/scripts/common.mjs';
+          const source = sourceMetadata({ project: Project.Clibox, event: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF, requestedVersion: process.env.REQUESTED_VERSION, requestedDryRun: process.env.REQUESTED_DRY_RUN }, file => readFileSync(file, 'utf8'));
+          if (!['', 'false', 'true'].includes(process.env.NPM_ENABLED)) throw new Error('Invalid CLIBOX_NPM_PUBLISH_ENABLED');
+          if (source.dry_run !== 'true' && (process.env.GITHUB_REPOSITORY !== 'delinoio/oss' || process.env.GITHUB_REF !== `refs/tags/${source.tag}`)) throw new Error('Publication requires the exact first-party release tag');
+          const commit = revision();
+          if (commit !== process.env.GITHUB_SHA) throw new Error('Checkout identity mismatch');
+          appendFileSync(process.env.GITHUB_OUTPUT, Object.entries({ ...source, revision: commit }).map(([key, value]) => `${key}=${value}\n`).join(''));
+          JS
+
+  build:
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            suffix: darwin-x64
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            suffix: darwin-arm64
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            suffix: win32-x64-msvc
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            suffix: win32-arm64-msvc
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            suffix: linux-x64-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            suffix: linux-arm64-gnu
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+            suffix: linux-x64-musl
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            suffix: linux-arm64-musl
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+          architecture: ${{ startsWith(matrix.target, 'aarch64-') && 'arm64' || 'x64' }}
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-01-01
+          targets: ${{ matrix.target }}
+      - name: Install native musl linker
+        if: endsWith(matrix.target, '-musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build and check native executable
+        shell: bash
+        env:
+          CLIBOX_TARGET: ${{ matrix.target }}
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+        run: |
+          set -euo pipefail
+          cargo build --locked --release -p clibox --target "$CLIBOX_TARGET"
+          binary="target/$CLIBOX_TARGET/release/clibox"
+          if [[ "$CLIBOX_TARGET" == *windows* ]]; then binary="$binary.exe"; fi
+          "$binary" --help
+          node packages/clibox/scripts/package.mjs binary --target "$CLIBOX_TARGET" --binary "$binary" --output packages/clibox/dist
+      - name: Smoke-test npm and pnpm consumers
+        if: ${{ !endsWith(matrix.target, '-musl') }}
+        shell: bash
+        env:
+          CLIBOX_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          binary="$GITHUB_WORKSPACE/target/$CLIBOX_TARGET/release/clibox"
+          if [[ "$CLIBOX_TARGET" == *windows* ]]; then binary="$binary.exe"; fi
+          pnpm --filter @delino/clibox test:package --target "$CLIBOX_TARGET" --binary "$binary"
+      - name: Smoke-test musl consumers in Alpine
+        if: endsWith(matrix.target, '-musl')
+        env:
+          CLIBOX_TARGET: ${{ matrix.target }}
+        run: |
+          docker run --rm --volume "$GITHUB_WORKSPACE:/workspace" --workdir /workspace --env CLIBOX_TARGET node:24-alpine sh -eu -c '
+            apk add --no-cache git
+            git config --global --add safe.directory /workspace
+            npm install --global pnpm@10.26.2
+            pnpm --filter @delino/clibox test:package --target "$CLIBOX_TARGET" --binary "/workspace/target/$CLIBOX_TARGET/release/clibox"
+          '
+      - uses: actions/upload-artifact@v7
+        with:
+          name: clibox-native-${{ matrix.suffix }}
+          path: packages/clibox/dist/tarballs/*.tgz
+          if-no-files-found: error
+          retention-days: 30
+
+  package:
+    needs: [prepare, build]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: clibox-native-*
+          merge-multiple: true
+          path: packages/clibox/dist/tarballs
+      - name: Assemble and validate the complete npm release
+        run: |
+          node packages/clibox/scripts/package.mjs main
+          node packages/clibox/scripts/publish.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: clibox-npm-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
+          path: packages/clibox/dist/tarballs/*.tgz
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    needs: [prepare, package]
+    if: ${{ needs.prepare.outputs.dry_run == 'false' && vars.CLIBOX_NPM_PUBLISH_ENABLED == 'true' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/clibox@v') }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Install pinned npm for trusted publishing
+        run: npm install --global npm@11.6.2 --ignore-scripts --no-audit --no-fund
+      - name: Check npm trusted publishing support
+        run: |
+          node --input-type=module <<'JS'
+          import { npm } from './packages/clibox/scripts/common.mjs';
+          const [major, minor, patch] = npm(['--version']).trim().split('.').map(Number);
+          if (major < 11 || (major === 11 && (minor < 5 || (minor === 5 && patch < 1)))) throw new Error('npm 11.5.1+ is required for OIDC');
+          JS
+      - uses: actions/download-artifact@v8
+        with:
+          name: clibox-npm-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
+          path: packages/clibox/dist/tarballs
+      - name: Publish exact verified tarballs through OIDC
+        env:
+          CLIBOX_NPM_PUBLISH_ENABLED: ${{ vars.CLIBOX_NPM_PUBLISH_ENABLED }}
+        run: node packages/clibox/scripts/publish.mjs --publish
+
+  summary:
+    needs: [prepare, build, package, publish]
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Report publication or pending manual bootstrap
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_REVISION: ${{ needs.prepare.outputs.revision }}
+          PACKAGE_RESULT: ${{ needs.package.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          DRY_RUN: ${{ needs.prepare.outputs.dry_run }}
+          NPM_ENABLED: ${{ vars.CLIBOX_NPM_PUBLISH_ENABLED }}
+        run: |
+          if [ "$PACKAGE_RESULT" != success ]; then
+            echo 'clibox packaging failed; no complete release artifact is ready.' >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$DRY_RUN" = true ]; then
+            echo 'Dry run complete: no npm publication was attempted.' >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$NPM_ENABLED" != true ]; then
+            echo 'npm bootstrap pending: manually publish all nine exact tarballs (platforms first), configure Trusted Publishers, then enable CLIBOX_NPM_PUBLISH_ENABLED. See docs/packages-clibox-distribution-contract.md.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "npm publication result: $PUBLISH_RESULT" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "Source: $RELEASE_VERSION at $RELEASE_REVISION" >> "$GITHUB_STEP_SUMMARY"

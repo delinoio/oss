@@ -9,6 +9,7 @@
 
 - `crates/binpm`: Rust-based Node-free binary package manager for release assets.
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
+- `crates/clibox`: Rust CLI with approved crates.io and npm distribution.
 - `crates/nodeup`: Rust-based Node.js version manager.
 - `crates/with-watch`: Rust-based filesystem-watching command wrapper.
 - `crates/serde-feather`: Size-first serde runtime-facing core crate.
@@ -195,3 +196,9 @@
 - Runlens Linux dynamic and static targets must both install inherited kernel syscall collection; libc interposition alone cannot establish completeness.
 - Runlens must retain redacted clean/repeat HOME and cache accesses as out-of-scope evidence; omit only tracer-private storage from access records.
 - Runlens Windows NT attribute hooks must copy and bound untrusted caller memory before parsing; malformed attributes preserve the original syscall and mark collection incomplete.
+
+### clibox Rules
+
+- Preserve the help/version-only CLI, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`.
+- This scaffold has an explicitly approved crates.io publication contract; register it as a workspace and cargo-mono release target. Do not add domain commands implicitly.
+- Standalone crate packages must contain their own MIT license and pass process-level CLI tests and Cargo publish dry-run.
