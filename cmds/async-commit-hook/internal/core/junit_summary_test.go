@@ -44,18 +44,31 @@ func TestJUnitSummaryRedactsBeforeFieldTruncation(t *testing.T) {
 	}
 }
 
-func TestJUnitBoundedSummaryRetainsPaginatedEvidenceAndDiagnostic(t *testing.T) {
+func TestBoundedReportSummaryRetainsPaginatedEvidenceAndDiagnostic(t *testing.T) {
+	for _, kind := range []ReportKind{JUnit, GoTest} {
+		t.Run(string(kind), func(t *testing.T) { testBoundedReportEvidence(t, kind) })
+	}
+}
+
+func testBoundedReportEvidence(t *testing.T, kind ReportKind) {
 	command := "cp payload report"
 	if runtime.GOOS == "windows" {
 		command = "Copy-Item payload report"
 	}
-	s, repo := fixture(t, fmt.Sprintf("version=1\n[checks.test]\ncommand=%q\n[[checks.test.reports]]\nkind=\"junit\"\npath=\"report\"\n", command))
+	s, repo := fixture(t, fmt.Sprintf("version=1\n[checks.test]\ncommand=%q\n[[checks.test.reports]]\nkind=%q\npath=\"report\"\n", command, kind))
 	var report strings.Builder
-	report.WriteString("<testsuite>")
-	for i := 0; i < 20000; i++ {
-		fmt.Fprintf(&report, "<testcase name=\"test-%d\"><failure/></testcase>", i)
+	if kind == JUnit {
+		report.WriteString("<testsuite>")
+		for i := 0; i < 20000; i++ {
+			fmt.Fprintf(&report, "<testcase name=\"test-%d\"><failure/></testcase>", i)
+		}
+		report.WriteString("</testsuite><!-- END-MARKER -->")
+	} else {
+		for i := 0; i < 20000; i++ {
+			fmt.Fprintf(&report, "{\"Action\":\"fail\",\"Package\":\"p\",\"Test\":\"Test%d\"}\n", i)
+		}
+		report.WriteString(`{"Action":"output","Package":"p","Output":"END-MARKER"}`)
 	}
-	report.WriteString("</testsuite><!-- END-MARKER -->")
 	if err := os.WriteFile(filepath.Join(repo, "payload"), []byte(report.String()), 0600); err != nil {
 		t.Fatal(err)
 	}

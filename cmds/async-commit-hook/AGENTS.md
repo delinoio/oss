@@ -114,7 +114,7 @@
 
 - Build SQLite file URIs from escaped absolute filename paths; state directory bytes must never become query/fragment parameters. Preserve WAL, FULL synchronization, foreign keys and immediate transactions.
 
-- Go report completeness tracking retains only active package/test identities; remove terminal pass/skip/fail entries while keeping occurrence counts for stable repeated-test failure IDs.
+- Go report completeness tracking retains only active package/test identities; remove terminal pass/skip/fail entries. Bound summaries during parsing, then count completed iterations in a second scan only for retained failure identities; never retain occurrence history for every completed test. Preserve stable repeated build/test IDs, validate discarded tails and retain complete redacted evidence.
 
 - Storage-failure propagation fixtures re-exec a deterministic test helper through real process ownership, preserving injected SQLite errors, completed-output proof and interrupted recovery. Do not make these fixture watchdogs depend on shell-engine cold startup; native shell integration remains separately covered.
 

@@ -1,9 +1,9 @@
 package core
 
-// Keep only a bounded summary prefix while the XML decoder validates the entire
+// Keep only a bounded summary prefix while the report parser validates the entire
 // report. Redact complete extracted fields before truncating them, so a secret
 // crossing the display boundary cannot leak a retained prefix.
-type junitFailures struct {
+type reportFailures struct {
 	failures  []Failure
 	secrets   []string
 	used      int
@@ -20,7 +20,7 @@ func redactFailure(f *Failure, secrets []string) (truncated bool) {
 	return
 }
 
-func (s *junitFailures) add(f Failure) {
+func (s *reportFailures) add(f Failure) {
 	if s.full {
 		return
 	}
@@ -39,10 +39,9 @@ func parseReportSummaries(kind ReportKind, b []byte, check, command, logID strin
 	if kind == JUnit {
 		return parseJUnitSummaries(b, check, command, logID, secrets)
 	}
-	failures, err := ParseReport(kind, b, check, command, logID)
-	truncated := false
-	for i := range failures {
-		truncated = redactFailure(&failures[i], secrets) || truncated
+	if kind == GoTest {
+		return parseGoTestSummaries(b, check, command, logID, secrets)
 	}
-	return failures, truncated, err
+	failures, err := ParseReport(kind, b, check, command, logID)
+	return failures, false, err
 }

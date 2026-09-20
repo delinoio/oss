@@ -27,6 +27,8 @@ func TestGoReportLargeRepeatedOutputUsesBoundedTailAllocations(t *testing.T) {
 	emit("fail", "")
 	expected := combined.String()
 	expected = strings.TrimSpace(expected[len(expected)-reportOutputLimit:])
+	// Summary bounding now happens in the parser, after selecting the same raw tail.
+	expected, _ = redactedFailureText(expected, nil)
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
 	failures, err := ParseReport(GoTest, report.Bytes(), "check", "go test -json", "log")
@@ -74,7 +76,8 @@ func TestGoReportAcceptsLargeSingleEvents(t *testing.T) {
 			if action == "pass" && len(failures) != 0 {
 				t.Fatal(failures)
 			}
-			if action == "fail" && (len(failures) != 1 || !strings.HasSuffix(failures[0].Message, "END-MARKER") || len(failures[0].Message) > reportOutputLimit) {
+			expected, _ := redactedFailureText(body[len(body)-reportOutputLimit:], nil)
+			if action == "fail" && (len(failures) != 1 || failures[0].Message != expected) {
 				t.Fatal("large event lost bounded failure tail")
 			}
 			if _, err = ParseReport(GoTest, report[:len(report)-1], "test", "go test -json", "log"); err == nil {

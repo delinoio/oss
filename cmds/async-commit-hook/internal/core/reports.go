@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"io"
@@ -141,7 +140,7 @@ func parseJUnit(b []byte, check, command, logID string) ([]Failure, error) {
 }
 func parseJUnitSummaries(b []byte, check, command, logID string, secrets []string) ([]Failure, bool, error) {
 	d := xml.NewDecoder(bytes.NewReader(b))
-	out := junitFailures{secrets: secrets}
+	out := reportFailures{secrets: secrets}
 	type suiteIdentity struct {
 		Kind, Name string
 		Occurrence int
@@ -266,77 +265,6 @@ func parseJUnitSummaries(b []byte, check, command, logID string, secrets []strin
 		out.add(Failure{ID: Hash([]byte(check + "/junit/summary")), Check: check, Command: command, Message: "JUnit summary reports failures without test details", LogID: logID})
 	}
 	return out.failures, out.truncated, nil
-}
-func parseGoTest(b []byte, check, command, logID string) ([]Failure, error) {
-	out := []Failure{}
-	seen := false
-	terminal := false
-	output := map[[2]string]*reportOutputTail{}
-	buildOutput := map[string]*reportOutputTail{}
-	buildOccurrences := map[string]int{}
-	tests := map[[2]string]struct{}{}
-	occurrences := map[[2]string]int{}
-	// The report is already bounded. Slice its lines without imposing a
-	// smaller event limit or allocating a second copy of a large JSON line.
-	for line := range bytes.SplitSeq(b, []byte{'\n'}) {
-		if len(bytes.TrimSpace(line)) == 0 {
-			continue
-		}
-		var event struct{ Action, Package, Test, Output, ImportPath string }
-		if e := json.Unmarshal(line, &event); e != nil || event.Action == "" {
-			return nil, E("report-malformed", "invalid Go test JSON event", 1)
-		}
-		seen = true
-		key := [2]string{event.Package, event.Test}
-		switch event.Action {
-		case "build-output", "build-fail":
-			// Go interleaves BuildEvents with TestEvents. ImportPath is the
-			// build identity and need not equal any TestEvent.Package value.
-			if event.ImportPath == "" {
-				return nil, E("report-malformed", "Go build event has no import path", 1)
-			}
-			if event.Action == "build-output" {
-				if buildOutput[event.ImportPath] == nil {
-					buildOutput[event.ImportPath] = &reportOutputTail{}
-				}
-				buildOutput[event.ImportPath].append(event.Output)
-			} else {
-				terminal = true
-				buildOccurrences[event.ImportPath]++
-				id := Hash(Encode([]any{check, "go-build", event.ImportPath, buildOccurrences[event.ImportPath]}))
-				out = append(out, Failure{ID: id, Check: check, Test: event.ImportPath, Command: command, Message: strings.TrimSpace(buildOutput[event.ImportPath].String()), LogID: logID})
-				delete(buildOutput, event.ImportPath)
-			}
-		case "output":
-			if output[key] == nil {
-				output[key] = &reportOutputTail{}
-			}
-			output[key].append(event.Output)
-		case "run", "start":
-			tests[key] = struct{}{}
-		case "pass", "skip", "fail":
-			terminal = true
-			delete(tests, key)
-			// Count every completed iteration, including passes, so repairing an
-			// earlier failure does not renumber a later repeated test failure.
-			occurrences[key]++
-			if event.Action == "fail" {
-				id := Hash(Encode([]any{check, "go", key, occurrences[key]}))
-				out = append(out, Failure{ID: id, Check: check, Test: event.Package + "/" + event.Test, Command: command, Message: strings.TrimSpace(output[key].String()), LogID: logID})
-			}
-			delete(output, key)
-		case "pause", "cont", "bench":
-		default:
-			return nil, E("report-malformed", "unknown Go test JSON action", 1)
-		}
-	}
-	if !seen || !terminal {
-		return nil, E("report-malformed", "Go test report is empty, truncated or incomplete", 1)
-	}
-	if len(tests) != 0 {
-		return nil, E("report-incomplete", "Go test report contains unfinished tests", 1)
-	}
-	return out, nil
 }
 func (s *Service) SaveEvidence(run, name string, b []byte) (Evidence, error) {
 	return s.saveRedactedEvidence(run, name, b, nil)
