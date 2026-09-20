@@ -346,6 +346,60 @@ fn allowed_write_ancestors(
     Ok(ancestors)
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum BaselineAccess {
+    Existing,
+    New,
+    Unknown,
+}
+
+fn baseline_access(
+    baseline: &Entries<Access>,
+    path: &str,
+    access: &Access,
+    windows: bool,
+    remaining: &mut usize,
+) -> Result<BaselineAccess> {
+    let mut missing = [access.read, access.write, access.read_directory];
+    let mut include = |prior: &Access| {
+        for (needed, present) in
+            missing
+                .iter_mut()
+                .zip([prior.read, prior.write, prior.read_directory])
+        {
+            *needed &= !present;
+        }
+        missing.iter().all(|needed| !needed)
+    };
+    if baseline.get(path)?.as_ref().is_some_and(&mut include) {
+        return Ok(BaselineAccess::Existing);
+    }
+    if !windows {
+        return Ok(BaselineAccess::New);
+    }
+    // Bound alias comparisons across the entire policy analysis. Retain stored
+    // paths as evidence and union only proven aliases, never Unicode candidates
+    // from a host without Windows' native ordinal uppercase table.
+    let mut uncertain = false;
+    for entry in baseline.iter() {
+        let (stored, prior) = entry?;
+        if *remaining == 0 {
+            return Ok(BaselineAccess::Unknown);
+        }
+        *remaining -= 1;
+        let (equal, unknown) = crate::privacy::windows_query_eq(path, &stored);
+        uncertain |= unknown;
+        if equal && !unknown && include(&prior) {
+            return Ok(BaselineAccess::Existing);
+        }
+    }
+    Ok(if uncertain {
+        BaselineAccess::Unknown
+    } else {
+        BaselineAccess::New
+    })
+}
+
 pub fn policy(
     report: &Report,
     rules: &Policy,
@@ -359,6 +413,7 @@ pub fn policy(
         ));
     }
     let mut result = Analysis::new(AnalysisKind::Policy);
+    let mut alias_budget = 4_000_000usize;
     target_quality(&mut result, report)?;
     for execution in report.current_executions() {
         let allow_read = rules
@@ -474,14 +529,15 @@ pub fn policy(
             if let Some(old) =
                 previous.filter(|old| compatible(old, execution) && old.outcome.collection_complete)
             {
-                let prior = old.accesses.get(&path)?;
-                let new = prior.is_none_or(|p| {
-                    access.read && !p.read
-                        || access.write && !p.write
-                        || access.read_directory && !p.read_directory
-                });
-                if new {
-                    result.finding(
+                match baseline_access(
+                    &old.accesses,
+                    &path,
+                    &access,
+                    execution.environment.os == "windows",
+                    &mut alias_budget,
+                )? {
+                    BaselineAccess::Existing => {}
+                    BaselineAccess::New => result.finding(
                         FindingCode::NewAccess,
                         if rules.fail_new_accesses {
                             Classification::Violation
@@ -489,7 +545,12 @@ pub fn policy(
                             Classification::Observed
                         },
                         vec![evidence(execution, Some(&path), EvidenceSource::Access)],
-                    )?;
+                    )?,
+                    BaselineAccess::Unknown => result.finding(
+                        FindingCode::UnknownEvidence,
+                        Classification::Unknown,
+                        vec![evidence(execution, Some(&path), EvidenceSource::Access)],
+                    )?,
                 }
             }
         }
@@ -1238,5 +1299,31 @@ fn absent_state(complete: bool) -> FileState {
         FileState::missing()
     } else {
         FileState::unknown(ObservationIssue::CollectionLimit)
+    }
+}
+
+#[cfg(test)]
+mod baseline_tests {
+    use super::*;
+
+    #[test]
+    fn exhausted_alias_search_cannot_prove_new_access() {
+        let mut baseline = Entries::default();
+        let read = Access {
+            read: true,
+            write: false,
+            read_directory: false,
+            unsupported: false,
+            in_scope: true,
+        };
+        baseline.insert("C:/File".into(), read.clone()).unwrap();
+        assert_eq!(
+            baseline_access(&baseline, "c:/file", &read, true, &mut 0).unwrap(),
+            BaselineAccess::Unknown
+        );
+        assert_eq!(
+            baseline_access(&baseline, "c:/file", &read, true, &mut 1).unwrap(),
+            BaselineAccess::Existing
+        );
     }
 }

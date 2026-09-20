@@ -4443,3 +4443,83 @@ fn io_uring_attempts_preserve_syscalls_without_certifying_coverage() {
         }
     }
 }
+
+#[test]
+fn new_access_policy_uses_report_os_aliases_and_preserves_current_evidence() {
+    use runlens::{analysis, config::Policy, entries::Entries, model::*};
+    let root = repository("read");
+    assert!(run(root.path(), "record.json", "read").status.success());
+    let template = runlens::report::read(&root.path().join("record.json")).unwrap();
+    let rules = Policy {
+        fail_new_accesses: true,
+        ..Default::default()
+    };
+    for os in ["windows", "linux"] {
+        for (old_path, path, unicode) in [
+            ("C:/Repo/File", "c:/repo/file", false),
+            ("//Server/Share/File", "//server/share/file", false),
+            ("${workspace}/Dir/File", "${workspace}/dir/file", false),
+            ("C:/Ä/File", "c:/ä/file", true),
+        ] {
+            for new_mode in [false, true] {
+                let mut baseline = template.clone();
+                baseline.executions[0].environment.os = os.into();
+                baseline.executions[0].accesses = Entries::default();
+                let read = Access {
+                    read: true,
+                    write: false,
+                    read_directory: false,
+                    unsupported: false,
+                    in_scope: true,
+                };
+                baseline.executions[0]
+                    .accesses
+                    .insert(old_path.into(), read.clone())
+                    .unwrap();
+                let mut write = read.clone();
+                write.read = false;
+                write.write = true;
+                baseline.executions[0]
+                    .accesses
+                    .insert(old_path.to_uppercase(), write)
+                    .unwrap();
+                let mut current = baseline.clone();
+                current.executions[0].id = uuid::Uuid::now_v7();
+                current.executions[0].accesses = Entries::default();
+                let mut access = read;
+                access.write = true;
+                access.read_directory = new_mode;
+                current.executions[0]
+                    .accesses
+                    .insert(path.into(), access)
+                    .unwrap();
+                let result = analysis::policy(
+                    &current,
+                    &rules,
+                    &Default::default(),
+                    &Default::default(),
+                    Some(&baseline),
+                )
+                .unwrap();
+                let expected = if os == "windows" && unicode && !cfg!(windows) {
+                    Verdict::Inconclusive
+                } else if os == "windows" && !new_mode {
+                    Verdict::Passed
+                } else {
+                    Verdict::Failed
+                };
+                assert_eq!(
+                    result.verdict,
+                    Some(expected),
+                    "{os} {path} new_mode={new_mode}: {result:?}"
+                );
+                for finding in result.findings.iter() {
+                    let (_, finding) = finding.unwrap();
+                    if finding.code == FindingCode::NewAccess {
+                        assert_eq!(finding.evidence[0].path.as_deref(), Some(path));
+                    }
+                }
+            }
+        }
+    }
+}

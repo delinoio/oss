@@ -173,7 +173,7 @@
 - Audit declared input/output glob intersections independently of observed paths; bounded analysis exhaustion is inconclusive, never proof that declarations are disjoint.
 - Cache and policy input/output declarations bind to the selected command's normalized argv and working directory and any recorded name. A mismatched or redacted identity is inconclusive; reading config and reports must never execute a command.
 - Cancellation during after-state snapshots must retain the cancelled invocation status and incomplete evidence even after the target exits successfully.
-- New-access policies may infer absence only from a compatible baseline with complete collection; incompatible or incomplete baselines do not create definite new-access violations.
+- New-access policies may infer absence only from a compatible baseline with complete collection; incompatible or incomplete baselines do not create definite new-access violations. Windows baselines union access modes only across proven ordinal path aliases, keep current evidence keys, and report unknown on bounded-search exhaustion or unresolved Unicode table parity.
 - Linux OS identity includes distribution ID and VERSION_ID; legacy version-only, missing, or malformed identities cannot establish comparison compatibility.
 - Selected environment names cannot prove equality of omitted values. Keep their report comparisons inconclusive without persisting values or guessable value hashes.
 - Canonical isolated Windows HOME/cache paths must use normal drive/UNC spelling for Git compatibility, without inheriting user configuration.
