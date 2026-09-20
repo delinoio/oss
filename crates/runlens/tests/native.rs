@@ -2882,3 +2882,54 @@ fn clean_retains_masked_home_and_cache_accesses_for_policy() {
     assert!(!serialized.contains("cache content"));
     assert!(!serialized.contains(root.path().to_str().unwrap()));
 }
+
+#[test]
+fn cache_globs_cover_concrete_membership_ancestors_only() {
+    use runlens::{analysis, config, entries::Entries, model::*, report};
+    for extra in [None, Some("generated/a/uncovered.txt"), Some("uncovered/")] {
+        let root = tempfile::tempdir().unwrap();
+        let mut args = vec![
+            "run",
+            "--save",
+            "outputs.json",
+            "--",
+            fixture(),
+            "policy-write",
+            "generated/a/result.js",
+        ];
+        if let Some(extra) = extra {
+            args.push(extra);
+        }
+        assert!(invoke(root.path(), &args).status.success());
+        let mut value = report::read(&root.path().join("outputs.json")).unwrap();
+        let expected = value.executions[0].command.clone();
+        let mut command = config::Command::direct(expected.argv.clone());
+        command.outputs = vec!["generated/*/*.js".into()];
+        // Direct ancestor writes must still fail independently. Then isolate
+        // the snapshot membership rule from those explicit mkdir attempts.
+        let direct = analysis::cache(&value, &command, &expected).unwrap();
+        assert_eq!(direct.verdict, Some(Verdict::Failed));
+        value.executions[0].accesses = Entries::default();
+        let checked = analysis::cache(&value, &command, &expected).unwrap();
+        assert_eq!(
+            checked.verdict,
+            Some(if extra.is_some() {
+                Verdict::Failed
+            } else {
+                Verdict::Passed
+            })
+        );
+        for finding in checked.findings.iter() {
+            let (_, finding) = finding.unwrap();
+            if finding.code == FindingCode::UncoveredOutput {
+                assert!(extra.is_some());
+                assert!(
+                    !finding
+                        .evidence
+                        .iter()
+                        .any(|e| e.path.as_deref() == Some("${workspace}/generated/a"))
+                );
+            }
+        }
+    }
+}

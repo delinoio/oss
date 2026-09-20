@@ -659,3 +659,8 @@ Clean/repeat isolated HOME and cache access attempts remain in receipts under
 `${temporary}` with `in_scope=false`; their contents remain outside snapshots.
 Only Runlens-owned collector/library paths are omitted from access records.
 Temporary isolation therefore cannot erase evidence used by access policies.
+
+Cache output coverage derives directory membership ancestors from concrete known
+changed paths matched by output globs, including intermediate wildcard segments.
+It shares the bounded ancestor index with write policies; direct ancestor writes,
+type changes, unknown states, and unrelated siblings still require coverage.

@@ -243,18 +243,18 @@ fn coverage(
             )?;
         }
     }
+    let ancestors = allowed_write_ancestors(execution, Some(&outputs))?;
     for item in execution.changes.iter() {
         let (path, change) = item?;
         let output = matches(&outputs, &path);
         let state = execution.after.get(&path)?.or(execution.before.get(&path)?);
         // Directory membership ancestors are described in receipts. Changed leaf
         // entries are audited independently, avoiding an implicit whole-root output.
-        let ancestor = state.is_some_and(|s| s.kind == Some(FileKind::Directory))
-            && command
-                .outputs
-                .iter()
-                .any(|p| p.starts_with(&format!("{}/", config::relative_pattern_path(&path))))
-            || path == "${workspace}";
+        let ancestor = change != ChangeKind::TypeChanged
+            && ancestors.get(&path)?.is_some()
+            && state.is_some_and(|s| {
+                s.knowledge == Knowledge::Known && s.kind == Some(FileKind::Directory)
+            });
         if change == ChangeKind::Unknown {
             result.finding(
                 FindingCode::UnknownEvidence,
