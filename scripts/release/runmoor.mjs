@@ -46,7 +46,7 @@ export async function checkPublication(plan, request) {
   const release = await request(`${prefix}/releases/tags/${encodeURIComponent(plan.tag)}`);
   if (release.status === 200) {
     if (release.body?.draft === true) {
-      if (release.body.tag_name !== plan.tag || release.body.prerelease !== false) throw new Error("Existing release draft is not bound to the requested stable tag");
+      if (release.body.tag_name !== plan.tag || release.body.prerelease !== false || release.body.target_commitish !== plan.revision) throw new Error("Existing release draft is not bound to the requested stable tag and source revision");
       return;
     }
     throw new Error("A public release already exists; immutable artifacts cannot be overwritten");

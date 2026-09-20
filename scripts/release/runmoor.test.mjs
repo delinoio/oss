@@ -83,13 +83,14 @@ test("Publication resumes a matching draft and refuses public or uncertain relea
   await checkPublication(plan, async (route) => ({ status: route.includes("/git/") ? 200 : 404, body: { object: { type: "commit", sha: revision } } }));
   await checkPublication(plan, async (route) => route.includes("/git/")
     ? { status: 200, body: { object: { type: "commit", sha: revision } } }
-    : { status: 200, body: { tag_name: plan.tag, draft: true, prerelease: false } });
+    : { status: 200, body: { tag_name: plan.tag, draft: true, prerelease: false, target_commitish: revision } });
   for (const body of [
-    { tag_name: plan.tag, draft: true, prerelease: true },
-    { tag_name: "runmoor@v9.9.9", draft: true, prerelease: false },
+    { tag_name: plan.tag, draft: true, prerelease: true, target_commitish: revision },
+    { tag_name: "runmoor@v9.9.9", draft: true, prerelease: false, target_commitish: revision },
+    { tag_name: plan.tag, draft: true, prerelease: false, target_commitish: "2".repeat(40) },
   ]) await assert.rejects(checkPublication(plan, async (route) => route.includes("/git/")
     ? { status: 200, body: { object: { type: "commit", sha: revision } } }
-    : { status: 200, body }), /stable tag/u);
+    : { status: 200, body }), /stable tag and source revision/u);
   for (const result of [
     { status: 403, body: {} },
     { status: 200, body: { object: { type: "commit", sha: "2".repeat(40) } } },
