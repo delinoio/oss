@@ -682,3 +682,5 @@ and records incomplete collection instead of panicking the child.
 Offline policy input/output coverage uses the same normalized argv, cwd, and recorded-name binding as cache audits. A changed or redacted identity is inconclusive; global boundaries still apply to observed accesses. Clean verification builds the expected identity from the active configuration in each fresh checkout.
 
 Explain searches both access and change keys using Windows ordinal case-insensitive comparison on Windows, preserving the concrete stored evidence paths. ASCII aliases work across analyst platforms. Windows Unicode aliases queried on another OS use simple uppercase candidates and retain an unknown finding because the source OS uppercase table is unavailable; full Unicode expansions do not define filename equality. Unix keys remain case-sensitive.
+
+Windows snapshot stability checks include volume serial number and file index for pathname and opened-handle metadata. Missing IDs cannot establish stability. Same-size, same-timestamp replacement therefore yields unknown evidence even if a detached handle remains readable. These IDs remain transient and are not persisted in reports.

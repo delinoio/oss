@@ -267,9 +267,21 @@ pub(crate) fn same(left: &fs::Metadata, right: &fs::Metadata) -> bool {
             && left.ctime_nsec() == right.ctime_nsec()
             && left.mode() == right.mode()
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     {
+        use std::os::windows::fs::MetadataExt;
+        // Path and open-handle metadata must identify the same volume/file.
+        // Missing IDs (e.g. directory enumeration metadata) are not equality.
         basic
+            && left.volume_serial_number().is_some()
+            && left.file_index().is_some()
+            && left.volume_serial_number() == right.volume_serial_number()
+            && left.file_index() == right.file_index()
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = basic;
+        false
     }
 }
 pub fn difference(before: &FileState, after: &FileState) -> Option<ChangeKind> {
@@ -319,4 +331,51 @@ pub fn changes(
         }
     }
     Ok(changes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stable_path_metadata_must_match_the_open_file_identity() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("observed");
+        fs::write(&path, b"old").unwrap();
+        let before = fs::symlink_metadata(&path).unwrap();
+        let detached = fs::File::open(&path).unwrap();
+        assert!(same(&before, &detached.metadata().unwrap()));
+        let replacement = directory.path().join("replacement");
+        fs::write(&replacement, b"new").unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&replacement)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(before.modified().unwrap()))
+            .unwrap();
+        // Windows does not replace an open destination with std::fs::rename.
+        // Retain the old handle across a rename and install a different file.
+        fs::rename(&path, directory.path().join("detached")).unwrap();
+        fs::rename(&replacement, &path).unwrap();
+        let after = fs::symlink_metadata(&path).unwrap();
+        assert_eq!(before.len(), after.len());
+        assert_eq!(before.modified().unwrap(), after.modified().unwrap());
+        assert!(!same(&before, &after));
+        assert!(!same(&detached.metadata().unwrap(), &after));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn absent_windows_file_ids_cannot_prove_stability() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("observed"), b"value").unwrap();
+        let metadata = fs::read_dir(directory.path())
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .metadata()
+            .unwrap();
+        assert!(!same(&metadata, &metadata));
+    }
 }

@@ -1,3 +1,5 @@
+#![cfg_attr(windows, feature(windows_by_handle))]
+
 pub mod analysis;
 pub mod clean;
 pub mod config;
