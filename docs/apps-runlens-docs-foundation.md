@@ -64,3 +64,8 @@ Production dispatches share one workflow-wide concurrency group with in-progress
 cancellation disabled. This serializes build through publication; dry runs use
 run-specific groups and cannot cancel production. Before deployment, the workflow
 requires its commit to equal current main, rejecting stale queued or rerun builds.
+
+The main-revision guard runs in Wrangler pre-commands, after artifact download
+and Wrangler installation. A stale revision or GitHub lookup failure aborts
+before the deployment command. The remote check and Pages publication are not
+an atomic transaction; the guard minimizes their unavoidable network boundary.

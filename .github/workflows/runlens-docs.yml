@@ -39,20 +39,17 @@ jobs:
     environment: runlens-docs-production
     runs-on: ubuntu-22.04
     steps:
-      - name: Require the current main revision
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const {data: ref} = await github.rest.git.getRef({...context.repo, ref: 'heads/main'});
-            if (ref.object.sha !== context.sha) {
-              core.setFailed('Documentation publication requires the current main revision.');
-            }
       - uses: actions/download-artifact@v8
         with:
           name: runlens-docs
           path: site
       - uses: cloudflare/wrangler-action@v3
+        env:
+          GH_TOKEN: ${{ github.token }}
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Wrangler runs preCommands after installing its tools, immediately
+          # before deployment. Keep this one shell command: each line is executed separately.
+          preCommands: test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA" || { echo 'Documentation publication requires the current main revision.' >&2; exit 1; }
           command: pages deploy site --project-name runlens-docs --branch main

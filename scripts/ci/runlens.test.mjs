@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { load } from "js-yaml";
@@ -18,10 +21,26 @@ test("Runlens production documentation requires an explicit main-branch dispatch
     group: "runlens-docs-${{ !inputs.dry_run && github.ref == 'refs/heads/main' && 'production' || github.run_id }}",
     "cancel-in-progress": false,
   });
-  const guard = docs.jobs.deploy.steps[0];
-  assert.equal(guard.uses, "actions/github-script@v8");
-  assert.match(guard.with.script, /ref\.object\.sha !== context\.sha/u);
-  assert.match(guard.with.script, /core\.setFailed/u);
+  const [download, deploy] = docs.jobs.deploy.steps;
+  assert.equal(docs.jobs.deploy.steps.length, 2);
+  assert.equal(download.uses, "actions/download-artifact@v8");
+  assert.equal(deploy.uses, "cloudflare/wrangler-action@v3");
+  assert.equal(deploy.env.GH_TOKEN, "${{ github.token }}");
+  assert.match(deploy.with.preCommands, /git\/ref\/heads\/main/u);
+  assert.match(deploy.with.preCommands, /GITHUB_SHA/u);
+  assert.doesNotMatch(deploy.with.preCommands, /\n/u);
+  const directory = mkdtempSync(join(tmpdir(), "runlens-docs-guard-"));
+  try {
+    writeFileSync(join(directory, "gh"), '#!/bin/sh\nprintf "%s\\n" "$TEST_HEAD"\nexit "$TEST_STATUS"\n', { mode: 0o700 });
+    for (const [head, status, success] of [["current", "0", true], ["stale", "0", false], ["", "1", false]]) {
+      const result = spawnSync("sh", ["-c", deploy.with.preCommands], {
+        env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, GITHUB_REPOSITORY: "owner/repo", GITHUB_SHA: "current", TEST_HEAD: head, TEST_STATUS: status },
+      });
+      assert.equal(result.status === 0, success, `head=${head} status=${status}`);
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 test("Runlens uses native six-platform execution and separate minimum OS evidence", () => {
   assert.equal(native.jobs.native.strategy.matrix.include.length, 6);

@@ -166,7 +166,7 @@
 
 - Runlens discovery links in public-docs navigation, home, and project catalog use `https://runlens.delino.io`; its guides remain owned by `apps/runlens-docs`.
 
-- Runlens documentation production dispatches serialize the full workflow, never share the dry-run concurrency group, and reject stale main revisions immediately before deployment.
+- Runlens documentation production dispatches serialize the full workflow, never share the dry-run concurrency group, and reject stale main revisions in Wrangler pre-commands after artifact download and tool installation, immediately before deployment.
 
 ### async-commit-hook
 - `apps/async-commit-hook` owns the Rsbuild app and `/docs` at `https://ach.delino.io`. Follow `docs/apps-async-commit-hook-contract.md`.
