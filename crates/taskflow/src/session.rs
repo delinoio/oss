@@ -213,7 +213,9 @@ pub async fn start(
                                             // Queued mutations can already be represented in the first
                                             // snapshot. Preserve their input cause even with initial:false.
                                             let before_baseline = received_at <= baseline_at && files::input_matches(&graph.workspace.projects[&node.project], &node.task, &path)?;
-                                            if before_baseline || observed.get(id) != Some(&snapshot) {
+                                            let changed = observed.get(id) != Some(&snapshot);
+                                            tracing::debug!(task = %id, path = %path.display(), before_baseline, changed, event_age_ms = received_at.elapsed().as_millis(), "Observed watched input event");
+                                            if before_baseline || changed {
                                                 observed.insert(id.clone(), snapshot);
                                                 enqueue(&graph, &options, &mut pending, id, Cause::Input { path: files::relative_to(root, &path)? }, Instant::now() + config::duration(&watch.debounce)?);
                                             }
@@ -486,6 +488,12 @@ fn enqueue(
                 } else {
                     Overlap::Queue
                 });
+        tracing::debug!(
+            task = id,
+            ?cause,
+            ?overlap,
+            "Applying overlap to active execution"
+        );
         match overlap {
             Overlap::Skip => return,
             Overlap::Restart => {
@@ -494,6 +502,7 @@ fn enqueue(
             Overlap::Queue => {}
         }
     }
+    tracing::debug!(task = id, ?cause, "Queueing session trigger");
     let pending = pending.entry(id.into()).or_insert_with(|| Pending {
         causes: BTreeSet::new(),
         due,

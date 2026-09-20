@@ -838,7 +838,10 @@ fn fixture(tasks: Value) -> tempfile::TempDir {
     LOGGING.get_or_init(|| {
         let _ = tracing_subscriber::fmt()
             .with_test_writer()
-            .with_max_level(tracing::Level::INFO)
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "taskflow=info".into()),
+            )
             .try_init();
     });
     let dir = tempfile::tempdir().unwrap();
@@ -1601,11 +1604,11 @@ async fn scenario_17_queue_skip_restart_own_real_exclusive_processes() {
         let address = listener.local_addr().unwrap().to_string();
         drop(listener);
         let directory = fixture(json!({
-            "check":{"command":command(&["gated-paced","events",&address,"release"]),"input":["source"],"watch":{"debounce":"20ms"},"overlap":overlap},
+            "check":{"command":command(&["gated-paced","events",&address,"release"]),"input":["source"],"watch":{"initial":false,"debounce":"20ms"},"overlap":overlap},
+            "barrier":{"command":command(&["record","ready","ready"]),"input":[]},
             "observe":{"command":command(&["copy","source","observed"]),"input":["source"],"output":["observed"],"watch":{"initial":false,"debounce":"20ms"}}
         }));
-        std::fs::write(directory.path().join("source"), "initial").unwrap();
-        profile(directory.path(), &["check", "observe"]);
+        profile(directory.path(), &["barrier", "check", "observe"]);
         let root = directory.path().to_path_buf();
         let token = CancellationToken::new();
         let stop = token.clone();
@@ -1623,30 +1626,50 @@ async fn scenario_17_queue_skip_restart_own_real_exclusive_processes() {
             .await
         });
         let events = directory.path().join("events");
-        wait_lines(&events, "start", 1).await;
-        // Keep the process alive until an independent subscriber confirms the
-        // session has processed each edit. FSEvents may deliver mutations after
-        // a fixed-duration process exits, which would no longer test overlap.
-        for (index, change) in ["first", "second"].into_iter().enumerate() {
-            std::fs::write(directory.path().join("source"), change).unwrap();
-            tokio::time::timeout(Duration::from_secs(15), async {
-                while std::fs::read_to_string(directory.path().join("observed"))
-                    .ok()
-                    .as_deref()
-                    != Some(change)
-                {
+        // No input exists before discovery. Start both subscriptions from an
+        // idle baseline, after the activation-only barrier has run, so delayed
+        // startup notifications cannot queue an extra observer execution.
+        wait_lines(&directory.path().join("ready"), "ready", 1).await;
+        let mut previous_observer = None;
+        for (index, change) in ["initial", "first", "second"].into_iter().enumerate() {
+            files::atomic_write(&directory.path().join("source"), change.as_bytes()).unwrap();
+            // Output alone is insufficient: an older queued command can read a
+            // newer version without that version's notification being handled.
+            // Finish this exact observer execution before publishing the next
+            // input, while the exclusive check stays behind its release gate.
+            let receipt = tokio::time::timeout(Duration::from_secs(15), async {
+                loop {
                     assert!(
                         !session.is_finished(),
                         "session failed before observing mutation"
                     );
+                    if let Some(receipt) = runner::previous(directory.path(), "app#observe") {
+                        if previous_observer.as_ref() != Some(&receipt.execution)
+                            && receipt.success()
+                            && std::fs::read_to_string(directory.path().join("observed"))
+                                .ok()
+                                .as_deref()
+                                == Some(change)
+                        {
+                            break receipt;
+                        }
+                    }
                     tokio::time::sleep(Duration::from_millis(10)).await;
                 }
             })
             .await
             .unwrap();
-            if overlap == "restart" {
-                wait_lines(&events, "start", index + 2).await;
-            }
+            assert!(receipt
+                .causes
+                .iter()
+                .any(|cause| matches!(cause, Cause::Input { .. })));
+            previous_observer = Some(receipt.execution);
+            wait_lines(
+                &events,
+                "start",
+                if overlap == "restart" { index + 1 } else { 1 },
+            )
+            .await;
         }
         std::fs::write(directory.path().join("release"), "release").unwrap();
         wait_lines(&events, "start", expected_starts).await;
