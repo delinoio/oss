@@ -231,14 +231,15 @@ impl Selection {
             affected || !self.tasks.is_empty(),
             "specify a task or affected selection"
         );
-        let mut changes = self.changed.clone();
+        let changes = self.changed.clone();
         if affected && changes.is_empty() {
-            changes = crate::plan::git_changes(
-                &graph.workspace.root,
+            return Plan::from_git(
+                graph,
+                &self.tasks,
                 self.base.as_deref().unwrap_or("HEAD"),
                 self.head.as_deref(),
             )
-            .await?;
+            .await;
         }
         Plan::create(graph, &self.tasks, &changes, affected)
     }

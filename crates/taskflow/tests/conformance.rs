@@ -7193,3 +7193,88 @@ async fn late_remote_commit_cancellation_preserves_cli_success() {
         assert_eq!(result.results["app#build"].outcome, Outcome::Executed);
     }
 }
+
+#[tokio::test]
+async fn affected_gitlinks_select_descendant_inputs_without_a_checkout() {
+    let root = fixture(json!({
+        "build":{"command":command(&["version"]),"input":["vendor/lib/**/*.rs"]},
+        "owned":{"command":command(&["version"]),"input":["vendor/lib/**"],"output":["vendor/lib/**"]},
+        "unrelated":{"command":command(&["version"]),"input":["other/**"]}
+    }));
+    let git = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .current_dir(root.path())
+            .args([
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.test",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "core.hooksPath=.git/no-hooks",
+            ])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    };
+    git(&["init", "-q"]);
+    files::atomic_write(&root.path().join("vendor/ignored.txt"), b"ignored").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-qm", "baseline"]);
+    for operation in ["add", "update", "delete"] {
+        let previous = git(&["rev-parse", "HEAD"]);
+        if operation == "delete" {
+            git(&["update-index", "--force-remove", "vendor/lib"]);
+        } else {
+            git(&[
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                &format!("160000,{previous},vendor/lib"),
+            ]);
+        }
+        git(&["commit", "-qm", operation]);
+        let g = graph(root.path()).await;
+        let plan = Plan::from_git(&g, &[], &previous, Some("HEAD"))
+            .await
+            .unwrap();
+        assert_eq!(plan.order, ["app#build"], "{operation}");
+        assert!(plan.causes["app#build"].contains(&Cause::Input {
+            path: "vendor/lib".into()
+        }));
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .current_dir(root.path())
+            .args(["--json", "plan", "--base", &previous, "--head", "HEAD"])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(
+            serde_json::from_slice::<Value>(&output.stdout).unwrap()["order"],
+            json!(["app#build"])
+        );
+    }
+    // A missing ordinary file is not evidence of a changed directory tree.
+    git(&["rm", "vendor/ignored.txt"]);
+    assert!(
+        Plan::from_git(graph(root.path()).await.as_ref(), &[], "HEAD", None)
+            .await
+            .unwrap()
+            .order
+            .is_empty()
+    );
+    std::fs::create_dir_all(root.path().join("vendor/lib")).unwrap();
+    assert_eq!(
+        Plan::create(
+            graph(root.path()).await.as_ref(),
+            &[],
+            &["vendor/lib".into()],
+            true
+        )
+        .unwrap()
+        .order,
+        ["app#build"]
+    );
+}

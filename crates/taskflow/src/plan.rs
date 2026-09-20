@@ -44,6 +44,26 @@ impl Plan {
         changes: &[PathBuf],
         affected: bool,
     ) -> Result<Self> {
+        Self::create_with_directories(graph, requests, changes, affected, &BTreeSet::new())
+    }
+
+    pub async fn from_git(
+        graph: &Graph,
+        requests: &[String],
+        base: &str,
+        head: Option<&str>,
+    ) -> Result<Self> {
+        let (changes, directories) = git_changed_paths(&graph.workspace.root, base, head).await?;
+        Self::create_with_directories(graph, requests, &changes, true, &directories)
+    }
+
+    fn create_with_directories(
+        graph: &Graph,
+        requests: &[String],
+        changes: &[PathBuf],
+        affected: bool,
+        directories: &BTreeSet<PathBuf>,
+    ) -> Result<Self> {
         let mut causes: BTreeMap<String, BTreeSet<Cause>> = BTreeMap::new();
         if !affected {
             for request in requests {
@@ -67,7 +87,22 @@ impl Plan {
             for path in changes {
                 let path = files::within(&graph.workspace.root, &graph.workspace.root.join(path))?;
                 owners.extend(graph.owners(&path));
-                for task in graph.inputs(&path)? {
+                let mut matching: BTreeSet<_> = graph.inputs(&path)?.into_iter().collect();
+                // Gitlinks represent a whole tree even when the submodule is
+                // deleted or uninitialized. Ordinary deleted files retain exact
+                // glob filtering; their absence is not directory evidence.
+                if path.is_dir() || directories.contains(path.strip_prefix(&graph.workspace.root)?)
+                {
+                    for node in graph.tasks.values() {
+                        let project = &graph.workspace.projects[&node.project];
+                        if files::input_event_may_match(project, &node.task, &path)
+                            && !files::output_matches(project, &node.task, &path)?
+                        {
+                            matching.insert(node.id.clone());
+                        }
+                    }
+                }
+                for task in matching {
                     causes.entry(task).or_default().insert(Cause::Input {
                         path: files::slash(path.strip_prefix(&graph.workspace.root)?)?,
                     });
@@ -222,32 +257,64 @@ pub async fn git_changes(
     base: &str,
     head: Option<&str>,
 ) -> Result<Vec<PathBuf>> {
+    Ok(git_changed_paths(root, base, head).await?.0)
+}
+
+async fn git_changed_paths(
+    root: &std::path::Path,
+    base: &str,
+    head: Option<&str>,
+) -> Result<(Vec<PathBuf>, BTreeSet<PathBuf>)> {
     for revision in std::iter::once(base).chain(head) {
         ensure!(
             !revision.is_empty() && !revision.starts_with('-'),
             "Git revision must be nonempty and must not start with '-'"
         );
     }
-    let mut args = vec!["git", "diff", "--name-only", "--no-renames", "-z", base];
+    let mut args = vec![
+        "git",
+        "diff",
+        "--raw",
+        "--no-abbrev",
+        "--no-ext-diff",
+        "--ignore-submodules=none",
+        "--no-renames",
+        "-z",
+        base,
+    ];
     if let Some(head) = head {
         args.push(head);
     }
     args.push("--");
-    let mut bytes = crate::discover::output_tool(root, &args, &[]).await?;
-    if head.is_none() {
-        bytes.extend(
-            crate::discover::output_tool(
-                root,
-                &["git", "ls-files", "--others", "--exclude-standard", "-z"],
-                &[],
-            )
-            .await?,
+    let bytes = crate::discover::output_tool(root, &args, &[]).await?;
+    let mut paths = BTreeSet::new();
+    let mut directories = BTreeSet::new();
+    let mut records = bytes.split(|b| *b == 0).filter(|p| !p.is_empty());
+    while let Some(header) = records.next() {
+        let fields: Vec<_> = std::str::from_utf8(header)?.split_whitespace().collect();
+        ensure!(
+            fields.len() == 5 && fields[0].starts_with(':'),
+            "invalid Git raw diff record"
         );
+        let name = records
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("missing Git raw diff path"))?;
+        let path = PathBuf::from(std::str::from_utf8(name)?);
+        if fields[0] == ":160000" || fields[1] == "160000" {
+            directories.insert(path.clone());
+        }
+        paths.insert(path);
     }
-    let paths: Result<BTreeSet<_>> = bytes
-        .split(|b| *b == 0)
-        .filter(|p| !p.is_empty())
-        .map(|p| Ok(PathBuf::from(std::str::from_utf8(p)?)))
-        .collect();
-    Ok(paths?.into_iter().collect())
+    if head.is_none() {
+        let untracked = crate::discover::output_tool(
+            root,
+            &["git", "ls-files", "--others", "--exclude-standard", "-z"],
+            &[],
+        )
+        .await?;
+        for name in untracked.split(|b| *b == 0).filter(|p| !p.is_empty()) {
+            paths.insert(PathBuf::from(std::str::from_utf8(name)?));
+        }
+    }
+    Ok((paths.into_iter().collect(), directories))
 }

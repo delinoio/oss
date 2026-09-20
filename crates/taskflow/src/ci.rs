@@ -430,12 +430,11 @@ pub fn export(graph: &Graph, targets: Vec<String>, output: &Path) -> Result<()> 
 
 pub async fn prepare(root: &Path, blueprint: &Blueprint, base: Option<&str>) -> Result<CiPlan> {
     let graph = blueprint.graph(root).await?;
-    let changes = if let Some(base) = base {
-        crate::plan::git_changes(root, base, None).await?
+    let plan = if let Some(base) = base {
+        Plan::from_git(&graph, &blueprint.targets, base, None).await?
     } else {
-        vec![]
+        Plan::create(&graph, &blueprint.targets, &[], false)?
     };
-    let plan = Plan::create(&graph, &blueprint.targets, &changes, base.is_some())?;
     Ok(CiPlan {
         version: 1,
         blueprint: blueprint.digest()?,
