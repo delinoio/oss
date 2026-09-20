@@ -19,7 +19,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-runlens-${{ github.ref }}
+  # All versions update the same Homebrew formula and release namespace.
+  group: release-runlens-${{ !inputs.dry_run && 'publication' || github.run_id }}
   cancel-in-progress: false
 
 jobs:

@@ -131,3 +131,10 @@ test("Windows native validation checks malformed file attribute memory", () => {
   assert.equal(step.if, "runner.os == 'Windows'");
   assert.equal(step.run, "cargo test --locked --package fspy_preload_windows object_attributes_reject_malformed_memory_without_dereferencing");
 });
+
+test("Runlens serializes publication across all versions while dry runs stay independent", () => {
+  assert.deepEqual(release.concurrency, {
+    group: "release-runlens-${{ !inputs.dry_run && 'publication' || github.run_id }}",
+    "cancel-in-progress": false,
+  });
+});

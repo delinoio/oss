@@ -791,3 +791,7 @@ caller preload bytes and dynamic-descendant loader behavior. The regression
 compares static environment output and a real caller-library symbol in a dynamic
 descendant against untraced execution. Removal: upstream must preserve caller
 preloads across static exec with equivalent unit and native coverage.
+
+All Runlens publication versions share one workflow-wide concurrency group with
+cancellation disabled, covering validation, signing, install checks, release and
+Homebrew mutations. Dry runs use run-specific groups and cannot interrupt it.

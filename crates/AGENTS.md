@@ -267,3 +267,5 @@
 - The isolated Windows Ctrl+C test helper must explicitly clear inherited Ctrl+C-ignore state before spawning clibox, including under Git Bash release jobs. Keep this normalization confined to the test-owned process and include helper stdout/stderr on failure; production signal behavior is unchanged.
 
 - Runlens static Linux targets retain caller LD_PRELOAD entries; remove only the tracer-owned library while preserving descendant loader behavior.
+
+- Serialize all Runlens release versions under one publication concurrency group; dry runs must not own or cancel that lock.
