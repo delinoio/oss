@@ -11,7 +11,7 @@ struct Cursor<'a> {
     column: usize,
     cancel: &'a Cancellation,
 }
-impl Cursor<'_> {
+impl<'a> Cursor<'a> {
     fn peek(&self) -> Option<u8> {
         self.text.as_bytes().get(self.offset).copied()
     }
@@ -50,6 +50,23 @@ impl Cursor<'_> {
         Ok(())
     }
 
+    fn key(&mut self) -> Result<&'a str> {
+        let start = self.offset;
+        if !self
+            .peek()
+            .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+        {
+            return Err(self.error());
+        }
+        while self
+            .peek()
+            .is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_')
+        {
+            self.advance()?;
+        }
+        Ok(&self.text[start..self.offset])
+    }
+
     fn error(&self) -> Error {
         Error::from(Failure::DotenvSyntax).at(self.line, self.column)
     }
@@ -74,29 +91,14 @@ pub fn parse(text: &str, values: &mut Values, cancel: &Cancellation) -> Result<(
             }
             continue;
         }
-        if c.text[c.offset..].starts_with("export")
-            && matches!(c.text.as_bytes().get(c.offset + 6), Some(b' ' | b'\t'))
-        {
-            for _ in 0..6 {
-                c.advance()?;
-            }
+        let mut key = c.key()?;
+        let export_prefix = key == "export" && matches!(c.peek(), Some(b' ' | b'\t'));
+        c.space()?;
+        // `export` remains an ordinary key when followed by the assignment sign.
+        if export_prefix && c.peek() != Some(b'=') {
+            key = c.key()?;
             c.space()?;
         }
-        let start = c.offset;
-        if !c
-            .peek()
-            .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
-        {
-            return Err(c.error());
-        }
-        while c
-            .peek()
-            .is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_')
-        {
-            c.advance()?;
-        }
-        let key = &text[start..c.offset];
-        c.space()?;
         if c.peek() != Some(b'=') {
             return Err(c.error());
         }

@@ -92,6 +92,38 @@ fn dotenv_tokens_order_overrides_and_defaults() {
 }
 
 #[test]
+fn dotenv_export_key_is_distinct_from_the_optional_prefix() {
+    for (input, key, token) in [
+        ("export =enabled\n", "export", "enabled"),
+        (
+            " export\t = 'literal ${HOME}' # comment\r\n",
+            "export",
+            "'literal ${HOME}'",
+        ),
+        ("export \t=", "export", ""),
+        ("export export =nested\n", "export", "nested"),
+        ("export \tKEY =enabled\n", "KEY", "enabled"),
+        ("export_KEY =enabled\n", "export_KEY", "enabled"),
+    ] {
+        good(
+            &["dotenv", "list", "--input", "-"],
+            input,
+            &format!("{key}\n"),
+        );
+        good(
+            &["dotenv", "merge", "-"],
+            input,
+            &format!("{key}={token}\n"),
+        );
+    }
+    good(
+        &["dotenv", "merge", "-"],
+        "export =first\nexport export=second\nexport\t=\n",
+        "export=\n",
+    );
+}
+
+#[test]
 fn explicit_files_do_not_consume_stdin_or_discover_parents() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join(".env"), "A=1").unwrap();
@@ -188,6 +220,9 @@ fn dotenv_invalid_records_never_emit_even_when_overwritten() {
         "한글=secret",
         "KEY",
         "export KEY",
+        "export # missing assignment",
+        "export export KEY=secret",
+        "export BAD-KEY=secret",
         "A='secret",
         "A=\"secret",
         "A='secret' trailing",
