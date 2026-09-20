@@ -43,7 +43,7 @@ pub struct OwnedProcess {
     #[cfg(unix)]
     supervisor: Option<tempfile::TempDir>,
     #[cfg(unix)]
-    lease: Option<tokio::process::ChildStdin>,
+    lease: Option<std::os::unix::net::UnixStream>,
     #[cfg(windows)]
     job: usize,
 }
@@ -57,12 +57,23 @@ impl OwnedProcess {
     ) -> Result<Self> {
         let args = argv(command, shell);
         #[cfg(unix)]
+        let envelope = unix_owner::environment_envelope(environment)?;
+        #[cfg(unix)]
         let scope = unix_owner::prepare()?;
+        #[cfg(unix)]
+        let (lease, control) = std::os::unix::net::UnixStream::pair()?;
+        #[cfg(unix)]
+        lease.set_write_timeout(Some(Duration::from_secs(10)))?;
         #[cfg(unix)]
         let mut builder = {
             let mut command = tokio::process::Command::new(scope.path().join("supervisor"));
             command.arg("run").arg(scope.path()).args(&args);
-            command.stdin(Stdio::piped()).kill_on_drop(false);
+            command
+                .stdin(Stdio::from(std::os::fd::OwnedFd::from(control)))
+                .kill_on_drop(false)
+                .env_clear()
+                .env("PATH", "/usr/bin:/bin")
+                .env("LC_ALL", "C");
             command
         };
         #[cfg(windows)]
@@ -78,6 +89,7 @@ impl OwnedProcess {
             .current_dir(directory)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        #[cfg(windows)]
         if let Some(environment) = environment {
             builder.env_clear().envs(environment);
         }
@@ -96,10 +108,6 @@ impl OwnedProcess {
             );
         }
         let mut child = builder.spawn().context("failed to spawn command")?;
-        // Tokio Child::wait closes its stdin automatically. Keep the owner lease
-        // separately so waiting for normal completion does not cancel the task.
-        #[cfg(unix)]
-        let lease = child.stdin.take();
         let _ = &mut child;
         let pid = child.id().context("spawned child has no process ID")?;
         let mut owned = Self {
@@ -109,10 +117,23 @@ impl OwnedProcess {
             #[cfg(unix)]
             supervisor: Some(scope),
             #[cfg(unix)]
-            lease,
+            lease: Some(lease),
             #[cfg(windows)]
             job: 0,
         };
+        #[cfg(unix)]
+        {
+            use std::io::Write;
+            // Task loader variables must never reach the supervisor's own
+            // exec. Send them as private bytes, then retain this separate EOF
+            // lease (Tokio Child::wait closes a ChildStdin automatically).
+            owned
+                .lease
+                .as_mut()
+                .unwrap()
+                .write_all(&envelope)
+                .context("send private command environment")?;
+        }
         #[cfg(windows)]
         {
             owned.job = windows::attach_and_resume(&owned.child, pid)?;
@@ -638,6 +659,42 @@ mod unix_owner {
 
     pub fn poison() {
         POISONED.store(true, Ordering::SeqCst);
+    }
+
+    pub fn environment_envelope(environment: Option<&BTreeMap<String, String>>) -> Result<Vec<u8>> {
+        let inherited;
+        let environment = match environment {
+            Some(environment) => environment,
+            None => {
+                inherited = crate::environment::inherited()?;
+                &inherited
+            }
+        };
+        ensure!(
+            environment.len() <= 65536,
+            "command environment exceeds transport limit"
+        );
+        let mut bytes = (environment.len() as u32).to_ne_bytes().to_vec();
+        for (name, value) in environment {
+            ensure!(
+                !name.is_empty() && !name.contains(['=', '\0']) && !value.contains('\0'),
+                "invalid command environment entry"
+            );
+            let size = name
+                .len()
+                .checked_add(value.len())
+                .and_then(|n| n.checked_add(1))
+                .context("command environment exceeds transport limit")?;
+            ensure!(
+                size <= 16 * 1024 * 1024 && bytes.len() + size + 4 <= METADATA_LIMIT as usize,
+                "command environment exceeds transport limit"
+            );
+            bytes.extend_from_slice(&(size as u32).to_ne_bytes());
+            bytes.extend_from_slice(name.as_bytes());
+            bytes.push(b'=');
+            bytes.extend_from_slice(value.as_bytes());
+        }
+        Ok(bytes)
     }
 
     pub fn prepare() -> Result<tempfile::TempDir> {

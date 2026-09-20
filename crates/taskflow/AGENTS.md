@@ -119,3 +119,5 @@
 - Validate automatic metadata inputs with the same complete link-chain containment as declared inputs before hashing discovery generations, CI manifests, or task snapshots, including input-disabled tasks and missing targets.
 
 - Persist selected OS/architecture defaults in CI blueprints and reapply them before graph construction on runners. Explicit task components retain precedence; conditional prerequisites, causes, and unit boundaries must match export.
+
+- Native owner bootstraps use a closed system environment. Transport the bounded task environment privately over the EOF lease and apply it only after kernel ownership exists; loader hooks must never execute in the bootstrap helper. Never persist transport values in files, launchd plists, or diagnostics.

@@ -76,6 +76,37 @@ static int write_all(int fd, const void *buffer, size_t n) {
     }
     return 0;
 }
+static int read_all(int fd, void *buffer, size_t n) {
+    char *p = buffer;
+    while (n) {
+        ssize_t done = read(fd, p, n);
+        if (done < 0 && errno == EINTR) continue;
+        if (done <= 0) return -1;
+        p += done; n -= (size_t)done;
+    }
+    return 0;
+}
+static char *receive_string(int fd, size_t *budget) {
+    uint32_t n;
+    if (read_all(fd, &n, sizeof(n)) || n > *budget) return NULL;
+    *budget -= n;
+    char *s = malloc((size_t)n + 1);
+    if (!s) return NULL;
+    if (read_all(fd, s, n) || memchr(s, 0, n)) { free(s); return NULL; }
+    s[n] = 0; return s;
+}
+static char **receive_vector(int fd, size_t *budget) {
+    uint32_t n;
+    if (read_all(fd, &n, sizeof(n)) || n > 65536) return NULL;
+    char **v = calloc((size_t)n + 1, sizeof(char *));
+    if (!v) return NULL;
+    for (uint32_t i = 0; i < n; i++) {
+        v[i] = receive_string(fd, budget);
+        if (!v[i]) { for (uint32_t j = 0; j < i; j++) free(v[j]); free(v); return NULL; }
+    }
+    return v;
+}
+static void free_vector(char **v) { if (v) { for (size_t i = 0; v[i]; i++) free(v[i]); free(v); } }
 static int code_for(int status) {
     return WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
 }
@@ -127,12 +158,12 @@ static int signal_children(int sig) {
     fclose(f);
     return failed ? -1 : 0;
 }
-static int run_linux(const char *scope, char **args) {
+static int run_linux(const char *scope, char **args, char **env) {
     if (prctl(PR_SET_CHILD_SUBREAPER, 1) || fcntl(0, F_SETFD, FD_CLOEXEC)) return 125;
     char *cwd = getcwd(NULL, 0);
     if (!cwd) return 125;
     if (stopping || ended(0)) { free(cwd); return acknowledge(scope, 130); }
-    pid_t root = start_command(args, environ, cwd, 1, 2);
+    pid_t root = start_command(args, env, cwd, 1, 2);
     free(cwd);
     if (root < 0) return 125;
     int status = 0, root_done = 0, cleanup = 0, term_sent = 0, code = 125;
@@ -209,30 +240,11 @@ static int signal_coalition(uint64_t id, pid_t exclude, int sig) {
     }
     free(pids); return 0;
 }
-static int read_all(int fd, void *buffer, size_t n) {
-    char *p = buffer;
-    while (n) {
-        ssize_t done = read(fd, p, n);
-        if (done < 0 && errno == EINTR) continue;
-        if (done <= 0) return -1;
-        p += done; n -= (size_t)done;
-    }
-    return 0;
-}
 static int send_string(int fd, const char *s) {
     size_t n = strlen(s);
     if (n > 16 * 1024 * 1024) return -1;
     uint32_t size = (uint32_t)n;
     return write_all(fd, &size, sizeof(size)) || write_all(fd, s, size) ? -1 : 0;
-}
-static char *receive_string(int fd, size_t *budget) {
-    uint32_t n;
-    if (read_all(fd, &n, sizeof(n)) || n > *budget) return NULL;
-    *budget -= n;
-    char *s = malloc((size_t)n + 1);
-    if (!s) return NULL;
-    if (read_all(fd, s, n) || memchr(s, 0, n)) { free(s); return NULL; }
-    s[n] = 0; return s;
 }
 static int send_vector(int fd, char **values) {
     uint32_t n = 0;
@@ -241,18 +253,6 @@ static int send_vector(int fd, char **values) {
     for (uint32_t i = 0; i < n; i++) if (send_string(fd, values[i])) return -1;
     return 0;
 }
-static char **receive_vector(int fd, size_t *budget) {
-    uint32_t n;
-    if (read_all(fd, &n, sizeof(n)) || n > 65536) return NULL;
-    char **v = calloc((size_t)n + 1, sizeof(char *));
-    if (!v) return NULL;
-    for (uint32_t i = 0; i < n; i++) {
-        v[i] = receive_string(fd, budget);
-        if (!v[i]) { for (uint32_t j = 0; j < i; j++) free(v[j]); free(v); return NULL; }
-    }
-    return v;
-}
-static void free_vector(char **v) { if (v) { for (size_t i = 0; v[i]; i++) free(v[i]); free(v); } }
 static int stream_socket(void) {
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0) return -1;
@@ -388,7 +388,7 @@ static int supervisor_mac(const char *scope) {
         pause_tick();
     }
 }
-static int run_mac(const char *scope, const char *executable, char **args) {
+static int run_mac(const char *scope, const char *executable, char **args, char **env) {
     phase = PROXY_CREATE;
     char plist[512], label[256], domain[64], target[320];
     snprintf(label, sizeof(label), "io.delino.tflow.%s", strrchr(scope, '/') + 1);
@@ -430,7 +430,7 @@ static int run_mac(const char *scope, const char *executable, char **args) {
     char *cwd = getcwd(NULL, 0);
     if (!cwd) goto cleanup;
     uint32_t mask = (uint32_t)command_mask;
-    failed = stopping || ended(0) || transfer_pipes(control, pipes, 1) || send_string(control, cwd) || write_all(control, &mask, sizeof(mask)) || send_vector(control, args) || send_vector(control, environ);
+    failed = stopping || ended(0) || transfer_pipes(control, pipes, 1) || send_string(control, cwd) || write_all(control, &mask, sizeof(mask)) || send_vector(control, args) || send_vector(control, env);
     free(cwd);
     if (failed) goto cleanup;
     phase = PROXY_WAIT;
@@ -477,14 +477,25 @@ int main(int argc, char **argv) {
     }
 #endif
     if (argc < 4 || strcmp(argv[1], "run")) return 125;
+    /* The executable starts with a closed bootstrap environment. Loader hooks
+     * in the task environment may run only inside the owned command, never
+     * before subreaper/coalition establishment in this process. */
+    size_t budget = 64 * 1024 * 1024;
+    char **env = receive_vector(0, &budget);
+    if (!env) return acknowledge(argv[2], 125);
+    for (size_t i = 0; env[i]; i++) {
+        char *equal = strchr(env[i], '=');
+        if (!equal || equal == env[i]) { free_vector(env); return acknowledge(argv[2], 125); }
+    }
 #ifdef __APPLE__
-    int result = run_mac(argv[2], argv[0], &argv[3]);
+    int result = run_mac(argv[2], argv[0], &argv[3], env);
     if (result == 125) {
         char path[512]; snprintf(path, sizeof(path), "%s/diagnostic", argv[2]);
         FILE *f = fopen(path, "a"); if (f) { fprintf(f, "role=proxy phase=%d errno=%d\n", phase, errno); fclose(f); }
     }
-    return result;
 #else
-    return run_linux(argv[2], &argv[3]);
+    int result = run_linux(argv[2], &argv[3], env);
 #endif
+    free_vector(env);
+    return result;
 }

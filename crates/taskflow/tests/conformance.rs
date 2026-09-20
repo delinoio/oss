@@ -7891,3 +7891,107 @@ async fn bootstrap_installs_preserve_termination_receipts_and_cli_status() {
         }
     }
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn unix_loader_hooks_run_only_inside_the_owned_task() {
+    use taskflow::process::{ExitReason, OwnedProcess};
+    let library_dir = tempfile::tempdir().unwrap();
+    let library = library_dir.path().join(if cfg!(target_os = "macos") {
+        "preload.dylib"
+    } else {
+        "preload.so"
+    });
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/preload.c");
+    assert!(std::process::Command::new("cc")
+        .args([
+            if cfg!(target_os = "macos") {
+                "-dynamiclib"
+            } else {
+                "-shared"
+            },
+            "-fPIC",
+            "-Wall",
+            "-Wextra",
+            "-Werror"
+        ])
+        .arg(source)
+        .arg("-o")
+        .arg(&library)
+        .status()
+        .unwrap()
+        .success());
+    let mut unrelated = std::process::Command::new("/bin/sleep")
+        .arg("60")
+        .spawn()
+        .unwrap();
+    for mode in ["complete", "cancel", "timeout"] {
+        let directory = tempfile::tempdir().unwrap();
+        let marker = directory.path().join("loader-pids");
+        let mut environment: BTreeMap<String, String> = std::env::vars().collect();
+        environment.insert(
+            if cfg!(target_os = "macos") {
+                "DYLD_INSERT_LIBRARIES"
+            } else {
+                "LD_PRELOAD"
+            }
+            .into(),
+            library.to_str().unwrap().into(),
+        );
+        environment.insert(
+            "TFLOW_PRELOAD_MARKER".into(),
+            marker.to_str().unwrap().into(),
+        );
+        let command = serde_json::from_value(command(if mode == "complete" {
+            &["version"]
+        } else {
+            &["sleep", "task.pid"]
+        }))
+        .unwrap();
+        let mut owner =
+            OwnedProcess::spawn(directory.path(), &command, None, Some(&environment)).unwrap();
+        let child_path = directory.path().join("loader-pids.child");
+        wait_lines(&child_path, "", 1).await;
+        let detached_pid: u32 = std::fs::read_to_string(child_path)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let cancel = CancellationToken::new();
+        if mode == "cancel" {
+            cancel.cancel();
+        }
+        let result = owner
+            .wait(
+                &cancel,
+                (mode == "timeout").then_some(Duration::from_millis(1)),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            result.reason,
+            match mode {
+                "cancel" => ExitReason::Cancelled,
+                "timeout" => ExitReason::TimedOut,
+                _ => ExitReason::Completed,
+            }
+        );
+        if mode == "complete" {
+            assert_eq!(result.code, 0);
+        }
+        assert_eq!(
+            std::fs::read_to_string(marker).unwrap().lines().count(),
+            1,
+            "only the actual task may load task libraries"
+        );
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while pid_alive(detached_pid) && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(!pid_alive(detached_pid), "loader child survived {mode}");
+        drop(owner);
+    }
+    assert!(unrelated.try_wait().unwrap().is_none());
+    unrelated.kill().unwrap();
+    unrelated.wait().unwrap();
+}
