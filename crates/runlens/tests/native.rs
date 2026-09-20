@@ -1005,15 +1005,7 @@ outputs = ["generated/**"]
     .unwrap();
     let result = invoke(
         root.path(),
-        &[
-            "run",
-            "--save",
-            "excluded.json",
-            "--",
-            fixture(),
-            "read",
-            "generated/input",
-        ],
+        &["run", "--command", "build", "--save", "excluded.json"],
     );
     assert!(
         result.status.success(),
@@ -1325,7 +1317,12 @@ env = ["FSPY"]
 #[test]
 fn cache_policy_and_overflow_fail_closed() {
     let root = repository("read-write");
-    let recorded = run(root.path(), "report.json", "read-write");
+    // Use the configured argv verbatim. Windows separator spelling is part
+    // of the recorded command identity and must not bypass cache binding.
+    let recorded = invoke(
+        root.path(),
+        &["run", "--command", "build", "--save", "report.json"],
+    );
     assert!(recorded.status.success());
     let output = invoke(
         root.path(),
