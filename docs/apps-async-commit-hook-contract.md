@@ -1,10 +1,10 @@
 # async-commit-hook application contract
 
 ## Scope
-`apps/async-commit-hook`: static application and `/docs` at https://ach.delino.io.
+`apps/async-commit-hook`: local UI embedded in the `ach` executable. Public documentation is owned separately by `apps/async-commit-hook-docs` at https://ach.delino.io.
 
 ## Runtime and Language
-React/TypeScript, Rsbuild, React Query with Connect Query, Cloudflare Pages. Fixed localhost development port 46308; conflicts and address overrides fail.
+React/TypeScript, Rsbuild, React Query with Connect Query. The Go daemon and on-demand viewer serve the same compiled UI and Connect API on the configured loopback endpoint. No Node server or external assets are required at runtime. Fixed localhost development port 46308; conflicts and address overrides fail.
 The package development wrapper uses the shared command resolver and `spawnDevServer` with process-tree termination enabled. SIGINT/SIGTERM wait for the POSIX process group or Windows `taskkill /t` cleanup before wrapper exit, including package-manager and command-wrapper descendants. Script integration fixtures verify immediate port reuse after both signals.
 The shared resolver and process-tree helper are explicit Turbo test inputs and CI selection paths, so their changes invalidate application test evidence.
 
@@ -16,28 +16,25 @@ The acknowledgement action stays disabled while an execution is queued, preparin
 Selecting Detached HEAD in Checks shows detached executions only. Inbox spans branches in the selected worktree; switching a filter resets its cursor.
 Repository/worktree and branch navigation; Changes, Commits, Checks, Inbox; run detail, logs, failures and comparison. Explicit acknowledgement, rerun and cancellation. No configuration authoring or arbitrary commands. Changes use configured base, local origin/HEAD, then explicit selection; compare the merge base without fetching.
 
-Pairing receives a single-use five-minute code through a URL fragment or user entry. Remove the fragment after reading. Persist browser authorization per local installation; show revocation, network permission denial, unpaired/disconnected and version errors. Missing data, empty/loading, queued/running, failed/cancelled/interrupted states have actionable next steps. Keyboard, focus, screen-reader and non-color status behavior are required.
+Open the local URL printed by `ach ui` without pairing, login or browser authorization. The Connect transport uses `window.location.origin` with mandatory `X-Ach-Api-Version: 1`; it never accepts a renderer-selected API authority. Keep `#run=ID` for refreshable execution links and discard retired pairing/port fragment fields without reading stored browser tokens. Disconnected, version, empty/loading and execution states retain actionable recovery and accessible keyboard/focus behavior. Documentation opens https://ach.delino.io separately.
 
 A rerun accepted before a startup failure shows its run ID, diagnostic, recovery hint, status command and an Open accepted execution action. Both rerun submission buttons stay disabled after acceptance to avoid accidental duplicate attempts. Successful startup navigates directly to the accepted execution.
 
 ## Storage
 
-When a fresh pairing fragment accompanies stale stored authorization, Pair again removes that authorization and clears query data while retaining the consumed fragment's in-memory code for the pairing form. Successful pairing and explicit disconnect discard the code.
-
-Detail navigation focuses the commit heading, returning to results restores the selected row, and polling never steals focus. Cancellation uses a native modal dialog with Escape and prior-focus restoration. Browsers exposing the local-network-access Permissions API receive a distinct denied-permission recovery message; older browser APIs retain ordinary connection guidance.
-Browser authorization and local connection preferences only; result cache is in memory. Durable results belong to the CLI's local state. Public docs cover configuration, installation, CLI/MCP/skills, privacy, validation meaning, compatibility and recovery.
+Detail navigation focuses the commit heading, returning to results restores the selected row, and polling never steals focus. Cancellation uses a native modal dialog with Escape and prior-focus restoration. No browser credentials or connection preferences are persisted; result cache is in memory. Durable results belong to local CLI state. Recovery tells users to run `ach ui` and reload, retaining the on-demand viewer while needed.
 
 ## Security
-Strict static CSP; logs/source rendered as text; no remote logging/analytics. Connect only to explicit loopback URLs. No secret in URL query strings. API authorization remains authoritative.
+Strict CSP with same-origin scripts, styles and connections; logs/source rendered as text; no remote logging/analytics. Bind only 127.0.0.1 and validate the configured Host. Every RPC requires exact same-origin POST and a single API version header; missing/null/foreign origins are denied without CORS grants. The development proxy validates localhost/127.0.0.1:46308 Host, matching Origin, POST and the version header before rewriting to 127.0.0.1:46309. Local processes are trusted; there is no per-browser identity boundary.
 
 ## Logging
 No automatic uploads or persistent result logging in the browser. Surface typed local diagnostics.
 
 ## Build and Test
-Package-local pnpm test, typecheck, component/accessibility tests, production build and route/security tests. Root development entry is pnpm dev:async-commit-hook.
+Package-local pnpm test, typecheck, component/accessibility tests, production build and route/security tests. Root development entry is pnpm dev:async-commit-hook. `build:embedded` clears the prior embed first, builds the generated client and UI, validates the complete hashed asset inventory, and copies it into the ignored command-owned webassets/dist. It is the sole producer of that embed. Go compilation requires this task first. HTML uses no-store; hashed JavaScript/CSS and their license files are immutable. Only real bundled files are served; missing paths never become an HTML fallback.
 
 ## Dependencies and Integrations
-Generated @delinoio/async-commit-hook-api-client; Cloudflare Pages deployment is manual and not executed during this implementation.
+Generated @delinoio/async-commit-hook-api-client; Go embed ties the UI to the installed executable version. Cloudflare Pages receives only the separate documentation build.
 
 ## Change Triggers
 Update project/protocol/client contracts, app AGENTS and public docs alongside user-visible changes.

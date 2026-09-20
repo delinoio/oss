@@ -143,3 +143,7 @@
 - Failed update preparation removes its exclusively created state backup and candidate before returning, including VACUUM, evidence-copy and pre-publication journal failures. Preserve prior backups. Surface cleanup failures; if a journal was already published before a durability error, retain its referenced files and require recovery.
 
 - Source cancellation fixtures publish the selected test process PID through an isolated loopback readiness connection, not a concurrently renamed file. Preserve deterministic cancellation/deadline barriers and process-reaping assertions on Windows as well as Unix; no production Git networking changes are implied.
+
+- Serve the app-owned verified embed and Connect API from the configured 127.0.0.1 endpoint in daemon and on-demand viewer modes. `ach ui` emits local links after readiness; viewers never own check lifetimes.
+- Pairing is retired. Require exact Host/Origin, POST and one API version header before every RPC; never grant remote/development CORS or accept legacy browser credentials. Pair remains a deprecated Unimplemented wire tombstone. Preserve existing state without creating new pairing/browser tables.
+- Generate the UI with `pnpm --filter async-commit-hook build:embedded` before Go builds, tests or packaging. Serve only real embedded files with strict CSP, correct MIME, no-store HTML and immutable hashed assets/licenses.

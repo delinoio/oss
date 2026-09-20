@@ -46,7 +46,7 @@ function namedStep(job, name) {
 test("async-commit-hook retains runner, interface, protocol and unsigned archive validation", () => {
   const commands = workflow.jobs["async-commit-hook"].steps.map(({ run }) => run ?? "").join("\n");
   for (const command of [
-    "go test -race ./cmds/async-commit-hook/...", "pnpm --filter async-commit-hook test",
+    "pnpm --filter async-commit-hook build:embedded", "go test -race ./cmds/async-commit-hook/...", "pnpm --filter async-commit-hook test", "pnpm --filter async-commit-hook-docs test",
     "pnpm --filter @delinoio/async-commit-hook-api-client test", "pnpm proto:check",
     "node --test scripts/release/async-commit-hook.test.mjs",
     'python3 scripts/release/build-async-commit-hook.py --output "$RUNNER_TEMP/ach-release"',

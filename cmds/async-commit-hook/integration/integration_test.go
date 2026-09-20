@@ -302,16 +302,25 @@ func TestTemporaryViewerExitLeavesWorkerAndHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = viewer.Process.Kill() })
-	ready := make(chan bool, 1)
+	ready := make(chan string, 1)
 	go func() {
 		reader := bufio.NewScanner(stdout)
-		ready <- reader.Scan() && strings.Contains(reader.Text(), "viewer-active")
+		if reader.Scan() {
+			ready <- reader.Text()
+		} else {
+			ready <- ""
+		}
 	}()
 	select {
-	case ok := <-ready:
-		if !ok {
+	case line := <-ready:
+		if !strings.Contains(line, "viewer-active") {
 			t.Fatal("viewer did not report readiness")
 		}
+		var output core.Output
+		if err := json.Unmarshal([]byte(line), &output); err != nil {
+			t.Fatal(err)
+		}
+		verifyLocalUI(t, output.Result.(map[string]any)["url"].(string))
 	case <-time.After(10 * time.Second):
 		t.Fatal("viewer startup timed out")
 	}

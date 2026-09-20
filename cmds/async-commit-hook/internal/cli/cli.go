@@ -30,12 +30,11 @@ ack | failures | cancel      Explicitly acknowledge, inspect failures or cancel 
 plan | doctor                Inspect committed configuration and diagnose local prerequisites
 compare                      Compare --run ID [--previous ID]
 rerun                        Rerun --run ID [--failed] in a fresh workspace
-ui                           Print a paired connection URL [--run ID]
+ui                           Print the local web UI URL [--run ID]
 hooks install | uninstall    Install with --pre-push to enable the gate; uninstall removes all owned hooks
 agent install | uninstall    --client codex|claude-code|opencode [--scope user|project]
 agent-guide                  Print the supplied validation skill
 daemon start | status | stop Stop drains; --force requests cancellation
-browser list | revoke        Revoke requires --browser ID
 mcp                          Serve MCP on stdio without an idle daemon
 pre-push                     Validate branch tips on Git stdin [--policy block|wait|run-and-wait]
 prune                        --dry-run [--max-age-days N --max-bytes N]
@@ -305,31 +304,20 @@ func Run(ctx context.Context, args []string, in io.Reader, out, diagnostics io.W
 			e = core.E("invalid-command", "use daemon start/status/stop", 2)
 		}
 	case "ui":
-		var code string
-		code, e = s.PairingCode()
-		if e == nil {
-			address := s.WebURL(id, code)
-			if s.Personal.Mode == core.Daemon {
-				e = s.Start(core.Daemon)
-				result = map[string]string{"url": address}
-			} else {
-				e = s.Serve(ctx, false, func() {
-					_ = emit(out, diagnostics, o.has("json"), map[string]string{"url": address, "state": "viewer-active; stop with Ctrl-C"}, nil, 0)
-				})
-				if e == nil {
-					return 0
-				}
+		address := s.WebURL(id)
+		if s.Personal.Mode == core.Daemon {
+			e = s.Start(core.Daemon)
+			result = map[string]string{"url": address}
+		} else {
+			e = s.Serve(ctx, false, func() {
+				_ = emit(out, diagnostics, o.has("json"), map[string]string{"url": address, "state": "viewer-active; stop with Ctrl-C"}, nil, 0)
+			})
+			if e == nil {
+				return 0
 			}
 		}
 	case "browser":
-		switch sub {
-		case "list":
-			result, e = s.Browsers()
-		case "revoke":
-			e = s.Revoke(o.flags["browser"])
-		default:
-			e = core.E("invalid-command", "use browser list/revoke --browser ID", 2)
-		}
+		e = core.E("browser-management-removed", "browser pairing is no longer used; open the local URL printed by ach ui", 2)
 	case "pre-push":
 		result, e = s.PrePush(ctx, repo, in, core.PushPolicy(o.flags["policy"]))
 	case "prune":

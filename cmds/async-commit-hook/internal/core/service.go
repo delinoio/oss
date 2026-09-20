@@ -123,7 +123,7 @@ func (s *Service) Submit(ctx context.Context, path, commit string, automatic boo
 func (s *Service) Receipt(r Run) Receipt {
 	out := Receipt{RunID: r.ID, Commit: r.Commit, State: r.State, StatusCommand: "ach status --run " + r.ID, WaitCommand: "ach wait --run " + r.ID, MCP: "ach_status / ach_wait with run_id=" + r.ID, Guide: "ach agent-guide"}
 	if s.Personal.Mode == Daemon {
-		out.URL = s.WebURL(r.ID, "")
+		out.URL = s.WebURL(r.ID)
 	} else {
 		out.UICommand = "ach ui --run " + r.ID
 	}

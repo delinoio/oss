@@ -12,7 +12,8 @@
     "test": "pnpm --filter @delinoio/async-commit-hook-api-client build && pnpm typecheck && vitest run && pnpm build && node --test scripts/*.test.mjs",
     "test:unit": "vitest run",
     "test:components": "vitest run",
-    "test:accessibility": "vitest run"
+    "test:accessibility": "vitest run",
+    "build:embedded": "node scripts/embed.mjs --clean && pnpm --filter @delinoio/async-commit-hook-api-client build && pnpm build && node scripts/embed.mjs"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.0",

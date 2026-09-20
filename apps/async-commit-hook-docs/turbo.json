@@ -1,0 +1,32 @@
+{
+  "extends": [
+    "//"
+  ],
+  "tasks": {
+    "dev": {
+      "dependsOn": [],
+      "cache": false,
+      "persistent": true,
+      "env": []
+    },
+    "build": {
+      "dependsOn": [],
+      "outputs": [
+        "doc_build/**"
+      ],
+      "env": []
+    },
+    "test": {
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/scripts/run-rspress-port.mjs",
+        "$TURBO_ROOT$/scripts/spawn-dev-server.mjs"
+      ],
+      "outputs": [
+        "doc_build/**"
+      ],
+      "env": []
+    }
+  }
+}

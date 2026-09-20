@@ -13,62 +13,50 @@ import (
 	"time"
 )
 
-func TestPairingExpiryReplayRevokeAndHTTPBoundary(t *testing.T) {
+func TestLocalHTTPBoundaryWithoutPairing(t *testing.T) {
 	s, _ := fixture(t, "version=1\n")
-	code, err := s.PairingCode()
-	if err != nil {
-		t.Fatal(err)
-	}
-	id, token, err := s.Pair(code, "test browser")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err = s.Pair(code, "replay"); err == nil {
-		t.Fatal("pairing replay accepted")
-	}
-	if !s.Authenticate("Bearer " + token) {
-		t.Fatal("token rejected")
-	}
-	code, _ = s.PairingCode()
-	_, err = s.Store.DB.Exec("UPDATE pairings SET expires=?", time.Now().Add(-time.Minute).Format(time.RFC3339Nano))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err = s.Pair(code, "expired"); err == nil {
-		t.Fatal("expired pairing accepted")
-	}
 	handler := s.Handler()
 	for _, test := range []struct {
-		origin, host, token string
-		status              int
+		origin, host, version, method string
+		status                        int
 	}{
-		{"https://ach.delino.io", "127.0.0.1:46309", token, 200},
-		{"https://evil.example", "127.0.0.1:46309", token, 403},
-		{"http://localhost:46308", "rebind.example:46309", token, 403},
-		{"http://localhost:46308", "127.0.0.1:46309", "", 401},
+		{"http://127.0.0.1:46309", "127.0.0.1:46309", "1", "POST", 200},
+		{"https://ach.delino.io", "127.0.0.1:46309", "1", "POST", 403},
+		{"http://127.0.0.1:46308", "127.0.0.1:46309", "1", "POST", 403},
+		{"http://127.0.0.1:46309", "rebind.example:46309", "1", "POST", 403},
+		{"http://localhost:46309", "localhost:46309", "1", "POST", 403},
+		{"null", "127.0.0.1:46309", "1", "POST", 403},
+		{"", "127.0.0.1:46309", "1", "POST", 403},
+		{"http://127.0.0.1:46309", "127.0.0.1:46309", "", "POST", 409},
+		{"http://127.0.0.1:46309", "127.0.0.1:46309", "2", "POST", 409},
+		{"http://127.0.0.1:46309", "127.0.0.1:46309", "1", "OPTIONS", 405},
+		{"http://127.0.0.1:46309", "127.0.0.1:46309", "1", "GET", 405},
 	} {
-		r := httptest.NewRequest("POST", "http://"+test.host+"/async_commit_hook.v1.LocalService/ListRepositories", strings.NewReader("{}"))
+		r := httptest.NewRequest(test.method, "http://"+test.host+"/async_commit_hook.v1.LocalService/ListRepositories", strings.NewReader("{}"))
 		r.Header.Set("Origin", test.origin)
-		r.Header.Set("Authorization", "Bearer "+test.token)
+		r.Header.Set("X-Ach-Api-Version", test.version)
 		r.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)
 		if w.Code != test.status {
 			t.Fatalf("%+v: %d %s", test, w.Code, w.Body.String())
 		}
+		if w.Header().Get("Access-Control-Allow-Origin") != "" {
+			t.Fatal("unexpected CORS grant")
+		}
 	}
-	if err = s.Revoke(id); err != nil {
-		t.Fatal(err)
+	request := httptest.NewRequest("POST", s.WebURL("")+"async_commit_hook.v1.LocalService/Pair", strings.NewReader("{}"))
+	request.Header.Set("Origin", "http://127.0.0.1:46309")
+	request.Header.Set("X-Ach-Api-Version", "1")
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != 501 || !strings.Contains(response.Body.String(), "pairing-removed") {
+		t.Fatal(response.Code, response.Body.String())
 	}
-	if s.Authenticate("Bearer " + token) {
-		t.Fatal("revoked token accepted")
-	}
-	var stored string
-	if err = s.Store.DB.QueryRow("SELECT token_hash FROM browsers WHERE id=?", id).Scan(&stored); err != nil {
-		t.Fatal(err)
-	}
-	if stored == token {
-		t.Fatal("raw credential stored")
+	var count int
+	if err := s.Store.DB.QueryRow("SELECT count(*) FROM sqlite_master WHERE name IN ('browsers','pairings')").Scan(&count); err != nil || count != 0 {
+		t.Fatal(count, err)
 	}
 }
 

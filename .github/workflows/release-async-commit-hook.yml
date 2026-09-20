@@ -46,9 +46,11 @@ jobs:
         run: |
           pnpm install --frozen-lockfile --ignore-scripts
           pnpm --filter devhud-admin build:embedded
+          pnpm --filter async-commit-hook build:embedded
           go test ./...
           go test -race ./cmds/async-commit-hook/...
           pnpm --filter async-commit-hook test
+          pnpm --filter async-commit-hook-docs test
           pnpm --filter @delinoio/async-commit-hook-api-client test
           pnpm proto:check
           node --test scripts/release/async-commit-hook.test.mjs
@@ -66,7 +68,7 @@ jobs:
         if: ${{ !inputs.dry_run }}
         with:
           name: ach-site
-          path: apps/async-commit-hook/dist
+          path: apps/async-commit-hook-docs/doc_build
           retention-days: 7
           if-no-files-found: error
   publish:
@@ -154,7 +156,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
-      - name: Deploy static app and public documentation
+      - name: Deploy public documentation
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

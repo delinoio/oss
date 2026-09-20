@@ -11,3 +11,5 @@
 - Preserve repository-list cursor/limit/next_cursor through generated wire messages; clients must merge repositories spanning pages by ID.
 
 - Preserve branch-list cursor/limit/next_cursor, including legacy responses without a cursor.
+
+- Preserve the deprecated Pair wire descriptor for compatibility, but do not use it in the local UI; the server always returns Unimplemented. Transport origin/version enforcement belongs to the application.
