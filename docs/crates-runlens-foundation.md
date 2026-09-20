@@ -664,3 +664,8 @@ Cache output coverage derives directory membership ancestors from concrete known
 changed paths matched by output globs, including intermediate wildcard segments.
 It shares the bounded ancestor index with write policies; direct ancestor writes,
 type changes, unknown states, and unrelated siblings still require coverage.
+
+Clean/repeat distinguishes collection loss from a definite unsuccessful child:
+a zero-exit child with incomplete evidence is inconclusive (exit 4), while known
+child, policy, or output failures remain failed. Policy analysis still inspects
+retained partial evidence, including preparation evidence, after an early stop.

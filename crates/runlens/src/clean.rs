@@ -668,7 +668,7 @@ async fn verify_in(
             }
         }
         if !prepared {
-            report.verification = Some(Verdict::Failed);
+            report.verification = Some(stopped_verdict(&report.executions.last().unwrap().outcome));
             break;
         }
         let execution = execute::observe(Request {
@@ -686,20 +686,23 @@ async fn verify_in(
         })
         .await?;
         let succeeded = execution.outcome.success();
+        let stopped = stopped_verdict(&execution.outcome);
         report.executions.push(execution);
         if !succeeded {
-            report.verification = Some(Verdict::Failed);
+            report.verification = Some(stopped);
             break;
         }
         fs::remove_dir_all(round)
             .map_err(|_| Error::new(ErrorCode::CleanupFailed, "repetition cleanup failed"))?;
     }
+    // Partial evidence can prove a policy failure even when collection could
+    // not prove success. Preserve that failure ahead of an inconclusive result.
+    let checks = analysis::policy(&report, &config.policy, &config.commands, baseline)?;
+    report.findings = checks.findings;
+    report.verification = merge_verdict(report.verification, checks.verdict);
     if report.targets().count() == runs as usize
         && report.executions.iter().all(|e| e.outcome.success())
     {
-        let checks = analysis::policy(&report, &config.policy, &config.commands, baseline)?;
-        report.findings = checks.findings;
-        report.verification = checks.verdict;
         if runs > 1 {
             let comparison = analysis::repeated_outputs(&report, &command.outputs)?;
             merge_findings(&mut report, &comparison)?;
@@ -737,6 +740,16 @@ async fn verify_in(
         report.verification = Some(Verdict::Inconclusive);
     }
     Ok(report)
+}
+fn stopped_verdict(outcome: &Outcome) -> Verdict {
+    if outcome.child_exit_code.is_some_and(|code| code != 0)
+        || outcome.child_signal.is_some()
+        || outcome.errors.contains(&ErrorCode::CommandFailed)
+    {
+        Verdict::Failed
+    } else {
+        Verdict::Inconclusive
+    }
 }
 fn merge_verdict(left: Option<Verdict>, right: Option<Verdict>) -> Option<Verdict> {
     match (left, right) {

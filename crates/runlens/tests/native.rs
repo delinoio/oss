@@ -2933,3 +2933,46 @@ fn cache_globs_cover_concrete_membership_ancestors_only() {
         }
     }
 }
+
+#[test]
+fn clean_and_repeat_collection_loss_is_inconclusive() {
+    for (kind, mode, expected) in [
+        ("clean", "overflow", 4),
+        ("repeat", "overflow", 4),
+        ("clean", "fail", 5),
+    ] {
+        let root = repository(mode);
+        let config_path = root.path().join("runlens.toml");
+        let mut config = fs::read_to_string(&config_path).unwrap();
+        config.push_str("\n[limits]\nmemory_bytes = 8192\ntotal_bytes = 8192\nmax_paths = 32\n");
+        fs::write(config_path, config).unwrap();
+        git(root.path(), &["add", "runlens.toml"]);
+        git(root.path(), &["commit", "-qm", "bounded collector"]);
+        let output = invoke(
+            root.path(),
+            &["verify", kind, "build", "--save", "limited.json"],
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(expected),
+            "{kind}/{mode}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report = parse(root.path(), "limited.json");
+        assert_eq!(
+            report["verification"],
+            if expected == 4 {
+                "inconclusive"
+            } else {
+                "failed"
+            }
+        );
+        if expected == 4 {
+            assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 0);
+            assert_eq!(
+                report["executions"][0]["outcome"]["collection_complete"],
+                false
+            );
+        }
+    }
+}
