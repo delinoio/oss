@@ -4,13 +4,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 
-export const Project = Object.freeze({ Binpm: "binpm", CargoMono: "cargo-mono", Nodeup: "nodeup", WithWatch: "with-watch", Derun: "derun", Runmoor: "runmoor" });
+export const Project = Object.freeze({ Binpm: "binpm", CargoMono: "cargo-mono", Nodeup: "nodeup", WithWatch: "with-watch", Derun: "derun", Runmoor: "runmoor", Clibox: "clibox" });
 export const Bump = Object.freeze({ Patch: "patch", Minor: "minor", Major: "major" });
 export const Kind = Object.freeze({ Rust: "rust", Go: "go" });
 const repository = "delinoio/oss";
 const botName = "delino-release-bot[bot]";
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const versions = Object.freeze({
+  clibox: { kind: Kind.Rust, file: "crates/clibox/Cargo.toml" },
   binpm: { kind: Kind.Rust, file: "crates/binpm/Cargo.toml" },
   "cargo-mono": { kind: Kind.Rust, file: "crates/cargo-mono/Cargo.toml" },
   nodeup: { kind: Kind.Rust, file: "crates/nodeup/Cargo.toml" },
@@ -82,7 +83,12 @@ function replaceVersion(source, project, kind, next) {
 
 export function readVersion(project, read = (file) => readFileSync(path.join(root, file), "utf8")) {
   const { file, kind } = descriptor(project);
-  return replaceVersion(read(file), project, kind).current;
+  const current = replaceVersion(read(file), project, kind).current;
+  if (project === Project.Clibox) {
+    const npm = JSON.parse(read("packages/clibox/package.json"));
+    requireValue(npm.name === "@delino/clibox" && npm.version === current, "clibox Cargo/npm versions disagree");
+  }
+  return current;
 }
 
 export function versionChanges(project, bump, read) {
@@ -92,6 +98,12 @@ export function versionChanges(project, bump, read) {
   const changes = { [file]: replaceVersion(read(file), project, kind, version).text };
   if (kind === Kind.Rust) {
     changes["Cargo.lock"] = replaceLockVersion(read("Cargo.lock"), project, previous_version, version);
+  }
+  if (project === Project.Clibox) {
+    const file = "packages/clibox/package.json";
+    const source = read(file);
+    requireValue([...source.matchAll(/^  "version": "[^"]+",$/gmu)].length === 1, "Missing or ambiguous npm source version");
+    changes[file] = source.replace(/^  "version": "[^"]+",$/mu, `  "version": "${version}",`);
   }
   return { project, bump, kind, previous_version, version, tag: `${project}@v${version}`, changes };
 }

@@ -1555,6 +1555,46 @@ jobs:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
 
+  node-clibox-test:
+    needs: changes
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['node-clibox-test'] }}
+    name: clibox npm consumers (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-14, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-ci-node
+        id: ci-node
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-01-01
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: false
+      - name: Install clean locked workspace
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verify affected workspace runner
+        run: node --test scripts/ci/run-affected.test.mjs
+      - name: Test launcher and native npm consumers
+        env:
+          FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['node-clibox-test'] }}
+          TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+          TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+        run: node scripts/ci/run-affected.mjs @delino/clibox test test:package
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-node.outputs.cache-path }}
+          key: ${{ steps.ci-node.outputs.cache-key }}
+
   ci-result:
     name: CI Result
     runs-on: ubuntu-latest
@@ -1574,6 +1614,7 @@ jobs:
       - node-runmoor-docs-test
       - node-nodeup-docs-test
       - node-public-docs-test
+      - node-clibox-test
       - devhud-frontend
       - devhud-extension
       - devhud-rust-conformance
