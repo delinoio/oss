@@ -6,6 +6,8 @@
       "Cargo.lock",
       "Cargo.toml",
       "crates/binpm/**",
+      "crates/clibox/**",
+      "packages/clibox/**",
       "crates/cargo-mono/**",
       "crates/nodeup/**",
       "crates/with-watch/**",
@@ -16,7 +18,8 @@
       "scripts/release/linux-packages/**",
       "package.json",
       "pnpm-lock.yaml"
-    ]
+    ],
+    "native": true
   },
   "go-quality": {
     "paths": [
@@ -588,6 +591,8 @@
       "turbo.json",
       ".github/workflows/release-clibox.yml",
       "scripts/release/project.mjs",
+      "scripts/release/linux-packages/**",
+      "packaging/linux/**",
       "scripts/release/project.test.mjs"
     ],
     "workspace": "@delino/clibox",

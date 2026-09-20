@@ -6,7 +6,7 @@ Use the signed Delino repository at `https://pkgs.oss.delino.io` to install CLI 
 
 Packages support x86-64 and ARM64 on Ubuntu 22.04, 24.04 and 26.04 LTS; Debian 12 and 13; Fedora 43 and 44; and RHEL-compatible 9 and 10 systems, including UBI, Rocky Linux and AlmaLinux.
 
-The stable repository contains `binpm`, `cargo-mono`, `nodeup`, `with-watch` and `derun`. Runmoor's stable releases are available as native packages only from the separately enabled preview repository. Package versions use the original CLI version followed by `-1`. Older releases published before native package support are unavailable through these repositories.
+**Native packages are not published yet.** The commands below apply after each CLI’s first native package release. `binpm`, `cargo-mono`, `nodeup`, `with-watch`, `derun`, `runmoor` and `clibox` will all use stable. Preview is reserved and currently has no CLI packages. Package versions use the original CLI version followed by `-1`. Older releases published before native package support are unavailable through these repositories.
 
 Arch Linux, Alpine Linux, DevHud and TTL are outside this repository's support scope.
 
@@ -48,7 +48,7 @@ sudo apt-get install binpm
 binpm --version
 ```
 
-The source uses `Signed-By` to restrict this key to the Delino repository. Replace `binpm` with another stable package name as needed. APT also installs `delino-archive-keyring`, which keeps this repository’s public certificate current through authenticated package updates.
+The source uses `Signed-By` to restrict this key to the Delino repository. Replace `binpm` with any available stable CLI package from the list above. APT also installs `delino-archive-keyring`, which keeps this repository’s public certificate current through authenticated package updates.
 
 ## DNF: stable
 
@@ -73,7 +73,9 @@ binpm --version
 
 The repository enables both `gpgcheck=1` and `repo_gpgcheck=1`. If DNF requests a key confirmation, compare the fingerprint above before accepting.
 
-## Enable Runmoor preview
+## Preview registration
+
+Preview currently has no CLI packages. Runmoor uses stable; it does not require this additional repository.
 
 Preview is an explicit opt-in and remains enabled for later updates. After the key setup above, register the additional source for your package manager.
 
@@ -89,8 +91,7 @@ Architectures: amd64 arm64
 Signed-By: /usr/share/keyrings/delino-packages.gpg
 EOF
 sudo apt-get update
-sudo apt-get install runmoor
-runmoor version
+
 ```
 
 DNF:
@@ -107,9 +108,12 @@ gpgkey=https://pkgs.oss.delino.io/keys/delino-packages.asc
 metadata_expire=300
 sslverify=1
 EOF
-sudo dnf install runmoor
-runmoor version
+sudo dnf makecache
 ```
+
+## Runmoor and clibox
+
+After their first native releases, use the stable registration above and install `runmoor` or `clibox` with APT or DNF. Check `runmoor version` or `clibox --version`. Native clibox installation does not require Node.js; desktop helpers remain optional user-installed tools.
 
 Installation does not register or start a Runmoor service, configure runners, or install Docker or Tart. Follow the [Runmoor guide](https://runmoor.delino.io) for explicit setup and service commands. Package installation checks do not certify live GitHub or Tart integration.
 

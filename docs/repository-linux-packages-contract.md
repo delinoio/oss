@@ -4,9 +4,13 @@
 
 The CLI release workflows own native APT and DNF distribution at `https://pkgs.oss.delino.io`. `packaging/linux/` owns pinned tools, public repository configuration, and package metadata; `scripts/release/linux-packages*` owns verification, packaging, repository generation, and resumable publication. This contract complements `repository-workflow-contract.md`.
 
-Stable packages are binpm, cargo-mono, nodeup, with-watch, and derun. Runmoor remains preview-only. Both amd64/x86_64 and arm64/aarch64 are required. Arch, Alpine, TTL, and DevHud are excluded. Public package names equal executable names. Version is the exact source SemVer with packaging revision 1. CLI installation owns `/usr/bin/<project>` and package documentation, plus the shared APT keyring dependency described below; it never initializes user configuration, downloads runtimes, registers services, or starts a daemon.
+The stable enrollment contract covers binpm, cargo-mono, nodeup, with-watch, derun, runmoor, and clibox. Preview is reserved with no enrolled CLI. No native packages have been published; the initial rollout, including binpm, was canceled before registry or tag publication. Integrations apply to future explicitly requested releases. Enrollment does not imply a package is already published. Both amd64/x86_64 and arm64/aarch64 are required. Arch, Alpine, TTL, and DevHud are excluded. Public package names equal executable names. Version is the exact source SemVer with packaging revision 1. CLI installation owns `/usr/bin/<project>` and package documentation, plus the shared APT keyring dependency described below; it never initializes user configuration, downloads runtimes, registers services, or starts a daemon.
 
-All six originating GitHub workflows publish stable releases. Runmoor's stable source release is accepted into the explicitly enabled native preview repository; source release status and native repository enrollment are separate contracts.
+All seven originating GitHub workflows publish stable releases and feed the stable native repository. Project contracts determine channels; callers cannot choose a channel. Clibox reuses the exact verified GNU npm executable bytes in its two signed GitHub Release archives before entering this common workflow.
+
+## CI validation
+
+The `linux-packages` CI job runs compatibility builds, disposable signed repositories, and package lifecycle checks on native amd64/arm64 hosts for relevant main pushes and every manual dispatch. PRs skip both architectures, including when CI configuration changes force all eligible checks, to keep package builds and distribution installation matrices out of the PR feedback path. The shared planner marks this job as native packaging; `CI Result` retains its dependency and requires the planned skip on PRs and success when selected on main or manually. General Linux tests, OCI checks, and lightweight static package contracts remain eligible on PRs. Release workflows retain their full package build, installation, and publication validation.
 
 ## Build and input trust
 
@@ -30,7 +34,7 @@ Cache immutable package and snapshot objects for one year. Bypass caching for mu
 
 The `linux-packages` GitHub Environment owns dedicated R2 object credentials limited to the two buckets and an RSA 4096 OpenPGP signing subkey. Keep the primary secret key and recovery material outside CI. Commit the public certificate and fingerprint only. APT uses a repository-specific Signed-By keyring. PR and dry-run paths use disposable signing identities and cannot consume production secrets or write R2.
 
-Restrict the environment to main and the six CLI release-tag patterns. Provision the buckets, custom domain, HTTPS and cache rules before enabling production publication. The rollout operator must wait for the exact downstream package publication and public verification after Release Project finishes its asynchronous tag handoff. Recovery retries must target the exact release identity and never modify GitHub tags or existing release assets.
+Restrict the environment to main and the seven CLI release-tag patterns, including `clibox@v*`. Provision the buckets, custom domain, HTTPS and cache rules before enabling production publication. The rollout operator must wait for the exact downstream package publication and public verification after Release Project finishes its asynchronous tag handoff. Recovery retries must target the exact release identity and never modify GitHub tags or existing release assets.
 
 ## Validation and rollout
 
@@ -40,9 +44,9 @@ Rocky Linux 10 uses the project's `rockylinux/rockylinux:10` image; the separate
 
 Test incorrect identities, checksums, signatures, architectures, dependencies and channels; interrupted uploads; concurrent publication requests; retry without replacement; stale indexes; and partial APT/DNF promotion. Tests use isolated files, keys and object stores. Run workflow syntax/contracts, release fixtures and changed documentation-app tests. Remove generated dist directories before completion.
 
-Changes to any of the four Rust CLI sources, workspace Cargo inputs, Cargo configuration or Rust toolchain select the native package CI job. Both architectures must rebuild against AlmaLinux 9 and pass ELF compatibility inspection before merging these changes.
+Relevant main changes to any of the five Rust CLI sources, workspace Cargo inputs, Cargo configuration or Rust toolchain select the native package CI job. Both architectures rebuild against AlmaLinux 9 and pass ELF compatibility inspection on main and manual runs; PRs retain the planned native-package skip described above. Release-time validation still requires both architectures before publication.
 
-First public releases follow the existing manual coordinator, one patch release at a time: binpm, nodeup, cargo-mono, with-watch, derun, runmoor. Verify each public package before continuing. Deployment is complete only when every project is installable on both architectures from its intended channel.
+No release dispatch or retry is authorized by this implementation update. The canceled binpm coordinator left its source version commit on main but created no release tag or public packages. Future explicitly requested releases use the existing coordinator and the same per-project public verification gate. Public documentation must mark unpublished CLI examples as unavailable until their own public installation checks pass.
 
 ## Implemented operations
 
@@ -64,17 +68,19 @@ RPM packages are generated by nFPM and signed with `rpmsign`/GnuPG. nFPM 2.47.0'
 
 Signing-key import must prove that an actual signature verifies in an isolated keyring containing only the committed public certificate. Matching primary fingerprints is insufficient after subkey rotation. All subsequent signature checks use that same public-only keyring.
 
-Package license metadata follows the four Rust manifests (MIT) and the Go projects' repository license (Apache-2.0). Include the complete corresponding text from `packaging/linux/licenses/` under each package's documentation directory. These distribution assets preserve upstream licensing rather than changing source licenses.
+Package license metadata follows the five Rust manifests (MIT) and the Go projects' repository license (Apache-2.0). Include the complete corresponding text from `packaging/linux/licenses/` under each package's documentation directory. These distribution assets preserve upstream licensing rather than changing source licenses.
 
 Public registration instructions write the complete source configuration from the documentation with quoted heredocs. They must preserve the literal DNF `$basearch` variable, APT Signed-By and both DNF signature checks. Downloaded repository configuration must not become the authority for enabling signature verification: storage-write credentials are separate from signing authority. The generated setup files remain available for controlled publisher/fixture validation, while users bootstrap from the documentation's explicit configuration after checking the public key fingerprint.
 
 
 ## APT certificate updates and signing-subkey rotation
 
-The auxiliary `delino-archive-keyring` package is architecture `all`, is present in both suites, and owns `/usr/share/keyrings/delino-packages.gpg` as package data rather than a conffile. Each CLI `.deb` depends on it. It has no scripts, services or source-configuration ownership and is not a seventh release-project input. Bootstrap the same path only after checking the public primary fingerprint. Normal APT upgrades then deliver certificate updates through the already authenticated repository, including to preview-only users.
+The auxiliary `delino-archive-keyring` package is architecture `all`, is present in both suites, and owns `/usr/share/keyrings/delino-packages.gpg` as package data rather than a conffile. Each CLI `.deb` depends on it. It has no scripts, services or source-configuration ownership and is not an additional CLI release-project input. Bootstrap the same path only after checking the public primary fingerprint. Normal APT upgrades then deliver certificate updates through the already authenticated repository, including to preview-only users.
 
 Increase `packaging/linux/signing.json`'s integer `keyring_version` whenever the committed certificate changes. A version permanently identifies one certificate and one immutable `.deb`; retain the public portions of every historical signing subkey so old candidates and snapshots remain verifiable. The catalog includes the certificate digest, keyring version and active subkey, so retrying an already published CLI can publish a certificate update without repackaging that CLI. Private state retains signed `keyrings/<version>.json` records and their content-addressed package objects.
 
 For rotation, add the successor signing subkey using the offline primary, commit the expanded certificate and increased keyring version, and publish an existing exact CLI release using the old CI signer. The publisher records the first fully read-back-verified public completion for that certificate. Keep the old signer for at least 30 days to let existing clients upgrade their keyring. Only then replace CI's encrypted subkey export with the single successor signing subkey and retry the exact CLI publication. The gate rejects a same-step certificate/signer change, an unstaged signer, an incomplete publication, a shorter overlap, rollback and removal of historical public subkeys. The secret import rejects primary secret material and ambiguous multiple available signing subkeys and selects the exact permitted subkey for every signature.
 
 An offline client that misses the overlap or remains offline beyond expiry must repeat the documented fingerprint-verified key bootstrap; signature verification remains mandatory. A primary fingerprint replacement is a separate explicit trust migration. Tests use temporary old/new subkeys and an isolated APT/dpkg client to install keyring v1, upgrade to v2 through old-key-signed metadata, verify successor-signed metadata, and reject that metadata with the stale keyring. Timing, incomplete-promotion and immutable-version gates have separate temporary-state tests.
+
+clibox packages require `ca-certificates` in both formats for OS-trusted HTTPS readiness checks. Preserve Rustls/ring C compilation and the pinned GNU/musl link boundaries; ELF-derived dependencies alone cannot represent certificate data.
