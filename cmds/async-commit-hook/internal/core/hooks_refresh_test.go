@@ -143,7 +143,13 @@ func TestHookRefreshPreservesUserEditsAndReplacements(t *testing.T) {
 	if err = AtomicWrite(path, user, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err = replaceOwnedHook(path, info, old, []byte("replacement")); err == nil {
+	root, err := os.OpenRoot(filepath.Dir(filepath.Dir(path)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	previous := agentFile{path: filepath.Join("hooks", filepath.Base(path)), info: info, data: old}
+	if err = replaceOwnedHook(root, previous, []byte("replacement")); err == nil {
 		t.Fatal("replaced a concurrently changed hook")
 	}
 	s.Paths.Config += ".new"

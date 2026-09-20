@@ -114,10 +114,6 @@ func (s *Service) Hook(ctx context.Context, repo string, prePush, remove bool) (
 			out = append(out, InstallResult{Path: path})
 			continue
 		}
-		old, readErr := os.ReadFile(path)
-		if readErr != nil && !os.IsNotExist(readErr) {
-			return out, readErr
-		}
 		command := quoteSh(executable) + " run --repo . --commit HEAD --automatic --config " + quoteSh(s.Paths.Config)
 		if kind == "pre-push" {
 			command = quoteSh(executable) + " pre-push --config " + quoteSh(s.Paths.Config)
@@ -129,10 +125,19 @@ func (s *Service) Hook(ctx context.Context, repo string, prePush, remove bool) (
 			out = append(out, InstallResult{Path: path, Manual: command + " (custom or shared hooks directory; integrate manually for this worktree only; preserve stdin for pre-push)", Example: hookExample(kind, command)})
 			continue
 		}
+		native, err := os.OpenRoot(common)
+		if err != nil {
+			return out, err
+		}
+		defer native.Close()
+		snapshot, err := readNativeHook(native, kind)
+		if err != nil {
+			return out, err
+		}
 		body := hookBody(executable, s.Paths.Config, kind)
-		if readErr == nil {
-			if ownedErr == nil && ownsHookContents(owned, old) {
-				result, err := s.refreshHook(owned, old, body)
+		if snapshot.info != nil {
+			if ownedErr == nil && ownsHookContents(owned, snapshot.data) {
+				result, err := s.refreshHook(native, owned, snapshot, body)
 				if err != nil {
 					return out, err
 				}
@@ -166,7 +171,7 @@ func (s *Service) removeHook(owned Installation, snapshot agentFile) error {
 func hookFileError(err error) error {
 	var typed *Error
 	if errors.As(err, &typed) && typed.Code == "agent-conflict" {
-		return E("hook-conflict", "owned hook changed during removal; changes were preserved; retry after concurrent edits finish", 2)
+		return E("hook-conflict", "owned hook changed during integration; changes were preserved; retry after concurrent edits finish", 2)
 	}
 	return err
 }
@@ -263,33 +268,29 @@ func ownsHookContents(owned Installation, body []byte) bool {
 	return Hash(body) == owned.Hash || len(owned.Original) != 0 && bytes.Equal(body, owned.Original)
 }
 
-func (s *Service) refreshHook(owned Installation, old, body []byte) (InstallResult, error) {
+func (s *Service) refreshHook(root *os.Root, owned Installation, snapshot agentFile, body []byte) (InstallResult, error) {
 	result := InstallResult{Path: owned.Path}
-	info, err := os.Lstat(owned.Path)
-	if err != nil {
+	if err := unchangedNativeHook(root, snapshot); err != nil {
 		return result, err
 	}
-	if !info.Mode().IsRegular() {
-		return result, E("hook-conflict", "owned hook is no longer a regular file: "+owned.Path, 2)
-	}
-	if !bytes.Equal(old, body) {
+	if !bytes.Equal(snapshot.data, body) {
 		result.Backup = filepath.Join(s.Store.Root, "backups", ID()+"-hook")
-		if err = AtomicWrite(result.Backup, old, 0600); err != nil {
+		if err := AtomicWrite(result.Backup, snapshot.data, 0600); err != nil {
 			return result, err
 		}
 		owned.Hash = Hash(body)
-		owned.Original = old
-		if err = s.saveInstallation(owned); err != nil {
+		owned.Original = snapshot.data
+		if err := s.saveInstallation(owned); err != nil {
 			return result, err
 		}
-		if err = replaceOwnedHook(owned.Path, info, old, body); err != nil {
+		if err := replaceOwnedHook(root, snapshot, body); err != nil {
 			return result, err
 		}
 	}
 	if len(owned.Original) != 0 {
 		owned.Hash = Hash(body)
 		owned.Original = nil
-		if err = s.saveInstallation(owned); err != nil {
+		if err := s.saveInstallation(owned); err != nil {
 			return result, err
 		}
 	}
@@ -297,16 +298,14 @@ func (s *Service) refreshHook(owned Installation, old, body []byte) (InstallResu
 	return result, nil
 }
 
-func replaceOwnedHook(path string, previous os.FileInfo, old, body []byte) error {
-	f, err := os.CreateTemp(filepath.Dir(path), ".ach-hook-*")
+func replaceOwnedHook(root *os.Root, previous agentFile, body []byte) error {
+	temporary := filepath.Join("hooks", ".ach-hook-"+ID())
+	f, err := root.OpenFile(temporary, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0755)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(f.Name())
-	if err = f.Chmod(0755); err == nil {
-		_, err = f.Write(body)
-	}
-	if err == nil {
+	defer root.Remove(temporary)
+	if _, err = f.Write(body); err == nil {
 		err = f.Sync()
 	}
 	if closeErr := f.Close(); err == nil {
@@ -315,18 +314,10 @@ func replaceOwnedHook(path string, previous os.FileInfo, old, body []byte) error
 	if err != nil {
 		return err
 	}
-	current, err := os.Lstat(path)
-	if err != nil {
+	if err := unchangedNativeHook(root, previous); err != nil {
 		return err
 	}
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	if !current.Mode().IsRegular() || !os.SameFile(previous, current) || !bytes.Equal(old, contents) {
-		return E("hook-conflict", "hook changed during refresh; preserve it and inspect manually: "+path, 2)
-	}
-	return replaceFile(f.Name(), path)
+	return root.Rename(temporary, previous.path)
 }
 
 // Automatic publication is restricted to the native common-directory hooks
