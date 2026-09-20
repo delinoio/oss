@@ -583,6 +583,51 @@ fn comparison_distinguishes_linux_distributions_with_equal_versions() {
     }
 }
 #[test]
+fn new_access_policy_requires_comparable_complete_baseline() {
+    use runlens::{analysis, config::Policy, entries::Entries, model::Verdict};
+    let root = repository("read");
+    assert!(run(root.path(), "current.json", "read").status.success());
+    let current = runlens::report::read(&root.path().join("current.json")).unwrap();
+    let mut baseline = current.clone();
+    baseline.executions[0].accesses = Entries::default();
+    let mut rules = Policy {
+        fail_new_accesses: true,
+        ..Default::default()
+    };
+    let commands = Default::default();
+    assert_eq!(
+        analysis::policy(&current, &rules, &commands, Some(&baseline))
+            .unwrap()
+            .verdict,
+        Some(Verdict::Failed)
+    );
+    for variant in 0..4 {
+        let mut old = baseline.clone();
+        match variant {
+            0 => old.executions[0].environment.source_revision = Some("0".repeat(40)),
+            1 => old.executions[0].environment.os_version = Some("other-version".into()),
+            2 => old.executions[0].environment.executable_sha256 = Some("0".repeat(64)),
+            _ => old.executions[0].outcome.collection_complete = false,
+        }
+        let result = analysis::policy(&current, &rules, &commands, Some(&old)).unwrap();
+        assert_eq!(result.verdict, Some(Verdict::Inconclusive));
+        assert!(
+            !result
+                .findings
+                .iter()
+                .any(|item| item.unwrap().1.code == runlens::model::FindingCode::NewAccess)
+        );
+        rules.deny_reads = vec!["input.txt".into()];
+        assert_eq!(
+            analysis::policy(&current, &rules, &commands, Some(&old))
+                .unwrap()
+                .verdict,
+            Some(Verdict::Failed)
+        );
+        rules.deny_reads.clear();
+    }
+}
+#[test]
 fn offline_policy_and_cache_follow_windows_case_rules() {
     let root = repository("read");
     fs::create_dir(root.path().join("Private")).unwrap();

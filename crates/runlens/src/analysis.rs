@@ -391,7 +391,9 @@ pub fn policy(
                     vec![evidence(execution, Some(&path), EvidenceSource::Access)],
                 )?;
             }
-            if let Some(old) = previous {
+            if let Some(old) =
+                previous.filter(|old| compatible(old, execution) && old.outcome.collection_complete)
+            {
                 let prior = old.accesses.get(&path)?;
                 let new = prior.is_none_or(|p| {
                     access.read && !p.read
