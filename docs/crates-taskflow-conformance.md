@@ -94,7 +94,7 @@ Additional invariants include unknown/duplicate configuration rejection, schema 
 
 `shard_preflight_preserves_explicit_metadata_bootstrap` validates the complete shard request before an explicitly declared installation creates missing Cargo metadata; installation itself runs unsharded before the selected test partition.
 
-`reading_session_files_does_not_cancel_or_requeue_work` verifies that metadata/input reads cannot cancel or repeat a live task. Linux access notifications from discovery and hashing must not be treated as mutations.
+`reading_session_files_does_not_cancel_or_requeue_work` verifies that metadata/input reads cannot cancel or repeat a live task. Its initial-disabled watcher starts with an absent input, then creates that input after an activation barrier establishes the baseline. This separates the read-only exercise from delayed macOS creation events originating before subscription. Linux access notifications from discovery and hashing must not be treated as mutations.
 
 `session_normalizes_watch_paths_for_existing_and_deleted_inputs` exercises a lexical root alias, deletion, and recreation. Notification paths use the same canonical root as discovery, including Windows verbatim prefixes; removed leaves are normalized through their existing ancestors.
 

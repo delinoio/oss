@@ -1873,18 +1873,25 @@ async fn reading_session_files_does_not_cancel_or_requeue_work() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap().to_string();
     drop(listener);
-    let directory = fixture(json!({"check": {
-        "command": command(&["paced", "events", &address, "500"]),
-        "input": ["source"], "watch": {"debounce": "20ms"}
-    }}));
-    std::fs::write(directory.path().join("source"), "unchanged").unwrap();
-    profile(directory.path(), &["check"]);
+    let directory = fixture(json!({
+        "check": {
+            "command": command(&["paced", "events", &address, "500"]),
+            "input": ["source"], "watch": {"initial": false, "debounce": "20ms"}
+        },
+        "barrier": {"command": command(&["record", "ready", "ready"]), "input": []}
+    }));
+    profile(directory.path(), &["check", "barrier"]);
     let root = directory.path().to_path_buf();
     let token = CancellationToken::new();
     let stop = token.clone();
     let session = tokio::spawn(async move {
         taskflow::session::start(&root, "default", RunOptions::default(), stop).await
     });
+    // FSEvents can deliver pre-subscription file creation after discovery.
+    // Start the input mutation only after the watch baseline is installed, so
+    // this fixture isolates reads from genuine queued creation notifications.
+    wait_lines(&directory.path().join("ready"), "ready", 1).await;
+    std::fs::write(directory.path().join("source"), "unchanged").unwrap();
     let events = directory.path().join("events");
     wait_lines(&events, "start", 1).await;
     for _ in 0..20 {
