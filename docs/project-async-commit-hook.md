@@ -33,6 +33,10 @@ Defaults: daemon mode, API loopback port 46309, frontend development port 46308,
 
 Results, reports and credentials remain local: this deliberately overrides the repository's R2 file-storage default. Trusted host commands are not a hostile-code sandbox. No telemetry, remote result storage, login autostart, automatic update, execution timeout or global command concurrency cap.
 
+Release preparation is available through `Release Project` with project `async-commit-hook`: it synchronizes all six source/installer version fields and creates the exact version tag. Signing, GitHub Release, Homebrew and Pages remain separate manual operations through the existing release workflow; see the release contract for exact-commit validation and recovery boundaries.
+
+Primary public installation instructions follow the downloaded installers' synchronized versions, and upgrade instructions select the highest published stable release. Explicit version selection and rollback remain documented separately without pinning the primary commands to a historical release.
+
 ## Change Policy
 Update the owning domain contract, evidence matrix and relevant AGENTS.md alongside interface, ownership, security or lifecycle changes. Generate protocol sources; never edit generated output. Public documentation describes supported user workflows, not repository internals.
 

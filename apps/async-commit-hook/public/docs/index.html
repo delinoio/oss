@@ -37,7 +37,7 @@
         </p>
         <pre>
 curl -fsSLo install-ach.sh https://ach.delino.io/install.sh
-sh install-ach.sh --version 0.1.0
+sh install-ach.sh
 
 # macOS and Linux, using the Homebrew tap:
 brew install delinoio/tap/async-commit-hook</pre
@@ -45,14 +45,19 @@ brew install delinoio/tap/async-commit-hook</pre
         <pre>
 # PowerShell:
 Invoke-WebRequest https://ach.delino.io/install.ps1 -OutFile install-ach.ps1
-./install-ach.ps1 -Version 0.1.0</pre
+./install-ach.ps1</pre
         >
         <p>
           The shell installer's <code>--version</code> option selects the exact
           release and overrides <code>ACH_VERSION</code>. Without either value,
           it uses the installer's bundled version. Use a three-part version such
           as <code>0.1.0</code>; invalid or unknown arguments stop installation
-          before downloading.
+          before downloading. The commands above use the downloaded installer's
+          bundled release unless <code>ACH_VERSION</code> overrides the shell
+          installer. To select a specific release, run
+          <code>sh install-ach.sh --version MAJOR.MINOR.PATCH</code> or
+          <code>./install-ach.ps1 -Version MAJOR.MINOR.PATCH</code>, replacing
+          <code>MAJOR.MINOR.PATCH</code> with the desired version.
         </p>
         <p>
           Download the platform archive, SHA256SUMS and Sigstore bundles from
@@ -521,7 +526,7 @@ ach prune --dry-run --max-bytes 1073741824</pre
         <pre>
 ach daemon stop
 # Stop viewer/MCP processes and finish or cancel checks, then:
-ach self-update --version 0.1.0
+ach self-update
 ach self-update --recover
 # Homebrew installations:
 brew upgrade async-commit-hook</pre
@@ -529,7 +534,10 @@ brew upgrade async-commit-hook</pre
         <p>
           Without <code>--version</code>, self-update selects the highest published
           stable version and refuses a downgrade. Intentional rollback requires
-          an explicit version. Updates refuse active checks/server processes, verify
+          an explicit version using
+          <code>ach self-update --version MAJOR.MINOR.PATCH</code>, replacing
+          <code>MAJOR.MINOR.PATCH</code> with the desired version.
+          Updates refuse active checks/server processes, verify
           signatures/checksums, back up state, and retain the previous
           executable. If the verified release executable is already byte-for-byte
           identical, self-update reports <code>up-to-date</code> without creating

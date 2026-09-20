@@ -27,6 +27,8 @@ When a fresh pairing fragment accompanies stale stored authorization, Pair again
 Detail navigation focuses the commit heading, returning to results restores the selected row, and polling never steals focus. Cancellation uses a native modal dialog with Escape and prior-focus restoration. Browsers exposing the local-network-access Permissions API receive a distinct denied-permission recovery message; older browser APIs retain ordinary connection guidance.
 Browser authorization and local connection preferences only; result cache is in memory. Durable results belong to the CLI's local state. Public docs cover configuration, installation, CLI/MCP/skills, privacy, validation meaning, compatibility and recovery.
 
+Primary public shell and PowerShell install commands omit an explicit product version and use the downloaded installers' synchronized defaults (subject to the documented shell `ACH_VERSION` override). The primary upgrade command is `ach self-update`, which selects the highest published stable version and refuses implicit downgrades. Separate explicit-version examples use a clearly replaceable `MAJOR.MINOR.PATCH` placeholder for intentional selection or rollback; release preparation must not leave primary published commands pinned to a historical version. Production-output tests enforce these command and guidance boundaries.
+
 ## Security
 Strict static CSP; logs/source rendered as text; no remote logging/analytics. Connect only to explicit loopback URLs. No secret in URL query strings. API authorization remains authoritative.
 

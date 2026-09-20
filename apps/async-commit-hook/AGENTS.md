@@ -14,6 +14,7 @@
 - Preserve keyboard navigation, dialog focus restoration, status words and recoverable network/version/authentication states.
 - Public documentation and installers live under `public`; internal implementation contracts remain in `docs/`.
 - Keep shell installer `--version` behavior aligned with the public guide, validate all arguments before downloads, and preserve signature/checksum verification for every selected version.
+- Primary public install commands use the downloaded installers' synchronized defaults, and the primary self-update command selects the highest published stable version. Keep explicit version-selection and rollback guidance separate so published commands never pin an old product release.
 - Public recovery guidance must distinguish confirmed descendant cleanup from lost ownership proof: incomplete cancellation blocks replacement, and a forcibly killed Linux supervisor requires host-reboot recovery. Do not claim actual minimum-OS machine qualification from local tests or cross-builds.
 - Run `pnpm test` from this directory after frontend changes. Generated `dist` is untracked and must be removed from the final worktree.
 

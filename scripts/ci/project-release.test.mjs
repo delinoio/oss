@@ -52,17 +52,17 @@ test("Publication follows preparation without CI and tags only after registry su
   assert.deepEqual(jobs.summary.needs, ["prepare", "registry", "tag"]);
 });
 
-for (const [scenario, results] of [
+for (const project of [Project.Clibox, Project.AsyncCommitHook]) for (const [scenario, results] of [
   ["success", ["success", "success", "success"]],
   ["prepare failure", ["failure", "skipped", "skipped"]],
   ["registry failure", ["success", "failure", "skipped"]],
   ["tag failure", ["success", "success", "failure"]],
-]) test(`Release summary handles ${scenario} without CI outputs`, (t) => {
+]) test(`${project} release summary handles ${scenario} without CI outputs`, (t) => {
   const directory = mkdtempSync(path.join(tmpdir(), "release-summary-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const summaryFile = path.join(directory, "summary.md");
   const outputs = results[0] === "success" ? {
-    previous_version: "1.2.2", version: "1.2.3", tag: "clibox@v1.2.3", revision: "1".repeat(40),
+    previous_version: "1.2.2", version: "1.2.3", tag: `${project}@v1.2.3`, revision: "1".repeat(40),
   } : {};
   const jobs = {
     prepare: { result: results[0], outputs },
@@ -75,7 +75,7 @@ for (const [scenario, results] of [
   assert.ok(script, "Summary must expose its Node script for fixture execution");
   const result = spawnSync(process.execPath, ["-e", script[1]], {
     encoding: "utf8",
-    env: { RELEASE_PROJECT: Project.Clibox, RESULTS: JSON.stringify(jobs), GITHUB_STEP_SUMMARY: summaryFile },
+    env: { RELEASE_PROJECT: project, RESULTS: JSON.stringify(jobs), GITHUB_STEP_SUMMARY: summaryFile },
   });
   assert.equal(result.error, undefined);
   assert.equal(result.status, scenario === "success" ? 0 : 1, result.stderr);
@@ -86,15 +86,22 @@ for (const [scenario, results] of [
   if (scenario === "success") {
     assert.ok(summary.includes("Version: 1.2.2 → 1.2.3"));
     assert.ok(summary.includes(`Commit: ${outputs.revision}`));
-    assert.ok(summary.includes("Tag: clibox@v1.2.3"));
+    assert.ok(summary.includes(`Tag: ${project}@v1.2.3`));
     assert.doesNotMatch(summary, /Incomplete phases/u);
+    if (project === Project.AsyncCommitHook) {
+      assert.match(summary, /separate manual run.*release-async-commit-hook\.yml/u);
+      assert.match(summary, /Select main and version 1\.2\.3; dry_run defaults to true/u);
+      assert.ok(summary.includes(`Publication requires the dispatch commit to match ${outputs.revision}`));
+      assert.match(summary, /never move the tag/u);
+    } else assert.doesNotMatch(summary, /separate manual run/u);
   } else {
     assert.match(summary, /Incomplete phases:.*rerun this release run to reuse any recorded version/u);
     if (scenario === "prepare failure") assert.match(summary, /unresolved; inspect prepare logs/u);
+    assert.doesNotMatch(summary, /preparation is complete|separate manual run/u);
   }
 });
 
-test("Source and tap tokens are separately scoped and all selected tag workflows remain available", () => {
+test("Source and tap tokens are separately scoped and project release triggers remain explicit", () => {
   for (const name of ["prepare", "tag"]) {
     const token = workflow.jobs[name].steps.find((step) => step.uses === "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1");
     assert.equal(token.with.repositories, "oss");
@@ -106,6 +113,13 @@ test("Source and tap tokens are separately scoped and all selected tag workflows
   }
   for (const project of Object.values(Project)) {
     const release = yaml.load(source(`.github/workflows/release-${project}.yml`));
+    if (project === Project.AsyncCommitHook) {
+      assert.deepEqual(Object.keys(release.on), ["workflow_dispatch"]);
+      assert.equal(release.on.workflow_dispatch.inputs.dry_run.default, true);
+      assert.match(JSON.stringify(release.jobs.validate), /refs\/heads\/main/u);
+      assert.equal(release.jobs.publish.environment, "async-commit-hook-release");
+      continue;
+    }
     assert.deepEqual(release.on.push.tags, [`${project}@v*`]);
     if ([Project.CargoMono, Project.Runmoor, Project.Clibox].includes(project)) continue;
     const steps = release.jobs.publish.steps;
@@ -125,9 +139,11 @@ test("Source and tap tokens are separately scoped and all selected tag workflows
   assert.match(tap, /credential\.helper=!gh auth git-credential/u);
 });
 
-test("clibox reaches source validation and tagging without Cargo publication credentials", () => {
+test("clibox and async-commit-hook reach source validation and tagging without Cargo publication credentials", () => {
   const prepare = workflow.jobs.prepare.steps.find((step) => step.name === "Validate configuration before committing");
-  assert.equal(prepare.env.REGISTRY_TOKEN, "${{ inputs.project != 'clibox' && secrets.CARGO_REGISTRY_TOKEN || '' }}");
+  const registryToken = "${{ inputs.project != 'clibox' && inputs.project != 'async-commit-hook' && secrets.CARGO_REGISTRY_TOKEN || '' }}";
+  assert.equal(prepare.env.REGISTRY_TOKEN, registryToken);
+  assert.equal(workflow.jobs.registry.steps.find((step) => step.name === "Publish only the selected crate").env.CARGO_REGISTRY_TOKEN, registryToken);
   assert.match(prepare.run, /requiresCargoPublish\(plan.project\)/u);
   const preflight = prepare.run.split("<<'JS'\n")[1].split("\nJS")[0];
   const environment = { CLIENT_ID: "fixture-id", PRIVATE_KEY: "fixture-key", RELEASE_BUMP: Bump.Patch };
@@ -138,6 +154,7 @@ test("clibox reaches source validation and tagging without Cargo publication cre
     stdio: "pipe",
   });
   assert.doesNotThrow(() => runPreflight(Project.Clibox));
+  assert.doesNotThrow(() => runPreflight(Project.AsyncCommitHook));
   assert.throws(() => runPreflight(Project.Binpm), /CARGO_REGISTRY_TOKEN is required/u);
   const registry = workflow.jobs.registry;
   assert.equal(registry.if, undefined);
