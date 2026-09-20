@@ -1,7 +1,9 @@
+mod ansi_path;
+
 use std::{
     ffi::{CStr, c_char},
     io,
-    os::windows::{ffi::OsStrExt, io::AsRawHandle, process::ChildExt as _},
+    os::windows::{io::AsRawHandle, process::ChildExt as _},
     path::Path,
     sync::Arc,
 };
@@ -18,7 +20,6 @@ use winapi::{
     shared::minwindef::TRUE,
     um::{processthreadsapi::ResumeThread, winbase::CREATE_SUSPENDED},
 };
-use winsafe::co::{CP, WC};
 
 use crate::{
     ChildTermination, TrackedChild, command::Command, error::SpawnError, ipc::ChannelAccesses,
@@ -53,16 +54,7 @@ impl SpyImpl {
     pub fn init_in(path: &Path) -> io::Result<Self> {
         let dll_path = INTERPOSE_CDYLIB.materialize().suffix(".dll").at(path)?;
 
-        let wide_dll_path = dll_path.as_os_str().encode_wide().collect::<Vec<u16>>();
-        let mut ansi_dll_path =
-            winsafe::WideCharToMultiByte(CP::ACP, WC::NoValue, &wide_dll_path, None, None)
-                .map_err(|err| io::Error::from_raw_os_error(err.raw().cast_signed()))?;
-
-        ansi_dll_path.push(0);
-
-        // SAFETY: we just pushed a NUL byte, so the slice is NUL-terminated
-        let ansi_dll_path_with_nul =
-            unsafe { CStr::from_bytes_with_nul_unchecked(ansi_dll_path.as_slice()) };
+        let ansi_dll_path_with_nul = ansi_path::encode_path(&dll_path)?;
         Ok(Self { ansi_dll_path_with_nul: ansi_dll_path_with_nul.into() })
     }
 

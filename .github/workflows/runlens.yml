@@ -89,6 +89,10 @@ jobs:
       - name: Native execution tests
         working-directory: crates/runlens
         run: cargo test --locked --features test-support
+      - name: Windows exact DLL path encoding regression
+        if: runner.os == 'Windows'
+        working-directory: crates/runlens
+        run: cargo test --locked --package fspy dll_path_encoding_rejects_lossy_code_page_conversion
       - name: Windows Detours setup failure regression
         # Pure NT classification also runs on non-Windows native workers.
         if: runner.os == 'Windows'

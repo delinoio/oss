@@ -50,7 +50,7 @@ fspy_preload_unix = { workspace = true }
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Console", "Win32_Security"] }
 fspy_detours_sys = { workspace = true }
 fspy_preload_windows = { workspace = true }
-winapi = { workspace = true, features = ["winbase", "securitybaseapi", "handleapi"] }
+winapi = { workspace = true, features = ["winbase", "securitybaseapi", "handleapi", "fileapi"] }
 winsafe = { workspace = true, features = ["kernel"] }
 
 [lints]

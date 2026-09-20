@@ -3995,3 +3995,37 @@ fn variadic_exec_accepts_native_argument_counts_and_preserves_e2big() {
         }
     }
 }
+
+#[cfg(windows)]
+#[tokio::test]
+async fn unicode_windows_collector_paths_are_exact_or_rejected_before_launch() {
+    let root = tempfile::tempdir().unwrap();
+    let collector = root.path().join("한글-Ａ");
+    fs::create_dir(&collector).unwrap();
+    let mut command = fspy::Command::new(fixture());
+    command
+        .args(["read-write"])
+        .current_dir(root.path())
+        .envs(std::env::vars_os());
+    match command
+        .spawn_in(
+            &collector,
+            65536,
+            4096,
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+    {
+        Ok(child) => {
+            let result = child.wait_handle.await.unwrap();
+            assert!(result.status.success());
+            assert!(result.path_accesses.unwrap().attached());
+            assert!(root.path().join("out/result.txt").exists());
+        }
+        Err(fspy::error::SpawnError::OsSpawn(error)) => {
+            assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
+            assert!(!root.path().join("out").exists());
+        }
+        Err(error) => panic!("unexpected initialization failure: {error}"),
+    }
+}

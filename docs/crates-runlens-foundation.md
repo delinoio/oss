@@ -722,3 +722,5 @@ Linux libc `execveat` is forwarded unchanged to inherited kernel collection. Rel
 Nested Unix `execvp`/`execlp` and Linux `execvpe` retain libc’s shell fallback for executable text without a shebang. That child-requested fallback still marks protected interpreter coverage incomplete when applicable.
 
 Unix variadic exec collection preserves native argument limits: argv storage uses checked allocation, while the OS enforces its effective argument/environment byte budget and returns the original errno.
+
+Windows injection validates the exact DLL pathname after ANSI encoding. An OS short-path alias is allowed only when it also round-trips exactly. If no representable name exists, initialization returns typed Unsupported before target creation; no lossy path reaches Detours.

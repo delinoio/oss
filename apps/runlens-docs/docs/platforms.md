@@ -40,3 +40,5 @@ On Unix, commands that change process sessions/groups or request a separate grou
 Windows children created directly through native process APIs that bypass normal CreateProcess tracing produce incomplete collection. The child continues inside inherited Job ownership, but its filesystem accesses cannot establish a verification pass.
 
 On Unix, additional inherited file descriptors such as shell descriptor 3 also make collection incomplete. Runlens preserves these caller-owned resources, but access through them cannot certify a policy pass.
+
+On Windows, the temporary collector path must be representable in the active system code page. Runlens tries an available Windows short-path alias for Unicode locations; if neither spelling is representable, it fails before starting the command. Select an accessible temporary directory with a representable path (for example, an ASCII-only `TEMP`/`TMP` path) and retry. UTF-8 system code pages support Unicode paths directly.
