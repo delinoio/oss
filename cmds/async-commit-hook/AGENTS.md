@@ -89,3 +89,5 @@
 - Page Connect registry reads across worktrees, including within one repository, before Git probing or serialization. Bound display labels without changing raw paths or IDs; cursor validation precedes storage access.
 
 - Accept interleaved Go build-output/build-fail events using ImportPath, separate bounded output tails and build failure identities. Preserve package/test failures and reject build events without an import path.
+
+- Agent install/reinstall/uninstall rejects final-component symlinks and nonregular configuration/skill files before backup, ownership or publication. OpenCode fallback discovery uses Lstat so dangling JSONC links cannot be bypassed.

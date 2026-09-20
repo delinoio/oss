@@ -377,6 +377,9 @@ ach mcp</pre
           preserves unrelated settings and comments, and diagnoses conflicts.
           Uninstall with the matching client/scope. If you edited the installed
           skill or MCP entry, resolve the conflict explicitly before removal.
+          Symlinked configuration or skill files are preserved and reported as
+          conflicts, including during uninstall. Keep your dotfile-manager links
+          and configure <code>ach mcp</code> manually in their managed targets.
           Restart your agent client after installation.
           Project scope uses the registered Git worktree root, even when
           <code>--repo .</code> refers to a subdirectory.

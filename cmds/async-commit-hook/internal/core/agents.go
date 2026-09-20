@@ -78,15 +78,27 @@ func (s *Service) Agent(client, scope, repo string, remove bool) (InstallResult,
 			path = filepath.Join(configHome, "opencode", "opencode.jsonc")
 			skill = filepath.Join(configHome, "opencode", "skills", "async-commit-hook", "SKILL.md")
 		}
-		if _, e = os.Stat(path); os.IsNotExist(e) {
+		if _, e = os.Lstat(path); os.IsNotExist(e) {
 			alternative := strings.TrimSuffix(path, "c")
-			if _, e = os.Stat(alternative); e == nil {
+			if _, e = os.Lstat(alternative); e == nil {
 				path = alternative
 			}
 		}
 		parent = "mcp"
 	default:
 		return InstallResult{}, E("invalid-agent", "choose codex, claude-code or opencode", 2)
+	}
+	// Atomic replacement would detach a dotfile-manager symlink from its
+	// target. Refuse before reading content, backing up, or recording ownership,
+	// including dangling links and previously owned files replaced by links.
+	for _, file := range []string{path, skill} {
+		if info, err := os.Lstat(file); err == nil {
+			if !info.Mode().IsRegular() {
+				return InstallResult{}, E("agent-conflict", "agent configuration and skill must be regular files; preserve links and configure ach mcp manually", 2)
+			}
+		} else if !os.IsNotExist(err) {
+			return InstallResult{}, err
+		}
 	}
 	id := "agent:" + client + ":" + path
 	owned, ownedErr := s.installation(id)
