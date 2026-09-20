@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "origin": "https://pkgs.oss.delino.io",
+  "public_bucket": "delino-oss-packages",
+  "state_bucket": "delino-oss-packages-state",
+  "rust_image": "almalinux:9@sha256:3a3fa7f043b142bc8008c8b308d39b47d2c84008addcd52f9f9a7a82d2a90474",
+  "tools_image": "node:24-bookworm@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4",
+  "tools": {
+    "nfpm": {
+      "version": "2.47.0",
+      "assets": {
+        "arm64": {
+          "url": "https://github.com/goreleaser/nfpm/releases/download/v2.47.0/nfpm_2.47.0_Linux_arm64.tar.gz",
+          "sha256": "1c0f5f2999b9a974bfb04fdb0cc3306096de530ac5dbb25d739cc5f5219c919c"
+        },
+        "amd64": {
+          "url": "https://github.com/goreleaser/nfpm/releases/download/v2.47.0/nfpm_2.47.0_Linux_x86_64.tar.gz",
+          "sha256": "0660ca602b2d2d2ae4781a06c692b3eeb9d437ffea05b831d76e41f4a3188783"
+        }
+      }
+    },
+    "aptly": {
+      "version": "1.6.3",
+      "assets": {
+        "amd64": {
+          "url": "https://github.com/aptly-dev/aptly/releases/download/v1.6.3/aptly_1.6.3_linux_amd64.zip",
+          "sha256": "535ed24eb706bc25a316b59d709a7e74e10165f2ffab8552097ba7e4816a3e7e"
+        },
+        "arm64": {
+          "url": "https://github.com/aptly-dev/aptly/releases/download/v1.6.3/aptly_1.6.3_linux_arm64.zip",
+          "sha256": "dd0988ebe8bfd547482e55de83f178c14e95d5d829d956ce683e0ca045cdb86c"
+        }
+      }
+    }
+  }
+}

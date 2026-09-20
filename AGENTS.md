@@ -433,3 +433,7 @@ Release automation baseline:
 
 - Runmoor release fixtures must run with Node built-ins and no workspace dependency installation; YAML workflow assertions belong to `scripts/ci/` under `pnpm ci:contracts`.
 - Runmoor release dry runs are secret-free and non-publishing. Only the guarded publication job can obtain OIDC/signing and release-write authority; preview releases use the exact `runmoor@v<MAJOR.MINOR.PATCH>` source identity and three documented platform archives.
+
+### Linux CLI Package Distribution
+
+- Follow `docs/repository-linux-packages-contract.md` for the six CLI APT/DNF repositories at `https://pkgs.oss.delino.io`. Native package publication is part of each selected CLI release, uses the dedicated `linux-packages` environment, and keeps Runmoor preview separate.
