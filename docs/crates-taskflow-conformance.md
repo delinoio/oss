@@ -308,3 +308,5 @@ The real Go flag suite also compares `-failfast` and `-failfast=false` across tw
 The cache capture unit regressions use bounded fixtures to check empty file/directory records, exact Base64 boundaries, escaped paths, and link metadata; identity-only snapshots remain independent of transfer limits. `critical_path_priority_counts_shared_diamond_suffixes` seeds duration receipts and verifies that the longer diamond path wins over an independent task in a single-worker execution.
 
 `cache_verify_rejects_impossible_partial_shard_suites` executes a four-partition generic suite, accepts a single nonzero-index partition and the complete suite, and rejects zero/two/three reports through both historical integrity validation and the CLI.
+
+`dangling_unix_output_links_fail_before_capture` confirms the existing containment check rejects missing Unix link targets before link type inference in local output hashing, snapshots, and portable artifact capture. After each target is created as a file or directory, capture and restoration preserve its actual type and readable content. This is regression evidence for the existing rejection boundary, not a new capture policy.

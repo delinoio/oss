@@ -6383,3 +6383,49 @@ async fn malformed_dotenv_diagnostics_never_expose_values() {
         }
     }
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn dangling_unix_output_links_fail_before_capture() {
+    for directory_target in [false, true] {
+        let root = fixture(
+            json!({"build":{"command":command(&["version"]),"input":[],"output":["out/**"]}}),
+        );
+        std::fs::create_dir(root.path().join("out")).unwrap();
+        let link = root.path().join("out/link");
+        std::os::unix::fs::symlink("../target", &link).unwrap();
+        let g = graph(root.path()).await;
+        let project = &g.workspace.projects["app"];
+        let task = &g.tasks["app#build"].task;
+        let capture = || cache::Artifact::capture("key".into(), "app#build".into(), project, task);
+        // files::within canonicalizes the existing symlink leaf before target
+        // typing. A missing target must never become a portable file record.
+        for result in [
+            cache::output_state(project, task).map(|_| ()),
+            cache::snapshot(project, task).map(|_| ()),
+            capture().map(|_| ()),
+        ] {
+            let error = result.unwrap_err();
+            assert_eq!(
+                error.downcast_ref::<std::io::Error>().unwrap().kind(),
+                std::io::ErrorKind::NotFound
+            );
+        }
+        if directory_target {
+            std::fs::create_dir(root.path().join("target")).unwrap();
+            std::fs::write(root.path().join("target/value"), "retained").unwrap();
+        } else {
+            std::fs::write(root.path().join("target"), "retained").unwrap();
+        }
+        let artifact = capture().unwrap();
+        assert!(artifact.files.iter().any(|record| matches!(&record.content, cache::Content::Link { directory, .. } if *directory == directory_target)));
+        std::fs::remove_dir_all(root.path().join("out")).unwrap();
+        artifact.restore("key", "app#build", project, task).unwrap();
+        let restored = if directory_target {
+            link.join("value")
+        } else {
+            link
+        };
+        assert_eq!(std::fs::read_to_string(restored).unwrap(), "retained");
+    }
+}
