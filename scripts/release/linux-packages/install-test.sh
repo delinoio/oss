@@ -52,6 +52,35 @@ else
     dnf remove -y "$project"
   fi
 fi
+if [ "$mode" = fixture ]; then
+  # Each fault is served only by the isolated fixture server. Require the package
+  # manager's verification diagnostic, not merely an unrelated command failure.
+  for fault in bad-signature bad-checksum; do
+    if command -v apt-get >/dev/null; then
+      apt-get clean
+      curl -fsS "$origin/$fault/setup/$name.sources" -o "/etc/apt/sources.list.d/$name.sources"
+      if [ "$fault" = bad-signature ]; then
+        if apt-get update --error-on=any > /tmp/rejected.log 2>&1; then cat /tmp/rejected.log; exit 1; fi
+        grep -Ei 'signature|GPG|Signed file' /tmp/rejected.log
+      else
+        apt-get update --error-on=any
+        if apt-get install -y "$project=$version-1" > /tmp/rejected.log 2>&1; then cat /tmp/rejected.log; exit 1; fi
+        grep -Ei 'hash sum mismatch|checksum|hashes of expected file' /tmp/rejected.log
+      fi
+    else
+      dnf clean all >/dev/null
+      curl -fsS "$origin/$fault/setup/$name.repo" -o "/etc/yum.repos.d/$name.repo"
+      if [ "$fault" = bad-signature ]; then
+        if dnf -y --disablerepo='*' --enablerepo="$name" --setopt="$name.skip_if_unavailable=0" makecache > /tmp/rejected.log 2>&1; then cat /tmp/rejected.log; exit 1; fi
+        grep -Ei 'signature|GPG|verification' /tmp/rejected.log
+      else
+        if dnf -y --setopt="$name.skip_if_unavailable=0" install "$project-$version-1" > /tmp/rejected.log 2>&1; then cat /tmp/rejected.log; exit 1; fi
+        grep -Ei 'checksum|digest' /tmp/rejected.log
+      fi
+    fi
+    test ! -e "/usr/bin/$project"
+  done
+fi
 test ! -e "/usr/bin/$project"
 test "$(cat /root/.config/delino-package-test/sentinel)" = preserve
 printf 'Package lifecycle verified: %s %s %s\n' "$project" "$version" "$arch"

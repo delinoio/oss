@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { architectures, dependencies, encode, sha256, requireValue, validateIdentity, pins } from './model.mjs';
 import { command } from './release-input.mjs';
 
@@ -23,12 +24,16 @@ export function importSigningKey(directory, { secretKey, passphrase, publicKey, 
 export function temporarySigningKey(directory) {
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const env = { ...process.env, GNUPGHOME: directory };
-  command('gpg', ['--batch', '--pinentry-mode', 'loopback', '--passphrase', '', '--quick-generate-key', 'Delino Package Fixture', 'rsa2048', 'cert', '1d'], { env });
+  const passphrase = randomBytes(24).toString('hex');
+  const passFile = path.join(directory, 'passphrase');
+  writeFileSync(passFile, passphrase, { mode: 0o600 });
+  const unlock = ['--pinentry-mode', 'loopback', '--passphrase-file', passFile];
+  command('gpg', ['--batch', ...unlock, '--quick-generate-key', 'Delino Package Fixture', 'rsa2048', 'cert', '1d'], { env });
   const fingerprint = command('gpg', ['--batch', '--with-colons', '--list-secret-keys'], { env }).split('\n').find((line) => line.startsWith('fpr:')).split(':')[9];
-  command('gpg', ['--batch', '--pinentry-mode', 'loopback', '--passphrase', '', '--quick-add-key', fingerprint, 'rsa2048', 'sign', '1d'], { env });
-  const secretKey = command('gpg', ['--batch', '--armor', '--export-secret-subkeys', fingerprint], { env });
+  command('gpg', ['--batch', ...unlock, '--quick-add-key', fingerprint, 'rsa2048', 'sign', '1d'], { env });
+  const secretKey = command('gpg', ['--batch', ...unlock, '--armor', '--export-secret-subkeys', fingerprint], { env });
   const publicKey = command('gpg', ['--batch', '--armor', '--export', fingerprint], { env });
-  return importSigningKey(directory, { secretKey, publicKey, fingerprint, passphrase: '' });
+  return importSigningKey(directory, { secretKey, publicKey, fingerprint, passphrase });
 }
 export function gpgSign(file, signing, clearsign = false) {
   const output = `${file}.${clearsign ? 'clearsigned' : 'asc'}`;
@@ -59,12 +64,22 @@ export function packageFiles(plan, input, output, signing) {
           { src: path.resolve(copyright), dst: `/usr/share/doc/${plan.project}/copyright`, file_info: { mode: 0o644 } },
         ],
         deb: { compression: 'xz' },
-        rpm: { compression: 'gzip', signature: { key_file: signing.keyFile } },
+        rpm: { compression: 'gzip' },
       };
       const configFile = path.join(output, `${arch}-${format}.json`);
       writeFileSync(configFile, encode(config));
       const target = path.join(output, name);
-      command('nfpm', ['package', '--config', configFile, '--packager', format, '--target', target], { env: { ...process.env, NFPM_RPM_PASSPHRASE: signing.passphrase, SOURCE_DATE_EPOCH: `${input.epoch}` } });
+      command('nfpm', ['package', '--config', configFile, '--packager', format, '--target', target], { env: { ...process.env, SOURCE_DATE_EPOCH: `${input.epoch}` } });
+      if (format === 'rpm') {
+        // nFPM 2.47.0 decrypts subkeys only when the primary secret key is encrypted.
+        // A CI export intentionally has a dummy primary, so use GnuPG through rpmsign.
+        // Remove this adapter only after nFPM supports encrypted subkey-only exports
+        // and the encrypted disposable-key lifecycle tests pass without it.
+        command('rpmsign', ['--define', '__gpg /usr/bin/gpg', '--define', `_gpg_name ${signing.fingerprint}`,
+          '--define', `_gpg_path ${signing.directory}`, '--define', '_gpg_digest_algo sha256',
+          '--define', `_gpg_sign_cmd_extra_args --pinentry-mode loopback --passphrase-file ${signing.passFile}`,
+          '--addsign', target], { env: signing.env });
+      }
       const bytes = readFileSync(target);
       result.push({ name, architecture: arch, format, sha256: sha256(bytes), size: bytes.length, bytes });
     }

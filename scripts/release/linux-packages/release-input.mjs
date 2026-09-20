@@ -1,11 +1,14 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { architectures, requireValue, validateRelease, checksumFor, sha256, extractExecutable, inspectElf, sourceIdentity } from './model.mjs';
+import { architectures, log, requireValue, validateRelease, checksumFor, sha256, extractExecutable, inspectElf, sourceIdentity } from './model.mjs';
 
 export function command(executable, args, options = {}) {
   try { return execFileSync(executable, args, { encoding: 'utf8', maxBuffer: 300 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'], ...options }); }
-  catch (error) { throw new Error(`COMMAND_FAILED_${path.basename(executable).toUpperCase().replaceAll(/[^A-Z0-9]/gu, '_')}`, { cause: error }); }
+  catch (error) {
+    log('command-failed', { executable: path.basename(executable), status: error.status ?? null, signal: error.signal ?? null });
+    throw new Error(`COMMAND_FAILED_${path.basename(executable).toUpperCase().replaceAll(/[^A-Z0-9]/gu, '_')}`, { cause: error });
+  }
 }
 export function readElf(file, architecture) {
   return inspectElf(readFileSync(file), architecture, command('readelf', ['--version-info', file]), command('readelf', ['--dynamic', file]), command('readelf', ['--notes', file]));
