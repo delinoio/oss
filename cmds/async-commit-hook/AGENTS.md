@@ -139,3 +139,5 @@
 - Agent uninstall publishes/backups settings only when removing an owned entry changes them. Missing or already-unintegrated settings remain absent or byte/identity-equivalent while owned skill and installation records are cleaned up; recover an absent OpenCode JSON fallback by its exact ownership record. Revalidate no-op settings before deleting ownership.
 
 - Implicit self-update scans every release page and chooses the highest canonical stable ach semantic version, excluding drafts, prereleases and invalid/foreign tags. Reject implicit downgrades; an explicit canonical --version may select an older release. Never use a partial failed inventory.
+
+- Failed update preparation removes its exclusively created state backup and candidate before returning, including VACUUM, evidence-copy and pre-publication journal failures. Preserve prior backups. Surface cleanup failures; if a journal was already published before a durability error, retain its referenced files and require recovery.

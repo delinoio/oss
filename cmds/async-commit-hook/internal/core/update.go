@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -152,11 +153,19 @@ func extractExecutable(archive []byte, windows bool) ([]byte, error) {
 	}
 	return out, nil
 }
-func (s *Service) stateBackup() (string, error) {
+func (s *Service) stateBackup() (backup string, err error) {
 	dir := filepath.Join(s.Store.Root, "backups", ID()+"-state")
-	if e := PrivateDir(dir); e != nil {
+	// Exclusive creation makes cleanup ownership explicit even if an ID ever
+	// collides. Windows applies the account-only ACL at directory creation.
+	if e := createStateDirectory(dir); e != nil {
 		return "", e
 	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, s.removeUpdatePreparation(dir))
+			backup = ""
+		}
+	}()
 	db := filepath.Join(dir, "state.sqlite")
 	if _, e := s.Store.DB.Exec("VACUUM INTO '" + strings.ReplaceAll(db, "'", "''") + "'"); e != nil {
 		return "", e
@@ -307,7 +316,7 @@ func (s *Service) SelfUpdate(ctx context.Context, version string) (map[string]st
 
 // Called only after both Sigstore bundles, the signed checksum and the archive
 // structure have been verified, while SelfUpdate holds the lifecycle lock.
-func (s *Service) prepareVerifiedUpdate(ctx context.Context, executable, version string, binary []byte) (UpdateJournal, bool, error) {
+func (s *Service) prepareVerifiedUpdate(ctx context.Context, executable, version string, binary []byte) (_ UpdateJournal, _ bool, err error) {
 	oldBinary, err := os.ReadFile(executable)
 	if err != nil {
 		return UpdateJournal{}, false, err
@@ -324,9 +333,10 @@ func (s *Service) prepareVerifiedUpdate(ctx context.Context, executable, version
 		candidate += ".exe"
 	}
 	prepared := false
+	backup := ""
 	defer func() {
 		if !prepared {
-			_ = os.Remove(candidate)
+			err = errors.Join(err, s.removeUpdatePreparation(candidate, backup))
 		}
 	}()
 	if err = AtomicWrite(candidate, binary, 0700); err != nil {
@@ -335,7 +345,7 @@ func (s *Service) prepareVerifiedUpdate(ctx context.Context, executable, version
 	if err = verifyUpdateVersion(ctx, candidate, version); err != nil {
 		return UpdateJournal{}, false, err
 	}
-	backup, err := s.stateBackup()
+	backup, err = s.stateBackup()
 	if err != nil {
 		return UpdateJournal{}, false, Wrap("update-backup-failed", err)
 	}
@@ -344,11 +354,36 @@ func (s *Service) prepareVerifiedUpdate(ctx context.Context, executable, version
 		return UpdateJournal{}, false, err
 	}
 	journal := UpdateJournal{Executable: executable, Candidate: candidate, Backup: executable + ".ach-backup-" + id, StateBackup: backup, SHA256: digest, OriginalSHA256: originalDigest, Phase: "prepared", Parent: parent}
-	if err = AtomicWrite(filepath.Join(s.Paths.Control, "update.json"), Encode(journal), 0600); err != nil {
+	journalPath := filepath.Join(s.Paths.Control, "update.json")
+	if err = AtomicWrite(journalPath, Encode(journal), 0600); err != nil {
+		// Unix rename can succeed before directory sync fails. An already
+		// published journal must retain its referenced files for recovery.
+		published, readErr := os.ReadFile(journalPath)
+		if readErr == nil && bytes.Equal(published, Encode(journal)) {
+			prepared = true
+			s.Log.Warn("update.journal_publication_uncertain", "code", "update-recovery-required")
+			return UpdateJournal{}, false, E("update-recovery-required", "update journal was published but durability could not be confirmed; run self-update --recover", 3)
+		}
 		return UpdateJournal{}, false, err
 	}
 	prepared = true
 	return journal, true, nil
+}
+
+// Discard only newly created preparation paths. Failed cleanup is returned and
+// logged, never hidden behind the original preparation error.
+func (s *Service) removeUpdatePreparation(paths ...string) error {
+	var result error
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+		if err := os.RemoveAll(path); err != nil {
+			s.Log.Warn("update.preparation_cleanup_failed", "code", "update-cleanup-failed")
+			result = errors.Join(result, Wrap("update-cleanup-failed", err))
+		}
+	}
+	return result
 }
 
 func verifyUpdateVersion(ctx context.Context, executable, version string) error {
