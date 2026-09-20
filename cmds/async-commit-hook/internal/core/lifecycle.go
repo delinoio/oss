@@ -37,7 +37,10 @@ func (s *Service) Active() ([]Component, error) {
 	}
 	out := []Component{}
 	for _, entry := range entries {
-		if filepath.Ext(entry.Name()) != ".json" {
+		id := strings.TrimSuffix(entry.Name(), ".json")
+		// The account control directory also owns update.json and other journals;
+		// only UUID-named component registrations participate in process cleanup.
+		if !ValidID(id) || entry.Name() != id+".json" {
 			continue
 		}
 		b, e := os.ReadFile(filepath.Join(s.Paths.Control, entry.Name()))
@@ -48,7 +51,7 @@ func (s *Service) Active() ([]Component, error) {
 			return nil, e
 		}
 		var c Component
-		if json.Unmarshal(b, &c) != nil {
+		if json.Unmarshal(b, &c) != nil || c.ID != id {
 			return nil, E("component-record-invalid", "invalid lifecycle record; run ach doctor", 3)
 		}
 		alive := ProcessAlive(c.Process)

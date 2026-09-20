@@ -109,3 +109,40 @@ func TestActiveRetriesFailedComponentCleanup(t *testing.T) {
 	}
 	assertComponentRemoved(t, s, c)
 }
+
+func TestActivePreservesOtherControlJournals(t *testing.T) {
+	s, _ := fixture(t, "version=1\n")
+	c := staleComponent(t, s, "cli")
+	journal := []byte(`{"phase":"prepared","executable":"retained"}`)
+	for _, name := range []string{"update.json", "other.json"} {
+		if err := AtomicWrite(filepath.Join(s.Paths.Control, name), journal, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.Active(); err != nil {
+		t.Fatal(err)
+	}
+	assertComponentRemoved(t, s, c)
+	for _, name := range []string{"update.json", "other.json"} {
+		got, err := os.ReadFile(filepath.Join(s.Paths.Control, name))
+		if err != nil || string(got) != string(journal) {
+			t.Fatal("unrelated journal changed", name, err)
+		}
+	}
+}
+
+func TestActiveRejectsMismatchedComponentIdentity(t *testing.T) {
+	s, _ := fixture(t, "version=1\n")
+	c := staleComponent(t, s, "cli")
+	path := filepath.Join(s.Paths.Control, c.ID+".json")
+	c.ID = ID()
+	if err := AtomicWrite(path, Encode(c), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Active(); err == nil {
+		t.Fatal("mismatched component identity accepted")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("invalid record removed", err)
+	}
+}
