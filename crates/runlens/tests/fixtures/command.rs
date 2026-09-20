@@ -110,6 +110,17 @@ fn main() {
                     "mutate-utimes" => {
                         libc::utimes(path.as_ptr(), std::ptr::null());
                     }
+                    #[cfg(target_os = "linux")]
+                    "mutate-futimesat" => {
+                        unsafe extern "C" {
+                            fn futimesat(
+                                fd: libc::c_int,
+                                path: *const libc::c_char,
+                                times: *const libc::timeval,
+                            ) -> libc::c_int;
+                        }
+                        futimesat(base.as_raw_fd(), relative.as_ptr(), std::ptr::null());
+                    }
                     "mutate-utimensat" => {
                         libc::utimensat(base.as_raw_fd(), relative.as_ptr(), std::ptr::null(), 0);
                     }

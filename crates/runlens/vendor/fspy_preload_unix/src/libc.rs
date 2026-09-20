@@ -1,6 +1,12 @@
 pub use libc::*;
 
 unsafe extern "C" {
+    // glibc exports this GNU interface on both supported 64-bit Linux targets,
+    // but pinned libc 0.2.185 does not declare it. Remove once libc supplies it.
+    // Signature: glibc time/sys/time.h, __USE_GNU futimesat declaration.
+    #[cfg(target_os = "linux")]
+    pub unsafe fn futimesat(fd: c_int, path: *const c_char, times: *const timeval) -> c_int;
+
     // On macOS x86_64, directory functions use $INODE64 symbol suffix for 64-bit inode support.
     // On arm64, 64-bit inodes are the only option so no suffix is needed.
     // https://github.com/apple-open-source-mirror/Libc/blob/5e566be7a7047360adfb35ffc44c6a019a854bea/include/dirent.h#L198

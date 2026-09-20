@@ -167,3 +167,9 @@ incomplete while forwarding the original NT call. Native Windows CI exercises
 valid lists, short/overflow lengths, malformed image sizes and inaccessible
 pointers. Remove this patch only when upstream safely handles invalid user memory
 without preempting the NT syscall's own error handling.
+
+The preload's Linux libc shim explicitly declares glibc futimesat using the
+public time/sys/time.h signature. Pinned libc 0.2.185 omits that binding, which
+otherwise breaks both Linux native builds. A native libc futimesat mutation
+fixture verifies write attempts. Remove the local declaration when the pinned
+libc dependency exports the same supported 64-bit GNU interface.

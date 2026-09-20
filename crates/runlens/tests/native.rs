@@ -2622,6 +2622,8 @@ fn path_only_mutations_cannot_pass_external_write_denials() {
         "mutate-truncate",
         "mutate-utimes",
         "mutate-utimensat",
+        #[cfg(target_os = "linux")]
+        "mutate-futimesat",
         "mutate-link",
         "mutate-linkat",
         "mutate-symlink",
