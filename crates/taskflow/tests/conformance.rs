@@ -858,8 +858,8 @@ async fn scenarios_08_15_16_19_watch_and_timer_companions_preserve_server() {
         .to_string();
     let dir = fixture(json!({
         "server":{"command":command(&["server",&address,"server.pid"]),"input":[],"service":true,"readiness":{"type":"tcp","address":address,"timeout":"5s"},"dependsOn":["check"],"with":["check","poll"]},
-        "check":{"command":command(&["record","trace","check"]),"input":["source"],"watch":{"initial":true,"debounce":"30ms"}},
-        "poll":{"command":command(&["record","trace","poll"]),"input":[],"schedule":{"every":"100ms","initial":false},"overlap":"skip"}
+        "check":{"command":command(&["record","checks","check"]),"input":["source"],"watch":{"initial":true,"debounce":"30ms"}},
+        "poll":{"command":command(&["record","polls","poll"]),"input":[],"schedule":{"every":"100ms","initial":false},"overlap":"skip"}
     }));
     let mut cfg: Value =
         serde_yaml::from_slice(&std::fs::read(dir.path().join("taskflow.yml")).unwrap()).unwrap();
@@ -869,7 +869,10 @@ async fn scenarios_08_15_16_19_watch_and_timer_companions_preserve_server() {
         serde_yaml::to_string(&cfg).unwrap().as_bytes(),
     )
     .unwrap();
-    std::fs::write(dir.path().join("source"), "before").unwrap();
+    // Keep the watched input absent until the shared prerequisite/companion
+    // finishes activation. macOS may deliver pre-subscription creation events
+    // after that execution; those legitimately request another check and would
+    // obscure the initial-execution deduplication this fixture is testing.
     let cancel = CancellationToken::new();
     let token = cancel.clone();
     let root = dir.path().to_path_buf();
@@ -888,18 +891,20 @@ async fn scenarios_08_15_16_19_watch_and_timer_companions_preserve_server() {
     wait_lines(&dir.path().join("server.pid"), "", 1).await;
     let pid = std::fs::read_to_string(dir.path().join("server.pid")).unwrap();
     assert_eq!(
-        std::fs::read_to_string(dir.path().join("trace"))
+        std::fs::read_to_string(dir.path().join("checks"))
             .unwrap()
             .matches("check")
             .count(),
         1
     );
     std::fs::write(dir.path().join("source"), "after").unwrap();
-    wait_lines(&dir.path().join("trace"), "check", 2).await;
-    wait_lines(&dir.path().join("trace"), "poll", 1).await;
-    let trace = std::fs::read_to_string(dir.path().join("trace")).unwrap();
+    wait_lines(&dir.path().join("checks"), "check", 2).await;
+    wait_lines(&dir.path().join("polls"), "poll", 1).await;
+    let trace = std::fs::read_to_string(dir.path().join("checks")).unwrap();
     assert_eq!(trace.matches("check").count(), 2, "{trace}");
-    assert!(trace.contains("poll"));
+    assert!(std::fs::read_to_string(dir.path().join("polls"))
+        .unwrap()
+        .contains("poll"));
     assert_eq!(
         std::fs::read_to_string(dir.path().join("server.pid")).unwrap(),
         pid
