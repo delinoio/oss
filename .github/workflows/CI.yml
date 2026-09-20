@@ -1714,7 +1714,7 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Verify affected workspace runner
         run: node --test scripts/ci/run-affected.test.mjs
-      - name: Test Rust utility commands and OS adapters
+      - name: Test Rust utilities, readiness commands, and OS adapters
         run: cargo test --locked -p clibox
       - name: Test launcher and native npm consumers
         env:
