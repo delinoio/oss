@@ -24,6 +24,7 @@ test("clibox release covers all eight native targets and Alpine consumer executi
   assert.match(alpine.run, /test:package/u);
   const build = steps.find(({ run }) => run?.includes("cargo build --locked --release -p clibox"));
   assert.ok(build);
+  assert.match(build.run, /cargo test --locked -p clibox --target/u);
   for (const arch of ["X86_64", "AARCH64"]) {
     assert.equal(build.env[`CARGO_TARGET_${arch}_UNKNOWN_LINUX_MUSL_LINKER`], "rust-lld");
     assert.equal(build.env[`CARGO_TARGET_${arch}_UNKNOWN_LINUX_MUSL_RUSTFLAGS`], "-C link-self-contained=yes");
@@ -69,6 +70,9 @@ test("clibox input changes select its aggregated consumer checks and force exter
   assert.equal(jobPaths[id].workspace, "@delino/clibox");
   assert.ok(ci.jobs["ci-result"].needs.includes(id));
   assert.deepEqual(ci.jobs[id].strategy.matrix.os, ["ubuntu-22.04", "macos-14", "windows-latest"]);
+  assert.ok(ci.jobs[id].steps.some(({ run }) => run === "cargo test --locked -p clibox"));
+  const smoke = source("packages/clibox/scripts/smoke.mjs");
+  for (const command of ["text", "time", "base64", "hash"]) assert.ok(smoke.includes('invoke(["' + command + '"'));
   for (const event of [Event.Push, Event.PullRequest]) {
     for (const file of ["packages/clibox/src/launcher.cjs", "crates/clibox/src/main.rs", ".github/workflows/release-clibox.yml", "scripts/release/project.mjs"]) {
       const plan = planJobs(event, [file]);

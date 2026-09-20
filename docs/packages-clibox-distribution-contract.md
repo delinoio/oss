@@ -37,7 +37,7 @@ Packaging and publication report structured events containing action, package, t
 - `pnpm --filter @delino/clibox test` runs deterministic launcher and packaging/release fixtures.
 - `pnpm --filter @delino/clibox test:package` builds the host CLI, creates tarballs, and installs them in temporary npm and pnpm consumers with scripts disabled. Installed-launcher checks exercise all seven issue #917 commands, binary bytes, timezone output, and checksum verification as well as help/version.
 - Package-local Turbo tasks include external Cargo/source inputs and disable caching for native packaging/integration checks.
-- CI's Linux/macOS/Windows `node-clibox-test` runs `cargo test --locked -p clibox` and participates in the shared change planner and `CI Result` aggregation. Release CI builds and smoke-tests all eight targets; Linux musl execution is also checked in Alpine.
+- CI's Linux/macOS/Windows `node-clibox-test` runs `cargo test --locked -p clibox` and participates in the shared change planner and `CI Result` aggregation. Release CI builds, runs Rust command/process tests, and smoke-tests all eight targets; Linux musl execution is also checked in Alpine.
 - Fixtures cover selection, argument and signal forwarding, missing/mismatched dependencies, archive contents/modes, identical package integrity from isolated LF/CRLF source trees, version mismatch, partial publication recovery, conflicting registry integrity, and credential-free dry runs.
 
 ## Dependencies and Integrations

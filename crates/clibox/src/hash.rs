@@ -62,7 +62,7 @@ fn hex(bytes: &[u8]) -> String {
     result
 }
 
-fn expected(value: &[u8], format: VerifyFormat, algorithm: Algorithm) -> Result<Vec<u8>> {
+pub fn expected(value: &[u8], format: VerifyFormat, algorithm: Algorithm) -> Result<Vec<u8>> {
     let length = if matches!(algorithm, Algorithm::Sha512) {
         64
     } else {
@@ -367,15 +367,16 @@ fn check(args: &HashVerify, path: &Path, cancel: &Cancellation) -> Result<Report
     Ok(report)
 }
 
-pub fn verify(args: HashVerify, writer: &mut dyn Write, cancel: &Cancellation) -> Result<u8> {
+pub fn verify(
+    args: HashVerify,
+    expected: Option<Vec<u8>>,
+    writer: &mut dyn Write,
+    cancel: &Cancellation,
+) -> Result<u8> {
     let report = if let Some(path) = &args.check {
         check(&args, path, cancel)?
     } else {
-        let expected = expected(
-            args.expected.as_ref().unwrap().as_bytes(),
-            args.format.unwrap_or(VerifyFormat::Hex),
-            args.algorithm,
-        )?;
+        let expected = expected.unwrap();
         let actual = args
             .source
             .reader()

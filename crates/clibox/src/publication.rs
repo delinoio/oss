@@ -379,4 +379,150 @@ mod tests {
         assert!(path.is_dir());
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
     }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_posix_access_acl_is_preserved() {
+        use std::os::fd::AsRawFd;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("acl");
+        let original = File::create(&path).unwrap();
+        // Linux UAPI posix_acl_xattr: LE version, then tag/permissions/id entries.
+        // A named user and mask make this an extended ACL, not just mode bits.
+        let mut acl = 2u32.to_le_bytes().to_vec();
+        for (tag, permissions, id) in [
+            (1u16, 6u16, u32::MAX),
+            (2, 4, 65534),
+            (4, 0, u32::MAX),
+            (16, 4, u32::MAX),
+            (32, 0, u32::MAX),
+        ] {
+            acl.extend_from_slice(&tag.to_le_bytes());
+            acl.extend_from_slice(&permissions.to_le_bytes());
+            acl.extend_from_slice(&id.to_le_bytes());
+        }
+        let key = c"system.posix_acl_access";
+        assert_eq!(
+            unsafe {
+                libc::fsetxattr(
+                    original.as_raw_fd(),
+                    key.as_ptr(),
+                    acl.as_ptr().cast(),
+                    acl.len(),
+                    0,
+                )
+            },
+            0
+        );
+        let (publication, mut output) = Publication::prepare(Some(path.clone()), true).unwrap();
+        output.as_mut().unwrap().write_all(b"changed").unwrap();
+        drop(output);
+        publication.publish().unwrap();
+        let replacement = File::open(&path).unwrap();
+        let mut actual = vec![0u8; acl.len()];
+        assert_eq!(
+            unsafe {
+                libc::fgetxattr(
+                    replacement.as_raw_fd(),
+                    key.as_ptr(),
+                    actual.as_mut_ptr().cast(),
+                    actual.len(),
+                )
+            },
+            acl.len() as isize
+        );
+        assert_eq!(actual, acl);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_protected_dacl_is_preserved() {
+        use std::os::windows::ffi::OsStrExt;
+
+        use windows_sys::Win32::{
+            Foundation::LocalFree,
+            Security::{
+                Authorization::{
+                    ConvertSecurityDescriptorToStringSecurityDescriptorW,
+                    ConvertStringSecurityDescriptorToSecurityDescriptorW, GetNamedSecurityInfoW,
+                    SE_FILE_OBJECT,
+                },
+                SetFileSecurityW, DACL_SECURITY_INFORMATION, GROUP_SECURITY_INFORMATION,
+                OWNER_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION,
+            },
+        };
+        fn security(path: &[u16]) -> Vec<u16> {
+            unsafe {
+                let info = DACL_SECURITY_INFORMATION
+                    | OWNER_SECURITY_INFORMATION
+                    | GROUP_SECURITY_INFORMATION;
+                let mut descriptor = std::ptr::null_mut();
+                assert_eq!(
+                    GetNamedSecurityInfoW(
+                        path.as_ptr(),
+                        SE_FILE_OBJECT,
+                        info,
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                        &mut descriptor
+                    ),
+                    0
+                );
+                let mut text = std::ptr::null_mut();
+                let mut length = 0;
+                assert_ne!(
+                    ConvertSecurityDescriptorToStringSecurityDescriptorW(
+                        descriptor,
+                        1,
+                        info,
+                        &mut text,
+                        &mut length
+                    ),
+                    0
+                );
+                let text_copy = std::slice::from_raw_parts(text, length as usize).to_vec();
+                LocalFree(text.cast());
+                LocalFree(descriptor);
+                text_copy
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("acl");
+        fs::write(&path, b"original").unwrap();
+        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+        let sddl: Vec<u16> = "D:P(A;;FA;;;OW)(A;;FR;;;WD)"
+            .encode_utf16()
+            .chain(Some(0))
+            .collect();
+        unsafe {
+            let mut descriptor = std::ptr::null_mut();
+            assert_ne!(
+                ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                    sddl.as_ptr(),
+                    1,
+                    &mut descriptor,
+                    std::ptr::null_mut()
+                ),
+                0
+            );
+            assert_ne!(
+                SetFileSecurityW(
+                    wide.as_ptr(),
+                    DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                    descriptor
+                ),
+                0
+            );
+            LocalFree(descriptor);
+        }
+        let before = security(&wide);
+        let (publication, mut file) = Publication::prepare(Some(path.clone()), true).unwrap();
+        file.as_mut().unwrap().write_all(b"changed").unwrap();
+        drop(file);
+        publication.publish().unwrap();
+        assert_eq!(security(&wide), before);
+        assert_eq!(fs::read(path).unwrap(), b"changed");
+    }
 }

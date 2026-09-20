@@ -118,6 +118,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo build --locked --release -p clibox --target "$CLIBOX_TARGET"
+          cargo test --locked -p clibox --target "$CLIBOX_TARGET"
           binary="target/$CLIBOX_TARGET/release/clibox"
           if [[ "$CLIBOX_TARGET" == *windows* ]]; then binary="$binary.exe"; fi
           "$binary" --help

@@ -137,6 +137,22 @@ fn regex_replacements_follow_capture_and_zero_width_semantics() {
         &[
             "text",
             "replace",
+            "(?<word>x)",
+            concat!("$", "{word}"),
+            "--regex",
+        ],
+        b"x",
+        b"x",
+    );
+    success(
+        &["text", "replace", "(?m)^", ">", "--regex"],
+        b"a\nb",
+        b">a\n>b",
+    );
+    success(
+        &[
+            "text",
+            "replace",
             "(?<word>é)(x)?",
             "$word:$2:$$",
             "--regex",
@@ -423,6 +439,27 @@ fn calendar_arithmetic_clamps_then_applies_days_and_elapsed_time() {
 
 #[test]
 fn time_rejects_invalid_ambiguous_and_out_of_range_values() {
+    assert_eq!(
+        run(&["time", "format", "0000-12-31T23:00:00-02:00"], b"")
+            .status
+            .code(),
+        Some(2)
+    );
+    assert_eq!(
+        run(
+            &[
+                "time",
+                "format",
+                "0000-12-31 23:00 -0200",
+                "--input-format",
+                "%F %H:%M %z"
+            ],
+            b""
+        )
+        .status
+        .code(),
+        Some(2)
+    );
     for value in [
         "0",
         "2023-02-29T00:00:00Z",
@@ -622,6 +659,18 @@ fn file_outputs_are_atomic_and_completed_failure_reports_are_published() {
     let path = dir.path().join("destination");
     let path = path.to_str().unwrap();
     fs::write(path, b"original").unwrap();
+    assert_eq!(
+        run(&["text", "replace", "", "x", "--output", path], b"")
+            .status
+            .code(),
+        Some(2)
+    );
+    assert_eq!(
+        run(&["hash", "verify", "invalid", "--output", path], b"")
+            .status
+            .code(),
+        Some(2)
+    );
     assert_eq!(
         run(&["base64", "encode", "--text", "x", "--output", path], b"")
             .status
@@ -864,11 +913,28 @@ fn cancellation_interrupts_open_stdin_and_removes_unpublished_output() {
 
 #[test]
 fn streaming_stdout_can_be_partial_before_decode_failure() {
-    let mut input = b"Zm9v".repeat(32 * 1024);
-    input.extend_from_slice(b"!");
-    let output = run(&["base64", "decode"], &input);
+    use std::io::Read;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_clibox"))
+        .args(["base64", "decode"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(&b"Zm9v".repeat(2048)).unwrap();
+    let mut prefix = [0; 3];
+    child
+        .stdout
+        .as_mut()
+        .unwrap()
+        .read_exact(&mut prefix)
+        .unwrap();
+    assert_eq!(&prefix, b"foo");
+    stdin.write_all(b"!").unwrap();
+    drop(stdin);
+    let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(1));
-    assert!(!output.stdout.is_empty());
     assert!(output.stdout.chunks_exact(3).all(|chunk| chunk == b"foo"));
 }
 

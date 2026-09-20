@@ -10,7 +10,10 @@ use std::{
 };
 
 use crate::{
-    cli::{Base64Command, Command, HashCommand, TextCommand},
+    cli::{
+        Base64Args, Base64Command, Command, EncodeFormat, HashCommand, HashEncode, HashVerify,
+        TextCommand, TextReplace, VerifyFormat,
+    },
     error::{Code, Error, Result},
     io::{Cancellation, CHUNK},
     publication::Publication,
@@ -19,6 +22,65 @@ use crate::{
 enum Event {
     Processed(Result<u8>),
     Written(Result<()>),
+}
+
+enum Prepared {
+    Text(TextReplace, Option<regex::Regex>),
+    Time(String),
+    Base64Encode(Base64Args),
+    Base64Decode(Base64Args),
+    HashEncode(HashEncode),
+    HashVerify(HashVerify, Option<Vec<u8>>),
+}
+
+impl Prepared {
+    fn new(command: Command) -> Result<Self> {
+        match command {
+            Command::Text {
+                command: TextCommand::Replace(args),
+            } => {
+                let regex = crate::text::prepare(&args)?;
+                Ok(Self::Text(args, regex))
+            }
+            Command::Time { command } => Ok(Self::Time(crate::time::prepare(&command)?)),
+            Command::Base64 {
+                command: Base64Command::Encode(args),
+            } => Ok(Self::Base64Encode(args)),
+            Command::Base64 {
+                command: Base64Command::Decode(args),
+            } => Ok(Self::Base64Decode(args)),
+            Command::Hash {
+                command: HashCommand::Encode(args),
+            } => {
+                if matches!(args.format, EncodeFormat::Checksum)
+                    && args
+                        .source
+                        .input
+                        .as_ref()
+                        .is_none_or(|path| path.as_os_str() == "-")
+                {
+                    return Err(Error::argument(Code::Arguments));
+                }
+                Ok(Self::HashEncode(args))
+            }
+            Command::Hash {
+                command: HashCommand::Verify(args),
+            } => {
+                let expected = args
+                    .expected
+                    .as_ref()
+                    .map(|value| {
+                        crate::hash::expected(
+                            value.as_bytes(),
+                            args.format.unwrap_or(VerifyFormat::Hex),
+                            args.algorithm,
+                        )
+                    })
+                    .transpose()?;
+                Ok(Self::HashVerify(args, expected))
+            }
+        }
+    }
 }
 
 struct ChannelWriter(SyncSender<Vec<u8>>);
@@ -52,6 +114,24 @@ pub fn execute(command: Command) -> Result<u8> {
     ctrlc::set_handler(move || signal.0.store(true, Ordering::Release))
         .map_err(|_| Error::runtime(Code::Runtime))?;
     let (path, replace) = command.output()?;
+    let (ready_tx, ready_rx) = mpsc::channel();
+    thread::Builder::new()
+        .name("clibox-validate".into())
+        .spawn(move || {
+            let _ = ready_tx.send(Prepared::new(command));
+        })
+        .map_err(|_| Error::runtime(Code::Runtime))?;
+    // Semantic argument errors take precedence over filesystem failures. Regex
+    // compilation/time preparation remain interruptible, with no file effects.
+    let command = loop {
+        cancel.check()?;
+        match ready_rx.recv_timeout(Duration::from_millis(20)) {
+            Ok(result) => break result?,
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return Err(Error::runtime(Code::Runtime)),
+        }
+    };
+    cancel.check()?;
     let (publication, output) = Publication::prepare(path, replace)?;
     let (events_tx, events_rx) = mpsc::channel();
     let (chunks_tx, chunks_rx) = mpsc::sync_channel::<Vec<u8>>(2);
@@ -113,23 +193,16 @@ pub fn execute(command: Command) -> Result<u8> {
     }
 }
 
-fn process(command: Command, writer: &mut dyn Write, cancel: &Cancellation) -> Result<u8> {
+fn process(command: Prepared, writer: &mut dyn Write, cancel: &Cancellation) -> Result<u8> {
     match command {
-        Command::Text {
-            command: TextCommand::Replace(args),
-        } => crate::text::replace(args, writer, cancel),
-        Command::Base64 {
-            command: Base64Command::Encode(args),
-        } => crate::base64::encode(args, writer, cancel),
-        Command::Base64 {
-            command: Base64Command::Decode(args),
-        } => crate::base64::decode(args, writer, cancel),
-        Command::Time { command } => crate::time::run(command, writer),
-        Command::Hash {
-            command: HashCommand::Encode(args),
-        } => crate::hash::encode(args, writer, cancel),
-        Command::Hash {
-            command: HashCommand::Verify(args),
-        } => crate::hash::verify(args, writer, cancel),
+        Prepared::Text(args, regex) => crate::text::replace(args, regex, writer, cancel),
+        Prepared::Base64Encode(args) => crate::base64::encode(args, writer, cancel),
+        Prepared::Base64Decode(args) => crate::base64::decode(args, writer, cancel),
+        Prepared::Time(value) => {
+            write(writer, value.as_bytes())?;
+            Ok(0)
+        }
+        Prepared::HashEncode(args) => crate::hash::encode(args, writer, cancel),
+        Prepared::HashVerify(args, expected) => crate::hash::verify(args, expected, writer, cancel),
     }
 }

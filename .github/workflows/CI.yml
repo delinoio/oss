@@ -1588,6 +1588,8 @@ jobs:
           TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
           TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
         run: node scripts/ci/run-affected.mjs @delino/clibox test test:package
+      - name: Test native clibox commands
+        run: cargo test --locked -p clibox
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5

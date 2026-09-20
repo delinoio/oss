@@ -1,4 +1,4 @@
-use std::{fmt::Write as _, io::Write};
+use std::fmt::Write as _;
 
 use chrono::{
     format::{parse_and_remainder, Fixed, Item, Numeric, Parsed, StrftimeItems},
@@ -10,7 +10,6 @@ use chrono_tz::Tz;
 use crate::{
     cli::{TimeAdd, TimeArgs, TimeCommand, TimeFrom, TimeTo},
     error::{Code, Error, Result},
-    runtime::write,
 };
 
 struct Instant {
@@ -18,16 +17,15 @@ struct Instant {
     precision: usize,
 }
 
-pub fn run(command: TimeCommand, writer: &mut dyn Write) -> Result<u8> {
+pub fn prepare(command: &TimeCommand) -> Result<String> {
     let now = Utc::now();
-    let (args, instant) = match &command {
+    let (args, instant) = match command {
         TimeCommand::Format(args) => (args, parse(args, now)?),
         TimeCommand::Add(args) => (&args.time, add(parse(&args.time, now)?, args)?),
     };
-    let output = format(args, instant)?;
-    write(writer, output.as_bytes())?;
-    write(writer, b"\n")?;
-    Ok(0)
+    let mut output = format(args, instant)?;
+    output.push('\n');
+    Ok(output)
 }
 
 fn local(zone: Tz, value: NaiveDateTime, parsing: bool) -> Result<DateTime<Tz>> {
@@ -127,6 +125,12 @@ fn parse(args: &TimeArgs, now: DateTime<Utc>) -> Result<Instant> {
         if !remainder.is_empty() || parsed.second() == Some(60) || precision > 9 {
             return Err(bad());
         }
+        if parsed
+            .to_naive_date()
+            .is_ok_and(|date| !(1..=9999).contains(&date.year()))
+        {
+            return Err(bad());
+        }
         if parsed.timestamp().is_none() {
             if parsed.hour_div_12().is_none() && parsed.hour_mod_12().is_none() {
                 parsed.set_hour(0).map_err(|_| bad())?;
@@ -161,12 +165,11 @@ fn parse(args: &TimeArgs, now: DateTime<Utc>) -> Result<Instant> {
                 if !shape.is_match(value) {
                     return Err(bad());
                 }
-                (
-                    DateTime::parse_from_rfc3339(value)
-                        .map_err(|_| bad())?
-                        .with_timezone(&zone),
-                    fraction(value)?,
-                )
+                let parsed = DateTime::parse_from_rfc3339(value).map_err(|_| bad())?;
+                if !(1..=9999).contains(&parsed.year()) {
+                    return Err(bad());
+                }
+                (parsed.with_timezone(&zone), fraction(value)?)
             }
             TimeFrom::Date => {
                 if value.len() != 10

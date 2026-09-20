@@ -57,17 +57,25 @@ fn validate_replacement(regex: &Regex, replacement: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn replace(args: TextReplace, writer: &mut dyn Write, cancel: &Cancellation) -> Result<u8> {
+pub fn prepare(args: &TextReplace) -> Result<Option<Regex>> {
     if args.pattern.is_empty() {
         return Err(Error::argument(Code::InvalidPattern));
     }
-    let regex = if args.regex {
+    if args.regex {
         let regex = Regex::new(&args.pattern).map_err(|_| Error::argument(Code::InvalidPattern))?;
         validate_replacement(&regex, &args.replacement)?;
-        Some(regex)
+        Ok(Some(regex))
     } else {
-        None
-    };
+        Ok(None)
+    }
+}
+
+pub fn replace(
+    args: TextReplace,
+    regex: Option<Regex>,
+    writer: &mut dyn Write,
+    cancel: &Cancellation,
+) -> Result<u8> {
     let mut reader = args.source.reader()?;
     let mut input = Vec::new();
     let mut buffer = [0; CHUNK];
