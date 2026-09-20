@@ -766,7 +766,7 @@ export function RunDetail({
             <FailureList failures={c.failures} />
             {check === c.id && (
               <>
-                <Logs run={id} check={c.id} />
+                <Logs run={id} check={c.id} state={c.state} />
                 {c.reports.map((report) => (
                   <ReportView
                     key={report.id}
@@ -831,17 +831,27 @@ export function FailureList({ failures }: { failures: Failure[] }) {
     </div>
   );
 }
-function Logs({ run, check }: { run: string; check: string }) {
+function Logs({ run, check, state }: { run: string; check: string; state: ExecutionState }) {
+  const polling = active(state);
+  const wasPolling = useRef(polling);
   const [offset, setOffset] = useState(0n);
   const log = useQuery(
     LocalQuery.getLogs,
     { runId: run, checkId: check, offset, limit: 65536 },
-    { refetchInterval: 2000 },
+    { refetchInterval: polling ? 2000 : false },
   );
+  const { refetch } = log;
+  useEffect(() => {
+    // Completion can arrive between log polls. Read the final bytes once before
+    // leaving this view idle, even when another check keeps the run active.
+    if (wasPolling.current && !polling) void refetch();
+    wasPolling.current = polling;
+  }, [polling, refetch]);
   return (
     <div className="logs">
       <div className="section-heading">
         <h4>Check log</h4>
+        <button onClick={() => { void log.refetch(); }}>Refresh log</button>
         <span>Offset {String(offset)} · local data</span>
       </div>
       {log.error ? (

@@ -135,3 +135,49 @@ it.each([false, true])("displays bounded run summaries and opens details (inbox=
     expect(onSelect).toHaveBeenCalledExactlyOnceWith("large");
   } finally { unmount(); client.clear(); }
 });
+
+it.each([
+  ExecutionState.PASSED, ExecutionState.FAILED, ExecutionState.CANCELLED,
+  ExecutionState.INTERRUPTED, ExecutionState.REPLACED, ExecutionState.BLOCKED,
+  ExecutionState.SKIPPED, ExecutionState.EXPIRED,
+])("finishes log polling once check %s completes while other checks remain active", async (terminal) => {
+  vi.useFakeTimers();
+  let state = ExecutionState.RUNNING;
+  const getLogs = vi.fn((request: { offset: bigint }) => ({
+    text: state === ExecutionState.RUNNING ? "live output" : `final page ${request.offset}`,
+    nextOffset: request.offset + 65536n, complete: request.offset > 0n,
+  }));
+  const transport = createRouterTransport((router) => router.service(LocalService, {
+    getRun: () => ({ run: create(RunSchema, {
+      id: "run", state: ExecutionState.RUNNING,
+      checks: [{ id: "check", name: "Example check", state }],
+    }) }), getLogs,
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const { unmount } = render(<QueryClientProvider client={client}><TransportProvider transport={transport}>
+    <RunDetail id="run" onBack={() => {}} onSelect={() => {}} />
+  </TransportProvider></QueryClientProvider>);
+  try {
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    fireEvent.click(screen.getByRole("button", { name: "Example check" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(getLogs).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2200); });
+    expect(getLogs).toHaveBeenCalledTimes(2);
+    state = terminal;
+    await act(async () => { await vi.advanceTimersByTimeAsync(1600); });
+    expect(getLogs).toHaveBeenCalledTimes(3);
+    expect(screen.getByLabelText("Check log output").textContent).toBe("final page 0");
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(getLogs).toHaveBeenCalledTimes(3);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh log" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(getLogs).toHaveBeenCalledTimes(4);
+    fireEvent.click(screen.getByRole("button", { name: "Next log page" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(screen.getByLabelText("Check log output").textContent).toBe("final page 65536");
+    expect(getLogs).toHaveBeenCalledTimes(5);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(getLogs).toHaveBeenCalledTimes(5);
+  } finally { unmount(); client.clear(); vi.useRealTimers(); }
+});

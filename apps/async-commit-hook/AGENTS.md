@@ -18,3 +18,5 @@
 - Run `pnpm test` from this directory after frontend changes. Generated `dist` is untracked and must be removed from the final worktree.
 
 - Run-list rows use the optional server check count, falling back to checks.length only for older responses; opening a row retrieves complete execution details.
+
+- Poll expanded logs only while their check is active, fetch final bytes once on completion, and retain explicit refresh and pagination for terminal evidence.
