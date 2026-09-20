@@ -3951,3 +3951,47 @@ fn path_exec_families_preserve_native_text_shell_fallback() {
         }
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn variadic_exec_accepts_native_argument_counts_and_preserves_e2big() {
+    let root = tempfile::tempdir().unwrap();
+    let executable = root.path().join("variadic");
+    let compilation = Command::new("cc")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/variadic.c"))
+        .args(["-O0", "-o"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert!(compilation.status.success(), "{compilation:?}");
+    fs::write(root.path().join("input.txt"), "input").unwrap();
+    for mode in ["execl", "execlp", "execle", "oversized"] {
+        let direct = Command::new(&executable)
+            .current_dir(root.path())
+            .arg(mode)
+            .output()
+            .unwrap();
+        assert!(direct.status.success(), "{mode}: {direct:?}");
+        let name = format!("{mode}.json");
+        let traced = invoke(
+            root.path(),
+            &[
+                "run",
+                "--save",
+                &name,
+                "--",
+                executable.to_str().unwrap(),
+                mode,
+            ],
+        );
+        assert!(traced.status.success(), "{mode}: {traced:?}");
+        assert_eq!(traced.stdout, direct.stdout);
+        if mode != "oversized" {
+            assert_eq!(
+                parse(root.path(), &name)["executions"][0]["accesses"]["${workspace}/input.txt"]
+                    ["read"],
+                true
+            );
+        }
+    }
+}

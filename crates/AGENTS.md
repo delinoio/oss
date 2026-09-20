@@ -226,3 +226,5 @@
 - Runlens Linux libc execveat must preserve every original operand and flag; inherited kernel collection owns its observations.
 
 - Runlens Unix PATH exec hooks preserve libc text-file shell fallback and report unsupported interpreter coverage without changing argv or child exit status.
+
+- Runlens variadic exec adapters must defer argument-budget enforcement to the OS, use checked allocation sizes, and preserve errno during cleanup.

@@ -14,7 +14,7 @@ pub unsafe fn with_argv(
     arg0: *const c_char,
     f: impl FnOnce(&[*const c_char], VaList) -> c_int,
 ) -> c_int {
-    let argc = 1 + {
+    let additional = {
         let mut va = va.clone();
         // Safety: argv is guaranteed to be NULL-terminated
         core::iter::from_fn(|| Some(unsafe { va.next_arg::<*const c_char>() }))
@@ -25,23 +25,31 @@ pub unsafe fn with_argv(
             .unwrap()
     };
 
+    let Some(argc) = additional.checked_add(1) else {
+        Error::E2BIG.set();
+        return -1;
+    };
+    let Some(bytes) = argc.checked_add(1).and_then(|n| n.checked_mul(mem::size_of::<*const c_char>())) else {
+        Error::E2BIG.set();
+        return -1;
+    };
+
     let mut stack: [MaybeUninit<*const c_char>; 32] = [MaybeUninit::uninit(); 32];
 
     let out = if argc < 32 {
         &mut stack[..argc + 1]
-    } else if argc < 4096 {
-        // TODO: Use ARG_MAX, not this hardcoded constant
-        // SAFETY: requesting a heap allocation of the correct size for argc pointers
-        let ptr = unsafe { libc::malloc((argc + 1) * mem::size_of::<*const c_char>()) };
+    } else {
+        // The kernel owns ARG_MAX (including strings/environment and dynamic
+        // stack limits). A fixed pointer-count cap rejects valid calls. Only
+        // checked allocation size and allocation failure constrain this adapter.
+        // SAFETY: bytes is checked space for argc pointers and the terminator.
+        let ptr = unsafe { libc::malloc(bytes) };
         if ptr.is_null() {
             Error::ENOMEM.set();
             return -1;
         }
         // SAFETY: ptr is non-null (checked above), properly aligned, and points to argc elements worth of allocated memory
         unsafe { slice::from_raw_parts_mut(ptr.cast::<MaybeUninit<*const c_char>>(), argc + 1) }
-    } else {
-        Error::E2BIG.set();
-        return -1;
     };
     out[0].write(arg0);
 
@@ -57,10 +65,12 @@ pub unsafe fn with_argv(
     // and all elements have been initialized via write() above.
     f(unsafe { &*(&raw const *out as *const [*const c_char]) }, va);
 
-    // f only returns if it fails
+    // f only returns if it fails; freeing temporary argv must preserve errno.
+    let errno = Error::last();
     if argc >= 32 {
         // SAFETY: out was allocated with libc::malloc above (argc >= 32 branch), so it must be freed with libc::free
         unsafe { libc::free(out.as_mut_ptr().cast()) };
     }
+    errno.set();
     -1
 }
