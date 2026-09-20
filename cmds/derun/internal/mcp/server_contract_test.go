@@ -17,6 +17,7 @@ import (
 	"github.com/delinoio/oss/cmds/derun/internal/session"
 	"github.com/delinoio/oss/cmds/derun/internal/state"
 	"github.com/delinoio/oss/cmds/derun/internal/testutil"
+	"github.com/delinoio/oss/cmds/derun/internal/version"
 )
 
 func TestServerContractHistoricalReplayFromCursorZero(t *testing.T) {
@@ -64,7 +65,12 @@ func TestServerContractHistoricalReplayFromCursorZero(t *testing.T) {
 	server := NewServer(store, logger, 0, 24*time.Hour)
 	client := newFramedRPCClient(t, server)
 
-	client.call(t, "initialize", map[string]any{})
+	initialized := client.call(t, "initialize", map[string]any{})
+	result := initialized.Result.(map[string]any)
+	serverInfo := result["serverInfo"].(map[string]any)
+	if serverInfo["version"] != version.Version {
+		t.Fatalf("MCP server version does not match release source: %v", serverInfo["version"])
+	}
 	client.callNotification(t, "notifications/initialized", map[string]any{})
 
 	payload := client.callTool(t, contracts.DerunMCPToolReadOutput, map[string]any{

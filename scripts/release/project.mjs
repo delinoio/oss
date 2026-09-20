@@ -1,0 +1,330 @@
+import { execFileSync } from "node:child_process";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { setTimeout as sleep } from "node:timers/promises";
+
+export const Project = Object.freeze({ Binpm: "binpm", CargoMono: "cargo-mono", Nodeup: "nodeup", WithWatch: "with-watch", Derun: "derun", Runmoor: "runmoor" });
+export const Bump = Object.freeze({ Patch: "patch", Minor: "minor", Major: "major" });
+export const Kind = Object.freeze({ Rust: "rust", Go: "go" });
+const repository = "delinoio/oss";
+const botName = "delino-release-bot[bot]";
+const root = fileURLToPath(new URL("../..", import.meta.url));
+const versions = Object.freeze({
+  binpm: { kind: Kind.Rust, file: "crates/binpm/Cargo.toml" },
+  "cargo-mono": { kind: Kind.Rust, file: "crates/cargo-mono/Cargo.toml" },
+  nodeup: { kind: Kind.Rust, file: "crates/nodeup/Cargo.toml" },
+  "with-watch": { kind: Kind.Rust, file: "crates/with-watch/Cargo.toml" },
+  derun: { kind: Kind.Go, file: "cmds/derun/internal/version/version.go" },
+  runmoor: { kind: Kind.Go, file: "cmds/runmoor/internal/runmoor/types.go" },
+});
+const shaPattern = /^[a-f0-9]{40}$/u;
+const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
+
+function requireValue(condition, message) {
+  if (!condition) throw new Error(message);
+}
+function descriptor(project) {
+  requireValue(Object.values(Project).includes(project), "Unknown release project");
+  return versions[project];
+}
+
+function replaceLockVersion(lock, project, previous, next) {
+  const sections = [...lock.matchAll(/^\[\[package\]\]\n[\s\S]*?(?=^\[\[|$(?![\s\S]))/gmu)]
+    .filter(([section]) => section.split("\n").includes(`name = "${project}"`));
+  requireValue(sections.length === 1, "Missing or ambiguous Cargo.lock package");
+  const section = sections[0][0];
+  requireValue(!/^source = /mu.test(section), "Release lock entry must be a workspace package");
+  const fields = [...section.matchAll(/^version = "([^"]+)"$/gmu)];
+  requireValue(fields.length === 1 && fields[0][1] === previous, "Manifest and Cargo.lock versions disagree");
+  requireValue(!lock.includes(` "${project} ${previous}`), "Version-qualified workspace dependents require an explicit release contract");
+  return lock.replace(section, section.replace(/^version = "[^"]+"$/mu, `version = "${next}"`));
+}
+function versionParts(version) {
+  requireValue(typeof version === "string" && version.length <= 62 && semverPattern.test(version), "An exact stable MAJOR.MINOR.PATCH version is required");
+  const parts = version.split(".").map(BigInt);
+  requireValue(parts.every((part) => part <= 18446744073709551615n), "Version component overflow");
+  return parts;
+}
+export function bumpVersion(version, bump) {
+  requireValue(Object.values(Bump).includes(bump), "Unknown version bump");
+  const parts = versionParts(version);
+  const index = { major: 0, minor: 1, patch: 2 }[bump];
+  parts[index] += 1n;
+  for (let i = index + 1; i < parts.length; i++) parts[i] = 0n;
+  const next = parts.join(".");
+  versionParts(next);
+  return next;
+}
+
+// These CLI manifests have explicit versions and no workspace dependents. Match
+// complete TOML sections, never a dependency's version or an external lock entry.
+// Reject ambiguous/new layouts until their release contract is explicitly added.
+function replaceVersion(source, project, kind, next) {
+  const pattern = kind === Kind.Rust
+    ? /(^\[package\]\s*\n)([\s\S]*?)(?=^\[|$(?![\s\S]))/gmu
+    : /^const Version = "([^"]+)"$/gmu;
+  const matches = [...source.matchAll(pattern)];
+  requireValue(matches.length === 1, "Missing or ambiguous source version declaration");
+  if (kind === Kind.Go) {
+    const current = matches[0][1];
+    versionParts(current);
+    return { current, text: next ? source.replace(pattern, `const Version = "${next}"`) : source };
+  }
+  const section = matches[0][2];
+  requireValue([...section.matchAll(/^name = "([^"]+)"$/gmu)].length === 1 && section.includes(`name = "${project}"\n`), "Manifest package identity mismatch");
+  const fields = [...section.matchAll(/^version = "([^"]+)"$/gmu)];
+  requireValue(fields.length === 1, "Missing or ambiguous manifest version");
+  const current = fields[0][1];
+  versionParts(current);
+  return { current, text: next ? source.replace(pattern, (_, header, body) => header + body.replace(/^version = "[^"]+"$/mu, `version = "${next}"`)) : source };
+}
+
+export function readVersion(project, read = (file) => readFileSync(path.join(root, file), "utf8")) {
+  const { file, kind } = descriptor(project);
+  return replaceVersion(read(file), project, kind).current;
+}
+
+export function versionChanges(project, bump, read) {
+  const { file, kind } = descriptor(project);
+  const previous_version = readVersion(project, read);
+  const version = bumpVersion(previous_version, bump);
+  const changes = { [file]: replaceVersion(read(file), project, kind, version).text };
+  if (kind === Kind.Rust) {
+    changes["Cargo.lock"] = replaceLockVersion(read("Cargo.lock"), project, previous_version, version);
+  }
+  return { project, bump, kind, previous_version, version, tag: `${project}@v${version}`, changes };
+}
+
+export function sourceMetadata({ project, event, ref, requestedVersion, requestedDryRun }, read) {
+  descriptor(project);
+  requireValue(["push", "workflow_dispatch"].includes(event), "Unsupported release event");
+  const dry_run = event === "push" ? "false" : requestedDryRun;
+  requireValue(["true", "false"].includes(dry_run), "Invalid release dry-run mode");
+  const version = event === "push" ? ref?.replace(`refs/tags/${project}@v`, "") : requestedVersion;
+  versionParts(version);
+  requireValue(readVersion(project, read) === version, "Requested release version does not match source");
+  const tag = `${project}@v${version}`;
+  requireValue(event !== "push" || ref === `refs/tags/${tag}`, "Release push must be the exact project tag");
+  requireValue(dry_run === "true" || ref === "refs/heads/main" || ref === `refs/tags/${tag}`, "Publication requires main or the exact version tag");
+  if (descriptor(project).kind === Kind.Rust) replaceLockVersion(read("Cargo.lock"), project, version, version);
+  return { version, tag, dry_run };
+}
+
+export function git(directory, args, options = {}) {
+  try {
+    const { trim = true, ...execOptions } = options;
+    const result = execFileSync("git", args, { cwd: directory, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"], ...execOptions });
+    return trim ? result.trim() : result;
+  } catch {
+    // Git transport failures may include credential-helper output. Report only
+    // the operation; authentication and remote refusal remain hard failures.
+    throw new Error(`Git ${args[0]} failed; inspect repository access or retry after resolving the conflict`);
+  }
+}
+const authArgs = ["-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential"];
+
+function validateRun(project, bump, runId) {
+  descriptor(project);
+  requireValue(Object.values(Bump).includes(bump), "Unknown version bump");
+  requireValue(/^[1-9]\d{0,19}$/u.test(runId ?? ""), "Invalid release run ID");
+}
+function releaseMessage(plan, runId) {
+  return `chore(release): ${plan.tag}\n\nRelease-Run: ${repository}/${runId}\nRelease-Project: ${plan.project}\nRelease-Bump: ${plan.bump}\nRelease-Previous-Version: ${plan.previous_version}`;
+}
+export function validateCommit(directory, revision, project, bump, runId) {
+  validateRun(project, bump, runId);
+  requireValue(shaPattern.test(revision ?? ""), "Invalid release commit");
+  const parents = git(directory, ["show", "-s", "--format=%P", revision]).split(" ");
+  requireValue(parents.length === 1 && shaPattern.test(parents[0]), "Release commit must have one parent");
+  const plan = versionChanges(project, bump, (file) => git(directory, ["show", `${parents[0]}:${file}`], { trim: false }));
+  requireValue(git(directory, ["show", "-s", "--format=%B", revision]) === releaseMessage(plan, runId), "Release journal does not match this run");
+  const changed = git(directory, ["diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-r", revision]).split("\n").sort();
+  requireValue(JSON.stringify(changed) === JSON.stringify(Object.keys(plan.changes).sort()), "Release commit contains unexpected paths");
+  for (const [file, text] of Object.entries(plan.changes)) {
+    requireValue(git(directory, ["show", `${revision}:${file}`], { trim: false }) === text, "Release commit is not the exact version-only change");
+  }
+  const { changes, ...identity } = plan;
+  return { ...identity, revision };
+}
+
+export async function prepareRelease({ directory, project, bump, runId, name, email, preflight = async () => {} }) {
+  validateRun(project, bump, runId);
+  requireValue(name === botName && /^\d+\+delino-release-bot\[bot\]@users\.noreply\.github\.com$/u.test(email ?? ""), "Unexpected release bot commit identity");
+  requireValue(git(directory, ["status", "--porcelain"]) === "", "Release checkout must be clean");
+  git(directory, ["fetch", "--no-tags", "origin", "refs/heads/main:refs/remotes/origin/main"]);
+  const candidates = git(directory, ["log", "origin/main", "--format=%H", "--fixed-strings", `--grep=Release-Run: ${repository}/${runId}`])
+    .split("\n").filter(Boolean).filter((sha) => git(directory, ["show", "-s", "--format=%B", sha]).split("\n").includes(`Release-Run: ${repository}/${runId}`));
+  requireValue(candidates.length <= 1, "Multiple commits claim this release run");
+  if (candidates.length === 1) {
+    const identity = validateCommit(directory, candidates[0], project, bump, runId);
+    git(directory, ["checkout", "--detach", identity.revision]);
+    return { ...identity, resumed: true };
+  }
+  git(directory, ["checkout", "--detach", "origin/main"]);
+  const plan = versionChanges(project, bump, (file) => readFileSync(path.join(directory, file), "utf8"));
+  await preflight(plan);
+  for (const [file, text] of Object.entries(plan.changes)) writeFileSync(path.join(directory, file), text);
+  git(directory, ["config", "user.name", name]);
+  git(directory, ["config", "user.email", email]);
+  git(directory, ["add", "--", ...Object.keys(plan.changes)]);
+  git(directory, ["commit", "--file=-"], { input: releaseMessage(plan, runId) + "\n" });
+  const revision = git(directory, ["rev-parse", "HEAD"]);
+  const identity = validateCommit(directory, revision, project, bump, runId);
+  git(directory, [...authArgs, "push", "origin", `${revision}:refs/heads/main`]);
+  return { ...identity, resumed: false };
+}
+
+export async function githubRequest(route) {
+  requireValue(route.startsWith(`/repos/${repository}/`) || route === `/users/${encodeURIComponent(botName)}`, "Unsupported GitHub API route");
+  requireValue(Boolean(process.env.GH_TOKEN), "A scoped GitHub token is required");
+  let response;
+  try {
+    response = await fetch(`https://api.github.com${route}`, {
+      headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
+      redirect: "error", signal: AbortSignal.timeout(30000),
+    });
+  } catch { throw new Error("GitHub API transport failed"); }
+  requireValue([200, 404].includes(response.status), `GitHub API failed with HTTP ${response.status}`);
+  if (response.status === 404) return { status: 404, body: null };
+  try { return { status: 200, body: await response.json() }; }
+  catch { throw new Error("Invalid GitHub API response"); }
+}
+
+export async function tagRevision(tag, request) {
+  const result = await request(`/repos/${repository}/git/ref/tags/${encodeURIComponent(tag)}`);
+  if (result.status === 404) return null;
+  requireValue(result.status === 200, "Cannot establish tag ownership");
+  let object = result.body?.object;
+  for (let depth = 0; object?.type === "tag" && depth < 4; depth++) {
+    requireValue(shaPattern.test(object.sha ?? ""), "Invalid annotated tag");
+    const tagObject = await request(`/repos/${repository}/git/tags/${object.sha}`);
+    requireValue(tagObject.status === 200, "Cannot resolve annotated tag");
+    object = tagObject.body?.object;
+  }
+  requireValue(object?.type === "commit" && shaPattern.test(object.sha ?? ""), "Invalid release tag target");
+  return object.sha;
+}
+
+export async function preflightVersion(plan, request) {
+  requireValue(await tagRevision(plan.tag, request) === null, "Next version tag already exists");
+  const release = await request(`/repos/${repository}/releases/tags/${encodeURIComponent(plan.tag)}`);
+  requireValue(release.status === 404, "Next version release already exists or cannot be checked");
+}
+
+export async function pushReleaseTag({ directory, identity, request }) {
+  const existing = await tagRevision(identity.tag, request);
+  requireValue(existing === null || existing === identity.revision, "Existing release tag belongs to a different commit");
+  if (existing === null) git(directory, [...authArgs, "push", "origin", `${identity.revision}:refs/tags/${identity.tag}`]);
+  requireValue(await tagRevision(identity.tag, request) === identity.revision, "Remote release tag verification failed");
+  return { tag: identity.tag, revision: identity.revision, reused: existing !== null };
+}
+
+async function listPages(route, field, request) {
+  const all = [];
+  for (let page = 1; page <= 10; page++) {
+    const result = await request(`${route}${route.includes("?") ? "&" : "?"}per_page=100&page=${page}`);
+    requireValue(result.status === 200 && Array.isArray(result.body?.[field]), "Cannot inspect workflow state");
+    all.push(...result.body[field]);
+    if (result.body[field].length < 100) return all;
+  }
+  throw new Error("Workflow lookup exceeded its pagination bound");
+}
+
+export async function waitForWorkflow({ identity, stage, request, now = Date.now, delay = sleep, timeoutMs = 4 * 60 * 60 * 1000, report = () => {} }) {
+  requireValue(["ci", "release"].includes(stage), "Unknown workflow wait stage");
+  const workflow = stage === "ci" ? "CI.yml" : `release-${identity.project}.yml`;
+  const branch = stage === "ci" ? "main" : identity.tag;
+  const prefix = `/repos/${repository}/actions`;
+  const started = now();
+  let lastState;
+  while (now() - started < timeoutMs) {
+    const query = new URLSearchParams({ head_sha: identity.revision, event: "push", branch });
+    const runs = await listPages(`${prefix}/workflows/${workflow}/runs?${query}`, "workflow_runs", request);
+    const matching = runs.filter((run) => run.head_sha === identity.revision && run.event === "push" && run.head_branch === branch && run.path === `.github/workflows/${workflow}`);
+    matching.sort((a, b) => b.id - a.id);
+    const run = matching[0];
+    const state = run ? `${run.id}:${run.run_attempt}:${run.status}:${run.conclusion}` : "awaiting-run";
+    if (state !== lastState) { report({ stage, state }); lastState = state; }
+    if (run) {
+      requireValue(Number.isSafeInteger(run.id) && run.id > 0, "Invalid workflow run identity");
+      const run_url = `https://github.com/${repository}/actions/runs/${run.id}`;
+      if (run.status === "completed") {
+        requireValue(run.conclusion === "success", `${stage} workflow ${run.id} did not succeed; rerun that exact workflow before resuming`);
+        if (stage === "ci") {
+          const jobs = await listPages(`${prefix}/runs/${run.id}/jobs?filter=latest`, "jobs", request);
+          const result = jobs.filter((job) => job.name === "CI Result");
+          requireValue(result.length === 1 && result[0].status === "completed" && result[0].conclusion === "success" && result[0].head_sha === identity.revision, "The exact commit's CI Result did not succeed");
+          return { ci_url: run_url };
+        }
+        requireValue(await tagRevision(identity.tag, request) === identity.revision, "Released tag no longer matches the source commit");
+        const release = await request(`/repos/${repository}/releases/tags/${encodeURIComponent(identity.tag)}`);
+        requireValue(release.status === 200 && release.body?.tag_name === identity.tag && release.body.draft === false && Array.isArray(release.body.assets) && release.body.assets.length > 0, "Successful workflow has no populated public release");
+        requireValue(release.body.prerelease === (identity.project === Project.Runmoor), "Unexpected release channel");
+        return { release_run_url: run_url, release_url: `https://github.com/${repository}/releases/tag/${encodeURIComponent(identity.tag)}` };
+      }
+    } else requireValue(now() - started < 10 * 60 * 1000, "Expected workflow did not start within ten minutes");
+    await delay(30000);
+  }
+  throw new Error(`${stage} workflow wait timed out`);
+}
+
+function output(values) {
+  if (process.env.GITHUB_OUTPUT) for (const [key, value] of Object.entries(values)) {
+    requireValue(/^[a-z_]+$/u.test(key) && !/[\r\n]/u.test(String(value)), "Unsafe workflow output");
+    appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`);
+  }
+  console.log(JSON.stringify(values));
+}
+function log(value) { console.error(JSON.stringify({ component: "release.project", ...value })); }
+function workflowContext() {
+  requireValue(process.env.GITHUB_REPOSITORY === repository && process.env.GITHUB_REF === "refs/heads/main" && process.env.GITHUB_EVENT_NAME === "workflow_dispatch", "Release coordinator requires a manual main run in delinoio/oss");
+  const project = process.env.RELEASE_PROJECT;
+  const bump = process.env.RELEASE_BUMP;
+  const runId = process.env.GITHUB_RUN_ID;
+  validateRun(project, bump, runId);
+  return { directory: root, project, bump, runId };
+}
+
+export async function main(command) {
+  if (command === "source") {
+    output(sourceMetadata({ project: process.env.RELEASE_PROJECT, event: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF, requestedVersion: process.env.REQUESTED_VERSION, requestedDryRun: process.env.REQUESTED_DRY_RUN }, (file) => readFileSync(path.join(root, file), "utf8")));
+    return;
+  }
+  if (command === "plan") {
+    const { changes, ...plan } = versionChanges(process.env.RELEASE_PROJECT, process.env.RELEASE_BUMP, (file) => readFileSync(path.join(root, file), "utf8"));
+    output({ ...plan, files: Object.keys(changes).join(",") });
+    return;
+  }
+  if (command === "bot-identity") {
+    const result = await githubRequest(`/users/${encodeURIComponent(botName)}`);
+    requireValue(result.status === 200 && result.body?.login === botName && result.body.type === "Bot" && Number.isSafeInteger(result.body.id), "Cannot resolve release bot identity");
+    output({ name: botName, email: `${result.body.id}+${botName}@users.noreply.github.com` });
+    return;
+  }
+  const context = workflowContext();
+  log({ phase: command, project: context.project, run_id: context.runId, outcome: "started" });
+  if (command === "prepare") {
+    output(await prepareRelease({ ...context, name: process.env.RELEASE_BOT_NAME, email: process.env.RELEASE_BOT_EMAIL, preflight: (plan) => preflightVersion(plan, githubRequest) }));
+    return;
+  }
+  const identity = validateCommit(root, process.env.RELEASE_REVISION, context.project, context.bump, context.runId);
+  requireValue(git(root, ["rev-parse", "HEAD"]) === identity.revision, "Checkout is not the release commit");
+  if (command === "validate") {
+    git(root, ["merge-base", "--is-ancestor", identity.revision, "origin/main"]);
+    const existing = await tagRevision(identity.tag, githubRequest);
+    requireValue(existing === null || existing === identity.revision, "Existing release tag belongs to a different commit");
+    output(identity);
+    return;
+  }
+  if (command === "tag") { output(await pushReleaseTag({ directory: root, identity, request: githubRequest })); return; }
+  requireValue(["wait-ci", "wait-release"].includes(command), "Unknown release command");
+  output(await waitForWorkflow({ identity, stage: command === "wait-ci" ? "ci" : "release", request: githubRequest, report: log }));
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main(process.argv[2]).catch((error) => {
+    log({ phase: process.argv[2], outcome: "failed", message: error.message });
+    process.exitCode = 1;
+  });
+}

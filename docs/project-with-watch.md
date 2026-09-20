@@ -13,6 +13,7 @@ Provide a Rust-based CLI wrapper that reruns delegated shell utilities and arbit
 - `docs/crates-with-watch-foundation.md`
 
 ## Cross-Domain Invariants
+- Manual version selection and bot-owned release orchestration follow `docs/repository-workflow-contract.md`; the `Release Project` workflow supports patch, minor, and major increments while preserving this project’s existing distribution channels.
 - Root passthrough mode must remain `with-watch [--no-hash] [--clear] <utility> [args...]`.
 - Shell mode must remain `with-watch [--no-hash] [--clear] --shell '<expr>'` and is the supported entrypoint for `&&`, `||`, and `|`.
 - Arbitrary command mode must remain `with-watch exec [--no-hash] [--clear] --input <glob>... -- <command> [args...]`.
