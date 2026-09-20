@@ -16,7 +16,8 @@
       "scripts/release/linux-packages/**",
       "package.json",
       "pnpm-lock.yaml"
-    ]
+    ],
+    "native": true
   },
   "go-quality": {
     "paths": [
