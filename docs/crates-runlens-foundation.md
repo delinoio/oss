@@ -743,3 +743,8 @@ production retains all caller descriptors and its conservative incomplete
 classification. A nested native harness with an injected descriptor verifies
 isolation, while explicit descriptor fixtures re-enable their selected handles
 and continue to require incomplete collection and non-passing policy checks.
+
+Directory changes depend on directory metadata: Unix chdir/fchdir attempts are
+reads resolved before cwd changes, including missing paths and renamed descriptors.
+They do not imply directory enumeration. Linux inherited seccomp also covers raw
+syscalls from static binaries; unresolved descriptor/path evidence stays incomplete.

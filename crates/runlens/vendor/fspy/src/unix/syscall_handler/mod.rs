@@ -8,6 +8,7 @@ mod stat;
 mod readlink;
 mod xattr;
 mod lifecycle;
+mod chdir;
 
 use std::{
     borrow::Cow,
@@ -103,6 +104,8 @@ impl_handler!(
     statx,
     statfs,
     fstatfs,
+    chdir,
+    fchdir,
 
     #[cfg(target_arch = "x86_64")] access,
     faccessat,

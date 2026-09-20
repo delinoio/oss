@@ -4133,3 +4133,85 @@ async fn unicode_windows_collector_paths_are_exact_or_rejected_before_launch() {
         Err(error) => panic!("unexpected initialization failure: {error}"),
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn directory_changes_are_read_attempts_before_cwd_changes() {
+    let mut executables = vec![fixture().to_owned()];
+    #[cfg(target_os = "linux")]
+    match std::env::var("RUNLENS_STATIC_FIXTURE") {
+        Ok(path) => executables.push(path),
+        Err(_) => assert!(
+            std::env::var_os("CI").is_none(),
+            "static fixture required in CI"
+        ),
+    }
+    for executable in executables.drain(..) {
+        for mode in ["chdir", "fchdir"] {
+            for present in [false, true] {
+                if mode == "fchdir" && !present {
+                    continue;
+                }
+                for relative in [false, true] {
+                    let outer = tempfile::tempdir().unwrap();
+                    let root = outer.path().join("workspace");
+                    let directory = outer.path().join("access-directory");
+                    let original = outer.path().join("original-directory");
+                    fs::create_dir(&root).unwrap();
+                    if present {
+                        fs::create_dir(if mode == "fchdir" {
+                            &original
+                        } else {
+                            &directory
+                        })
+                        .unwrap();
+                    }
+                    fs::write(
+                        root.join("runlens.toml"),
+                        "schema_version = 1\n[policy]\ndeny_reads = [\"**/access-directory\"]\n",
+                    )
+                    .unwrap();
+                    let path = if relative {
+                        "../access-directory"
+                    } else {
+                        directory.to_str().unwrap()
+                    };
+                    let result = invoke(
+                        &root,
+                        &[
+                            "run",
+                            "--save",
+                            "record.json",
+                            "--",
+                            &executable,
+                            mode,
+                            path,
+                            original.to_str().unwrap(),
+                        ],
+                    );
+                    assert!(result.status.success(), "{mode}: {result:?}");
+                    assert_eq!(
+                        String::from_utf8_lossy(&result.stdout).trim(),
+                        if present { "0" } else { "-1" }
+                    );
+                    let report = parse(&root, "record.json");
+                    let access = report["executions"][0]["accesses"]
+                        .as_object()
+                        .unwrap()
+                        .iter()
+                        .find(|(path, access)| {
+                            path.ends_with("/access-directory") && access["read"] == true
+                        });
+                    assert!(
+                        access.is_some(),
+                        "{mode} relative={relative} present={present}: {}",
+                        report["executions"][0]["accesses"]
+                    );
+                    assert_eq!(access.unwrap().1["read_directory"], false);
+                    let policy = invoke(&root, &["policy", "check", "record.json", "--json"]);
+                    assert_eq!(policy.status.code(), Some(5), "{policy:?}");
+                }
+            }
+        }
+    }
+}

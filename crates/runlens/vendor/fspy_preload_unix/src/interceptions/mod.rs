@@ -7,3 +7,4 @@ mod remove;
 mod spawn;
 mod stat;
 mod lifecycle;
+mod chdir;

@@ -226,3 +226,11 @@ duplicate must not remove this required injection input. Both Windows native CI
 builds type-check the four-argument ABI before the receipt tests exercise payload
 delivery. Remove this repair only with an upstream spawn implementation that
 preserves the same suspended-child payload and ownership sequence.
+
+Unix chdir/fchdir interception and Linux seccomp record directory metadata read
+attempts before the working directory changes. The syscall's result is preserved;
+unresolvable kernel operands remain incomplete. Native libc and static raw-syscall
+fixtures cover absolute/relative names, missing paths, and descriptors whose
+directory was renamed after opening, proving fchdir's current-path read independently
+of the original open. Remove when upstream observes both families before mutation
+with equivalent read-boundary behavior on both architectures.

@@ -7,6 +7,18 @@
 #include <sys/syscall.h>
 #include <sys/vfs.h>
 int main(int argc, char **argv) {
+    if (argc == 4 && (!strcmp(argv[1], "chdir") || !strcmp(argv[1], "fchdir"))) {
+        long result;
+        if (!strcmp(argv[1], "chdir")) result = syscall(SYS_chdir, argv[2]);
+        else {
+            int fd = open(argv[3], O_RDONLY | O_DIRECTORY);
+            if (fd < 0 || rename(argv[3], argv[2])) return 92;
+            result = syscall(SYS_fchdir, fd);
+            close(fd);
+        }
+        printf("%ld\n", result);
+        return 0;
+    }
     if (argc == 3 && (!strcmp(argv[1], "statfs") || !strcmp(argv[1], "fstatfs"))) {
         struct statfs stats;
         if (!strcmp(argv[1], "statfs")) syscall(SYS_statfs, argv[2], &stats);

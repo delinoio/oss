@@ -7,6 +7,26 @@ fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
         #[cfg(unix)]
+        "chdir" | "fchdir" => {
+            let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            // SAFETY: both paths remain valid terminated strings and the owned
+            // descriptor stays open through fchdir. Print only the OS result.
+            let result = unsafe {
+                if args[0] == "chdir" {
+                    libc::chdir(path.as_ptr())
+                } else {
+                    let original = std::ffi::CString::new(args[2].as_bytes()).unwrap();
+                    let fd = libc::open(original.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY);
+                    assert!(fd >= 0);
+                    assert_eq!(libc::rename(original.as_ptr(), path.as_ptr()), 0);
+                    let result = libc::fchdir(fd);
+                    libc::close(fd);
+                    result
+                }
+            };
+            println!("{result}");
+        }
+        #[cfg(unix)]
         "path-exec" => {
             let path = std::ffi::CString::new(args[2].as_bytes()).unwrap();
             let argv = [
