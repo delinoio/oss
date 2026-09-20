@@ -186,7 +186,7 @@ pub fn execute(command: Command) -> Result<u8> {
         }
         if let (Some(status), true) = (processed, written) {
             cancel.check()?;
-            publication.publish()?;
+            publication.publish(|| cancel.check())?;
             tracing::debug!(action = "complete", status, "operation completed");
             return Ok(status);
         }

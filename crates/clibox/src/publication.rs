@@ -38,7 +38,7 @@ impl Publication {
         Ok((publication, Some(file)))
     }
 
-    pub fn publish(mut self) -> Result<()> {
+    pub fn publish(mut self, before_commit: impl FnOnce() -> Result<()>) -> Result<()> {
         let Some(path) = &self.destination else {
             return Ok(());
         };
@@ -56,6 +56,8 @@ impl Publication {
         if let Some(original) = inspect(path, self.replace)? {
             preserve_permissions(&original, temporary)?;
         }
+        // Cancellation during flushing/permission work must still prevent publication.
+        before_commit()?;
         let temporary = self.temporary.take().unwrap();
         if self.replace {
             temporary
@@ -347,8 +349,8 @@ mod tests {
         second_file.as_mut().unwrap().write_all(b"second").unwrap();
         drop(first_file);
         drop(second_file);
-        second.publish().unwrap();
-        first.publish().unwrap();
+        second.publish(|| Ok(())).unwrap();
+        first.publish(|| Ok(())).unwrap();
         assert_eq!(fs::read(path).unwrap(), b"first");
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
     }
@@ -360,7 +362,10 @@ mod tests {
         let (publication, file) = Publication::prepare(Some(path.clone()), false).unwrap();
         drop(file);
         fs::write(&path, b"concurrent").unwrap();
-        assert_eq!(publication.publish().unwrap_err().code, Code::OutputExists);
+        assert_eq!(
+            publication.publish(|| Ok(())).unwrap_err().code,
+            Code::OutputExists
+        );
         assert_eq!(fs::read(path).unwrap(), b"concurrent");
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
     }
@@ -373,10 +378,29 @@ mod tests {
         drop(file);
         fs::create_dir(&path).unwrap();
         assert_eq!(
-            publication.publish().unwrap_err().code,
+            publication.publish(|| Ok(())).unwrap_err().code,
             Code::UnsafeDestination
         );
         assert!(path.is_dir());
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn cancellation_at_the_publication_boundary_keeps_the_original() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("output");
+        fs::write(&path, b"original").unwrap();
+        let (publication, mut file) = Publication::prepare(Some(path.clone()), true).unwrap();
+        file.as_mut().unwrap().write_all(b"changed").unwrap();
+        drop(file);
+        assert_eq!(
+            publication
+                .publish(|| Err(Error::runtime(Code::Cancelled)))
+                .unwrap_err()
+                .code,
+            Code::Cancelled
+        );
+        assert_eq!(fs::read(path).unwrap(), b"original");
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
@@ -417,7 +441,7 @@ mod tests {
         let (publication, mut output) = Publication::prepare(Some(path.clone()), true).unwrap();
         output.as_mut().unwrap().write_all(b"changed").unwrap();
         drop(output);
-        publication.publish().unwrap();
+        publication.publish(|| Ok(())).unwrap();
         let replacement = File::open(&path).unwrap();
         let mut actual = vec![0u8; acl.len()];
         assert_eq!(
@@ -521,7 +545,7 @@ mod tests {
         let (publication, mut file) = Publication::prepare(Some(path.clone()), true).unwrap();
         file.as_mut().unwrap().write_all(b"changed").unwrap();
         drop(file);
-        publication.publish().unwrap();
+        publication.publish(|| Ok(())).unwrap();
         assert_eq!(security(&wide), before);
         assert_eq!(fs::read(path).unwrap(), b"changed");
     }
