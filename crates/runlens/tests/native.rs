@@ -2718,3 +2718,11 @@ async fn launched_image_identity_survives_or_detects_path_replacement() {
         }
     }
 }
+
+#[test]
+#[cfg(target_os = "linux")]
+fn dynamic_linux_inline_syscalls_cannot_pass_external_write_denials() {
+    for missing in [false, true] {
+        check_removal_attempt(fixture(), "delete-raw-syscall", missing);
+    }
+}

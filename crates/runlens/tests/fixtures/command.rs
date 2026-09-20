@@ -4,6 +4,22 @@ use std::{fs, process::Command, time::Duration};
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
+        #[cfg(target_os = "linux")]
+        "delete-raw-syscall" => {
+            let path = std::ffi::CString::new(args[1].as_str()).unwrap();
+            // SAFETY: live C pathname and scalar unlinkat arguments; bypass
+            // every libc symbol to verify kernel-level dynamic-image coverage.
+            unsafe {
+                #[cfg(target_arch = "x86_64")]
+                core::arch::asm!("syscall", inlateout("rax") libc::SYS_unlinkat => _,
+                    in("rdi") libc::AT_FDCWD as i64, in("rsi") path.as_ptr(), in("rdx") 0usize,
+                    lateout("rcx") _, lateout("r11") _, options(nostack));
+                #[cfg(target_arch = "aarch64")]
+                core::arch::asm!("svc 0", in("x8") libc::SYS_unlinkat,
+                    inlateout("x0") libc::AT_FDCWD as i64 => _, in("x1") path.as_ptr(),
+                    in("x2") 0usize, options(nostack));
+            }
+        }
         #[cfg(unix)]
         mode if mode.starts_with("mutate-") => {
             use std::{ffi::CString, os::fd::AsRawFd};

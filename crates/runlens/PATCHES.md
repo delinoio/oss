@@ -145,3 +145,9 @@ changed retained metadata clears the digest and makes collection incomplete.
 `launched_image_identity_survives_or_detects_path_replacement` replaces the path
 after the last preflight and checks native execution and identity on each platform.
 Remove these patches when upstream supplies an equivalent launch-bound identity.
+
+Linux dynamic images install the same inherited seccomp notification filter as
+static images. Preload alone misses inline kernel calls. The native dynamic
+inline-unlinkat fixture verifies external write-policy denial on both Linux
+architectures, including failed attempts. Remove this patch when upstream covers
+direct syscalls in all supported images independently of libc interposition.

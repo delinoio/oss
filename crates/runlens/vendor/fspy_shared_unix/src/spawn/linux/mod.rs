@@ -54,7 +54,10 @@ pub fn handle_exec(
                 encoded_payload.payload.preload_path.as_os_str().as_bytes(),
             );
             ensure_env(&mut command.envs, PAYLOAD_ENV_NAME, encoded_payload.encoded_string)?;
-            return Ok(None);
+            // Libc interposition cannot see inline/direct kernel syscalls.
+            // Install the same inherited kernel filter for dynamic and static
+            // images; preload remains useful for explicit unsupported execs.
+            return Ok(Some(PreExec(encoded_payload.payload.seccomp_payload.clone())));
         }
     }
 

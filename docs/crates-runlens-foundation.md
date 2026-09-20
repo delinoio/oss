@@ -641,3 +641,7 @@ the canonical file and ancestor rename chain through process creation, and macOS
 compares the mapped main image vnode reported before main. Retained file metadata
 must remain stable through child completion. Missing or mismatched evidence clears
 the executable digest and marks the receipt incomplete, including fast processes.
+
+Linux seccomp syscall observation applies to dynamically linked and static native
+images, including inline kernel calls and descendants inheriting the filter.
+Preload hooks alone are not sufficient evidence of complete Linux collection.
