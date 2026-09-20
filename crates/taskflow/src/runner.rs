@@ -781,11 +781,9 @@ async fn run_task(
                     !cancel.is_cancelled(),
                     "task cancelled during cache publication"
                 );
+                // Persistence finalizes this reuse just as it finalizes fresh
+                // execution. Later cancellation cannot contradict that receipt.
                 persist(&graph.workspace.root, &receipt)?;
-                ensure!(
-                    !cancel.is_cancelled(),
-                    "task cancelled before returning cached result"
-                );
                 tracing::info!(task = id, outcome = ?receipt.outcome, changed = receipt.changed, "Reused task result");
                 return Ok(receipt);
             }
@@ -1156,11 +1154,21 @@ async fn publish(
     Ok(())
 }
 
+#[cfg(test)]
+tokio::task_local! {
+    // Deterministic cancellation at the durable-receipt boundary, without
+    // relying on filesystem notification latency or production test switches.
+    static CANCEL_AFTER_PERSIST: CancellationToken;
+}
+
 pub fn persist(root: &Path, receipt: &Receipt) -> Result<()> {
     files::atomic_write(
         &receipt_path(root, &receipt.task),
         &serde_json::to_vec(receipt)?,
-    )
+    )?;
+    #[cfg(test)]
+    let _ = CANCEL_AFTER_PERSIST.try_with(CancellationToken::cancel);
+    Ok(())
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1608,6 +1616,82 @@ mod output_cleanup_tests {
             assert_eq!(
                 previous(directory.path(), "app#check").is_some(),
                 !during_hash
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn persisted_cache_reuse_survives_late_cancellation() {
+        for restore in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            std::fs::write(
+                root.path().join("taskflow.yml"),
+                "version: 1\nproject: app\ntasks:\n  check:\n    command: [must-not-run]\n    \
+                 input: []\n    output: [out]\n    cache: true\n    tools: {rustc: [rustc, \
+                 --version]}\n",
+            )
+            .unwrap();
+            std::fs::write(root.path().join("out"), "cached").unwrap();
+            let graph = Arc::new(
+                Graph::build(
+                    crate::discover::Workspace::discover(root.path())
+                        .await
+                        .unwrap(),
+                )
+                .unwrap(),
+            );
+            let options = RunOptions::default();
+            let identity = prepare_inputs(
+                &graph,
+                "app#check",
+                &BTreeMap::new(),
+                &options,
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+            let artifact = cache::Artifact::capture(
+                identity.key,
+                "app#check".into(),
+                &graph.workspace.projects["app"],
+                &graph.tasks["app#check"].task,
+            )
+            .unwrap();
+            cache::store(root.path(), &artifact).unwrap();
+            if restore {
+                std::fs::remove_file(root.path().join("out")).unwrap();
+            }
+            let cancel = CancellationToken::new();
+            let plan = Plan::create(&graph, &["check".into()], &[], false).unwrap();
+            let result = CANCEL_AFTER_PERSIST
+                .scope(
+                    cancel.clone(),
+                    run_plan(graph, plan, options, cancel.clone()),
+                )
+                .await
+                .unwrap();
+            assert!(
+                cancel.is_cancelled(),
+                "cancellation must occur after durable receipt publication"
+            );
+            assert!(result.success, "{result:?}");
+            assert_eq!(result.exit_code(), 0);
+            let receipt = &result.results["app#check"];
+            assert_eq!(
+                receipt.outcome,
+                if restore {
+                    Outcome::Restored
+                } else {
+                    Outcome::LocalCache
+                }
+            );
+            assert_eq!(
+                serde_json::to_value(receipt).unwrap(),
+                serde_json::to_value(previous(root.path(), "app#check").unwrap()).unwrap()
+            );
+            assert_eq!(
+                std::fs::read_to_string(root.path().join("out")).unwrap(),
+                "cached"
             );
         }
     }

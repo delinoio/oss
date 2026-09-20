@@ -125,3 +125,5 @@
 - Linux launches the embedded supervisor from a sealed executable memfd, retaining its close-on-exec descriptor through spawn. Temporary control storage may be noexec. Unsupported MFD_EXEC flags may use the legacy kernel API; explicit executable-memory policy denials must fail closed without disk fallback.
 
 - Preserve structured launch error kind and OS code without command/environment contents. Linux conformance overlaps supervisor launches across threads to cover inherited writable-file ETXTBSY regressions.
+
+- Cache reuse is finalized by its durable receipt; cancellation after successful persistence cannot change that receipt or invocation to cancelled. Cancellation before publication still invalidates reuse.
