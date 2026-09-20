@@ -39,7 +39,7 @@ struct Node {
     mark: Marker,
 }
 enum Kind {
-    Scalar(Scalar, String),
+    Scalar(Scalar),
     Sequence(Vec<Rc<Value>>),
     Mapping(BTreeMap<String, Rc<Value>>),
 }
@@ -315,19 +315,22 @@ fn collection_tag(tag: Option<&Tag>, expected: CoreTag) -> Result<()> {
     }
 }
 
-fn quote(text: &str, cancel: &Cancellation) -> Result<String> {
-    let mut out = Output::new();
-    out.push("\"")?;
+fn quote(
+    text: &str,
+    cancel: &Cancellation,
+    mut push: impl FnMut(&str) -> Result<()>,
+) -> Result<()> {
+    push("\"")?;
     for (index, ch) in text.chars().enumerate() {
         if index.is_multiple_of(4096) {
             cancel.check()?;
         }
         match ch {
-            '"' => out.push("\\\"")?,
-            '\\' => out.push("\\\\")?,
-            '\n' => out.push("\\n")?,
-            '\r' => out.push("\\r")?,
-            '\t' => out.push("\\t")?,
+            '"' => push("\\\"")?,
+            '\\' => push("\\\\")?,
+            '\n' => push("\\n")?,
+            '\r' => push("\\r")?,
+            '\t' => push("\\t")?,
             ch if ch.is_control()
                 || matches!(
                     ch,
@@ -336,13 +339,29 @@ fn quote(text: &str, cancel: &Cancellation) -> Result<String> {
             {
                 // YAML permits escaped BMP noncharacters in scalar values but
                 // excludes them from literal source. Keep output valid input.
-                out.push(&format!("\\u{:04x}", ch as u32))?
+                let mut escape = *b"\\u0000";
+                for (index, digit) in escape[2..].iter_mut().enumerate() {
+                    *digit = b"0123456789abcdef"[((ch as u32 >> (12 - index * 4)) & 0xf) as usize];
+                }
+                push(std::str::from_utf8(&escape).expect("ASCII escape"))?
             }
-            ch => out.push(ch.encode_utf8(&mut [0; 4]))?,
+            ch => push(ch.encode_utf8(&mut [0; 4]))?,
         }
     }
-    out.push("\"")?;
-    Ok(String::from_utf8(out.bytes).expect("UTF-8 encoder"))
+    push("\"")?;
+    Ok(())
+}
+
+// Size accounting must not allocate an encoded scalar or apply the output
+// ceiling: a fully validated merge operand may be shadowed in the final graph.
+// Use the same escaping visitor for measurement and actual bounded emission.
+fn quoted_size(text: &str, cancel: &Cancellation) -> Result<usize> {
+    let mut size = 0usize;
+    quote(text, cancel, |part| {
+        size = size.saturating_add(part.len());
+        Ok(())
+    })?;
+    Ok(size)
 }
 
 struct Graph<'a> {
@@ -370,14 +389,7 @@ impl Graph<'_> {
                 self.done[id] = Some(result.clone());
                 return Ok(result);
             }
-            Raw::Scalar(scalar) => {
-                let encoded = match &scalar {
-                    Scalar::String(value) => quote(value, self.cancel)?,
-                    Scalar::Atom(value) => value.clone(),
-                    Scalar::Merge => quote("<<", self.cancel)?,
-                };
-                Kind::Scalar(scalar, encoded)
-            }
+            Raw::Scalar(scalar) => Kind::Scalar(scalar),
             Raw::Sequence(ids) => {
                 let mut values = Vec::new();
                 for child in ids {
@@ -393,10 +405,10 @@ impl Graph<'_> {
                     let key = self.resolve(pair[0])?;
                     let value = self.resolve(pair[1])?;
                     match &key.kind {
-                        Kind::Scalar(Scalar::Merge, _) => {
+                        Kind::Scalar(Scalar::Merge) => {
                             merges.push((value, self.nodes[pair[1]].mark))
                         }
-                        Kind::Scalar(Scalar::String(key), _) => {
+                        Kind::Scalar(Scalar::String(key)) => {
                             if explicit.insert(key.clone(), value).is_some() {
                                 return Err(at(Failure::DuplicateKey, self.nodes[pair[0]].mark));
                             }
@@ -450,8 +462,13 @@ impl Graph<'_> {
             depth = depth.max(child.depth.saturating_add(1));
         };
         match &kind {
-            Kind::Scalar(_, encoded) => {
-                size = encoded.len().saturating_add(1);
+            Kind::Scalar(scalar) => {
+                size = match scalar {
+                    Scalar::String(value) => quoted_size(value, self.cancel)?,
+                    Scalar::Atom(value) => value.len(),
+                    Scalar::Merge => quoted_size("<<", self.cancel)?,
+                }
+                .saturating_add(1);
                 lines = 1;
             }
             Kind::Sequence(values) => {
@@ -461,7 +478,7 @@ impl Graph<'_> {
             }
             Kind::Mapping(values) => {
                 for (key, value) in values {
-                    add(quote(key, self.cancel)?.len() + 1, value);
+                    add(quoted_size(key, self.cancel)?.saturating_add(1), value);
                 }
             }
         }
@@ -503,9 +520,13 @@ fn emit(value: &Value, indent: usize, output: &mut Output, cancel: &Cancellation
     cancel.check()?;
     let padding = " ".repeat(indent);
     match &value.kind {
-        Kind::Scalar(_, encoded) => {
+        Kind::Scalar(scalar) => {
             output.push(&padding)?;
-            output.push(encoded)?;
+            match scalar {
+                Scalar::String(text) => quote(text, cancel, |part| output.push(part))?,
+                Scalar::Atom(text) => output.push(text)?,
+                Scalar::Merge => quote("<<", cancel, |part| output.push(part))?,
+            }
             output.push("\n")?;
         }
         Kind::Sequence(values) if values.is_empty() => {
@@ -527,7 +548,7 @@ fn emit(value: &Value, indent: usize, output: &mut Output, cancel: &Cancellation
             for (key, value) in values {
                 cancel.check()?;
                 output.push(&padding)?;
-                output.push(&quote(key, cancel)?)?;
+                quote(key, cancel, |part| output.push(part))?;
                 output.push(":")?;
                 emit_child(value, indent, output, cancel)?;
             }

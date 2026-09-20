@@ -565,6 +565,35 @@ fn nesting_and_compact_exponential_alias_expansion_are_bounded() {
     assert!(String::from_utf8_lossy(&result.stderr).contains("OutputLimit"));
 }
 
+#[test]
+fn yaml_output_limit_ignores_shadowed_escaped_merge_values() {
+    const LIMIT: usize = 64 * 1024 * 1024;
+    // Each two-byte input escape becomes six output bytes. The raw document is
+    // within its budget, but encoding this value would exceed the output limit.
+    let escaped = "\\0".repeat(LIMIT / 6 + 1);
+    let dir = tempfile::tempdir().unwrap();
+    for source in [
+        format!("<<: {{value: \"{escaped}\"}}\nvalue: small\n"),
+        format!("<<: [{{value: small}}, {{value: \"{escaped}\"}}]\n"),
+    ] {
+        assert!(source.len() < LIMIT);
+        let result = run(dir.path(), &["yaml", "normalize"], source.as_bytes());
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(result.stdout, b"\"value\": \"small\"\n");
+        assert!(result.stderr.is_empty());
+    }
+    // Keeping the same value reachable still fails before stdout publication.
+    let source = format!("value: \"{escaped}\"\n");
+    let result = run(dir.path(), &["yaml", "normalize"], source.as_bytes());
+    assert_eq!(result.status.code(), Some(1));
+    assert!(result.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("OutputLimit"));
+}
+
 fn wait(child: &mut std::process::Child) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
     while child.try_wait().unwrap().is_none() {
