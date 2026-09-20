@@ -59,3 +59,5 @@ Branch.id and Worktree.branch_id are additive opaque worktree-scoped identities 
 Source discovery for ListBranches, ListCommits and GetChanges uses the incoming request context, including registered-worktree lookup and Git metadata discovery. Abandoned discovery processes are terminated and reaped; cancellation and deadline expiry return Connect Canceled and DeadlineExceeded respectively without being rewritten as worktree-unavailable.
 
 The same context and status preservation extend through post-discovery commit/config/default-base/merge-base resolution and streamed branch/history/diff reads. After reader cleanup and child reaping, caller cancellation wins over translated Git/parse/unavailable errors. Stopping a bounded branch page internally does not produce a caller cancellation.
+
+Source-RPC cancellation regression fixtures use an isolated loopback connection for the stalled test Git process readiness barrier. This avoids Windows rename/read sharing violations without weakening canceled/deadline status or process-reaping assertions. Production source operations retain their existing local Git behavior.

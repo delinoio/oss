@@ -141,3 +141,5 @@
 - Implicit self-update scans every release page and chooses the highest canonical stable ach semantic version, excluding drafts, prereleases and invalid/foreign tags. Reject implicit downgrades; an explicit canonical --version may select an older release. Never use a partial failed inventory.
 
 - Failed update preparation removes its exclusively created state backup and candidate before returning, including VACUUM, evidence-copy and pre-publication journal failures. Preserve prior backups. Surface cleanup failures; if a journal was already published before a durability error, retain its referenced files and require recovery.
+
+- Source cancellation fixtures publish the selected test process PID through an isolated loopback readiness connection, not a concurrently renamed file. Preserve deterministic cancellation/deadline barriers and process-reaping assertions on Windows as well as Unix; no production Git networking changes are implied.

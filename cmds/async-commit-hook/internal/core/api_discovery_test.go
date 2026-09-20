@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
-	"strconv"
 	"testing"
 	"time"
 
@@ -33,29 +33,39 @@ func init() {
 		if err != nil {
 			return
 		}
-		if len(data) != 0 {
-			var config struct {
-				RealGit string
-				Match   []string
-			}
-			if json.Unmarshal(data, &config) != nil {
-				os.Exit(96)
-			}
-			args := os.Args[i+2:]
-			if len(args) < len(config.Match) || !slices.Equal(args[:len(config.Match)], config.Match) {
-				cmd := exec.Command(config.RealGit, os.Args[1:]...)
-				cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-				if err := cmd.Run(); err != nil {
-					if exit, ok := err.(*exec.ExitError); ok {
-						os.Exit(exit.ExitCode())
-					}
-					os.Exit(95)
-				}
-				os.Exit(0)
-			}
+		var config struct {
+			RealGit string
+			Match   []string
+			Ready   string
 		}
-		if err := AtomicWrite(filepath.Join(root, ".git", "ach-test-git-ready"), []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
+		if json.Unmarshal(data, &config) != nil {
+			os.Exit(96)
+		}
+		args := os.Args[i+2:]
+		if len(config.Match) != 0 && (len(args) < len(config.Match) || !slices.Equal(args[:len(config.Match)], config.Match)) {
+			cmd := exec.Command(config.RealGit, os.Args[1:]...)
+			cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+			if err := cmd.Run(); err != nil {
+				if exit, ok := err.(*exec.ExitError); ok {
+					os.Exit(exit.ExitCode())
+				}
+				os.Exit(95)
+			}
+			os.Exit(0)
+		}
+		// Publish readiness over an isolated loopback connection. A concurrent
+		// file open can encounter a Windows sharing violation during rename,
+		// even after AtomicWrite's bytes are complete. No product networking is
+		// involved, and the selected helper has no children at this barrier.
+		conn, err := net.DialTimeout("tcp4", config.Ready, 30*time.Second)
+		if err != nil {
 			os.Exit(97)
+		}
+		if err = json.NewEncoder(conn).Encode(os.Getpid()); err != nil {
+			os.Exit(98)
+		}
+		if err = conn.Close(); err != nil {
+			os.Exit(99)
 		}
 		for {
 			time.Sleep(time.Hour)
@@ -138,13 +148,36 @@ func testSourceRPCCancellation(t *testing.T, operation string, match []string, d
 	if err != nil {
 		t.Fatal(err)
 	}
-	var config []byte
-	if len(match) != 0 {
-		config = Encode(struct {
-			RealGit string
-			Match   []string
-		}{realGit, match})
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer listener.Close()
+	type readiness struct {
+		pid int
+		err error
+	}
+	ready := make(chan readiness, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			ready <- readiness{err: err}
+			return
+		}
+		defer conn.Close()
+		if err = conn.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
+			ready <- readiness{err: err}
+			return
+		}
+		var pid int
+		err = json.NewDecoder(io.LimitReader(conn, 64)).Decode(&pid)
+		ready <- readiness{pid, err}
+	}()
+	config := Encode(struct {
+		RealGit string
+		Match   []string
+		Ready   string
+	}{realGit, match, listener.Addr().String()})
 	if err = os.WriteFile(filepath.Join(repo, ".git", "ach-test-stalled-git"), config, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -176,31 +209,19 @@ func testSourceRPCCancellation(t *testing.T, operation string, match []string, d
 	}()
 	watchdog := time.NewTimer(30 * time.Second)
 	defer watchdog.Stop()
-	ticker := time.NewTicker(5 * time.Millisecond)
-	defer ticker.Stop()
 	var child Process
-	for child.PID == 0 {
-		select {
-		case err := <-done:
-			t.Fatalf("discovery did not reach Git: %v", err)
-		case <-watchdog.C:
-			t.Fatal("Git readiness watchdog expired")
-		case <-ticker.C:
-			data, err := os.ReadFile(filepath.Join(repo, ".git", "ach-test-git-ready"))
-			if os.IsNotExist(err) {
-				continue
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			pid, err := strconv.Atoi(string(data))
-			if err != nil {
-				t.Fatal(err)
-			}
-			child, err = ProcessIdentity(pid)
-			if err != nil {
-				t.Fatal(err)
-			}
+	select {
+	case err := <-done:
+		t.Fatalf("discovery did not reach Git: %v", err)
+	case <-watchdog.C:
+		t.Fatal("Git readiness watchdog expired")
+	case result := <-ready:
+		if result.err != nil || result.pid <= 0 {
+			t.Fatalf("Git readiness failed: pid=%d error=%v", result.pid, result.err)
+		}
+		child, err = ProcessIdentity(result.pid)
+		if err != nil {
+			t.Fatal(err)
 		}
 	}
 	defer func() {
