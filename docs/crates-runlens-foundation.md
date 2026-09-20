@@ -728,3 +728,5 @@ Windows injection validates the exact DLL pathname after ANSI encoding. An OS sh
 Windows NT/verbatim UNC observations retain their absolute network root when converted from collector records. Equivalent UNC bases can be stripped lexically; external shares never become current-worktree-relative observations.
 
 Frozen source copies preserve dangling symbolic links. On Windows the copied link’s directory/file kind comes from its own metadata, so preparation can create its target later without changing link semantics.
+
+Windows tracing finishes fallible setup and Job assignment while the child remains suspended. After resumption the original child handle transfers directly to lifecycle collection; no optional handle duplication can misclassify an already-started command as an initialization failure.

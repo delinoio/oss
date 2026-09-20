@@ -228,6 +228,8 @@
 
 - Runlens frozen-source copies preserve a Windows symbolic link’s own directory/file reparse type even when its target does not exist.
 
+- Runlens Windows spawn must complete fallible setup before resuming the child; its existing Job and original child handle own the remaining lifecycle.
+
 ### clibox Rules
 
 - Preserve the help/version-only CLI, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`.

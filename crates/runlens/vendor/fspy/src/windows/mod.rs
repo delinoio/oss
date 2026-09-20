@@ -116,8 +116,7 @@ impl SpyImpl {
                 // payload_bytes is a valid buffer with correct length
                 let success = unsafe {
                     DetourCopyPayloadToProcess(
-                        process_handle,
-                        &PAYLOAD_ID,
+                                    &PAYLOAD_ID,
                         payload_bytes.as_ptr().cast(),
                         payload_bytes.len().try_into().unwrap(),
                     )
@@ -146,28 +145,18 @@ impl SpyImpl {
                 if *spawn_success { SpawnError::OsSpawn(err) } else { SpawnError::Injection(err) }
             })?;
 
-        // Duplicate the process handle before the child is moved into the background
-        // task. The duplicate is independently owned (its own ref count), so it stays
-        // valid even after tokio closes its copy when the process exits.
-        let process_handle = {
-            use std::os::windows::io::BorrowedHandle;
-            // SAFETY: The child was just spawned and hasn't been moved yet, so its
-            // raw handle is valid. `borrow_raw` creates a temporary borrow.
-            let borrowed = unsafe { BorrowedHandle::borrow_raw(child.raw_handle().unwrap()) };
-            borrowed.try_clone_to_owned().map_err(SpawnError::OsSpawn)?
-        };
-
+        // Job ownership was established before ResumeThread. Do not introduce
+        // fallible setup here: the child can already have observable effects.
+        // The wait task owns the original handle; no duplicate is needed.
         Ok(TrackedChild {
             stdin: child.stdin.take(),
             stdout: child.stdout.take(),
             stderr: child.stderr.take(),
-            process_handle,
             // Keep polling for the child to exit in the background even if `wait_handle` is not awaited,
             // because we need to stop the supervisor and close the channel as soon as the child exits.
             wait_handle: tokio::spawn(async move {
                 let (status, lifecycle_incomplete) = job.wait(&mut child, cancellation_token).await?;
-                // Close the ipc channel after the child has exited.
-                // We are not interested in path accesses from descendants after the main child has exited.
+                // Close collection only after the complete owned job is reaped.
                 let path_accesses = ChannelAccesses::try_from(receiver)
                     .map(|ipc_accesses| PathAccessIterable { ipc_accesses });
 
