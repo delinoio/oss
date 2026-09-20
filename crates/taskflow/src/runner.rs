@@ -310,22 +310,30 @@ pub async fn run_plan(
                             && !error.is::<crate::docker::CleanupFailure>()
                             && !error.is::<crate::process::CleanupFailure>()
                             && !error.is::<cache::PublicationRollbackFailure>();
+                        let timed_out =
+                            !cancelled && crate::process::error_exit_code(&error) == 124;
+                        let status = ProcessExit {
+                            code: if cancelled {
+                                130
+                            } else if timed_out {
+                                124
+                            } else {
+                                1
+                            },
+                            reason: if cancelled {
+                                ExitReason::Cancelled
+                            } else if timed_out {
+                                ExitReason::TimedOut
+                            } else {
+                                ExitReason::Completed
+                            },
+                        };
                         // Detailed native stderr already passes through the masker;
                         // engine errors contain identifiers and stable context only.
                         let node = &graph.tasks[&id];
                         if node.task.service {
                             if let Some(services) = &options.services {
-                                let _ = services.events.send((
-                                    id.clone(),
-                                    ProcessExit {
-                                        code: if cancelled { 130 } else { 1 },
-                                        reason: if cancelled {
-                                            ExitReason::Cancelled
-                                        } else {
-                                            ExitReason::Completed
-                                        },
-                                    },
-                                ));
+                                let _ = services.events.send((id.clone(), status));
                             }
                         }
                         let secrets = Environment::build(
@@ -353,7 +361,7 @@ pub async fn run_plan(
                             tracing::error!(task = %id, error = %message, "Task failed");
                         }
                         let mut receipt = Receipt::skipped(&id, outcome, causes);
-                        receipt.exit_code = if cancelled { 130 } else { 1 };
+                        receipt.exit_code = status.code;
                         receipt.diagnostic = Some(message);
                         receipt
                     }
@@ -1472,6 +1480,15 @@ async fn wait_ready(
     };
     let deadline = tokio::time::Instant::now()
         + service_remaining.map_or(timeout, |remaining| remaining.min(timeout));
+    let service_expires_first = service_remaining.is_some_and(|remaining| remaining <= timeout);
+    let expired = || {
+        if service_expires_first {
+            anyhow::Error::new(crate::process::TimedOut)
+                .context("service timeout elapsed during readiness")
+        } else {
+            anyhow::anyhow!("service readiness timed out")
+        }
+    };
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(1))
@@ -1511,17 +1528,32 @@ async fn wait_ready(
             biased;
             _ = cancel.cancelled() => {
                 probe_cancel.cancel();
-                check.await?;
+                // An unstarted command probe reports the cancellation we just
+                // requested. Preserve the selected cause while still surfacing
+                // real probe/owner cleanup errors.
+                check.await.or_else(|error| {
+                    if error.is::<crate::process::Cancelled>() { Ok(false) } else { Err(error) }
+                })?;
                 anyhow::bail!("service readiness cancelled");
             }
             _ = tokio::time::sleep_until(deadline) => {
                 probe_cancel.cancel();
-                check.await?;
-                anyhow::bail!("service readiness timed out");
+                // An unstarted command probe reports the cancellation we just
+                // requested. Preserve the selected cause while still surfacing
+                // real probe/owner cleanup errors.
+                check.await.or_else(|error| {
+                    if error.is::<crate::process::Cancelled>() { Ok(false) } else { Err(error) }
+                })?;
+                return Err(expired());
             }
             exited = process.child.wait() => {
                 probe_cancel.cancel();
-                check.await?;
+                // An unstarted command probe reports the cancellation we just
+                // requested. Preserve the selected cause while still surfacing
+                // real probe/owner cleanup errors.
+                check.await.or_else(|error| {
+                    if error.is::<crate::process::Cancelled>() { Ok(false) } else { Err(error) }
+                })?;
                 exited?;
                 anyhow::bail!("service exited before readiness");
             }
@@ -1530,10 +1562,9 @@ async fn wait_ready(
         if ready {
             return Ok(());
         }
-        ensure!(
-            tokio::time::Instant::now() < deadline,
-            "service readiness timed out"
-        );
+        if tokio::time::Instant::now() >= deadline {
+            return Err(expired());
+        }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 }

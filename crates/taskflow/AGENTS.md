@@ -155,3 +155,5 @@
 - Libtest runnable inventories subtract the ignored-only listing from the full listing. Never turn zero-executed ignored tests into passed units; all-ignored suites retain complete empty-shard accounting.
 
 - Workspace manifest declarations must be nonempty project-relative paths before native discovery. Reject Unix roots, Windows roots/UNC/drive-relative forms, and NUL on every exporter host; retain workspace containment checks after resolving relative paths.
+
+- Service deadlines retain typed timeout identity through readiness, failed activation receipts, service-exit events, and CLI error conversion. Readiness-only failure remains code 1; service timeout is 124, with cleanup failures taking precedence.

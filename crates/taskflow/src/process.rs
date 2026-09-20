@@ -470,6 +470,22 @@ pub(crate) fn check_cancelled(cancel: &CancellationToken) -> Result<()> {
     Ok(())
 }
 
+/// Preserve typed execution failures at public CLI and session boundaries.
+pub fn error_exit_code(error: &anyhow::Error) -> i32 {
+    if error.is::<CleanupFailure>()
+        || error.is::<crate::docker::CleanupFailure>()
+        || error.is::<crate::cache::PublicationRollbackFailure>()
+    {
+        1
+    } else if error.is::<Cancelled>() {
+        130
+    } else if error.is::<TimedOut>() {
+        124
+    } else {
+        1
+    }
+}
+
 pub(crate) fn aborts_discovery(error: &anyhow::Error) -> bool {
     error.is::<Cancelled>() || error.is::<CleanupFailure>()
 }

@@ -44,11 +44,7 @@ async fn main() {
             } else {
                 eprintln!("tflow: {error}");
             }
-            if error.is::<taskflow::process::Cancelled>() {
-                130
-            } else {
-                1
-            }
+            taskflow::process::error_exit_code(&error)
         }
     };
     std::process::exit(code);

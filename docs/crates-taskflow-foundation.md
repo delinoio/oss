@@ -124,3 +124,5 @@ Docker accepts absolute local Unix socket paths or local Windows named pipes wit
 Docker result helpers are scoped to the owning container and removed after cleanup on success, failure, cancellation, or timeout. Tool probes and shard units retain no auxiliary run directories; only outer task receipts, reports, and logs persist.
 
 Graph refresh preserves pending input causes and compares the last accepted watched snapshots with the new generation before establishing its baseline. Automatic manifest/lockfile inputs therefore activate watchers with `initial: false`. Invalid configuration keeps the previous baseline until recovery, and identical metadata rewrites do not activate checks.
+
+Service deadlines preserve timeout code 124 through readiness failure, activation receipts, service-exit events, and the CLI error boundary. A readiness-only deadline remains an ordinary readiness failure (code 1). Probe cancellation is awaited before returning the selected cause, and unverified cleanup overrides timeout or cancellation.

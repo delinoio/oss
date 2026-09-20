@@ -306,7 +306,14 @@ pub async fn start(
                         }
                     }
                     active_tasks.retain(|_, owner| *owner != wave_id);
-                    if selected.iter().any(|id| graph.tasks[id].task.service && results.get(id).is_some_and(|r| !r.success() && r.outcome != runner::Outcome::Cancelled)) { anyhow::bail!("service activation failed"); }
+                    for id in selected.iter().filter(|id| graph.tasks[*id].task.service) {
+                        if let Some(receipt) = results.get(id).filter(|r| !r.success() && r.outcome != runner::Outcome::Cancelled) {
+                            if receipt.exit_code == 124 {
+                                return Err(anyhow::Error::new(crate::process::TimedOut).context("service activation timed out"));
+                            }
+                            anyhow::bail!("service activation failed");
+                        }
+                    }
                 }
                 _ = tokio::time::sleep(Duration::from_millis(25)) => {}
             }
@@ -381,6 +388,10 @@ fn service_exit(
     status: crate::process::ProcessExit,
 ) -> Result<()> {
     services.controls.lock().unwrap().remove(&id);
+    if active.contains(&id) && status.reason == crate::process::ExitReason::TimedOut {
+        return Err(anyhow::Error::new(crate::process::TimedOut)
+            .context(format!("service {id} timed out; shutting down session")));
+    }
     ensure!(
         !active.contains(&id) || status.cancelled(),
         "service {id} exited ({}); shutting down session",

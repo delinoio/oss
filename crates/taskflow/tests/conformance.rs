@@ -2882,7 +2882,28 @@ async fn service_timeout_shuts_down_and_reaps_the_session() {
         )
         .await
         .expect("service timeout must stop the session");
-        assert!(result.is_err());
+        assert_eq!(
+            taskflow::process::error_exit_code(&result.unwrap_err()),
+            124
+        );
+        let cli = tokio::time::timeout(
+            Duration::from_secs(15),
+            tokio::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+                .arg("--root")
+                .arg(directory.path())
+                .arg("start")
+                .kill_on_drop(true)
+                .output(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            cli.status.code(),
+            Some(124),
+            "{}",
+            String::from_utf8_lossy(&cli.stderr)
+        );
         for name in ["server-pid", "check-pid"] {
             let pid: u32 = std::fs::read_to_string(directory.path().join(name))
                 .unwrap()
@@ -5631,7 +5652,10 @@ async fn readiness_cancellation_and_deadlines_await_probe_owners() {
             .unwrap()
             .unwrap();
         if mode != "cancel" {
-            assert!(result.is_err());
+            assert_eq!(
+                taskflow::process::error_exit_code(&result.unwrap_err()),
+                if mode == "service-timeout" { 124 } else { 1 }
+            );
         }
         if !cfg!(windows) {
             assert!(
