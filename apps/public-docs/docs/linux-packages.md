@@ -35,8 +35,14 @@ After verifying the key, install it in a dedicated keyring and register stable:
 sudo install -d -m 0755 /etc/apt/keyrings
 gpg --dearmor --output delino-packages.gpg delino-packages.asc
 sudo install -m 0644 delino-packages.gpg /etc/apt/keyrings/delino-packages.gpg
-curl -fsSLo delino.sources https://pkgs.oss.delino.io/setup/delino.sources
-sudo install -m 0644 delino.sources /etc/apt/sources.list.d/delino.sources
+sudo tee /etc/apt/sources.list.d/delino.sources <<'EOF'
+Types: deb
+URIs: https://pkgs.oss.delino.io/apt
+Suites: stable
+Components: main
+Architectures: amd64 arm64
+Signed-By: /etc/apt/keyrings/delino-packages.gpg
+EOF
 sudo apt-get update
 sudo apt-get install binpm
 binpm --version
@@ -50,8 +56,17 @@ After verifying the same key:
 
 ```sh
 sudo rpm --import delino-packages.asc
-curl -fsSLo delino.repo https://pkgs.oss.delino.io/setup/delino.repo
-sudo install -m 0644 delino.repo /etc/yum.repos.d/delino.repo
+sudo tee /etc/yum.repos.d/delino.repo <<'EOF'
+[delino]
+name=Delino stable
+mirrorlist=https://pkgs.oss.delino.io/rpm/stable/$basearch/mirrorlist
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://pkgs.oss.delino.io/keys/delino-packages.asc
+metadata_expire=300
+sslverify=1
+EOF
 sudo dnf install binpm
 binpm --version
 ```
@@ -65,8 +80,14 @@ Preview is an explicit opt-in and remains enabled for later updates. After the k
 APT:
 
 ```sh
-curl -fsSLo delino-preview.sources https://pkgs.oss.delino.io/setup/delino-preview.sources
-sudo install -m 0644 delino-preview.sources /etc/apt/sources.list.d/delino-preview.sources
+sudo tee /etc/apt/sources.list.d/delino-preview.sources <<'EOF'
+Types: deb
+URIs: https://pkgs.oss.delino.io/apt
+Suites: preview
+Components: main
+Architectures: amd64 arm64
+Signed-By: /etc/apt/keyrings/delino-packages.gpg
+EOF
 sudo apt-get update
 sudo apt-get install runmoor
 runmoor version
@@ -75,8 +96,17 @@ runmoor version
 DNF:
 
 ```sh
-curl -fsSLo delino-preview.repo https://pkgs.oss.delino.io/setup/delino-preview.repo
-sudo install -m 0644 delino-preview.repo /etc/yum.repos.d/delino-preview.repo
+sudo tee /etc/yum.repos.d/delino-preview.repo <<'EOF'
+[delino-preview]
+name=Delino preview
+mirrorlist=https://pkgs.oss.delino.io/rpm/preview/$basearch/mirrorlist
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://pkgs.oss.delino.io/keys/delino-packages.asc
+metadata_expire=300
+sslverify=1
+EOF
 sudo dnf install runmoor
 runmoor version
 ```
