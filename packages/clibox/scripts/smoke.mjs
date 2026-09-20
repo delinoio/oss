@@ -10,8 +10,10 @@ import { buildPackage } from "./package.mjs";
 const { values } = parseArgs({ options: { binary: { type: "string" }, target: { type: "string" } } });
 const target = values.target ? platforms.targets.find(({ rust }) => rust === values.target) : platforms.selectTarget();
 ensure(target, "Unsupported smoke-test target");
-if (!values.binary) execFileSync("cargo", ["build", "--locked", "-p", "clibox", "--target-dir", path.join(root, "target")], { cwd: root, stdio: "inherit" });
-const binary = path.resolve(values.binary ?? path.join(root, "target/debug", target.binary));
+// Exercise production-sized artifacts: TLS-enabled debug executables can exceed
+// the bounded archive inspector's limit and do not represent shipped packages.
+if (!values.binary) execFileSync("cargo", ["build", "--locked", "--release", "-p", "clibox", "--target-dir", path.join(root, "target")], { cwd: root, stdio: "inherit" });
+const binary = path.resolve(values.binary ?? path.join(root, "target/release", target.binary));
 const directory = mkdtempSync(path.join(tmpdir(), "clibox-package-"));
 try {
   const output = path.join(directory, "packed");
