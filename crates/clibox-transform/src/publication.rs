@@ -761,7 +761,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows_protected_dacl_is_preserved() {
-        use std::os::windows::ffi::OsStrExt;
+        use std::os::windows::{ffi::OsStrExt, fs::OpenOptionsExt};
 
         use windows_sys::Win32::{
             Foundation::LocalFree,
@@ -775,7 +775,26 @@ mod tests {
                 GROUP_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION,
                 PROTECTED_DACL_SECURITY_INFORMATION, SE_DACL_AUTO_INHERITED,
             },
+            Storage::FileSystem::FILE_WRITE_ATTRIBUTES,
         };
+        fn assert_attribute_access(path: &Path, denied: bool, phase: &str) {
+            // Reapplying unchanged attributes with SetFileAttributesW can succeed
+            // despite a FILE_WRITE_ATTRIBUTES denial. Request that exact access
+            // on a fresh handle to test the DACL without mutating the fixture.
+            // https://learn.microsoft.com/windows/win32/fileio/file-access-rights-constants
+            let result = fs::OpenOptions::new()
+                .access_mode(FILE_WRITE_ATTRIBUTES)
+                .open(path);
+            if denied {
+                assert_eq!(
+                    result.expect_err(phase).kind(),
+                    io::ErrorKind::PermissionDenied,
+                    "{phase}"
+                );
+            } else {
+                assert!(result.is_ok(), "{phase}: attribute access must be allowed");
+            }
+        }
         fn security(path: &[u16]) -> Vec<u16> {
             unsafe {
                 let info = DACL_SECURITY_INFORMATION
@@ -865,14 +884,7 @@ mod tests {
                     io::ErrorKind::PermissionDenied
                 );
             }
-            if deny_attributes {
-                assert_eq!(
-                    fs::set_permissions(&path, fs::metadata(&path).unwrap().permissions())
-                        .unwrap_err()
-                        .kind(),
-                    io::ErrorKind::PermissionDenied
-                );
-            }
+            assert_attribute_access(&path, deny_attributes, "before publication");
             let before = security(&wide);
             let (cancelled, file) = Publication::prepare(Some(path.clone()), true).unwrap();
             drop(file);
@@ -884,20 +896,14 @@ mod tests {
                 Code::Cancelled
             );
             assert_eq!(security(&wide), before);
+            assert_attribute_access(&path, deny_attributes, "after cancellation");
             assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
             let (publication, mut file) = Publication::prepare(Some(path.clone()), true).unwrap();
             file.as_mut().unwrap().write_all(b"changed").unwrap();
             drop(file);
             publication.publish(|| Ok(())).unwrap();
             assert_eq!(security(&wide), before);
-            if deny_attributes {
-                assert_eq!(
-                    fs::set_permissions(&path, fs::metadata(&path).unwrap().permissions())
-                        .unwrap_err()
-                        .kind(),
-                    io::ErrorKind::PermissionDenied
-                );
-            }
+            assert_attribute_access(&path, deny_attributes, "after publication");
             if deny_data {
                 assert_eq!(
                     fs::read(&path).unwrap_err().kind(),
