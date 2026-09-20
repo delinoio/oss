@@ -214,8 +214,5 @@ jobs:
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
         with:
           script: |
-            const releaseId = Number(process.env.RELEASE_ID);
-            if (!Number.isSafeInteger(releaseId) || releaseId <= 0) throw Error('Missing draft release identity');
-            const {data: release} = await github.rest.repos.getRelease({...context.repo, release_id: releaseId});
-            require('./scripts/release/runlens-draft.cjs').assertMatchingDraft(release, process.env.RELEASE_TAG, context.sha);
-            await github.rest.repos.updateRelease({...context.repo, release_id: releaseId, draft: false});
+            const {publishDraft} = require('./scripts/release/runlens-draft.cjs');
+            await publishDraft({github, context, releaseId: Number(process.env.RELEASE_ID), tag: process.env.RELEASE_TAG, directory: 'runlens-artifacts'});

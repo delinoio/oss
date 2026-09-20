@@ -28,26 +28,16 @@ function verifyBundle(bundle, payload, tag) {
   }
 }
 
-async function prepareDraft({ github, context, tag, directory, verify = verifyBundle }) {
-  const expected = new Map(files.map(name => {
+function expectedInventory(directory) {
+  return new Map(files.map(name => {
     const data = fs.readFileSync(path.join(directory, name));
     return [name, { size: data.length, digest: digest(data) }];
   }));
-  let release;
-  try {
-    ({ data: release } = await github.rest.repos.getReleaseByTag({ ...context.repo, tag }));
-    assertMatchingDraft(release, tag, context.sha);
-  } catch (error) {
-    if (error.status !== 404) throw error;
-    ({ data: release } = await github.rest.repos.createRelease({ ...context.repo,
-      tag_name: tag, target_commitish: context.sha, draft: true, generate_release_notes: true }));
-  }
-  const list = () => github.paginate(github.rest.repos.listReleaseAssets, { ...context.repo, release_id: release.id });
-  const existing = await list();
+}
+
+async function verifyExisting({ github, context, tag, directory, verify, expected, assets }) {
   const names = new Set();
-  // Check every retained asset before adding anything. Never delete or replace
-  // mismatches: a failed candidate remains private for operator inspection.
-  for (const asset of existing) {
+  for (const asset of assets) {
     if (!expected.has(asset.name) || names.has(asset.name) || asset.state !== 'uploaded') {
       throw Error('Unexpected, duplicate, or incomplete draft asset');
     }
@@ -58,25 +48,70 @@ async function prepareDraft({ github, context, tag, directory, verify = verifyBu
         headers: { accept: 'application/octet-stream' } });
       const bundle = Buffer.from(data);
       if (bundle.length !== asset.size || digest(bundle) !== asset.digest) throw Error('Retained signature digest mismatch');
-      // A fresh signing attempt produces different bundle bytes. Authenticate
-      // the original against the identical payload/tag rather than overwrite it.
+      // Re-signing produces different bundle bytes. Authenticate retained bytes
+      // against the identical payload/tag instead of trusting the new sidecar.
       await verify(bundle, path.join(directory, asset.name.slice(0, -'.sigstore.json'.length)), tag);
       expected.set(asset.name, { size: bundle.length, digest: digest(bundle) });
     }
     const wanted = expected.get(asset.name);
     if (asset.size !== wanted.size || asset.digest !== wanted.digest) throw Error('Retained draft asset mismatch');
   }
+  return names;
+}
+
+function assertCompleteInventory(assets, expected) {
+  if (assets.length !== files.length || new Set(assets.map(asset => asset.name)).size !== files.length
+      || assets.some(asset => asset.state !== 'uploaded' || asset.size !== expected.get(asset.name)?.size
+        || asset.digest !== expected.get(asset.name)?.digest)) {
+    throw Error('Incomplete or mismatched uploaded assets; draft retained for inspection');
+  }
+}
+
+async function prepareDraft({ github, context, tag, directory, verify = verifyBundle }) {
+  const expected = expectedInventory(directory);
+  let release;
+  try {
+    ({ data: release } = await github.rest.repos.getReleaseByTag({ ...context.repo, tag }));
+    assertMatchingDraft(release, tag, context.sha);
+  } catch (error) {
+    if (error.status !== 404) throw error;
+    ({ data: release } = await github.rest.repos.createRelease({ ...context.repo,
+      tag_name: tag, target_commitish: context.sha, draft: true, generate_release_notes: true }));
+  }
+  const list = () => github.paginate(github.rest.repos.listReleaseAssets, { ...context.repo, release_id: release.id });
+  // Check every retained asset before adding anything. Never delete or replace
+  // mismatches: a failed candidate remains private for operator inspection.
+  const names = await verifyExisting({ github, context, tag, directory, verify, expected, assets: await list() });
   for (const name of files) {
     if (!names.has(name)) await github.rest.repos.uploadReleaseAsset({ ...context.repo,
       release_id: release.id, name, data: fs.readFileSync(path.join(directory, name)) });
   }
-  const uploaded = await list();
-  if (uploaded.length !== files.length || new Set(uploaded.map(asset => asset.name)).size !== files.length
-      || uploaded.some(asset => asset.state !== 'uploaded' || asset.size !== expected.get(asset.name)?.size
-        || asset.digest !== expected.get(asset.name)?.digest)) {
-    throw Error('Incomplete or mismatched uploaded assets; draft retained for inspection');
-  }
+  assertCompleteInventory(await list(), expected);
   return release;
 }
 
-module.exports = { assertMatchingDraft, prepareDraft, files };
+async function publishDraft({ github, context, releaseId, tag, directory, verify = verifyBundle }) {
+  if (!Number.isSafeInteger(releaseId) || releaseId <= 0) throw Error('Missing draft release identity');
+  const identity = async () => {
+    const { data: release } = await github.rest.repos.getRelease({ ...context.repo, release_id: releaseId });
+    assertMatchingDraft(release, tag, context.sha);
+  };
+  await identity();
+  const expected = expectedInventory(directory);
+  const list = () => github.paginate(github.rest.repos.listReleaseAssets, { ...context.repo, release_id: releaseId });
+  const assets = await list();
+  if (assets.length !== files.length) throw Error('Incomplete draft inventory before publication');
+  await verifyExisting({ github, context, tag, directory, verify, expected, assets });
+  // Authentication downloads can take time too. Re-list after them and reject
+  // replacement IDs, even when the new object's name/size/digest is identical.
+  const current = await list();
+  assertCompleteInventory(current, expected);
+  const verifiedIds = new Map(assets.map(asset => [asset.name, asset.id]));
+  if (current.some(asset => verifiedIds.get(asset.name) !== asset.id)) {
+    throw Error('Draft asset replaced during publication verification');
+  }
+  await identity();
+  return github.rest.repos.updateRelease({ ...context.repo, release_id: releaseId, draft: false });
+}
+
+module.exports = { assertMatchingDraft, prepareDraft, publishDraft, files };

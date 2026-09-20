@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { assertMatchingDraft, prepareDraft, files } from '../release/runlens-draft.cjs';
+import { assertMatchingDraft, prepareDraft, publishDraft, files } from '../release/runlens-draft.cjs';
 
 const tag = 'runlens@v0.1.0';
 const context = { repo: { owner: 'delinoio', repo: 'oss' }, sha: 'a'.repeat(40) };
@@ -13,10 +13,18 @@ function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), 'runlens-draft-test-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   for (const file of files) writeFileSync(join(directory, file), `verified:${file}`);
-  const state = { release: undefined, assets: [], creates: 0, uploads: 0, verifications: 0, failAt: undefined };
+  const state = { release: undefined, assets: [], creates: 0, uploads: 0, verifications: 0, publications: 0, failAt: undefined };
   const github = { rest: { repos: {
     async getReleaseByTag() {
       if (!state.release) throw Object.assign(Error('missing'), { status: 404 });
+      return { data: state.release };
+    },
+    async getRelease() { return { data: state.release }; },
+    async updateRelease({ release_id, draft }) {
+      assert.equal(release_id, state.release.id);
+      assert.equal(draft, false);
+      state.publications++;
+      state.release.draft = false;
       return { data: state.release };
     },
     async createRelease(args) {
@@ -34,14 +42,17 @@ function fixture(t) {
       assert.equal(headers.accept, 'application/octet-stream');
       return { data: state.assets.find(asset => asset.id === asset_id).data };
     },
-  } }, async paginate() { return state.assets; } };
-  const run = () => prepareDraft({ github, context, tag, directory, verify: (bundle, payload, identity) => {
+  } }, async paginate() { return state.assets.map(asset => ({ ...asset })); } };
+  const verify = (bundle, payload, identity) => {
     state.verifications++;
     assert.equal(identity, tag);
     assert.ok(readFileSync(payload).toString().startsWith('verified:'));
     assert.match(bundle.toString(), /^verified:/u);
-  } });
-  return { directory, state, run };
+    state.duringVerification?.();
+  };
+  const run = () => prepareDraft({ github, context, tag, directory, verify });
+  const publish = () => publishDraft({ github, context, tag, directory, verify, releaseId: state.release.id });
+  return { directory, state, run, publish };
 }
 
 test('interrupted draft uploads resume without replacing retained assets', async t => {
@@ -99,6 +110,61 @@ test('mismatched payloads, unauthenticated signatures and unexpected assets neve
     corrupt(state.assets);
     await assert.rejects(run);
     assert.equal(state.uploads, 14);
+    assert.equal(state.release.draft, true);
+  }
+});
+
+
+test('publication authenticates the complete retained inventory after the tap step', async t => {
+  const { directory, state, run, publish } = fixture(t);
+  await run();
+  for (const file of files.filter(file => file.endsWith('.sigstore.json'))) {
+    writeFileSync(join(directory, file), 'new-signing-attempt');
+  }
+  await publish();
+  assert.equal(state.verifications, 7);
+  assert.equal(state.publications, 1);
+  assert.equal(state.release.draft, false);
+  assert.equal(state.uploads, 14);
+});
+
+test('asset changes during the tap update leave the candidate unpublished', async t => {
+  const { state, run, publish } = fixture(t);
+  await run();
+  const original = state.assets.map(asset => ({ ...asset }));
+  for (const mutate of [
+    assets => { assets.pop(); },
+    assets => { assets.push({ ...assets[0], name: 'unexpected' }); },
+    assets => { assets[2] = { ...assets[0] }; },
+    assets => { assets[0].size++; },
+    assets => { assets[0].digest = digest('replaced archive'); },
+    assets => { assets[0].state = 'starter'; },
+    assets => { assets[1].data = Buffer.from('untrusted'); assets[1].size = 9; assets[1].digest = digest(assets[1].data); },
+    assets => { assets[1].data = Buffer.from('different download'); },
+  ]) {
+    state.assets = original.map(asset => ({ ...asset }));
+    mutate(state.assets);
+    await assert.rejects(publish);
+    assert.equal(state.publications, 0);
+    assert.equal(state.release.draft, true);
+    assert.equal(state.uploads, 14, 'publication must never repair or overwrite assets');
+  }
+});
+
+test('replacement during signature verification or changed draft identity blocks publication', async t => {
+  const { state, run, publish } = fixture(t);
+  await run();
+  const original = state.assets.map(asset => ({ ...asset }));
+  for (const mutate of [
+    () => { state.assets[0].id++; },
+    () => { state.assets[0].digest = digest('tampered'); },
+    () => { state.release.target_commitish = 'b'.repeat(40); },
+  ]) {
+    state.assets = original.map(asset => ({ ...asset }));
+    state.release.target_commitish = context.sha;
+    state.duringVerification = () => { delete state.duringVerification; mutate(); };
+    await assert.rejects(publish);
+    assert.equal(state.publications, 0);
     assert.equal(state.release.draft, true);
   }
 });

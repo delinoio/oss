@@ -88,7 +88,13 @@ a draft bound to the exact release tag and commit, fills missing assets without
 replacing existing ones, verifies uploaded sizes and SHA-256 digests, and then
 updates the Homebrew tap before making the verified draft public. Tap failures
 leave the release private; the final publication step requires successful tap
-completion and rechecks the draft's identity. Published releases, drafts for other
+completion and rechecks the draft's identity, exact asset names, uploaded state,
+sizes, and SHA-256 digests. It re-downloads and authenticates every retained
+Sigstore bundle against the exact local payload/tag, re-lists the inventory after
+authentication to reject replaced asset IDs, then checks identity again before
+publication. This final gate never repairs or overwrites assets. The verification and publication requests are separate, so this gate minimizes
+the interval and refuses detected concurrent edits; release writers must remain
+exclusive through the final publication request. Published releases, drafts for other
 commits, unexpected assets, and mismatched payloads are refused. A retry authenticates
 retained Sigstore bundles against the exact payload and tag, preserving valid
 original signatures even when a new signing attempt produces different bundle bytes.

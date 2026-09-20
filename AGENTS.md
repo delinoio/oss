@@ -454,4 +454,5 @@ Release automation baseline:
 - Runlens POSIX installation must reject symlinks and non-regular destination objects while preserving their contents; successful replacement must install the executable at the exact requested file path.
 - Runlens native validation must watch its Homebrew formula template and shared tap renderer on both pull requests and main pushes.
 - Keep each verified Runlens release private until its Homebrew update succeeds; tap failure must not leave a public release missing required distribution. Resume only exact-tag, exact-commit drafts after verifying retained payload digests and Sigstore bundles; never overwrite existing assets or published releases.
+- Runlens final publication must revalidate the exact remote asset inventory and authenticate retained Sigstore bundles after the Homebrew update; a missing, added, replaced, incomplete, or mismatched asset leaves the draft private without repair or overwrite.
 - Runlens release validation requires job-scoped `actions: read` alongside `contents: read` to inspect native evidence from another run; keep signing and publication authority out of validation.
