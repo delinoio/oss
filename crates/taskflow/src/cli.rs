@@ -479,10 +479,11 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
                     cancel.child_token(),
                 )
                 .await?;
-                if result.exit_code() == 130 {
-                    return Err(crate::process::Cancelled.into());
+                if !result.success {
+                    let code = result.exit_code();
+                    print(&serde_json::to_value(result)?, cli.json)?;
+                    return Ok(code);
                 }
-                ensure!(result.success, "installation prerequisite failed");
                 graph = Arc::new(Graph::build(
                     Workspace::discover(&root)
                         .await?

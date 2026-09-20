@@ -7725,3 +7725,72 @@ fn session_sharded_install_revalidates_its_complete_bootstrap_receipt() {
     assert_eq!(reports.len(), 2, "installation runs every partition");
     assert!(shard::aggregate(&inventory, 2, &reports).unwrap());
 }
+
+#[tokio::test]
+async fn bootstrap_installs_preserve_termination_receipts_and_cli_status() {
+    for action in ["run", "start"] {
+        for mode in ["timeout", "failure", "cancel"] {
+            if mode == "cancel" && !cfg!(unix) {
+                continue;
+            }
+            let mut install = json!({"command":command(&["sleep","started.pid","child.pid"]),"install":true,"input":[]});
+            if mode == "timeout" {
+                install["timeout"] = json!("100ms");
+            }
+            if mode == "failure" {
+                install["command"] = command(&["fail"]);
+            }
+            let root = fixture(json!({
+                "install":install,
+                "build":{"command":command(&["write","unexpected","ran"]),"input":[],"dependsOn":["install"]}
+            }));
+            profile(root.path(), &["build"]);
+            let mut cli = tokio::process::Command::new(env!("CARGO_BIN_EXE_tflow"));
+            cli.arg("--root").arg(root.path()).args(["--json", action]);
+            if action == "run" {
+                cli.arg("build");
+            }
+            let child = cli
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .unwrap();
+            if mode == "cancel" {
+                wait_lines(&root.path().join("child.pid"), "", 1).await;
+                #[cfg(unix)]
+                nix::sys::signal::kill(
+                    nix::unistd::Pid::from_raw(child.id().unwrap() as i32),
+                    nix::sys::signal::Signal::SIGINT,
+                )
+                .unwrap();
+            }
+            let output = tokio::time::timeout(Duration::from_secs(20), child.wait_with_output())
+                .await
+                .unwrap()
+                .unwrap();
+            let expected = match mode {
+                "timeout" => 124,
+                "cancel" => 130,
+                _ => 1,
+            };
+            assert_eq!(
+                output.status.code(),
+                Some(expected),
+                "{action}/{mode}: {output:?}"
+            );
+            let result: runner::RunResult = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(result.exit_code(), expected);
+            assert!(!root.path().join("unexpected").exists());
+            assert!(runner::previous(root.path(), "app#install").is_none());
+            if mode == "cancel" {
+                for name in ["started.pid", "child.pid"] {
+                    let pid = std::fs::read_to_string(root.path().join(name))
+                        .unwrap()
+                        .parse()
+                        .unwrap();
+                    assert!(!pid_alive(pid), "bootstrap process survived completion");
+                }
+            }
+        }
+    }
+}

@@ -79,7 +79,7 @@ pub async fn start(
             bootstrap_options.shard = None;
             bootstrap_options.provided = bootstrap_results.clone();
             let result = runner::run_plan(graph.clone(), install_plan, bootstrap_options.clone(), work_cancel.child_token()).await?;
-            ensure!(result.success, "installation prerequisite failed");
+            if !result.success { return Ok(result); }
             // Live owners cannot be transferred to a refreshed task identity.
             services.shutdown().await?;
             while service_receiver.try_recv().is_ok() {}
