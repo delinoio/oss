@@ -76,7 +76,15 @@ impl Publication {
     }
 }
 
-fn inspect(path: &Path, replace: bool) -> Result<Option<File>> {
+struct Original {
+    metadata: fs::Metadata,
+    #[cfg(not(target_os = "macos"))]
+    file: File,
+    #[cfg(target_os = "macos")]
+    path: std::ffi::CString,
+}
+
+fn inspect(path: &Path, replace: bool) -> Result<Option<Original>> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -88,17 +96,60 @@ fn inspect(path: &Path, replace: bool) -> Result<Option<File>> {
     if !metadata.is_file() || metadata.file_type().is_symlink() {
         return Err(Error::runtime(Code::UnsafeDestination));
     }
-    let file = open_original(path).map_err(|_| Error::runtime(Code::Permissions))?;
-    let metadata = file
-        .metadata()
-        .map_err(|_| Error::runtime(Code::Permissions))?;
-    if !metadata.is_file() || multiple_links(&file, &metadata)? {
+    #[cfg(not(target_os = "macos"))]
+    let original = {
+        let file = open_original(path).map_err(|error| {
+            tracing::debug!(
+                action = "inspect-output",
+                os_code = error.raw_os_error(),
+                "permission inspection failed"
+            );
+            Error::runtime(Code::Permissions)
+        })?;
+        let metadata = file
+            .metadata()
+            .map_err(|_| Error::runtime(Code::Permissions))?;
+        Original { metadata, file }
+    };
+    #[cfg(target_os = "macos")]
+    let original = {
+        use std::os::unix::ffi::OsStrExt;
+        // Darwin has no O_PATH equivalent: even O_EVTONLY requires data access.
+        // lstat and acl_get_link_np inspect metadata/security without opening
+        // content or following the final symlink. As with replacement itself,
+        // these observations do not lock against concurrent changes.
+        let path = std::ffi::CString::new(path.as_os_str().as_bytes())
+            .map_err(|_| Error::runtime(Code::Permissions))?;
+        Original { metadata, path }
+    };
+    if !original.metadata.is_file() || multiple_links(&original)? {
         return Err(Error::runtime(Code::UnsafeDestination));
     }
-    Ok(Some(file))
+    Ok(Some(original))
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
+fn open_original(path: &Path) -> io::Result<File> {
+    use std::os::{fd::FromRawFd, unix::ffi::OsStrExt};
+    let path = std::ffi::CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    // OpenOptions masks custom flags with !O_ACCMODE. musl includes O_PATH in
+    // O_ACCMODE, so that route silently requests content access instead. Use
+    // libc directly until Rust preserves metadata-only opens on musl too.
+    let fd = unsafe {
+        libc::open(
+            path.as_ptr(),
+            libc::O_PATH | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if fd < 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(unsafe { File::from_raw_fd(fd) })
+    }
+}
+
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
 fn open_original(path: &Path) -> io::Result<File> {
     use std::os::unix::fs::OpenOptionsExt;
     fs::OpenOptions::new()
@@ -111,39 +162,39 @@ fn open_original(path: &Path) -> io::Result<File> {
 fn open_original(path: &Path) -> io::Result<File> {
     use std::os::windows::fs::OpenOptionsExt;
 
-    use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES, READ_CONTROL,
+    };
     fs::OpenOptions::new()
-        .read(true)
+        .access_mode(FILE_READ_ATTRIBUTES | READ_CONTROL)
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
         .open(path)
 }
 
 #[cfg(unix)]
-fn multiple_links(_: &File, metadata: &fs::Metadata) -> Result<bool> {
+fn multiple_links(original: &Original) -> Result<bool> {
     use std::os::unix::fs::MetadataExt;
-    Ok(metadata.nlink() != 1)
+    Ok(original.metadata.nlink() != 1)
 }
 
 #[cfg(windows)]
-fn multiple_links(file: &File, _: &fs::Metadata) -> Result<bool> {
+fn multiple_links(original: &Original) -> Result<bool> {
     use std::os::windows::io::AsRawHandle;
 
     use windows_sys::Win32::Storage::FileSystem::{
         GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_REPARSE_POINT,
     };
     let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
-    if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) } == 0 {
+    if unsafe { GetFileInformationByHandle(original.file.as_raw_handle(), &mut info) } == 0 {
         return Err(Error::runtime(Code::Permissions));
     }
     Ok(info.nNumberOfLinks != 1 || info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0)
 }
 
 #[cfg(unix)]
-fn preserve_permissions(original: &File, temporary: &Path) -> Result<()> {
+fn preserve_permissions(original: &Original, temporary: &Path) -> Result<()> {
     use std::os::{fd::AsRawFd, unix::fs::MetadataExt};
-    let metadata = original
-        .metadata()
-        .map_err(|_| Error::runtime(Code::Permissions))?;
+    let metadata = &original.metadata;
     let target = fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -167,13 +218,18 @@ fn preserve_permissions(original: &File, temporary: &Path) -> Result<()> {
 }
 
 #[cfg(target_os = "linux")]
-fn preserve_acl(original: &File, target: &File) -> Result<()> {
+fn preserve_acl(original: &Original, target: &File) -> Result<()> {
     use std::os::fd::AsRawFd;
     // Linux POSIX access ACLs are kernel xattrs; using libc avoids a new libacl
     // dependency in the self-contained musl artifacts.
     let key = c"system.posix_acl_access";
-    let length =
-        unsafe { libc::fgetxattr(original.as_raw_fd(), key.as_ptr(), std::ptr::null_mut(), 0) };
+    // fgetxattr does not accept O_PATH on supported kernels. The procfs magic
+    // link keeps lookup bound to our held inode even if its pathname changes;
+    // getxattr requests ACL metadata, not read access to file contents. Missing
+    // procfs or inaccessible security metadata fails before replacement.
+    let source = std::ffi::CString::new(format!("/proc/self/fd/{}", original.file.as_raw_fd()))
+        .map_err(|_| Error::runtime(Code::Permissions))?;
+    let length = unsafe { libc::getxattr(source.as_ptr(), key.as_ptr(), std::ptr::null_mut(), 0) };
     if length < 0 {
         let error = io::Error::last_os_error().raw_os_error();
         if error == Some(libc::ENODATA) || error == Some(libc::ENOTSUP) {
@@ -187,12 +243,17 @@ fn preserve_acl(original: &File, target: &File) -> Result<()> {
                 return Ok(());
             }
         }
+        tracing::debug!(
+            action = "read-acl",
+            os_code = io::Error::last_os_error().raw_os_error(),
+            "permission preservation failed"
+        );
         return Err(Error::runtime(Code::Permissions));
     }
     let mut value = vec![0u8; length as usize];
     let read = unsafe {
-        libc::fgetxattr(
-            original.as_raw_fd(),
+        libc::getxattr(
+            source.as_ptr(),
             key.as_ptr(),
             value.as_mut_ptr().cast(),
             value.len(),
@@ -209,27 +270,32 @@ fn preserve_acl(original: &File, target: &File) -> Result<()> {
             )
         } != 0
     {
+        tracing::debug!(
+            action = "copy-acl",
+            os_code = io::Error::last_os_error().raw_os_error(),
+            "permission preservation failed"
+        );
         return Err(Error::runtime(Code::Permissions));
     }
     Ok(())
 }
 
 #[cfg(target_os = "macos")]
-fn preserve_acl(original: &File, target: &File) -> Result<()> {
+fn preserve_acl(original: &Original, target: &File) -> Result<()> {
     use std::os::fd::AsRawFd;
     // Darwin's extended ACL API is supplied by libSystem, not an external tool.
     // libc does not expose these declarations; their ABI is in sys/acl.h.
     unsafe extern "C" {
         fn acl_init(count: libc::c_int) -> *mut libc::c_void;
-        fn acl_get_fd_np(fd: libc::c_int, kind: libc::c_int) -> *mut libc::c_void;
+        fn acl_get_link_np(path: *const libc::c_char, kind: libc::c_int) -> *mut libc::c_void;
         fn acl_set_fd_np(fd: libc::c_int, acl: *mut libc::c_void, kind: libc::c_int)
             -> libc::c_int;
         fn acl_free(acl: *mut libc::c_void) -> libc::c_int;
     }
     const ACL_TYPE_EXTENDED: libc::c_int = 0x100;
     unsafe {
-        let mut acl = acl_get_fd_np(original.as_raw_fd(), ACL_TYPE_EXTENDED);
-        // Darwin represents an absent extended ACL as ENOENT even for an open
+        let mut acl = acl_get_link_np(original.path.as_ptr(), ACL_TYPE_EXTENDED);
+        // Darwin represents an absent extended ACL as ENOENT even for an existing
         // regular file. Apply an empty ACL to remove any inherited temp ACL.
         if acl.is_null() && io::Error::last_os_error().raw_os_error() == Some(libc::ENOENT) {
             acl = acl_init(0);
@@ -257,7 +323,7 @@ fn preserve_acl(original: &File, target: &File) -> Result<()> {
 }
 
 #[cfg(windows)]
-fn preserve_permissions(original: &File, temporary: &Path) -> Result<()> {
+fn preserve_permissions(original: &Original, temporary: &Path) -> Result<()> {
     use std::os::windows::{ffi::OsStrExt, io::AsRawHandle};
 
     use windows_sys::Win32::{
@@ -277,7 +343,7 @@ fn preserve_permissions(original: &File, temporary: &Path) -> Result<()> {
         OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION;
     let status = unsafe {
         GetSecurityInfo(
-            original.as_raw_handle(),
+            original.file.as_raw_handle(),
             SE_FILE_OBJECT,
             information,
             &mut owner,
@@ -320,15 +386,12 @@ fn preserve_permissions(original: &File, temporary: &Path) -> Result<()> {
     if status != ERROR_SUCCESS {
         return Err(Error::runtime(Code::Permissions));
     }
-    let permissions = original
-        .metadata()
-        .map_err(|_| Error::runtime(Code::Permissions))?
-        .permissions();
+    let permissions = original.metadata.permissions();
     fs::set_permissions(temporary, permissions).map_err(|_| Error::runtime(Code::Permissions))
 }
 
 #[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
-fn preserve_acl(_: &File, _: &File) -> Result<()> {
+fn preserve_acl(_: &Original, _: &File) -> Result<()> {
     Err(Error::runtime(Code::Permissions))
 }
 
@@ -415,7 +478,7 @@ mod tests {
         // A named user and mask make this an extended ACL, not just mode bits.
         let mut acl = 2u32.to_le_bytes().to_vec();
         for (tag, permissions, id) in [
-            (1u16, 6u16, u32::MAX),
+            (1u16, 2u16, u32::MAX),
             (2, 4, 65534),
             (4, 0, u32::MAX),
             (16, 4, u32::MAX),
@@ -442,7 +505,7 @@ mod tests {
         output.as_mut().unwrap().write_all(b"changed").unwrap();
         drop(output);
         publication.publish(|| Ok(())).unwrap();
-        let replacement = File::open(&path).unwrap();
+        let replacement = fs::OpenOptions::new().write(true).open(&path).unwrap();
         let mut actual = vec![0u8; acl.len()];
         assert_eq!(
             unsafe {
@@ -523,41 +586,65 @@ mod tests {
                 text_copy
             }
         }
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("acl");
-        fs::write(&path, b"original").unwrap();
-        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-        let sddl: Vec<u16> = "D:P(A;;FA;;;OW)(A;;FR;;;WD)"
-            .encode_utf16()
-            .chain(Some(0))
-            .collect();
-        unsafe {
-            let mut descriptor = std::ptr::null_mut();
-            assert_ne!(
-                ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                    sddl.as_ptr(),
-                    1,
-                    &mut descriptor,
-                    std::ptr::null_mut()
-                ),
-                0
-            );
-            assert_ne!(
-                SetFileSecurityW(
-                    wide.as_ptr(),
-                    DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
-                    descriptor
-                ),
-                0
-            );
-            LocalFree(descriptor);
+        fn set_dacl(path: &[u16], sddl: &str) {
+            let sddl: Vec<u16> = sddl.encode_utf16().chain(Some(0)).collect();
+            unsafe {
+                let mut descriptor = std::ptr::null_mut();
+                assert_ne!(
+                    ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                        sddl.as_ptr(),
+                        1,
+                        &mut descriptor,
+                        std::ptr::null_mut()
+                    ),
+                    0
+                );
+                assert_ne!(
+                    SetFileSecurityW(
+                        path.as_ptr(),
+                        DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                        descriptor
+                    ),
+                    0
+                );
+                LocalFree(descriptor);
+            }
         }
-        let before = security(&wide);
-        let (publication, mut file) = Publication::prepare(Some(path.clone()), true).unwrap();
-        file.as_mut().unwrap().write_all(b"changed").unwrap();
-        drop(file);
-        publication.publish(|| Ok(())).unwrap();
-        assert_eq!(security(&wide), before);
-        assert_eq!(fs::read(path).unwrap(), b"changed");
+        for deny_data in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("acl");
+            fs::write(&path, b"original").unwrap();
+            let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+            let readable = "D:P(A;;FA;;;OW)(A;;FR;;;WD)";
+            // Deny FILE_READ_DATA while retaining attributes/security access.
+            set_dacl(
+                &wide,
+                if deny_data {
+                    "D:P(D;;0x1;;;WD)(A;;FA;;;OW)(A;;FR;;;WD)"
+                } else {
+                    readable
+                },
+            );
+            if deny_data {
+                assert_eq!(
+                    fs::read(&path).unwrap_err().kind(),
+                    io::ErrorKind::PermissionDenied
+                );
+            }
+            let before = security(&wide);
+            let (publication, mut file) = Publication::prepare(Some(path.clone()), true).unwrap();
+            file.as_mut().unwrap().write_all(b"changed").unwrap();
+            drop(file);
+            publication.publish(|| Ok(())).unwrap();
+            assert_eq!(security(&wide), before);
+            if deny_data {
+                assert_eq!(
+                    fs::read(&path).unwrap_err().kind(),
+                    io::ErrorKind::PermissionDenied
+                );
+                set_dacl(&wide, readable);
+            }
+            assert_eq!(fs::read(path).unwrap(), b"changed");
+        }
     }
 }

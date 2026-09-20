@@ -93,6 +93,67 @@ fn parser_rejects_conflicts_and_malformed_values() {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn forced_output_preserves_permissions_without_reading_the_destination() {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("unreadable-output");
+    for mode in [0o200, 0o000] {
+        fs::write(&path, b"original").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+        if unsafe { libc::geteuid() } != 0 {
+            assert_eq!(
+                fs::read(&path).unwrap_err().kind(),
+                std::io::ErrorKind::PermissionDenied
+            );
+        }
+        let before = fs::metadata(&path).unwrap();
+        let output = run(
+            &[
+                "base64",
+                "decode",
+                "--text",
+                "invalid!",
+                "--output",
+                path.to_str().unwrap(),
+                "--force",
+            ],
+            b"",
+        );
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stdout.is_empty());
+        assert_eq!(fs::metadata(&path).unwrap().ino(), before.ino());
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            mode
+        );
+
+        success(
+            &[
+                "text",
+                "replace",
+                "old",
+                "new",
+                "--text",
+                "old",
+                "--output",
+                path.to_str().unwrap(),
+                "--force",
+            ],
+            b"",
+            b"",
+        );
+        let after = fs::metadata(&path).unwrap();
+        assert_eq!(after.permissions().mode() & 0o777, mode);
+        assert_eq!((after.uid(), after.gid()), (before.uid(), before.gid()));
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"new");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+}
+
 #[test]
 fn literal_text_preserves_unicode_and_line_endings() {
     success(
@@ -966,16 +1027,19 @@ fn closed_stdout_is_a_runtime_failure() {
 #[cfg(target_os = "macos")]
 #[test]
 fn macos_extended_acl_survives_replacement() {
-    use std::{ffi::CStr, os::fd::AsRawFd};
+    use std::{
+        ffi::{CStr, CString},
+        os::unix::ffi::OsStrExt,
+    };
     unsafe extern "C" {
-        fn acl_get_fd_np(fd: libc::c_int, kind: libc::c_int) -> *mut libc::c_void;
+        fn acl_get_link_np(path: *const libc::c_char, kind: libc::c_int) -> *mut libc::c_void;
         fn acl_to_text(acl: *mut libc::c_void, length: *mut libc::ssize_t) -> *mut libc::c_char;
         fn acl_free(acl: *mut libc::c_void) -> libc::c_int;
     }
     fn acl(path: &Path) -> Vec<u8> {
-        let file = fs::File::open(path).unwrap();
+        let path = CString::new(path.as_os_str().as_bytes()).unwrap();
         unsafe {
-            let acl = acl_get_fd_np(file.as_raw_fd(), 0x100);
+            let acl = acl_get_link_np(path.as_ptr(), 0x100);
             assert!(!acl.is_null());
             let text = acl_to_text(acl, std::ptr::null_mut());
             assert!(!text.is_null());
@@ -985,30 +1049,73 @@ fn macos_extended_acl_survives_replacement() {
             bytes
         }
     }
-    let dir = tempdir().unwrap();
-    let path = dir.path().join("acl");
-    fs::write(&path, b"before").unwrap();
-    // chmod is only a fixture setup tool, never a clibox runtime dependency.
-    assert!(Command::new("/bin/chmod")
-        .args(["+a", "everyone allow read"])
-        .arg(&path)
-        .status()
-        .unwrap()
-        .success());
-    let before = acl(&path);
-    success(
-        &[
-            "text",
-            "replace",
-            "before",
-            "after",
-            "--input",
-            path.to_str().unwrap(),
-            "--in-place",
-        ],
-        b"",
-        b"",
-    );
-    assert_eq!(acl(&path), before);
-    assert_eq!(fs::read(&path).unwrap(), b"after");
+    for deny_data in [false, true] {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("acl");
+        fs::write(&path, b"before").unwrap();
+        // chmod is only a fixture setup tool, never a clibox runtime dependency.
+        assert!(Command::new("/bin/chmod")
+            .args([
+                "+a",
+                if deny_data {
+                    "everyone deny read"
+                } else {
+                    "everyone allow read"
+                }
+            ])
+            .arg(&path)
+            .status()
+            .unwrap()
+            .success());
+        let before = acl(&path);
+        if deny_data {
+            assert_eq!(
+                fs::read(&path).unwrap_err().kind(),
+                std::io::ErrorKind::PermissionDenied
+            );
+            success(
+                &[
+                    "text",
+                    "replace",
+                    "before",
+                    "after",
+                    "--text",
+                    "before",
+                    "--output",
+                    path.to_str().unwrap(),
+                    "--force",
+                ],
+                b"",
+                b"",
+            );
+        } else {
+            success(
+                &[
+                    "text",
+                    "replace",
+                    "before",
+                    "after",
+                    "--input",
+                    path.to_str().unwrap(),
+                    "--in-place",
+                ],
+                b"",
+                b"",
+            );
+        }
+        assert_eq!(acl(&path), before);
+        if deny_data {
+            assert_eq!(
+                fs::read(&path).unwrap_err().kind(),
+                std::io::ErrorKind::PermissionDenied
+            );
+            assert!(Command::new("/bin/chmod")
+                .arg("-N")
+                .arg(&path)
+                .status()
+                .unwrap()
+                .success());
+        }
+        assert_eq!(fs::read(&path).unwrap(), b"after");
+    }
 }

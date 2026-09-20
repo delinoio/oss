@@ -158,7 +158,7 @@ Operations are offline and use current OS permissions. No settings, cache, histo
 
 ### File replacement
 
-Output is prepared in a temporary file beside its destination and published only after processing succeeds. Existing output requires `--force`. Access permissions, including supported native ACLs and ownership, are preserved on replacement; inability to preserve them fails instead of silently discarding them. Symbolic-link and multiply-linked replacement destinations are rejected.
+Output is prepared in a temporary file beside its destination and published only after processing succeeds. Existing output requires `--force`. Replacement does not require reading the existing file contents; metadata and security information must remain accessible. `--in-place` still needs read access to its input. Access permissions, including supported native ACLs and ownership, are preserved on replacement; inability to preserve them fails instead of silently discarding them. Symbolic-link and multiply-linked replacement destinations are rejected.
 
 `text replace --in-place` requires one explicitly selected regular input file, conflicts with `--text` and `--output`, and itself authorizes replacement without `--force`. Invalid UTF-8, invalid patterns/references, and required-match failures leave the original intact. Unpublished temporary files are cleaned up after handled failures/interruption. Completed replacements are not undone.
 
