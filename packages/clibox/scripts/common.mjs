@@ -12,9 +12,15 @@ export function ensure(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+// Git can check out text as CRLF on Windows. Release text is always UTF-8/LF
+// so native packages assembled on Linux retain the same source bytes.
+export function sourceText(file) {
+  return readFileSync(path.join(root, file), "utf8").replaceAll("\r\n", "\n");
+}
+
 export function metadata(read = (file) => readFileSync(path.join(root, file), "utf8")) {
   const manifest = JSON.parse(read("packages/clibox/package.json"));
-  const cargo = read("crates/clibox/Cargo.toml").match(/^\[package\]\s*\n([\s\S]*?)(?=^\[|$(?![\s\S]))/mu)?.[1];
+  const cargo = read("crates/clibox/Cargo.toml").replaceAll("\r\n", "\n").match(/^\[package\]\s*\n([\s\S]*?)(?=^\[|$(?![\s\S]))/mu)?.[1];
   const version = cargo?.match(/^version = "([^"]+)"$/mu)?.[1];
   ensure(cargo?.includes('name = "clibox"\n') && manifest.name === "@delino/clibox", "Source package identity mismatch");
   ensure(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.test(version ?? "") && manifest.version === version, "Cargo/npm version mismatch or invalid version");

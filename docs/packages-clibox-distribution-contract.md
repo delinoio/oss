@@ -19,6 +19,7 @@ JavaScript developers using `pnpm add -D -E @delino/clibox` followed by `pnpm ex
 - Resolve only the selected installed dependency, verify its version, and launch its executable without a shell, preserving argv, cwd, environment, stdio, exit code, and termination signals.
 - Unsupported platforms, missing dependencies, version drift, and spawn failures report bounded structured stderr diagnostics. Missing dependencies include reinstall guidance with optional dependencies enabled. No PATH, download, or compile fallback is allowed.
 - Generated tarballs carry the exact source commit, expected file allowlist, README, and MIT license. Native binaries are version-checked before packing. Unix binaries and the npm bin shim require archive execute bits; Windows PE payloads do not require POSIX execute bits.
+- Source manifest validation accepts both LF and Windows CRLF checkouts. Packaging canonicalizes launcher text, README, and license to UTF-8/LF; assembly verifies those exact canonical bytes so Windows-built packages validate on Linux. Native executable bytes are copied unchanged.
 - Release verification requires exactly nine expected packages with matching source version, revision, metadata, and computed SHA-512 integrity. Publish platform packages first and confirm each registry integrity before publishing the main package. Existing identical versions are reused; conflicting versions fail without overwriting.
 
 ## Storage
@@ -35,7 +36,7 @@ Packaging and publication report structured events containing action, package, t
 - `pnpm --filter @delino/clibox test:package` builds the host CLI, creates tarballs, and installs them in temporary npm and pnpm consumers with scripts disabled.
 - Package-local Turbo tasks include external Cargo/source inputs and disable caching for native packaging/integration checks.
 - CI's `node-clibox-test` participates in the shared change planner and `CI Result` aggregation. Release CI builds and smoke-tests all eight targets; Linux musl execution is also checked in Alpine.
-- Fixtures cover selection, argument and signal forwarding, missing/mismatched dependencies, archive contents/modes, version mismatch, partial publication recovery, conflicting registry integrity, and credential-free dry runs.
+- Fixtures cover selection, argument and signal forwarding, missing/mismatched dependencies, archive contents/modes, identical package integrity from isolated LF/CRLF source trees, version mismatch, partial publication recovery, conflicting registry integrity, and credential-free dry runs.
 
 ## Dependencies and Integrations
 `Release Project` synchronizes the Cargo and npm source versions in one version-only commit. `release-clibox.yml` accepts the exact version tag or a manual dry run. Publication requires the exact tag at the selected source commit and a matching crates.io version. The guarded publish job explicitly installs npm `11.6.2` before checking the OIDC minimum of `11.5.1` and publishing; Node.js 24's bundled npm is not the publication version contract.

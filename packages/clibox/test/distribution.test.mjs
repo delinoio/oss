@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import platforms from "../src/platforms.cjs";
-import { metadata, npm, packageRoot, root } from "../scripts/common.mjs";
+import { metadata, npm, sourceText } from "../scripts/common.mjs";
 import { buildPackage, inspectTarball, integrity, packageManifest, tarballName, tarEntries, verifySet } from "../scripts/package.mjs";
 import { publishArtifacts, registryIntegrity } from "../scripts/publish.mjs";
 
@@ -15,9 +17,38 @@ const artifacts = names.map((name) => ({ name, version, revision: sourceRevision
 const quiet = () => {};
 
 test("source version checks reject drift before packaging", () => {
-  const read = (file) => readFileSync(path.join(root, file), "utf8");
-  assert.throws(() => metadata((file) => file.endsWith("package.json") ? read(file).replace(`"version": "${version}"`, '"version": "99.0.0"') : read(file)), /version mismatch/u);
+  for (const eol of ["\n", "\r\n"]) {
+    const read = (file) => sourceText(file).replaceAll("\n", eol);
+    assert.deepEqual(metadata(read), metadata());
+    assert.throws(() => metadata((file) => file.endsWith("package.json") ? read(file).replace(`"version": "${version}"`, '"version": "99.0.0"') : read(file)), /version mismatch/u);
+    assert.throws(() => metadata((file) => file.endsWith("Cargo.toml") ? read(file).replace('name = "clibox"', 'name = "unexpected"') : read(file)), /identity mismatch/u);
+  }
   assert.throws(() => packageManifest(undefined, version, "main"), /exact source commit/u);
+});
+
+test("CRLF checkouts produce canonical LF tarballs verifiable from another checkout", (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "clibox CRLF source "));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const files = [
+    "crates/clibox/Cargo.toml", "crates/clibox/LICENSE", "packages/clibox/package.json",
+    "packages/clibox/README.md", "packages/clibox/bin/clibox.cjs", "packages/clibox/src/launcher.cjs",
+    "packages/clibox/src/platforms.cjs", "packages/clibox/scripts/common.mjs", "packages/clibox/scripts/package.mjs",
+  ];
+  const packed = [];
+  for (const eol of ["\n", "\r\n"]) {
+    const checkout = path.join(directory, eol === "\n" ? "lf" : "crlf");
+    for (const file of files) {
+      mkdirSync(path.dirname(path.join(checkout, file)), { recursive: true });
+      writeFileSync(path.join(checkout, file), sourceText(file).replaceAll("\n", eol));
+    }
+    const output = path.join(checkout, "output");
+    const module = pathToFileURL(path.join(checkout, "packages/clibox/scripts/package.mjs")).href;
+    execFileSync(process.execPath, ["--input-type=module", "-e", `import { buildPackage } from ${JSON.stringify(module)}; buildPackage(${JSON.stringify({ output, sourceRevision })});`], { encoding: "utf8" });
+    const file = path.join(output, "tarballs", tarballName("@delino/clibox", version));
+    packed.push(inspectTarball(file, { version, sourceRevision }).integrity);
+    for (const { bytes } of tarEntries(readFileSync(file)).values()) assert.equal(bytes.includes(Buffer.from("\r\n")), false);
+  }
+  assert.equal(packed[0], packed[1]);
 });
 
 test("generated metadata pins exact versions, platforms, public access and no lifecycle scripts", () => {
@@ -58,8 +89,8 @@ test("pack validates native executable versions and the complete nine-tarball bo
     writeFileSync(path.join(fixture, "package.json"), JSON.stringify(packageManifest(target, version, sourceRevision)));
     writeFileSync(path.join(fixture, "bin", target.binary), "inert fixture binary");
     chmodSync(path.join(fixture, "bin", target.binary), target.os === "win32" ? 0o644 : 0o755);
-    copyFileSync(path.join(root, "crates/clibox/LICENSE"), path.join(fixture, "LICENSE"));
-    copyFileSync(path.join(packageRoot, "README.md"), path.join(fixture, "README.md"));
+    writeFileSync(path.join(fixture, "LICENSE"), sourceText("crates/clibox/LICENSE"));
+    writeFileSync(path.join(fixture, "README.md"), sourceText("packages/clibox/README.md"));
     npm(["pack", "--ignore-scripts", "--pack-destination", tarballs], { cwd: fixture });
   }
   assert.deepEqual(verifySet(tarballs, sourceRevision).map(({ name }) => name), names);

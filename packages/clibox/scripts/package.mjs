@@ -5,7 +5,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { gunzipSync } from "node:zlib";
 import platforms from "../src/platforms.cjs";
-import { ensure, event, isMain, metadata, npm, packageRoot, registry, repository, revision, root } from "./common.mjs";
+import { ensure, event, isMain, metadata, npm, packageRoot, registry, repository, revision, sourceText } from "./common.mjs";
 
 const { targets } = platforms;
 const mainName = "@delino/clibox";
@@ -49,14 +49,14 @@ export function buildPackage({ target, binary, output, sourceRevision = revision
   const directory = path.join(path.resolve(output), target?.suffix ?? "main");
   rmSync(directory, { recursive: true, force: true });
   mkdirSync(path.join(directory, "bin"), { recursive: true });
-  copyFileSync(path.join(packageRoot, "README.md"), path.join(directory, "README.md"));
-  copyFileSync(path.join(root, "crates/clibox/LICENSE"), path.join(directory, "LICENSE"));
+  writeFileSync(path.join(directory, "README.md"), sourceText("packages/clibox/README.md"));
+  writeFileSync(path.join(directory, "LICENSE"), sourceText("crates/clibox/LICENSE"));
   if (target) {
     copyFileSync(path.resolve(binary), path.join(directory, "bin", target.binary));
     chmodSync(path.join(directory, "bin", target.binary), 0o755);
   } else {
     mkdirSync(path.join(directory, "src"));
-    for (const file of mainFiles) copyFileSync(path.join(packageRoot, file), path.join(directory, file));
+    for (const file of mainFiles) writeFileSync(path.join(directory, file), sourceText(`packages/clibox/${file}`));
     chmodSync(path.join(directory, "bin/clibox.cjs"), 0o755);
   }
   const manifest = packageManifest(target, version, sourceRevision);
@@ -114,9 +114,9 @@ export function inspectTarball(file, { version, sourceRevision }) {
   // the archive execute bits; the Windows loader uses the PE executable itself.
   ensure(entries.get(executable).bytes.length > 0, "Empty executable");
   if (target?.os !== platforms.Platform.Windows) ensure((entries.get(executable).mode & 0o111) === 0o111, "Missing executable mode");
-  if (!target) for (const file of mainFiles) ensure(entries.get(file).bytes.equals(readFileSync(path.join(packageRoot, file))), `Launcher source mismatch: ${file}`);
-  ensure(entries.get("LICENSE").bytes.equals(readFileSync(path.join(root, "crates/clibox/LICENSE"))), "License mismatch");
-  ensure(entries.get("README.md").bytes.equals(readFileSync(path.join(packageRoot, "README.md"))), "README mismatch");
+  if (!target) for (const file of mainFiles) ensure(entries.get(file).bytes.equals(Buffer.from(sourceText(`packages/clibox/${file}`))), `Launcher source mismatch: ${file}`);
+  ensure(entries.get("LICENSE").bytes.equals(Buffer.from(sourceText("crates/clibox/LICENSE"))), "License mismatch");
+  ensure(entries.get("README.md").bytes.equals(Buffer.from(sourceText("packages/clibox/README.md"))), "README mismatch");
   ensure(path.basename(file) === tarballName(manifest.name, version), "Tarball name mismatch");
   return { name: manifest.name, version, revision: sourceRevision, filename: path.basename(file), integrity: integrity(bytes) };
 }
