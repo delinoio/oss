@@ -328,7 +328,14 @@ fn quote(text: &str, cancel: &Cancellation) -> Result<String> {
             '\n' => out.push("\\n")?,
             '\r' => out.push("\\r")?,
             '\t' => out.push("\\t")?,
-            ch if ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}' | '\u{feff}') => {
+            ch if ch.is_control()
+                || matches!(
+                    ch,
+                    '\u{2028}' | '\u{2029}' | '\u{feff}' | '\u{fffe}' | '\u{ffff}'
+                ) =>
+            {
+                // YAML permits escaped BMP noncharacters in scalar values but
+                // excludes them from literal source. Keep output valid input.
                 out.push(&format!("\\u{:04x}", ch as u32))?
             }
             ch => out.push(ch.encode_utf8(&mut [0; 4]))?,

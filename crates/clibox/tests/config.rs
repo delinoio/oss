@@ -1022,6 +1022,15 @@ fn yaml_rejects_nonprintable_source_and_incomplete_directives() {
 }
 
 #[test]
+fn yaml_escaped_bmp_noncharacters_remain_valid_and_idempotent() {
+    yaml(
+        "\"\\uFFFE\": &value \"\\uFFFF\"\ncopy: *value\nlist: [\"\\uFFFE\", \"\\U0000FFFF\"]\n",
+        "\"copy\": \"\\uffff\"\n\"list\":\n  - \"\\ufffe\"\n  - \"\\uffff\"\n\"\\ufffe\": \
+         \"\\uffff\"\n",
+    );
+}
+
+#[test]
 fn yaml_version_directives_are_unique_per_document() {
     let dir = tempfile::tempdir().unwrap();
     for input in [
