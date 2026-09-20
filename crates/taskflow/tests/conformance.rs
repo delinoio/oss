@@ -1123,6 +1123,62 @@ async fn scenario_26_queries_cycles_missing_references_and_output_ownership() {
 }
 
 #[tokio::test]
+async fn cache_rejects_noncanonical_record_paths_before_restoration() {
+    let directory =
+        fixture(json!({"build":{"command":command(&["version"]),"input":[],"output":["out/**"]}}));
+    files::atomic_write(&directory.path().join("out/file"), b"preserved").unwrap();
+    let graph = graph(directory.path()).await;
+    let project = &graph.workspace.projects["app"];
+    let task = &graph.tasks["app#build"].task;
+    let original =
+        cache::Artifact::capture(files::digest(b"key"), "app#build".into(), project, task).unwrap();
+    original.validate_integrity(&original.key).unwrap();
+    for path in [
+        "out/./file",
+        "out//file",
+        "out/file/",
+        "./out/file",
+        "out\\file",
+        "out/file\0",
+        "C:out/file",
+    ] {
+        for duplicate in [false, true] {
+            let mut artifact = original.clone();
+            let mut record = artifact
+                .files
+                .iter()
+                .find(|entry| entry.path == "out/file")
+                .unwrap()
+                .clone();
+            record.path = path.into();
+            if !duplicate {
+                artifact.files.retain(|entry| entry.path != "out/file");
+            }
+            artifact.files.push(record);
+            artifact.output_digest = cache::output_digest(&artifact.files).unwrap();
+            assert!(
+                artifact.validate_integrity(&artifact.key).is_err(),
+                "{path:?}"
+            );
+            assert!(
+                artifact
+                    .restore(&artifact.key, "app#build", project, task)
+                    .is_err(),
+                "{path:?}"
+            );
+            assert_eq!(
+                std::fs::read(directory.path().join("out/file")).unwrap(),
+                b"preserved"
+            );
+        }
+    }
+    let mut duplicate = original.clone();
+    duplicate.files.push(original.files.last().unwrap().clone());
+    duplicate.output_digest = cache::output_digest(&duplicate.files).unwrap();
+    assert!(duplicate.validate_integrity(&duplicate.key).is_err());
+}
+
+#[tokio::test]
 async fn cache_rejects_corruption_and_path_traversal_before_changing_outputs() {
     let dir =
         fixture(json!({"build":{"command":command(&["version"]),"input":[],"output":["out/**"]}}));

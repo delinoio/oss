@@ -32,6 +32,7 @@
 - Local cache readers, writers, and cleaning share a process-safe cache lock outside the removable cache tree; never hold it during commands or network operations.
 - Reject semantically invalid local entries before remote fallback selection; valid JSON alone never blocks a compatible remote artifact.
 - Cache verification checks artifact identity, content digests, paths, and shard accounting independently of current configuration, rejecting descendants of every non-directory record; restoration additionally validates project ownership and link containment.
+- Artifact record paths use one canonical portable spelling: reject dot segments, repeated/trailing separators, backslashes, NUL, and rooted/drive-relative paths before normalized-identity deduplication or restoration.
 - Do not close the detached Unix descendant cleanup gap using process-group tests or periodic PID enumeration; require ownership evidence for setsid/setpgid and double-fork descendants on macOS and Linux.
 - Log-owner failure interrupts live services and readiness probes immediately; await the same process ownership future, both drains, and container cleanup before notifying the session. Successful stream EOF does not cancel a service.
 - Output-drain failures must still await both stream owners and container removal/absence verification before returning; unverified cleanup takes precedence over log errors.

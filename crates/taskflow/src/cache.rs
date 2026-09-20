@@ -394,16 +394,20 @@ impl Artifact {
         let mut total = 0;
         for entry in &self.files {
             let path = Path::new(&entry.path);
+            let identity: PathBuf = path.components().collect();
             ensure!(
                 !entry.path.is_empty()
+                    && !entry.path.contains(['\\', '\0'])
+                    && crate::config::project_relative(&entry.path)
                     && path.components().all(|c| matches!(c, Component::Normal(_)))
-                    && !entry.path.split(['/', '\\']).any(files::reserved_name),
+                    && files::slash(&identity)? == entry.path
+                    && !entry.path.split('/').any(files::reserved_name),
                 "unsafe cache entry path"
             );
-            ensure!(
-                seen.insert(entry.path.clone()),
-                "duplicate cache entry path"
-            );
+            // Serialized paths have one portable spelling. Filesystem APIs
+            // otherwise collapse dot segments and repeated separators while the
+            // artifact digest still counts separate records for the same file.
+            ensure!(seen.insert(identity), "duplicate cache entry path");
             match &entry.content {
                 Content::File { data, digest, .. } => {
                     leaves.push(path);

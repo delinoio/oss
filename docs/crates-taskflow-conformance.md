@@ -46,6 +46,8 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 
 `cache_verify_rejects_misdirected_and_inconsistent_artifacts` also rejects validly encoded file records that declare descendants beneath another regular file, without restoring any output.
 
+`cache_rejects_noncanonical_record_paths_before_restoration` verifies artifact integrity and restoration reject dot segments, repeated/trailing separators, backslashes, NUL, and drive-relative names, both alone and alongside a record for the same destination. Existing outputs remain untouched; canonical duplicate records are also rejected using normalized path identity.
+
 `uncached_output_digests_are_not_limited_by_artifact_size` executes a task with an output larger than 512 MiB, confirms successful local identity tracking, and retains the artifact capture bound. Local and captured identities share the `output-state-v2` digest domain; previous payload-based digests become safe cache misses.
 
 `output_ownership_uses_destination_filesystem_aliases` probes actual case/Unicode equivalence and rejects overlapping clean output roots, including nested projects, before any output is created.
