@@ -48,6 +48,8 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 
 `cache_rejects_noncanonical_record_paths_before_restoration` verifies artifact integrity and restoration reject dot segments, repeated/trailing separators, backslashes, NUL, and drive-relative names, both alone and alongside a record for the same destination. Existing outputs remain untouched; canonical duplicate records are also rejected using normalized path identity.
 
+`input_snapshots_only_walk_possible_project_and_pattern_roots` places an invalid Unix identity in an unrelated subtree to detect unintended traversal without timing thresholds. Empty, disabled, and negative-only inputs retain only metadata; automatic and explicit inputs scan their possible roots, including sibling references and missing prefixes, without traversing directory links. Explicitly selecting the invalid subtree still fails.
+
 `uncached_output_digests_are_not_limited_by_artifact_size` executes a task with an output larger than 512 MiB, confirms successful local identity tracking, and retains the artifact capture bound. Local and captured identities share the `output-state-v2` digest domain; previous payload-based digests become safe cache misses.
 
 `output_ownership_uses_destination_filesystem_aliases` probes actual case/Unicode equivalence and rejects overlapping clean output roots, including nested projects, before any output is created.

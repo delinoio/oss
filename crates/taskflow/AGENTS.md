@@ -48,6 +48,7 @@
 - Reject absolute, rooted, and Windows drive-relative input and output patterns during configuration validation on every host, including negative patterns.
 - Reserve ASCII case aliases of .git, .taskflow, and .taskflow-restore-* components on every host, including configuration, output capture, and artifact validation.
 - Explicit positive input globs may traverse otherwise ignored trees; prune only using conservative literal directory prefixes, never directory-name substrings. Reserved .git, .taskflow, and .taskflow-restore-* trees remain excluded.
+- Empty/disabled/negative-only input declarations read metadata without walking files. Bound automatic scans to the owning project and explicit scans to deduplicated possible literal roots, retaining conservative wildcard/escape coverage and the no-directory-link traversal rule.
 - Directory mutation notifications rescan every intersecting positive input root, even when the directory was deleted or does not itself match a glob; only a changed filtered snapshot enqueues work.
 - Timestamp delivered watcher events before discovery and preserve matching input causes queued before each baseline, including initial-disabled subscriptions.
 - Watch invalidation consumes filesystem mutations, never access notifications from metadata discovery or input hashing. Metadata notifications must confirm a changed or invalid graph before cancelling the active generation; identical rewrites preserve live work.

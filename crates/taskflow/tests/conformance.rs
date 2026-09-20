@@ -3746,6 +3746,69 @@ async fn finite_timeouts_fail_while_operator_cancellation_remains_distinct() {
 }
 
 #[tokio::test]
+#[cfg(unix)]
+async fn input_snapshots_only_walk_possible_project_and_pattern_roots() {
+    let directory =
+        fixture(json!({"check":{"command":command(&["version"]),"input":[],"output":[]}}));
+    files::atomic_write(&directory.path().join("member/src/lib.rs"), b"source").unwrap();
+    files::atomic_write(&directory.path().join("shared/data.txt"), b"shared").unwrap();
+    let graph = graph(directory.path()).await;
+    let mut project = graph.workspace.projects["app"].clone();
+    project.directory = directory.path().canonicalize().unwrap().join("member");
+    let mut task = graph.tasks["app#check"].task.clone();
+    // An invalid identity in an unrelated subtree deterministically detects an
+    // accidental workspace scan without depending on timing or ACL privileges.
+    std::fs::create_dir(directory.path().join("unrelated")).unwrap();
+    std::fs::write(
+        directory.path().join("unrelated").join(r"invalid\identity"),
+        b"unrelated",
+    )
+    .unwrap();
+    let metadata: BTreeSet<_> = graph
+        .workspace
+        .metadata_files
+        .iter()
+        .map(|path| files::slash(path.strip_prefix(&graph.workspace.root).unwrap()).unwrap())
+        .collect();
+    for inputs in [json!([]), json!([{"auto":false}]), json!(["!**"])] {
+        task.input = Some(serde_json::from_value(inputs).unwrap());
+        assert_eq!(
+            files::input_state(&graph.workspace, &project, &task)
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect::<BTreeSet<_>>(),
+            metadata
+        );
+    }
+    for inputs in [
+        None,
+        Some(json!([{"auto":true}])),
+        Some(json!(["src/**/*.rs"])),
+        Some(json!(["src/lib.rs", "src/**"])),
+    ] {
+        task.input = inputs.map(|value| serde_json::from_value(value).unwrap());
+        let state = files::input_state(&graph.workspace, &project, &task).unwrap();
+        assert!(state.contains_key("member/src/lib.rs"));
+        assert_eq!(state.len(), metadata.len() + 1);
+    }
+    task.input = Some(serde_json::from_value(json!(["../shared/*.txt", "missing/*.rs"])).unwrap());
+    assert!(files::input_state(&graph.workspace, &project, &task)
+        .unwrap()
+        .contains_key("shared/data.txt"));
+    std::os::unix::fs::symlink("../shared", project.directory.join("alias")).unwrap();
+    task.input = Some(serde_json::from_value(json!(["alias/*.txt"])).unwrap());
+    assert_eq!(
+        files::input_state(&graph.workspace, &project, &task)
+            .unwrap()
+            .len(),
+        metadata.len()
+    );
+    task.input = Some(serde_json::from_value(json!(["../unrelated/**"])).unwrap());
+    assert!(files::input_state(&graph.workspace, &project, &task).is_err());
+}
+
+#[tokio::test]
 async fn explicit_wildcard_inputs_include_ignored_directories_in_cache_and_watch() {
     for pattern in [
         "*/manifest.json",

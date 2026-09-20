@@ -343,33 +343,103 @@ pub fn input_state(
             Some(normalize(&project.directory.join(output_anchor(pattern))))
         })
         .collect();
-    for entry in walkdir::WalkDir::new(&ws.root)
-        .follow_links(false)
-        .into_iter()
-        .filter_entry(|entry| {
-            if entry.file_name().to_str().is_some_and(reserved_name) {
-                return false;
-            }
-            !ignored_directory(entry.path())
-                || explicit_roots.iter().any(|prefix| {
-                    prefix.starts_with(entry.path()) || entry.path().starts_with(prefix)
-                })
-        })
-    {
-        let entry = entry?;
-        if !entry.file_type().is_file() && !entry.file_type().is_symlink() {
+    let automatic = task.input.is_none()
+        || task
+            .input
+            .iter()
+            .flatten()
+            .any(|input| matches!(input, Input::Auto(value) if value.auto));
+    let mut candidates = explicit_roots.clone();
+    if automatic {
+        candidates.push(project.directory.clone());
+    }
+    let mut roots = Vec::new();
+    for mut root in candidates {
+        if ws.root.starts_with(&root) {
+            root = ws.root.clone();
+        }
+        if !root.starts_with(&ws.root) {
             continue;
         }
-        if input_matches(project, task, entry.path())? {
-            if entry.file_type().is_symlink() {
-                validate_input_link(&ws.root, entry.path())?;
-            } else {
-                within(&ws.root, entry.path())?;
+        // Starting a walker below a directory link must not bypass the existing
+        // no-follow policy. Stop at its first link and let normal matching/link
+        // validation decide whether that entry itself is an input.
+        let mut prefix = ws.root.clone();
+        for part in root.strip_prefix(&ws.root)?.components() {
+            prefix.push(part);
+            match std::fs::symlink_metadata(&prefix) {
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    root = prefix;
+                    break;
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+                Err(error) => return Err(error.into()),
             }
-            result.insert(
-                slash(entry.path().strip_prefix(&ws.root)?)?,
-                input_file_state(entry.path())?,
-            );
+        }
+        if root
+            .components()
+            .any(|part| part.as_os_str().to_str().is_some_and(reserved_name))
+        {
+            continue;
+        }
+        roots.push(canonical_path(&root)?);
+    }
+    roots.sort();
+    let mut scan_roots: Vec<PathBuf> = Vec::new();
+    for root in roots {
+        if !scan_roots.iter().any(|parent| root.starts_with(parent)) {
+            scan_roots.push(root);
+        }
+    }
+    tracing::debug!(
+        automatic,
+        roots = scan_roots.len(),
+        "Scanning task input roots"
+    );
+    for root in scan_roots {
+        for entry in walkdir::WalkDir::new(&root)
+            .follow_links(false)
+            .follow_root_links(false)
+            .into_iter()
+            .filter_entry(|entry| {
+                if entry.file_name().to_str().is_some_and(reserved_name) {
+                    return false;
+                }
+                !ignored_directory(entry.path())
+                    || explicit_roots.iter().any(|prefix| {
+                        prefix.starts_with(entry.path()) || entry.path().starts_with(prefix)
+                    })
+            })
+        {
+            let entry = match entry {
+                Ok(entry) => entry,
+                // A literal file or glob prefix may not exist yet. This is an empty
+                // match, just as it was when reached from a workspace-wide walk.
+                Err(error)
+                    if error.depth() == 0
+                        && error
+                            .io_error()
+                            .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) =>
+                {
+                    continue
+                }
+                Err(error) => return Err(error.into()),
+            };
+            if !entry.file_type().is_file() && !entry.file_type().is_symlink() {
+                continue;
+            }
+            if input_matches(project, task, entry.path())? {
+                if entry.file_type().is_symlink() {
+                    validate_input_link(&ws.root, entry.path())?;
+                } else {
+                    within(&ws.root, entry.path())?;
+                }
+                result.insert(
+                    slash(entry.path().strip_prefix(&ws.root)?)?,
+                    input_file_state(entry.path())?,
+                );
+            }
         }
     }
     for path in &ws.metadata_files {
