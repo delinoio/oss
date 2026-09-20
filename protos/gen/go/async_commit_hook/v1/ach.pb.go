@@ -1059,6 +1059,8 @@ func (x *PairResponse) GetToken() string {
 
 type ListRepositoriesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	Cursor        string                 `protobuf:"bytes,1,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	Limit         uint32                 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1093,9 +1095,24 @@ func (*ListRepositoriesRequest) Descriptor() ([]byte, []int) {
 	return file_async_commit_hook_v1_ach_proto_rawDescGZIP(), []int{13}
 }
 
+func (x *ListRepositoriesRequest) GetCursor() string {
+	if x != nil {
+		return x.Cursor
+	}
+	return ""
+}
+
+func (x *ListRepositoriesRequest) GetLimit() uint32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
 type ListRepositoriesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Repositories  []*Repository          `protobuf:"bytes,1,rep,name=repositories,proto3" json:"repositories,omitempty"`
+	NextCursor    string                 `protobuf:"bytes,2,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1135,6 +1152,13 @@ func (x *ListRepositoriesResponse) GetRepositories() []*Repository {
 		return x.Repositories
 	}
 	return nil
+}
+
+func (x *ListRepositoriesResponse) GetNextCursor() string {
+	if x != nil {
+		return x.NextCursor
+	}
+	return ""
 }
 
 type ListBranchesRequest struct {
@@ -2544,10 +2568,14 @@ const file_async_commit_hook_v1_ach_proto_rawDesc = "" +
 	"\fPairResponse\x12\x1d\n" +
 	"\n" +
 	"browser_id\x18\x01 \x01(\tR\tbrowserId\x12\x14\n" +
-	"\x05token\x18\x02 \x01(\tR\x05token\"\x19\n" +
-	"\x17ListRepositoriesRequest\"`\n" +
+	"\x05token\x18\x02 \x01(\tR\x05token\"G\n" +
+	"\x17ListRepositoriesRequest\x12\x16\n" +
+	"\x06cursor\x18\x01 \x01(\tR\x06cursor\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\rR\x05limit\"\x81\x01\n" +
 	"\x18ListRepositoriesResponse\x12D\n" +
-	"\frepositories\x18\x01 \x03(\v2 .async_commit_hook.v1.RepositoryR\frepositories\"6\n" +
+	"\frepositories\x18\x01 \x03(\v2 .async_commit_hook.v1.RepositoryR\frepositories\x12\x1f\n" +
+	"\vnext_cursor\x18\x02 \x01(\tR\n" +
+	"nextCursor\"6\n" +
 	"\x13ListBranchesRequest\x12\x1f\n" +
 	"\vworktree_id\x18\x01 \x01(\tR\n" +
 	"worktreeId\"P\n" +

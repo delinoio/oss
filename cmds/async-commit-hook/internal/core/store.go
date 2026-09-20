@@ -130,17 +130,57 @@ func (s *Store) Repositories() ([]Repository, error) {
 	if err != nil {
 		return nil, err
 	}
+	repos, _, err := readRepositories(context.Background(), rows, 0)
+	return repos, err
+}
+
+// RepositoryPage bounds worktrees, not just repositories: one repository can
+// have many linked worktrees and must not make a single response unbounded.
+func (s *Store) RepositoryPage(ctx context.Context, cursor string, limit int) ([]Repository, string, error) {
+	if limit == 0 {
+		limit = 50
+	}
+	if limit < 1 || limit > 50 {
+		return nil, "", E("invalid-page-size", "page size must be 1..50", 2)
+	}
+	repo, worktree := "", ""
+	if cursor != "" {
+		if len(cursor) > 256 {
+			return nil, "", E("invalid-cursor", "repository cursor exceeds its limit", 2)
+		}
+		b, err := base64.RawURLEncoding.DecodeString(cursor)
+		parts := strings.Split(string(b), ":")
+		if err != nil || len(parts) != 3 || parts[0] != "registry-v1" || !ValidID(parts[1]) || !ValidID(parts[2]) {
+			return nil, "", E("invalid-cursor", "invalid repository page cursor", 2)
+		}
+		repo, worktree = parts[1], parts[2]
+	}
+	rows, err := s.DB.QueryContext(ctx, "SELECT r.id,r.common_dir,r.name,r.local_identity,w.id,w.path,w.branch FROM repositories r JOIN worktrees w ON w.repository_id=r.id WHERE (r.id,w.id)>(?,?) ORDER BY r.id,w.id LIMIT ?", repo, worktree, limit+1)
+	if err != nil {
+		return nil, "", err
+	}
+	return readRepositories(ctx, rows, limit)
+}
+
+func readRepositories(ctx context.Context, rows *sql.Rows, limit int) ([]Repository, string, error) {
 	defer rows.Close()
+	count, cursor, next := 0, "", ""
 	out := []Repository{}
 	index := map[string]int{}
 	identities := map[string]string{}
 	for rows.Next() {
+		if limit > 0 && count == limit {
+			next = cursor
+			break
+		}
 		r := Repository{}
 		w := Worktree{}
 		var identity string
-		if err = rows.Scan(&r.ID, &r.CommonDir, &r.Name, &identity, &w.ID, &w.Path, &w.Branch); err != nil {
-			return nil, err
+		if err := rows.Scan(&r.ID, &r.CommonDir, &r.Name, &identity, &w.ID, &w.Path, &w.Branch); err != nil {
+			return nil, "", err
 		}
+		count++
+		cursor = base64.RawURLEncoding.EncodeToString([]byte("registry-v1:" + r.ID + ":" + w.ID))
 		w.RepositoryID = r.ID
 		identities[r.ID] = identity
 		i, ok := index[r.ID]
@@ -151,16 +191,19 @@ func (s *Store) Repositories() ([]Repository, error) {
 		}
 		out[i].Worktrees = append(out[i].Worktrees, w)
 	}
-	if err = rows.Err(); err != nil {
-		return nil, err
+	if err := rows.Err(); err != nil {
+		return nil, "", err
 	}
-	if err = rows.Close(); err != nil {
-		return nil, err
+	if err := rows.Close(); err != nil {
+		return nil, "", err
 	}
 	for i := range out {
 		for j := range out[i].Worktrees {
 			w := &out[i].Worktrees[j]
-			common, root, branch, discoverErr := Discover(context.Background(), w.Path)
+			if info, err := os.Stat(w.Path); err != nil || !info.IsDir() {
+				continue
+			}
+			common, root, branch, discoverErr := Discover(ctx, w.Path)
 			identity, identityErr := repositoryIdentity(common, false)
 			w.Available = discoverErr == nil && identityErr == nil && identity == identities[out[i].ID] && common == out[i].CommonDir && root == w.Path
 			if w.Available {
@@ -168,7 +211,7 @@ func (s *Store) Repositories() ([]Repository, error) {
 			}
 		}
 	}
-	return out, nil
+	return out, next, nil
 }
 func insertRun(tx *sql.Tx, r *Run, auto string) error {
 	var automatic any

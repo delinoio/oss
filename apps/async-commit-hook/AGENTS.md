@@ -20,3 +20,5 @@
 - Run-list rows use the optional server check count, falling back to checks.length only for older responses; opening a row retrieves complete execution details.
 
 - Poll expanded logs only while their check is active, fetch final bytes once on completion, and retain explicit refresh and pagination for terminal evidence.
+
+- Load repository pages on demand with Connect Query, merge split repositories/worktrees by ID, and retain loaded navigation and selection across next-page errors.

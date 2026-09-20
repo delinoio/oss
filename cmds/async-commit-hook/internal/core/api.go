@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	pb "github.com/delinoio/oss/protos/gen/go/async_commit_hook/v1"
@@ -306,16 +307,29 @@ func (a *API) Pair(_ context.Context, r *connect.Request[pb.PairRequest]) (*conn
 	}
 	return connect.NewResponse(&pb.PairResponse{BrowserId: id, Token: token}), nil
 }
-func (a *API) ListRepositories(context.Context, *connect.Request[pb.ListRepositoriesRequest]) (*connect.Response[pb.ListRepositoriesResponse], error) {
-	repos, e := a.s.Store.Repositories()
+func registryLabel(value string) string {
+	value = strings.ToValidUTF8(value, "\uFFFD")
+	const limit = 4096
+	if len(value) <= limit {
+		return value
+	}
+	end := limit - len("…")
+	for !utf8.RuneStart(value[end]) {
+		end--
+	}
+	return value[:end] + "…"
+}
+
+func (a *API) ListRepositories(ctx context.Context, req *connect.Request[pb.ListRepositoriesRequest]) (*connect.Response[pb.ListRepositoriesResponse], error) {
+	repos, next, e := a.s.Store.RepositoryPage(ctx, req.Msg.Cursor, int(req.Msg.Limit))
 	if e != nil {
 		return nil, apiError(e)
 	}
-	out := &pb.ListRepositoriesResponse{}
+	out := &pb.ListRepositoriesResponse{NextCursor: next}
 	for _, r := range repos {
-		v := &pb.Repository{Id: r.ID, Name: strings.ToValidUTF8(r.Name, "\uFFFD")}
+		v := &pb.Repository{Id: r.ID, Name: registryLabel(r.Name)}
 		for _, w := range r.Worktrees {
-			v.Worktrees = append(v.Worktrees, &pb.Worktree{Id: w.ID, Path: strings.ToValidUTF8(w.Path, "\uFFFD"), Branch: strings.ToValidUTF8(w.Branch, "\uFFFD"), Available: w.Available})
+			v.Worktrees = append(v.Worktrees, &pb.Worktree{Id: w.ID, Path: registryLabel(w.Path), Branch: registryLabel(w.Branch), Available: w.Available})
 		}
 		out.Repositories = append(out.Repositories, v)
 	}

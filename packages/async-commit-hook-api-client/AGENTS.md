@@ -7,3 +7,5 @@
 - Generated `dist` is not tracked and must be removed from the final worktree.
 
 - Preserve optional Run.check_count presence, including explicit zero; list consumers must not infer totals from the omitted detail array.
+
+- Preserve repository-list cursor/limit/next_cursor through generated wire messages; clients must merge repositories spanning pages by ID.

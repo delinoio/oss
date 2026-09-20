@@ -125,9 +125,13 @@ message PairResponse {
   string browser_id = 1;
   string token = 2;
 }
-message ListRepositoriesRequest {}
+message ListRepositoriesRequest {
+  string cursor = 1;
+  uint32 limit = 2;
+}
 message ListRepositoriesResponse {
   repeated Repository repositories = 1;
+  string next_cursor = 2;
 }
 message ListBranchesRequest {
   string worktree_id = 1;

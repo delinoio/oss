@@ -51,3 +51,5 @@ Execution-detail queries poll every 1.5 seconds only while queued, preparing, ru
 Checks and Inbox rows display the server-provided total check count without requiring per-check list payloads. Fall back to the check-array length only when an older response omits that count. Row selection still loads complete execution details.
 
 Expanded check logs poll only while that check is active, independently of other checks in the run. A transition to a terminal state triggers one final read; terminal logs support explicit refresh and page navigation without periodic integrity reads.
+
+The repository sidebar loads bounded worktree pages on demand through Connect Query. Load more workspaces preserves the current selection and merges repositories spanning pages by ID. Pending and failed page loads retain loaded history, with a retry action; keyboard activation and focus remain on the load control while more pages exist.

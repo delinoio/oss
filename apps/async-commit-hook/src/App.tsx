@@ -7,11 +7,13 @@ import {
 import {
   TransportProvider,
   useQuery,
+  useInfiniteQuery,
   useMutation,
 } from "@connectrpc/connect-query";
 import {
   ExecutionState,
   LocalQuery,
+  type Repository,
   type Run,
   type Failure,
 } from "@delinoio/async-commit-hook-api-client";
@@ -267,14 +269,29 @@ function Pairing({
 }
 
 type Tab = "checks" | "changes" | "commits" | "inbox";
-function Workspace({
+export function Workspace({
   initialRun,
   onPair,
 }: {
   initialRun: string;
   onPair: () => void;
 }) {
-  const repos = useQuery(LocalQuery.listRepositories, {});
+  const repos = useInfiniteQuery(LocalQuery.listRepositories, { cursor: "", limit: 50 }, {
+    pageParamKey: "cursor",
+    getNextPageParam: (page) => page.nextCursor || undefined,
+  });
+  const repositories = useMemo(() => {
+    const merged = new Map<string, Repository>();
+    for (const page of repos.data?.pages ?? []) {
+      for (const repo of page.repositories) {
+        const prior = merged.get(repo.id);
+        const trees = new Map((prior?.worktrees ?? []).map((w) => [w.id, w]));
+        for (const tree of repo.worktrees) trees.set(tree.id, tree);
+        merged.set(repo.id, { ...repo, worktrees: [...trees.values()] });
+      }
+    }
+    return [...merged.values()];
+  }, [repos.data]);
   const version = useQuery(LocalQuery.getVersion, {});
   const [worktree, setWorktree] = useState("");
   const [branch, setBranch] = useState("");
@@ -287,7 +304,7 @@ function Workspace({
     lastOpenedRun.current = id;
     setRun(id);
   };
-  const currentRepo = repos.data?.repositories.find((r) =>
+  const currentRepo = repositories.find((r) =>
     r.worktrees.some((w) => w.id === worktree),
   );
   const selectedTree = currentRepo?.worktrees.find((w) => w.id === worktree);
@@ -297,12 +314,12 @@ function Workspace({
     { enabled: Boolean(worktree) },
   );
   useEffect(() => {
-    if (!worktree && repos.data?.repositories[0]?.worktrees[0]) {
-      const w = repos.data.repositories[0].worktrees[0];
+    if (!worktree && repositories[0]?.worktrees[0]) {
+      const w = repositories[0].worktrees[0];
       setWorktree(w.id);
       setBranch(w.branch);
     }
-  }, [worktree, repos.data]);
+  }, [worktree, repositories]);
   if (version.data && version.data.apiVersion !== 1)
     return (
       <main id="main">
@@ -315,7 +332,7 @@ function Workspace({
     <div className="workspace">
       <aside className="sidebar" aria-label="Repositories">
         <div className="side-heading">
-          WORKSPACES <span>{repos.data?.repositories.length || 0}</span>
+          WORKSPACES <span>{repositories.length || 0}</span>
         </div>
         {repos.isPending && <p role="status">Loading repositories…</p>}
         {repos.error && (
@@ -323,13 +340,13 @@ function Workspace({
             <ErrorNotice
               error={repos.error}
               retry={() => {
-                void repos.refetch();
+                void (repos.isFetchNextPageError ? repos.fetchNextPage() : repos.refetch());
               }}
             />
             <button onClick={onPair}>Pair again</button>
           </>
         )}
-        {repos.data?.repositories.map((repo) => (
+        {repositories.map((repo) => (
           <section key={repo.id}>
             <h2>{repo.name}</h2>
             {repo.worktrees.map((w) => (
@@ -355,6 +372,15 @@ function Workspace({
             ))}
           </section>
         ))}
+        {(repos.hasNextPage || (repos.data?.pages.length ?? 0) > 1) && (
+          <button
+            disabled={repos.isFetchingNextPage}
+            aria-disabled={!repos.hasNextPage}
+            onClick={() => { if (repos.hasNextPage) void repos.fetchNextPage(); }}
+          >
+            {repos.isFetchingNextPage ? "Loading workspaces…" : repos.hasNextPage ? "Load more workspaces" : "All workspaces loaded"}
+          </button>
+        )}
         <div className="sidebar-footer">
           <span className="dot" /> LOCAL HISTORY
           <p>

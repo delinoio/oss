@@ -85,3 +85,5 @@
 - Credential file reads require a regular nonsymlink file, verify the opened identity, and consume at most 64 KiB plus one overflow byte. Unix opens must not block on replacement FIFOs; diagnostics exclude paths and values.
 
 - Large response fixtures must assert the expanded-byte threshold and complete large-graph detail without duplicating maximal SQLite graphs across every pagination row; retain native Windows test budget for execution coverage.
+
+- Page Connect registry reads across worktrees, including within one repository, before Git probing or serialization. Bound display labels without changing raw paths or IDs; cursor validation precedes storage access.

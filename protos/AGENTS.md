@@ -26,3 +26,5 @@
 - Its run-list detached filter must distinguish an empty stored branch from omitted filtering and participate in cursor scope.
 
 - async-commit-hook run lists carry optional check_count totals and omit check arrays/diagnostics; GetRun retains complete detail. Preserve older-response count fallback in clients.
+
+- async-commit-hook repository lists use cursor/limit requests and next_cursor responses, page across worktrees (maximum 50), and bound display fields to 4 KiB; one repository can span pages.
