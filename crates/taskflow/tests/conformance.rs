@@ -3742,25 +3742,28 @@ async fn docker_context_cannot_override_a_validated_local_host() {
             .into(),
     );
     environment.insert("DOCKER_HOST".into(), "unix:///local.sock".into());
-    environment.insert("DOCKER_CONTEXT".into(), "remote-fixture".into());
-    let task: config::Task = serde_json::from_value(json!({"command":["unused"]})).unwrap();
-    let error = taskflow::docker::prepare(
-        directory.path(),
-        directory.path(),
-        &task,
-        &environment,
-        &BTreeMap::new(),
-        &uuid::Uuid::now_v7().to_string(),
-        &CancellationToken::new(),
-    )
-    .await
-    .err()
-    .unwrap();
-    assert!(
-        error.to_string().contains("local daemon socket"),
-        "{error:#}"
-    );
-    assert!(!directory.path().join("docker-start").exists());
+    for context in ["remote-fixture", "remote-npipe-fixture"] {
+        environment.insert("DOCKER_CONTEXT".into(), context.into());
+        let task: config::Task = serde_json::from_value(json!({"command":["unused"]})).unwrap();
+        let error = taskflow::docker::prepare(
+            directory.path(),
+            directory.path(),
+            &task,
+            &environment,
+            &BTreeMap::new(),
+            &uuid::Uuid::now_v7().to_string(),
+            &CancellationToken::new(),
+        )
+        .await
+        .err()
+        .unwrap();
+        assert!(
+            error.to_string().contains("local daemon socket"),
+            "{error:#}"
+        );
+        assert!(!directory.path().join("docker-start").exists());
+        assert!(!directory.path().join(".taskflow/runs").exists());
+    }
 }
 
 #[tokio::test]

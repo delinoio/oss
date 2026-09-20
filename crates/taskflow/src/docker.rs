@@ -153,7 +153,7 @@ pub async fn prepare(
     .await?;
     let endpoint = serde_json::from_slice::<String>(&bytes)?;
     ensure!(
-        endpoint.starts_with("unix://") || endpoint.starts_with("npipe://"),
+        local_endpoint(&endpoint),
         "Docker execution requires a local daemon socket"
     );
     // Host binaries may target another OS/architecture. Provide the bounded
@@ -265,4 +265,60 @@ pub async fn prepare(
             environment: environment.clone(),
         },
     ))
+}
+
+// Docker's npipe scheme also supports remote Windows servers. Only the literal
+// dot server in the documented local UNC form proves a local transport.
+fn local_endpoint(endpoint: &str) -> bool {
+    if endpoint.chars().any(char::is_control) || endpoint.contains(['%', '?', '#']) {
+        return false;
+    }
+    if let Some(path) = endpoint.strip_prefix("unix://") {
+        return path.starts_with('/')
+            && !path.starts_with("//")
+            && path.len() > 1
+            && !path.contains('\\');
+    }
+    if let Some(path) = endpoint.strip_prefix("npipe://") {
+        let normalized = path.replace('\\', "/");
+        let parts: Vec<_> = normalized.split('/').collect();
+        return parts.len() == 5
+            && parts[0].is_empty()
+            && parts[1].is_empty()
+            && parts[2] == "."
+            && parts[3].eq_ignore_ascii_case("pipe")
+            && !parts[4].is_empty()
+            && !matches!(parts[4], "." | "..");
+    }
+    false
+}
+
+#[cfg(test)]
+mod endpoint_tests {
+    use super::local_endpoint;
+    #[test]
+    fn only_local_socket_addresses_are_accepted() {
+        for endpoint in [
+            "unix:///var/run/docker.sock",
+            "npipe:////./pipe/docker_engine",
+            r"npipe://\\.\pipe\dockerDesktopLinuxEngine",
+        ] {
+            assert!(local_endpoint(endpoint), "{endpoint}");
+        }
+        for endpoint in [
+            "npipe:////remote-host/pipe/docker_engine",
+            "npipe:////localhost/pipe/docker_engine",
+            "npipe:////127.0.0.1/pipe/docker_engine",
+            "npipe:////./pipe/",
+            "npipe:////./pipe/../remote",
+            "npipe:////%2e/pipe/docker_engine",
+            "npipe://remote/pipe/docker_engine",
+            "unix://remote/docker.sock",
+            "unix:////remote/docker.sock",
+            "unix:///",
+            "tcp://127.0.0.1:2375",
+        ] {
+            assert!(!local_endpoint(endpoint), "{endpoint}");
+        }
+    }
 }

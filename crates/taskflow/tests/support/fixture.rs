@@ -28,6 +28,8 @@ fn main() {
             "context" => {
                 let endpoint = if std::env::var("DOCKER_CONTEXT").as_deref() == Ok("remote-fixture") {
                     "tcp://remote.invalid:2375"
+                } else if std::env::var("DOCKER_CONTEXT").as_deref() == Ok("remote-npipe-fixture") {
+                    "npipe:////remote-host/pipe/docker_engine"
                 } else { "unix:///taskflow-fixture" };
                 println!("\"{endpoint}\"");
             }

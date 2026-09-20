@@ -97,3 +97,5 @@
 - Finite invocation and CI execution exit codes preserve receipt reasons: success is 0, operator cancellation takes priority as 130, and any failed receipt with code 124 makes an otherwise failed invocation return 124 before ordinary failure code 1.
 
 - Preserve Git raw old/new gitlink modes for affected selection. Submodule changes select intersecting positive input trees even without a checkout; ordinary missing files retain exact matching and wholly owned outputs remain excluded.
+
+- Docker named-pipe endpoints must use the literal local dot server; the npipe scheme alone does not prove locality. Reject remote authorities and malformed socket addresses before creating execution state.
