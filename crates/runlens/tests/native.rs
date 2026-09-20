@@ -1846,6 +1846,13 @@ fn many_execution_reports_remain_readable_with_few_file_descriptors() {
     assert!(run(root.path(), "original.json", "read").status.success());
     let mut report = parse(root.path(), "original.json");
     let execution = report["executions"][0].clone();
+    // Repeated usage rows may exceed the input envelope's size without being
+    // a new external report. This stays below the input limit on every OS.
+    let mut execution = execution;
+    execution["command"]["argv"]
+        .as_array_mut()
+        .unwrap()
+        .push("x".repeat(256).into());
     report["executions"] = Value::Array(
         (0..1056)
             .map(|_| {

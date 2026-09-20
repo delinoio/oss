@@ -299,16 +299,29 @@ fn uuid_v7<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Uuid, D:
 
 pub const MAX_ENVELOPE_BYTES: usize = 1024 * 1024;
 pub const MAX_EXECUTIONS: usize = 1056;
-thread_local! { static ENVELOPE_BYTES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
-pub fn reset_envelope_budget() {
-    ENVELOPE_BYTES.set(0);
+thread_local! { static ENVELOPE_BYTES: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) }; }
+/// Charge only the external report envelope. Rehydrating validated, bounded
+/// Entries during analysis/export is not a second incoming report. Restore the
+/// prior scope on success, parser failure, and unwind (including nested reads).
+pub(crate) fn with_envelope_budget<T>(read: impl FnOnce() -> T) -> T {
+    struct Restore(Option<usize>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            ENVELOPE_BYTES.set(self.0);
+        }
+    }
+    let _scope = Restore(ENVELOPE_BYTES.replace(Some(0)));
+    read()
 }
 fn charge<E: serde::de::Error>(bytes: usize) -> Result<(), E> {
-    let total = ENVELOPE_BYTES.get().saturating_add(bytes);
+    let Some(previous) = ENVELOPE_BYTES.get() else {
+        return Ok(());
+    };
+    let total = previous.saturating_add(bytes);
     if total > MAX_ENVELOPE_BYTES {
         return Err(E::custom("report envelope exceeds 1 MiB"));
     }
-    ENVELOPE_BYTES.set(total);
+    ENVELOPE_BYTES.set(Some(total));
     Ok(())
 }
 fn bounded_text<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
@@ -364,4 +377,20 @@ fn bounded_strings<'de, D: serde::Deserializer<'de>, const N: usize>(
         .into_iter()
         .map(|text| text.0)
         .collect())
+}
+
+#[cfg(test)]
+mod envelope_tests {
+    use super::*;
+    #[test]
+    fn envelope_budget_is_scoped_and_restored_after_failures() {
+        with_envelope_budget(|| {
+            charge::<serde_json::Error>(MAX_ENVELOPE_BYTES).unwrap();
+            with_envelope_budget(|| charge::<serde_json::Error>(1).unwrap());
+            assert!(charge::<serde_json::Error>(1).is_err());
+        });
+        charge::<serde_json::Error>(MAX_ENVELOPE_BYTES + 1).unwrap();
+        with_envelope_budget(|| charge::<serde_json::Error>(MAX_ENVELOPE_BYTES).unwrap());
+        assert_eq!(ENVELOPE_BYTES.get(), None);
+    }
 }

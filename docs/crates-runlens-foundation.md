@@ -696,3 +696,5 @@ Fresh Windows HOME/cache environment paths use canonical locations with ordinary
 Linux metadata collection distinguishes operand-free NULL capability probes from `AT_EMPTY_PATH` descriptor reads for statx/fstatat. Kernel-rejected probes without a filesystem operand do not imply lost evidence; descriptor reads remain observable. Collector debug diagnostics expose only stable stages and numeric syscall/error classifications, never raw paths or argument buffers.
 
 Linux installs one user-notification filter before the root image and retains its supervisor through the managed tree. Nested exec/spawn keeps environment preparation but reuses inherited kernel collection instead of requesting a conflicting second listener, including dynamic-to-static execution.
+
+The 1 MiB report-envelope parser budget is scoped to each external read and restored on every exit. Analysis/export rehydration of already bounded internal Entries does not spend that incoming-envelope budget again; memory, row-size, record-count, and spill limits still apply. Regression coverage includes 1,056 executions under a 128-descriptor ceiling and repeated command identities in receipt output.
