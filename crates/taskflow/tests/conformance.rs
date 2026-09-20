@@ -300,30 +300,33 @@ async fn scenario_10_local_docker_execution_uses_explicit_platform_and_cleans_co
     let dir = fixture(
         json!({"container":{"command":["node","-e","require('fs').mkdirSync('out',{recursive:true});require('fs').writeFileSync('out/value',process.env.MESSAGE);require('child_process').execFileSync(process.env.TFLOW_BIN,['result','unchanged'])"],"input":[],"output":["out/**"],"env":{"MESSAGE":"docker-ok"},"platform":{"os":"linux","arch":config::host_arch(),"executor":"docker","image":image}}}),
     );
-    let result = run(graph(dir.path()).await, &["container"]).await;
-    assert!(result.success, "{result:?}");
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("out/value")).unwrap(),
-        "docker-ok"
-    );
-    assert!(!result.results["app#container"].changed);
-    let name = format!("tflow-{}", result.results["app#container"].execution);
-    let output = taskflow::discover::output_tool(
-        dir.path(),
-        &[
-            "docker",
-            "ps",
-            "-a",
-            "--filter",
-            &format!("name=^/{name}$"),
-            "--format",
-            "{{.Names}}",
-        ],
-        &[],
-    )
-    .await
-    .unwrap();
-    assert!(output.is_empty());
+    let g = graph(dir.path()).await;
+    for expected_changed in [true, false] {
+        let result = run(g.clone(), &["container"]).await;
+        assert!(result.success, "{result:?}");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("out/value")).unwrap(),
+            "docker-ok"
+        );
+        assert_eq!(result.results["app#container"].changed, expected_changed);
+        let name = format!("tflow-{}", result.results["app#container"].execution);
+        let output = taskflow::discover::output_tool(
+            dir.path(),
+            &[
+                "docker",
+                "ps",
+                "-a",
+                "--filter",
+                &format!("name=^/{name}$"),
+                "--format",
+                "{{.Names}}",
+            ],
+            &[],
+        )
+        .await
+        .unwrap();
+        assert!(output.is_empty());
+    }
 }
 
 #[tokio::test]

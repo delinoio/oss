@@ -18,7 +18,7 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 | 6–7 | `scenario_06_streaming_secret_masking_handles_all_boundaries`, `scenarios_06_07_dotenv_precedence_disable_and_persisted_masking`, and CLI query masking. |
 | 8 | `scenarios_08_15_16_19_watch_and_timer_companions_preserve_server` uses a real TCP server. |
 | 9 | Generic and Go/libtest/Vitest/Jest suites compared with unsharded commands, deterministic assignment/aggregate rejection, `cached_shards_retain_complete_accounting_evidence`, and `scenario_09_ci_shards_reject_partial_success_and_gate_secret_mapping`. |
-| 10 | `scenario_10_local_docker_execution_uses_explicit_platform_and_cleans_container` also reports unchanged through the injected helper in an image without TaskFlow. |
+| 10 | `scenario_10_local_docker_execution_uses_explicit_platform_and_cleans_container` also reports unchanged through the injected helper in an image without TaskFlow, propagating newly created outputs and suppressing an identical second result. |
 | 11 | `scenarios_11_22_26_ci_units_transfer_artifacts_and_preserve_causes` executes separate fresh directories and validates generated YAML with actionlint. |
 | 12–14 | `scenarios_12_13_14_21_23_24_native_workspaces_aliases_and_conditions` covers native membership/exclusion, Cargo virtual root, mixed workspace, aliases, renames, kinds, config-less projects, duplicate IDs, and task-less neighbors; explicit missing/cycles are checked by `scenario_26_queries_cycles_missing_references_and_output_ownership`. |
 | 15 | Watch/server fixture and `scenarios_15_19_21_live_invalid_configuration_recovers_atomically`. |
