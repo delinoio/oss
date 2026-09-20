@@ -109,6 +109,8 @@ Real remote transport tests use loopback MinIO and fixture-only credentials. The
 ## Logging
 Test assertions include typed receipts and native fixture diagnostics on failure. Production logs remain subject to the engine's designation mask and stable context rules.
 
+`combined_log_keeps_masking_across_pipe_eof` splits a multiline Unicode secret at every byte boundary across sequential pipe lifetimes. `combined_shard_logs_mask_secrets_before_storage_and_display` splits a secret across stdout and stderr of separate real shard processes and verifies masked stored/normal terminal output, including continued storage masking with `--show-secrets`. The combined mask is flushed only after every task stream and shard finishes.
+
 ## Build and Test
 
 ```sh

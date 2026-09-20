@@ -801,7 +801,12 @@ async fn run_task(
             exe.to_string_lossy().into_owned(),
         );
     }
-    let log = Arc::new(Mutex::new(File::create(run_directory.join("output.log"))?));
+    let log = Arc::new(Mutex::new(OutputLog::new(
+        File::create(run_directory.join("output.log"))?,
+        environment.secrets.clone(),
+        options.show_secrets,
+        options.quiet,
+    )));
     let mut docker = None;
     let mut command = task.command.clone();
     if task.platform.executor == Executor::Docker && task.shard.is_none() {
@@ -824,7 +829,7 @@ async fn run_task(
         return Err(crate::process::Cancelled.into());
     }
     if task.shard.is_some() {
-        let mut receipt = crate::shard::execute(
+        let result = crate::shard::execute(
             graph,
             id,
             &values,
@@ -836,7 +841,10 @@ async fn run_task(
             causes,
             log.clone(),
         )
-        .await?;
+        .await;
+        let flushed = log.lock().unwrap().finish();
+        let mut receipt = result?;
+        flushed?;
         // Shard selection partitions cache storage, not the semantic identity
         // of the tested input version passed to downstream tasks and CI jobs.
         receipt.output = result_key;
@@ -869,16 +877,12 @@ async fn run_task(
         process.child.stdout.take().unwrap(),
         log.clone(),
         environment.secrets.clone(),
-        options.show_secrets,
-        options.quiet,
         log_failed.clone(),
     ));
     let stderr = tokio::spawn(monitored_log(
         process.child.stderr.take().unwrap(),
-        log,
+        log.clone(),
         environment.secrets.clone(),
-        options.show_secrets,
-        options.quiet,
         log_failed.clone(),
     ));
     tracing::info!(task = id, execution = %execution, causes = ?causes, "Task started");
@@ -909,7 +913,11 @@ async fn run_task(
             };
             if let Err(error) = result {
                 let reaped = process.terminate().await;
-                finish_logs_and_container(stdout, stderr, cleanup_container(docker)).await?;
+                let drained =
+                    finish_logs_and_container(stdout, stderr, cleanup_container(docker)).await;
+                let flushed = log.lock().unwrap().finish();
+                drained?;
+                flushed?;
                 reaped?;
                 return Err(error);
             }
@@ -932,6 +940,7 @@ async fn run_task(
             let completed = finish_service(
                 &mut process,
                 (stdout, stderr),
+                log,
                 &stop,
                 &log_failed,
                 remaining,
@@ -972,7 +981,10 @@ async fn run_task(
     } else {
         Ok(())
     };
-    finish_logs_and_container(stdout, stderr, cleanup_container(docker)).await?;
+    let drained = finish_logs_and_container(stdout, stderr, cleanup_container(docker)).await;
+    let flushed = log.lock().unwrap().finish();
+    drained?;
+    flushed?;
     reaped?;
     let status = waited?;
     let stable = (task.install && !task.cache)
@@ -1257,6 +1269,7 @@ async fn finish_service(
         tokio::task::JoinHandle<Result<()>>,
         tokio::task::JoinHandle<Result<()>>,
     ),
+    log: Arc<Mutex<OutputLog>>,
     stop: &CancellationToken,
     log_failed: &CancellationToken,
     timeout: Option<Duration>,
@@ -1269,24 +1282,61 @@ async fn finish_service(
         Ok(())
     };
     let output = finish_logs_and_container(logs.0, logs.1, cleanup).await;
+    let flushed = log.lock().unwrap().finish();
     reaped?;
     let status = waited?;
     output?;
+    flushed?;
     Ok(status)
+}
+
+/// Serializes the final masked byte stream for one task, including all shards.
+/// Per-pipe masking also remains necessary when another pipe interrupts a
+/// secret.
+pub struct OutputLog {
+    file: File,
+    masker: Redactor,
+    show: bool,
+    quiet: bool,
+}
+impl OutputLog {
+    fn new(file: File, secrets: Vec<Vec<u8>>, show: bool, quiet: bool) -> Self {
+        Self {
+            file,
+            masker: Redactor::new(secrets),
+            show,
+            quiet,
+        }
+    }
+
+    fn write(&mut self, masked: &[u8], raw: &[u8], eof: bool) -> Result<()> {
+        // EOF belongs to the task, not a pipe or shard: either can leave a
+        // partial secret that the next writer completes in the shared log.
+        let combined = self.masker.push(masked, eof);
+        self.file.write_all(&combined)?;
+        if !self.quiet {
+            std::io::stderr()
+                .lock()
+                .write_all(if self.show { raw } else { &combined })?;
+        }
+        Ok(())
+    }
+
+    fn finish(&mut self) -> Result<()> {
+        self.write(&[], &[], true)
+    }
 }
 
 async fn monitored_log(
     reader: impl AsyncRead + Unpin,
-    file: Arc<Mutex<File>>,
+    file: Arc<Mutex<OutputLog>>,
     secrets: Vec<Vec<u8>>,
-    show: bool,
-    quiet: bool,
     failed: CancellationToken,
 ) -> Result<()> {
     // Cancellation on drop also covers panics/aborted log owners. A successful
     // EOF is normal and must leave a still-running service alone.
     let failure = failed.drop_guard();
-    let result = stream_log(reader, file, secrets, show, quiet).await;
+    let result = stream_log(reader, file, secrets).await;
     if result.is_ok() {
         failure.disarm();
     }
@@ -1295,21 +1345,15 @@ async fn monitored_log(
 
 pub async fn stream_log(
     mut reader: impl AsyncRead + Unpin,
-    file: Arc<Mutex<File>>,
+    file: Arc<Mutex<OutputLog>>,
     secrets: Vec<Vec<u8>>,
-    show: bool,
-    quiet: bool,
 ) -> Result<()> {
     let mut masker = Redactor::new(secrets);
     let mut block = [0; 8192];
     loop {
         let n = reader.read(&mut block).await?;
         let masked = masker.push(&block[..n], n == 0);
-        file.lock().unwrap().write_all(&masked)?;
-        if !quiet {
-            let live = if show { &block[..n] } else { &masked[..] };
-            std::io::stderr().lock().write_all(live)?;
-        }
+        file.lock().unwrap().write(&masked, &block[..n], false)?;
         if n == 0 {
             break;
         }
@@ -1404,6 +1448,32 @@ mod output_cleanup_tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use super::*;
+
+    #[tokio::test]
+    async fn combined_log_keeps_masking_across_pipe_eof() {
+        let secret = "pipe\nsecret-☃".as_bytes();
+        for split in 1..secret.len() {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("output.log");
+            let secrets = vec![secret.to_vec()];
+            let log = Arc::new(Mutex::new(OutputLog::new(
+                File::create(&path).unwrap(),
+                secrets.clone(),
+                false,
+                true,
+            )));
+            // The first pipe reaches EOF before the second pipe starts writing.
+            // Flushing a pipe's own mask must not flush the combined log's mask.
+            stream_log(&secret[..split], log.clone(), secrets.clone())
+                .await
+                .unwrap();
+            stream_log(&secret[split..], log.clone(), secrets)
+                .await
+                .unwrap();
+            log.lock().unwrap().finish().unwrap();
+            assert_eq!(std::fs::read(&path).unwrap(), b"[REDACTED]");
+        }
+    }
 
     #[tokio::test]
     async fn bootstrap_receipts_require_current_keys_outputs_and_prerequisites() {
@@ -1685,8 +1755,13 @@ mod output_cleanup_tests {
             let directory = tempfile::tempdir().unwrap();
             let path = directory.path().join("output.log");
             std::fs::write(&path, "retained").unwrap();
-            let log = Arc::new(Mutex::new(File::open(&path).unwrap()));
-            let stdout = tokio::spawn(stream_log(&b"output"[..], log, vec![], false, true));
+            let log = Arc::new(Mutex::new(OutputLog::new(
+                File::open(&path).unwrap(),
+                vec![],
+                false,
+                true,
+            )));
+            let stdout = tokio::spawn(stream_log(&b"output"[..], log, vec![]));
             let sibling_finished = Arc::new(AtomicBool::new(false));
             let sibling = sibling_finished.clone();
             let stderr = tokio::spawn(async move {
@@ -1747,22 +1822,23 @@ mod output_cleanup_tests {
             for cleanup_fails in [false, true] {
                 let path = directory.path().join("output.log");
                 std::fs::write(&path, "retained").unwrap();
-                let broken = Arc::new(Mutex::new(File::open(&path).unwrap()));
-                let good = Arc::new(Mutex::new(
-                    File::create(directory.path().join("good.log")).unwrap(),
-                ));
-                let failed = CancellationToken::new();
-                // A successful stream EOF alone does not stop a service.
-                monitored_log(
-                    tokio::io::empty(),
-                    good.clone(),
+                let broken = Arc::new(Mutex::new(OutputLog::new(
+                    File::open(&path).unwrap(),
                     vec![],
                     false,
                     true,
-                    failed.clone(),
-                )
-                .await
-                .unwrap();
+                )));
+                let good = Arc::new(Mutex::new(OutputLog::new(
+                    File::create(directory.path().join("good.log")).unwrap(),
+                    vec![],
+                    false,
+                    true,
+                )));
+                let failed = CancellationToken::new();
+                // A successful stream EOF alone does not stop a service.
+                monitored_log(tokio::io::empty(), good.clone(), vec![], failed.clone())
+                    .await
+                    .unwrap();
                 assert!(!failed.is_cancelled());
                 let mut process = OwnedProcess::spawn(
                     directory.path(),
@@ -1782,16 +1858,16 @@ mod output_cleanup_tests {
                         good.clone()
                     },
                     vec![],
-                    false,
-                    true,
                     failed.clone(),
                 ));
                 let stderr = tokio::spawn(monitored_log(
                     process.child.stderr.take().unwrap(),
-                    if stream == "stderr" { broken } else { good },
+                    if stream == "stderr" {
+                        broken.clone()
+                    } else {
+                        good
+                    },
                     vec![],
-                    false,
-                    true,
                     failed.clone(),
                 ));
                 let cleaned = AtomicBool::new(false);
@@ -1809,6 +1885,7 @@ mod output_cleanup_tests {
                     finish_service(
                         &mut process,
                         (stdout, stderr),
+                        broken,
                         &CancellationToken::new(),
                         &failed,
                         None,

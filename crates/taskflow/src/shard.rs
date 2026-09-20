@@ -1,6 +1,5 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs::File,
     path::Path,
     sync::{Arc, Mutex},
     time::Instant,
@@ -17,7 +16,7 @@ use crate::{
     graph::Graph,
     plan::Cause,
     process::{self, ExitReason, OwnedProcess, ProcessExit},
-    runner::{Outcome, Receipt, RunOptions},
+    runner::{Outcome, OutputLog, Receipt, RunOptions},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -687,7 +686,7 @@ pub async fn execute(
     execution: &str,
     key: &str,
     causes: BTreeSet<Cause>,
-    log: Arc<Mutex<File>>,
+    log: Arc<Mutex<OutputLog>>,
 ) -> Result<Receipt> {
     let task = &graph.tasks[id].task;
     let config = task.shard.as_ref().unwrap();
@@ -953,7 +952,7 @@ async fn run_unit(
     secrets: &[Vec<u8>],
     options: &RunOptions,
     cancel: &CancellationToken,
-    log: Arc<Mutex<File>>,
+    log: Arc<Mutex<OutputLog>>,
     deadline: Option<tokio::time::Instant>,
 ) -> Result<ProcessExit> {
     let result = process::DEADLINE
@@ -994,15 +993,11 @@ async fn run_unit(
                 child.child.stdout.take().unwrap(),
                 log.clone(),
                 secrets.to_vec(),
-                options.show_secrets,
-                options.quiet,
             ));
             let stderr = tokio::spawn(crate::runner::stream_log(
                 child.child.stderr.take().unwrap(),
                 log,
                 secrets.to_vec(),
-                options.show_secrets,
-                options.quiet,
             ));
             let waited = child.wait(cancel, process::remaining_timeout(None)).await;
             let reaped = if waited.is_err() {

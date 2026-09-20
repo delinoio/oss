@@ -1021,6 +1021,37 @@ fn scenario_06_streaming_secret_masking_handles_all_boundaries() {
 }
 
 #[tokio::test]
+async fn combined_shard_logs_mask_secrets_before_storage_and_display() {
+    let secret = "log-\nsecret-☃";
+    let root = fixture(json!({
+        "suite":{"command":command(&["version"]),"input":[],"env":{"TFLOW_LOG_SECRET":secret},"secrets":["TFLOW_LOG_SECRET"],"shard":{"adapter":"generic","count":3,"list":command(&["inventory"]),"run":command(&["shard-log"])}}
+    }));
+    for show in [false, true] {
+        let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_tflow"));
+        command
+            .current_dir(root.path())
+            .args(["--json", "run", "suite"]);
+        if show {
+            command.arg("--show-secrets");
+        }
+        let output = command.output().await.unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let result: runner::RunResult = serde_json::from_slice(&output.stdout).unwrap();
+        let log = root
+            .path()
+            .join(".taskflow/runs")
+            .join(&result.results["app#suite"].execution)
+            .join("output.log");
+        assert_eq!(std::fs::read(log).unwrap(), b"[REDACTED]");
+        let terminal = String::from_utf8(output.stderr).unwrap();
+        assert_eq!(terminal.contains(secret), show, "{terminal}");
+        if !show {
+            assert!(terminal.contains("[REDACTED]"), "{terminal}");
+        }
+    }
+}
+
+#[tokio::test]
 async fn scenarios_06_07_dotenv_precedence_disable_and_persisted_masking() {
     let dir = fixture(
         json!({"env":{"command":command(&["env","TFLOW_TEST_SECRET","value"]),"input":[],"secrets":["TFLOW_TEST_SECRET"]}}),

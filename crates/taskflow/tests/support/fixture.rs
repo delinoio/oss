@@ -184,8 +184,13 @@ fn main() {
             writeln!(file, "end:{}", std::process::id()).unwrap();
         }
         "inventory" => println!("{{\"version\":1,\"tests\":[{{\"id\":\"aa\"}},{{\"id\":\"bb\"}},{{\"id\":\"cc\"}}]}}"),
-        "shard" => {
+        "shard" | "shard-log" => {
             let input = fs::read_to_string(std::env::var("TFLOW_SHARD_INPUT").unwrap()).unwrap();
+            if args[1] == "shard-log" {
+                let secret = std::env::var("TFLOW_LOG_SECRET").unwrap();
+                if input.contains("\"aa\"") { std::io::stdout().write_all(&secret.as_bytes()[..4]).unwrap(); }
+                if input.contains("\"bb\"") { std::io::stderr().write_all(&secret.as_bytes()[4..]).unwrap(); }
+            }
             let selected: Vec<_> = ["aa", "bb", "cc"].iter().filter(|id| input.contains(&format!("\"{id}\""))).map(|id| format!("{{\"id\":\"{id}\",\"status\":\"passed\"}}")).collect();
             write(&std::env::var("TFLOW_SHARD_RESULT").unwrap(), format!("{{\"version\":1,\"results\":[{}]}}", selected.join(",")).as_bytes());
         }
