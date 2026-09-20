@@ -970,7 +970,8 @@ async fn run_unit(
             if task.platform.executor == crate::config::Executor::Docker {
                 let mut unit = task.clone();
                 unit.command = command;
-                unit.platform.ports.clear();
+                // Execution units retain publish mappings. Only inventory and
+                // tool probes omit them; each sequential unit owns its ports.
                 env = crate::docker::host_environment(&env);
                 let prepared = crate::docker::prepare(
                     &graph.workspace.root,

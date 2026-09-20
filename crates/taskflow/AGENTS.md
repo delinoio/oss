@@ -129,3 +129,5 @@
 - Cache reuse is finalized by its durable receipt; cancellation after successful persistence cannot change that receipt or invocation to cancelled. Cancellation before publication still invalidates reuse.
 
 - Apply the same regular-file and bounded-read checks to persisted shard inventories and every shard report as to generic adapter results; reject special files before blocking opens and cap actual reads as well as metadata lengths.
+
+- Docker shard execution preserves validated task port mappings for each owned unit; only inventory and tool probes omit publishing. Await unit cleanup before the next unit reuses a port.

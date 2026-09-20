@@ -370,6 +370,59 @@ async fn scenario_10_local_docker_execution_uses_explicit_platform_and_cleans_co
         .unwrap();
         assert!(output.is_empty());
     }
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let server = "const fs=require('fs');const \
+                  ids=JSON.parse(fs.readFileSync(process.env.TFLOW_SHARD_INPUT)).tests;const \
+                  server=require('http').createServer((req,res)=>{res.setHeader('Connection','\
+                  close');res.end(JSON.stringify(ids));server.close(()=>fs.writeFileSync(process.\
+                  env.TFLOW_SHARD_RESULT,JSON.stringify({version:1,results:ids.map(id=>({id,\
+                  status:'passed'}))})));});server.listen(8080,'0.0.0.0');";
+    let directory = fixture(json!({"suite":{
+        "command":["node","--version"], "input":[], "output":[], "timeout":"45s",
+        "tools":{"node":["node","--version"]},
+        "platform":{"os":"linux","arch":config::host_arch(),"executor":"docker","image":image,"ports":[format!("127.0.0.1:{port}:8080")]},
+        "shard":{"adapter":"generic","count":2,"list":["node","-e","console.log(JSON.stringify({version:1,tests:[{id:'aa'},{id:'bb'}]}))"],"run":["node","-e",server]}
+    }}));
+    let g = graph(directory.path()).await;
+    let plan = Plan::create(&g, &["suite".into()], &[], false).unwrap();
+    let cancel = CancellationToken::new();
+    let running = tokio::spawn(runner::run_plan(
+        g,
+        plan,
+        RunOptions::default(),
+        cancel.clone(),
+    ));
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_millis(500))
+        .build()
+        .unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(40);
+    let mut contacted = BTreeSet::new();
+    while contacted.len() < 2 && !running.is_finished() && tokio::time::Instant::now() < deadline {
+        if let Ok(response) = client.get(format!("http://127.0.0.1:{port}")).send().await {
+            contacted.extend(response.json::<Vec<String>>().await.unwrap());
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    if contacted.len() != 2 {
+        cancel.cancel();
+    }
+    let result = running.await.unwrap().unwrap();
+    assert!(result.success, "{result:?}");
+    assert_eq!(contacted, BTreeSet::from(["aa".into(), "bb".into()]));
+    let (inventory, reports) = shard::read_reports(
+        &directory
+            .path()
+            .join(".taskflow/runs")
+            .join(&result.results["app#suite"].execution),
+    )
+    .unwrap();
+    assert!(shard::aggregate(&inventory, 2, &reports).unwrap());
+    let _replacement = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
 }
 
 async fn wait_for_minio_cluster(endpoint: &str, budget: Duration) -> anyhow::Result<()> {
