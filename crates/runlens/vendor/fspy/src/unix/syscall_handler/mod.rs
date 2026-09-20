@@ -1,6 +1,7 @@
 mod execve;
 mod getdents;
 mod open;
+mod rename;
 mod stat;
 
 use std::{
@@ -77,6 +78,10 @@ impl_handler!(
     #[cfg(target_arch = "x86_64")] open,
     openat,
     openat2,
+
+    #[cfg(target_arch = "x86_64")] rename,
+    renameat,
+    renameat2,
 
     #[cfg(target_arch = "x86_64")] getdents,
     getdents64,

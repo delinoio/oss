@@ -69,3 +69,12 @@ Windows payload propagation retains and validates the DLL path's trailing NUL
 before constructing a native C string. Native nested-child fixtures cover payload
 propagation. Remove this fix when upstream serializes and validates the complete
 NUL-terminated slice rather than relying on bytes after its allocation.
+
+Unix rename interception records both endpoints as write attempts before forwarding
+unchanged. macOS covers rename, renameat, renamex_np and renameatx_np; Linux covers
+libc rename/renameat/renameat2 and all corresponding raw syscalls through seccomp,
+including static children and directory-relative destinations. Native successful
+and failed rename fixtures verify both paths, actual deletion versus mere attempts,
+and external deny-write policy failures. Linux CI repeats these cases with the
+static fixture. Remove this patch when upstream records both rename endpoints and
+marks unresolved arguments as incomplete while preserving the child operation.

@@ -17,6 +17,47 @@ fn main() {
             println!("child stdout preserved");
             eprintln!("child stderr preserved");
         }
+        #[cfg(unix)]
+        "rename" | "renameat" | "renameat2" | "renamex" | "renameatx" => {
+            use std::{ffi::CString, os::fd::AsRawFd};
+            let source = CString::new(args[1].as_str()).unwrap();
+            let destination = CString::new(args[2].as_str()).unwrap();
+            let destination_dir = fs::File::open(&args[3]).unwrap();
+            let full_destination = CString::new(format!("{}/{}", args[3], args[2])).unwrap();
+            // SAFETY: all strings remain alive and NUL-terminated, and the
+            // directory descriptor remains open for the call.
+            let result = unsafe {
+                match args[0].as_str() {
+                    "rename" => libc::rename(source.as_ptr(), full_destination.as_ptr()),
+                    "renameat" => libc::renameat(
+                        libc::AT_FDCWD,
+                        source.as_ptr(),
+                        destination_dir.as_raw_fd(),
+                        destination.as_ptr(),
+                    ),
+                    #[cfg(target_os = "linux")]
+                    "renameat2" => libc::renameat2(
+                        libc::AT_FDCWD,
+                        source.as_ptr(),
+                        destination_dir.as_raw_fd(),
+                        destination.as_ptr(),
+                        0,
+                    ),
+                    #[cfg(target_os = "macos")]
+                    "renamex" => libc::renamex_np(source.as_ptr(), full_destination.as_ptr(), 0),
+                    #[cfg(target_os = "macos")]
+                    "renameatx" => libc::renameatx_np(
+                        libc::AT_FDCWD,
+                        source.as_ptr(),
+                        destination_dir.as_raw_fd(),
+                        destination.as_ptr(),
+                        0,
+                    ),
+                    _ => panic!("unsupported native rename fixture"),
+                }
+            };
+            assert_eq!(result == 0, args[1] == "input.txt");
+        }
         "read" => {
             let _ = fs::read(args.get(1).map(String::as_str).unwrap_or("input.txt"));
         }

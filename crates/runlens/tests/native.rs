@@ -1883,3 +1883,109 @@ fn unix_collection_failure_and_large_variadic_exec_preserve_child_semantics() {
         true
     );
 }
+
+#[cfg(unix)]
+fn check_rename_attempt(executable: &str, mode: &str, missing: bool) {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let outside = outside.path().canonicalize().unwrap();
+    let destination = outside.join("renamed.txt");
+    fs::write(root.path().join("input.txt"), "moved contents").unwrap();
+    fs::write(
+        root.path().join("runlens.toml"),
+        format!(
+            "schema_version = 1\n[policy]\ndeny_writes = [{:?}]\n",
+            destination.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+    let source = if missing { "missing.txt" } else { "input.txt" };
+    let output = invoke(
+        root.path(),
+        &[
+            "run",
+            "--save",
+            "rename.json",
+            "--",
+            executable,
+            mode,
+            source,
+            "renamed.txt",
+            outside.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{mode}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report = parse(root.path(), "rename.json");
+    let execution = &report["executions"][0];
+    assert_eq!(execution["outcome"]["collection_complete"], true);
+    assert_eq!(
+        execution["accesses"][format!("${{workspace}}/{source}")]["write"],
+        true
+    );
+    assert_eq!(
+        execution["accesses"][destination.to_str().unwrap()]["write"],
+        true
+    );
+    assert_eq!(destination.exists(), !missing);
+    if missing {
+        assert!(
+            execution["changes"]
+                .get("${workspace}/missing.txt")
+                .is_none()
+        );
+    } else {
+        assert_eq!(execution["changes"]["${workspace}/input.txt"], "deleted");
+    }
+    assert_eq!(
+        invoke(root.path(), &["policy", "check", "rename.json", "--json"])
+            .status
+            .code(),
+        Some(5)
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn rename_attempts_cover_both_endpoints_and_external_write_policy() {
+    let modes = [
+        "rename",
+        "renameat",
+        #[cfg(target_os = "linux")]
+        "renameat2",
+        #[cfg(target_os = "macos")]
+        "renamex",
+        #[cfg(target_os = "macos")]
+        "renameatx",
+    ];
+    for mode in modes {
+        for missing in [false, true] {
+            check_rename_attempt(fixture(), mode, missing);
+        }
+    }
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn static_linux_rename_syscalls_cover_both_endpoints() {
+    let Ok(executable) = std::env::var("RUNLENS_STATIC_FIXTURE") else {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "CI requires a real static Linux fixture"
+        );
+        return;
+    };
+    for mode in [
+        #[cfg(target_arch = "x86_64")]
+        "rename",
+        "renameat",
+        "renameat2",
+    ] {
+        for missing in [false, true] {
+            check_rename_attempt(&executable, mode, missing);
+        }
+    }
+}

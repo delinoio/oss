@@ -575,3 +575,9 @@ Every Git metadata/source operation uses a fresh private HOME and an empty regul
 global-config file within it. Native Windows arm64 Git rejects `NUL` for this
 purpose; real files avoid platform null-device behavior without loading user
 configuration. Reused internal config files must remain empty regular files.
+
+Unix rename collection records source and destination write attempts for native
+rename/renameat, macOS extended variants, and Linux renameat2. Linux seccomp covers
+raw/static calls too. Failed renames still record attempts; only snapshots assert
+workspace deletion or creation. An external destination therefore remains visible
+to literal write-boundary policies even when only the source is in snapshot scope.
