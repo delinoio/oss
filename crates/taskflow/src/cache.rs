@@ -867,9 +867,9 @@ fn store_encoded_if(
     let previous = match files::read_regular_limited(&entry, MAX_ENTRY_BYTES) {
         Ok(bytes) => Some(bytes),
         Err(error) => {
-            if !error
+            if error
                 .downcast_ref::<std::io::Error>()
-                .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+                .is_none_or(|e| e.kind() != std::io::ErrorKind::NotFound)
             {
                 tracing::warn!(
                     code = "invalid-cache-manifest",

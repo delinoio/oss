@@ -421,9 +421,9 @@ pub fn previous(root: &Path, id: &str) -> Option<Receipt> {
     let bytes = match files::read_regular_limited(&receipt_path(root, id), RECEIPT_LIMIT) {
         Ok(bytes) => bytes,
         Err(error) => {
-            if !error
+            if error
                 .downcast_ref::<std::io::Error>()
-                .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+                .is_none_or(|e| e.kind() != std::io::ErrorKind::NotFound)
             {
                 tracing::warn!(
                     task = id,
