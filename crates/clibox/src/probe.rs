@@ -142,18 +142,21 @@ where
 {
     let mut pending: FuturesUnordered<_> = addresses.into_iter().map(connect).collect();
     let mut last = Code::DnsLookup;
+    let mut terminal = None;
     while let Some(result) = pending.next().await {
         match result {
             Ok(stream) => return Ok(stream),
             Err(error) => {
                 last = network_io(error.kind());
                 if !last.retryable() {
-                    return Err(last);
+                    // A local error may affect only this destination or family.
+                    // Preserve it if all addresses fail, but let others connect.
+                    terminal.get_or_insert(last);
                 }
             }
         }
     }
-    Err(last)
+    Err(terminal.unwrap_or(last))
 }
 
 struct Resolver;

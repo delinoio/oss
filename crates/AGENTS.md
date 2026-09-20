@@ -156,6 +156,7 @@
 - Preserve help/version and the #919 `wait tcp`, `wait http`, and `wait file` contracts, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`.
 - Keep the explicitly approved crates.io publication, workspace, and cargo-mono release target. #916 utilities remain implemented and #917 retains its independently reserved command interfaces; do not add other domain commands implicitly.
 - Wait command kinds, HTTP methods, outcomes, and error classifications use enums. Poll immediately, delay only after unsuccessful attempts, clip all work/delays to monotonic deadlines, and cancel without target mutation or service termination.
+- Let every resolved TCP address attempt finish within the shared deadline until any succeeds; preserve terminal errors only for an all-address failure instead of discarding other addresses on one destination's error.
 - Use Rust networking and metadata only. HTTP verifies OS trust/hostname, completes at headers, disables proxies/credentials/redirects/client retries and custom CA overrides; file readiness follows symlinks but requires a regular file.
 - Preserve usable OS trust roots when other entries fail loading or parsing; fail trust initialization only when no usable roots remain, and expose counts rather than individual loader errors or certificate data.
 - Keep one in-flight HTTP client/native trust initialization across attempt timeouts; retries await the retained result and cancellation must not wait for an uninterruptible OS trust call.

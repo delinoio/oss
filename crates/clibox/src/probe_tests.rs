@@ -89,6 +89,40 @@ async fn all_addresses_get_a_chance_and_successful_tcp_connection_is_closed() {
 }
 
 #[tokio::test]
+async fn terminal_address_failure_does_not_discard_another_success() {
+    let addresses = vec!["[::1]:1".parse().unwrap(), "127.0.0.1:2".parse().unwrap()];
+    let result = connect_addresses(addresses, |addr| async move {
+        if addr.port() == 1 {
+            Err(io::Error::from(io::ErrorKind::PermissionDenied))
+        } else {
+            tokio::task::yield_now().await;
+            Ok(42)
+        }
+    })
+    .await;
+    assert_eq!(result.unwrap(), 42);
+}
+
+#[tokio::test]
+async fn all_failed_addresses_preserve_terminal_errors_in_either_order() {
+    for terminal_port in [1, 2] {
+        let addresses = vec!["[::1]:1".parse().unwrap(), "127.0.0.1:2".parse().unwrap()];
+        let result = connect_addresses(addresses, |addr| async move {
+            if addr.port() == 2 {
+                tokio::task::yield_now().await;
+            }
+            Err::<(), _>(io::Error::from(if addr.port() == terminal_port {
+                io::ErrorKind::PermissionDenied
+            } else {
+                io::ErrorKind::ConnectionRefused
+            }))
+        })
+        .await;
+        assert_eq!(result, Err(Code::PermissionDenied));
+    }
+}
+
+#[tokio::test]
 async fn dns_localhost_and_refusal() {
     let addresses = resolve("localhost", 1).await.unwrap();
     assert!(!addresses.is_empty());
