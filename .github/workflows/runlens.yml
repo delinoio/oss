@@ -82,6 +82,10 @@ jobs:
       - name: Native execution tests
         working-directory: crates/runlens
         run: cargo test --locked --features test-support
+      - name: Windows Detours setup failure regression
+        if: runner.os == 'Windows'
+        working-directory: crates/runlens
+        run: cargo test --locked --package fspy_preload_windows detours_long_results_preserve_setup_failures
       - name: Release build
         working-directory: crates/runlens
         run: cargo build --locked --release --target ${{ matrix.target }} --bin runlens

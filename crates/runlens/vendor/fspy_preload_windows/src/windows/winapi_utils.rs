@@ -29,7 +29,9 @@ pub fn ck(b: BOOL) -> winsafe::SysResult<()> {
 }
 
 pub const fn ck_long(val: c_long) -> winsafe::SysResult<()> {
-    if 0 == NO_ERROR {
+    // LONG APIs return their error code directly; consulting a constant or
+    // GetLastError would hide failed hook transactions. See PATCHES.md.
+    if val.cast_unsigned() == NO_ERROR {
         Ok(())
     } else {
         // SAFETY: creating an ERROR from the raw c_long value for the Windows error code
@@ -146,6 +148,22 @@ mod tests {
     };
 
     use super::get_path_name;
+
+    #[test]
+    fn detours_long_results_preserve_setup_failures() {
+        use super::ck_long;
+        use winsafe::co;
+        assert_eq!(ck_long(0), Ok(()));
+        assert_eq!(ck_long(5), Err(co::ERROR::ACCESS_DENIED));
+        assert_eq!(ck_long(6), Err(co::ERROR::INVALID_HANDLE));
+        // SAFETY: Detours explicitly rejects a null detour before reading any
+        // target pointer. This exercises a real setup error without patching code.
+        let failed_attach = unsafe {
+            fspy_detours_sys::DetourAttach(std::ptr::null_mut(), std::ptr::null_mut())
+        };
+        assert_eq!(failed_attach, 87);
+        assert_eq!(ck_long(failed_attach), Err(co::ERROR::INVALID_PARAMETER));
+    }
 
     fn test_get_path_name(filename: &str) {
         let tmpdir = tempfile::tempdir().unwrap();

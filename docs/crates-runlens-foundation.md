@@ -608,3 +608,9 @@ of descriptor read/write access mode, and for Linux O_TMPFILE. Stdio update mode
 r+, w+, and a+ include both read and write, including binary-mode variants. Preload
 and raw/static Linux syscall collection use the same classification so external
 mutations cannot be misclassified as read-only because they lack workspace snapshots.
+
+Windows Detours setup and teardown use the returned LONG error code, with zero
+as the only success value. Failures propagate through the existing transaction
+abort and typed unsupported-collection marker, preserving child execution while
+preventing a complete receipt. Native Windows validation includes an explicitly
+invoked checker test using a real DetourAttach invalid-parameter failure.

@@ -23,6 +23,12 @@ test("Runlens uses native six-platform execution and separate minimum OS evidenc
   assert.deepEqual(native.permissions, { contents: "read" });
   assert.doesNotMatch(commands, /secrets\.|sign-blob|gh release/u);
 });
+test("Windows native validation exercises real Detours setup errors", () => {
+  const step = native.jobs.native.steps.find(step => step.name === "Windows Detours setup failure regression");
+  assert.equal(step.if, "runner.os == 'Windows'");
+  assert.equal(step["working-directory"], "crates/runlens");
+  assert.equal(step.run, "cargo test --locked --package fspy_preload_windows detours_long_results_preserve_setup_failures");
+});
 test("Runlens native validation watches its prebuilt Homebrew release inputs", () => {
   for (const event of ["pull_request", "push"]) {
     for (const path of ["packaging/homebrew/templates/runlens.rb.tmpl", "scripts/release/update-homebrew.sh"]) {

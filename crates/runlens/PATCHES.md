@@ -93,3 +93,10 @@ both read and write for r+/w+/a+ (including binary-mode spellings). Native exter
 create/truncate/update-mode fixtures and static Linux openat fixtures enforce
 write boundaries, with read-only controls. Remove this patch when upstream shares
 correct creation/truncation/update-mode semantics across both collection paths.
+
+The Windows LONG checker compares the actual Detours return value with NO_ERROR,
+not a constant or thread-local last error. Setup failures therefore reach the
+existing transaction-abort and UNSUPPORTED marker path while the child continues.
+The Windows native workflow explicitly runs the checker regression with success,
+access/handle failures, and a real rejected DetourAttach call. Remove this patch
+when upstream preserves LONG error codes at all setup and teardown boundaries.
