@@ -4265,3 +4265,76 @@ fn unknown_source_revisions_cannot_certify_baseline_absence() {
         );
     }
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_custom_loader_dependencies_cannot_certify_complete_collection() {
+    let root = tempfile::tempdir().unwrap();
+    let external = tempfile::tempdir().unwrap();
+    let library = external.path().join("loader-dependency.dylib");
+    let source = external.path().join("dependency.c");
+    let program_source = external.path().join("main.c");
+    let program = root.path().join("loader-program");
+    fs::write(
+        &program_source,
+        "#include <stdio.h>\nextern int dependency(void);\nint main(void) { printf(\"%d\\n\", \
+         dependency()); return 0; }\n",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("runlens.toml"),
+        "schema_version = 1\n[policy]\ndeny_reads = [\"**/loader-dependency.dylib\"]\n",
+    )
+    .unwrap();
+    for value in [17, 29] {
+        fs::write(
+            &source,
+            format!("int dependency(void) {{ return {value}; }}\n"),
+        )
+        .unwrap();
+        let compiled = Command::new("cc")
+            .arg("-dynamiclib")
+            .arg(&source)
+            .arg("-o")
+            .arg(&library)
+            .output()
+            .unwrap();
+        assert!(compiled.status.success(), "{compiled:?}");
+        if value == 17 {
+            let compiled = Command::new("cc")
+                .arg(&program_source)
+                .arg(&library)
+                .arg("-o")
+                .arg(&program)
+                .output()
+                .unwrap();
+            assert!(compiled.status.success(), "{compiled:?}");
+        }
+        let saved = format!("loader-{value}.json");
+        let result = invoke(
+            root.path(),
+            &["run", "--save", &saved, "--", program.to_str().unwrap()],
+        );
+        assert_eq!(result.status.code(), Some(4), "{result:?}");
+        assert_eq!(
+            String::from_utf8_lossy(&result.stdout).trim(),
+            value.to_string()
+        );
+        let report = parse(root.path(), &saved);
+        assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 0);
+        assert_eq!(
+            report["executions"][0]["outcome"]["collection_complete"],
+            false
+        );
+        assert!(
+            report["executions"][0]["accesses"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .any(|(path, access)| path.ends_with("/loader-dependency.dylib")
+                    && access["read"] == true)
+        );
+        let policy = invoke(root.path(), &["policy", "check", &saved, "--json"]);
+        assert_eq!(policy.status.code(), Some(5), "{policy:?}");
+    }
+}

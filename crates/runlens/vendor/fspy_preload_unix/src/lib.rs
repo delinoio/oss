@@ -9,3 +9,5 @@ mod interceptions;
 mod libc;
 #[cfg(all(unix, not(target_env = "musl")))]
 mod macros;
+#[cfg(target_os = "macos")]
+mod images;

@@ -231,6 +231,7 @@
 - Runlens Windows spawn must complete fallible setup before resuming the child; its existing Job and original child handle own the remaining lifecycle.
 - Runlens Unix native fixtures must isolate ambient runner descriptors at the test command boundary. Explicit inheritance fixtures re-enable their own descriptors and must continue to prove that production preserves the handles and rejects complete verification.
 - Runlens observes Unix chdir/fchdir as directory metadata read attempts before cwd mutation; Linux kernel collection must also cover direct/static calls.
+- Runlens macOS loader observations retain library read paths and mark loose/custom images incomplete; only confirmed active shared-cache images may avoid pre-attachment loader-loss classification.
 
 ### clibox Rules
 

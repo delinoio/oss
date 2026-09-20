@@ -755,3 +755,5 @@ Git discovery. Available differences remain inspectable, but comparisons and
 new-access absence claims are inconclusive; definite independent policy violations
 still fail. Native regression coverage uses separate non-Git workspaces and every
 one-sided/two-sided missing-revision combination.
+
+macOS observes dyld image additions, including images mapped before tracer attachment. Each loaded library contributes read evidence. The separately bound main executable and private collector are excluded from this loader check; only active shared-cache images with matching Mach-O cache flags avoid incompleteness. Loose/custom libraries retain their original execution but cannot certify collection, because naming a loaded image does not bind earlier loader reads or initializer accesses. Native tests rebuild a custom external dylib without changing its executable and verify changed stdout, incomplete receipts, and read-policy denial.

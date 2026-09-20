@@ -234,3 +234,5 @@ fixtures cover absolute/relative names, missing paths, and descriptors whose
 directory was renamed after opening, proving fchdir's current-path read independently
 of the original open. Remove when upstream observes both families before mutation
 with equivalent read-boundary behavior on both architectures.
+
+macOS registers a dyld image callback after client attachment. It records existing and future loaded-library paths using thread-safe dladdr, skipping the owned tracer and separately bound main executable. Only images marked MH_DYLIB_IN_CACHE and confirmed by the active cache avoid loader-loss classification; all loose/custom images make collection incomplete because prior loader reads/initializers are unbound. Bounded path lookup failures also mark loss. A native C executable linked to an external dylib runs against two changed library implementations, preserves both outputs, and fails the read policy without claiming complete collection. Remove when upstream binds pre-attachment loader dependencies and initialization accesses with equivalent coverage.

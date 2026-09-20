@@ -43,5 +43,7 @@ fn init_client() {
     let bump: &'static fspy_nostd_alloc::PageBump = BUMP.init(fspy_nostd_alloc::page_bump());
     if let Some(client) = Client::from_env(current.envs(), bump) {
         let _ = CLIENT.set(client);
+        #[cfg(target_os = "macos")]
+        crate::images::observe();
     }
 }
