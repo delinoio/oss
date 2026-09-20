@@ -444,3 +444,5 @@ After the additional receipt/cache bounds, libtest inventory, and manifest-path 
 `input_patterns_reject_reserved_state_components` validates positive/negative reserved input components, nested and cross-project forms, portable separators, ASCII case aliases, and restore prefixes. Broad globs and ordinary hidden directories such as `.github` remain valid; runtime traversal still excludes reserved trees.
 
 `ci_bootstrap_pins_the_cli_build_directory` executes the generated Cargo build invocation against a tiny TaskFlow source fixture with both consumer `build.target-dir` and `CARGO_TARGET_DIR` overrides. Every job emits the same pinned build path and the expected CLI binary is produced without writing either alternate output tree.
+
+`check_rejects_docker_settings_on_host_tasks` rejects Docker images and nonempty port mappings for both implicit and explicit host executors. Real CLI checks and runs fail before prerequisites or commands execute; ordinary host configurations remain valid.

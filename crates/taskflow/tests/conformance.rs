@@ -6867,6 +6867,45 @@ async fn ci_export_rejects_blank_runner_mappings_before_writing() {
 }
 
 #[test]
+fn check_rejects_docker_settings_on_host_tasks() {
+    let image = format!("fixture@sha256:{}", "a".repeat(64));
+    for executor in [None, Some("host")] {
+        for mut platform in [
+            json!({"image":image}),
+            json!({"image":""}),
+            json!({"ports":["8080:80"]}),
+            json!({"image":image,"ports":["8080:80"]}),
+        ] {
+            if let Some(executor) = executor {
+                platform["executor"] = json!(executor);
+            }
+            let directory = fixture(json!({
+                "prepare":{"command":command(&["write","unexpected","executed"]),"input":[]},
+                "build":{"command":command(&["write","unexpected","executed"]),"input":[],"dependsOn":["prepare"],"platform":platform}
+            }));
+            let error = config::load(&directory.path().join("taskflow.yml")).unwrap_err();
+            assert!(format!("{error:#}").contains("require executor: docker"));
+            for args in [vec!["check"], vec!["run", "build"]] {
+                let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+                    .current_dir(directory.path())
+                    .args(args)
+                    .output()
+                    .unwrap();
+                assert!(!output.status.success());
+                let diagnostic = String::from_utf8_lossy(&output.stderr);
+                assert!(diagnostic.contains("app#build"), "{diagnostic}");
+                assert!(!directory.path().join("unexpected").exists());
+            }
+        }
+    }
+    for platform in [json!({}), json!({"executor":"host","ports":[]})] {
+        let task: config::Task =
+            serde_json::from_value(json!({"command":["true"],"platform":platform})).unwrap();
+        task.validate().unwrap();
+    }
+}
+
+#[test]
 fn check_rejects_invalid_docker_ports_before_prerequisites() {
     let image = format!("fixture@sha256:{}", "a".repeat(64));
     for port in ["8080:80\0", "-p8080:80", "", " "] {

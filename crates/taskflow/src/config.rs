@@ -580,6 +580,11 @@ impl Task {
                 .parse::<chrono_tz::Tz>()
                 .context("invalid IANA timezone")?;
         }
+        ensure!(
+            self.platform.executor == Executor::Docker
+                || (self.platform.image.is_none() && self.platform.ports.is_empty()),
+            "Docker image and port mappings require executor: docker"
+        );
         if self.platform.executor == Executor::Docker {
             self.platform.validate_ports()?;
             ensure!(
