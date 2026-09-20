@@ -3666,3 +3666,58 @@ fn direct_windows_native_creation_cannot_claim_child_coverage() {
     let policy = invoke(root.path(), &["policy", "check", "native.json", "--json"]);
     assert_eq!(policy.status.code(), Some(4), "{policy:?}");
 }
+
+#[cfg(unix)]
+#[test]
+fn inherited_nonstandard_descriptors_preserve_io_but_prevent_policy_pass() {
+    use std::os::{fd::AsRawFd, unix::process::CommandExt};
+    for fd in [3, 80] {
+        let root = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        let path = external.path().join("descriptor-output");
+        let file = fs::File::create(&path).unwrap();
+        fs::write(
+            root.path().join("runlens.toml"),
+            "schema_version = 1\n[policy]\ndeny_writes = [\"**/descriptor-output\"]\n",
+        )
+        .unwrap();
+        let mut command = Command::new(binary());
+        command.current_dir(root.path()).args([
+            "--log-level",
+            "off",
+            "run",
+            "--save",
+            "fd.json",
+            "--",
+            fixture(),
+            "inherited-fd",
+            &fd.to_string(),
+        ]);
+        let source = file.as_raw_fd();
+        // SAFETY: only async-signal-safe descriptor operations run in the fork.
+        unsafe {
+            command.pre_exec(move || {
+                if libc::dup2(source, fd) < 0 || libc::fcntl(fd, libc::F_SETFD, 0) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let result = command.output().unwrap();
+        assert_eq!(result.status.code(), Some(4), "{result:?}");
+        assert_eq!(fs::read(&path).unwrap(), b"FD-CANARY");
+        let report = parse(root.path(), "fd.json");
+        assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 0);
+        assert!(
+            !fs::read_to_string(root.path().join("fd.json"))
+                .unwrap()
+                .contains("FD-CANARY")
+        );
+        assert_eq!(
+            invoke(root.path(), &["policy", "check", "fd.json", "--json"])
+                .status
+                .code(),
+            Some(4)
+        );
+    }
+}

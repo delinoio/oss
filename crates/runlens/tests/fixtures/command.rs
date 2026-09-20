@@ -715,6 +715,15 @@ fn main() {
                 let _ = fs::metadata(format!("missing-{index}"));
             }
         }
+        #[cfg(unix)]
+        "inherited-fd" => {
+            let fd: i32 = args[1].parse().unwrap();
+            // SAFETY: scalar inherited descriptor and live bounded input bytes.
+            assert_eq!(
+                unsafe { libc::write(fd, b"FD-CANARY".as_ptr().cast(), 9) },
+                9
+            );
+        }
         "stdio" => {
             print!("STDOUT-CANARY");
             eprint!("STDERR-CANARY");

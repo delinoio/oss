@@ -155,6 +155,7 @@
 
 - Executable resolution reads exactly PATH on Unix and uses case-insensitive environment-key lookup only on Windows.
 
+- Unix nonstandard descriptors lacking close-on-exec must make collection incomplete while preserving their inheritance; enumerate all open descriptors rather than an arbitrary low range.
 - Inherited regular-file standard streams cannot establish complete collection without descriptor-I/O tracing; preserve the streams and mark such runs incomplete.
 
 - Follow docs/project-runlens.md and docs/crates-runlens-foundation.md. Run independent tests/fmt/Clippy with nightly-2026-08-02 in addition to root cargo test.

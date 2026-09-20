@@ -38,3 +38,5 @@ Redirecting standard input, output, or error through a pre-opened regular file k
 On Unix, commands that change process sessions/groups or request a separate group when spawning produce incomplete collection. Detached descendants can outlive observation and cannot be certified or reliably cleaned up by group-based ownership. Use finite children that stay in the command's process group for lifecycle verification.
 
 Windows children created directly through native process APIs that bypass normal CreateProcess tracing produce incomplete collection. The child continues inside inherited Job ownership, but its filesystem accesses cannot establish a verification pass.
+
+On Unix, additional inherited file descriptors such as shell descriptor 3 also make collection incomplete. Runlens preserves these caller-owned resources, but access through them cannot certify a policy pass.

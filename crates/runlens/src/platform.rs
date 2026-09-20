@@ -529,11 +529,11 @@ pub fn executable_identity(
 }
 
 /// Path interception cannot observe I/O through pre-opened standard files.
-/// Retain the caller's streams, but never certify those executions as complete.
+/// Retain caller streams/descriptors without certifying unobserved file I/O.
 pub fn inherited_stdio_complete(stdin_inherited: bool) -> bool {
     #[cfg(unix)]
     {
-        (i32::from(!stdin_inherited)..=2).all(|fd| {
+        let standard = (i32::from(!stdin_inherited)..=2).all(|fd| {
             let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
             // SAFETY: fstat initializes the supplied stat only on success.
             if unsafe { libc::fstat(fd, stat.as_mut_ptr()) } != 0 {
@@ -544,7 +544,8 @@ pub fn inherited_stdio_complete(stdin_inherited: bool) -> bool {
                 unsafe { stat.assume_init() }.st_mode & libc::S_IFMT,
                 libc::S_IFIFO | libc::S_IFSOCK | libc::S_IFCHR
             )
-        })
+        });
+        standard && inherited_extra_descriptors_complete()
     }
     #[cfg(windows)]
     {
@@ -565,6 +566,46 @@ pub fn inherited_stdio_complete(stdin_inherited: bool) -> bool {
                 )
             })
     }
+}
+
+#[cfg(unix)]
+fn inherited_extra_descriptors_complete() -> bool {
+    #[cfg(target_os = "linux")]
+    let directory = "/proc/self/fd";
+    #[cfg(not(target_os = "linux"))]
+    let directory = "/dev/fd";
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return false;
+    };
+    for entry in entries {
+        let Ok(entry) = entry else {
+            return false;
+        };
+        let Some(fd) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<i32>().ok())
+        else {
+            return false;
+        };
+        if fd <= 2 {
+            continue;
+        }
+        // SAFETY: F_GETFD only queries this process's descriptor flags. Our
+        // directory handle and owned runtime files are close-on-exec. A vanished
+        // descriptor cannot reach the child, but unknown errors fail closed.
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+        if flags == -1 {
+            if std::io::Error::last_os_error().raw_os_error() == Some(libc::EBADF) {
+                continue;
+            }
+            return false;
+        }
+        if flags & libc::FD_CLOEXEC == 0 {
+            return false;
+        }
+    }
+    true
 }
 
 #[cfg(test)]
