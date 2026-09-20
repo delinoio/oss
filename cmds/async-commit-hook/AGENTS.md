@@ -99,3 +99,5 @@
 - Reject ACH_MANAGED environment declarations case-insensitively across the complete graph before snapshotting or credential resolution; it is a runner-owned recursion guard.
 
 - Agent merges snapshot file identity and exact bytes before parsing; revalidate both immediately before atomic replacement or removal, and use no-replace creation for initially absent paths. Rollback must compare exact published skill ownership before restoring/removing it.
+
+- Automatically publish hooks only into the canonical native common-directory hooks folder, never a custom or symlink-redirected folder even when empty. Supply worktree-scoped manual commands for shared locations; owned uninstall remains available.

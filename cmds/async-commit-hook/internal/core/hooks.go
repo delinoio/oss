@@ -77,7 +77,7 @@ func (s *Service) Hook(ctx context.Context, repo string, prePush, remove bool) (
 		return nil, E("installation-busy", "another hook/agent edit is active; retry", 3)
 	}
 	defer lock.Close()
-	_, root, _, e := Discover(ctx, repo)
+	common, root, _, e := Discover(ctx, repo)
 	if e != nil {
 		return nil, e
 	}
@@ -125,6 +125,13 @@ func (s *Service) Hook(ctx context.Context, repo string, prePush, remove bool) (
 				return out, e
 			}
 			out = append(out, InstallResult{Path: path})
+			continue
+		}
+		if !repositoryHookDirectory(common, filepath.Dir(path)) {
+			// An absent hook in a shared directory is still shared policy. Do not
+			// publish a repository opt-in into every repository using this path.
+			command = scopedHookCommand(root, command)
+			out = append(out, InstallResult{Path: path, Manual: command + " (custom or shared hooks directory; integrate manually for this worktree only; preserve stdin for pre-push)", Example: hookExample(kind, command)})
 			continue
 		}
 		body := hookBody(executable, s.Paths.Config, kind)
@@ -276,4 +283,23 @@ func replaceOwnedHook(path string, previous os.FileInfo, old, body []byte) error
 		return E("hook-conflict", "hook changed during refresh; preserve it and inspect manually: "+path, 2)
 	}
 	return replaceFile(f.Name(), path)
+}
+
+// Automatic publication is restricted to the native common-directory hooks
+// location. A redirected/symlinked directory has no provable repository owner.
+func repositoryHookDirectory(common, directory string) bool {
+	native := filepath.Join(common, "hooks")
+	if filepath.Clean(directory) != native {
+		return false
+	}
+	resolved, err := filepath.EvalSymlinks(directory)
+	if os.IsNotExist(err) {
+		// A dangling hooks symlink is not an absent directory we may create.
+		_, statErr := os.Lstat(directory)
+		return os.IsNotExist(statErr)
+	}
+	return err == nil && resolved == native
+}
+func scopedHookCommand(root, command string) string {
+	return "if [ \"$(git rev-parse --show-toplevel 2>/dev/null)\" = " + quoteSh(filepath.ToSlash(root)) + " ]; then " + command + "; fi"
 }

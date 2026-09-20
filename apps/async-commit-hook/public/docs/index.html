@@ -589,12 +589,14 @@ brew upgrade async-commit-hook</pre
         <p>
           ach never overwrites another hook. If installation reports a conflict,
           use the exact command and configuration example it prints. With a
-          custom <code>core.hooksPath</code>, merge that command into the
-          effective hook. After moving ach or changing its personal
+          custom <code>core.hooksPath</code>, ach leaves even an absent hook
+          untouched because that directory may be shared by other repositories.
+          Merge the printed worktree-scoped command into the effective hook. After moving ach or changing its personal
           configuration path, reinstall the integration.
         </p>
         <p>
-          For Lefthook, merge this command into your existing configuration:
+          For a repository-local Lefthook configuration, merge these commands.
+          For shared configurations, use the worktree-scoped example printed by ach:
         </p>
         <pre>
 post-commit:
