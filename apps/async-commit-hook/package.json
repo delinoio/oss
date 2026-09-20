@@ -1,0 +1,38 @@
+{
+  "name": "async-commit-hook",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @delinoio/async-commit-hook-api-client build && node scripts/development.mjs",
+    "build": "rsbuild build",
+    "build:frontend": "pnpm build",
+    "typecheck": "tsc --noEmit",
+    "lint": "pnpm typecheck",
+    "test": "pnpm --filter @delinoio/async-commit-hook-api-client build && pnpm typecheck && vitest run && pnpm build && node --test scripts/*.test.mjs",
+    "test:unit": "vitest run",
+    "test:components": "vitest run",
+    "test:accessibility": "vitest run"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.14.0",
+    "@connectrpc/connect": "2.1.2",
+    "@connectrpc/connect-web": "2.1.2",
+    "@connectrpc/connect-query": "2.3.1",
+    "@delinoio/async-commit-hook-api-client": "workspace:*",
+    "@tanstack/react-query": "5.101.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@rsbuild/core": "2.1.10",
+    "@rsbuild/plugin-react": "2.0.1",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/dom": "10.4.1",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "jsdom": "20.0.3",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}

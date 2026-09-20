@@ -557,6 +557,32 @@
       "turbo.json"
     ]
   },
+  "async-commit-hook": {
+    "paths": [
+      ".github/workflows/release-async-commit-hook.yml",
+      ".npmrc",
+      ".nvmrc",
+      "apps/async-commit-hook/**",
+      "buf.gen.yaml",
+      "buf.yaml",
+      "cmds/async-commit-hook/**",
+      "docs/*async-commit-hook*.md",
+      "go.mod",
+      "go.sum",
+      "package.json",
+      "packages/async-commit-hook-api-client/**",
+      "packaging/async-commit-hook/**",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "protos/**",
+      "scripts/check-proto-breaking.sh",
+      "scripts/release/*async-commit-hook*",
+      "scripts/dev-environment/process.mjs",
+      "scripts/run-rsbuild-dev.mjs",
+      "scripts/spawn-dev-server.mjs",
+      "turbo.json"
+    ]
+  },
   "node-clibox-test": {
     "paths": [
       ".nvmrc",

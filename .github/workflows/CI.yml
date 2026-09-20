@@ -162,7 +162,9 @@ jobs:
           pnpm --filter devhud-admin build:embedded
 
       - name: Run go test
-        run: go test ./...
+        # Native Git, PowerShell and durable SQLite integration exceed Go's
+        # default package budget on hosted Windows. Keep a bounded watchdog.
+        run: go test -timeout=20m ./...
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -1605,6 +1607,45 @@ jobs:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
 
+  async-commit-hook:
+    needs: changes
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['async-commit-hook'] }}
+    name: Async commit hook contracts and integration
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup Go
+        id: ci-go
+        uses: ./.github/actions/setup-ci-go
+      - name: Setup Node.js
+        id: ci-node
+        uses: ./.github/actions/setup-ci-node
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: |
+          go test -race ./cmds/async-commit-hook/...
+          pnpm --filter async-commit-hook test
+          pnpm --filter @delinoio/async-commit-hook-api-client test
+          pnpm proto:check
+          node --test scripts/release/async-commit-hook.test.mjs
+          python3 scripts/release/build-async-commit-hook.py --output "$RUNNER_TEMP/ach-release"
+
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-node.outputs.cache-path }}
+          key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Save Go cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-go.outputs.cache-path }}
+          key: ${{ steps.ci-go.outputs.cache-key }}
+
   node-clibox-test:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['node-clibox-test'] }}
@@ -1654,6 +1695,7 @@ jobs:
     needs:
       - changes
       - ci-contracts
+      - async-commit-hook
       - go-quality
       - go-test
       - repository-environment

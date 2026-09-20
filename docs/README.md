@@ -109,3 +109,9 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - `docs/repository-workflow-contract.md` (repository-level workflow and read-only CEF review contract)
 
 - [Linux CLI package repositories](repository-linux-packages-contract.md): APT/DNF build compatibility, signing, publication, recovery and rollout.
+
+### async-commit-hook
+- [Project index](project-async-commit-hook.md)
+- [Command](cmds-async-commit-hook-contract.md), [app](apps-async-commit-hook-contract.md), [protocol](protos-async-commit-hook-v1-contract.md), [client](packages-async-commit-hook-api-client-contract.md)
+- [Complete requirements](cmds-async-commit-hook-requirements.md) and [implementation evidence](cmds-async-commit-hook-evidence.md)
+- [Release and recovery](cmds-async-commit-hook-release-contract.md)
