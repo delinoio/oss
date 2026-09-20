@@ -37,7 +37,7 @@ func TestExplicitRegistrationAfterCheckoutPathReusePreservesHistory(t *testing.T
 			if _, err = s.Plan(ctx, path, ""); err == nil {
 				t.Fatal("replacement inherited trust")
 			}
-			if _, err = (&API{s: s}).worktree(oldRun.WorktreeID); err == nil {
+			if _, err = (&API{s: s}).worktree(ctx, oldRun.WorktreeID); err == nil {
 				t.Fatal("old worktree exposed replacement source")
 			}
 			repo, wt, err := s.Init(ctx, path)

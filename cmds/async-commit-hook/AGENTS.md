@@ -131,3 +131,5 @@
 - Bound JUnit failure summaries during XML parsing using the shared aggregate byte budget. Redact complete extracted fields before truncation, stop retaining failure/identity history once full, continue validating the entire report, and persist the truncation diagnostic plus complete paginated evidence.
 
 - Native hook creation and failed-publication rollback use an opened Git common-directory root for all directory/file access. Replaced parent symlinks must not redirect writes or cleanup outside that root.
+
+- Source RPCs pass their request context through worktree lookup and Git discovery. Cancellation/deadline responses retain their Connect status and abandoned discovery children must be reaped.

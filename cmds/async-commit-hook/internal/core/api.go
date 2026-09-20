@@ -215,6 +215,12 @@ func apiError(e error) error {
 	if e == nil {
 		return nil
 	}
+	if errors.Is(e, context.Canceled) {
+		return connect.NewError(connect.CodeCanceled, context.Canceled)
+	}
+	if errors.Is(e, context.DeadlineExceeded) {
+		return connect.NewError(connect.CodeDeadlineExceeded, context.DeadlineExceeded)
+	}
 	var ce *Error
 	if !errors.As(e, &ce) {
 		return connect.NewError(connect.CodeInternal, errors.New("runner-error: inspect local diagnostics"))
@@ -280,20 +286,26 @@ func (a *API) run(r Run, detail bool) *pb.Run {
 	}
 	return out
 }
-func (a *API) worktree(id string) (string, error) {
+func (a *API) worktree(ctx context.Context, id string) (string, error) {
 	if !ValidID(id) {
 		return "", E("invalid-worktree-id", "expected UUID v7", 2)
 	}
 	var path, repository string
-	e := a.s.Store.DB.QueryRow("SELECT path,repository_id FROM worktrees WHERE id=?", id).Scan(&path, &repository)
+	e := a.s.Store.DB.QueryRowContext(ctx, "SELECT path,repository_id FROM worktrees WHERE id=?", id).Scan(&path, &repository)
 	if e == nil {
-		common, root, _, discoverErr := Discover(context.Background(), path)
+		common, root, _, discoverErr := Discover(ctx, path)
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		if discoverErr == nil {
 			r, w, registeredErr := a.s.Store.Registered(common, root)
 			if registeredErr == nil && r.ID == repository && w.ID == id {
 				return path, nil
 			}
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 	return "", E("worktree-unavailable", "registered worktree is unavailable", 2)
 }
@@ -336,7 +348,7 @@ func (a *API) ListRepositories(ctx context.Context, req *connect.Request[pb.List
 	return connect.NewResponse(out), nil
 }
 func (a *API) ListBranches(ctx context.Context, r *connect.Request[pb.ListBranchesRequest]) (*connect.Response[pb.ListBranchesResponse], error) {
-	path, e := a.worktree(r.Msg.WorktreeId)
+	path, e := a.worktree(ctx, r.Msg.WorktreeId)
 	if e != nil {
 		return nil, apiError(e)
 	}
@@ -351,7 +363,7 @@ func (a *API) ListBranches(ctx context.Context, r *connect.Request[pb.ListBranch
 	return connect.NewResponse(out), nil
 }
 func (a *API) ListCommits(ctx context.Context, r *connect.Request[pb.ListCommitsRequest]) (*connect.Response[pb.ListCommitsResponse], error) {
-	path, e := a.worktree(r.Msg.WorktreeId)
+	path, e := a.worktree(ctx, r.Msg.WorktreeId)
 	if e != nil {
 		return nil, apiError(e)
 	}
@@ -370,7 +382,7 @@ func (a *API) ListCommits(ctx context.Context, r *connect.Request[pb.ListCommits
 	return connect.NewResponse(out), nil
 }
 func (a *API) GetChanges(ctx context.Context, r *connect.Request[pb.GetChangesRequest]) (*connect.Response[pb.GetChangesResponse], error) {
-	path, e := a.worktree(r.Msg.WorktreeId)
+	path, e := a.worktree(ctx, r.Msg.WorktreeId)
 	if e != nil {
 		return nil, apiError(e)
 	}
