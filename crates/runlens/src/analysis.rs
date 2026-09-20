@@ -1186,10 +1186,22 @@ fn read_reference(execution: &Execution, path: &str) -> Result<Option<Evidence>>
                 EvidenceSource::Access,
             )));
         }
-        current = candidate
-            .rsplit_once('/')
-            .map(|(parent, _)| parent)
-            .filter(|parent| !parent.is_empty());
+        current = if candidate == "/" {
+            None
+        } else {
+            candidate
+                .rsplit_once('/')
+                .map(|(parent, _)| {
+                    // Keep the absolute POSIX root as the terminal ancestor;
+                    // relative/report-placeholder paths must not acquire a root.
+                    if parent.is_empty() && candidate.starts_with('/') {
+                        "/"
+                    } else {
+                        parent
+                    }
+                })
+                .filter(|parent| !parent.is_empty())
+        };
     }
     Ok(None)
 }

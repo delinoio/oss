@@ -838,3 +838,8 @@ Unix execution preserves the exact requested argv[0], including PATH names,
 relative paths and aliases. Resolving and retaining the native executable for
 launch identity must not rewrite the command-visible argument zero. Native
 regressions compare each form with direct execution and retain the image digest.
+
+Conflict analysis retains / as the terminal directory-read ancestor of absolute
+POSIX paths, with concrete reader/writer evidence. Ordinary root file reads do
+not cover descendants, and relative or workspace-placeholder paths never acquire
+a synthetic POSIX root.

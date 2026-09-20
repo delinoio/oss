@@ -5172,3 +5172,70 @@ fn requested_path_and_relative_argv_zero_match_direct_execution() {
         );
     }
 }
+
+#[test]
+fn posix_root_directory_reads_are_conflict_ancestors() {
+    use runlens::{analysis, entries::Entries, model::*};
+    let root = tempfile::tempdir().unwrap();
+    assert!(run(root.path(), "seed.json", "read").status.success());
+    let template = runlens::report::read(&root.path().join("seed.json")).unwrap();
+    for (reader, writer, directory, expected) in [
+        ("/", "/tmp/result", true, true),
+        ("/", "/result", true, true),
+        ("/", "/", true, true),
+        ("/", "tmp/result", true, false),
+        ("/", "/tmp/result", false, false),
+        ("/other", "/tmp/result", true, false),
+    ] {
+        let mut reports = [template.clone(), template.clone()];
+        for (index, path) in [reader, writer].into_iter().enumerate() {
+            let execution = &mut reports[index].executions[0];
+            execution.id = uuid::Uuid::now_v7();
+            execution.environment.os = "linux".into();
+            execution.accesses = Entries::default();
+            execution.changes = Entries::default();
+            execution
+                .accesses
+                .insert(
+                    path.into(),
+                    Access {
+                        read: index == 0 && !directory,
+                        write: index == 1,
+                        read_directory: index == 0 && directory,
+                        unsupported: false,
+                        in_scope: false,
+                    },
+                )
+                .unwrap();
+        }
+        let result = analysis::conflicts(&reports).unwrap();
+        let candidates = result
+            .findings
+            .iter()
+            .map(Result::unwrap)
+            .map(|(_, finding)| finding)
+            .filter(|finding| finding.code == FindingCode::PotentialReadWriteConflict)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            !candidates.is_empty(),
+            expected,
+            "{reader}/{writer}/{directory}"
+        );
+        for candidate in candidates {
+            assert!(
+                candidate
+                    .evidence
+                    .iter()
+                    .any(|e| e.path.as_deref() == Some(reader)
+                        && e.execution_id == reports[0].executions[0].id)
+            );
+            assert!(
+                candidate
+                    .evidence
+                    .iter()
+                    .any(|e| e.path.as_deref() == Some(writer)
+                        && e.execution_id == reports[1].executions[0].id)
+            );
+        }
+    }
+}

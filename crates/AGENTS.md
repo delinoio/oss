@@ -284,3 +284,5 @@
 - Runlens Windows doctor/preflight must verify native process and artifact architecture parity with IsWow64Process2, rejecting failed queries and emulation before tracing.
 
 - Runlens Unix launch identity uses the resolved executable but passes the exact requested argv[0] to the child, including PATH names and relative aliases.
+
+- Runlens conflict analysis must include the POSIX root directory as the final ancestor of absolute paths, without assigning that root to relative paths.
