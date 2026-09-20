@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"database/sql"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,11 +17,19 @@ func TestWorkerStorageFailureJoinsMoreRunsThanCompletionBuffer(t *testing.T) {
 	// Empty check graphs keep this a scheduler test, without launching thousands
 	// of OS shells. Every accepted run still comes from the real SQLite queue.
 	const count = 2050
-	for range count {
-		run.ID = ID()
-		if _, err := s.Store.InsertRun(&run, ""); err != nil {
-			t.Fatal(err)
+	// This fixture proves shutdown coordination, not per-receipt fsync. Commit
+	// its accepted rows together so Windows disk flush latency does not consume
+	// the package watchdog before the worker under test has even started.
+	if err := s.Store.Transaction(func(tx *sql.Tx) error {
+		for range count {
+			run.ID = ID()
+			if err := insertRun(tx, &run, ""); err != nil {
+				return err
+			}
 		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 	started := make(chan string, count)
 	var reaped atomic.Int64

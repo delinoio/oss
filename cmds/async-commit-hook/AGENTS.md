@@ -101,3 +101,5 @@
 - Agent merges snapshot file identity and exact bytes before parsing; revalidate both immediately before atomic replacement or removal, and use no-replace creation for initially absent paths. Rollback must compare exact published skill ownership before restoring/removing it.
 
 - Automatically publish hooks only into the canonical native common-directory hooks folder, never a custom or symlink-redirected folder even when empty. Supply worktree-scoped manual commands for shared locations; owned uninstall remains available.
+
+- Batch scheduler-only bulk fixture insertion in one real SQLite transaction; do not pay thousands of unrelated durable receipt flushes before the concurrency scenario starts. Preserve separate durability/acceptance integration tests.

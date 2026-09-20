@@ -162,7 +162,9 @@ jobs:
           pnpm --filter devhud-admin build:embedded
 
       - name: Run go test
-        run: go test ./...
+        # Native Git, PowerShell and durable SQLite integration exceed Go's
+        # default package budget on hosted Windows. Keep a bounded watchdog.
+        run: go test -timeout=20m ./...
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}

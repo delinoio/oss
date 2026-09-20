@@ -344,7 +344,7 @@ enum RustiaComponent {
 
 ### CI Baseline
 
-Repository-wide quality CI is defined in `.github/workflows/CI.yml`.
+Repository-wide quality CI is defined in `.github/workflows/CI.yml`. The three-OS Go test matrix uses an explicit 20-minute per-package watchdog for native Git, shell and durable SQLite integration; this is not a product command timeout.
 
 Coverage expectations:
 - `go-quality`: generates and validates the ignored administrator bundle, then runs `go fmt ./...` (failing if formatting changes are applied) and `go vet ./...` on Ubuntu.
