@@ -119,3 +119,5 @@
 - Storage-failure propagation fixtures re-exec a deterministic test helper through real process ownership, preserving injected SQLite errors, completed-output proof and interrupted recovery. Do not make these fixture watchdogs depend on shell-engine cold startup; native shell integration remains separately covered.
 
 - Configurable state roots and reserved state directories must already have account-only permissions or be created privately. Never chmod or replace the DACL of an existing directory merely because it was selected as state.
+
+- Hook removal snapshots a regular nonsymlink file and revalidates its identity and exact bytes immediately before unlinking. Concurrent edits, replacements and newly created files produce hook-conflict and retain installation ownership for retry.

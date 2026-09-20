@@ -97,14 +97,6 @@ func (s *Service) Hook(ctx context.Context, repo string, prePush, remove bool) (
 		}
 		id := "hook:" + path
 		owned, ownedErr := s.installation(id)
-		old, readErr := os.ReadFile(path)
-		if readErr != nil && !os.IsNotExist(readErr) {
-			return out, readErr
-		}
-		command := quoteSh(executable) + " run --repo . --commit HEAD --automatic --config " + quoteSh(s.Paths.Config)
-		if kind == "pre-push" {
-			command = quoteSh(executable) + " pre-push --config " + quoteSh(s.Paths.Config)
-		}
 		if remove {
 			if errors.Is(ownedErr, sql.ErrNoRows) {
 				continue // Unrelated hooks are outside the uninstall scope.
@@ -112,20 +104,23 @@ func (s *Service) Hook(ctx context.Context, repo string, prePush, remove bool) (
 			if ownedErr != nil {
 				return out, ownedErr
 			}
-			if !os.IsNotExist(readErr) {
-				if !ownsHookContents(owned, old) {
-					return out, E("hook-conflict", "owned hook changed; preserve it and remove the ach integration manually: "+path, 2)
-				}
-				if e = os.Remove(path); e != nil {
-					return out, e
-				}
+			snapshot, err := readAgentFile(path)
+			if err != nil {
+				return out, hookFileError(err)
 			}
-			_, e = s.Store.DB.Exec("DELETE FROM installations WHERE id=?", id)
-			if e != nil {
-				return out, e
+			if err := s.removeHook(owned, snapshot); err != nil {
+				return out, err
 			}
 			out = append(out, InstallResult{Path: path})
 			continue
+		}
+		old, readErr := os.ReadFile(path)
+		if readErr != nil && !os.IsNotExist(readErr) {
+			return out, readErr
+		}
+		command := quoteSh(executable) + " run --repo . --commit HEAD --automatic --config " + quoteSh(s.Paths.Config)
+		if kind == "pre-push" {
+			command = quoteSh(executable) + " pre-push --config " + quoteSh(s.Paths.Config)
 		}
 		if !repositoryHookDirectory(common, filepath.Dir(path)) {
 			// An absent hook in a shared directory is still shared policy. Do not
@@ -176,6 +171,27 @@ func (s *Service) Hook(ctx context.Context, repo string, prePush, remove bool) (
 		out = append(out, InstallResult{Installed: true, Path: path})
 	}
 	return out, nil
+}
+
+// Use the same identity-and-bytes snapshot as agent edits. The installation lock
+// serializes ach only; external editors and hook managers do not take that lock.
+func (s *Service) removeHook(owned Installation, snapshot agentFile) error {
+	if snapshot.info != nil && !ownsHookContents(owned, snapshot.data) {
+		return hookFileError(agentFileConflict())
+	}
+	if err := snapshot.remove(); err != nil {
+		return hookFileError(err)
+	}
+	_, err := s.Store.DB.Exec("DELETE FROM installations WHERE id=?", owned.ID)
+	return err
+}
+
+func hookFileError(err error) error {
+	var typed *Error
+	if errors.As(err, &typed) && typed.Code == "agent-conflict" {
+		return E("hook-conflict", "owned hook changed during removal; changes were preserved; retry after concurrent edits finish", 2)
+	}
+	return err
 }
 
 func rollbackCreatedHook(path string, created os.FileInfo, body []byte) error {
