@@ -14,6 +14,7 @@ JavaScript developers using `pnpm add -D -E @delino/clibox` followed by `pnpm ex
 - The source workspace is private and contains no dependency on an unpublished binary package. Public manifests are generated explicitly, never by an install lifecycle hook.
 - The main package pins all eight optional dependencies to its exact version. Platform packages declare `os`, `cpu`, and, for Linux, `libc`.
 - Linux GNU binaries target the build runner baselines: glibc 2.35 on x64 and 2.39 on arm64. Alpine uses the separate musl builds.
+- Both musl targets use the pinned Rust toolchain's `rust-lld` with `-C link-self-contained=yes`, keeping startup objects and libc matched. The pure-Rust CLI has no system C-library dependency. Ubuntu's external musl linker is not used; release jobs execute each binary on its native host and exercise npm/pnpm consumers in Alpine.
 - Platform suffixes are `darwin-x64`, `darwin-arm64`, `win32-x64-msvc`, `win32-arm64-msvc`, `linux-x64-gnu`, `linux-arm64-gnu`, `linux-x64-musl`, and `linux-arm64-musl`; every name starts with `@delino/clibox-`.
 - Resolve OS/architecture from Node and distinguish Linux glibc/musl using the Node diagnostic report header. Do not log the report or its environment contents.
 - Resolve only the selected installed dependency, verify its version, and launch its executable without a shell, preserving argv, cwd, environment, stdio, exit code, and termination signals.

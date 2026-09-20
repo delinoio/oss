@@ -104,15 +104,17 @@ jobs:
         with:
           toolchain: nightly-2026-01-01
           targets: ${{ matrix.target }}
-      - name: Install native musl linker
-        if: endsWith(matrix.target, '-musl')
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: Build and check native executable
         shell: bash
         env:
           CLIBOX_TARGET: ${{ matrix.target }}
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+          # Keep musl startup objects and libc matched to the pinned Rust runtime.
+          # Ubuntu 22.04's musl-gcc produces a crashing x64 static PIE here; the
+          # pure-Rust CLI needs no system C libraries or external musl toolchain.
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: rust-lld
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -C link-self-contained=yes
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: rust-lld
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -C link-self-contained=yes
         run: |
           set -euo pipefail
           cargo build --locked --release -p clibox --target "$CLIBOX_TARGET"
