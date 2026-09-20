@@ -248,12 +248,18 @@ pub fn validate_reports(
 }
 
 pub fn read_reports(directory: &Path) -> Result<(Inventory, Vec<ShardResults>)> {
-    let inventory = serde_json::from_slice(&std::fs::read(directory.join("inventory.json"))?)?;
+    let inventory = serde_json::from_slice(&read_metadata(
+        &directory.join("inventory.json"),
+        "shard inventory",
+    )?)?;
     let mut reports = vec![];
     for entry in std::fs::read_dir(directory)? {
         let entry = entry?;
         if entry.file_name().to_string_lossy().starts_with("shard-") {
-            reports.push(serde_json::from_slice(&std::fs::read(entry.path())?)?);
+            reports.push(serde_json::from_slice(&read_metadata(
+                &entry.path(),
+                "shard report",
+            )?)?);
         }
     }
     reports.sort_by_key(|r: &ShardResults| r.index);
@@ -1033,15 +1039,31 @@ fn unit_status(exit: ProcessExit) -> UnitStatus {
 }
 
 fn read_generic_result(path: &Path) -> Result<Vec<u8>> {
-    let file = std::fs::File::open(path).context("generic adapter did not write results")?;
-    let metadata = file.metadata()?;
+    read_metadata(path, "generic adapter results")
+}
+
+fn read_metadata(path: &Path, kind: &str) -> Result<Vec<u8>> {
     ensure!(
-        metadata.is_file(),
-        "generic adapter results must be a regular file"
+        std::fs::symlink_metadata(path)?.is_file(),
+        "{kind} must be a regular file"
     );
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // Reject link replacement and never block if a regular file is replaced
+        // by a FIFO between the pathname check and open.
+        options.custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK);
+    }
+    let file = options
+        .open(path)
+        .with_context(|| format!("cannot open {kind}"))?;
+    let metadata = file.metadata()?;
+    ensure!(metadata.is_file(), "{kind} must be a regular file");
     ensure!(
         metadata.len() <= process::METADATA_LIMIT,
-        "generic adapter results exceeded 64 MiB"
+        "{kind} exceeded 64 MiB"
     );
     // The file may grow after the metadata query. Bound the actual reader too,
     // and retain one extra byte only to distinguish the exact limit from overflow.
@@ -1050,7 +1072,7 @@ fn read_generic_result(path: &Path) -> Result<Vec<u8>> {
         .read_to_end(&mut bytes)?;
     ensure!(
         bytes.len() as u64 <= process::METADATA_LIMIT,
-        "generic adapter results exceeded 64 MiB"
+        "{kind} exceeded 64 MiB"
     );
     Ok(bytes)
 }

@@ -127,3 +127,5 @@
 - Preserve structured launch error kind and OS code without command/environment contents. Linux conformance overlaps supervisor launches across threads to cover inherited writable-file ETXTBSY regressions.
 
 - Cache reuse is finalized by its durable receipt; cancellation after successful persistence cannot change that receipt or invocation to cancelled. Cancellation before publication still invalidates reuse.
+
+- Apply the same regular-file and bounded-read checks to persisted shard inventories and every shard report as to generic adapter results; reject special files before blocking opens and cap actual reads as well as metadata lengths.

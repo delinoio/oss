@@ -8027,3 +8027,47 @@ async fn linux_concurrent_supervisor_launches_do_not_expose_writable_executables
         result.unwrap();
     }
 }
+
+#[test]
+fn persisted_shard_metadata_is_bounded_and_regular() {
+    let root = tempfile::tempdir().unwrap();
+    let inventory = shard::Inventory {
+        version: 1,
+        tests: vec![],
+    };
+    shard::write_reports(root.path(), &inventory, &[]).unwrap();
+    assert!(shard::read_reports(root.path()).unwrap().1.is_empty());
+    for name in ["inventory.json", "shard-0.json", "shard-extra.json"] {
+        let path = root.path().join(name);
+        std::fs::File::create(&path)
+            .unwrap()
+            .set_len(64 * 1024 * 1024 + 1)
+            .unwrap();
+        let error = shard::read_reports(root.path()).unwrap_err().to_string();
+        assert!(error.contains("exceeded 64 MiB"), "{name}: {error}");
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        assert!(shard::read_reports(root.path())
+            .unwrap_err()
+            .to_string()
+            .contains("regular file"));
+        std::fs::remove_dir(&path).unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("missing", &path).unwrap();
+            assert!(shard::read_reports(root.path()).is_err());
+            std::fs::remove_file(&path).unwrap();
+            use nix::{libc, NixPath};
+            path.with_nix_path(|value| {
+                assert_eq!(unsafe { libc::mkfifo(value.as_ptr(), 0o600) }, 0)
+            })
+            .unwrap();
+            assert!(shard::read_reports(root.path())
+                .unwrap_err()
+                .to_string()
+                .contains("regular file"));
+            std::fs::remove_file(&path).unwrap();
+        }
+        shard::write_reports(root.path(), &inventory, &[]).unwrap();
+    }
+}
