@@ -153,3 +153,10 @@
 - If `apps/nodeup-docs` changes, run `pnpm --filter nodeup-docs test` before finishing.
 - If `apps/public-docs` changes, run `pnpm --filter public-docs test` before finishing.
 - Update relevant docs in `docs/` for every behavior, structure, or interface change.
+
+### Native CLI package documentation
+
+- Follow `docs/repository-linux-packages-contract.md`. The shared public `/linux-packages` route owns APT/DNF setup and key verification; standalone CLI installation pages retain product-specific guidance.
+- Public package documentation includes the exact public fingerprint, supported systems, stable/preview registration, installation/update/removal, and explicit Runmoor service ownership. Keep R2, signing secrets, CI and recovery internals in `docs/`.
+- Only the shared package registration page may show its exact contracted `/etc/apt` and `/etc/yum.repos.d` installation paths; never broaden unrelated public filesystem-path exceptions.
+- The canonical public-docs production origin is `https://oss.delino.io`; shared Linux package guidance is `https://oss.delino.io/linux-packages`.

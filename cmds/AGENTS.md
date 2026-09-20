@@ -37,3 +37,5 @@
 - Update `docs/project-derun.md` and `docs/cmds-derun-foundation.md` whenever derun command contracts change.
 - Update `docs/project-ttl.md` and `docs/cmds-ttl-foundation.md` whenever TTL compiler command shape, cache backend, or runtime boundaries change.
 - Update `docs/project-ttl.md` and `docs/cmds-ttl-language-contract.md` whenever TTL syntax/type/invalidation/code-generation contracts change.
+
+- Derun exposes `--version` from its shared version constant. Native Linux Derun and Runmoor builds disable CGO and include amd64/arm64; package service/configuration ownership follows `docs/repository-linux-packages-contract.md`.

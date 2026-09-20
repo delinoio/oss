@@ -92,3 +92,7 @@ cargo test -p cargo-mono --test cli
 
 - [Projects Overview](projects-overview)
 - [Getting Started](getting-started)
+
+## APT and DNF
+
+Follow [Linux Packages](/linux-packages) to verify the repository key and register stable. Then install `cargo-mono` with `sudo apt-get install cargo-mono` or `sudo dnf install cargo-mono`. Use the same package manager for updates and removal.

@@ -130,7 +130,7 @@ test('release metadata rejects a wrong tag, commit, channel or missing signature
 
 test('signed recovery records reject tampering and an untrusted fingerprint', async (t) => {
   const { temporarySigningKey, signCandidate, verifyCandidate, signRecord, verifyRecord } = await import('./linux-packages/package.mjs');
-  const directory = mkdtempSync(path.join(tmpdir(), 'delino-record-signature-'));
+  const directory = mkdtempSync(path.join(tmpdir(), 'dl-sig-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const signing = temporarySigningKey(path.join(directory, 'gnupg'));
   const { record } = fixture();

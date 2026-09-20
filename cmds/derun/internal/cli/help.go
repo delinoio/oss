@@ -12,6 +12,7 @@ func printUsage() {
 		"Usage:",
 		"  derun run [--session-id <id>] [--retention <duration>] -- <command> [args...]",
 		"  derun mcp",
+		"  derun --version",
 		"  derun help [run|mcp]",
 		"",
 		"Commands:",

@@ -34,3 +34,9 @@ Provide a Go CLI that preserves terminal fidelity for AI-agent workflows and bri
 - `docs/project-template.md`
 - `docs/domain-template.md`
 - `docs/README.md`
+
+## Native Linux packages
+
+Follow `docs/repository-linux-packages-contract.md` for APT/DNF release publication, supported systems, signatures, and recovery. This project belongs to the stable channel.
+
+Derun `--version` prints `derun <Version>` from the same constant used by MCP and release automation, without initializing runtime state.

@@ -69,3 +69,5 @@
 ## References
 - `docs/project-derun.md`
 - `docs/domain-template.md`
+
+Derun `--version` prints `derun <Version>` from the same constant used by MCP and release automation, without initializing runtime state.
