@@ -1,7 +1,7 @@
 # Project: clibox
 
 ## Goal
-Provide a Rust CLI that JavaScript projects can pin through npm and their lockfiles. The initial CLI exposes help and version only.
+Provide a Rust CLI that JavaScript projects can pin through npm and their lockfiles. Its local configuration commands list dotenv keys, merge dotenv layers, and normalize YAML references under issue #920.
 
 ## Project ID
 `clibox`
@@ -22,7 +22,9 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 - Consumers never compile Rust or run installation/download scripts. The npm launcher executes only its exact-version platform dependency.
 - Manual `Release Project` versioning, exact-commit CI, crates.io publication, and the `clibox@v<version>` tag precede the downstream npm workflow.
 - npm publication uses GitHub Actions OIDC and provenance from the complete verified CI artifact; setup and dry-run validation do not publish.
-- Domain commands, a docs website, Homebrew, and public GitHub Release binaries are outside this foundation.
+- Configuration commands are offline Rust operations with 64 MiB input/output limits, private atomic file publication, cancellation, and redacted diagnostics. No public library API, application state, or shell execution is introduced.
+- A docs website, Homebrew, and public GitHub Release binaries remain outside scope.
+- Linux/macOS/Windows process tests and installed npm/pnpm smoke tests cover all three commands. Eight-target and Alpine release gates remain unchanged.
 
 ## Change Policy
 Update both domain contracts, this index, relevant AGENTS files, version synchronization, platform fixtures, and release workflows together when these boundaries change.

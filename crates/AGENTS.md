@@ -153,6 +153,8 @@
 
 ### clibox Rules
 
-- Preserve the help/version-only CLI, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`.
-- This scaffold has an explicitly approved crates.io publication contract; register it as a workspace and cargo-mono release target. Do not add domain commands implicitly.
+- Preserve help/version, Rust 2021, MIT licensing, Cargo/npm exact version synchronization, and issue #920's dotenv/YAML behavior in `docs/crates-clibox-foundation.md`.
+- Keep dotenv value tokens literal and validate every record; YAML must retain scalar precision, resolve document-local references/merges, reject invalid graphs, sort mappings, and be byte-idempotent. Bound raw input and serialized output independently to 64 MiB and collection depth to 128 before excessive expansion.
+- File output must use private same-directory staging, preserve destination access permissions, reject replacement links, clean up on handled failures/cancellation, and never duplicate stdout. Keep diagnostics enum-classified and exclude keys, values, content, paths, argv, and dependency/panic text even with RUST_LOG.
+- Preserve the approved crates.io release target and standalone/musl distribution; no runtime downloads, network, shell execution, or application state. Other proposed domain commands require their own contract-backed implementation.
 - Standalone crate packages must contain their own MIT license and pass process-level CLI tests and Cargo publish dry-run.

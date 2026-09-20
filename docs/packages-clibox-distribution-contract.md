@@ -10,7 +10,7 @@ The launcher is unbundled CommonJS using Node.js built-ins on Node.js 22+. Build
 JavaScript developers using `pnpm add -D -E @delino/clibox` followed by `pnpm exec clibox`, npm users installing the same package as an exact dev dependency, and release maintainers.
 
 ## Interfaces and Contracts
-- The installed command is `clibox`; no public JavaScript import API is provided.
+- The installed command is `clibox`; no public JavaScript import API is provided. It exposes `dotenv list`, `dotenv merge`, and `yaml normalize` with the Rust contract's bounded, offline, redacted-diagnostic behavior; the launcher forwards these arguments unchanged.
 - The source workspace is private and contains no dependency on an unpublished binary package. Public manifests are generated explicitly, never by an install lifecycle hook.
 - The main package pins all eight optional dependencies to its exact version. Platform packages declare `os`, `cpu`, and, for Linux, `libc`.
 - Linux GNU binaries target the build runner baselines: glibc 2.35 on x64 and 2.39 on arm64. Alpine uses the separate musl builds.
@@ -37,7 +37,8 @@ Packaging and publication report structured events containing action, package, t
 - `pnpm --filter @delino/clibox test` runs deterministic launcher and packaging/release fixtures.
 - `pnpm --filter @delino/clibox test:package` builds the host CLI, creates tarballs, and installs them in temporary npm and pnpm consumers with scripts disabled.
 - Package-local Turbo tasks include external Cargo/source inputs and disable caching for native packaging/integration checks.
-- CI's `node-clibox-test` participates in the shared change planner and `CI Result` aggregation. Release CI builds and smoke-tests all eight targets; Linux musl execution is also checked in Alpine.
+- CI's `node-clibox-test` runs `cargo test --locked -p clibox` on Linux, macOS, and Windows, then participates in the shared change planner and `CI Result` aggregation. Release CI builds and smoke-tests all eight targets; Linux musl execution is also checked in Alpine.
+- Installed npm/pnpm consumer smoke tests exercise default dotenv listing, literal dotenv merge precedence, YAML alias/merge normalization and byte idempotence, and silent in-place publication. The same smoke script runs for all eight native release targets and Alpine consumers.
 - Fixtures cover selection, argument and signal forwarding, missing/mismatched dependencies, archive contents/modes, identical package integrity from isolated LF/CRLF source trees, version mismatch, partial publication recovery, conflicting registry integrity, and credential-free dry runs.
 
 ## Dependencies and Integrations

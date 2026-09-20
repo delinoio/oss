@@ -10,3 +10,16 @@ include = ["src/**", "tests/**", "Cargo.toml", "README.md", "LICENSE"]
 
 [dependencies]
 clap = { version = "4.5.32", features = ["derive"] }
+regex = "1.11"
+tempfile = "3.25"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+yaml-rust2 = { version = "0.13", default-features = false }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+signal-hook = "0.3"
+
+[target.'cfg(windows)'.dependencies]
+ctrlc = "3.4"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_Console", "Win32_System_Threading", "Win32_Security_Authorization"] }

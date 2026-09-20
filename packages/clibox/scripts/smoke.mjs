@@ -34,6 +34,17 @@ try {
     const launcher = path.join(consumer, "node_modules/@delino/clibox/bin/clibox.cjs");
     const help = execFileSync(process.execPath, [launcher, "--help"], { cwd: consumer, encoding: "utf8" });
     ensure(help.includes("Usage: clibox"), `${manager} help smoke failed`);
+    const cli = (args, input) => execFileSync(process.execPath, [launcher, ...args], { cwd: consumer, encoding: "utf8", input });
+    writeFileSync(path.join(consumer, ".env"), 'Z=base\nA="literal ${HOME}"\n');
+    writeFileSync(path.join(consumer, "local.env"), "Z=local\n");
+    ensure(cli(["dotenv", "list"]) === "A\nZ\n", `${manager} dotenv list smoke failed`);
+    ensure(cli(["dotenv", "merge", ".env", "local.env"]) === 'A="literal ${HOME}"\nZ=local\n', `${manager} dotenv merge smoke failed`);
+    const normalized = cli(["yaml", "normalize"], "base: &base {z: 2, a: 1}\ncopy: {<<: *base, z: 3}\n");
+    ensure(normalized === '"base":\n  "a": 1\n  "z": 2\n"copy":\n  "a": 1\n  "z": 3\n', `${manager} YAML reference smoke failed`);
+    ensure(cli(["yaml", "normalize"], normalized) === normalized, `${manager} YAML idempotence smoke failed`);
+    writeFileSync(path.join(consumer, "config.yaml"), "z: 2\na: 1\n");
+    ensure(cli(["yaml", "normalize", "--input", "config.yaml", "--in-place"]) === "", `${manager} file output leaked to stdout`);
+    ensure(readFileSync(path.join(consumer, "config.yaml"), "utf8") === '"a": 1\n"z": 2\n', `${manager} in-place smoke failed`);
     const installed = JSON.parse(readFileSync(path.join(consumer, "node_modules", native.name, "package.json"), "utf8"));
     ensure(installed.version === metadata().version, "Installed native version mismatch");
     event("consumer_smoke", { manager, target: target.suffix, version: installed.version });
