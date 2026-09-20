@@ -53,14 +53,14 @@ jobs:
         env:
           CLIENT_ID: ${{ vars.DELINO_RELEASE_BOT_CLIENT_ID }}
           PRIVATE_KEY: ${{ secrets.DELINO_RELEASE_BOT_PRIVATE_KEY }}
-          REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          REGISTRY_TOKEN: ${{ inputs.project != 'clibox' && secrets.CARGO_REGISTRY_TOKEN || '' }}
         run: |
           node --input-type=module <<'JS'
-          import { Kind, versionChanges } from './scripts/release/project.mjs';
+          import { requiresCargoPublish, versionChanges } from './scripts/release/project.mjs';
           import { readFileSync } from 'node:fs';
           const plan = versionChanges(process.env.RELEASE_PROJECT, process.env.RELEASE_BUMP, file => readFileSync(file, 'utf8'));
           if (!process.env.CLIENT_ID || !process.env.PRIVATE_KEY) throw new Error('Release bot configuration is required');
-          if (plan.kind === Kind.Rust && !process.env.REGISTRY_TOKEN) throw new Error('CARGO_REGISTRY_TOKEN is required');
+          if (requiresCargoPublish(plan.project) && !process.env.REGISTRY_TOKEN) throw new Error('CARGO_REGISTRY_TOKEN is required');
           JS
       - name: Create source repository token
         id: bot
@@ -104,17 +104,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/release/project.mjs validate
       - name: Install Rust toolchain
-        if: needs.prepare.outputs.kind == 'rust'
+        if: needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox'
         uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-01-01
       - name: Cache Rust dependencies
-        if: needs.prepare.outputs.kind == 'rust'
+        if: needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox'
         uses: Swatinem/rust-cache@v2
       - name: Publish only the selected crate
-        if: needs.prepare.outputs.kind == 'rust'
+        if: needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox'
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ inputs.project != 'clibox' && secrets.CARGO_REGISTRY_TOKEN || '' }}
         run: cargo run --locked -p cargo-mono -- publish --package "$RELEASE_PROJECT"
 
   tag:

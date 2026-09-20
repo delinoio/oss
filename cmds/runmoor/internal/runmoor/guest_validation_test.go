@@ -90,7 +90,10 @@ func TestGuestValidationRejectsInvalidImagesWithoutReadinessRetry(t *testing.T) 
 			case "transport timeout":
 				f.transient = 100
 			}
-			timeout := 2 * time.Second
+			// The validation shell launches several real processes, so correctness
+			// cases need headroom on loaded hosts. Only the timeout case below
+			// deliberately tests a short transport deadline.
+			timeout := 15 * time.Second
 			if scenario == "transport timeout" {
 				timeout = 50 * time.Millisecond
 			}

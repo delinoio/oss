@@ -29,6 +29,12 @@ function descriptor(project) {
   return versions[project];
 }
 
+// Rust source versioning is independent from registry distribution: clibox
+// ships only through npm and native packages, while retaining Cargo builds.
+export function requiresCargoPublish(project) {
+  return descriptor(project).kind === Kind.Rust && project !== Project.Clibox;
+}
+
 function replaceLockVersion(lock, project, previous, next) {
   const sections = [...lock.matchAll(/^\[\[package\]\]\n[\s\S]*?(?=^\[\[|$(?![\s\S]))/gmu)]
     .filter(([section]) => section.split("\n").includes(`name = "${project}"`));

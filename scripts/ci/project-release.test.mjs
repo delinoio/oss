@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import yaml from "js-yaml";
-import { Bump, Project } from "../release/project.mjs";
+import { Bump, Project, requiresCargoPublish } from "../release/project.mjs";
 
 const source = (file) => readFileSync(new URL(`../../${file}`, import.meta.url), "utf8");
 const workflow = yaml.load(source(".github/workflows/release-project.yml"));
@@ -32,7 +32,7 @@ test("Publication follows preparation without CI and tags only after registry su
   assert.deepEqual(jobs.registry.needs, ["prepare"]);
   assert.deepEqual(jobs.tag.needs, ["prepare", "registry"]);
   const publish = jobs.registry.steps.find((step) => step.name === "Publish only the selected crate");
-  assert.equal(publish.if, "needs.prepare.outputs.kind == 'rust'");
+  assert.equal(publish.if, "needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox'");
   assert.equal(publish.run, 'cargo run --locked -p cargo-mono -- publish --package "$RELEASE_PROJECT"');
   assert.equal(publish["continue-on-error"], undefined);
   for (const name of ["registry", "tag"]) {
@@ -123,4 +123,32 @@ test("Source and tap tokens are separately scoped and all selected tag workflows
   const tap = source("scripts/release/update-homebrew.sh");
   assert.doesNotMatch(tap, /x-access-token:|remote set-url/u);
   assert.match(tap, /credential\.helper=!gh auth git-credential/u);
+});
+
+test("clibox reaches source validation and tagging without Cargo publication credentials", () => {
+  const prepare = workflow.jobs.prepare.steps.find((step) => step.name === "Validate configuration before committing");
+  assert.equal(prepare.env.REGISTRY_TOKEN, "${{ inputs.project != 'clibox' && secrets.CARGO_REGISTRY_TOKEN || '' }}");
+  assert.match(prepare.run, /requiresCargoPublish\(plan.project\)/u);
+  const preflight = prepare.run.split("<<'JS'\n")[1].split("\nJS")[0];
+  const environment = { CLIENT_ID: "fixture-id", PRIVATE_KEY: "fixture-key", RELEASE_BUMP: Bump.Patch };
+  const runPreflight = (project) => execFileSync(process.execPath, ["--input-type=module"], {
+    cwd: new URL("../../", import.meta.url),
+    input: preflight,
+    env: { ...environment, RELEASE_PROJECT: project },
+    stdio: "pipe",
+  });
+  assert.doesNotThrow(() => runPreflight(Project.Clibox));
+  assert.throws(() => runPreflight(Project.Binpm), /CARGO_REGISTRY_TOKEN is required/u);
+  const registry = workflow.jobs.registry;
+  assert.equal(registry.if, undefined);
+  const validation = registry.steps.find((step) => step.name === "Validate immutable release source");
+  assert.equal(validation.if, undefined);
+  assert.equal(validation.run, "node scripts/release/project.mjs validate");
+  for (const step of registry.steps.filter((step) =>
+    ["Install Rust toolchain", "Cache Rust dependencies", "Publish only the selected crate"].includes(step.name))) {
+    assert.equal(step.if, "needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox'");
+  }
+  for (const project of Object.values(Project)) {
+    assert.equal(requiresCargoPublish(project), [Project.Binpm, Project.CargoMono, Project.Nodeup, Project.WithWatch].includes(project));
+  }
 });

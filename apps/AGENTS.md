@@ -155,6 +155,10 @@
 - If `apps/public-docs` changes, run `pnpm --filter public-docs test` before finishing.
 - Update relevant docs in `docs/` for every behavior, structure, or interface change.
 
+### async-commit-hook
+- `apps/async-commit-hook` owns the Rsbuild app and `/docs` at `https://ach.delino.io`. Follow `docs/apps-async-commit-hook-contract.md`.
+- Fixed development port 46308; root entry `pnpm dev:async-commit-hook`. Use generated Connect Query and React Query. Logs/source remain inert, authorization is local and revocable, and results never go to static hosting.
+
 ### Native CLI package documentation
 
 - Follow `docs/repository-linux-packages-contract.md`. The shared public `/linux-packages` route owns APT/DNF setup and key verification; standalone CLI installation pages retain product-specific guidance.
