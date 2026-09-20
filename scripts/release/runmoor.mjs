@@ -55,12 +55,14 @@ export async function checkPublication(plan, request, expectedAssets) {
   if (release.status === 200) {
     if (release.body?.draft === true) {
       if (release.body.tag_name !== plan.tag || release.body.prerelease !== false || release.body.target_commitish !== plan.revision) throw new Error("Existing release draft is not bound to the requested stable tag and source revision");
-      if (!sameAssetManifest(release.body.assets, expectedAssets)) throw new Error("Existing release draft assets do not match the verified release asset inventory");
-      return;
+      // The recovery probe omits expectedAssets so the workflow can download and cryptographically verify the existing signed candidate before generating new bundles. Every publish path performs a second call with the complete manifest.
+      if (expectedAssets !== undefined && !sameAssetManifest(release.body.assets, expectedAssets)) throw new Error("Existing release draft assets do not match the verified release asset inventory");
+      return release.body;
     }
     throw new Error("A public release already exists; immutable artifacts cannot be overwritten");
   }
   if (release.status !== 404) throw new Error("Cannot establish whether a release already exists");
+  return null;
 }
 
 export function assetManifest(directory, signed = false) {

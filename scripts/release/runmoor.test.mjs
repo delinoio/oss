@@ -105,6 +105,10 @@ test("Publication resumes a matching draft and refuses public or uncertain relea
   ]);
   await checkPublication(plan, async () => ({ status: 404, body: {} }));
   await checkPublication(plan, async (route) => ({ status: route.includes("/git/") ? 200 : 404, body: { object: { type: "commit", sha: revision } } }));
+  const inspectedDraft = await checkPublication(plan, async (route) => route.includes("/git/")
+    ? { status: 200, body: { object: { type: "commit", sha: revision } } }
+    : { status: 200, body: { tag_name: plan.tag, draft: true, prerelease: false, target_commitish: revision, assets: expectedAssets } });
+  assert.equal(inspectedDraft.tag_name, plan.tag);
   await checkPublication(plan, async (route) => route.includes("/git/")
     ? { status: 200, body: { object: { type: "commit", sha: revision } } }
     : { status: 200, body: { tag_name: plan.tag, draft: true, prerelease: false, target_commitish: revision, assets: expectedAssets } }, expectedAssets);

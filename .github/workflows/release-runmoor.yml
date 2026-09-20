@@ -128,7 +128,52 @@ jobs:
           name: runmoor-unsigned-archives
           path: dist
       - uses: sigstore/cosign-installer@v4.1.1
+      - name: Inspect and reuse existing stable draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          node --input-type=module <<'JS'
+          import { appendFileSync, copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+          import { tmpdir } from 'node:os';
+          import path from 'node:path';
+          import { archiveNames, assetManifest, checkPublication, releasePlan, verify } from './scripts/release/runmoor.mjs';
+          const identity = `https://github.com/${process.env.GITHUB_WORKFLOW_REF}`;
+          const request = async (apiPath) => {
+            const response = await fetch(`https://api.github.com${apiPath}`, {headers: {Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/vnd.github+json'}, redirect: 'error', signal: AbortSignal.timeout(30000)});
+            return {status: response.status, body: response.status === 200 ? await response.json() : {}};
+          };
+          const plan = releasePlan({version: process.env.RELEASE_VERSION, revision: process.env.GITHUB_SHA, ref: process.env.GITHUB_REF, mode: 'publish'});
+          const release = await checkPublication(plan, request);
+          if (!release) {
+            appendFileSync(process.env.GITHUB_ENV, 'RUNMOOR_REUSE_DRAFT=false\n');
+          } else {
+            const expectedNames = [...archiveNames, 'SHA256SUMS', ...archiveNames.map((name) => `${name}.sigstore.json`), 'SHA256SUMS.sigstore.json'];
+            const draftDirectory = mkdtempSync(path.join(tmpdir(), 'runmoor-draft-'));
+            try {
+              for (const asset of release.assets ?? []) {
+                if (!expectedNames.includes(asset.name) || !asset.url) throw new Error('Existing release draft contains an unexpected asset');
+                const response = await fetch(asset.url, {headers: {Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/octet-stream'}, redirect: 'follow', signal: AbortSignal.timeout(30000)});
+                if (!response.ok) throw new Error(`Cannot download existing release asset ${asset.name}`);
+                writeFileSync(path.join(draftDirectory, asset.name), Buffer.from(await response.arrayBuffer()));
+              }
+              const downloaded = assetManifest(draftDirectory, true);
+              await checkPublication(plan, request, downloaded);
+              const local = assetManifest('dist');
+              const downloadedByName = new Map(downloaded.map((asset) => [asset.name, asset]));
+              for (const asset of local) {
+                const candidate = downloadedByName.get(asset.name);
+                if (!candidate || candidate.size !== asset.size || candidate.digest !== asset.digest) throw new Error(`Existing release asset ${asset.name} does not match the current source revision`);
+              }
+              verify(draftDirectory, true, {identity});
+              for (const name of [...archiveNames, 'SHA256SUMS']) copyFileSync(path.join(draftDirectory, `${name}.sigstore.json`), path.join('dist', `${name}.sigstore.json`));
+              verify('dist', true, {identity});
+              appendFileSync(process.env.GITHUB_ENV, 'RUNMOOR_REUSE_DRAFT=true\n');
+            } finally { rmSync(draftDirectory, {recursive: true, force: true}); }
+          }
+          JS
       - name: Sign exact artifacts with Sigstore
+        if: env.RUNMOOR_REUSE_DRAFT != 'true'
         run: |
           node scripts/release/runmoor.mjs verify --output dist
           for artifact in dist/*.tar.gz dist/SHA256SUMS; do
@@ -150,6 +195,7 @@ jobs:
           }, expectedAssets);
           JS
       - name: Create stable release draft
+        if: env.RUNMOOR_REUSE_DRAFT != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.plan.outputs.tag }}
