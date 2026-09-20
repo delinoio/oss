@@ -5236,3 +5236,56 @@ fn check_validates_remote_syntax_without_credentials() {
         }
     }
 }
+
+#[tokio::test]
+async fn either_subscription_can_request_one_initial_execution() {
+    let mut tasks = serde_json::Map::new();
+    let mut expected = BTreeSet::new();
+    for (w, watch) in [None, Some(false), Some(true)].into_iter().enumerate() {
+        for (s, schedule) in [None, Some(false), Some(true)].into_iter().enumerate() {
+            let id = format!("task{w}{s}");
+            let mut task = json!({"command":command(&["record",&id,"ran"]),"input":[]});
+            if let Some(initial) = watch {
+                task["watch"] = json!({"initial":initial});
+            }
+            if let Some(initial) = schedule {
+                task["schedule"] = json!({"initial":initial,"every":"1d"});
+            }
+            if (watch.is_none() && schedule.is_none())
+                || watch == Some(true)
+                || schedule == Some(true)
+            {
+                expected.insert(id.clone());
+            }
+            tasks.insert(id, task);
+        }
+    }
+    let root = fixture(Value::Object(tasks.clone()));
+    profile(
+        root.path(),
+        &tasks.keys().map(String::as_str).collect::<Vec<_>>(),
+    );
+    let cancel = CancellationToken::new();
+    let directory = root.path().to_owned();
+    let token = cancel.clone();
+    let session = tokio::spawn(async move {
+        taskflow::session::start(&directory, "default", RunOptions::default(), token).await
+    });
+    for id in &expected {
+        wait_lines(&root.path().join(id), "ran", 1).await;
+    }
+    cancel.cancel();
+    tokio::time::timeout(Duration::from_secs(10), session)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    for id in tasks.keys() {
+        let contents = std::fs::read_to_string(root.path().join(id)).unwrap_or_default();
+        assert_eq!(
+            contents,
+            if expected.contains(id) { "ran\n" } else { "" },
+            "{id}"
+        );
+    }
+}

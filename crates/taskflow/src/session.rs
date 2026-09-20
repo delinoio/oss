@@ -289,12 +289,12 @@ fn initial(graph: &Graph, active: &BTreeSet<String>) -> BTreeMap<String, Pending
         .filter(|id| {
             let task = &graph.tasks[*id].task;
             task.service
+                || (task.watch.is_none() && task.schedule.is_none())
+                || task.watch.as_ref().is_some_and(|watch| watch.initial)
                 || task
-                    .watch
+                    .schedule
                     .as_ref()
-                    .map(|w| w.initial)
-                    .or_else(|| task.schedule.as_ref().map(|s| s.initial))
-                    .unwrap_or(true)
+                    .is_some_and(|schedule| schedule.initial)
         })
         .map(|id| {
             (

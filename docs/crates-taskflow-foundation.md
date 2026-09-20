@@ -45,6 +45,8 @@ Subscribe before activation. Default file debounce is 200ms; default overlap is 
 
 Shared companions are reference-counted by live owners; prerequisite and initial companion execution are deduplicated. Finite check failures retain subscriptions; server/readiness failure ends the session. Shutdown removes subscriptions, timers, queued runs, and process trees. Invalid configuration suspends new work until corrected. Readiness and service deadlines cancel and await the active readiness probe, its process owner, and both output drains before session cleanup returns; dropping a probe future does not satisfy cleanup.
 
+Either watch or schedule may request initial execution for a mixed subscription; both true flags share one activation, and both false flags defer work until a trigger. Tasks without subscriptions run initially.
+
 Intervals use monotonic time. Cron uses five fields, IANA zones, UTC by default, no catch-up bursts, and once per repeated local wall-clock minute. `every` and `cron` are mutually exclusive. Configuration reads and one-shot runs never activate subscriptions.
 
 Cron weekdays use 0 or 7 for Sunday, 1–6 for Monday–Saturday, and named weekdays. Restricted day-of-month and day-of-week fields form a union. Interval and cron decision functions accept explicit times so missed ticks and DST can be tested without sleeping.
