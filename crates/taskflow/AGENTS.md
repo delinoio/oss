@@ -61,6 +61,7 @@
 - Native libtest sharding rejects explicit Cargo --target in either argv form before execution; generic adapters own cross-target runner invocation.
 - Rust libtest metadata must honor the command's explicit manifest selection in both argv forms; parse harness declarations only for the selected compiler-artifact targets, never reject unrelated packages or unselected targets.
 - Native Go -failfast stops later units across the invocation and records them as skipped without hiding the failure. Native Go shard arguments use an explicit flag/value contract; reject unknown or selection/output flags before inventory execution.
+- Real watcher overlap tests must hold their process until an independent subscriber confirms each mutation was handled; fixed process durations cannot assume bounded OS event-delivery latency.
 - Provision Git on PATH for default affected-selection conformance fixtures, including minimal Rust containers.
 - Maintain schema freshness and numbered issue #898 conformance scenarios. Report unavailable platform/service evidence accurately.
 - Keep `docs/crates-taskflow-conformance.md`, the native/Docker CI matrices, and their centralized `scripts/ci/job-paths.json` ownership synchronized. CI result bundles must prove complete task, artifact, and shard accounting against the exact plan; secret transport is forbidden for PR jobs.

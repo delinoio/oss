@@ -289,3 +289,5 @@ The real Go flag suite also compares `-failfast` and `-failfast=false` across tw
 `ci_export_rejects_blank_runner_mappings_before_writing` rejects empty, whitespace-only, and control-character runner labels during configuration checks and direct blueprint export, including the plan/aggregate fallback mapping. Neither workflow nor blueprint is written on failure.
 
 `check_rejects_invalid_docker_ports_before_prerequisites` checks NUL, option-shaped, and blank Docker publish values through configuration loading, `check`, and `run`; the prerequisite marker is never written. Container-only, IPv4/IPv6 host binding, protocol suffix, and port-range forms remain accepted without contacting Docker.
+
+`scenario_17_queue_skip_restart_own_real_exclusive_processes` holds a real TCP-exclusive process behind a release gate until an independent watched task observes each input version. This proves both changes were processed during execution, without assuming a maximum FSEvents delivery latency. Queue coalesces both edits, skip ignores both, and restart reaps each predecessor before the next process binds the port.

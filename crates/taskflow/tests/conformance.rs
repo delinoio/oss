@@ -1596,15 +1596,16 @@ async fn reading_session_files_does_not_cancel_or_requeue_work() {
 
 #[tokio::test]
 async fn scenario_17_queue_skip_restart_own_real_exclusive_processes() {
-    for (overlap, expected_starts) in [("queue", 2), ("skip", 1), ("restart", 2)] {
+    for (overlap, expected_starts) in [("queue", 2), ("skip", 1), ("restart", 3)] {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap().to_string();
         drop(listener);
-        let directory = fixture(
-            json!({"check":{"command":command(&["paced","events",&address,"700"]),"input":["source"],"watch":{"debounce":"20ms"},"overlap":overlap}}),
-        );
+        let directory = fixture(json!({
+            "check":{"command":command(&["gated-paced","events",&address,"release"]),"input":["source"],"watch":{"debounce":"20ms"},"overlap":overlap},
+            "observe":{"command":command(&["copy","source","observed"]),"input":["source"],"output":["observed"],"watch":{"initial":false,"debounce":"20ms"}}
+        }));
         std::fs::write(directory.path().join("source"), "initial").unwrap();
-        profile(directory.path(), &["check"]);
+        profile(directory.path(), &["check", "observe"]);
         let root = directory.path().to_path_buf();
         let token = CancellationToken::new();
         let stop = token.clone();
@@ -1614,6 +1615,7 @@ async fn scenario_17_queue_skip_restart_own_real_exclusive_processes() {
                 "default",
                 RunOptions {
                     quiet: true,
+                    jobs: 2,
                     ..Default::default()
                 },
                 stop,
@@ -1622,10 +1624,31 @@ async fn scenario_17_queue_skip_restart_own_real_exclusive_processes() {
         });
         let events = directory.path().join("events");
         wait_lines(&events, "start", 1).await;
-        for change in ["first", "second"] {
+        // Keep the process alive until an independent subscriber confirms the
+        // session has processed each edit. FSEvents may deliver mutations after
+        // a fixed-duration process exits, which would no longer test overlap.
+        for (index, change) in ["first", "second"].into_iter().enumerate() {
             std::fs::write(directory.path().join("source"), change).unwrap();
-            tokio::time::sleep(Duration::from_millis(40)).await;
+            tokio::time::timeout(Duration::from_secs(15), async {
+                while std::fs::read_to_string(directory.path().join("observed"))
+                    .ok()
+                    .as_deref()
+                    != Some(change)
+                {
+                    assert!(
+                        !session.is_finished(),
+                        "session failed before observing mutation"
+                    );
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+            if overlap == "restart" {
+                wait_lines(&events, "start", index + 2).await;
+            }
         }
+        std::fs::write(directory.path().join("release"), "release").unwrap();
         wait_lines(&events, "start", expected_starts).await;
         wait_lines(&events, "end", if overlap == "queue" { 2 } else { 1 }).await;
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -1633,15 +1656,7 @@ async fn scenario_17_queue_skip_restart_own_real_exclusive_processes() {
         session.await.unwrap().unwrap();
         let records = std::fs::read_to_string(events).unwrap();
         let starts = records.lines().filter(|l| l.starts_with("start")).count();
-        // Restart may replace twice when two separated edits are delivered.
-        assert!(
-            if overlap == "restart" {
-                (2..=3).contains(&starts)
-            } else {
-                starts == expected_starts
-            },
-            "{overlap}: {records}"
-        );
+        assert_eq!(starts, expected_starts, "{overlap}: {records}");
         assert!(
             std::net::TcpListener::bind(&address).is_ok(),
             "session leaked a process"

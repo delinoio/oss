@@ -160,11 +160,15 @@ fn main() {
             write(&args[3], std::process::id().to_string().as_bytes());
             for stream in listener.incoming() { drop(stream.unwrap()); }
         }
-        "paced" => {
+        "paced" | "gated-paced" => {
             let _exclusive = std::net::TcpListener::bind(&args[3]).unwrap();
             let mut file = fs::OpenOptions::new().create(true).append(true).open(&args[2]).unwrap();
             writeln!(file, "start:{}", std::process::id()).unwrap();
-            std::thread::sleep(Duration::from_millis(args[4].parse().unwrap()));
+            if args[1] == "gated-paced" {
+                while !Path::new(&args[4]).exists() { std::thread::sleep(Duration::from_millis(10)); }
+            } else {
+                std::thread::sleep(Duration::from_millis(args[4].parse().unwrap()));
+            }
             writeln!(file, "end:{}", std::process::id()).unwrap();
         }
         "inventory" => println!("{{\"version\":1,\"tests\":[{{\"id\":\"aa\"}},{{\"id\":\"bb\"}},{{\"id\":\"cc\"}}]}}"),
