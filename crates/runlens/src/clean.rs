@@ -500,6 +500,7 @@ pub async fn verify(
         .commands
         .get(name)
         .ok_or_else(|| Error::input("configured command was not found"))?;
+    command.validate_argv()?;
     if runs > 1 && command.outputs.is_empty() {
         return Err(Error::input(
             "repeat verification requires declared outputs",
@@ -627,6 +628,49 @@ async fn verify_in(
          preparation."
             .into(),
     );
+    // Check all planned targets/preparations and imported metadata before the
+    // first preparation can perform side effects. Future round paths are known
+    // without creating them; canonicalize only their already-owned parent.
+    let canonical_owned = owned.canonicalize().map_err(|_| Error::storage())?;
+    let mut budget = crate::report::MetadataBudget::planned();
+    if let Some(baseline) = baseline {
+        for execution in &baseline.executions {
+            budget.execution(&execution.command, &execution.environment, &execution.scope)?;
+        }
+    }
+    for repetition in 1..=runs {
+        let round = canonical_owned.join(format!("round-{repetition}"));
+        let workspace = round.join("workspace");
+        let redactor = crate::privacy::Redactor::new(
+            &workspace,
+            &[&round.join("environment")],
+            &config.redaction,
+        )?;
+        for argv in &command.prepare {
+            let mut preparation = Command::direct(argv.clone());
+            preparation.env = command.env.clone();
+            let (identity, environment, scope) = execute::metadata(
+                &preparation,
+                Some(name),
+                &workspace.join(&command.cwd),
+                config,
+                &redactor,
+                Some(revision),
+                include,
+            );
+            budget.execution(&identity, &environment, &scope)?;
+        }
+        let (identity, environment, scope) = execute::metadata(
+            command,
+            Some(name),
+            &workspace.join(&command.cwd),
+            config,
+            &redactor,
+            Some(revision),
+            include,
+        );
+        budget.execution(&identity, &environment, &scope)?;
+    }
     let mut expected = std::collections::BTreeMap::new();
     for repetition in 1..=runs {
         if cancel.is_cancelled() {

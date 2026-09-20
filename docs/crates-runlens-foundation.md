@@ -801,3 +801,12 @@ the executing host before downloading or installing archives. The guard requires
 macOS 13, Windows NT 10.0.19045, or Ubuntu 22.04 and the matching native
 architecture. Rosetta and mismatched Windows native architecture are rejected;
 runner labels and a successful doctor on a newer OS cannot replace this check.
+
+Execution preflight validates every direct, named, and preparation argv before
+launch (1–1024 arguments, at most 32768 bytes per argument, no NUL). The same
+metadata validator used for report acceptance checks masked field sizes, JSON
+string expansion, vector counts, and the 1 MiB envelope before snapshots.
+Clean/repeat additionally budgets all planned preparations, targets, repetitions,
+and imported baseline execution metadata before the first preparation. Planning
+reserves a digest and 4 KiB for built-in limitation notices. Invalid metadata is
+invalid-input even without --save; no child side effects occur before rejection.

@@ -59,6 +59,20 @@ fn default_cwd() -> PathBuf {
     PathBuf::from(".")
 }
 impl Command {
+    pub(crate) fn validate_argv(&self) -> Result<()> {
+        for argv in std::iter::once(&self.argv).chain(&self.prepare) {
+            if argv.is_empty()
+                || argv.len() > 1024
+                || argv
+                    .iter()
+                    .any(|arg| arg.contains('\0') || arg.len() > 32768)
+            {
+                return Err(Error::input("invalid command argv"));
+            }
+        }
+        Ok(())
+    }
+
     pub fn direct(argv: Vec<String>) -> Self {
         Self {
             argv,
@@ -154,15 +168,7 @@ pub fn load(path: Option<&Path>, root: &Path) -> Result<Config> {
         {
             return Err(Error::input("invalid named command"));
         }
-        for argv in std::iter::once(&command.argv).chain(command.prepare.iter()) {
-            if argv.is_empty()
-                || argv
-                    .iter()
-                    .any(|arg| arg.contains('\0') || arg.len() > 32768)
-            {
-                return Err(Error::input("invalid command argv"));
-            }
-        }
+        command.validate_argv()?;
         if command.cwd.is_absolute()
             || command
                 .cwd

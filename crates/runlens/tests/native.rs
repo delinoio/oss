@@ -4836,3 +4836,125 @@ int main(void) {
         true
     );
 }
+
+#[test]
+fn invalid_metadata_never_launches_direct_or_preparation_commands() {
+    let root = repository("read");
+    let external = tempfile::tempdir().unwrap();
+    let marker = external.path().join("started");
+    let mut argv = vec![
+        fixture().to_owned(),
+        "metadata-marker".into(),
+        marker.to_str().unwrap().into(),
+    ];
+    argv.resize(1025, "x".into());
+    for save in [false, true] {
+        let mut args = vec!["run"];
+        if save {
+            args.extend(["--save", "invalid.json"]);
+        }
+        args.push("--");
+        args.extend(argv.iter().map(String::as_str));
+        let result = invoke(root.path(), &args);
+        assert_eq!(result.status.code(), Some(2), "{result:?}");
+        assert!(!marker.exists());
+        assert!(!root.path().join("invalid.json").exists());
+    }
+    let mut config = runlens::config::Config::default();
+    let mut command = runlens::config::Command::direct(vec![fixture().into(), "read".into()]);
+    command.prepare = vec![argv];
+    config.commands.insert("build".into(), command);
+    fs::write(
+        root.path().join("runlens.toml"),
+        toml::to_string(&config).unwrap(),
+    )
+    .unwrap();
+    let result = invoke(root.path(), &["verify", "clean", "build"]);
+    assert_eq!(result.status.code(), Some(2), "{result:?}");
+    assert!(!marker.exists());
+}
+
+#[test]
+fn repeat_metadata_budget_is_checked_before_any_preparation() {
+    let root = repository("read");
+    let external = tempfile::tempdir().unwrap();
+    let marker = external.path().join("started");
+    let mut command = runlens::config::Command::direct(vec![fixture().into(), "read".into()]);
+    command.argv.extend(vec!["a".repeat(500); 80]);
+    command.outputs = vec!["output".into()];
+    command.prepare = vec![vec![
+        fixture().into(),
+        "metadata-marker".into(),
+        marker.to_str().unwrap().into(),
+    ]];
+    let mut config = runlens::config::Config::default();
+    config.commands.insert("build".into(), command);
+    fs::write(
+        root.path().join("runlens.toml"),
+        toml::to_string(&config).unwrap(),
+    )
+    .unwrap();
+    let result = invoke(root.path(), &["verify", "repeat", "build", "--runs", "32"]);
+    assert_eq!(result.status.code(), Some(2), "{result:?}");
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn metadata_redaction_and_field_limits_are_checked_before_launch() {
+    use runlens::{
+        config::{Command as RunCommand, Config},
+        execute::{self, Request},
+        model::Role,
+    };
+    for case in [
+        "argument-length",
+        "redacted-length",
+        "environment-count",
+        "combined-exclusions",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let root = root.path().canonicalize().unwrap();
+        let marker = root.join("started");
+        let mut command = RunCommand::direct(vec![
+            fixture().into(),
+            "metadata-marker".into(),
+            marker.to_str().unwrap().into(),
+        ]);
+        let mut config = Config::default();
+        match case {
+            "argument-length" => command.argv.push("a".repeat(32769)),
+            "redacted-length" => {
+                command.argv.push("a".repeat(32768));
+                config.redaction.patterns = vec!["a".into()];
+            }
+            "environment-count" => command.env = vec!["ALLOWED".into(); 1025],
+            _ => {
+                config.exclusions = vec!["excluded".into(); 3000];
+                command.exclusions = vec!["excluded".into(); 3000];
+            }
+        }
+        let result = execute::observe_with_launch_hook(
+            Request {
+                root: &root,
+                command: &command,
+                name: None,
+                config: &config,
+                environment: std::env::vars_os().collect(),
+                temporary: vec![],
+                revision: None,
+                working_tree_included: true,
+                role: Role::Target,
+                repetition: 1,
+                cancellation: tokio_util::sync::CancellationToken::new(),
+            },
+            || panic!("invalid metadata reached launch"),
+        )
+        .await;
+        assert_eq!(
+            result.unwrap_err().code,
+            runlens::error::ErrorCode::InvalidInput,
+            "{case}"
+        );
+        assert!(!marker.exists());
+    }
+}

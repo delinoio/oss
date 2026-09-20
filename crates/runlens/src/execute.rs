@@ -46,9 +46,7 @@ async fn observe_inner(request: Request<'_>, hook: impl FnOnce()) -> Result<Exec
     let started = Instant::now();
     request.config.limits.validate()?;
     crate::entries::set_memory_limit(request.config.limits.memory_bytes);
-    if request.command.argv.is_empty() {
-        return Err(Error::input("command argv is required"));
-    }
+    request.command.validate_argv()?;
     let cwd = request
         .root
         .join(&request.command.cwd)
@@ -94,6 +92,16 @@ async fn observe_inner(request: Request<'_>, hook: impl FnOnce()) -> Result<Exec
         .chain(request.command.exclusions.iter())
         .cloned()
         .collect::<Vec<_>>();
+    let (identity, mut environment, mut scope) = metadata(
+        request.command,
+        request.name,
+        &cwd,
+        request.config,
+        &redactor,
+        request.revision.as_deref(),
+        request.working_tree_included,
+    );
+    crate::report::MetadataBudget::planned().execution(&identity, &environment, &scope)?;
     tracing::info!(execution_id=%id,stage="before-snapshot","execution starting");
     let before = snapshot::take(
         request.root,
@@ -342,50 +350,17 @@ async fn observe_inner(request: Request<'_>, hook: impl FnOnce()) -> Result<Exec
             errors.push(ErrorCode::Incomplete);
         }
     }
+    environment.executable_sha256 = executable_sha256;
+    scope.before_complete = before.complete;
+    scope.after_complete = after.complete;
+    scope.redacted_paths = redacted_paths;
     let mut execution = Execution {
         id,
         role: request.role,
         repetition: request.repetition,
-        command: Identity {
-            name: request.name.map(|s| redactor.text(s)),
-            argv: redactor.argv(&request.command.argv),
-            cwd: redactor.path(&cwd),
-        },
-        environment: Environment {
-            os: std::env::consts::OS.into(),
-            architecture: std::env::consts::ARCH.into(),
-            os_version: platform::os_version(),
-            runlens_version: env!("CARGO_PKG_VERSION").into(),
-            engine_version: ENGINE_REVISION.into(),
-            executable_sha256,
-            source_revision: request.revision,
-            working_tree_included: request.working_tree_included,
-            environment_names: request
-                .command
-                .env
-                .iter()
-                .map(|name| redactor.text(name))
-                .collect(),
-        },
-        scope: Scope {
-            root: "${workspace}".into(),
-            exclusions: exclusions.iter().map(|s| redactor.text(s)).collect(),
-            input_patterns: request
-                .command
-                .inputs
-                .iter()
-                .map(|s| redactor.text(s))
-                .collect(),
-            output_patterns: request
-                .command
-                .outputs
-                .iter()
-                .map(|s| redactor.text(s))
-                .collect(),
-            before_complete: before.complete,
-            after_complete: after.complete,
-            redacted_paths,
-        },
+        command: identity,
+        environment,
+        scope,
         before: before.entries,
         after: after.entries,
         accesses,
@@ -405,6 +380,59 @@ async fn observe_inner(request: Request<'_>, hook: impl FnOnce()) -> Result<Exec
     }
     tracing::info!(execution_id=%id,stage="complete",elapsed_ms=execution.outcome.elapsed_ms,"execution evidence ready");
     Ok(execution)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn metadata(
+    command: &Command,
+    name: Option<&str>,
+    cwd: &Path,
+    config: &Config,
+    redactor: &Redactor,
+    revision: Option<&str>,
+    included: bool,
+) -> (Identity, Environment, Scope) {
+    (
+        Identity {
+            name: name.map(|value| redactor.text(value)),
+            argv: redactor.argv(&command.argv),
+            cwd: redactor.path(cwd),
+        },
+        Environment {
+            os: std::env::consts::OS.into(),
+            architecture: std::env::consts::ARCH.into(),
+            os_version: platform::os_version(),
+            runlens_version: env!("CARGO_PKG_VERSION").into(),
+            engine_version: ENGINE_REVISION.into(),
+            // Reserve a complete digest before launch even if hashing later fails.
+            executable_sha256: Some("0".repeat(64)),
+            source_revision: revision.map(str::to_owned),
+            working_tree_included: included,
+            environment_names: command.env.iter().map(|name| redactor.text(name)).collect(),
+        },
+        Scope {
+            root: "${workspace}".into(),
+            exclusions: config
+                .exclusions
+                .iter()
+                .chain(&command.exclusions)
+                .map(|value| redactor.text(value))
+                .collect(),
+            input_patterns: command
+                .inputs
+                .iter()
+                .map(|value| redactor.text(value))
+                .collect(),
+            output_patterns: command
+                .outputs
+                .iter()
+                .map(|value| redactor.text(value))
+                .collect(),
+            before_complete: false,
+            after_complete: false,
+            redacted_paths: false,
+        },
+    )
 }
 
 fn observed_in_scope(

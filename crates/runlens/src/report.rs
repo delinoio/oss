@@ -84,6 +84,79 @@ fn guard_json(reader: &mut impl Read) -> Result<()> {
     }
     Ok(())
 }
+/// Shared by report validation and prelaunch planning so serialization limits
+/// cannot first reject a command after its side effects have occurred.
+#[derive(Default)]
+pub(crate) struct MetadataBudget(usize);
+impl MetadataBudget {
+    pub(crate) fn planned() -> Self {
+        // Reserve the bounded, built-in run/clean/repeat limitation notices.
+        Self(4096)
+    }
+
+    fn text(&mut self, value: &str) -> Result<()> {
+        self.0 = self
+            .0
+            .saturating_add(value.len() + std::mem::size_of::<String>());
+        if value.len() > MAX_RECORD_BYTES
+            || self.0 > MAX_ENVELOPE_BYTES
+            || serde_json::to_string(value)
+                .map_err(|_| Error::input("invalid metadata"))?
+                .len()
+                - 1
+                > MAX_RECORD_BYTES
+        {
+            return Err(Error::input("report metadata exceeds the envelope limit"));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn execution(
+        &mut self,
+        command: &Identity,
+        env: &Environment,
+        scope: &Scope,
+    ) -> Result<()> {
+        if command.argv.is_empty()
+            || command.argv.len() > 1024
+            || env.environment_names.len() > 1024
+            || scope.root != "${workspace}"
+            || scope.exclusions.len() > 4096
+            || scope.input_patterns.len() > 4096
+            || scope.output_patterns.len() > 4096
+        {
+            return Err(Error::input("invalid execution metadata"));
+        }
+        for value in command
+            .argv
+            .iter()
+            .chain(command.name.iter())
+            .chain([
+                &command.cwd,
+                &scope.root,
+                &env.os,
+                &env.architecture,
+                &env.runlens_version,
+                &env.engine_version,
+            ])
+            .chain(scope.exclusions.iter())
+            .chain(scope.input_patterns.iter())
+            .chain(scope.output_patterns.iter())
+            .chain(env.environment_names.iter())
+            .chain(env.os_version.iter())
+            .chain(env.source_revision.iter())
+            .chain(env.executable_sha256.iter())
+        {
+            self.text(value)?;
+        }
+        valid_path(&command.cwd)?;
+        if let Some(hash) = &env.executable_sha256 {
+            valid_digest(hash)?;
+        }
+        Ok(())
+    }
+}
+
 pub fn validate(report: &Report) -> Result<()> {
     if report.schema_version != 1 {
         return Err(Error::input("unsupported report schema version"));
@@ -95,56 +168,15 @@ pub fn validate(report: &Report) -> Result<()> {
         return Err(Error::input("invalid report envelope size"));
     }
     let mut ids = std::collections::BTreeSet::new();
-    let mut envelope_bytes = 0usize;
-    let mut charge = |value: &str| -> Result<()> {
-        envelope_bytes = envelope_bytes.saturating_add(value.len() + std::mem::size_of::<String>());
-        if value.len() > MAX_RECORD_BYTES || envelope_bytes > MAX_ENVELOPE_BYTES {
-            return Err(Error::input("report metadata exceeds the envelope limit"));
-        }
-        Ok(())
-    };
+    let mut envelope = MetadataBudget::default();
     for value in &report.limitations {
-        charge(value)?;
+        envelope.text(value)?;
     }
     for execution in &report.executions {
         if execution.id.get_version_num() != 7 || !ids.insert(execution.id) {
             return Err(Error::input("execution IDs must be unique UUID v7 values"));
         }
-        if execution.command.argv.is_empty()
-            || execution.command.argv.len() > 1024
-            || execution.environment.environment_names.len() > 1024
-            || execution.scope.root != "${workspace}"
-        {
-            return Err(Error::input("invalid execution metadata"));
-        }
-        let env = &execution.environment;
-        for value in execution
-            .command
-            .argv
-            .iter()
-            .chain(execution.command.name.iter())
-            .chain([
-                &execution.command.cwd,
-                &execution.scope.root,
-                &env.os,
-                &env.architecture,
-                &env.runlens_version,
-                &env.engine_version,
-            ])
-            .chain(execution.scope.exclusions.iter())
-            .chain(execution.scope.input_patterns.iter())
-            .chain(execution.scope.output_patterns.iter())
-            .chain(env.environment_names.iter())
-            .chain(env.os_version.iter())
-            .chain(env.source_revision.iter())
-            .chain(env.executable_sha256.iter())
-        {
-            charge(value)?;
-        }
-        valid_path(&execution.command.cwd)?;
-        if let Some(hash) = &env.executable_sha256 {
-            valid_digest(hash)?;
-        }
+        envelope.execution(&execution.command, &execution.environment, &execution.scope)?;
         if execution.outcome.child_exit_code.is_some() && execution.outcome.child_signal.is_some() {
             return Err(Error::input("contradictory child termination outcome"));
         }

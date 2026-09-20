@@ -271,3 +271,5 @@
 - Serialize all Runlens release versions under one publication concurrency group; dry runs must not own or cancel that lock.
 
 - Every authenticated Runlens installer job must verify its declared platform and exact minimum OS on the executing native host before installation; mutable labels and newer-OS doctor success are insufficient evidence.
+
+- Runlens must reject unrepresentable argv and masked report metadata before child launch; clean/repeat budget the full plan and imported baseline metadata before any preparation. Keep preflight and report metadata validation shared.

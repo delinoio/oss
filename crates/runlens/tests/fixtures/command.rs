@@ -930,6 +930,9 @@ fn main() {
             std::io::stdin().read_to_string(&mut input).unwrap();
             print!("{input}");
         }
+        "metadata-marker" => {
+            fs::write(&args[1], "command started").unwrap();
+        }
         "prepare-output" => {
             assert!(!std::path::Path::new("out").exists());
             fs::create_dir("out").unwrap();
