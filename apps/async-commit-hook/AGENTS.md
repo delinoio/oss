@@ -26,3 +26,5 @@
 - Load branches on demand, retaining the selected branch even when its page is not loaded; preserve loaded options and selection through next-page errors.
 
 - Key branch options by opaque identity, not normalized display text, and pass branch_id to source/history queries. Keep current identities before their page loads and preserve legacy servers without IDs.
+
+- Checks and Inbox queries require both a selected repository and worktree. Pending, empty or failed discovery must never issue an unfiltered run query or render cached unscoped rows.

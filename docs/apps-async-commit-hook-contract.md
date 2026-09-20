@@ -57,3 +57,5 @@ The repository sidebar loads bounded worktree pages on demand through Connect Qu
 The branch selector loads bounded pages on demand through Connect Query, deduplicates names and retains the selected branch before its page loads. Page errors keep prior options and selection available with an explicit retry; loading controls retain focus.
 
 Branch navigation keys options by the opaque server identity, including the current branch before its page loads. Normalized labels are display-only; Changes, Commits and Checks send branch_id, while Inbox remains branch-unfiltered. Older servers without identities retain their legacy string selection.
+
+Checks and Inbox stay inactive until a repository/worktree pair is selected. Pending, empty and failed discovery show selection guidance and never request or display an unfiltered history page; explicit run deep links remain independently addressable.

@@ -526,7 +526,7 @@ export function RunList({
       cursor,
       limit: 50,
     },
-    { refetchInterval: 2000 },
+    { enabled: Boolean(repository && worktree), refetchInterval: 2000 },
   );
   useEffect(() => {
     if (!runs.data || restoredFocus.current) return;
@@ -537,6 +537,8 @@ export function RunList({
     ).find((element) => element.dataset.runId === focusRun);
     row?.focus();
   }, [runs.data, focusRun]);
+  if (!repository || !worktree)
+    return <p role="status" className="empty">Select a registered worktree to view its results.</p>;
   if (runs.isPending)
     return (
       <p role="status" className="empty">

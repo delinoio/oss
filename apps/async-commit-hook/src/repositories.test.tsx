@@ -124,3 +124,39 @@ it("keeps colliding branch labels separate and sends opaque identities in every 
     await waitFor(() => expect(listRuns).toHaveBeenLastCalledWith(expect.objectContaining({ branchId: "", branch: "", detached: false, inbox: true }), expect.anything()));
   } finally { unmount(); client.clear(); }
 });
+
+for (const outcome of ["selected", "empty", "error"] as const) {
+  it(`does not request unfiltered runs while workspace discovery is ${outcome}`, async () => {
+    let release = () => {};
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const listRuns = vi.fn(() => ({ runs: [] }));
+    const transport = createRouterTransport((router) => router.service(LocalService, {
+      listRepositories: async () => {
+        await pending;
+        if (outcome === "error") throw new ConnectError("Discovery unavailable", Code.Unavailable);
+        return { repositories: outcome === "empty" ? [] : [{ id: "repo", name: "Repository", worktrees: [{ id: "tree", path: "/repo", branch: "main" }] }] };
+      },
+      getVersion: () => ({ apiVersion: 1 }), listBranches: () => ({ branches: [] }), listRuns,
+    }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { unmount } = render(<QueryClientProvider client={client}><TransportProvider transport={transport}>
+      <Workspace initialRun="" onPair={() => {}} />
+    </TransportProvider></QueryClientProvider>);
+    try {
+      await screen.findByText("Loading repositories…");
+      expect(listRuns).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "Inbox" }));
+      await screen.findByText("Select a registered worktree to view its results.");
+      expect(listRuns).not.toHaveBeenCalled();
+      await act(async () => { release(); });
+      if (outcome === "selected") {
+        await waitFor(() => expect(listRuns).toHaveBeenCalledOnce());
+        expect(listRuns).toHaveBeenCalledWith(expect.objectContaining({ repositoryId: "repo", worktreeId: "tree", inbox: true }), expect.anything());
+      } else {
+        await waitFor(() => expect(screen.queryByText("Loading repositories…")).toBeNull());
+        fireEvent.click(screen.getByRole("button", { name: "Checks" }));
+        expect(listRuns).not.toHaveBeenCalled();
+      }
+    } finally { unmount(); client.clear(); }
+  });
+}
