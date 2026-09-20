@@ -103,3 +103,5 @@
 - Automatically publish hooks only into the canonical native common-directory hooks folder, never a custom or symlink-redirected folder even when empty. Supply worktree-scoped manual commands for shared locations; owned uninstall remains available.
 
 - Batch scheduler-only bulk fixture insertion in one real SQLite transaction; do not pay thousands of unrelated durable receipt flushes before the concurrency scenario starts. Preserve separate durability/acceptance integration tests.
+
+- Stream commit history in fixed pages of 100 without buffering Git stdout; drain long subjects while retaining at most a 4 KiB valid UTF-8 display prefix with an ellipsis. Parent headers are capped at 16 KiB and rejected whole on overflow, preserving exact ancestry for accepted records.

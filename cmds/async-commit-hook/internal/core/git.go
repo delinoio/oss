@@ -310,27 +310,6 @@ type Changes struct {
 	Truncated bool   `json:"truncated"`
 }
 
-func Commits(ctx context.Context, path, ref string, offset int) ([]Commit, error) {
-	sha, e := ResolveCommit(ctx, path, ref)
-	if e != nil {
-		return nil, e
-	}
-	if offset < 0 || offset > 1000000 {
-		return nil, E("invalid-offset", "invalid commit offset", 2)
-	}
-	v, e := Git(ctx, path, "log", "--format=%H%x09%P%x09%s", "--max-count=100", fmt.Sprintf("--skip=%d", offset), sha, "--")
-	if e != nil {
-		return nil, e
-	}
-	out := []Commit{}
-	for _, l := range strings.Split(v, "\n") {
-		p := strings.SplitN(l, "\t", 3)
-		if len(p) == 3 {
-			out = append(out, Commit{p[0], strings.Fields(p[1]), strings.ToValidUTF8(p[2], "\uFFFD")})
-		}
-	}
-	return out, nil
-}
 func Diff(ctx context.Context, path, ref, base string) (Changes, error) {
 	out := Changes{}
 	sha, e := ResolveCommit(ctx, path, ref)
