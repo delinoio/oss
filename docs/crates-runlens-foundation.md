@@ -441,6 +441,10 @@ Windows root masking and scope classification use the native ordinal casing
 rules for workspace, home, and temporary roots, preserving component boundaries
 and converting UTF-16 match offsets back to UTF-8 without byte-length guesses.
 The same root comparison applies to exclusions; Unix roots stay case-sensitive.
+Exclusion comparisons normalize ordinary DOS/UNC and extended Windows prefixes
+before extracting a relative path. Windows core fixtures cover both directions
+and missing descendants; the native excluded-input fixture prevents an omitted
+snapshot input from being certified as a newly created output.
 Configured redaction environment names match keys case-insensitively on Windows
 and case-sensitively on Unix. Selected values are masked before argv and path
 metadata serialization regardless of their original Windows key spelling.

@@ -502,3 +502,40 @@ fn unreadable_files_preserve_unknown_instead_of_empty_content() {
     assert_eq!(state.reason, Some(ObservationIssue::PermissionDenied));
     assert!(state.sha256.is_none());
 }
+
+#[test]
+#[cfg(windows)]
+fn exclusions_compare_dos_and_extended_windows_roots() {
+    use std::path::{Path, PathBuf};
+    let matcher = config::patterns(&["generated".into()]).unwrap();
+    for (ordinary, extended) in [
+        (r"C:\Repo", r"\\?\C:\Repo"),
+        (r"\\server\share\Repo", r"\\?\UNC\server\share\Repo"),
+    ] {
+        for (root, observed) in [(ordinary, extended), (extended, ordinary)] {
+            for suffix in ["generated", "generated/input", "generated/nested/missing"] {
+                assert!(
+                    snapshot::excluded(
+                        &Path::new(observed).join(suffix),
+                        Path::new(root),
+                        &matcher,
+                        &[]
+                    ),
+                    "{root} / {observed} / {suffix}"
+                );
+            }
+            assert!(!snapshot::excluded(
+                &Path::new(observed).join("generated-other/input"),
+                Path::new(root),
+                &matcher,
+                &[]
+            ));
+            assert!(snapshot::excluded(
+                &Path::new(observed).join("temporary/file"),
+                Path::new(root),
+                &matcher,
+                &[PathBuf::from(root).join("temporary")]
+            ));
+        }
+    }
+}
