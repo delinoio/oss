@@ -72,7 +72,7 @@
 - Validate Docker OS selection after CLI defaults are applied; explicit task components retain precedence.
 - Validate the effective Docker context endpoint with the exact launch environment; a local DOCKER_HOST cannot authorize an overriding remote context.
 - Tool identities hash bounded stdout and stderr separately; native metadata parsers consume stdout only.
-- Probe tools inside the selected Docker image. Docker result reporting must use a container-compatible helper, never the host binary. Remote publication stages content before rechecking cancellation/input state. Guarded local publication is the completion boundary; persist its successful receipt before a bounded, awaited remote manifest PUT, and never retroactively cancel that completed task even if the PUT response is lost. Session failures await all child owners before returning.
+- Probe tools inside the selected Docker image. Docker result reporting must use a container-compatible helper, never the host binary. Remote publication stages content before rechecking cancellation/input state. Guarded local publication is the completion boundary; persist its successful receipt before a bounded, awaited remote manifest PUT, and never retroactively cancel that completed task even if the PUT response is lost. Finite invocation success and CLI exit codes follow finalized receipts, not a late cancellation token; pending cancellations still produce code 130. Session failures await all child owners before returning.
 - Existing repository workflows are not migrated and the crate remains unpublished.
 
 - CI Rust numeric versions must be valid unprefixed rustup toolchain names; reject v-prefixed versions before workflow files are written.

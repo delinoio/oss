@@ -288,8 +288,8 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
                 unit,
                 input,
                 output,
-            } => serde_json::to_value(
-                ci::execute(
+            } => {
+                let bundle = ci::execute(
                     &root,
                     &read_json(&root.join(blueprint))?,
                     read_json(&root.join(plan))?,
@@ -298,8 +298,11 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
                     &root.join(output),
                     cancel,
                 )
-                .await?,
-            )?,
+                .await?;
+                let code = bundle.exit_code();
+                print(&serde_json::to_value(bundle)?, cli.json)?;
+                return Ok(code);
+            }
             CiAction::Aggregate {
                 blueprint,
                 plan,
@@ -362,11 +365,15 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
             &root,
             &profile,
             execution.options(cli.os, cli.arch)?,
-            cancel,
+            cancel.clone(),
         )
         .await?;
         print(&serde_json::to_value(&result)?, cli.json)?;
-        return Ok(if result.success { 0 } else { 1 });
+        return Ok(if cancel.is_cancelled() {
+            130
+        } else {
+            result.exit_code()
+        });
     }
     let mut graph = Arc::new(Graph::build(
         Workspace::discover(&root)
@@ -472,6 +479,9 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
                     cancel.child_token(),
                 )
                 .await?;
+                if result.exit_code() == 130 {
+                    return Err(crate::process::Cancelled.into());
+                }
                 ensure!(result.success, "installation prerequisite failed");
                 options.provided.extend(result.results);
                 graph = Arc::new(Graph::build(
@@ -482,9 +492,9 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
                 plan = selection.plan(&graph).await?;
             }
             let result = runner::run_plan(graph, plan, options, cancel).await?;
-            let success = result.success;
+            let code = result.exit_code();
             print(&serde_json::to_value(result)?, cli.json)?;
-            return Ok(if success { 0 } else { 1 });
+            return Ok(code);
         }
         _ => unreachable!(),
     };

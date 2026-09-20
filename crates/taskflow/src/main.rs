@@ -34,13 +34,7 @@ async fn main() {
         .await;
     signal_task.abort();
     let code = match result {
-        Ok(code) => {
-            if cancel.is_cancelled() {
-                130
-            } else {
-                code
-            }
-        }
+        Ok(code) => code,
         Err(error) => {
             if json {
                 eprintln!(

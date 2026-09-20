@@ -6542,3 +6542,88 @@ async fn outputless_suppression_requires_the_latest_attempt_to_succeed() {
         assert_eq!(retry.results["app#consume"].outcome, Outcome::Blocked);
     }
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn late_remote_commit_cancellation_preserves_cli_success() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    for lost_response in [false, true] {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let directory = fixture(json!({"build": {
+            "command": command(&["version"]), "input":[], "output":[],
+            "cache":true, "tools":{"fixture":command(&["version"])}
+        }}));
+        let path = directory.path().join("taskflow.yml");
+        let mut config: Value = serde_yaml::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        config["remote"] = json!({"endpoint":format!("http://{}",listener.local_addr().unwrap()),"bucket":"fixture","namespace":"fixture","accessKeyEnv":"TFLOW_TEST_ACCESS","secretKeyEnv":"TFLOW_TEST_PRIVATE","mode":"read-write"});
+        std::fs::write(path, serde_yaml::to_string(&config).unwrap()).unwrap();
+        let child = tokio::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .kill_on_drop(true)
+            .arg("--root")
+            .arg(directory.path())
+            .args(["--json", "run", "build", "--force", "--quiet"])
+            .env_remove("GITHUB_EVENT_NAME")
+            .env_remove("TFLOW_UNTRUSTED_CI")
+            .env("TFLOW_TEST_ACCESS", "fixture")
+            .env("TFLOW_TEST_PRIVATE", "fixture")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let pid = child.id().unwrap();
+        let root = directory.path().to_path_buf();
+        let server = tokio::spawn(async move {
+            for index in 0..2 {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                let end = loop {
+                    assert!(socket.read_buf(&mut request).await.unwrap() > 0);
+                    if let Some(end) = request.windows(4).position(|part| part == b"\r\n\r\n") {
+                        break end + 4;
+                    }
+                };
+                let headers = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+                assert!(headers.starts_with("put "));
+                assert!(headers.contains(if index == 0 { "/objects/" } else { "/entries/" }));
+                let length: usize = headers
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length: "))
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                while request.len() < end + length {
+                    assert!(socket.read_buf(&mut request).await.unwrap() > 0);
+                }
+                if index == 1 {
+                    assert!(runner::previous(&root, "app#build").unwrap().success());
+                    nix::sys::signal::kill(
+                        nix::unistd::Pid::from_raw(pid as i32),
+                        nix::sys::signal::Signal::SIGINT,
+                    )
+                    .unwrap();
+                    // Keep the already committed PUT pending while the process
+                    // handles SIGINT; a lost response must preserve completion too.
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                }
+                if index == 0 || !lost_response {
+                    socket
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                        )
+                        .await
+                        .unwrap();
+                }
+            }
+        });
+        let output = tokio::time::timeout(Duration::from_secs(20), child.wait_with_output())
+            .await
+            .unwrap()
+            .unwrap();
+        server.await.unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let result: runner::RunResult = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(result.success);
+        assert_eq!(result.exit_code(), 0);
+        assert_eq!(result.results["app#build"].outcome, Outcome::Executed);
+    }
+}

@@ -91,6 +91,21 @@ pub struct RunResult {
     pub success: bool,
     pub results: BTreeMap<String, Receipt>,
 }
+impl RunResult {
+    pub fn exit_code(&self) -> i32 {
+        if self.success {
+            0
+        } else if self
+            .results
+            .values()
+            .any(|r| r.outcome == Outcome::Cancelled)
+        {
+            130
+        } else {
+            1
+        }
+    }
+}
 
 pub struct Services {
     pub controls: Mutex<BTreeMap<String, CancellationToken>>,
@@ -384,7 +399,9 @@ pub async fn run_plan(
     }
     Ok(RunResult {
         version: 1,
-        success: results.values().all(Receipt::success) && !cancel.is_cancelled(),
+        // Pending/active cancellations already have their own receipts. A late
+        // token cannot retract tasks that crossed guarded local publication.
+        success: results.values().all(Receipt::success),
         results,
     })
 }
@@ -1398,6 +1415,20 @@ mod output_cleanup_tests {
             .await
             .unwrap();
             server.await.unwrap();
+            let plan = Plan::create(&graph, &["check".into()], &[], false).unwrap();
+            let result = run_plan(
+                Arc::new(graph),
+                plan,
+                RunOptions {
+                    provided: BTreeMap::from([("app#check".into(), receipt.clone())]),
+                    ..Default::default()
+                },
+                cancel,
+            )
+            .await
+            .unwrap();
+            assert_eq!(result.success, phase != "object");
+            assert_eq!(result.exit_code(), if phase == "object" { 130 } else { 0 });
             if phase == "object" {
                 assert_eq!(receipt.outcome, Outcome::Cancelled);
                 assert!(!cache::entry_path(directory.path(), &receipt.key).exists());
