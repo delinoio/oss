@@ -5,6 +5,7 @@ members = [
     "crates/devhud-native-messaging-host",
     "crates/binpm",
     "crates/cargo-mono",
+    "crates/clibox",
     "crates/nodeup",
     "crates/with-watch",
     "crates/serde-feather",
@@ -23,7 +24,7 @@ tauri-plugin = { git = "https://github.com/tauri-apps/tauri", rev = "4af26a3f7f8
 tauri-utils = { git = "https://github.com/tauri-apps/tauri", rev = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41" }
 
 [workspace.metadata.cargo-mono.publish.tag]
-packages = ["binpm", "nodeup", "with-watch", "cargo-mono", "rustia-rs", "rustia-macros", "rustia-llm"]
+packages = ["binpm", "nodeup", "with-watch", "cargo-mono", "clibox", "rustia-rs", "rustia-macros", "rustia-llm"]
 
 # Release profile optimizations
 [profile.release]
