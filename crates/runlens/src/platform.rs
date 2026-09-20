@@ -522,6 +522,45 @@ pub fn executable_identity(
     })
 }
 
+/// Path interception cannot observe I/O through pre-opened standard files.
+/// Retain the caller's streams, but never certify those executions as complete.
+pub fn inherited_stdio_complete(stdin_inherited: bool) -> bool {
+    #[cfg(unix)]
+    {
+        (i32::from(!stdin_inherited)..=2).all(|fd| {
+            let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
+            // SAFETY: fstat initializes the supplied stat only on success.
+            if unsafe { libc::fstat(fd, stat.as_mut_ptr()) } != 0 {
+                return false;
+            }
+            // SAFETY: fstat succeeded above.
+            matches!(
+                unsafe { stat.assume_init() }.st_mode & libc::S_IFMT,
+                libc::S_IFIFO | libc::S_IFSOCK | libc::S_IFCHR
+            )
+        })
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::{
+            Storage::FileSystem::{FILE_TYPE_CHAR, FILE_TYPE_PIPE, GetFileType},
+            System::Console::{
+                GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+            },
+        };
+        [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE]
+            .into_iter()
+            .skip(usize::from(!stdin_inherited))
+            .all(|kind| {
+                // SAFETY: borrowed process standard handle; neither call consumes it.
+                matches!(
+                    unsafe { GetFileType(GetStdHandle(kind)) },
+                    FILE_TYPE_CHAR | FILE_TYPE_PIPE
+                )
+            })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -579,44 +618,5 @@ mod tests {
         }
         assert!(linux_os_identity(&" ".repeat(65537)).is_none());
         assert!(!known_linux_identity("22.04"));
-    }
-}
-
-/// Path interception cannot observe I/O through pre-opened standard files.
-/// Retain the caller's streams, but never certify those executions as complete.
-pub fn inherited_stdio_complete(stdin_inherited: bool) -> bool {
-    #[cfg(unix)]
-    {
-        (i32::from(!stdin_inherited)..=2).all(|fd| {
-            let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
-            // SAFETY: fstat initializes the supplied stat only on success.
-            if unsafe { libc::fstat(fd, stat.as_mut_ptr()) } != 0 {
-                return false;
-            }
-            // SAFETY: fstat succeeded above.
-            matches!(
-                unsafe { stat.assume_init() }.st_mode & libc::S_IFMT,
-                libc::S_IFIFO | libc::S_IFSOCK | libc::S_IFCHR
-            )
-        })
-    }
-    #[cfg(windows)]
-    {
-        use windows_sys::Win32::{
-            Storage::FileSystem::{FILE_TYPE_CHAR, FILE_TYPE_PIPE, GetFileType},
-            System::Console::{
-                GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
-            },
-        };
-        [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE]
-            .into_iter()
-            .skip(usize::from(!stdin_inherited))
-            .all(|kind| {
-                // SAFETY: borrowed process standard handle; neither call consumes it.
-                matches!(
-                    unsafe { GetFileType(GetStdHandle(kind)) },
-                    FILE_TYPE_CHAR | FILE_TYPE_PIPE
-                )
-            })
     }
 }
