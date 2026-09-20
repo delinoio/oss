@@ -432,6 +432,9 @@ Cancellation handlers are installed before owned child work. Native cancellation
 fixtures synchronize on actual child readiness rather than assuming startup time.
 
 Offline checks never pass a report with no target execution.
+Configured redaction environment names match keys case-insensitively on Windows
+and case-sensitively on Unix. Selected values are masked before argv and path
+metadata serialization regardless of their original Windows key spelling.
 New-access findings require a compatible baseline with complete collection.
 Incompatible or incomplete baselines remain inconclusive; independent definite
 read/write boundary violations still take precedence.

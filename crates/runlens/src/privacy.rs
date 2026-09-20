@@ -29,7 +29,14 @@ impl Redactor {
             // can match the textual evidence that this redactor serializes.
             .filter_map(|(key, value)| Some((key.into_string().ok()?, value.into_string().ok()?)))
             .filter(|(key, _)| {
-                sensitive_flag.is_match(key) || config.environment_names.contains(key)
+                sensitive_flag.is_match(key)
+                    || config.environment_names.iter().any(|selected| {
+                        if cfg!(windows) {
+                            selected.eq_ignore_ascii_case(key)
+                        } else {
+                            selected == key
+                        }
+                    })
             })
             .map(|(_, value)| value)
             .filter(|v| !v.is_empty())

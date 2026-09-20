@@ -628,6 +628,46 @@ fn new_access_policy_requires_comparable_complete_baseline() {
     }
 }
 #[test]
+fn selected_redaction_names_follow_environment_key_case_rules() {
+    let root = repository("read");
+    let canary = "redaction-case-canary-7a24";
+    fs::write(root.path().join(canary), "content is never retained").unwrap();
+    fs::write(
+        root.path().join("runlens.toml"),
+        r#"schema_version = 1
+[redaction]
+environment_names = ["CUSTOM_REDACT"]
+"#,
+    )
+    .unwrap();
+    for (index, name) in ["CUSTOM_REDACT", "custom_redact"].iter().enumerate() {
+        let saved = format!("redaction-{index}.json");
+        let result = Command::new(binary())
+            .current_dir(root.path())
+            .env_remove("CUSTOM_REDACT")
+            .env_remove("custom_redact")
+            .env(name, canary)
+            .args(["run", "--save", &saved, "--", fixture(), "read", canary])
+            .output()
+            .unwrap();
+        let masked = cfg!(windows) || index == 0;
+        assert_eq!(
+            result.status.code(),
+            Some(if masked { 4 } else { 0 }),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let bytes = fs::read_to_string(root.path().join(&saved)).unwrap();
+        assert_eq!(bytes.contains(canary), !masked);
+        assert!(!String::from_utf8_lossy(&result.stderr).contains(canary));
+        let value = parse(root.path(), &saved);
+        assert_eq!(
+            value["executions"][0]["command"]["argv"][2],
+            if masked { "[redacted]" } else { canary }
+        );
+    }
+}
+#[test]
 fn offline_policy_and_cache_follow_windows_case_rules() {
     let root = repository("read");
     fs::create_dir(root.path().join("Private")).unwrap();

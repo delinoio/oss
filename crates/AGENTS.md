@@ -165,6 +165,7 @@
 - Linux OS identity includes distribution ID and VERSION_ID; legacy version-only, missing, or malformed identities cannot establish comparison compatibility.
 - Selected environment names cannot prove equality of omitted values. Keep their report comparisons inconclusive without persisting values or guessable value hashes.
 - Clean environment selection must reject reserved Git controls case-insensitively on Windows so casing cannot escape fresh checkout/configuration isolation.
+- Configured secret environment-name selection follows Windows case-insensitive key semantics before masking values in argv or path metadata; Unix selection remains case-sensitive.
 - Retain the inspected executable handle through snapshots and revalidate pathname identity at the launch boundary; a stale digest must never certify a replacement executable.
 - Normalize only complete workspace/home/temporary path roots; similarly prefixed external paths must remain distinguishable in policy and query evidence.
 - Unsupported accesses, lexical aliases through parent components, and uncovered workspace paths prevent a policy pass; never collapse such paths across potentially changed symlinks to invent an identity. Known absolute external paths still support literal boundary checks without establishing cache coverage.
