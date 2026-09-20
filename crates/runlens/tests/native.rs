@@ -1989,3 +1989,58 @@ fn static_linux_rename_syscalls_cover_both_endpoints() {
         }
     }
 }
+
+#[test]
+fn write_allowlists_cover_ancestor_membership_but_not_forbidden_siblings() {
+    for (pattern, path, extra, deny, expected) in [
+        ("out/**", "out/result", None, "", 0),
+        ("build/out/**", "build/out/result", None, "", 0),
+        ("**/out/**", "build/out/result", None, "", 0),
+        ("out/**", "out/result", Some("forbidden-file"), "", 5),
+        ("out/**", "out/result", Some("forbidden-dir/"), "", 5),
+        (
+            "build/out/**",
+            "build/out/result",
+            None,
+            "deny_writes = [\"build\"]",
+            5,
+        ),
+        ("out/**", "out/result", None, "deny_writes = [\".\"]", 5),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join("runlens.toml"),
+            format!("schema_version = 1\n[policy]\nallow_writes = [{pattern:?}]\n{deny}\n"),
+        )
+        .unwrap();
+        let mut args = vec![
+            "run",
+            "--save",
+            "allowed.json",
+            "--",
+            fixture(),
+            "policy-write",
+            path,
+        ];
+        if let Some(extra) = extra {
+            args.push(extra);
+        }
+        let output = invoke(root.path(), &args);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            parse(root.path(), "allowed.json")["executions"][0]["changes"]["${workspace}"],
+            "modified"
+        );
+        let checked = invoke(root.path(), &["policy", "check", "allowed.json", "--json"]);
+        assert_eq!(
+            checked.status.code(),
+            Some(expected),
+            "{pattern} / {extra:?} / {deny}: {}",
+            String::from_utf8_lossy(&checked.stdout)
+        );
+    }
+}

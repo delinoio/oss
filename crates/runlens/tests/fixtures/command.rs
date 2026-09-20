@@ -58,6 +58,18 @@ fn main() {
             };
             assert_eq!(result == 0, args[1] == "input.txt");
         }
+        "policy-write" => {
+            let output = std::path::Path::new(&args[1]);
+            fs::create_dir_all(output.parent().unwrap()).unwrap();
+            fs::write(output, "allowed output").unwrap();
+            if let Some(extra) = args.get(2) {
+                if extra.ends_with('/') {
+                    fs::create_dir_all(extra).unwrap();
+                } else {
+                    fs::write(extra, "forbidden output").unwrap();
+                }
+            }
+        }
         "read" => {
             let _ = fs::read(args.get(1).map(String::as_str).unwrap_or("input.txt"));
         }

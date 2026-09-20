@@ -281,6 +281,38 @@ fn coverage(
     }
     Ok(())
 }
+// Index only ancestors of known, explicitly allowed changes. Every sibling and
+// leaf still undergoes its own boundary check. Entries keeps this index bounded
+// and spillable even for large reports; unknown changes never grant permission.
+fn allowed_write_ancestors(
+    execution: &Execution,
+    allowed: Option<&globset::GlobSet>,
+) -> Result<Entries<bool>> {
+    let mut ancestors = Entries::default();
+    let Some(allowed) = allowed else {
+        return Ok(ancestors);
+    };
+    for entry in execution.changes.iter() {
+        let (path, change) = entry?;
+        if change == ChangeKind::Unknown
+            || !matches(allowed, &path)
+            || !path.starts_with("${workspace}/")
+        {
+            continue;
+        }
+        let mut current = path.as_str();
+        while let Some((parent, _)) = current.rsplit_once('/') {
+            if execution.changes.get(parent)?.is_some()
+                && !ancestors.insert(parent.to_owned(), true)?
+            {
+                break;
+            }
+            current = parent;
+        }
+    }
+    Ok(ancestors)
+}
+
 pub fn policy(
     report: &Report,
     rules: &Policy,
@@ -413,12 +445,27 @@ pub fn policy(
                 }
             }
         }
+        let ancestors = allowed_write_ancestors(execution, allow_write.as_ref())?;
         // A backend may miss a write while snapshots still prove a change.
         for entry in execution.changes.iter() {
             let (path, change) = entry?;
+            // Directory membership changes accompany permitted descendant
+            // creation/removal. Never exempt explicit denies, type changes,
+            // unknown state, or access attempts at the ancestor itself.
+            let ancestor = change != ChangeKind::TypeChanged
+                && ancestors.get(&path)?.is_some()
+                && execution
+                    .after
+                    .get(&path)?
+                    .filter(|s| s.knowledge == Knowledge::Known)
+                    .or(execution
+                        .before
+                        .get(&path)?
+                        .filter(|s| s.knowledge == Knowledge::Known))
+                    .is_some_and(|s| s.kind == Some(FileKind::Directory));
             if change != ChangeKind::Unknown
                 && (matches(&deny_write, &path)
-                    || allow_write.as_ref().is_some_and(|set| !matches(set, &path)))
+                    || !ancestor && allow_write.as_ref().is_some_and(|set| !matches(set, &path)))
             {
                 result.finding(
                     FindingCode::WriteBoundary,

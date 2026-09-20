@@ -586,3 +586,9 @@ rename/renameat, macOS extended variants, and Linux renameat2. Linux seccomp cov
 raw/static calls too. Failed renames still record attempts; only snapshots assert
 workspace deletion or creation. An external destination therefore remains visible
 to literal write-boundary policies even when only the source is in snapshot scope.
+
+Write allowlists cover snapshot-only directory membership changes on ancestors of
+known allowed descendant changes. The bounded ancestor index follows concrete
+changed paths, including wildcard patterns, rather than permitting the whole root.
+Every sibling and leaf is still checked; explicit denies, direct write attempts,
+unknown evidence, and directory type changes retain their original classification.
