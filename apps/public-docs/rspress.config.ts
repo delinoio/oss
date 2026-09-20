@@ -5,6 +5,7 @@ const homePages = [
   { text: "Getting Started", link: "/getting-started" },
   { text: "Projects Overview", link: "/projects-overview" },
   { text: "Documentation Lifecycle", link: "/documentation-lifecycle" },
+  { text: "Linux Packages", link: "/linux-packages" },
 ];
 
 const productPages = [

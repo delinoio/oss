@@ -166,3 +166,7 @@ with-watch exec --input 'src/**/*.rs' -- cargo test -p with-watch
 
 - [Projects Overview](projects-overview)
 - [Documentation Lifecycle](documentation-lifecycle)
+
+## APT and DNF
+
+Follow [Linux Packages](/linux-packages) to verify the repository key and register stable. Then install `with-watch` with `sudo apt-get install with-watch` or `sudo dnf install with-watch`. Use the same package manager for updates and removal.

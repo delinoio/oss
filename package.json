@@ -16,7 +16,7 @@
     "test:dev-environment": "node --test scripts/dev-environment/*.test.mjs && node scripts/dev-environment/verify-turbo.mjs",
     "ci:affected": "turbo run",
     "ci:contracts": "node --test scripts/ci/*.test.mjs",
-    "ci:workflows": "go tool actionlint",
+    "ci:workflows": "node scripts/ci/workflows.mjs",
     "ci:release-fixtures": "node --test scripts/release/*.test.mjs",
     "build": "turbo build",
     "test": "turbo test",
@@ -64,6 +64,7 @@
     }
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "3.1136.0",
     "@bufbuild/buf": "1.72.0",
     "@bufbuild/protoc-gen-es": "2.14.0",
     "@connectrpc/protoc-gen-connect-query": "2.3.1",
