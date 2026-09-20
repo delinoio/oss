@@ -400,10 +400,20 @@ pub fn export(graph: &Graph, targets: Vec<String>, output: &Path) -> Result<()> 
         for name in secrets {
             ensure!(
                 environment_name(&name)
-                    && !matches!(
-                        name.as_str(),
-                        "TFLOW_BLUEPRINT" | "TFLOW_UNIT" | "TFLOW_UNTRUSTED_CI"
-                    ),
+                    && !["TFLOW_BLUEPRINT", "TFLOW_UNIT", "TFLOW_UNTRUSTED_CI"]
+                        .iter()
+                        .any(|reserved| {
+                            // Export may run on a different OS than this job. Names
+                            // have already passed the ASCII identifier contract, so
+                            // ASCII folding matches Windows ordinal comparison here.
+                            if graph.tasks[&unit.tasks[0]].task.platform.resolved().0
+                                == crate::config::Os::Windows
+                            {
+                                name.eq_ignore_ascii_case(reserved)
+                            } else {
+                                name == *reserved
+                            }
+                        }),
                 "CI secret requires a non-reserved environment identifier"
             );
             env.insert(

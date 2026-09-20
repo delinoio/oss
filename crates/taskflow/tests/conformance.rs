@@ -8124,3 +8124,71 @@ fn persisted_shard_metadata_is_bounded_and_regular() {
         shard::write_reports(root.path(), &inventory, &[]).unwrap();
     }
 }
+
+#[tokio::test]
+async fn ci_reserved_environment_names_follow_the_runner_platform() {
+    for os in ["windows", "linux", "macos"] {
+        for reserved in ["TFLOW_BLUEPRINT", "TFLOW_UNIT", "TFLOW_UNTRUSTED_CI"] {
+            for name in [
+                reserved.to_owned(),
+                reserved.to_ascii_lowercase(),
+                format!("Tflow_{}", &reserved[6..]),
+                format!("{reserved}_TOKEN"),
+            ] {
+                for source in ["task", "accessKeyEnv", "secretKeyEnv", "sessionTokenEnv"] {
+                    let directory = fixture(
+                        json!({"check":{"command":command(&["version"]),"input":[],"output":[],"platform":{"os":os,"arch":"x64"}}}),
+                    );
+                    let path = directory.path().join("taskflow.yml");
+                    let mut cfg: Value =
+                        serde_yaml::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+                    cfg["ci"] = json!({"revision":"1111111111111111111111111111111111111111","rust":"nightly-2026-01-01","runners":{format!("{os}-x64"):"self-hosted"}});
+                    if source == "task" {
+                        cfg["tasks"]["check"]["secrets"] = json!([name]);
+                    } else {
+                        cfg["remote"] = json!({"endpoint":"https://cache.example.test","bucket":"cache","namespace":"fixture","accessKeyEnv":"REMOTE_ACCESS","secretKeyEnv":"REMOTE_SECRET","mode":"off"});
+                        cfg["remote"][source] = json!(name);
+                    }
+                    std::fs::write(&path, serde_yaml::to_string(&cfg).unwrap()).unwrap();
+                    let result = taskflow::ci::export(
+                        graph(directory.path()).await.as_ref(),
+                        vec!["check".into()],
+                        Path::new("ci.yml"),
+                    );
+                    let collision = name == reserved
+                        || (os == "windows" && name.eq_ignore_ascii_case(reserved));
+                    assert_eq!(
+                        result.is_err(),
+                        collision,
+                        "{os} {source} {name}: {result:?}"
+                    );
+                    if collision {
+                        assert!(result.unwrap_err().to_string().contains("non-reserved"));
+                        assert!(!directory.path().join("ci.yml").exists());
+                        assert!(!directory.path().join("ci.taskflow.json").exists());
+                    } else {
+                        let workflow: Value = serde_yaml::from_slice(
+                            &std::fs::read(directory.path().join("ci.yml")).unwrap(),
+                        )
+                        .unwrap();
+                        let job = workflow["jobs"]
+                            .as_object()
+                            .unwrap()
+                            .iter()
+                            .find(|(id, _)| id.starts_with("task_"))
+                            .unwrap()
+                            .1;
+                        let env = &job["steps"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .find(|step| step["name"] == "Execute graph unit")
+                            .unwrap()["env"];
+                        assert!(env[reserved].is_string());
+                        assert!(env[&name].as_str().unwrap().contains("secrets."));
+                    }
+                }
+            }
+        }
+    }
+}

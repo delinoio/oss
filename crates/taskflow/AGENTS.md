@@ -131,3 +131,5 @@
 - Apply the same regular-file and bounded-read checks to persisted shard inventories and every shard report as to generic adapter results; reject special files before blocking opens and cap actual reads as well as metadata lengths.
 
 - Docker shard execution preserves validated task port mappings for each owned unit; only inventory and tool probes omit publishing. Await unit cleanup before the next unit reuses a port.
+
+- CI secret and remote-credential names cannot collide with generated control variables under the execution unit's target OS name semantics, independent of the exporter host. Validate before writing workflow or blueprint.
