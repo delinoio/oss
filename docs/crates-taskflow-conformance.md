@@ -326,3 +326,5 @@ The cache capture unit regressions use bounded fixtures to check empty file/dire
 `cancelled_setup_never_consumes_a_baseline_or_launches` covers pre-cancelled uncontended resource locks and no-probe task setup, plus cancellation during synchronous input hashing. Pending cancellation preserves the previous receipt, and neither path reaches command launch.
 
 `queries_mask_task_local_values_designated_by_other_tasks` checks real task/project CLI queries and environment scoping when only a sibling task designates a task-local variable as secret, including Windows environment-name aliases.
+
+`bootstrap_refresh_revalidates_outputs_and_configuration` starts with unresolved real Cargo metadata and an installer that deletes/replaces an earlier output or rewrites its producer configuration. Finite CLI runs and development sessions must restore the refreshed producer before consumers run. `bootstrap_receipts_require_current_keys_outputs_and_prerequisites` independently verifies retaining valid receipts and rejecting stale keys/outputs through their dependent closure.

@@ -110,6 +110,18 @@ fn main() {
                     .args(["result", "unchanged"]).status().unwrap().success());
             }
         }
+        "bootstrap-install" => {
+            if !Path::new("installed").exists() {
+                assert!(std::process::Command::new("cargo").args(["generate-lockfile", "--offline"]).status().unwrap().success());
+                match args[2].as_str() {
+                    "delete" => fs::remove_file("middle").unwrap(),
+                    "replace" => write("middle", b"obsolete"),
+                    "config" => { fs::copy("next.yml", "taskflow.yml").unwrap(); }
+                    _ => panic!("unknown bootstrap fixture mutation"),
+                }
+                write("installed", b"done");
+            }
+        }
         "write" => write(&args[2], args[3].as_bytes()),
         "record" | "unchanged" => {
             let mut file = fs::OpenOptions::new().create(true).append(true).open(&args[2]).unwrap();

@@ -70,19 +70,26 @@ pub async fn start(
         let mut roots = roots(&graph, profile)?;
         let mut active_set = activation(&graph, &roots);
         let mut bootstrap_results = BTreeMap::new();
+        let mut invalid_bootstrap = BTreeSet::new();
         if active_set.iter().any(|id| graph.unresolved.contains(id)) {
             let installs: Vec<_> = active_set.iter().filter(|id| graph.tasks[*id].task.install).cloned().collect();
             ensure!(!installs.is_empty(), "unresolved native metadata requires an explicit install: true prerequisite");
             let install_plan = Plan::create(&graph, &installs, &[], false)?;
             let result = runner::run_plan(graph.clone(), install_plan, options.clone(), work_cancel.child_token()).await?;
             ensure!(result.success, "installation prerequisite failed");
-            bootstrap_results = result.results;
+            // Live owners cannot be transferred to a refreshed task identity.
+            services.shutdown().await?;
+            while service_receiver.try_recv().is_ok() {}
             graph = Arc::new(Graph::build(Workspace::discover(root).await?.select_platform(options.os, options.arch))?);
+            (bootstrap_results, invalid_bootstrap) = runner::revalidate_bootstrap(&graph, result.results, &options, &work_cancel).await?;
             roots = roots_for_profile(&graph, profile)?;
             active_set = activation(&graph, &roots);
         }
         let mut pending = initial(&graph, &active_set);
         pending.retain(|id, _| !bootstrap_results.contains_key(id));
+        for id in invalid_bootstrap.intersection(&active_set) {
+            pending.entry(id.clone()).or_insert_with(|| Pending { causes: BTreeSet::from([Cause::Activation]), due: Instant::now() });
+        }
         let mut timers = timers(&graph, &active_set)?;
         let mut observed = snapshots(&graph, &active_set)?;
         let mut baseline_at = Instant::now();

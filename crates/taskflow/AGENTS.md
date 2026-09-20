@@ -85,3 +85,5 @@
 - Suppressing prerequisite-only work requires a successful baseline even without declared outputs. Invalidate the persisted baseline under the task lock before each new attempt, retaining it only in memory for output comparison; failures and interrupted attempts must not expose an older success to later suppression.
 
 - Check cancellation before task setup, before each resource lock attempt, after lock acquisition, and immediately before command launch. Pending work must not invalidate a prior baseline or launch side effects; acquired Docker ownership still requires awaited cleanup.
+
+- Bootstrap receipts cross native graph rediscovery only after their refreshed task keys, declared outputs, and prerequisite receipts match. Reuse the executor's identity calculation; invalidate dependent reuse transitively and give stale tasks an independent activation cause. Shut down bootstrap services before rediscovery.

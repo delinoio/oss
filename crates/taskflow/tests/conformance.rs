@@ -1444,6 +1444,102 @@ fn shard_preflight_preserves_explicit_metadata_bootstrap() {
     assert!(directory.path().join("Cargo.lock").exists());
 }
 
+#[tokio::test]
+async fn bootstrap_refresh_revalidates_outputs_and_configuration() {
+    for session in [false, true] {
+        for mutation in ["delete", "replace", "config"] {
+            let root = fixture(json!({
+                "prepare":{"command":command(&["copy","source","middle"]),"input":["source"],"output":["middle"]},
+                "install":{"command":command(&["bootstrap-install",mutation]),"install":true,"input":[],"output":["Cargo.lock"],"dependsOn":["prepare"]},
+                "build":{"command":command(&["copy","middle","final"]),"input":["middle"],"output":["final"],"dependsOn":["install",{"task":"build","from":"dependencies"}]}
+            }));
+            profile(root.path(), &["build"]);
+            std::fs::write(root.path().join("source"), "original").unwrap();
+            std::fs::write(root.path().join("next-source"), "refreshed").unwrap();
+            std::fs::write(
+                root.path().join("Cargo.toml"),
+                "[package]\nname='bootstrap-output-fixture'\nversion='0.1.0'\nedition='2021'\n",
+            )
+            .unwrap();
+            files::atomic_write(&root.path().join("src/lib.rs"), b"").unwrap();
+            let mut next: Value =
+                serde_yaml::from_slice(&std::fs::read(root.path().join("taskflow.yml")).unwrap())
+                    .unwrap();
+            next["tasks"]["prepare"]["command"] = command(&["copy", "next-source", "middle"]);
+            next["tasks"]["prepare"]["input"] = json!(["next-source"]);
+            std::fs::write(
+                root.path().join("next.yml"),
+                serde_yaml::to_string(&next).unwrap(),
+            )
+            .unwrap();
+            assert!(graph(root.path()).await.unresolved.contains("app#build"));
+            let expected = if mutation == "config" {
+                "refreshed"
+            } else {
+                "original"
+            };
+            if session {
+                let cancel = CancellationToken::new();
+                let stop = cancel.clone();
+                let path = root.path().to_path_buf();
+                let running = tokio::spawn(async move {
+                    taskflow::session::start(
+                        &path,
+                        "default",
+                        RunOptions {
+                            quiet: true,
+                            ..Default::default()
+                        },
+                        stop,
+                    )
+                    .await
+                });
+                tokio::time::timeout(Duration::from_secs(30), async {
+                    loop {
+                        if std::fs::read_to_string(root.path().join("final"))
+                            .is_ok_and(|value| value == expected)
+                        {
+                            break;
+                        }
+                        assert!(
+                            !running.is_finished(),
+                            "session stopped before restoring bootstrap outputs"
+                        );
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                    }
+                })
+                .await
+                .unwrap();
+                cancel.cancel();
+                tokio::time::timeout(Duration::from_secs(10), running)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap();
+            } else {
+                let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+                    .arg("--root")
+                    .arg(root.path())
+                    .args(["--json", "run", "build", "--quiet"])
+                    .output()
+                    .await
+                    .unwrap();
+                assert!(output.status.success(), "{mutation}: {output:?}");
+                let result: runner::RunResult = serde_json::from_slice(&output.stdout).unwrap();
+                assert_eq!(result.results["app#prepare"].outcome, Outcome::Executed);
+            }
+            assert_eq!(
+                std::fs::read_to_string(root.path().join("middle")).unwrap(),
+                expected
+            );
+            assert_eq!(
+                std::fs::read_to_string(root.path().join("final")).unwrap(),
+                expected
+            );
+        }
+    }
+}
+
 #[test]
 fn invalid_shard_selection_cannot_execute_prerequisites() {
     for shard in [

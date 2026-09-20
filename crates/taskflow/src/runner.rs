@@ -443,6 +443,136 @@ pub fn previous(root: &Path, id: &str) -> Option<Receipt> {
         .and_then(|b| serde_json::from_slice(&b).ok())
 }
 
+struct PreparedInputs {
+    environment: Environment,
+    inputs: BTreeMap<String, String>,
+    result_key: String,
+    key: String,
+}
+
+async fn prepare_inputs(
+    graph: &Graph,
+    id: &str,
+    prerequisites: &BTreeMap<String, Receipt>,
+    options: &RunOptions,
+    cancel: &CancellationToken,
+) -> Result<PreparedInputs> {
+    crate::process::check_cancelled(cancel)?;
+    let node = &graph.tasks[id];
+    let project = &graph.workspace.projects[&node.project];
+    let task = &node.task;
+    let environment = Environment::build(
+        &graph.workspace,
+        project,
+        task,
+        &options.env,
+        options.no_dotenv,
+    )?;
+    let inputs = files::input_state(&graph.workspace, project, task)?;
+    let mut tools = BTreeMap::new();
+    for (name, command) in &task.tools {
+        let identity = crate::process::tool_identity(
+            &graph.workspace.root,
+            &project.directory,
+            task,
+            command,
+            &environment.values,
+            &options.env,
+            cancel,
+        )
+        .await?;
+        tools.insert(name, identity);
+    }
+    let prerequisite_outputs: BTreeMap<_, _> = prerequisites
+        .iter()
+        .map(|(id, r)| (id, &r.output))
+        .collect();
+    let result_key = files::digest(&serde_json::to_vec(&(
+        1,
+        id,
+        task,
+        &inputs,
+        &environment.fingerprint,
+        &tools,
+        &prerequisite_outputs,
+        task.platform.key(),
+        None::<(usize, usize)>,
+    ))?);
+    let key = if task.shard.is_some() && options.shard.is_some() {
+        files::digest(&serde_json::to_vec(&(&result_key, options.shard))?)
+    } else {
+        result_key.clone()
+    };
+    crate::process::check_cancelled(cancel)?;
+    Ok(PreparedInputs {
+        environment,
+        inputs,
+        result_key,
+        key,
+    })
+}
+
+/// Installation can change declarations, inputs, native metadata, or outputs.
+/// A receipt may cross rediscovery only if its complete refreshed identity and
+/// output contract still hold, including every prerequisite it relied on.
+pub(crate) async fn revalidate_bootstrap(
+    graph: &Graph,
+    receipts: BTreeMap<String, Receipt>,
+    options: &RunOptions,
+    cancel: &CancellationToken,
+) -> Result<(BTreeMap<String, Receipt>, BTreeSet<String>)> {
+    let selected = receipts
+        .keys()
+        .filter(|id| graph.tasks.contains_key(*id))
+        .cloned()
+        .collect();
+    let mut invalid: BTreeSet<_> = receipts.keys().cloned().collect();
+    let mut retained: BTreeMap<String, Receipt> = BTreeMap::new();
+    for id in graph.topological(&selected)? {
+        crate::process::check_cancelled(cancel)?;
+        let receipt = &receipts[&id];
+        let node = &graph.tasks[&id];
+        let dependencies = graph.prerequisites(&id);
+        if !receipt.success()
+            || node.task.service
+            || dependencies.iter().any(|id| !retained.contains_key(id))
+        {
+            continue;
+        }
+        let prerequisites = dependencies
+            .into_iter()
+            .map(|id| (id.clone(), retained[&id].clone()))
+            .collect();
+        let _locks =
+            acquire_locks(&graph.workspace.root, &id, &node.task.resources, cancel).await?;
+        let identity = match prepare_inputs(graph, &id, &prerequisites, options, cancel).await {
+            Ok(identity) => identity,
+            Err(error)
+                if crate::process::aborts_discovery(&error)
+                    || error.is::<crate::docker::CleanupFailure>() =>
+            {
+                return Err(error)
+            }
+            Err(_) => continue,
+        };
+        let outputs_match = node.task.output.as_ref().is_none_or(Vec::is_empty)
+            || cache::output_state(&graph.workspace.projects[&node.project], &node.task)
+                .is_ok_and(|output| output == receipt.output);
+        if identity.key == receipt.key && outputs_match {
+            retained.insert(id.clone(), receipt.clone());
+            invalid.remove(&id);
+        }
+    }
+    for id in &invalid {
+        tracing::info!(
+            task = id,
+            code = "bootstrap-receipt-invalid",
+            "Revalidating task after native metadata refresh"
+        );
+    }
+    Ok((retained, invalid))
+}
+
 async fn run_task(
     graph: &Graph,
     id: &str,
@@ -480,48 +610,12 @@ async fn run_task(
         Err(error) => return Err(error).context("cannot invalidate previous task receipt"),
     }
     let started = Instant::now();
-    let environment = Environment::build(
-        &graph.workspace,
-        project,
-        task,
-        &options.env,
-        options.no_dotenv,
-    )?;
-    let inputs = files::input_state(&graph.workspace, project, task)?;
-    let mut tools = BTreeMap::new();
-    for (name, command) in &task.tools {
-        let identity = crate::process::tool_identity(
-            &graph.workspace.root,
-            &project.directory,
-            task,
-            command,
-            &environment.values,
-            &options.env,
-            &cancel,
-        )
-        .await?;
-        tools.insert(name, identity);
-    }
-    let prerequisite_outputs: BTreeMap<_, _> = prerequisites
-        .iter()
-        .map(|(id, r)| (id, &r.output))
-        .collect();
-    let result_key = files::digest(&serde_json::to_vec(&(
-        1,
-        id,
-        task,
-        &inputs,
-        &environment.fingerprint,
-        &tools,
-        &prerequisite_outputs,
-        task.platform.key(),
-        None::<(usize, usize)>,
-    ))?);
-    let key = if task.shard.is_some() && options.shard.is_some() {
-        files::digest(&serde_json::to_vec(&(&result_key, options.shard))?)
-    } else {
-        result_key.clone()
-    };
+    let PreparedInputs {
+        environment,
+        inputs,
+        result_key,
+        key,
+    } = prepare_inputs(graph, id, prerequisites, options, &cancel).await?;
     let remote = if task.cache {
         graph
             .workspace
@@ -1304,6 +1398,58 @@ mod output_cleanup_tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use super::*;
+
+    #[tokio::test]
+    async fn bootstrap_receipts_require_current_keys_outputs_and_prerequisites() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("taskflow.yml"),
+            "version: 1\nproject: app\ntasks:\n  prepare:\n    command: [unused]\n    input: []\n    output: [middle]\n  install:\n    command: [unused]\n    input: []\n    dependsOn: [prepare]\n").unwrap();
+        std::fs::write(directory.path().join("middle"), "original").unwrap();
+        let graph = Graph::build(
+            crate::discover::Workspace::discover(directory.path())
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        let options = RunOptions::default();
+        let cancel = CancellationToken::new();
+        let mut receipts = BTreeMap::new();
+        for id in ["app#prepare", "app#install"] {
+            let state = prepare_inputs(&graph, id, &receipts, &options, &cancel)
+                .await
+                .unwrap();
+            let mut receipt =
+                Receipt::skipped(id, Outcome::Executed, BTreeSet::from([Cause::Direct]));
+            receipt.key = state.key;
+            receipt.output = if id == "app#prepare" {
+                cache::output_state(&graph.workspace.projects["app"], &graph.tasks[id].task)
+                    .unwrap()
+            } else {
+                receipt.key.clone()
+            };
+            receipts.insert(id.into(), receipt);
+        }
+        let (valid, invalid) = revalidate_bootstrap(&graph, receipts.clone(), &options, &cancel)
+            .await
+            .unwrap();
+        assert_eq!(valid.len(), 2);
+        assert!(invalid.is_empty());
+        std::fs::write(directory.path().join("middle"), "changed").unwrap();
+        let (valid, invalid) = revalidate_bootstrap(&graph, receipts.clone(), &options, &cancel)
+            .await
+            .unwrap();
+        assert!(valid.is_empty());
+        assert_eq!(invalid.len(), 2);
+        std::fs::write(directory.path().join("middle"), "original").unwrap();
+        let mut changed = graph.clone();
+        changed.tasks.get_mut("app#prepare").unwrap().task.command =
+            crate::config::Command::Argv(vec!["changed".into()]);
+        let (valid, invalid) = revalidate_bootstrap(&changed, receipts, &options, &cancel)
+            .await
+            .unwrap();
+        assert!(valid.is_empty());
+        assert_eq!(invalid.len(), 2);
+    }
 
     #[tokio::test]
     async fn cancelled_setup_never_consumes_a_baseline_or_launches() {

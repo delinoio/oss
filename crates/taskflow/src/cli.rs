@@ -475,7 +475,7 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
                 let result = runner::run_plan(
                     graph.clone(),
                     bootstrap,
-                    bootstrap_options,
+                    bootstrap_options.clone(),
                     cancel.child_token(),
                 )
                 .await?;
@@ -483,13 +483,27 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
                     return Err(crate::process::Cancelled.into());
                 }
                 ensure!(result.success, "installation prerequisite failed");
-                options.provided.extend(result.results);
                 graph = Arc::new(Graph::build(
                     Workspace::discover(&root)
                         .await?
                         .select_platform(cli.os, cli.arch),
                 )?);
+                let (provided, invalid) = runner::revalidate_bootstrap(
+                    &graph,
+                    result.results,
+                    &bootstrap_options,
+                    &cancel,
+                )
+                .await?;
+                options.provided.extend(provided);
                 plan = selection.plan(&graph).await?;
+                for id in invalid {
+                    if let Some(causes) = plan.causes.get_mut(&id) {
+                        // A stale prerequisite must execute even if another
+                        // bootstrap task reported unchanged.
+                        causes.insert(crate::plan::Cause::Activation);
+                    }
+                }
             }
             let result = runner::run_plan(graph, plan, options, cancel).await?;
             let code = result.exit_code();

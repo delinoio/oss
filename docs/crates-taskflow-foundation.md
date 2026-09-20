@@ -109,3 +109,5 @@ Configuration, result protocol, cache format, adapter coverage, lifecycle, and C
 Service task timeouts cover process startup through readiness and continued service execution. Expiry is a service failure that tears down the session; explicit owner cancellation remains a normal shutdown.
 
 Explicit `--changed` file lists cannot be combined with `--base` or `--head`; `plan` and `run` reject these ambiguous selectors before prerequisite execution.
+
+After an installation bootstrap, both finite runs and development sessions revalidate receipts against the refreshed graph using the normal task key calculation and current declared outputs. Missing or changed prerequisites invalidate dependent reuse. Stale tasks receive an activation cause before the final plan runs, so unchanged propagation cannot suppress their repair. Bootstrap service owners are shut down before rediscovery.
