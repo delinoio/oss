@@ -288,6 +288,7 @@ mod tests {
                 "$FOO",
                 "${EMPTY:-fallback}",
                 "$MISSING",
+                "$1",
                 r"\'quoted\'",
                 r"a\\b",
             ]),
@@ -297,15 +298,15 @@ mod tests {
         .unwrap();
         assert_eq!(
             p.args,
-            args(&["%FOO%", "fallback", "", r"\'quoted\'", r"a\\b"])
+            args(&["%FOO%", "fallback", "", "", r"\'quoted\'", r"a\\b"])
         );
         let p = plan(
-            args(&["cmd", "$BASE", "${EMPTY:-fallback}"]),
+            args(&["cmd", "$BASE", "${EMPTY:-fallback}", "$1"]),
             parent(),
             false,
         )
         .unwrap();
-        assert_eq!(p.args, args(&["$BASE", "${EMPTY:-fallback}"]));
+        assert_eq!(p.args, args(&["$BASE", "${EMPTY:-fallback}", "$1"]));
         for windows in [false, true] {
             let literals = [
                 "O'Reilly",
