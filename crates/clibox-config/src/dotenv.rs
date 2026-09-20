@@ -92,7 +92,8 @@ pub fn parse(text: &str, values: &mut Values, cancel: &Cancellation) -> Result<(
             continue;
         }
         let mut key = c.key()?;
-        let export_prefix = key == "export" && matches!(c.peek(), Some(b' ' | b'\t'));
+        // Node recognizes the prefix only with an immediate ASCII space.
+        let export_prefix = key == "export" && c.peek() == Some(b' ');
         c.space()?;
         // `export` remains an ordinary key when followed by the assignment sign.
         if export_prefix && c.peek() != Some(b'=') {

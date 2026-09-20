@@ -101,8 +101,10 @@ fn dotenv_export_key_is_distinct_from_the_optional_prefix() {
             "'literal ${HOME}'",
         ),
         ("export \t=", "export", ""),
+        ("export\t=enabled\n", "export", "enabled"),
         ("export export =nested\n", "export", "nested"),
         ("export \tKEY =enabled\n", "KEY", "enabled"),
+        ("\tKEY\t=\tenabled\n", "KEY", "enabled"),
         ("export_KEY =enabled\n", "export_KEY", "enabled"),
     ] {
         good(
@@ -121,6 +123,27 @@ fn dotenv_export_key_is_distinct_from_the_optional_prefix() {
         "export =first\nexport export=second\nexport\t=\n",
         "export=\n",
     );
+}
+
+#[test]
+fn dotenv_export_prefix_requires_an_ascii_space() {
+    let dir = tempfile::tempdir().unwrap();
+    for separator in ["\t", "\t ", "\t\t"] {
+        let input = format!("SAFE=before\nexport{separator}SECRET_KEY=secret\nSECRET_KEY=after\n");
+        for args in [
+            vec!["dotenv", "list", "--input", "-"],
+            vec!["dotenv", "merge", "-"],
+        ] {
+            let result = run(dir.path(), &args, input.as_bytes());
+            assert_eq!(result.status.code(), Some(1), "{separator:?} {args:?}");
+            assert!(result.stdout.is_empty());
+            let stderr = String::from_utf8(result.stderr).unwrap();
+            assert!(stderr.contains("DotenvSyntax"));
+            assert!(stderr.contains("line=2"));
+            assert!(!stderr.contains("SECRET_KEY"));
+            assert!(!stderr.contains("secret"));
+        }
+    }
 }
 
 #[test]
