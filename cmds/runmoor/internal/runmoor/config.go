@@ -361,7 +361,7 @@ func InitConfig(path string) error {
 	return err
 }
 
-const configSkeleton = `# Runmoor preview. Fill every REQUIRED value before running.
+const configSkeleton = `# Runmoor. Fill every REQUIRED value before running.
 # Credentials are references only. File references require owner-only permissions.
 schema_version = 1
 # docker_socket = "unix:///var/run/docker.sock"

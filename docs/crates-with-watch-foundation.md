@@ -89,7 +89,7 @@
 - Uses `starbase_args` for shell command-line parsing.
 - Uses `notify` for filesystem event delivery.
 - Uses `blake3` for content-hash-based rerun filtering.
-- Integrates with root `auto-publish` tag publication and `.github/workflows/release-with-watch.yml`.
+- Integrates with manual `Release Project` versioning and tag publication and `.github/workflows/release-with-watch.yml`.
 - Integrates with Homebrew tap automation through `scripts/release/update-homebrew.sh` and `packaging/homebrew/templates/with-watch.rb.tmpl`.
 - Integrates with direct installer scripts and `cargo-binstall` metadata for prebuilt binary distribution.
 

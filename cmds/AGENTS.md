@@ -20,6 +20,7 @@
 ### Go Command Rules
 
 - Keep command boundaries explicit and documented.
+- Derun release and MCP server versions share `cmds/derun/internal/version/version.go`; Runmoor retains its `Version` constant. Version tests must work after any supported release bump.
 - Keep configuration schemas documented and synchronized with implementation.
 - Add enough structured logging for step-level debugging and failure diagnosis.
 - Do not log secret values for sensitive workflows.

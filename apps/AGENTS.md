@@ -120,10 +120,10 @@
 - Development uses `127.0.0.1:46309` and preview uses `127.0.0.1:46271`, through the shared fixed-port wrapper without address overrides or automatic remapping.
 - Malformed documentation links must fail validation with only the output page and error classification; never propagate URL parser errors that include the original input.
 - Enforce clean internal URLs across every recognized HTML URL attribute, each `srcset` candidate, and CSS resource references, while permitting external `.html` URLs and generated static assets.
-- Preserve the former public-docs release-claim classifier and its negation fixtures: reject affirmative beta-channel, partial/staged GA, phased/fractional rollout, early-access, and early-announcement claims while allowing Runmoor preview-prerelease disclosures and explicit prohibitions.
+- Preserve the former public-docs release-claim classifier and its negation fixtures: reject affirmative beta-channel, partial/staged GA, phased/fractional rollout, early-access, and early-announcement claims while allowing Runmoor stable-channel disclosures and explicit prohibitions.
 - Validate every stable route within both the rendered top navigation and sidebar on each document page. Validate GitHub social-navigation and document-footer links independently; article links cannot satisfy navigation requirements.
 - Scan every emitted stylesheet as well as HTML for prohibited credentials, private resource URLs, and non-clean internal destinations. Resolve relative CSS URLs against the stylesheet location and preserve valid generated fonts and static assets.
-- Preserve all supported CLI/configuration and image/service workflows, manual verification/update/rollback, external licenses, and the unverified live GitHub/Tart preview boundary. Document that image changes require a running manager, including initial preparation without pools or connections. Keep internal scheduling/storage implementation in `docs/`.
+- Preserve all supported CLI/configuration and image/service workflows, manual verification/update/rollback, external licenses, and the unverified live GitHub/Tart compatibility boundary. Document that image changes require a running manager, including initial preparation without pools or connections. Keep internal scheduling/storage implementation in `docs/`.
 - The old public-docs `/runmoor` routes must remain removed, without redirects or handoff pages. The CLI release README remains in place and links to the standalone site.
 
 ### nodeup-docs Rules

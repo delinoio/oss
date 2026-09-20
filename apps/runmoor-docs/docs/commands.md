@@ -43,7 +43,7 @@ All commands accept `--config PATH` and `--no-color`. Commands and flags are cas
 | `reload` | Validate and atomically accept the whole candidate |
 | `pause`, `resume`, `drain` | Optional `--pool NAME`; drain waits for cleanup |
 | `stop` | Optional `--pool NAME` and `--force`; whole-manager stop exits |
-| `version` | Print version, preview status and source revision |
+| `version` | Print version and source revision |
 | `service install`, `start`, `stop`, `uninstall` | Operate the user service; use the `service` prefix for each |
 | `image create` | `--name NAME`, `--cpu N`, `--memory-mib N`, exactly one `--ipsw PATH` or `--from SOURCE`; optional `--source-home PATH` for an external local image |
 | `image open`, `remove` | `--id UUID`; use the `image` prefix for each |

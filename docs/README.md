@@ -28,6 +28,10 @@ Each project must have one project index document and one or more domain contrac
 - `docs/project-template.md`: template for project index docs
 - `docs/domain-template.md`: template for domain contract docs
 
+## Repository Workflow
+
+- `docs/repository-workflow-contract.md`: CI selection and validation, manual CLI project/version releases, `delino-release-bot` setup, exact-commit recovery, and Runmoor stable publication.
+
 ## Project Catalog
 
 ### binpm
