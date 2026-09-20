@@ -419,6 +419,26 @@ pub async fn inventory(
                 let Some(binary) = artifact["executable"].as_str() else {
                     continue;
                 };
+                if task.platform.executor == crate::config::Executor::Docker {
+                    let relative = binary
+                        .strip_prefix("/workspace/")
+                        .filter(|path| {
+                            !path.is_empty()
+                                && path.split('/').all(|part| !matches!(part, "" | "." | ".."))
+                        })
+                        .context(
+                            "Docker libtest executable must persist under /workspace; use a \
+                             mounted Cargo target directory or generic sharding",
+                        )?;
+                    let persisted =
+                        files::within(&graph.workspace.root, &graph.workspace.root.join(relative))
+                            .context("Docker libtest executable escapes the mounted workspace")?;
+                    ensure!(
+                        persisted.is_file(),
+                        "Docker libtest executable is missing from the mounted workspace; use a \
+                         mounted Cargo target directory or generic sharding"
+                    );
+                }
                 let package = metadata["packages"]
                     .as_array()
                     .context("Cargo packages missing")?

@@ -1627,6 +1627,7 @@ jobs:
       - name: Prepare Rust and immutable local fixtures
         run: |
           rustup toolchain install nightly-2026-01-01 --profile minimal
+          docker pull rust@sha256:5b9332190bb3b9ece73b810cd1f1e9f06343b294ce184bcb067f0747d7d333ea
           docker pull node@sha256:6dac556d980b7f0e5498d08f08cee0ca67798b4ad6c23964a9214920e67758d0
           docker pull quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
       - name: Run real container and S3 transport tests

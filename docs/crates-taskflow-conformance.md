@@ -119,6 +119,7 @@ cargo test
 The default conformance suite requires Git on PATH for real affected-selection fixtures; minimal Rust container images must install it explicitly. Install pnpm 10.26.2, Node 24, Go 1.25+, and the repository Rust toolchain for native fixtures. Pull these immutable multi-architecture test images for Docker/S3 fixtures:
 
 ```sh
+docker pull rust@sha256:5b9332190bb3b9ece73b810cd1f1e9f06343b294ce184bcb067f0747d7d333ea
 docker pull node@sha256:6dac556d980b7f0e5498d08f08cee0ca67798b4ad6c23964a9214920e67758d0
 docker pull quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
 cargo test -p taskflow --test conformance -- --include-ignored
@@ -297,3 +298,5 @@ The real Go flag suite also compares `-failfast` and `-failfast=false` across tw
 `check_rejects_invalid_docker_ports_before_prerequisites` checks NUL, option-shaped, and blank Docker publish values through configuration loading, `check`, and `run`; the prerequisite marker is never written. Container-only, IPv4/IPv6 host binding, protocol suffix, and port-range forms remain accepted without contacting Docker.
 
 `scenario_17_queue_skip_restart_own_real_exclusive_processes` starts with absent inputs and initial-disabled subscriptions, then creates the first input after an activation-only barrier. It holds a real TCP-exclusive process behind a release gate until each input version has a new successful independent subscriber receipt. Output content alone is not an acknowledgement: an older queued execution can read a newer version before its notification is handled. Each observer completes before the next version is published. Queue coalesces both edits, skip ignores both, and restart reaps each predecessor before the next process binds the port. Session debug logs record event age, baseline/snapshot decisions, and overlap decisions without input contents; conformance logging accepts `RUST_LOG` for diagnosis.
+
+`scenario_10_local_docker_libtest_requires_persisted_executables` checks that Cargo config, environment, and argv target-directory selections outside the mount fail before listing; a target directory under `/workspace` inventories and runs both tests successfully across separate containers. The Docker CI fixture uses the pinned Rust image shown above.

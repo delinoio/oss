@@ -6196,3 +6196,76 @@ async fn critical_path_priority_counts_shared_diamond_suffixes() {
     // root -> b -> join costs 201; visiting a first must not erase join's 100.
     assert_eq!(events.lines().next(), Some("root"), "{events}");
 }
+
+#[tokio::test]
+#[ignore = "requires Docker and the pinned Rust fixture image"]
+async fn scenario_10_local_docker_libtest_requires_persisted_executables() {
+    for selector in ["config", "env", "argv", "mounted"] {
+        let target = if selector == "mounted" {
+            "/workspace/shared-target"
+        } else {
+            "/tmp/ephemeral-target"
+        };
+        let mut args = vec!["cargo", "test", "--tests", "--offline"];
+        if matches!(selector, "argv" | "mounted") {
+            args.extend(["--target-dir", target]);
+        }
+        let env = if selector == "env" {
+            json!({"CARGO_TARGET_DIR":target})
+        } else {
+            json!({})
+        };
+        let root = fixture(json!({"suite":{
+            "command":args,"env":env,"input":[],"output":[],"shard":{"adapter":"libtest","count":2},
+            "platform":{"executor":"docker","os":"linux","arch":config::host_arch(),
+            "image":"rust@sha256:5b9332190bb3b9ece73b810cd1f1e9f06343b294ce184bcb067f0747d7d333ea"}
+        }}));
+        files::atomic_write(
+            &root.path().join("Cargo.toml"),
+            b"[package]\nname='docker-libtest'\nversion='0.1.0'\nedition='2021'\n[workspace]\n",
+        )
+        .unwrap();
+        files::atomic_write(
+            &root.path().join("src/lib.rs"),
+            b"#[test] fn one() {}\n#[test] fn two() {}\n",
+        )
+        .unwrap();
+        if selector == "config" {
+            files::atomic_write(
+                &root.path().join(".cargo/config.toml"),
+                format!("[build]\ntarget-dir='{target}'\n").as_bytes(),
+            )
+            .unwrap();
+        }
+        taskflow::discover::output_tool(
+            root.path(),
+            &["cargo", "generate-lockfile", "--offline"],
+            &[],
+        )
+        .await
+        .unwrap();
+        let result = run(graph(root.path()).await, &["suite"]).await;
+        if selector == "mounted" {
+            assert!(result.success, "{result:?}");
+            let (inventory, reports) = shard::read_reports(
+                &root
+                    .path()
+                    .join(".taskflow/runs")
+                    .join(&result.results["app#suite"].execution),
+            )
+            .unwrap();
+            assert_eq!(inventory.tests.len(), 2);
+            assert!(shard::aggregate(&inventory, 2, &reports).unwrap());
+        } else {
+            assert!(!result.success);
+            assert!(
+                result.results["app#suite"]
+                    .diagnostic
+                    .as_deref()
+                    .unwrap()
+                    .contains("executable must persist under /workspace"),
+                "{result:?}"
+            );
+        }
+    }
+}
