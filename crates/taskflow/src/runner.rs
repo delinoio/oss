@@ -101,6 +101,12 @@ impl RunResult {
             .any(|r| r.outcome == Outcome::Cancelled)
         {
             130
+        } else if self
+            .results
+            .values()
+            .any(|r| r.outcome == Outcome::Failed && r.exit_code == 124)
+        {
+            124
         } else {
             1
         }

@@ -3889,6 +3889,7 @@ async fn finite_timeouts_fail_while_operator_cancellation_remains_distinct() {
             }
         );
         assert_eq!(receipt.exit_code, if cancelled { 130 } else { 124 });
+        assert_eq!(result.exit_code(), if cancelled { 130 } else { 124 });
         assert_eq!(
             receipt.diagnostic.as_deref(),
             if cancelled {
@@ -3916,6 +3917,61 @@ async fn finite_timeouts_fail_while_operator_cancellation_remains_distinct() {
             .await
             .unwrap_or_else(|_| panic!("{name} ({pid}) survived task completion"));
         }
+    }
+}
+
+#[tokio::test]
+async fn finite_cli_and_ci_preserve_deadline_exit_status() {
+    let root = fixture(json!({
+        "slow":{"command":command(&["delay","10000","version"]),"input":[],"timeout":"500ms"}
+    }));
+    let config_path = root.path().join("taskflow.yml");
+    let mut cfg: Value = serde_yaml::from_slice(&std::fs::read(&config_path).unwrap()).unwrap();
+    let (os, arch) = config::Platform::default().resolved();
+    cfg["tasks"]["slow"]["platform"] = json!({"os":os,"arch":arch});
+    cfg["ci"] = json!({"revision":"1111111111111111111111111111111111111111","rust":"nightly-2026-01-01","runners":{config::Platform::default().key():"self-hosted"}});
+    std::fs::write(&config_path, serde_yaml::to_string(&cfg).unwrap()).unwrap();
+    let g = graph(root.path()).await;
+    let blueprint = taskflow::ci::Blueprint::new(&g, vec!["slow".into()]).unwrap();
+    let plan = taskflow::ci::prepare(root.path(), &blueprint, None)
+        .await
+        .unwrap();
+    let state = root.path().join(".taskflow");
+    std::fs::create_dir_all(state.join("input")).unwrap();
+    std::fs::write(
+        state.join("blueprint.json"),
+        serde_json::to_vec(&blueprint).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(state.join("plan.json"), serde_json::to_vec(&plan).unwrap()).unwrap();
+    for args in [
+        vec!["run", "slow", "--quiet"],
+        vec![
+            "ci",
+            "execute",
+            "--blueprint",
+            ".taskflow/blueprint.json",
+            "--plan",
+            ".taskflow/plan.json",
+            "--unit",
+            &blueprint.units[0].id,
+            "--input",
+            ".taskflow/input",
+            "--output",
+            ".taskflow/bundle.json",
+        ],
+    ] {
+        let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .current_dir(root.path())
+            .arg("--json")
+            .args(args)
+            .output()
+            .await
+            .unwrap();
+        assert_eq!(output.status.code(), Some(124), "{output:?}");
+        let result: runner::RunResult = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(result.results["app#slow"].outcome, Outcome::Failed);
+        assert_eq!(result.results["app#slow"].exit_code, 124);
     }
 }
 
@@ -5611,7 +5667,7 @@ async fn shard_deadlines_leave_docker_cleanup_available() {
         .await
         .unwrap()
         .unwrap();
-        assert!(!output.status.success());
+        assert_eq!(output.status.code(), Some(124), "{output:?}");
         let result: runner::RunResult = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(result.results["app#suite"].exit_code, 124, "{output:?}");
         let cleanup = std::fs::read_to_string(root.path().join("cleanup-events")).unwrap();

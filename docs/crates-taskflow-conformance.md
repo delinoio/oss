@@ -233,6 +233,8 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 
 `finite_timeouts_fail_while_operator_cancellation_remains_distinct` compares deadline expiry with explicit cancellation using real parent/child processes. It asserts distinct outcomes and exit codes, timeout diagnostics, blocked dependents, absent success cache entries, and completed cleanup.
 
+`finite_cli_and_ci_preserve_deadline_exit_status` verifies code 124 through the actual finite-run and CI-execute CLI boundaries. Invocation exit status preserves cancellation first, then failed timeout receipts, before falling back to ordinary failure code 1; sharded Docker timeout fixtures also check the actual CLI status.
+
 `explicit_wildcard_inputs_include_ignored_directories_in_cache_and_watch` exercises star, globstar, character-class, and brace patterns against `dist/manifest.json`. Each form participates in snapshots, cache invalidation, and live watch reruns, while internal restore trees remain excluded from both snapshots and event matching.
 
 `libtest_inventory_honors_explicit_manifest_selection` runs a Cargo-excluded standalone package with split and equals-form manifest arguments, including a task directory without its own Cargo manifest. Inventory and complete shard results identify only the selected package.

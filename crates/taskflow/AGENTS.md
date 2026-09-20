@@ -87,3 +87,4 @@
 - Check cancellation before task setup, before each resource lock attempt, after lock acquisition, and immediately before command launch. Pending work must not invalidate a prior baseline or launch side effects; acquired Docker ownership still requires awaited cleanup.
 
 - Bootstrap receipts cross native graph rediscovery only after their refreshed task keys, declared outputs, and prerequisite receipts match. Reuse the executor's identity calculation; invalidate dependent reuse transitively and give stale tasks an independent activation cause. Shut down bootstrap services before rediscovery.
+- Finite invocation and CI execution exit codes preserve receipt reasons: success is 0, operator cancellation takes priority as 130, and any failed receipt with code 124 makes an otherwise failed invocation return 124 before ordinary failure code 1.
