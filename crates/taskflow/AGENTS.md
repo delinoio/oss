@@ -80,3 +80,4 @@
 - Bound artifact capture incrementally by encoded record size, including empty entries, escaped paths, links, digests, and Base64 expansion, before retaining records or reading payloads. Keep local uncached identity hashing independent of transfer bounds.
 - Critical-path duration traversal must count a shared suffix on every alternative branch; cycle guards track only current ancestry, not all visited nodes.
 - Docker libtest inventories must reject compiler-artifact executables outside the persistent /workspace mount or absent after build-container removal, before launching test listing. Test Cargo config, environment, and argv target directories in real Docker conformance.
+- Historical cache shard evidence must contain exactly one partition or a complete suite. Integrity verification rejects other partial cardinalities without relying on current task configuration.

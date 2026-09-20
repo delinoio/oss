@@ -424,6 +424,10 @@ impl Artifact {
                 .count;
             ensure!((1..=256).contains(&count), "invalid cached shard count");
             ensure!(
+                reports.len() == 1 || reports.len() == count,
+                "cached shards must contain one partition or the complete suite"
+            );
+            ensure!(
                 crate::shard::validate_reports(inventory, count, reports)?,
                 "cached shard results contain failure"
             );

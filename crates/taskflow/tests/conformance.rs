@@ -6269,3 +6269,51 @@ async fn scenario_10_local_docker_libtest_requires_persisted_executables() {
         }
     }
 }
+
+#[tokio::test]
+async fn cache_verify_rejects_impossible_partial_shard_suites() {
+    let directory = fixture(json!({"suite":{
+        "command":command(&["version"]),"input":[],"output":[],
+        "shard":{"adapter":"generic","count":4,"list":command(&["inventory"]),"run":command(&["shard"])}
+    }}));
+    let g = graph(directory.path()).await;
+    let result = run(g.clone(), &["suite"]).await;
+    assert!(result.success);
+    let (inventory, reports) = shard::read_reports(
+        &directory
+            .path()
+            .join(".taskflow/runs")
+            .join(&result.results["app#suite"].execution),
+    )
+    .unwrap();
+    assert_eq!(reports.len(), 4);
+    for count in 0..=4 {
+        cache::clean(directory.path()).unwrap();
+        let key = files::digest(format!("shards-{count}").as_bytes());
+        let mut artifact = cache::Artifact::capture(
+            key.clone(),
+            "app#suite".into(),
+            &g.workspace.projects["app"],
+            &g.tasks["app#suite"].task,
+        )
+        .unwrap();
+        // A single cached partition need not have index zero.
+        let selected = if count == 1 {
+            vec![reports[3].clone()]
+        } else {
+            reports[..count].to_vec()
+        };
+        artifact.shards = Some((inventory.clone(), selected));
+        let valid = matches!(count, 1 | 4);
+        assert_eq!(artifact.validate_integrity(&key).is_ok(), valid);
+        cache::store(directory.path(), &artifact).unwrap();
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .current_dir(directory.path())
+            .args(["--json", "cache", "verify"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.success(), valid, "count={count}");
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["entries"][0]["valid"], valid, "count={count}");
+    }
+}
