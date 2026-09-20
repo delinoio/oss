@@ -64,25 +64,29 @@ impl Environment {
         }
         // A CI unit can carry credentials for several tasks. Designation is
         // workspace-wide, but access remains scoped to each declaring task.
-        for name in ws
+        let designated: BTreeSet<_> = ws
             .projects
             .values()
             .filter_map(|project| project.config.as_ref())
             .chain(std::iter::once(&ws.config))
             .flat_map(|config| config.tasks.values())
             .flat_map(|task| &task.secrets)
-        {
-            if !contains_name(task.secrets.iter(), name) {
-                values.retain(|key, _| !same_name(key, name));
-            }
-        }
-        let secrets = task
-            .secrets
+            .chain(task.secrets.iter())
+            .collect();
+        // Redaction sees values before access filtering. A task-local value
+        // under another task's secret name still appears in queryable config,
+        // even though it must never be passed to this task's child process.
+        let secrets = designated
             .iter()
             .filter_map(|name| get(&values, name))
             .filter(|v| !v.is_empty())
             .map(|v| v.as_bytes().to_vec())
             .collect();
+        for name in designated {
+            if !contains_name(task.secrets.iter(), name) {
+                values.retain(|key, _| !same_name(key, name));
+            }
+        }
         let mut keys: BTreeSet<_> = task
             .env_inputs
             .iter()

@@ -324,3 +324,5 @@ The cache capture unit regressions use bounded fixtures to check empty file/dire
 `late_remote_commit_cancellation_preserves_cli_success` sends SIGINT to the real Unix CLI during an acknowledged or lost remote manifest response, after local publication. Completed receipts, invocation success, and exit code remain successful; the portable publication unit test verifies the same aggregate boundary and cancellation before publication.
 
 `cancelled_setup_never_consumes_a_baseline_or_launches` covers pre-cancelled uncontended resource locks and no-probe task setup, plus cancellation during synchronous input hashing. Pending cancellation preserves the previous receipt, and neither path reaches command launch.
+
+`queries_mask_task_local_values_designated_by_other_tasks` checks real task/project CLI queries and environment scoping when only a sibling task designates a task-local variable as secret, including Windows environment-name aliases.

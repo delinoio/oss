@@ -1322,6 +1322,44 @@ fn schema_is_fresh_and_cli_queries_mask_designated_values() {
 }
 
 #[tokio::test]
+async fn queries_mask_task_local_values_designated_by_other_tasks() {
+    let name = if cfg!(windows) {
+        "tflow_query_secret"
+    } else {
+        "TFLOW_QUERY_SECRET"
+    };
+    let canary = "task-local-sensitive-query-canary";
+    let root = fixture(json!({
+        "local": {"command":command(&["version"]), "env":{name:canary}},
+        "owner": {"command":command(&["version"]), "secrets":["TFLOW_QUERY_SECRET"]}
+    }));
+    let g = graph(root.path()).await;
+    let env = taskflow::environment::Environment::build(
+        &g.workspace,
+        &g.workspace.projects["app"],
+        &g.tasks["app#local"].task,
+        &BTreeMap::new(),
+        false,
+    )
+    .unwrap();
+    assert!(!env.values.contains_key(name));
+    assert!(env.secrets.contains(&canary.as_bytes().to_vec()));
+    for query in ["tasks", "projects"] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .arg("--root")
+            .arg(root.path())
+            .args(["--json", "query", query])
+            .env_remove("TFLOW_QUERY_SECRET")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert!(!String::from_utf8_lossy(&output.stdout).contains(canary));
+        assert!(!String::from_utf8_lossy(&output.stderr).contains(canary));
+        assert!(String::from_utf8_lossy(&output.stdout).contains("[REDACTED]"));
+    }
+}
+
+#[tokio::test]
 async fn unchanged_prerequisites_cannot_suppress_corrupt_outputs() {
     for cached in [false, true] {
         let directory = fixture(json!({
