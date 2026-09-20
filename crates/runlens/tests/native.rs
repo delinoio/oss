@@ -3062,3 +3062,80 @@ fn policy_declarations_require_the_recorded_argv_and_working_directory() {
         );
     }
 }
+
+#[test]
+fn explain_matches_windows_case_aliases_in_accesses_and_changes() {
+    use runlens::{analysis, entries::Entries, model::*};
+    let root = repository("read");
+    assert!(run(root.path(), "query.json", "read").status.success());
+    let mut report = runlens::report::read(&root.path().join("query.json")).unwrap();
+    let execution = &mut report.executions[0];
+    execution.accesses = Entries::default();
+    execution.changes = Entries::default();
+    for path in [
+        "${workspace}/Private/File",
+        "C:/Private/File",
+        "//Server/Share/File",
+        "${workspace}/Ä/Datei",
+    ] {
+        execution
+            .accesses
+            .insert(
+                path.into(),
+                Access {
+                    read: true,
+                    write: false,
+                    read_directory: false,
+                    unsupported: false,
+                    in_scope: true,
+                },
+            )
+            .unwrap();
+        execution
+            .changes
+            .insert(format!("{path}.out"), ChangeKind::Created)
+            .unwrap();
+    }
+    for os in ["windows", "linux"] {
+        report.executions[0].environment.os = os.into();
+        for query in [
+            "private/file",
+            "c:/private/file",
+            "//server/share/file",
+            "ä/datei",
+        ] {
+            let result = analysis::explain(query, &[report.clone()]).unwrap();
+            assert_eq!(
+                result.usages.len(),
+                usize::from(os == "windows"),
+                "{os}: {query}"
+            );
+            if os == "windows" {
+                assert!(
+                    result
+                        .usages
+                        .iter()
+                        .next()
+                        .unwrap()
+                        .unwrap()
+                        .1
+                        .consumer_candidate
+                );
+            }
+            let result = analysis::explain(&format!("{query}.out"), &[report.clone()]).unwrap();
+            assert_eq!(result.usages.len(), usize::from(os == "windows"));
+            if os == "windows" {
+                assert!(
+                    result
+                        .usages
+                        .iter()
+                        .next()
+                        .unwrap()
+                        .unwrap()
+                        .1
+                        .producer_candidate
+                );
+            }
+        }
+    }
+}

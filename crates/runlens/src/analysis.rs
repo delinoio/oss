@@ -802,23 +802,68 @@ pub fn explain(path: &str, reports: &[Report]) -> Result<Analysis> {
             } else {
                 format!("${{workspace}}/{}", path.trim_start_matches("./"))
             };
-            let access = execution.accesses.get(&path)?;
-            let change = execution.changes.get(&path)?;
-            if access.is_some() || change.is_some() {
-                result.usages.insert(
-                    format!("{}:{path}", execution.id),
-                    Usage {
-                        execution_id: execution.id,
-                        command: execution.command.clone(),
-                        consumer_candidate: access
-                            .as_ref()
-                            .is_some_and(|a| a.read || a.read_directory),
-                        producer_candidate: access.as_ref().is_some_and(|a| a.write)
-                            || change.is_some_and(|c| c != ChangeKind::Unknown),
-                        access,
-                        change,
-                    },
+            let mut paths = Entries::<bool>::default();
+            let mut uncertain = false;
+            if windows {
+                for entry in execution
+                    .accesses
+                    .iter()
+                    .map(|item| item.map(|(key, _)| key))
+                    .chain(
+                        execution
+                            .changes
+                            .iter()
+                            .map(|item| item.map(|(key, _)| key)),
+                    )
+                {
+                    let stored = entry?;
+                    let (matches, unknown) = crate::privacy::windows_query_eq(&path, &stored);
+                    uncertain |= unknown;
+                    if matches {
+                        paths.insert(stored, true)?;
+                    }
+                }
+            } else {
+                paths.insert(path, true)?;
+            }
+            for entry in paths.iter() {
+                let (path, _) = entry?;
+                let access = execution.accesses.get(&path)?;
+                let change = execution.changes.get(&path)?;
+                if access.is_some() || change.is_some() {
+                    result.usages.insert(
+                        format!("{}:{path}", execution.id),
+                        Usage {
+                            execution_id: execution.id,
+                            command: execution.command.clone(),
+                            consumer_candidate: access
+                                .as_ref()
+                                .is_some_and(|a| a.read || a.read_directory),
+                            producer_candidate: access.as_ref().is_some_and(|a| a.write)
+                                || change.is_some_and(|c| c != ChangeKind::Unknown),
+                            access,
+                            change,
+                        },
+                    )?;
+                }
+            }
+            if uncertain {
+                result.finding(
+                    FindingCode::UnknownEvidence,
+                    Classification::Unknown,
+                    vec![evidence(execution, None, EvidenceSource::Outcome)],
                 )?;
+                if !result
+                    .limitations
+                    .iter()
+                    .any(|text| text.starts_with("Windows Unicode"))
+                {
+                    result.limitations.push(
+                        "Windows Unicode case aliases on a non-Windows analyst host are \
+                         candidates; query on Windows to apply its native ordinal uppercase table."
+                            .into(),
+                    );
+                }
             }
             quality(&mut result, execution)?;
         }

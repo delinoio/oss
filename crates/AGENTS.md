@@ -185,6 +185,7 @@
 - Unix path removal must record write attempts for unlink/unlinkat/rmdir/remove, including AT_REMOVEDIR, missing paths, directory-relative paths, and Linux static syscalls; external deletion cannot evade literal write boundaries.
 - Unix rename tracing must record both source and destination write attempts, including directory-relative, extended macOS, and static Linux syscall variants; syscall failure does not erase attempted access.
 - Unsupported accesses, lexical aliases through parent components, and uncovered workspace paths prevent a policy pass; never collapse such paths across potentially changed symlinks to invent an identity. Known absolute external paths still support literal boundary checks without establishing cache coverage.
+- Explain matches Windows path aliases with ordinal case-insensitive comparisons and retains stored evidence keys. Non-Windows Unicode aliases are candidates with explicit unknown table parity; ASCII aliases work on every analyst host.
 - Offline path queries follow the report's OS syntax, including Windows drive and UNC paths; do not reinterpret Unix literal backslashes as separators.
 - Compile Windows input/output/exclusion/policy globs case-insensitively, including directory roots. Offline checks follow each execution's recorded OS, not the analyst's host OS.
 - Combined clean/repeat verdicts preserve definite failures ahead of inconclusive results and passes; an incomplete baseline cannot erase a policy violation.

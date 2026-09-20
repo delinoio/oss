@@ -289,3 +289,39 @@ pub fn command_identities(
         })
         .collect())
 }
+
+/// Query equality plus whether the analyst lacks the source OS uppercase table.
+pub(crate) fn windows_query_eq(left: &str, right: &str) -> (bool, bool) {
+    if left == right || (left.is_ascii() && right.is_ascii()) {
+        return (left.eq_ignore_ascii_case(right), false);
+    }
+    #[cfg(windows)]
+    {
+        let left: Vec<u16> = left.encode_utf16().collect();
+        let right: Vec<u16> = right.encode_utf16().collect();
+        // SAFETY: both buffers are live with their explicit bounded lengths.
+        let result = unsafe {
+            windows_sys::Win32::Globalization::CompareStringOrdinal(
+                left.as_ptr(),
+                left.len() as i32,
+                right.as_ptr(),
+                right.len() as i32,
+                1,
+            )
+        };
+        (result == 2, result == 0)
+    }
+    #[cfg(not(windows))]
+    {
+        // Windows ordinal comparison uses an OS-owned uppercase table, not full
+        // Unicode case folding (which would equate e.g. sharp-s with SS). Offer
+        // simple-uppercase candidates offline, but never claim table parity.
+        // Remove this uncertainty only when reports bind a portable case table.
+        let upper = |c: char| {
+            let mut chars = c.to_uppercase();
+            let first = chars.next().unwrap();
+            if chars.next().is_none() { first } else { c }
+        };
+        (left.chars().map(upper).eq(right.chars().map(upper)), true)
+    }
+}
