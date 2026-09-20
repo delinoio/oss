@@ -495,6 +495,14 @@ pub async fn verify(
             "repeat verification requires declared outputs",
         ));
     }
+    let current_executions = (command.prepare.len() + 1)
+        .checked_mul(runs as usize)
+        .and_then(|count| count.checked_add(baseline.map_or(0, |report| report.executions.len())));
+    if current_executions.is_none_or(|count| count > MAX_EXECUTIONS) {
+        return Err(Error::input(
+            "baseline and requested executions exceed the report execution limit",
+        ));
+    }
     let revision = revision(root, &cancel)
         .await
         .ok_or_else(|| Error::input("clean verification requires a repository HEAD"))?;

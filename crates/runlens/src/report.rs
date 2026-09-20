@@ -90,7 +90,7 @@ pub fn validate(report: &Report) -> Result<()> {
         return Err(Error::input("unsupported report schema version"));
     }
     if report.executions.is_empty()
-        || report.executions.len() > 1056
+        || report.executions.len() > MAX_EXECUTIONS
         || report.limitations.len() > 64
     {
         return Err(Error::input("invalid report envelope size"));

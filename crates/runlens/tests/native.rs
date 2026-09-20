@@ -36,6 +36,54 @@ async fn tracing_initialization_failure_does_not_launch_the_target() {
 fn fixture() -> &'static str {
     env!("CARGO_BIN_EXE_runlens-test-command")
 }
+#[tokio::test]
+async fn clean_preflights_combined_execution_capacity_before_source_preparation() {
+    use runlens::{clean, config, error::ErrorCode, model::MAX_EXECUTIONS};
+    let root = tempfile::tempdir().unwrap();
+    assert!(run(root.path(), "baseline.json", "read").status.success());
+    let mut baseline = runlens::report::read(&root.path().join("baseline.json")).unwrap();
+    let template = baseline.executions[0].clone();
+    let mut config = config::Config::default();
+    let mut command = config::Command::direct(vec![fixture().into(), "read".into()]);
+    command.outputs = vec!["out/**".into()];
+    for (baseline_count, preparations, runs, exceeds) in [
+        (MAX_EXECUTIONS, 0, 1, true),
+        (MAX_EXECUTIONS - 1, 0, 1, false),
+        (MAX_EXECUTIONS - 1, 1, 1, true),
+        (MAX_EXECUTIONS - 3, 0, 3, false),
+        (MAX_EXECUTIONS - 2, 0, 3, true),
+    ] {
+        baseline.executions = (0..baseline_count)
+            .map(|_| {
+                let mut execution = template.clone();
+                execution.id = uuid::Uuid::now_v7();
+                execution
+            })
+            .collect();
+        command.prepare = vec![command.argv.clone(); preparations];
+        config.commands.insert("build".into(), command.clone());
+        let error = clean::verify(
+            root.path(),
+            "build",
+            &config,
+            runs,
+            false,
+            Some(&baseline),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidInput);
+        assert_eq!(
+            error.message,
+            if exceeds {
+                "baseline and requested executions exceed the report execution limit"
+            } else {
+                "clean verification requires a repository HEAD"
+            }
+        );
+    }
+}
 fn invoke(root: &Path, args: &[&str]) -> Output {
     Command::new(binary())
         .args(args)

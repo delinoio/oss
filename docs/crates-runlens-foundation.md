@@ -479,7 +479,10 @@ without implying snapshot or cache coverage. Parent-component aliases are not
 lexically collapsed across possible symlinks: absent trustworthy identity,
 unmatched aliases make the policy inconclusive rather than passing.
 Imported baseline executions use the `baseline` role for evidence-reference
-closure. Their historical operational failures affect comparison certainty but
+closure. Before any Git preparation or target launch, the baseline count plus
+all planned preparation and target executions must fit the 1,056-execution limit.
+This conservative preflight counts every supplied historical execution.
+Their historical operational failures affect comparison certainty but
 never become errors or cleanup recipients of the current invocation. Current
 target and preparation outcomes determine its operational exit status.
 Clean/repeat verdicts combine policy and comparison results with failed taking

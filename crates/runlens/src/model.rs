@@ -298,6 +298,7 @@ fn uuid_v7<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Uuid, D:
 }
 
 pub const MAX_ENVELOPE_BYTES: usize = 1024 * 1024;
+pub const MAX_EXECUTIONS: usize = 1056;
 thread_local! { static ENVELOPE_BYTES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
 pub fn reset_envelope_budget() {
     ENVELOPE_BYTES.set(0);
