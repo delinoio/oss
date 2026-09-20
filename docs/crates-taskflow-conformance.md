@@ -104,7 +104,7 @@ cargo fmt --all --check
 cargo test
 ```
 
-Install pnpm 10.26.2, Node 24, Go 1.25+, and the repository Rust toolchain for native fixtures. Pull these immutable multi-architecture test images for Docker/S3 fixtures:
+The default conformance suite requires Git on PATH for real affected-selection fixtures; minimal Rust container images must install it explicitly. Install pnpm 10.26.2, Node 24, Go 1.25+, and the repository Rust toolchain for native fixtures. Pull these immutable multi-architecture test images for Docker/S3 fixtures:
 
 ```sh
 docker pull node@sha256:6dac556d980b7f0e5498d08f08cee0ca67798b4ad6c23964a9214920e67758d0
@@ -119,7 +119,7 @@ The `taskflow-conformance` CI job covers macOS/Linux/Windows x64/arm64 and exclu
 ## Validation evidence and limits
 The implementation session exercised real macOS arm64 host execution, Linux arm64 containers through Docker, loopback MinIO, pnpm/Cargo/Go discovery, all four native shard adapters, source-build CLI/schema, generated-workflow actionlint, root Rust tests, and public-docs build/route checks. Committed CI definitions are not evidence that remote platform jobs have already executed. Windows and other host architectures require their conformance results before a release support claim. Registry/service availability failures must be reported as failed or unavailable validation, never counted as passes.
 
-Before this repair, GitHub Actions for PR #906 revision `62e21056` reported success for all six native platform jobs and both Linux Docker/S3 jobs (40 successful checks, four skipped). That establishes prior-revision native evidence, including Windows; the new repairs still require their own matrix results. Local repair validation covers all 99 conformance cases, seven library regressions, and one CLI unit test on macOS arm64, including six external suites, and 93 conformance cases plus the same library and CLI tests in Linux arm64 containers. Root `cargo test`, TaskFlow Clippy with warnings denied, workspace formatting, repository/generated-workflow actionlint, all 27 CI contract checks, and public-docs tests passed.
+Before this repair, GitHub Actions for PR #906 revision `f3913525` reported success for all six native platform jobs and both Linux Docker/S3 jobs (40 successful checks, four skipped). That establishes prior-revision native evidence, including Windows; the new repairs still require their own matrix results. Local repair validation covers all 104 conformance cases, seven library regressions, and one CLI unit test on macOS arm64, including six external suites, and 98 conformance cases plus the same library and CLI tests in Linux arm64 containers. The first minimal-container run lacked Git and failed the Git fixture; after explicitly installing Git, the complete Linux suite passed. Root `cargo test`, TaskFlow Clippy with warnings denied, workspace formatting, repository/generated-workflow actionlint, all 27 CI contract checks, and public-docs tests passed.
 
 A local full Windows GNU cross-check was unavailable because the host lacks the MinGW C compiler required by the TLS dependency. The Windows process-owner source was type-checked separately for the Windows target; this is not a substitute for native execution evidence.
 
