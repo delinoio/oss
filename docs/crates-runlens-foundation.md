@@ -368,7 +368,8 @@ unchanged and documented separately in the vendored patch ledger.
 Sensitive-flag scanning continues through already hidden argv entries, including
 consecutive flags and explicitly redacted argument indices. Canary regression
 tests cover saved reports and both JSON and HTML exports.
-Root normalization requires a path start and an exact root or separator boundary;
+Root normalization requires a path start (including attached alphabetic options
+such as `-I/path` and `-L/path`) and an exact root or separator boundary;
 similarly prefixed external paths retain their identity for policy, mapping, and
 query matching. Embedded path arguments after whitespace, assignment, or quotes
 use the same component-boundary rule.

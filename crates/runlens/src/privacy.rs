@@ -152,6 +152,7 @@ fn replace_path_root(value: &str, root: &str, placeholder: &str) -> String {
     let mut copied = 0;
     for (start, end) in root_matches(value, root) {
         let starts_path = start == 0
+            || attached_option_prefix(&value[..start])
             || value[..start].chars().next_back().is_some_and(|ch| {
                 ch.is_whitespace() || matches!(ch, '=' | '\'' | '"' | '(' | '[' | '{' | ',')
             });
@@ -169,6 +170,22 @@ fn replace_path_root(value: &str, root: &str, placeholder: &str) -> String {
     }
     result.push_str(&value[copied..]);
     result
+}
+
+fn attached_option_prefix(prefix: &str) -> bool {
+    // Compilers commonly accept -I/path and -L/path without a delimiter.
+    // Restrict this exception to an option token so embedded external paths
+    // such as /elsewhere/workspace retain their original identity.
+    let token = prefix
+        .rsplit(|ch: char| ch.is_whitespace() || matches!(ch, '\'' | '"' | '(' | '[' | '{' | ','))
+        .next()
+        .unwrap_or_default();
+    token.strip_prefix('-').is_some_and(|option| {
+        !option.is_empty()
+            && option
+                .bytes()
+                .all(|ch| ch.is_ascii_alphabetic() || ch == b'-')
+    })
 }
 
 #[cfg(not(windows))]

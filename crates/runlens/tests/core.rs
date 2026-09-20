@@ -302,6 +302,25 @@ fn path_normalization_preserves_similar_external_roots() {
         redactor.text(&format!("prefix{root}/input")),
         format!("prefix{root}/input")
     );
+    for option in ["-I", "-L", "-isystem"] {
+        assert_eq!(
+            redactor.argv(&[format!("{option}{root}/include")]),
+            [format!("{option}${{workspace}}/include")]
+        );
+        assert_eq!(
+            redactor.text(&format!("tool {option}{temporary}/include")),
+            format!("tool {option}${{temporary}}/include")
+        );
+        assert_eq!(
+            redactor.text(&format!("{option}{root}-cache/include")),
+            format!("{option}{root}-cache/include")
+        );
+    }
+    #[cfg(windows)]
+    assert_eq!(
+        redactor.argv(&[r"-Ic:\RUNLENS\project\include".into()]),
+        [r"-I${workspace}\include"]
+    );
     #[cfg(windows)]
     assert_eq!(
         redactor.text(r"--file=C:\Runlens\project\input"),
