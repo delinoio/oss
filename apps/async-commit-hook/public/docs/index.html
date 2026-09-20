@@ -584,6 +584,23 @@ brew upgrade async-commit-hook</pre
         </p>
       </section>
 
+      <section id="symlinks">
+        <h2>Committed symbolic links</h2>
+        <p>
+          On Windows, committed symbolic links are ordinary files containing
+          their exact link target text, matching Git with
+          <code>core.symlinks=false</code>. Targets are never dereferenced during
+          preparation; Developer Mode and administrator privileges are not required.
+          macOS and Linux retain native symbolic links. Checks that require
+          native link behavior should select those platforms in their configuration.
+        </p>
+        <p>
+          Windows results from versions that prepared native links are incompatible
+          with this representation. Submit <code>ach run --commit SHA</code> for
+          fresh validation; old results remain available for inspection.
+        </p>
+      </section>
+
       <section id="existing-hooks">
         <h2>Existing hooks and hook managers</h2>
         <p>

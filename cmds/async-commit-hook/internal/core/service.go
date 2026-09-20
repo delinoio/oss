@@ -240,6 +240,9 @@ func (s *Service) Rerun(id string, failedOnly bool) (Receipt, error) {
 	if original.OS != runtime.GOOS || original.Arch != runtime.GOARCH {
 		return Receipt{}, E("incompatible-context", "rerun requires the original OS and architecture", 2)
 	}
+	if err := validateSourceRepresentation(original, runtime.GOOS, runtime.GOARCH); err != nil {
+		return Receipt{}, err
+	}
 	selected := map[string]bool{}
 	var selectWithDeps func(string)
 	selectWithDeps = func(n string) {

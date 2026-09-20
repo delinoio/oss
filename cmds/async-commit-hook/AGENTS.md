@@ -105,3 +105,5 @@
 - Batch scheduler-only bulk fixture insertion in one real SQLite transaction; do not pay thousands of unrelated durable receipt flushes before the concurrency scenario starts. Preserve separate durability/acceptance integration tests.
 
 - Stream commit history in fixed pages of 100 without buffering Git stdout; drain long subjects while retaining at most a 4 KiB valid UTF-8 display prefix with an ellipsis. Parent headers are capped at 16 KiB and rejected whole on overflow, preserving exact ancestry for accepted records.
+
+- Windows materializes committed symlink entries as exact regular link-text files and sets managed core.symlinks=false, independent of privileges and source checkout settings. Include this fixed source representation in Windows fingerprints; reject legacy Windows preparation/rerun contexts rather than inherit native-link evidence. Unix links and fingerprints remain unchanged.

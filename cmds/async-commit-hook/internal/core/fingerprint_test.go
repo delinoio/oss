@@ -31,14 +31,14 @@ path="report.xml"
 	}
 	env := map[string]string{"PUBLIC_INPUT": "one"}
 	want := Fingerprint(p, env)
-	// Preserve existing digests for the default presentation/gate configuration.
+	// Preserve native-link digests; Windows now has a distinct source representation.
 	legacy := Hash(Encode(struct {
 		Project     Project
 		Environment map[string]string
 		OS, Arch    string
 	}{p, env, runtime.GOOS, runtime.GOARCH}))
-	if want != legacy {
-		t.Fatal("default v1 fingerprint compatibility changed")
+	if (want == legacy) != (runtime.GOOS != "windows") {
+		t.Fatal("source representation fingerprint compatibility changed incorrectly")
 	}
 	for _, policy := range []PushPolicy{PushBlock, PushWait, PushRun} {
 		for _, base := range []string{"", "origin/main", "another-branch"} {

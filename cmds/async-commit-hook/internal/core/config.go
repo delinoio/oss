@@ -278,6 +278,9 @@ func (c Command) SelectedShell(osName string) Shell {
 }
 func Hash(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }
 func Fingerprint(p Project, env map[string]string) string {
+	return fingerprintForPlatform(p, env, runtime.GOOS, runtime.GOARCH)
+}
+func fingerprintForPlatform(p Project, env map[string]string, osName, arch string) string {
 	// Whitelist execution inputs instead of hashing the entire configuration.
 	// Keep the old default-policy serialization slot constant for compatibility
 	// with existing v1 default-config digests; the selected push policy and diff
@@ -289,10 +292,11 @@ func Fingerprint(p Project, env map[string]string) string {
 	}
 	execution := executionConfig{p.Version, PushBlock, p.Checks}
 	return Hash(Encode(struct {
-		Project     executionConfig
-		Environment map[string]string
-		OS, Arch    string
-	}{execution, env, runtime.GOOS, runtime.GOARCH}))
+		Project              executionConfig
+		Environment          map[string]string
+		OS, Arch             string
+		SourceRepresentation sourceRepresentation `json:",omitempty"`
+	}{execution, env, osName, arch, sourceRepresentationForOS(osName)}))
 }
 func PublicEnvironment(p Project) (map[string]string, error) {
 	values := map[string]string{}

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 )
 
@@ -249,6 +250,9 @@ func declaresLFSFilter(attributes string) bool {
 }
 
 func (s *Store) Prepare(ctx context.Context, r Run) (string, error) {
+	if err := validateSourceRepresentation(r, runtime.GOOS, runtime.GOARCH); err != nil {
+		return "", err
+	}
 	dir := filepath.Join(s.Root, "workspaces", r.ID)
 	if _, err := os.Lstat(dir); err == nil {
 		return "", E("workspace-exists", "a previous owned workspace requires interruption recovery", 3)
@@ -271,6 +275,11 @@ func (s *Store) Prepare(ctx context.Context, r Run) (string, error) {
 	}
 	if _, err := Git(ctx, dir, "config", "ach.managed", "true"); err != nil {
 		return dir, err
+	}
+	if sourceRepresentationForOS(runtime.GOOS) == symlinkTextFiles {
+		if _, err := Git(ctx, dir, "config", "core.symlinks", "false"); err != nil {
+			return dir, err
+		}
 	}
 	// Local fetch creates independent objects: source GC/removal cannot invalidate an accepted workspace.
 	if _, err := Git(ctx, dir, "-c", "protocol.file.allow=always", "fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--", r.Source, r.Commit); err != nil {

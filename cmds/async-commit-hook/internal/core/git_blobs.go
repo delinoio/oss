@@ -6,12 +6,16 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 )
 
 // One batch session streams raw objects without filters or working-tree conversions.
 func materializeBlobs(ctx context.Context, dir string, owned *os.Root, sha string) error {
+	return materializeBlobsWithRepresentation(ctx, dir, owned, sha, sourceRepresentationForOS(runtime.GOOS))
+}
+func materializeBlobsWithRepresentation(ctx context.Context, dir string, owned *os.Root, sha string, representation sourceRepresentation) error {
 	cmd := gitCommand(ctx, dir, "cat-file", "--batch")
 	input, err := cmd.StdinPipe()
 	if err != nil {
@@ -67,7 +71,7 @@ func materializeBlobs(ctx context.Context, dir string, owned *os.Root, sha strin
 		if err = owned.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			return err
 		}
-		if entry.Mode == "120000" {
+		if entry.Mode == "120000" && representation != symlinkTextFiles {
 			// OS symlink targets are bounded; never allocate an arbitrary blob as a path.
 			if size > 64*1024 {
 				return E("unsupported-source-path", "symlink target exceeds supported path size", 2)
@@ -80,6 +84,9 @@ func materializeBlobs(ctx context.Context, dir string, owned *os.Root, sha strin
 				return Wrap("workspace-write", err)
 			}
 		} else {
+			// Windows always uses Git's core.symlinks=false representation. Preserve
+			// exact link-text bytes without requiring Developer Mode or privilege,
+			// and without dereferencing a target inside or outside the workspace.
 			mode := os.FileMode(0600)
 			if entry.Mode == "100755" {
 				mode = 0700
