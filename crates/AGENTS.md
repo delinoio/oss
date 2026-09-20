@@ -153,6 +153,6 @@
 
 ### clibox Rules
 
-- Preserve the help/version-only CLI, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`.
-- This scaffold has an explicitly approved crates.io publication contract; register it as a workspace and cargo-mono release target. Do not add domain commands implicitly.
+- Preserve the six utility command contracts, compatible root help/version, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`. Keep OS adapters private and mockable, diagnostics redacted (including parser/tool failures), and stdout dedicated to results.
+- clibox remains an approved workspace/cargo-mono crates.io release target. Changes beyond issue #916 require an explicit contract update. Preserve safe Windows batch argv dispatch, partial port-enumeration errors, process/ownership revalidation before forceful termination, a shared five-second verification wait, and cancellation that leaves opened applications running. Validate clipboard text completely before replacement/output and retain Linux ownership with an installed background tool; never install tools automatically.
 - Standalone crate packages must contain their own MIT license and pass process-level CLI tests and Cargo publish dry-run.
