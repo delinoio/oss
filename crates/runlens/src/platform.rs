@@ -246,7 +246,13 @@ fn linux_os_identity(text: &str) -> Option<String> {
 pub fn resolve(program: &str, env: &[(OsString, OsString)], cwd: &Path) -> Result<PathBuf> {
     let path = env
         .iter()
-        .find(|(key, _)| key.to_string_lossy().eq_ignore_ascii_case("PATH"))
+        .find(|(key, _)| {
+            if cfg!(windows) {
+                key.eq_ignore_ascii_case("PATH")
+            } else {
+                key == "PATH"
+            }
+        })
         .map(|(_, value)| value);
     which::which_in(program, path, cwd).map_err(|_| {
         Error::input("executable was not found in the selected PATH and working directory")
@@ -564,6 +570,49 @@ pub fn inherited_stdio_complete(stdin_inherited: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn executable_lookup_uses_platform_environment_key_semantics() {
+        let root = tempfile::tempdir().unwrap();
+        let selected = root.path().join("selected");
+        let other = root.path().join("other");
+        std::fs::create_dir(&selected).unwrap();
+        std::fs::create_dir(&other).unwrap();
+        let program = if cfg!(windows) {
+            "lookup.exe"
+        } else {
+            "lookup"
+        };
+        for dir in [&selected, &other] {
+            std::fs::write(dir.join(program), b"fixture").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(dir.join(program), std::fs::Permissions::from_mode(0o700))
+                    .unwrap();
+            }
+        }
+        #[cfg(unix)]
+        {
+            let env = vec![
+                ("Path".into(), other.into_os_string()),
+                ("PATH".into(), selected.clone().into_os_string()),
+            ];
+            assert_eq!(
+                resolve(program, &env, root.path()).unwrap(),
+                selected.join(program)
+            );
+            assert!(resolve(program, &env[..1], root.path()).is_err());
+        }
+        #[cfg(windows)]
+        {
+            let env = vec![("pAtH".into(), selected.clone().into_os_string())];
+            assert_eq!(
+                resolve(program, &env, root.path()).unwrap(),
+                selected.join(program)
+            );
+        }
+    }
 
     #[test]
     fn linux_minimum_requires_known_ubuntu_at_or_above_2204() {
