@@ -45,7 +45,7 @@ Each project must have one project index document and one or more domain contrac
 
 ### clibox
 - `docs/project-clibox.md`
-- `docs/crates-clibox-foundation.md` (native CLI, TCP/HTTP/file readiness waits, redacted output and cancellation)
+- `docs/crates-clibox-foundation.md` (four private Rust crates: CLI composition, OS utilities, offline transformations, and TCP/HTTP/file readiness; npm/native distribution only)
 - `docs/packages-clibox-distribution-contract.md`
 
 ### nodeup
