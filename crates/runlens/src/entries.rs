@@ -42,6 +42,7 @@ fn reserve(previous: usize, next: usize) -> bool {
 struct Disk {
     connection: Connection,
     _file: NamedTempFile,
+    root: Arc<crate::temporary::Directory>,
 }
 enum Storage {
     Memory(BTreeMap<String, String>),
@@ -149,7 +150,8 @@ impl<T: Serialize + DeserializeOwned> Entries<T> {
             state.reserved = next_bytes;
         }
         if memory_storage && !fits_memory {
-            let file = NamedTempFile::new().map_err(|_| Error::storage())?;
+            let root = crate::temporary::storage_root().map_err(|_| Error::storage())?;
+            let file = NamedTempFile::new_in(root.path()).map_err(|_| Error::storage())?;
             let mut connection = Connection::open(file.path()).map_err(|_| Error::storage())?;
             connection
                 .execute_batch(
@@ -175,6 +177,7 @@ impl<T: Serialize + DeserializeOwned> Entries<T> {
             state.storage = Storage::Disk(Disk {
                 connection,
                 _file: file,
+                root,
             });
         }
         match &mut state.storage {
@@ -340,13 +343,17 @@ impl<T: schemars::JsonSchema> schemars::JsonSchema for Entries<T> {
 impl Drop for State {
     fn drop(&mut self) {
         MEMORY_USED.fetch_sub(self.reserved, Ordering::Relaxed);
-        if let Storage::Disk(Disk { connection, _file }) =
-            std::mem::replace(&mut self.storage, Storage::Memory(BTreeMap::new()))
+        if let Storage::Disk(Disk {
+            connection,
+            _file,
+            root,
+        }) = std::mem::replace(&mut self.storage, Storage::Memory(BTreeMap::new()))
         {
             drop(connection);
             if _file.close().is_err() {
                 crate::temporary::record_cleanup_failure();
             }
+            drop(root);
         }
     }
 }
@@ -354,6 +361,30 @@ impl Drop for State {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn retained_spills_share_the_collector_namespace_and_outlive_individual_maps() {
+        let mut baseline = Entries::new(0);
+        baseline.insert("baseline".into(), 7u32).unwrap();
+        let root = crate::temporary::storage_root().unwrap();
+        let path = {
+            let state = baseline.state.lock().unwrap();
+            let Storage::Disk(disk) = &state.storage else {
+                panic!("expected spilled baseline")
+            };
+            assert!(Arc::ptr_eq(&root, &disk.root));
+            disk._file.path().to_owned()
+        };
+        assert_eq!(path.parent(), Some(root.path()));
+        let mut current = Entries::new(0);
+        current.insert("current".into(), 9u32).unwrap();
+        drop(baseline);
+        assert!(!path.exists());
+        assert!(root.path().is_dir());
+        assert_eq!(current.get("current").unwrap(), Some(9));
+        drop(root);
+        assert_eq!(current.get("current").unwrap(), Some(9));
+    }
+
     #[test]
     fn retained_maps_share_one_memory_threshold() {
         set_memory_limit(256);
@@ -375,10 +406,10 @@ mod tests {
     fn index_cleanup_failure_is_observable() {
         let mut values = Entries::new(0);
         values.insert("path".into(), true).unwrap();
-        let path = {
+        let (path, _root) = {
             let state = values.state.lock().unwrap();
             match &state.storage {
-                Storage::Disk(disk) => disk._file.path().to_owned(),
+                Storage::Disk(disk) => (disk._file.path().to_owned(), Arc::clone(&disk.root)),
                 _ => panic!("expected a disk index"),
             }
         };

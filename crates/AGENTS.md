@@ -215,6 +215,7 @@
 - Linux nested execution reuses the inherited seccomp listener; do not install a second USER_NOTIF listener from preload hooks.
 - Runlens Linux dynamic and static targets must both install inherited kernel syscall collection; libc interposition alone cannot establish completeness.
 - Runlens must retain redacted clean/repeat HOME and cache accesses as out-of-scope evidence; omit only tracer-private storage from access records.
+- All Runlens metadata spills, including retained baselines, share the excluded tracer-private namespace with collector files; keep storage alive through its owning indexes and surface cleanup failures.
 - Runlens Windows NT attribute hooks must copy and bound untrusted caller memory before parsing; malformed attributes preserve the original syscall and mark collection incomplete.
 
 - Runlens Linux libc execveat must preserve every original operand and flag; inherited kernel collection owns its observations.

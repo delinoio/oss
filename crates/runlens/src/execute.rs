@@ -68,14 +68,23 @@ async fn observe_inner(request: Request<'_>, hook: impl FnOnce()) -> Result<Exec
             "execution cancelled before launch",
         ));
     }
-    let owned = crate::temporary::Directory::new("runlens-").map_err(|_| Error::storage())?;
+    let storage = crate::temporary::storage_root().map_err(|_| Error::storage())?;
+    let owned = crate::temporary::Directory::new_in(storage.path(), "execution-")
+        .map_err(|_| Error::storage())?;
     let mut temporary = request
         .temporary
         .iter()
         .map(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))
         .collect::<Vec<_>>();
-    let collector_root = owned.path().canonicalize().map_err(|_| Error::storage())?;
-    temporary.push(collector_root.clone());
+    let storage_root = storage
+        .path()
+        .canonicalize()
+        .map_err(|_| Error::storage())?;
+    // Callers may enumerate the original temporary alias (macOS /var, or a
+    // selected symlink) while descriptor observations use its canonical path.
+    let storage_paths = [storage_root.clone(), storage.path().to_owned()];
+    temporary.push(storage_root.clone());
+    temporary.push(storage.path().to_owned());
     let refs = temporary.iter().map(PathBuf::as_path).collect::<Vec<_>>();
     let redactor = Redactor::new(request.root, &refs, &request.config.redaction)?;
     let exclusions = request
@@ -222,9 +231,12 @@ async fn observe_inner(request: Request<'_>, hook: impl FnOnce()) -> Result<Exec
                             raw_path
                         };
                         let path = raw_path.as_path();
-                        // Only tracer-owned IPC/library files are hidden. The
-                        // child's isolated HOME/cache is observable evidence.
-                        if crate::privacy::within_root(path, &collector_root) {
+                        // Include retained baseline and snapshot spill indexes in
+                        // tracer-private storage. Fresh HOME/cache remains visible.
+                        if storage_paths
+                            .iter()
+                            .any(|root| crate::privacy::within_root(path, root))
+                        {
                             continue;
                         }
                         let key = redactor.path(path);

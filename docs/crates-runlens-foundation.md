@@ -757,3 +757,13 @@ still fail. Native regression coverage uses separate non-Git workspaces and ever
 one-sided/two-sided missing-revision combination.
 
 macOS observes dyld image additions, including images mapped before tracer attachment. Each loaded library contributes read evidence. The separately bound main executable and private collector are excluded from this loader check; only active shared-cache images with matching Mach-O cache flags avoid incompleteness. Loose/custom libraries retain their original execution but cannot certify collection, because naming a loaded image does not bind earlier loader reads or initializer accesses. Native tests rebuild a custom external dylib without changing its executable and verify changed stdout, incomplete receipts, and read-policy denial.
+
+Spilled metadata and per-execution collector files share a private storage root.
+A weak process registry lets retained baseline indexes and later snapshots share
+that namespace; indexes keep it alive only until their last owner drops. Both
+snapshot exclusion and collected-access filtering omit the entire private root,
+while caller temporary files and fresh HOME/cache evidence remain observable.
+Cleanup closes each SQLite connection/file before releasing the directory owner,
+and failures retain the existing typed cleanup classification. Native enumeration
+fixtures force before-snapshot spills, read the temporary tree, verify no private
+index appears as an external dependency, and check cleanup after serialization.

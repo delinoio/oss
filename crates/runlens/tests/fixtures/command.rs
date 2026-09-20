@@ -6,6 +6,25 @@ mod windows_native;
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
+        "scan-temporary" => {
+            fn scan(path: &std::path::Path, depth: usize) -> usize {
+                if depth > 4 {
+                    return 0;
+                }
+                let mut files = 0;
+                for entry in fs::read_dir(path).unwrap() {
+                    let entry = entry.unwrap();
+                    if entry.file_type().unwrap().is_dir() {
+                        scan(&entry.path(), depth + 1);
+                    } else {
+                        let _ = fs::read(entry.path());
+                        files += 1;
+                    }
+                }
+                files
+            }
+            println!("{}", scan(std::path::Path::new(&args[1]), 0));
+        }
         #[cfg(unix)]
         "chdir" | "fchdir" => {
             let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();

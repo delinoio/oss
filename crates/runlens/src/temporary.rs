@@ -1,7 +1,25 @@
 //! Cleanup errors remain visible even on early-return and disposable-index
 //! paths.
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{
+    Arc, Mutex, Weak,
+    atomic::{AtomicBool, Ordering},
+};
 static CLEANUP_FAILED: AtomicBool = AtomicBool::new(false);
+static STORAGE_ROOT: Mutex<Weak<Directory>> = Mutex::new(Weak::new());
+
+// A weak registry shares one tracer-private namespace with retained report
+// indexes, without keeping disposable storage alive after the last owner exits.
+pub(crate) fn storage_root() -> std::io::Result<Arc<Directory>> {
+    let mut current = STORAGE_ROOT
+        .lock()
+        .map_err(|_| std::io::Error::other("private storage lock failed"))?;
+    if let Some(root) = current.upgrade() {
+        return Ok(root);
+    }
+    let root = Arc::new(Directory::new("runlens-private-")?);
+    *current = Arc::downgrade(&root);
+    Ok(root)
+}
 pub fn record_cleanup_failure() {
     CLEANUP_FAILED.store(true, Ordering::Relaxed);
     tracing::error!(
@@ -19,6 +37,13 @@ impl Directory {
         tempfile::Builder::new()
             .prefix(prefix)
             .tempdir()
+            .map(|value| Self(Some(value)))
+    }
+
+    pub(crate) fn new_in(root: &std::path::Path, prefix: &str) -> std::io::Result<Self> {
+        tempfile::Builder::new()
+            .prefix(prefix)
+            .tempdir_in(root)
             .map(|value| Self(Some(value)))
     }
 

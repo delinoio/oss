@@ -4338,3 +4338,60 @@ fn macos_custom_loader_dependencies_cannot_certify_complete_collection() {
         assert_eq!(policy.status.code(), Some(5), "{policy:?}");
     }
 }
+
+#[test]
+fn snapshot_spills_remain_private_during_target_temp_enumeration() {
+    let root = tempfile::tempdir().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    fs::write(temporary.path().join("user-temporary"), "user-owned").unwrap();
+    for index in 0..100 {
+        fs::write(root.path().join(format!("input-{index}")), "input").unwrap();
+    }
+    fs::write(
+        root.path().join("runlens.toml"),
+        "schema_version = 1\n[limits]\nmemory_bytes = 8192\ntotal_bytes = \
+         1048576\n[policy]\ndeny_reads = [\"**/runlens-private-*/**\"]\n",
+    )
+    .unwrap();
+    let output = cli_command()
+        .env("TMPDIR", temporary.path())
+        .env("TEMP", temporary.path())
+        .env("TMP", temporary.path())
+        .current_dir(root.path())
+        .args([
+            "run",
+            "--save",
+            "spill.json",
+            "--",
+            fixture(),
+            "scan-temporary",
+            temporary.path().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        "1",
+        "only the user file belongs at the temporary root"
+    );
+    let report = parse(root.path(), "spill.json");
+    let accesses = report["executions"][0]["accesses"].as_object().unwrap();
+    assert!(
+        accesses
+            .iter()
+            .any(|(path, access)| path.ends_with("/user-temporary") && access["read"] == true)
+    );
+    assert!(
+        !accesses
+            .keys()
+            .any(|path| path.contains("runlens-private-"))
+    );
+    let policy = invoke(root.path(), &["policy", "check", "spill.json", "--json"]);
+    assert!(policy.status.success(), "{policy:?}");
+    assert_eq!(
+        fs::read_dir(temporary.path()).unwrap().count(),
+        1,
+        "all tracer storage must be cleaned after report serialization"
+    );
+}
