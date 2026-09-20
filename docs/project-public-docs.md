@@ -36,7 +36,7 @@ Provide the Rspress-based public documentation site for user-facing product and 
 
 ## Shared Linux package documentation
 
-The `/linux-packages` clean route owns shared key verification, APT/DNF registration, channel selection, installation, update and removal guidance for the six CLI projects. It does not duplicate their product guides.
+The `/linux-packages` clean route owns shared key verification, APT/DNF registration, channel selection, installation, update and removal guidance for the seven CLI projects. It does not duplicate their product guides.
 
 The canonical public-docs production origin is `https://oss.delino.io`.
 

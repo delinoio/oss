@@ -84,4 +84,6 @@ derun mcp
 
 ## APT and DNF
 
+Native packages for `derun` are not published yet. Use the installation methods above for now. The commands below apply after the first native package release.
+
 Follow [Linux Packages](/linux-packages) to verify the repository key and register stable. Then install `derun` with `sudo apt-get install derun` or `sudo dnf install derun`. Use the same package manager for updates and removal.

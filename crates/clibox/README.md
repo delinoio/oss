@@ -179,3 +179,7 @@ For port permission errors, inspect the returned partial results and use the app
 Automated parser, process, mocked OS-adapter and package tests cover these contracts. Real GUI behavior, desktop clipboard persistence and application-wait verification remain follow-up validation; mocked coverage does not establish those desktop observations. To roll back, install an earlier exact package version. Previous OS effects are not undone.
 
 Licensed under MIT.
+
+## Linux APT and DNF
+
+Native packages are not published yet. After the first native package release, register the stable repository using the [Linux package setup guide](https://oss.delino.io/linux-packages), including its key fingerprint check. Then install with `sudo apt-get install clibox` or `sudo dnf install clibox` and check `clibox --version`. Native installation does not require Node.js. Update with `sudo apt-get install --only-upgrade clibox` or `sudo dnf upgrade clibox`; remove with `sudo apt-get remove clibox` or `sudo dnf remove clibox`. Desktop helpers remain separately installed runtime capabilities.

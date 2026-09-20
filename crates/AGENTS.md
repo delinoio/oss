@@ -166,3 +166,7 @@
 - Preserve the six utility command contracts, compatible root help/version, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`. Keep OS adapters private and mockable, diagnostics redacted (including parser/tool failures), and stdout dedicated to results.
 - clibox remains an approved workspace/cargo-mono crates.io release target. Changes beyond issues #916 and #919 require an explicit contract update. Preserve already-tokenized child quotes/backslashes without assignment unescaping, safe Windows batch argv dispatch, partial port-enumeration errors, process/ownership revalidation before forceful termination, a shared five-second verification wait, and cancellation that leaves opened applications running. Validate clipboard text completely before replacement/output and retain Linux ownership with an installed background tool; never install tools automatically.
 - Standalone crate packages must contain their own MIT license and pass process-level CLI tests and Cargo publish dry-run.
+
+- clibox GNU release builds use the shared pinned AlmaLinux 9/glibc 2.34 boundary for npm and stable APT/DNF distribution; preserve the existing musl targets and optional user-installed desktop tools.
+
+- The isolated Windows Ctrl+C test helper must explicitly clear inherited Ctrl+C-ignore state before spawning clibox, including under Git Bash release jobs. Keep this normalization confined to the test-owned process and include helper stdout/stderr on failure; production signal behavior is unchanged.

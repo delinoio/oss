@@ -255,7 +255,7 @@ When strict verification is requested for installed tools, `--require-verified` 
 
 ## Linux APT and DNF
 
-Delino provides a stable APT and DNF repository for this CLI. Packages support x86-64 and ARM64 on Ubuntu 22.04/24.04/26.04 LTS, Debian 12/13, Fedora 43/44, and RHEL-compatible 9/10 systems, including UBI, Rocky Linux and AlmaLinux.
+Native packages are not published yet. Use the installation methods above for now. The commands below apply after the first stable APT/DNF package release. Packages support x86-64 and ARM64 on Ubuntu 22.04/24.04/26.04 LTS, Debian 12/13, Fedora 43/44, and RHEL-compatible 9/10 systems, including UBI, Rocky Linux and AlmaLinux.
 
 The repository address is `https://pkgs.oss.delino.io`. Verify its public RSA 4096 key before registering it:
 

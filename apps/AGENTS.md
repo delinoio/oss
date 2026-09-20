@@ -162,3 +162,5 @@
 - Only the shared package registration page may show its exact contracted `/etc/apt`, `/etc/yum.repos.d` and `/usr/share/keyrings` installation paths; never broaden unrelated public filesystem-path exceptions.
 - The canonical public-docs production origin is `https://oss.delino.io`; shared Linux package guidance is `https://oss.delino.io/linux-packages`.
 - Public native-package registration examples must spell out the complete repository configuration with a quoted heredoc, preserving APT Signed-By and both DNF signature checks. Do not bootstrap trust by installing an unverified configuration file downloaded from package storage.
+
+- Native package documentation must distinguish implemented release integration from published availability. No native packages have been published yet; mark every CLI package-manager example as unavailable until its own public installation verification completes. Runmoor and clibox use stable.

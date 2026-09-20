@@ -10,7 +10,7 @@ For most macOS and Linux users, start with Homebrew. For Windows users, start wi
 
 | Method | Use this when |
 | --- | --- |
-| APT / DNF | You want Linux installation, updates and removal managed by your distribution’s package manager; see [Linux APT and DNF](#linux-apt-and-dnf). |
+| APT / DNF | Not published yet. See the planned [Linux APT and DNF](#linux-apt-and-dnf). |
 | Homebrew | You are on macOS or Linux and already use Homebrew, or you want the simplest managed install path. |
 | Direct installers | You want a first-party release artifact without Homebrew or `cargo-binstall`. Use pinned commands in CI or audited environments. |
 | `cargo-binstall` | You already have Rust tooling and want to install from first-party GitHub Release assets without source-build fallback. |
@@ -290,7 +290,7 @@ The value must be a non-negative integer number of seconds. Invalid values such 
 
 ## Linux APT and DNF
 
-Delino provides a stable APT and DNF repository for this CLI. Packages support x86-64 and ARM64 on Ubuntu 22.04/24.04/26.04 LTS, Debian 12/13, Fedora 43/44, and RHEL-compatible 9/10 systems, including UBI, Rocky Linux and AlmaLinux.
+Native packages for nodeup are not published yet. Use the installation methods above for now. The stable repository registration and installation commands below apply after the first native package release. Packages support x86-64 and ARM64 on Ubuntu 22.04/24.04/26.04 LTS, Debian 12/13, Fedora 43/44, and RHEL-compatible 9/10 systems, including UBI, Rocky Linux and AlmaLinux.
 
 The repository address is `https://pkgs.oss.delino.io`. Verify its public RSA 4096 key before registering it:
 
