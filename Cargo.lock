@@ -1676,7 +1676,9 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "futures-util",
+ "h2",
  "hickory-resolver",
+ "http",
  "hyper",
  "libc",
  "libproc",

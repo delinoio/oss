@@ -180,12 +180,11 @@ fn typed_errors_distinguish_retryable_readiness_from_terminal_faults() {
     assert!(matches!(native_tls(malformed), Err(Code::TrustStore)));
 }
 
-async fn tls_server(
+fn tls_server_config(
     name: &str,
 ) -> (
-    Url,
     rustls::pki_types::CertificateDer<'static>,
-    tokio::task::JoinHandle<()>,
+    rustls::ServerConfig,
 ) {
     let key = rcgen::KeyPair::generate().unwrap();
     let cert = rcgen::CertificateParams::new(vec![name.to_owned()])
@@ -204,6 +203,17 @@ async fn tls_server(
         rustls::pki_types::PrivatePkcs8KeyDer::from(key.serialize_der()).into(),
     )
     .unwrap();
+    (der, server)
+}
+
+async fn tls_server(
+    name: &str,
+) -> (
+    Url,
+    rustls::pki_types::CertificateDer<'static>,
+    tokio::task::JoinHandle<()>,
+) {
+    let (der, server) = tls_server_config(name);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = Url::parse(&format!(
         "https://127.0.0.1:{}/secret-marker",
@@ -224,6 +234,62 @@ async fn tls_server(
         }
     });
     (url, der, handle)
+}
+
+#[tokio::test]
+async fn http2_only_tls_checks_finish_at_headers_without_a_body() {
+    for (method, status, expected) in [
+        (Method::Get, 200, Ok(())),
+        (Method::Head, 204, Ok(())),
+        (Method::Get, 503, Err(Code::UnexpectedStatus)),
+    ] {
+        let (cert, mut server) = tls_server_config("127.0.0.1");
+        server.alpn_protocols = vec![b"h2".to_vec()];
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = Url::parse(&format!("https://{}/", listener.local_addr().unwrap())).unwrap();
+        let (finished, finish) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let stream = tokio_rustls::TlsAcceptor::from(Arc::new(server))
+                .accept(stream)
+                .await
+                .unwrap();
+            assert_eq!(stream.get_ref().1.alpn_protocol(), Some(b"h2".as_slice()));
+            let mut connection = h2::server::handshake(stream).await.unwrap();
+            let (request, mut response) = connection.accept().await.unwrap().unwrap();
+            assert_eq!(
+                request.method(),
+                match method {
+                    Method::Get => http::Method::GET,
+                    Method::Head => http::Method::HEAD,
+                }
+            );
+            assert!(!request.headers().contains_key("authorization"));
+            // Keep the body stream open forever. Only response headers can make
+            // this check complete, including for an unexpected status.
+            let _body = response
+                .send_response(
+                    http::Response::builder().status(status).body(()).unwrap(),
+                    false,
+                )
+                .unwrap();
+            tokio::select! {
+                _ = finish => {},
+                next = connection.accept() => assert!(next.is_none()),
+            }
+        });
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(cert).unwrap();
+        let client = http_client(Some(tls_with_roots(roots).unwrap())).unwrap();
+        assert_eq!(
+            timeout(Duration::from_secs(3), http(&client, &url, method, None))
+                .await
+                .unwrap(),
+            expected
+        );
+        let _ = finished.send(());
+        server.await.unwrap();
+    }
 }
 
 #[tokio::test]

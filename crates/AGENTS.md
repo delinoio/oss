@@ -158,6 +158,7 @@
 - Wait command kinds, HTTP methods, outcomes, and error classifications use enums. Poll immediately, delay only after unsuccessful attempts, clip all work/delays to monotonic deadlines, and cancel without target mutation or service termination.
 - Let every resolved TCP address attempt finish within the shared deadline until any succeeds; preserve terminal errors only for an all-address failure instead of discarding other addresses on one destination's error.
 - Use Rust networking and metadata only. HTTP verifies OS trust/hostname, completes at headers, disables proxies/credentials/redirects/client retries and custom CA overrides; file readiness follows symlinks but requires a regular file.
+- Enable HTTP/2 explicitly and advertise both h2 and HTTP/1.1 in the preconfigured TLS client's ALPN; preserve headers-only readiness for either negotiated protocol.
 - Preserve usable OS trust roots when other entries fail loading or parsing; fail trust initialization only when no usable roots remain, and expose counts rather than individual loader errors or certificate data.
 - Keep one in-flight HTTP client/native trust initialization across attempt timeouts; retries await the retained result and cancellation must not wait for an uninterruptible OS trust call.
 - Wait results and all authored parser/runtime/tracing diagnostics must omit input locators, credentials, bodies, raw argv, and dependency errors. Static diagnostics survive quiet/log filtering; dependency log targets remain disabled even with detailed `RUST_LOG`. Respect `NO_COLOR` and TTY-only color.

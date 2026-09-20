@@ -192,13 +192,17 @@ fn native_tls(
 }
 
 fn tls_with_roots(roots: rustls::RootCertStore) -> Result<rustls::ClientConfig, Code> {
-    Ok(rustls::ClientConfig::builder_with_provider(Arc::new(
+    let mut config = rustls::ClientConfig::builder_with_provider(Arc::new(
         rustls::crypto::ring::default_provider(),
     ))
     .with_safe_default_protocol_versions()
     .map_err(|_| Code::TrustStore)?
     .with_root_certificates(roots)
-    .with_no_client_auth())
+    .with_no_client_auth();
+    // Reqwest preserves ALPN on preconfigured Rustls clients, so advertise both
+    // supported protocols here instead of relying on its default TLS builder.
+    config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    Ok(config)
 }
 
 fn http_client(tls: Option<rustls::ClientConfig>) -> Result<Client, Code> {
@@ -208,7 +212,6 @@ fn http_client(tls: Option<rustls::ClientConfig>) -> Result<Client, Code> {
         .retry(reqwest::retry::never())
         .referer(false)
         .pool_max_idle_per_host(0)
-        .http1_only()
         .dns_resolver(Arc::new(Resolver));
     // Always select a known Rustls provider, even when workspace feature
     // unification also enables reqwest's native-TLS or bundled-root features.

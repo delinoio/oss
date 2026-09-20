@@ -146,7 +146,7 @@ Use an absolute `http` or `https` URL. GET is the default; `--method head` selec
 
 Redirects are not followed. A redirect succeeds only when its exact status was explicitly selected. Unexpected statuses, DNS/connection failures, temporary network failures, and attempt timeouts retry. Certificate validation, OS trust initialization, TLS protocol errors, malformed HTTP responses, permissions, and other runtime faults terminate.
 
-HTTPS verifies certificate trust and hostname using the OS trust store. Linux systems, including Alpine, need their OS CA certificates installed (Alpine: `apk add ca-certificates`). No OpenSSL runtime library is required. Proxies, authentication, custom headers, custom CA options, client certificates, and certificate-verification bypass are unsupported. Proxy environment discovery and implicit credentials are disabled; URL user information is rejected. `SSL_CERT_FILE` and `SSL_CERT_DIR` do not override OS trust. Polling retries are controlled by clibox, without automatic HTTP-client retries.
+HTTPS verifies certificate trust and hostname using the OS trust store. HTTPS negotiates HTTP/2 or HTTP/1.1 with the server; plain HTTP uses HTTP/1.1. Linux systems, including Alpine, need their OS CA certificates installed (Alpine: `apk add ca-certificates`). No OpenSSL runtime library is required. Proxies, authentication, custom headers, custom CA options, client certificates, and certificate-verification bypass are unsupported. Proxy environment discovery and implicit credentials are disabled; URL user information is rejected. `SSL_CERT_FILE` and `SSL_CERT_DIR` do not override OS trust. Polling retries are controlled by clibox, without automatic HTTP-client retries.
 
 ### Files
 
