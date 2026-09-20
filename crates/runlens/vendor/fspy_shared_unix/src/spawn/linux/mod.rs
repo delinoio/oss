@@ -61,6 +61,11 @@ pub fn handle_exec(
         }
     }
 
-    command.envs.retain(|(name, _)| name != LD_PRELOAD && name != PAYLOAD_ENV_NAME);
+    #[cfg(not(target_env = "musl"))]
+    crate::exec::remove_preload_entry(
+        &mut command.envs,
+        encoded_payload.payload.preload_path.as_os_str().as_bytes(),
+    );
+    command.envs.retain(|(name, _)| name != PAYLOAD_ENV_NAME);
     Ok(Some(PreExec(encoded_payload.payload.seccomp_payload.clone())))
 }

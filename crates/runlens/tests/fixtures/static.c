@@ -1,6 +1,7 @@
 /* A static Linux child must be observed by seccomp, without LD_PRELOAD. */
 #define _GNU_SOURCE
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -10,6 +11,13 @@
 #include <sys/vfs.h>
 #include <sys/inotify.h>
 int main(int argc, char **argv) {
+    if (argc == 3 && !strcmp(argv[1], "preload-child")) {
+        const char *preload = getenv("LD_PRELOAD");
+        printf("%s\n", preload ? preload : "absent");
+        fflush(stdout);
+        execl(argv[2], argv[2], (char *)NULL);
+        return 90;
+    }
     if (argc == 3 && !strcmp(argv[1], "inotify-watch")) {
         int fd = inotify_init1(IN_CLOEXEC | IN_NONBLOCK);
         if (fd < 0) return 90;

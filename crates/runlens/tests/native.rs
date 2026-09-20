@@ -4766,3 +4766,73 @@ fn malformed_windows_file_attributes_preserve_syscall_results_and_child() {
         false
     );
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn static_execution_preserves_user_preload_for_dynamic_descendants() {
+    let Some(static_child) = std::env::var_os("RUNLENS_STATIC_FIXTURE") else {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "static fixture required in CI"
+        );
+        return;
+    };
+    let root = tempfile::tempdir().unwrap();
+    let library = root.path().join("caller.so");
+    let dynamic = root.path().join("dynamic-child");
+    fs::write(
+        root.path().join("library.c"),
+        "int runlens_caller_probe(void) { return 17; }",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("dynamic.c"),
+        r#"#include <dlfcn.h>
+#include <stdio.h>
+int main(void) {
+    int (*probe)(void) = dlsym(RTLD_DEFAULT, "runlens_caller_probe");
+    if (!probe) return 91;
+    printf("probe=%d\n", probe());
+    return 0;
+}"#,
+    )
+    .unwrap();
+    assert!(
+        Command::new("cc")
+            .args(["-shared", "-fPIC", "library.c", "-o", "caller.so"])
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        Command::new("cc")
+            .args(["dynamic.c", "-ldl", "-o", "dynamic-child"])
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .success()
+    );
+    let plain = Command::new(&static_child)
+        .arg("preload-child")
+        .arg(&dynamic)
+        .env("LD_PRELOAD", &library)
+        .output()
+        .unwrap();
+    assert!(plain.status.success(), "{plain:?}");
+    let result = cli_command()
+        .current_dir(root.path())
+        .args(["run", "--save", "preload.json", "--"])
+        .arg(&static_child)
+        .arg("preload-child")
+        .arg(&dynamic)
+        .env("LD_PRELOAD", &library)
+        .output()
+        .unwrap();
+    assert!(result.status.success(), "{result:?}");
+    assert_eq!(result.stdout, plain.stdout);
+    assert_eq!(
+        parse(root.path(), "preload.json")["executions"][0]["outcome"]["collection_complete"],
+        true
+    );
+}

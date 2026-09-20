@@ -785,3 +785,9 @@ original NT call. The native malformed-file-attributes regression compares exact
 NT statuses with an untraced process and verifies child continuation; the preload
 unit test covers each pointer layer and malformed lengths. Remove this local
 patch only when upstream provides equivalent bounded, non-dereferencing handling.
+
+Linux static exec removes only the tracer-owned LD_PRELOAD entry, preserving
+caller preload bytes and dynamic-descendant loader behavior. The regression
+compares static environment output and a real caller-library symbol in a dynamic
+descendant against untraced execution. Removal: upstream must preserve caller
+preloads across static exec with equivalent unit and native coverage.

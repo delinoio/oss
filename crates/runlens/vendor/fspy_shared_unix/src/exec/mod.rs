@@ -220,6 +220,37 @@ pub fn append_path_env(
     }
 }
 
+/// Remove only the tracer's library from Linux's colon/space-separated preload
+/// list. Preserve caller bytes when no tracer entry exists, including empty and
+/// explicitly removed variables. Static images may later exec dynamic children.
+#[cfg(target_os = "linux")]
+pub fn remove_preload_entry(envs: &mut Vec<(BString, Option<BString>)>, value: &[u8]) {
+    for (name, entry) in envs.iter_mut() {
+        if name != "LD_PRELOAD" { continue; }
+        let Some(existing) = entry else { continue; };
+        let bytes: &[u8] = existing.as_ref();
+        let separator = |byte: u8| byte == b':' || byte == b' ';
+        let mut ranges = Vec::new();
+        let mut start = 0;
+        for end in 0..=bytes.len() {
+            if end != bytes.len() && !separator(bytes[end]) { continue; }
+            if &bytes[start..end] == value {
+                ranges.push(if start > 0 { start - 1..end } else { start..(end + usize::from(end < bytes.len())) });
+            }
+            start = end + 1;
+        }
+        if ranges.is_empty() { continue; }
+        let mut kept = bytes.to_vec();
+        // Mark removal ranges rather than draining: adjacent duplicate entries
+        // can share a separator, and must not shift or double-remove bytes.
+        let mut remove = vec![false; bytes.len()];
+        for range in ranges { remove[range].fill(true); }
+        let mut index = 0;
+        kept.retain(|_| { let keep = !remove[index]; index += 1; keep });
+        *entry = if kept.is_empty() { None } else { Some(kept.into()) };
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use bstr::BString;
@@ -292,5 +323,27 @@ mod tests {
         let mut envs = vec![(BString::from("LD_PRELOAD"), None)];
         append_path_env(&mut envs, "LD_PRELOAD", "/a.so");
         assert_eq!(env(&envs, b"LD_PRELOAD"), Some(b"/a.so".to_vec()));
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod preload_removal_tests {
+    use super::*;
+    #[test]
+    fn static_preloads_preserve_caller_entries() {
+        for (before, after) in [
+            (b"/user.so".as_slice(), Some(b"/user.so".as_slice())),
+            (b"/a.so /b.so", Some(b"/a.so /b.so")),
+            (b"/a.so /b.so:/tracer.so", Some(b"/a.so /b.so")),
+            (b"/tracer.so:/user.so", Some(b"/user.so")),
+            (b"/user.so:/tracer.so:/more.so", Some(b"/user.so:/more.so")),
+            (b"/tracer.so:/tracer.so", None),
+            (b"/tracer.so", None),
+            (b"", Some(b"")),
+        ] {
+            let mut envs = vec![(BString::from("LD_PRELOAD"), Some(BString::from(before)))];
+            remove_preload_entry(&mut envs, b"/tracer.so");
+            assert_eq!(envs[0].1.as_deref().map(AsRef::<[u8]>::as_ref), after);
+        }
     }
 }
