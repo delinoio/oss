@@ -10,6 +10,7 @@ import platform
 import re
 import subprocess
 import tarfile
+import tomllib
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -33,7 +34,7 @@ def digest(path):
         return hashlib.file_digest(handle, 'sha256').hexdigest()
 
 def source_version():
-    return re.search(r'^version = "([^"]+)"', (SOURCE / 'Cargo.toml').read_text(), re.M)[1]
+    return tomllib.loads((SOURCE / "Cargo.toml").read_text())["package"]["version"]
 
 def version(value):
     if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', value):
@@ -186,13 +187,18 @@ def homebrew(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['package', 'evidence', 'collect', 'readiness', 'homebrew'])
-    parser.add_argument('--directory', type=Path, required=True)
-    parser.add_argument('--version', required=True)
+    parser.add_argument('command', choices=['source-version', 'package', 'evidence', 'collect', 'readiness', 'homebrew'])
+    parser.add_argument('--directory', type=Path)
+    parser.add_argument('--version')
     parser.add_argument('--platform', choices=PLATFORMS)
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
     try:
+        if args.command == 'source-version':
+            print(version(source_version()))
+            return
+        if args.directory is None or args.version is None:
+            parser.error('--directory and --version are required for artifact commands')
         globals()[args.command](args)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         parser.exit(1, f'runlens release validation: {error}\n')

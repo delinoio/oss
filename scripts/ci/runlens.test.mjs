@@ -86,3 +86,15 @@ test("Windows native validation checks malformed process attribute memory", () =
   assert.equal(step.if, "runner.os == 'Windows'");
   assert.equal(step.run, "cargo test --locked --package fspy_preload_windows process_image_attributes_reject_malformed_memory_without_dereferencing");
 });
+
+test("native archives and evidence use the checked-out source version", () => {
+  const steps = native.jobs.native.steps;
+  const source = steps.find(step => step.id === "source");
+  assert.match(source.run, /runlens\.py source-version/u);
+  for (const command of ["package", "evidence"]) {
+    const step = steps.find(step => step.run?.includes(`runlens.py ${command}`));
+    assert.equal(step.env.RUNLENS_VERSION, "${{ steps.source.outputs.version }}");
+    assert.match(step.run, /--version "\$RUNLENS_VERSION"/u);
+    assert.doesNotMatch(step.run, /0\.1\.0/u);
+  }
+});

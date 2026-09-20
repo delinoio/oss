@@ -2,6 +2,8 @@
 """Offline artifact and release gate regressions; performs no publication."""
 import sys
 sys.dont_write_bytecode = True
+from contextlib import redirect_stdout
+from unittest.mock import patch
 import importlib.util
 import io
 import json
@@ -19,10 +21,24 @@ spec.loader.exec_module(release)
 
 class ReleaseTests(unittest.TestCase):
     def test_versions_are_closed(self):
-        self.assertEqual(release.version('0.1.0'), '0.1.0')
-        for version in ['0.1.1', 'v0.1.0', '00.1.0', '0.1.0;echo secret', '0.1.0-beta.1']:
+        self.assertEqual(release.version(release.source_version()), release.source_version())
+        for version in ['999999.0.0', 'v0.1.0', '00.1.0', '0.1.0;echo secret', '0.1.0-beta.1']:
             with self.assertRaises(ValueError):
                 release.version(version)
+
+    def test_source_version_follows_manifest_bumps(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            # A dependency version before [package] must not supply the version.
+            (source / 'Cargo.toml').write_text('[dependencies.fixture]\nversion = "9.0.0"\n[package]\nversion = "0.2.1"\n')
+            with patch.object(release, 'SOURCE', source), patch.object(sys, 'argv', ['runlens.py', 'source-version']):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    release.main()
+                self.assertEqual(output.getvalue(), '0.2.1\n')
+                self.assertEqual(release.version('0.2.1'), '0.2.1')
+                with self.assertRaises(ValueError):
+                    release.version('0.1.0')
 
     def test_inventory_and_minimum_os_gate(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -40,11 +56,11 @@ class ReleaseTests(unittest.TestCase):
                             info = tarfile.TarInfo(name)
                             info.size = 7
                             output.addfile(info, io.BytesIO(b'fixture'))
-                proof = {'schema_version': 1, 'version': '0.1.0', 'commit': commit, 'platform': key,
+                proof = {'schema_version': 1, 'version': release.source_version(), 'commit': commit, 'platform': key,
                          'archive': archive.name, 'sha256': release.digest(archive), 'minimum_os': True,
                          'native_execution': True, 'installer_fixture': True}
                 (root / f'evidence-{key}.json').write_text(json.dumps(proof))
-            args = SimpleNamespace(directory=root, version='0.1.0', dry_run=False)
+            args = SimpleNamespace(directory=root, version=release.source_version(), dry_run=False)
             release.collect(args)
             self.assertEqual(len((root / 'SHA256SUMS').read_text().splitlines()), 6)
             release.readiness(args)
@@ -58,7 +74,7 @@ class ReleaseTests(unittest.TestCase):
             release.readiness(args)
             (root / release.asset_name('darwin-amd64')).unlink()
             with self.assertRaises(ValueError):
-                release.inventory(root, '0.1.0')
+                release.inventory(root, release.source_version())
 
 if __name__ == '__main__':
     unittest.main()
