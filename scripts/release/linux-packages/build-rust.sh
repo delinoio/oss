@@ -22,10 +22,11 @@ print(pin['url'])
 print(pin['sha256'])
 PY
 )
-curl --proto '=https' --tlsv1.2 --fail --silent --show-error "${bootstrap[0]}" -o /tmp/delino-rustup-init
-printf '%s  %s\n' "${bootstrap[1]}" /tmp/delino-rustup-init | sha256sum --check --strict
-chmod 0755 /tmp/delino-rustup-init
-/tmp/delino-rustup-init -y --profile minimal --default-toolchain "$toolchain" --target "$target" --no-modify-path
+mkdir -p /tmp/delino-bootstrap
+curl --proto '=https' --tlsv1.2 --fail --silent --show-error "${bootstrap[0]}" -o /tmp/delino-bootstrap/rustup-init
+printf '%s  %s\n' "${bootstrap[1]}" /tmp/delino-bootstrap/rustup-init | sha256sum --check --strict
+chmod 0755 /tmp/delino-bootstrap/rustup-init
+/tmp/delino-bootstrap/rustup-init -y --profile minimal --default-toolchain "$toolchain" --target "$target" --no-modify-path
 rustup set auto-self-update disable
 cargo build --locked -p "$project" --release --target "$target"
 readelf --version-info "target/$target/release/$project"
