@@ -28,10 +28,14 @@ export async function publishArtifacts(artifacts, { dryRun = true, lookup = regi
     const reused = found !== null;
     if (!reused) {
       await publish(artifact);
-      for (let attempt = 0; attempt < 10; attempt++) {
+      // Registry metadata may lag a successful immutable upload for minutes.
+      // Allow 60 five-second delays, with each request separately capped at 30
+      // seconds, without repeating the publication write.
+      for (let attempt = 0; attempt <= 60; attempt++) {
         found = await lookup(artifact);
         if (found !== null) break;
-        if (attempt < 9) await delay(3000);
+        report("publish_pending", { name: artifact.name, version: artifact.version, attempt: attempt + 1 });
+        if (attempt < 60) await delay(5000);
       }
     }
     ensure(found === artifact.integrity, `Published package integrity was not confirmed: ${artifact.name}@${artifact.version}`);

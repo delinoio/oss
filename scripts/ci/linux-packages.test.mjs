@@ -26,7 +26,8 @@ test('all seven release workflows wait on native packages without changing relea
     assert.equal(job.with.project, project);
     assert.equal(job.with.mode, 'publish');
     assert.equal(job.with.revision, '${{ github.sha }}');
-    assert.doesNotMatch(JSON.stringify(job), /secrets:|id-token/u);
+    assert.equal(job.secrets, 'inherit');
+    assert.doesNotMatch(JSON.stringify(job), /id-token/u);
     if (!['derun', 'runmoor'].includes(project)) assert.match(source, /scripts\/release\/linux-packages\/build-rust\.sh/u);
   }
   const derun = yaml.load(read('.github/workflows/release-derun.yml'));
