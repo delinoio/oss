@@ -31,5 +31,8 @@ winapi = { workspace = true, features = [
 windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_UI_Shell"] }
 winsafe = { workspace = true, features = ["kernel"] }
 
+[target.'cfg(target_os = "windows")'.dev-dependencies]
+tempfile = { workspace = true }
+
 [lints]
 workspace = true

@@ -100,6 +100,9 @@ existing transaction-abort and UNSUPPORTED marker path while the child continues
 The Windows native workflow explicitly runs the checker regression with success,
 access/handle failures, and a real rejected DetourAttach call. Remove this patch
 when upstream preserves LONG error codes at all setup and teardown boundaries.
+The Windows preload test target retains its `tempfile` development dependency:
+even a filtered Detours test compiles the existing pathname helper fixtures.
+Remove this dependency only when those fixtures no longer require temporary files.
 
 Windows NtCreateFile classification includes creation, overwrite and supersede
 dispositions independently of DesiredAccess. Both create and open hooks include

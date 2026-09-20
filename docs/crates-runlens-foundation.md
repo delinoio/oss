@@ -446,6 +446,8 @@ and converting UTF-16 match offsets back to UTF-8 without byte-length guesses.
 The same root comparison applies to exclusions; Unix roots stay case-sensitive.
 Windows creation, overwrite, supersede and delete-on-close options produce write
 attempts even with read-only desired access; FILE_OPEN alone remains non-mutating.
+Native Windows CI compiles the complete preload unit-test target (including its
+temporary-file fixtures) before running the Detours setup-error regression.
 Windows file-information updates record source-handle writes before deletion or
 metadata mutation. Rename/link destinations and unknown information classes
 currently remain unsupported evidence and make collection incomplete; the child
