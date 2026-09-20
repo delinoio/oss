@@ -77,3 +77,5 @@
 - Connect list projections omit check arrays and diagnostics and include total check_count; preserve complete check detail for GetRun and CLI/MCP so list size never multiplies by the graph size.
 
 - Account lifecycle compatibility includes personal credential reference mappings, never their resolved values. Reject reuse/startup under changed references while any old owner remains.
+
+- Reject non-UTF-8 declared public environment values before snapshot serialization or fingerprinting; JSON replacement must never change execution inputs or collapse their identity.

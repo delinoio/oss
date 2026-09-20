@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -305,6 +306,9 @@ func PublicEnvironment(p Project) (map[string]string, error) {
 				return nil, E("environment-missing", "required environment variable "+e.Name+" is unavailable", 2)
 			}
 			if ok {
+				if !utf8.ValidString(value) {
+					return nil, E("invalid-environment", "public input "+e.Name+" must contain valid UTF-8", 2)
+				}
 				values[e.Name] = value
 			}
 		}
