@@ -614,13 +614,52 @@ fn clean_and_repeat_use_fresh_environments_without_worktree_changes() {
 #[test]
 fn clean_baselines_require_matching_source_selection() {
     let root = repository("read");
+    let baseline = invoke(
+        root.path(),
+        &["verify", "clean", "build", "--save", "baseline.json"],
+    );
+    // Keep failure classifications when a native runner cannot produce a clean
+    // baseline. Do not dump command arguments, paths, environment, or file data.
+    let evidence = fs::read(root.path().join("baseline.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .map(|report| {
+            let executions = report["executions"].as_array().map(|executions| {
+                executions
+                    .iter()
+                    .map(|execution| {
+                        let unknown = |stage: &str| {
+                            execution[stage].as_object().map(|states| {
+                                let mut reasons =
+                                    std::collections::BTreeMap::<String, usize>::new();
+                                for state in states.values() {
+                                    if let Some(reason) = state["reason"].as_str() {
+                                        *reasons.entry(reason.to_owned()).or_default() += 1;
+                                    }
+                                }
+                                reasons
+                            })
+                        };
+                        serde_json::json!({
+                            "outcome": execution["outcome"],
+                            "before_complete": execution["scope"]["before_complete"],
+                            "after_complete": execution["scope"]["after_complete"],
+                            "before_unknown": unknown("before"),
+                            "after_unknown": unknown("after"),
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            });
+            serde_json::json!({"verification": report["verification"], "executions": executions})
+        });
     assert!(
-        invoke(
-            root.path(),
-            &["verify", "clean", "build", "--save", "baseline.json"]
-        )
-        .status
-        .success()
+        baseline.status.success(),
+        "baseline exit={:?}; diagnostics={}; evidence={evidence:?}",
+        baseline.status.code(),
+        String::from_utf8_lossy(&baseline.stderr)
+            .chars()
+            .take(8192)
+            .collect::<String>(),
     );
     let verify = |extra: &[&str], report: &str| {
         let mut args = vec![
