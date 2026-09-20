@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, copyFileSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { gunzipSync } from "node:zlib";
+import { gzipSync, gunzipSync } from "node:zlib";
 import platforms from "../src/platforms.cjs";
 import { ensure, event, isMain, metadata, npm, packageRoot, registry, repository, revision, sourceText } from "./common.mjs";
 
@@ -65,8 +65,11 @@ export function buildPackage({ target, binary, output, sourceRevision = revision
   mkdirSync(destination, { recursive: true });
   const [packed] = JSON.parse(npm(["pack", "--json", "--ignore-scripts", "--pack-destination", destination], { cwd: directory }));
   ensure(packed.filename === tarballName(manifest.name, version), "Unexpected npm tarball filename");
-  const artifact = inspectTarball(path.join(destination, packed.filename), { version, sourceRevision });
-  ensure(artifact.integrity === packed.integrity, "npm pack integrity mismatch");
+  const file = path.join(destination, packed.filename);
+  const bytes = readFileSync(file);
+  ensure(integrity(bytes) === packed.integrity, "npm pack integrity mismatch");
+  writeFileSync(file, executableTarball(bytes, target ? `bin/${target.binary}` : "bin/clibox.cjs"));
+  const artifact = inspectTarball(file, { version, sourceRevision });
   event("pack", artifact);
   return artifact;
 }
@@ -96,6 +99,29 @@ export function tarEntries(bytes) {
   }
   ensure(offset + 1024 <= tar.length && tar.subarray(offset).every((value) => value === 0), "Invalid tar ending");
   return entries;
+}
+
+// NTFS cannot represent Unix execute bits, and npm pack does not always add
+// them to bin entries. Set the generated archive's executable mode before
+// recording its final integrity. Keep this at creation only: verification of
+// downloaded/retry artifacts must reject missing modes without changing bytes.
+export function executableTarball(bytes, executable) {
+  const entries = tarEntries(bytes);
+  ensure(entries.has(executable), "Missing generated executable");
+  const tar = gunzipSync(bytes, { maxOutputLength: 64 * 1024 * 1024 });
+  let offset = 0;
+  for (const [name, entry] of entries) {
+    if (name === executable) {
+      const header = tar.subarray(offset, offset + 512);
+      header.write("0000755\0", 100, 8, "ascii");
+      header.fill(32, 148, 156);
+      const checksum = header.reduce((sum, value) => sum + value, 0);
+      header.write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148, 8, "ascii");
+      break;
+    }
+    offset += 512 + Math.ceil(entry.bytes.length / 512) * 512;
+  }
+  return gzipSync(tar, { level: 9 });
 }
 
 export function inspectTarball(file, { version, sourceRevision }) {

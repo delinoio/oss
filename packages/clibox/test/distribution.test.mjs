@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import fs, { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import platforms from "../src/platforms.cjs";
 import { metadata, npm, sourceText } from "../scripts/common.mjs";
-import { buildPackage, inspectTarball, integrity, packageManifest, tarballName, tarEntries, verifySet } from "../scripts/package.mjs";
+import { buildPackage, executableTarball, inspectTarball, integrity, packageManifest, tarballName, tarEntries, verifySet } from "../scripts/package.mjs";
 import { publishArtifacts, registryIntegrity } from "../scripts/publish.mjs";
 
 const sourceRevision = "1".repeat(40);
@@ -68,6 +69,23 @@ test("generated metadata pins exact versions, platforms, public access and no li
   }
 });
 
+test("pack preserves executable shim mode when host chmod cannot set execute bits", (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "clibox-no-execute-bits-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  // Model the NTFS chmod limitation on every CI host, including Unix machines.
+  t.mock.method(fs, "chmodSync", () => {});
+  syncBuiltinESMExports();
+  try {
+    const artifact = buildPackage({ output: directory, sourceRevision });
+    const file = path.join(directory, "tarballs", artifact.filename);
+    assert.equal(tarEntries(readFileSync(file)).get("bin/clibox.cjs").mode & 0o777, 0o755);
+    assert.equal(artifact.integrity, integrity(readFileSync(file)));
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  }
+});
+
 test("pack validates native executable versions and the complete nine-tarball boundary", (t) => {
   const directory = mkdtempSync(path.join(tmpdir(), "clibox-artifacts-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
@@ -87,11 +105,24 @@ test("pack validates native executable versions and the complete nine-tarball bo
     const fixture = path.join(directory, target.suffix);
     mkdirSync(path.join(fixture, "bin"), { recursive: true });
     writeFileSync(path.join(fixture, "package.json"), JSON.stringify(packageManifest(target, version, sourceRevision)));
-    writeFileSync(path.join(fixture, "bin", target.binary), "inert fixture binary");
-    chmodSync(path.join(fixture, "bin", target.binary), target.os === "win32" ? 0o644 : 0o755);
+    const payload = Buffer.from("inert\r\nfixture\0binary");
+    writeFileSync(path.join(fixture, "bin", target.binary), payload);
     writeFileSync(path.join(fixture, "LICENSE"), sourceText("crates/clibox/LICENSE"));
     writeFileSync(path.join(fixture, "README.md"), sourceText("packages/clibox/README.md"));
     npm(["pack", "--ignore-scripts", "--pack-destination", tarballs], { cwd: fixture });
+    const file = path.join(tarballs, tarballName(target.name, version));
+    // Start with non-executable files on every host, including Windows where
+    // chmod cannot set POSIX execute bits. Windows PE packages accept that mode;
+    // Unix packages must reject it until creation finalizes the archive header.
+    assert.equal(tarEntries(readFileSync(file)).get(`bin/${target.binary}`).mode & 0o111, 0);
+    if (target.os !== "win32") {
+      const original = readFileSync(file);
+      assert.throws(() => inspectTarball(file, { version, sourceRevision }), /Missing executable mode/u);
+      assert.deepEqual(readFileSync(file), original);
+      writeFileSync(file, executableTarball(original, `bin/${target.binary}`));
+    }
+    inspectTarball(file, { version, sourceRevision });
+    assert.deepEqual(tarEntries(readFileSync(file)).get(`bin/${target.binary}`).bytes, payload);
   }
   assert.deepEqual(verifySet(tarballs, sourceRevision).map(({ name }) => name), names);
   writeFileSync(path.join(tarballs, "unexpected.txt"), "unexpected");
