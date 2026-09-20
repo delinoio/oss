@@ -32,23 +32,23 @@ Stop if the fingerprint differs. Keep signature verification enabled when instal
 After verifying the key, install it in a dedicated keyring and register stable:
 
 ```sh
-sudo install -d -m 0755 /etc/apt/keyrings
+sudo install -d -m 0755 /usr/share/keyrings
 gpg --dearmor --output delino-packages.gpg delino-packages.asc
-sudo install -m 0644 delino-packages.gpg /etc/apt/keyrings/delino-packages.gpg
+sudo install -m 0644 delino-packages.gpg /usr/share/keyrings/delino-packages.gpg
 sudo tee /etc/apt/sources.list.d/delino.sources <<'EOF'
 Types: deb
 URIs: https://pkgs.oss.delino.io/apt
 Suites: stable
 Components: main
 Architectures: amd64 arm64
-Signed-By: /etc/apt/keyrings/delino-packages.gpg
+Signed-By: /usr/share/keyrings/delino-packages.gpg
 EOF
 sudo apt-get update
 sudo apt-get install binpm
 binpm --version
 ```
 
-The source uses `Signed-By` to restrict this key to the Delino repository. Replace `binpm` with another stable package name as needed.
+The source uses `Signed-By` to restrict this key to the Delino repository. Replace `binpm` with another stable package name as needed. APT also installs `delino-archive-keyring`, which keeps this repository’s public certificate current through authenticated package updates.
 
 ## DNF: stable
 
@@ -86,7 +86,7 @@ URIs: https://pkgs.oss.delino.io/apt
 Suites: preview
 Components: main
 Architectures: amd64 arm64
-Signed-By: /etc/apt/keyrings/delino-packages.gpg
+Signed-By: /usr/share/keyrings/delino-packages.gpg
 EOF
 sudo apt-get update
 sudo apt-get install runmoor
@@ -119,7 +119,7 @@ For APT, replace `binpm` with the installed package:
 
 ```sh
 sudo apt-get update
-sudo apt-get install --only-upgrade binpm
+sudo apt-get install --only-upgrade delino-archive-keyring binpm
 sudo apt-get remove binpm
 ```
 
@@ -133,3 +133,5 @@ sudo dnf remove binpm
 Removing a CLI package preserves its user configuration and data. Stop and unregister a Runmoor service with the documented Runmoor commands before removing the executable.
 
 To stop receiving updates, remove the corresponding `delino.sources` or `delino-preview.sources` from APT's sources directory, or `delino.repo` or `delino-preview.repo` from DNF's repository directory. Remove the Delino APT keyring only when neither Delino source remains registered.
+
+Keep `delino-archive-keyring` updated before a signing key expires. If a machine has been offline through a key change and APT cannot authenticate the repository, repeat the public-key download, full fingerprint check and keyring installation above, then run `apt-get update`. Never disable signature verification to recover.

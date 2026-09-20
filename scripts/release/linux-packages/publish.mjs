@@ -1,5 +1,6 @@
 import { encode, sha256, requireValue, safeKey, log } from './model.mjs';
 import { validateCandidate } from './package.mjs';
+import { validateRotation } from './keyring.mjs';
 
 async function readJSON(store, key) {
   const value = await store.get(key);
@@ -29,16 +30,19 @@ export async function loadCandidate(state, plan, source) {
   requireValue(result.value.source === source && JSON.stringify(result.value.identity) === JSON.stringify(plan), 'PACKAGE_IDENTITY_CONFLICT');
   return result.value;
 }
-export async function addToCatalog(state, record) {
+export async function addToCatalog(state, record, keyring) {
   const current = await readJSON(state, 'catalog.json');
   const catalog = current?.value ?? { schema_version: 1, candidates: [] };
   requireValue(catalog.schema_version === 1 && Array.isArray(catalog.candidates), 'INVALID_CATALOG');
+  if (keyring) await validateRotation(state, catalog.keyring, keyring);
+  const keyringChanged = keyring && JSON.stringify(catalog.keyring) !== JSON.stringify(keyring);
+  if (keyring) catalog.keyring = keyring;
   const key = `candidates/${record.identity.project}/${record.identity.version}.json`;
   const candidate = { key, sha256: sha256(encode(record)) };
   const existing = catalog.candidates.find((entry) => entry.key === key);
   requireValue(!existing || existing.sha256 === candidate.sha256, 'CATALOG_IDENTITY_CONFLICT');
-  if (!existing) {
-    catalog.candidates.push(candidate);
+  if (!existing || keyringChanged) {
+    if (!existing) catalog.candidates.push(candidate);
     catalog.candidates.sort((left, right) => left.key.localeCompare(right.key));
     await state.put('catalog.json', encode(catalog), { expectedETag: current?.etag ?? null });
   }
@@ -93,5 +97,11 @@ export async function promote(state, publicStore, snapshot, verifyPublic = async
     await verifyPublic(file.key, value.body);
   }
   await state.put(`published/${snapshot.generation}.json`, encode({ schema_version: 1, generation: snapshot.generation, objects: ordered.map(({ key, sha256: hash }) => ({ key, sha256: hash })) }), { immutable: true });
+  const keyring = JSON.parse(currentCatalog.body).keyring;
+  if (keyring) {
+    const key = `keyring-staged/${keyring.certificate}.json`;
+    // Preserve the first fully verified public timestamp across retries/releases.
+    if (!await state.get(key)) await state.put(key, encode({ schema_version: 1, signer: keyring.signer, timestamp: Date.now(), generation: snapshot.generation }), { immutable: true });
+  }
   log('published', { generation: snapshot.generation, objects: ordered.length });
 }

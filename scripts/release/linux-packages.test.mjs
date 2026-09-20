@@ -7,6 +7,7 @@ import { identity, Channel, checksumFor, inspectElf, extractExecutable, dependen
 import { archive } from './runmoor.mjs';
 import { FileStore } from './linux-packages/store.mjs';
 import { addToCatalog, saveCandidate, snapshotFor, promote } from './linux-packages/publish.mjs';
+import { validateRotation, rotationOverlapMs } from './linux-packages/keyring.mjs';
 
 const revision = 'a'.repeat(40);
 const fingerprint = 'A'.repeat(40);
@@ -47,7 +48,7 @@ test('native setup isolates stable and preview with signature checks', () => {
   assert.doesNotMatch(files['setup/delino.sources'].toString(), /preview/u);
   assert.match(files['setup/delino-preview.repo'].toString(), /repo_gpgcheck=1\n/u);
   assert.match(files['setup/delino.repo'].toString(), /gpgcheck=1\n/u);
-  assert.match(files['setup/delino.sources'].toString(), /Signed-By: \/etc\/apt\/keyrings\//u);
+  assert.match(files['setup/delino.sources'].toString(), /Signed-By: \/usr\/share\/keyrings\//u);
 });
 test('checksums reject duplicates, missing entries and malformed digests', () => {
   const line = `${'a'.repeat(64)}  binpm.tar.gz\n`;
@@ -114,6 +115,32 @@ test('public digest verification is part of publication success', async (t) => {
   const catalog = await addToCatalog(state, first.record); const snapshot = await snapshotFor(state, catalog, build);
   await assert.rejects(promote(state, publicStore, snapshot, async () => { throw new Error('PUBLIC_READBACK_MISMATCH'); }), /PUBLIC_READBACK_MISMATCH/u);
   assert.equal(await state.get(`published/${catalog.generation}.json`), null);
+});
+
+test('keyring updates force a new snapshot and signer rotation requires a completed overlap', async (t) => {
+  const { state, publicStore } = stores(t); const first = fixture();
+  await saveCandidate(state, first.record, first.files);
+  const initial = { version: 1, certificate: '1'.repeat(64), signer: 'A'.repeat(40), subkeys: ['A'.repeat(40)] };
+  const one = await addToCatalog(state, first.record, initial);
+  const expanded = { ...initial, version: 2, certificate: '2'.repeat(64), subkeys: [...initial.subkeys, 'B'.repeat(40)] };
+  await assert.rejects(addToCatalog(state, first.record, { ...expanded, signer: 'B'.repeat(40) }), /SIGNER_NOT_STAGED/u);
+  const two = await addToCatalog(state, first.record, expanded);
+  assert.notEqual(one.generation, two.generation);
+  assert.equal(two.records.length, 1, 'certificate updates must not repackage a release');
+  const switched = { ...expanded, signer: 'B'.repeat(40) };
+  await assert.rejects(addToCatalog(state, first.record, switched), /KEYRING_OVERLAP_REQUIRED/u);
+  const snapshot = await snapshotFor(state, two, build);
+  await assert.rejects(promote(state, publicStore, snapshot, () => { throw new Error('interrupted'); }));
+  assert.equal(await state.get(`keyring-staged/${expanded.certificate}.json`), null);
+  await promote(state, publicStore, snapshot);
+  const receipt = JSON.parse((await state.get(`keyring-staged/${expanded.certificate}.json`)).body);
+  await assert.rejects(validateRotation(state, expanded, switched, receipt.timestamp + rotationOverlapMs - 1), /KEYRING_OVERLAP_REQUIRED/u);
+  await validateRotation(state, expanded, switched, receipt.timestamp + rotationOverlapMs);
+  await assert.rejects(validateRotation(state, expanded, { ...expanded, certificate: '3'.repeat(64) }), /KEYRING_VERSION_REQUIRED/u);
+  await assert.rejects(validateRotation(state, expanded, initial), /KEYRING_ROLLBACK/u);
+  await assert.rejects(validateRotation(state, expanded, { ...expanded, subkeys: [expanded.signer] }), /KEYRING_REMOVAL_FORBIDDEN/u);
+  await promote(state, publicStore, snapshot);
+  assert.deepEqual(JSON.parse((await state.get(`keyring-staged/${expanded.certificate}.json`)).body), receipt);
 });
 
 test('release metadata rejects a wrong tag, commit, channel or missing signature', async () => {

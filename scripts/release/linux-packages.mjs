@@ -9,6 +9,7 @@ import { importSigningKey, temporarySigningKey, packageFiles, candidateRecord, s
 import { buildRepositories } from './linux-packages/repository.mjs';
 import { R2Store } from './linux-packages/store.mjs';
 import { saveCandidate, loadCandidate, addToCatalog, snapshotFor, promote } from './linux-packages/publish.mjs';
+import { prepareKeyring } from './linux-packages/keyring.mjs';
 
 export async function main(args = process.argv.slice(2)) {
   const { values } = parseArgs({ args, options: { project: { type: 'string' }, version: { type: 'string' }, revision: { type: 'string' }, mode: { type: 'string', default: Mode.DryRun }, output: { type: 'string' } } });
@@ -65,10 +66,11 @@ export async function main(args = process.argv.slice(2)) {
     }
     verifyCandidate(record, signing, work);
     await event('catalog');
-    const catalog = await addToCatalog(state, record);
+    const keyring = await prepareKeyring(state, signing, work, JSON.parse(readFileSync('packaging/linux/signing.json')).keyring_version);
+    const catalog = await addToCatalog(state, record, keyring.policy);
     for (const candidate of catalog.records) verifyCandidate(candidate, signing, work);
     await event('snapshot');
-    const snapshot = await snapshotFor(state, catalog, (records, load, generation) => buildRepositories(records, load, path.join(work, 'repository'), signing, generation), (value) => signRecord(value, signing, work));
+    const snapshot = await snapshotFor(state, catalog, (records, load, generation) => buildRepositories(records, load, path.join(work, 'repository'), signing, generation, keyring), (value) => signRecord(value, signing, work));
     verifyRecord(snapshot, signing, work);
     await event('promote');
     await promote(state, publicStore, snapshot, async (key, expected) => {

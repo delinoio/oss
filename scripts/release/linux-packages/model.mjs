@@ -99,7 +99,7 @@ export function setupFiles() {
   const files = {};
   for (const channel of Object.values(Channel)) {
     const name = channel === Channel.Stable ? 'delino' : 'delino-preview';
-    files[`setup/${name}.sources`] = Buffer.from(`Types: deb\nURIs: ${origin}/apt\nSuites: ${channel}\nComponents: main\nArchitectures: amd64 arm64\nSigned-By: /etc/apt/keyrings/delino-packages.gpg\n`);
+    files[`setup/${name}.sources`] = Buffer.from(`Types: deb\nURIs: ${origin}/apt\nSuites: ${channel}\nComponents: main\nArchitectures: amd64 arm64\nSigned-By: /usr/share/keyrings/delino-packages.gpg\n`);
     files[`setup/${name}.repo`] = Buffer.from(`[${name}]\nname=Delino ${channel}\nmirrorlist=${origin}/rpm/${channel}/$basearch/mirrorlist\nenabled=1\ngpgcheck=1\nrepo_gpgcheck=1\ngpgkey=${origin}/keys/delino-packages.asc\nmetadata_expire=300\nsslverify=1\n`);
   }
   return files;

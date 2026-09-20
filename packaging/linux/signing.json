@@ -1,5 +1,6 @@
 {
   "fingerprint": "B08DE37A14DD10DDFD04E66E87CB82A1F70FBD30",
   "algorithm": "RSA4096",
-  "uid": "Delino OSS Packages"
+  "uid": "Delino OSS Packages",
+  "keyring_version": 1
 }

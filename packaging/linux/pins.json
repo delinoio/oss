@@ -39,5 +39,18 @@
         "sha256": "ac864d8fcb61e5e36364e65c23b82942534d761e545a01182b6a0fef3b8e1339"
       }
     }
+  },
+  "rustup": {
+    "version": "1.29.1",
+    "assets": {
+      "x86_64-unknown-linux-gnu": {
+        "url": "https://static.rust-lang.org/rustup/archive/1.29.1/x86_64-unknown-linux-gnu/rustup-init",
+        "sha256": "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71"
+      },
+      "aarch64-unknown-linux-gnu": {
+        "url": "https://static.rust-lang.org/rustup/archive/1.29.1/aarch64-unknown-linux-gnu/rustup-init",
+        "sha256": "15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433"
+      }
+    }
   }
 }

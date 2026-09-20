@@ -22,13 +22,15 @@ if command -v apt-get >/dev/null; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
   apt-get install -y ca-certificates curl gnupg >/dev/null
-  mkdir -p /etc/apt/keyrings
-  curl -fsS "$origin/keys/delino-packages.asc" | gpg --batch --yes --dearmor -o /etc/apt/keyrings/delino-packages.gpg
+  mkdir -p /usr/share/keyrings
+  curl -fsS "$origin/keys/delino-packages.asc" | gpg --batch --yes --dearmor -o /usr/share/keyrings/delino-packages.gpg
   curl -fsS "$origin/setup/$name.sources" -o "/etc/apt/sources.list.d/$name.sources"
   apt-get update
   apt-cache policy "$project"
   apt-get install -y "$project=$version-1"
   test "$(dpkg-query -W -f='${Architecture}' "$project")" = "$arch"
+  test "$(dpkg-query -W -f='${Architecture}' delino-archive-keyring)" = all
+  dpkg-query -L delino-archive-keyring | grep -Fx /usr/share/keyrings/delino-packages.gpg
   "$project" --help >/dev/null
   if [ "$project" = runmoor ]; then "$project" version; else "$project" --version; fi | grep -F "$version"
   verify_license

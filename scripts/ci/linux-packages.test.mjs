@@ -38,5 +38,12 @@ test('tool and build image pins include immutable checksums', () => {
   for (const key of ['rust_image', 'tools_image']) assert.match(pins[key], /@sha256:[a-f0-9]{64}$/u);
   for (const tool of ['nfpm', 'aptly']) for (const arch of ['amd64', 'arm64']) assert.match(pins.tools[tool].assets[arch].sha256, /^[a-f0-9]{64}$/u);
   assert.match(pins.tools.createrepo_c.source.sha256, /^[a-f0-9]{64}$/u);
+  for (const target of ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu']) {
+    assert.equal(pins.rustup.assets[target].url, `https://static.rust-lang.org/rustup/archive/${pins.rustup.version}/${target}/rustup-init`);
+    assert.match(pins.rustup.assets[target].sha256, /^[a-f0-9]{64}$/u);
+  }
+  const bootstrap = read('scripts/release/linux-packages/build-rust.sh');
+  assert.doesNotMatch(bootstrap, /sh\.rustup\.rs/u);
+  assert.ok(bootstrap.indexOf('sha256sum --check --strict') < bootstrap.indexOf('/tmp/delino-rustup-init -y'));
   assert.match(read('scripts/ci/workflows.mjs'), /Remove this compatibility adapter/u);
 });

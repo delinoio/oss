@@ -9,13 +9,23 @@ case "$target" in
   *) exit 2 ;;
 esac
 # Build on the oldest supported libc, independently of the hosted runner OS.
-dnf install -y gcc gcc-c++ make pkgconf-pkg-config xz-devel perl git ca-certificates curl-minimal
+dnf install -y gcc gcc-c++ make pkgconf-pkg-config xz-devel perl git ca-certificates curl-minimal python3
 export CARGO_HOME=/tmp/delino-cargo
 export RUSTUP_HOME=/tmp/delino-rustup
 export CARGO_TARGET_DIR=/workspace/target
 export PATH="$CARGO_HOME/bin:$PATH"
 toolchain=$(tr -d '\r\n' < rust-toolchain)
-curl --proto '=https' --tlsv1.2 --fail --silent --show-error https://sh.rustup.rs -o /tmp/delino-rustup-init.sh
-sh /tmp/delino-rustup-init.sh -y --profile minimal --default-toolchain "$toolchain" --target "$target"
+mapfile -t bootstrap < <(python3 - "$target" <<'PY'
+import json, sys
+pin = json.load(open('packaging/linux/pins.json'))['rustup']['assets'][sys.argv[1]]
+print(pin['url'])
+print(pin['sha256'])
+PY
+)
+curl --proto '=https' --tlsv1.2 --fail --silent --show-error "${bootstrap[0]}" -o /tmp/delino-rustup-init
+printf '%s  %s\n' "${bootstrap[1]}" /tmp/delino-rustup-init | sha256sum --check --strict
+chmod 0755 /tmp/delino-rustup-init
+/tmp/delino-rustup-init -y --profile minimal --default-toolchain "$toolchain" --target "$target" --no-modify-path
+rustup set auto-self-update disable
 cargo build --locked -p "$project" --release --target "$target"
 readelf --version-info "target/$target/release/$project"

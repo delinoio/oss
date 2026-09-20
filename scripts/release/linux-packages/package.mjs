@@ -13,17 +13,25 @@ export function importSigningKey(directory, { secretKey, passphrase, publicKey, 
   writeFileSync(passFile, passphrase, { mode: 0o600 });
   const env = { ...process.env, GNUPGHOME: directory };
   command('gpg', ['--batch', '--import', keyFile], { env });
-  const exported = command('gpg', ['--batch', '--with-colons', '--fingerprint', '--list-secret-keys'], { env });
+  const exported = command('gpg', ['--batch', '--with-colons', '--with-subkey-fingerprint', '--list-secret-keys'], { env });
   requireValue(exported.split('\n').find((line) => line.startsWith('fpr:'))?.split(':')[9] === fingerprint, 'SIGNING_KEY_MISMATCH');
+  const secretLines = exported.split('\n').map((line) => line.split(':'));
+  const primaries = secretLines.filter((line) => line[0] === 'sec');
+  requireValue(primaries.length === 1 && primaries[0][14] === '#', 'PRIMARY_SECRET_KEY_FORBIDDEN');
+  const available = secretLines.flatMap((line, index) => line[0] === 'ssb' && line[14] === '+' && line[11].includes('s') ? [secretLines[index + 1]?.[9]] : []);
+  requireValue(available.length === 1 && /^[A-F0-9]{40}$/u.test(available[0]), 'SIGNING_SUBKEY_AMBIGUOUS');
   const publicFile = path.join(directory, 'public.asc');
   writeFileSync(publicFile, publicKey);
-  const publicDescription = command('gpg', ['--batch', '--with-colons', '--show-keys', publicFile], { env });
+  const publicDescription = command('gpg', ['--batch', '--with-colons', '--with-subkey-fingerprint', '--show-keys', publicFile], { env });
   requireValue(publicDescription.split('\n').find((line) => line.startsWith('fpr:'))?.split(':')[9] === fingerprint, 'PUBLIC_KEY_MISMATCH');
   // The primary fingerprint alone cannot detect a rotated signing subkey missing
   // from the certificate clients download. Verify with that certificate only.
   const verifyEnv = { ...process.env, GNUPGHOME: mkdtempSync(path.join(directory, 'verify-')) };
   command('gpg', ['--batch', '--no-autostart', '--import', publicFile], { env: verifyEnv });
-  const signing = { directory, keyFile, passFile, fingerprint, publicKey: Buffer.from(publicKey), env, verifyEnv, passphrase };
+  const publicLines = publicDescription.split('\n').map((line) => line.split(':'));
+  requireValue(publicLines.filter((line) => line[0] === 'pub').length === 1, 'PUBLIC_KEY_MISMATCH');
+  const publicSubkeys = publicLines.flatMap((line, index) => line[0] === 'sub' && line[11].includes('s') ? [publicLines[index + 1]?.[9]] : []).sort();
+  const signing = { directory, keyFile, passFile, fingerprint, signer: available[0], publicSubkeys, publicKey: Buffer.from(publicKey), env, verifyEnv, passphrase };
   const probe = path.join(directory, 'certificate-probe');
   writeFileSync(probe, randomBytes(32));
   try { gpgSign(probe, signing); }
@@ -52,7 +60,7 @@ export function temporarySigningKey(directory) {
 }
 export function gpgSign(file, signing, clearsign = false) {
   const output = `${file}.${clearsign ? 'clearsigned' : 'asc'}`;
-  command('gpg', ['--batch', '--yes', '--pinentry-mode', 'loopback', '--passphrase-file', signing.passFile, '--local-user', signing.fingerprint, '--digest-algo', 'SHA256', '--armor', '--output', output, clearsign ? '--clearsign' : '--detach-sign', file], { env: signing.env });
+  command('gpg', ['--batch', '--yes', '--pinentry-mode', 'loopback', '--passphrase-file', signing.passFile, '--local-user', `${signing.signer}!`, '--digest-algo', 'SHA256', '--armor', '--output', output, clearsign ? '--clearsign' : '--detach-sign', file], { env: signing.env });
   command('gpg', ['--batch', '--no-auto-key-retrieve', '--verify', output, ...(clearsign ? [] : [file])], { env: signing.verifyEnv });
   return output;
 }
@@ -73,7 +81,7 @@ export function packageFiles(plan, input, output, signing) {
       const name = format === 'deb' ? `${plan.project}_${plan.version}-1_${arch}.deb` : `${plan.project}-${plan.version}-1.${rpmArch}.rpm`;
       const config = { name: plan.project, arch, platform: 'linux', version: plan.version, release: '1', section: 'utils', priority: 'optional',
         maintainer: 'Delino', description, vendor: 'Delino', homepage: `https://github.com/delinoio/oss`, license,
-        mtime: new Date(input.epoch * 1000).toISOString(), depends: dependencies(input.binaries[arch].libraries, format),
+        mtime: new Date(input.epoch * 1000).toISOString(), depends: [...dependencies(input.binaries[arch].libraries, format), ...(format === 'deb' ? ['delino-archive-keyring (>= 1-1)'] : [])],
         contents: [
           { src: path.resolve(input.binaries[arch].file), dst: `/usr/bin/${plan.project}`, file_info: { mode: 0o755, mtime: new Date(input.epoch * 1000).toISOString() } },
           { src: path.resolve(copyright), dst: `/usr/share/doc/${plan.project}/copyright`, file_info: { mode: 0o644 } },
@@ -90,7 +98,7 @@ export function packageFiles(plan, input, output, signing) {
         // A CI export intentionally has a dummy primary, so use GnuPG through rpmsign.
         // Remove this adapter only after nFPM supports encrypted subkey-only exports
         // and the encrypted disposable-key lifecycle tests pass without it.
-        command('rpmsign', ['--define', '__gpg /usr/bin/gpg', '--define', `_gpg_name ${signing.fingerprint}`,
+        command('rpmsign', ['--define', '__gpg /usr/bin/gpg', '--define', `_gpg_name ${signing.signer}!`,
           '--define', `_gpg_path ${signing.directory}`, '--define', '_gpg_digest_algo sha256',
           '--define', `_gpg_sign_cmd_extra_args --pinentry-mode loopback --passphrase-file ${signing.passFile}`,
           '--addsign', target], { env: signing.env });

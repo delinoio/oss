@@ -369,6 +369,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/package-fixture"
           docker run --rm -v "$PWD:/workspace:ro" -v "$RUNNER_TEMP/package-fixture:/output" delino-linux-package-tools node scripts/release/linux-packages/fixture.mjs /output
+          docker run --rm -v "$PWD:/workspace:ro" delino-linux-package-tools node scripts/release/linux-packages/rotation-test.mjs
       - name: Verify native package lifecycle on supported distributions
         env:
           TEST_ARCH: ${{ matrix.arch }}

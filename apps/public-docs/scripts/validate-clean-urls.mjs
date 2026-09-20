@@ -290,7 +290,7 @@ const forbiddenContentFixtures = [
 ];
 // Only the package registration page may show these exact public installation paths.
 // Keep all other filesystem and repository-path checks unchanged.
-const packageInstallationPaths = ['/etc/apt/keyrings/delino-packages.gpg', '/etc/apt/keyrings', '/etc/apt/sources.list.d/delino.sources', '/etc/apt/sources.list.d/delino-preview.sources', '/etc/yum.repos.d/delino.repo', '/etc/yum.repos.d/delino-preview.repo'];
+const packageInstallationPaths = ['/usr/share/keyrings/delino-packages.gpg', '/usr/share/keyrings', '/etc/apt/sources.list.d/delino.sources', '/etc/apt/sources.list.d/delino-preview.sources', '/etc/yum.repos.d/delino.repo', '/etc/yum.repos.d/delino-preview.repo'];
 function publicPathText(text, htmlFile) {
   if (path.relative(outputDir, htmlFile) !== 'linux-packages.html') return text;
   for (const allowed of [...packageInstallationPaths].sort((a, b) => b.length - a.length)) {

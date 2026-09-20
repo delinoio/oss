@@ -4,15 +4,17 @@ import { architectures, Channel, origin, encode, requireValue, setupFiles, sha25
 import { command } from './release-input.mjs';
 import { gpgSign } from './package.mjs';
 import { Cache } from './store.mjs';
+import { packageKeyring } from './keyring.mjs';
 
 function listFiles(root) {
   return readdirSync(root, { recursive: true }).filter((name) => statSync(path.join(root, name)).isFile()).sort();
 }
-export async function buildRepositories(records, loadPackage, directory, signing, generation) {
+export async function buildRepositories(records, loadPackage, directory, signing, generation, keyring) {
   requireValue(/^[a-f0-9]{64}$/u.test(generation), 'INVALID_GENERATION');
   const files = [];
   const add = (key, bytes, mutable = false) => files.push({ key: safeKey(key), bytes, sha256: sha256(bytes), mutable, cache: mutable ? Cache.Mutable : Cache.Immutable });
   mkdirSync(directory, { recursive: true });
+  keyring ??= packageKeyring(signing, path.join(directory, 'keyring'));
   const aptlyRoot = path.join(directory, 'aptly');
   const config = path.join(directory, 'aptly.json');
   writeFileSync(config, encode({ rootDir: aptlyRoot, architectures, skipLegacyPool: true }));
@@ -22,6 +24,10 @@ export async function buildRepositories(records, loadPackage, directory, signing
     const channelRecords = records.filter((record) => record.identity.channel === channel);
     const imported = path.join(directory, 'packages', channel);
     mkdirSync(imported, { recursive: true });
+    const keyringFile = path.join(imported, keyring.file.name);
+    requireValue(sha256(keyring.bytes) === keyring.file.sha256, 'KEYRING_STORAGE_CORRUPT');
+    writeFileSync(keyringFile, keyring.bytes);
+    apt(['repo', 'add', channel, keyringFile]);
     for (const record of channelRecords) for (const file of record.files) {
       const bytes = await loadPackage(file);
       requireValue(sha256(bytes) === file.sha256 && bytes.length === file.size, 'PACKAGE_STORAGE_CORRUPT');
