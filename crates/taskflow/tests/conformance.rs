@@ -5601,10 +5601,12 @@ async fn readiness_cancellation_and_deadlines_await_probe_owners() {
         if mode != "cancel" {
             assert!(result.is_err());
         }
-        assert!(
-            cfg!(windows) || started.elapsed() >= Duration::from_secs(2),
-            "probe cleanup was dropped: {mode}"
-        );
+        if !cfg!(windows) {
+            assert!(
+                started.elapsed() >= Duration::from_secs(2),
+                "probe cleanup was dropped: {mode}"
+            );
+        }
         for name in ["service.pid", "probe.pid", "probe-child.pid"] {
             let pid = std::fs::read_to_string(root.path().join(name))
                 .unwrap()
