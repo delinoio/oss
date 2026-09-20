@@ -1682,6 +1682,67 @@ checksum = "3a822ea5bc7590f9d40f1ba12c0dc3c2760f3482c6984db1573ad11031420831"
 
 [[package]]
 name = "clibox"
+version = "0.1.1"
+dependencies = [
+ "base64 0.22.1",
+ "clap",
+ "clibox-system",
+ "clibox-transform",
+ "clibox-wait",
+ "libc",
+ "rcgen",
+ "rustls",
+ "serde_json",
+ "sha2 0.10.9",
+ "socket2",
+ "tempfile",
+ "tracing",
+ "tracing-subscriber",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "clibox-system"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "libc",
+ "libproc",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "regex",
+ "serde",
+ "serde_json",
+ "signal-hook",
+ "tempfile",
+ "tracing",
+ "windows-sys 0.61.2",
+ "x11rb",
+]
+
+[[package]]
+name = "clibox-transform"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "blake3",
+ "chrono",
+ "chrono-tz",
+ "clap",
+ "ctrlc",
+ "libc",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tracing",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "clibox-wait"
 version = "0.1.0"
 dependencies = [
  "clap",
@@ -1690,26 +1751,16 @@ dependencies = [
  "hickory-resolver",
  "http",
  "hyper",
- "libc",
- "libproc",
- "objc2",
- "objc2-app-kit",
- "objc2-foundation",
  "rcgen",
- "regex",
  "reqwest 0.12.28",
  "rustls",
  "rustls-native-certs 0.8.4",
  "serde",
  "serde_json",
- "signal-hook",
  "tempfile",
  "tokio",
  "tokio-rustls",
  "tracing",
- "tracing-subscriber",
- "windows-sys 0.61.2",
- "x11rb",
 ]
 
 [[package]]

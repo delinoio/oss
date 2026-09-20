@@ -1,8 +1,8 @@
 {
   "name": "@delino/clibox",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
-  "description": "A native CLI distributed through Cargo and npm",
+  "description": "A native CLI distributed through native packages and npm",
   "license": "MIT",
   "engines": { "node": ">=22" },
   "scripts": {

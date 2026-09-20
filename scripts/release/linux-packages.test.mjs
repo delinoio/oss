@@ -35,7 +35,8 @@ const build = async (records, _load, generation) => {
 };
 
 test('project, version, revision and channels are closed', () => {
-  assert.equal(identity({ project: 'runmoor', version: '1.0.0', revision }).channel, Channel.Preview);
+  assert.equal(identity({ project: 'runmoor', version: '1.0.0', revision }).channel, Channel.Stable);
+  assert.equal(identity({ project: 'clibox', version: '1.0.0', revision }).channel, Channel.Stable);
   for (const project of ['ttl', 'devhud', '../binpm', 'binpm;true']) assert.throws(() => identity({ project, version: '1.0.0', revision }));
   for (const version of ['01.0.0', 'v1.0.0', '1.0.0-rc.1', '1.0\n0']) assert.throws(() => identity({ project: 'binpm', version, revision }));
   assert.throws(() => safeKey('../keys'));
@@ -75,6 +76,8 @@ test('ELF checks reject wrong architecture, newer libc, runtime paths and CPU re
   assert.throws(() => inspectElf(elf, 'amd64', '', '(NEEDED) [libssl.so.3]', ''));
   assert.throws(() => inspectElf(elf, 'amd64', '', '', 'x86 ISA needed: x86-64-v3'));
   assert.deepEqual(dependencies(['libc.so.6', 'liblzma.so.5'], 'deb'), ['libc6 (>= 2.34)', 'liblzma5']);
+  for (const format of ['deb', 'rpm']) assert.ok(dependencies(['libc.so.6'], format, 'clibox').includes('ca-certificates'));
+  assert.ok(!dependencies(['libc.so.6'], 'deb', 'binpm').includes('ca-certificates'));
 });
 test('candidate recovery preserves the first complete signed bytes', async (t) => {
   const { state } = stores(t); const first = fixture();
@@ -155,7 +158,7 @@ test('release metadata rejects a wrong tag, commit, channel or missing signature
   assert.throws(() => validateRelease({ ...release, assets: release.assets.slice(1) }, plan, revision));
   const runmoor = identity({ project: 'runmoor', version: '1.2.3', revision });
   const runmoorRelease = { ...release, tag_name: runmoor.tag, assets: release.assets.map((asset) => ({ ...asset, name: asset.name.replace('binpm', 'runmoor') })) };
-  assert.equal(runmoor.channel, Channel.Preview);
+  assert.equal(runmoor.channel, Channel.Stable);
   assert.equal(validateRelease(runmoorRelease, runmoor, revision).length, 6);
   assert.throws(() => validateRelease({ ...runmoorRelease, prerelease: true }, runmoor, revision));
 });

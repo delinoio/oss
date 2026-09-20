@@ -97,6 +97,7 @@ enum ProjectId {
   Rustia = "rustia",
   PublicDocs = "public-docs",
   DevHud = "devhud",
+  AsyncCommitHook = "async-commit-hook",
 }
 ```
 
@@ -108,7 +109,7 @@ enum ProjectId {
 - `binpm` -> `crates/binpm`, `apps/binpm-docs`
 - `with-watch` -> `crates/with-watch`
 - `cargo-mono` -> `crates/cargo-mono`
-- `clibox` -> `crates/clibox`, `packages/clibox`
+- `clibox` -> `crates/clibox`, `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`, `packages/clibox`
 - `runmoor` -> `cmds/runmoor`, `apps/runmoor-docs`
 - `derun` -> `cmds/derun`
 - `ttl` -> `cmds/ttlc`
@@ -351,7 +352,7 @@ enum RustiaComponent {
 
 ### CI Baseline
 
-Repository-wide quality CI is defined in `.github/workflows/CI.yml`.
+Repository-wide quality CI is defined in `.github/workflows/CI.yml`. The three-OS Go test matrix uses an explicit 20-minute per-package watchdog for native Git, shell and durable SQLite integration; this is not a product command timeout.
 
 Coverage expectations:
 - `go-quality`: generates and validates the ignored administrator bundle, then runs `go fmt ./...` (failing if formatting changes are applied) and `go vet ./...` on Ubuntu.
@@ -367,6 +368,7 @@ Coverage expectations:
 - `node-clibox-test`: runs `cargo test --locked -p clibox`, native CLI consumer installation and launcher/distribution tests on Linux, macOS, and Windows, selected by shared CI planning and required by `CI Result`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`.
 - `ci-contracts`: validates workflow syntax and the repository CI contract with the checked-in Go `actionlint` tool and Node fixtures.
+- `async-commit-hook`: follows the central change plan, runs Go race tests, app/client tests, protocol freshness and release fixtures, and builds all six unsigned target archives. Shared setup actions restore caches; only successful main validation saves them.
 - `devhud-frontend`, `devhud-extension`, and `devhud-admin`: run package-local type, lint, unit, component, accessibility, and deterministic frontend/package builds.
 - `devhud-protocol`: runs schema formatting, lint, compatibility, and generated-freshness checks; Go binding tests; and TypeScript client lint, tests, and build on Ubuntu.
 - `devhud-api`: runs package-local Go format, vet, unit, PostgreSQL migration, integration, API, and sweeper conformance.
@@ -436,10 +438,19 @@ Release automation baseline:
 - After addressing pull request review comments and pushing updates, resolve the corresponding review threads.
 - If a project splits into multiple deployables, the project index must include path ownership and integration boundaries, and component-level domain docs must exist.
 
+### async-commit-hook Contract
+
+- Project ID `async-commit-hook` owns `cmds/async-commit-hook`, `apps/async-commit-hook`, `protos/async_commit_hook/v1` and `packages/async-commit-hook-api-client`; only executable `ach` is distributed.
+- Follow `docs/project-async-commit-hook.md` and its domain contracts. Issue #897 applies with the owner's recorded exclusions of actual six-target machine validation and actual public publication.
+- `release-async-commit-hook.yml` is manual-only from `main`, defaults to unsigned nonpublishing dry-run artifacts, and follows `docs/cmds-async-commit-hook-release-contract.md`. Ordinary CI must never sign or publish ach artifacts, mutate the Homebrew tap or deploy Pages.
+- CLI/MCP/Connect share one core, exact-commit latest-compatible-attempt validation and explicit per-run acknowledgements. Never resurrect old successful evidence after pruning.
+- State, reports and logs remain local and account-owned; no telemetry. User commands require explicit repository trust. Cancellation must reconcile owned descendants before releasing exclusive scheduling groups.
+- Development uses frontend 46308 and local API 46309 with conflict failure; root DevHud development remains unchanged.
+
 ### Linux CLI Package Distribution
 
-- Follow `docs/repository-linux-packages-contract.md` for the six CLI APT/DNF repositories at `https://pkgs.oss.delino.io`. Native package publication is part of each selected CLI release, uses the dedicated `linux-packages` environment, and keeps Runmoor preview separate.
-- Runmoor's stable GitHub release status does not implicitly move its APT/DNF package out of the opt-in preview repository; validate source release status independently from native repository enrollment.
+- Follow `docs/repository-linux-packages-contract.md` for the seven CLI APT/DNF repositories at `https://pkgs.oss.delino.io`. Native package publication is part of each selected CLI release, uses the dedicated `linux-packages` environment, and enrolls binpm, cargo-mono, nodeup, with-watch, derun, runmoor and clibox in stable.
+- Runmoor uses stable for both source releases and native packages. Preview remains reserved and separately registered; callers cannot override project channels.
 - APT signing-certificate updates are distributed by the shared `delino-archive-keyring` dependency in both suites. Keep certificate versions immutable, retain historical public signing subkeys, and require a completed 30-day old-signer publication overlap before switching CI subkeys.
 - Relevant main pushes, including Rust CLI source, Cargo workspace/configuration and toolchain changes, must select the Linux package CI job so both native architectures retain the AlmaLinux 9 compatibility baseline. Manual CI dispatch always selects it. PRs skip this job even when CI configuration changes force all eligible checks; its `CI Result` dependency remains and must match the planned skip. General Linux validation, static package contracts, and release-time packaging checks remain enabled.
 
@@ -455,12 +466,15 @@ Release automation baseline:
 
 ### clibox Contract
 
-- The Rust crate and installed command are `clibox`; the public npm entry point is `@delino/clibox`. Keep the Cargo manifest/lock, private npm source manifest, executable version, and all nine generated npm packages at the same exact version.
+- The executable crate and installed command are `clibox`; the public npm entry point is `@delino/clibox`. Keep the Cargo manifest/lock, private npm source manifest, executable version, and all nine generated npm packages at the same exact version.
+- Keep `clibox` as the root CLI composer with direct path dependencies on `clibox-system`, `clibox-transform`, and `clibox-wait`; companion crates must not depend on one another or the executable. Family command definitions, runtimes, errors, and unit tests belong to their owning crate. Only the executable version participates in product release synchronization; companion versions remain internal. All four crates must be selected by clibox CI/release tests and covered by npm task cache inputs and change detection.
+- Missing subcommands for `clibox run`, `port`, `clipboard`, `wait`, `text`, `time`, `base64`, and `hash` must show command-specific clap help on stderr with exit code 2. Preserve root no-argument and explicit help success on stdout, and redact all other parser failures.
 - The npm launcher supports Node.js 22+, macOS/Windows x64 and arm64, and Linux x64/arm64 with separate glibc/musl packages. It resolves only the matching exact-version `@delino/clibox-*` optional dependency and has no shell, PATH fallback, install script, runtime download, or Rust compilation fallback.
 - Generate public npm packages from the private source workspace under ignored `dist` or temporary directories. Ordinary workspace installation must not resolve unpublished clibox dependencies. Never track generated tarballs or binaries.
-- clibox implements `run env`, `port which`, `port kill`, `open`, and text `clipboard copy`/`paste` alongside help/version. Preserve child argv/signal compatibility, revalidated port-owner termination with one shared five-second wait, explicit-app-only waiting, 16 MiB NUL-free UTF-8 clipboard validation and Linux background clipboard ownership. Use current-user/session authority without persistence, elevation, automatic retries or sensitive diagnostic values. Publish crates.io through Release Project, followed by `clibox@v<version>` and the npm workflow. No Homebrew or public GitHub Release assets are added.
-- The CLI provides help/version and `wait tcp`, `wait http`, and `wait file` under issue #919, alongside the #916 utilities and preserving the independently reserved #917 interfaces. Waits are stateless, use immediate nonoverlapping polling and monotonic deadlines, support handled cancellation, and expose only redacted human/quiet/JSON results. Publish crates.io through Release Project, followed by `clibox@v<version>` and the npm workflow. No Homebrew or public GitHub Release assets are added.
-- HTTPS uses OS trust with Rustls/ring and no implicit proxies, credentials, redirects, custom CA overrides, or body reads. Keep parser and dependency errors redacted even under `RUST_LOG=trace`. musl crypto compilation uses `musl-tools`/target-specific `CC=musl-gcc`, while final linking remains pinned self-contained `rust-lld`; no dynamic OpenSSL dependency is permitted.
+- clibox implements `run env`, `port which`, `port kill`, `open`, and text `clipboard copy`/`paste` alongside help/version. Preserve child argv/signal compatibility, revalidated port-owner termination with one shared five-second wait, explicit-app-only waiting, 16 MiB NUL-free UTF-8 clipboard validation and Linux background clipboard ownership. Use current-user/session authority without persistence, elevation, automatic retries or sensitive diagnostic values.
+- The seven offline text/time/Base64/hash commands specified by issue #917 coexist with the issue #916 OS utilities. Preserve enum-backed modes, redacted stderr diagnostics, cancellable processing with exit 1 for handled transformation cancellation, permission-preserving atomic file publication, and bundled timezone data. Keep OS-command signal propagation separate from transformation publication supervision. All four clibox crates must remain `publish = false`. Release Project validates the exact-commit CI result and pushes `clibox@v<version>` without requiring or injecting a Cargo registry token or publishing to crates.io. npm and GitHub publishers must not depend on a crates.io version. The same verified npm GNU binaries also produce two signed Linux GitHub Release archives and stable APT/DNF packages; Homebrew remains excluded. The npm publication flag controls npm only.
 - `release-clibox.yml` runs native unit/process tests and validates all eight native targets and the full nine-package set before publication. Publish and verify platform packages before the main package; reuse only identical registry integrity on retries. Dry runs are secret-free and non-publishing.
-- `CLIBOX_NPM_PUBLISH_ENABLED=true` and an exact first-party Trusted Publisher on all nine packages are required for OIDC/provenance publication; only the guarded publish job receives `id-token: write`. That job must explicitly install the pinned OIDC-capable npm version before validating support and publishing, independent of Node's bundled npm.
+- The CLI provides help/version and `wait tcp`, `wait http`, and `wait file` under issue #919, alongside the #916 utilities and the implemented #917 transformations. Waits are stateless, use immediate nonoverlapping polling and monotonic deadlines, support handled cancellation, and expose only redacted human/quiet/JSON results.
+- HTTPS uses OS trust with Rustls/ring and no implicit proxies, credentials, redirects, custom CA overrides, or body reads. Keep parser and dependency errors redacted even under `RUST_LOG=trace`. musl crypto compilation uses `musl-tools`/target-specific `CC=musl-gcc`, while final linking remains pinned self-contained `rust-lld`; no dynamic OpenSSL dependency is permitted.
+- `CLIBOX_NPM_PUBLISH_ENABLED=true` and an exact first-party Trusted Publisher on all nine packages are required for npm OIDC/provenance publication. Only the separately guarded npm `publish` and GitHub `publish-release` jobs receive `id-token: write`; the latter uses it solely for Sigstore signing. The npm job must explicitly install the pinned OIDC-capable npm version before validating support and publishing, independent of Node's bundled npm.
 - Keep `docs/project-clibox.md`, both clibox domain contracts, root/domain AGENTS rules, release versioning, CI selection/aggregation, and distribution fixtures synchronized.

@@ -9,6 +9,53 @@ use serde_json::{json, Value};
 const CLI: &str = env!("CARGO_BIN_EXE_clibox");
 const MARKER: &str = "CLIBOX_FIXTURE=";
 
+#[test]
+fn environment_delegates_transform_commands_with_platform_variable_conversion() {
+    for (arguments, expected) in [
+        (
+            vec![
+                "text", "replace", "(hello)", "$1 🦀", "--regex", "--text", "hello",
+            ],
+            // Windows run env applies cross-env's command-variable conversion,
+            // including numeric references; direct text replace keeps captures.
+            if cfg!(windows) { " 🦀" } else { "hello 🦀" },
+        ),
+        (vec!["text", "replace", "hello", "", "--text", "hello"], ""),
+        (
+            vec![
+                "time", "format", "-1", "--from", "unix-ms", "--to", "unix-s",
+            ],
+            "-1\n",
+        ),
+    ] {
+        let output = Command::new(CLI)
+            .args(["run", "env", "--"])
+            .arg(CLI)
+            .args(arguments)
+            .env_remove("1")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{:?}", output.stderr);
+        assert_eq!(output.stdout, expected.as_bytes());
+        assert!(output.stderr.is_empty());
+    }
+    let output = Command::new(CLI)
+        .args(["run", "env", "--"])
+        .arg(CLI)
+        .args([
+            "hash",
+            "verify",
+            "SECRET_INVALID_DIGEST",
+            "--text",
+            "SECRET_INPUT",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("SECRET_"));
+}
+
 // The integration-test executable is also a disposable process fixture. It is
 // never installed or shipped as an extra public executable and uses no GUI
 // APIs.

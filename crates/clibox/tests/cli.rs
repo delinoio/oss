@@ -1,4 +1,4 @@
-use std::process::Command;
+use std::{env::consts::EXE_SUFFIX, process::Command};
 
 #[test]
 fn help_and_no_arguments_succeed_on_stdout() {
@@ -12,6 +12,24 @@ fn help_and_no_arguments_succeed_on_stdout() {
         assert!(stdout.contains("Usage: clibox"));
         assert!(stdout.contains("--help"));
         assert!(stdout.contains("--version"));
+        for command in [
+            "run",
+            "port",
+            "open",
+            "clipboard",
+            "text",
+            "time",
+            "base64",
+            "hash",
+            "wait",
+        ] {
+            assert!(
+                stdout
+                    .lines()
+                    .any(|line| line.trim_start().starts_with(&format!("{command} "))),
+                "missing {command} in root help"
+            );
+        }
         assert!(output.stderr.is_empty());
     }
 }
@@ -33,15 +51,75 @@ fn version_comes_from_the_cargo_package() {
 }
 
 #[test]
-fn unknown_arguments_fail_on_stderr() {
-    for argument in ["--unknown", "run"] {
+fn missing_subcommands_show_command_help_on_stderr() {
+    let groups: [(&str, &[&str]); 8] = [
+        ("run", &["env"]),
+        ("port", &["which", "kill"]),
+        ("clipboard", &["copy", "paste"]),
+        ("wait", &["tcp", "http", "file"]),
+        ("text", &["replace"]),
+        ("time", &["format", "add"]),
+        ("base64", &["encode", "decode"]),
+        ("hash", &["encode", "verify"]),
+    ];
+    for (group, subcommands) in groups {
         let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
-            .arg(argument)
+            .arg(group)
+            .env("CLICOLOR_FORCE", "1")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{group}");
+        assert!(output.stdout.is_empty(), "{group}");
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        // clap derives usage from argv[0], including the Windows .exe suffix.
+        assert!(
+            stderr.contains(&format!("Usage: clibox{EXE_SUFFIX} {group}")),
+            "{stderr}"
+        );
+        assert!(stderr.contains("Commands:"));
+        for subcommand in subcommands {
+            assert!(stderr.contains(&format!("  {subcommand} ")), "{stderr}");
+        }
+        assert!(!stderr.contains("error:"));
+        assert!(!stderr.contains('\u{1b}'));
+
+        for flag in ["--help", "-h"] {
+            let help = Command::new(env!("CARGO_BIN_EXE_clibox"))
+                .args([group, flag])
+                .env("NO_COLOR", "1")
+                .output()
+                .unwrap();
+            assert!(help.status.success(), "{group} {flag}");
+            assert!(help.stderr.is_empty());
+            assert_eq!(String::from_utf8(help.stdout).unwrap(), stderr);
+        }
+    }
+}
+
+#[test]
+fn unknown_arguments_fail_on_stderr() {
+    for arguments in [
+        vec!["--PRIVATE-MARKER"],
+        vec!["PRIVATE-MARKER"],
+        vec!["run", "PRIVATE-MARKER"],
+        vec!["port", "PRIVATE-MARKER"],
+        vec!["clipboard", "PRIVATE-MARKER"],
+        vec!["wait", "PRIVATE-MARKER"],
+        vec!["text", "PRIVATE-MARKER"],
+        vec!["time", "PRIVATE-MARKER"],
+        vec!["base64", "PRIVATE-MARKER"],
+        vec!["hash", "PRIVATE-MARKER"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
+            .args(arguments)
+            .env("RUST_LOG", "trace")
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
         assert!(output.stdout.is_empty());
-        assert!(String::from_utf8(output.stderr).unwrap().contains("error:"));
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains("error:"));
+        assert!(!stderr.contains("PRIVATE-MARKER"));
     }
 }
 
@@ -93,7 +171,7 @@ fn invalid_shapes_fail_before_any_os_effect() {
             .unwrap();
         assert_eq!(output.status.code(), Some(2), "{args:?}");
         assert!(output.stdout.is_empty());
-        assert!(!output.stderr.is_empty());
+        assert!(String::from_utf8(output.stderr).unwrap().contains("error:"));
     }
 }
 
@@ -106,4 +184,25 @@ fn help_never_forces_color_on_a_pipe() {
         .unwrap();
     assert!(output.status.success());
     assert!(!output.stdout.contains(&0x1b));
+}
+
+#[test]
+fn parser_failures_remain_redacted_and_visible_with_logging_disabled() {
+    for args in [
+        vec!["wait", "http", "https://SECRET-PARSER@localhost"],
+        vec!["hash", "encode", "--algorithm", "SECRET-PARSER"],
+        vec!["port", "which", "SECRET-PARSER"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
+            .args(args)
+            .env("RUST_LOG", "off")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains("error: arguments:"));
+        assert!(stderr.contains("--help"));
+        assert!(!stderr.contains("SECRET-PARSER"));
+    }
 }

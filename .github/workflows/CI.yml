@@ -162,7 +162,9 @@ jobs:
           pnpm --filter devhud-admin build:embedded
 
       - name: Run go test
-        run: go test ./...
+        # Native Git, PowerShell and durable SQLite integration exceed Go's
+        # default package budget on hosted Windows. Keep a bounded watchdog.
+        run: go test -timeout=20m ./...
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -355,11 +357,11 @@ jobs:
           image=$(node -p 'JSON.parse(require("fs").readFileSync("packaging/linux/pins.json")).rust_image')
           target=x86_64-unknown-linux-gnu
           if [ "$TEST_ARCH" = arm64 ]; then target=aarch64-unknown-linux-gnu; fi
-          docker run --rm -v "$PWD:/workspace" -w /workspace -e BUILD_TARGET="$target" "$image" bash -c 'for project in binpm cargo-mono nodeup with-watch; do bash scripts/release/linux-packages/build-rust.sh "$project" "$BUILD_TARGET"; done'
+          docker run --rm -v "$PWD:/workspace" -w /workspace -e BUILD_TARGET="$target" "$image" bash -c 'for project in binpm cargo-mono nodeup with-watch clibox; do bash scripts/release/linux-packages/build-rust.sh "$project" "$BUILD_TARGET"; done'
           sudo chown -R "$(id -u):$(id -g)" target
           TEST_TARGET="$target" node --input-type=module <<'JS'
           import { readElf } from './scripts/release/linux-packages/release-input.mjs';
-          for (const project of ['binpm', 'cargo-mono', 'nodeup', 'with-watch']) {
+          for (const project of ['binpm', 'cargo-mono', 'nodeup', 'with-watch', 'clibox']) {
             readElf(`target/${process.env.TEST_TARGET}/release/${project}`, process.env.TEST_ARCH);
           }
           JS
@@ -1687,6 +1689,45 @@ jobs:
           # Untrusted PR denial is covered separately by the default conformance suite.
           env -u GITHUB_EVENT_NAME -u TFLOW_UNTRUSTED_CI cargo test --locked -p taskflow --test conformance scenario_22_real_s3 -- --ignored
 
+  async-commit-hook:
+    needs: changes
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['async-commit-hook'] }}
+    name: Async commit hook contracts and integration
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup Go
+        id: ci-go
+        uses: ./.github/actions/setup-ci-go
+      - name: Setup Node.js
+        id: ci-node
+        uses: ./.github/actions/setup-ci-node
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: |
+          go test -race ./cmds/async-commit-hook/...
+          pnpm --filter async-commit-hook test
+          pnpm --filter @delinoio/async-commit-hook-api-client test
+          pnpm proto:check
+          node --test scripts/release/async-commit-hook.test.mjs
+          python3 scripts/release/build-async-commit-hook.py --output "$RUNNER_TEMP/ach-release"
+
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-node.outputs.cache-path }}
+          key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Save Go cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-go.outputs.cache-path }}
+          key: ${{ steps.ci-go.outputs.cache-key }}
+
   node-clibox-test:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['node-clibox-test'] }}
@@ -1715,7 +1756,7 @@ jobs:
       - name: Verify affected workspace runner
         run: node --test scripts/ci/run-affected.test.mjs
       - name: Test Rust utilities, readiness commands, and OS adapters
-        run: cargo test --locked -p clibox
+        run: cargo test --locked -p clibox -p clibox-system -p clibox-transform -p clibox-wait
       - name: Test launcher and native npm consumers
         env:
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['node-clibox-test'] }}
@@ -1737,6 +1778,7 @@ jobs:
     needs:
       - changes
       - ci-contracts
+      - async-commit-hook
       - go-quality
       - go-test
       - repository-environment

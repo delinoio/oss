@@ -1,23 +1,34 @@
 # clibox Rust foundation
 
 ## Scope
-`crates/clibox` owns the Rust executable and public crates.io package `clibox`. Issue [#919](https://github.com/delinoio/oss/issues/919) adds stateless TCP, HTTP, and file readiness waits. Issue [#916](https://github.com/delinoio/oss/issues/916) also implements six developer utilities. The complementary #917 interfaces remain reserved for independent implementation.
+`crates/clibox` owns the Rust executable. Its private companion crates own OS utilities (`crates/clibox-system`), offline transformations (`crates/clibox-transform`), and readiness waits (`crates/clibox-wait`). All four are explicit workspace members with `publish = false`; distribution uses npm, GitHub Release archives, and APT/DNF rather than crates.io. Issue [#916](https://github.com/delinoio/oss/issues/916) extends the original help/version foundation with six OS utilities. Issue [#917](https://github.com/delinoio/oss/issues/917) adds seven text/time/Base64/hash utilities alongside them. Issue [#919](https://github.com/delinoio/oss/issues/919) adds stateless TCP, HTTP, and file readiness waits.
+
+### Crate boundaries
+- `clibox` owns the process entrypoint, logging/panic initialization, static redacted parser diagnostics, and root command composition. It depends directly on the three companion crates through path dependencies.
+- `clibox-system` owns its clap command tree, environment/open/clipboard/port implementations, private OS adapters, contextual failures, and signal/child-status handling.
+- `clibox-transform` owns its clap command tree, text/time/Base64/hash implementations, streaming I/O, cancellation supervisor, safe errors, and permission-preserving atomic publication.
+- `clibox-wait` owns its clap command tree and target validation, polling and deadlines, DNS/TCP/HTTP/TLS/file probes, cancellation, and final reports.
+- Companion crates do not depend on each other or on the executable. Exports are limited to command composition and execution plus the transformation runtime-failure reporter used by the process panic hook. These are internal interfaces, not supported public Rust library APIs.
+- Each crate declares only its own runtime/platform dependencies. Unit tests follow their implementation; executable process tests remain in `crates/clibox/tests`, with their own dev-dependencies. Companion parser fixtures use test-local wrappers instead of depending on the root CLI.
+- Only the executable Cargo manifest/lock entry, npm source manifest, and generated artifacts participate in product version synchronization. Companion versions begin at `0.1.0`, are not automatically bumped, and are not registry dependency constraints.
 
 ## Runtime and Language
-Rust 2021, MIT license, repository-pinned Rust toolchain, and `clap` argument parsing. It is an explicit Cargo workspace member and approved crates.io publication target. Runtime operation uses Tokio, Hickory DNS, reqwest, Rustls with statically linked ring cryptography, and native OS certificate roots. Readiness waits invoke no installed networking or shell polling utilities. Environment/open/clipboard commands retain their explicitly delegated child and installed desktop-tool behavior. Native adapters are private implementation modules.
+Rust 2021, MIT license, repository-pinned Rust toolchain, and `clap` argument parsing. All four crates are non-publishable Cargo workspace members; the executable is built with Cargo for npm and native distribution. Runtime operation uses Tokio, Hickory DNS, reqwest, Rustls with statically linked ring cryptography, and native OS certificate roots. Readiness waits invoke no installed networking or shell polling utilities. Environment/open/clipboard commands retain their explicitly delegated child and installed desktop-tool behavior. Native adapters are private implementation modules.
 
 ## Users and Operators
-Developers invoking a pinned CLI in terminals, npm scripts, portable local workflows, and CI, and maintainers building and releasing the same executable through Cargo and npm. Operate with current-user permissions only.
+Developers invoking a pinned CLI in terminals, npm scripts, portable local workflows, and CI, and maintainers building the executable with Cargo and releasing it through npm and native packages. Operate with current-user permissions only.
 
 ## Interfaces and Contracts
 - `clibox`, `clibox --help`, and `clibox -h` print help to stdout and exit successfully; `--version`/`-V` print `clibox <Cargo package version>`.
+- `clibox run`, `clibox port`, `clibox clipboard`, `clibox wait`, `clibox text`, `clibox time`, `clibox base64`, and `clibox hash` without a subcommand print the corresponding command's help on stderr, leave stdout empty, and exit 2. Explicit `--help`/`-h` for those commands prints help on stdout and exits 0. Preserve clap's generated `DisplayHelpOnMissingArgumentOrSubcommand` output without replacing it with a generic diagnostic.
 - `clibox wait tcp HOST:PORT [--timeout DURATION] [--interval DURATION] [--attempt-timeout DURATION] [--quiet | --json]`.
 - `clibox wait http URL [--method get|head] [--status CODE] [--timeout DURATION] [--interval DURATION] [--attempt-timeout DURATION] [--quiet | --json]`.
 - `clibox wait file PATH [--timeout DURATION] [--interval DURATION] [--quiet | --json]`.
-- Accept exactly one target. Missing, malformed, extra, unknown, or conflicting arguments exit 2 with static actionable English stderr diagnostics and no JSON. Never render clap's raw parser errors, which can contain sensitive argv. Help includes examples and command limitations. There is no public Rust library API.
+- Wait commands accept exactly one target. Missing targets and malformed, extra, unknown, or conflicting arguments exit 2 with static actionable English stderr diagnostics and no JSON. Only generated help/version output may bypass these diagnostics; never render clap's raw input-error diagnostics, which can contain sensitive argv. Help includes examples and command limitations. There is no public Rust library API.
 - Wait commands do not consume stdin, launch subsequent commands, reverse-wait, continuously monitor, or accept mixed/multiple targets.
 
 ### Utility commands
+The seven transformation interfaces and their file-publication rules follow below.
 Root no-argument, `--help`/`-h`, and `--version`/`-V` behavior remains compatible. Every command has English help and examples. Malformed or missing CLI inputs return 2; runtime failures return 1. Delegated commands retain their own exit status and supported termination signals.
 
 ```text
@@ -33,6 +44,8 @@ clibox clipboard paste
 Compatibility is based on cross-env v10.1.0 commit `152ae6a85b5725ac3c725a8a3e471aee79acc712`: assignment quotes/escaping, parent-environment variable references, duplicate assignments (last value wins), empty values, PATH/NODE_PATH list conversion, and platform-specific command conversion. Assignments refer to the inherited parent environment, not earlier assignments. Windows command conversion supports simple references and `${NAME:-default}`; command arguments are never path-normalized. Executable lookup uses the child PATH and Windows PATHEXT, including npm `.cmd` shims. Simple batch variable references are resolved before Rust's batch argument escaping; never concatenate an arbitrary shell expression or use unescaped raw arguments. Unsupported safe batch encoding fails instead of weakening argument boundaries.
 
 The child inherits cwd, stdio, and environment; assignments change only its environment. `--` ends the assignment prefix. Unlike cross-env, the command is required, already-tokenized child quotes/backslashes and empty arguments are preserved, and SIGINT termination is not mapped to success. Assignment escaping does not reparse the child command or its arguments; the documented Windows variable conversion still applies. Unix termination signals are forwarded and reproduced; Windows console cancellation is forwarded to the child process group using supported CTRL_BREAK delivery. Shell expressions, cross-env-shell, dotenv, and persisted presets are excluded.
+
+Windows command conversion includes numeric references such as `$1`; an unset variable becomes empty before the child runs. Integration fixtures must preserve this cross-env behavior when delegating transformation commands. Regex capture arguments should use direct `clibox text replace` invocation, whose parser and npm launcher preserve the received dollar references.
 
 ### Port ownership
 Inputs are space-separated decimal ports 1–65535, deduplicated. TCP LISTEN is the default; UDP includes bound sockets and `all` combines both. IPv4 and IPv6 local addresses are included. Lookup is scoped to the caller's OS visibility and Linux network/PID namespaces.
@@ -54,6 +67,8 @@ The current desktop session's ordinary text clipboard is used. Explicit TEXT (in
 Input must be valid NUL-free UTF-8 of at most 16 MiB (16,777,216 bytes); invalid copy data is rejected before replacement, and paste is fully validated before output. Empty clipboard succeeds with empty output, while non-text-only content fails. Native macOS NSPasteboard and Windows Unicode clipboard APIs provide text. Linux selects Wayland when WAYLAND_DISPLAY is present, otherwise X11 when DISPLAY is present, without fallback between sessions. Wayland requires wl-copy/wl-paste; X11 requires xclip. X11 ownership is queried with pure-Rust x11rb because older xclip conversion errors cannot distinguish no owner from non-text data. Missing tools, inaccessible sessions and unsupported protocol capabilities have actionable redacted failures; tools are never installed automatically.
 
 Linux copy supplies text through stdin and returns after setup while the tool owns clipboard data in the background until replacement/session termination. It must not wait for the owner process's lifetime or keep the CLI foregrounded. Tool diagnostics are captured or suppressed, never relayed verbatim. Because wl-copy buffers stdin in a temporary file, clibox supplies a private verified tmpfs-backed directory and removes it after setup or failure; no clipboard bytes are written to persistent storage. Missing writable tmpfs is an unsupported capability reported before copy. Existing desktop clipboard managers remain outside clibox's retention control. Images, rich text, binary content, alternate selections, history, sync, and file options are excluded.
+
+## Readiness behavior
 
 ### Polling and deadlines
 The first check starts immediately. Overall waiting is unlimited by default; `--timeout 0` explicitly means unlimited. Durations accept nonnegative integers suffixed `ms`, `s`, `m`, or `h`; bare `0` is accepted only for timeout. Interval and attempt timeout must be positive. Fractions, negative values, millisecond arithmetic overflow, and unrepresentable monotonic deadlines fail validation.
@@ -94,10 +109,10 @@ Exit codes are ready 0, runtime failure/overall timeout 1, invalid CLI input 2, 
 
 Stable error classifications are enum-backed: `dns_lookup`, `dns_configuration`, `connection_refused`, `network_unavailable`, `attempt_timeout`, `unexpected_status`, `tls_certificate`, `tls_protocol`, `trust_store`, `permission_denied`, `network_io`, `http_protocol`, `file_missing`, `not_regular_file`, `filesystem`, `runtime_initialization`, `signal_handler`, `interrupted`, `terminated`, and `overall_timeout`. Command kinds, methods, and outcomes are also enums. Dependency errors are classified by typed sources, never by formatting or logging their text.
 
-## Storage
-Wait operations add no persistent configuration, application cache, history, authentication, tenancy, backend, privileges, or migrations. Wait commands do not modify target files. Rollback is an earlier pinned package version; readiness observations have no persisted effect to reverse.
+## Storage and Security
+No persistent configuration, cache, operation history, application authentication, tenancy, backend service, or telemetry is added. Use current-user/session permissions only. For OS utilities and transformations, no automatic retries or fixed execution timeout applies apart from the shared port-termination wait; readiness waits use the polling/deadline contract above. Users can interrupt child execution, stdin reading, OS work, application waits, and transformations. OS commands preserve supported termination signals; handled transformation cancellation returns 1 after cleaning unpublished temporary files. Cancellation does not undo completed clipboard replacement, termination, launch, or file publication. Transformations may read/write explicit files and same-directory temporary output under the publication contract below.
 
-No persistent configuration, cache, operation history, application authentication, tenancy, backend service, or telemetry is added. Use current-user/session permissions only. For environment, port, open, and clipboard commands, no automatic retries or fixed execution timeout applies apart from the shared port-termination wait; readiness waits use the polling/deadline contract above. Users can interrupt child execution, stdin reading, OS work, and application waits. Cancellation does not undo completed clipboard replacement, termination, or launch.
+Wait operations add no persistent configuration, application cache, history, authentication, tenancy, backend, privileges, or migrations. Wait commands do not modify target files. Rollback is an earlier pinned package version; readiness observations have no persisted effect to reverse.
 
 Cargo publication remains explicit and gated by the repository release coordinator. Rollback is installation of an earlier pinned version; previous OS effects are not undone. No feature flag is needed because each capability is explicitly invoked.
 
@@ -105,37 +120,186 @@ Cargo publication remains explicit and gated by the repository release coordinat
 No raw argv/locator/credential/body logging, including parser failures or dependency errors. Cargo publication remains explicit and gated by the repository release coordinator. There is no feature flag, remote telemetry, metrics service, dashboard, compliance gate, separate SLO, performance target, or mandatory external-service/manual validation.
 
 ## Logging
-Structured `tracing` diagnostics go to stderr, defaulting to warnings/errors. Routine pending checks are debug events; `RUST_LOG=clibox=debug` enables kind, attempt, elapsed time, numeric HTTP status, and stable failure classification. Filter out **all dependency targets**, even with `RUST_LOG=trace` or explicit dependency filters, and never echo malformed filter values. `NO_COLOR` disables color; otherwise color is allowed only on a TTY. Static failure diagnostics remain visible even if log filtering disables tracing.
+Structured `tracing` diagnostics go to stderr, defaulting to warnings/errors. Routine pending checks are debug events; `RUST_LOG=clibox=debug` enables kind, attempt, elapsed time, numeric HTTP status, and stable failure classification. Filter out **all dependency targets**, even with `RUST_LOG=trace` or explicit dependency filters, and never echo malformed filter values. `NO_COLOR` disables color; otherwise color is allowed only on a TTY. Static wait/parser failure diagnostics remain visible even if log filtering disables tracing.
 
-Structured Rust tracing goes to stderr, defaults to warnings/errors, and honors RUST_LOG for detailed diagnostics. Stdout is exclusively results or inherited child stdout. Color is TTY-only and honors NO_COLOR. For environment/port/open/clipboard utilities, allowed diagnostic context includes operation, backend, PID, port and stable failure code, never clipboard content, environment values, complete argv, full URLs or paths. Clap errors are redacted rather than echoing rejected values. Child output is inherited user-program output, not authored diagnostic output.
+Structured Rust tracing goes to stderr, defaults to warnings/errors, and honors RUST_LOG for detailed diagnostics. Stdout is exclusively results or inherited child stdout. Color is TTY-only and honors NO_COLOR. Allowed diagnostic context includes operation, backend, PID, port and stable failure code, never clipboard content, environment values, transformation input, patterns, replacements, digests, complete argv, full URLs or paths. Dependency logging is excluded even with trace logging enabled; parser, panic, and runtime diagnostics remain redacted. Clap errors are redacted rather than echoing rejected values. Child output is inherited user-program output, not authored diagnostic output.
 
-Wait signal handlers are installed only by the Tokio wait runtime. Utility commands retain their native signal forwarding/reproduction and shared runtime cancellation. Never register both handler families for one invocation.
+Wait signal handlers are installed only by the Tokio wait runtime. Utility commands retain their native signal forwarding/reproduction and shared runtime cancellation. Transformations retain their separate publication/cancellation supervisor. Never register multiple handler families for one invocation.
 
 ## Build and Test
-- `cargo run -p clibox -- wait --help` and `cargo test --locked -p clibox`.
+- `cargo run -p clibox -- wait --help` and `cargo test --locked -p clibox -p clibox-system -p clibox-transform -p clibox-wait`.
 - Root `cargo test` and `cargo fmt --all --check` remain required repository checks.
-- `cargo publish -p clibox --dry-run` verifies standalone crate packaging.
+- Validate npm/native artifact packaging; no crates.io publication or Cargo publish dry-run is required.
 - `pnpm --filter @delino/clibox test` and `pnpm --filter @delino/clibox test:package` validate the launcher and installed consumers.
 - Scheduler tests use paused time: immediate first checks, unlimited waiting, after-completion delays, clipped budgets, no overlapping polls, retry recovery, and cancellation/resource drop during checks and delays.
 - Loopback TCP/HTTP and isolated TLS fixtures cover DNS/IPv4/IPv6, multiple addresses/refusal/cleanup, GET/HEAD, statuses/transitions, redirect policy, delayed headers, nonterminating bodies, trusted/untrusted certificates, hostname mismatch, partial trust loading, malformed root entries, and trust loading without usable roots.
+- Delayed TCP startup uses a dev-only socket2 socket bound before the child runs and retained until `listen`, preventing ephemeral-port reuse by parallel fixtures while still exercising the not-yet-listening state.
 - File/process fixtures cover empty/delayed/relative/Unicode files, symlinks/dangling links/loops/special files, metadata without content access, typed permissions/error races, parser validation, output/exit behavior, handled Unix signals and isolated-console Windows Ctrl+C, proxy isolation, and secret markers under detailed or invalid log filters.
-- `node-clibox-test` runs Cargo unit/process tests on Linux, macOS, and Windows. Release builds run those tests for all eight targets before packaging and preserve Alpine consumer validation. Cross-platform evidence is produced by those jobs; local validation alone does not claim all platforms were executed.
+- `node-clibox-test` selects all four crates for Cargo unit/process tests on Linux, macOS, and Windows. Help assertions account for clap's platform-specific executable name, including `clibox.exe` on Windows. Release builds run those tests for all eight targets before packaging and preserve Alpine consumer validation. Cross-platform evidence is produced by those jobs; local validation alone does not claim all platforms were executed.
 - ring requires a C compiler at build time: MSVC on Windows, Xcode clang on macOS, and native C compilers on GNU Linux. Both musl jobs install `musl-tools` and set the target-specific `CC` to `musl-gcc` for ring, while the final linker remains pinned `rust-lld` with self-contained Rust runtime objects. No runtime OpenSSL/shared crypto dependency is added. Linux HTTPS consumers need their OS CA certificates, including Alpine `ca-certificates`.
 - Preserve Cargo/npm exact version synchronization, all eight native targets, script-free installation, and launcher argv/signal forwarding. Remove generated repository-owned `dist` after validation. No actual package publication is part of implementation.
 
-- `cargo test -p clibox` covers parser contracts, compatible environment transformations, process execution/signals, test-owned TCP/UDP IPv4/IPv6 sockets, mocked partial termination and shared deadlines, mocked open/clipboard adapters, invalid text boundaries, and secret-marker diagnostic checks.
+- `cargo test --locked -p clibox -p clibox-system -p clibox-transform -p clibox-wait` covers parser contracts, compatible environment transformations, process execution/signals, test-owned TCP/UDP IPv4/IPv6 sockets, mocked partial termination and shared deadlines, mocked open/clipboard adapters, invalid text boundaries, and secret-marker diagnostic checks.
 - Root `cargo test` and `cargo fmt --all --check` remain mandatory. Generate the existing DevHud frontend dependency before root Rust checks, then remove repository-owned generated dist directories after validation.
-- `cargo publish -p clibox --dry-run` checks standalone packaging, including private adapter sources and tests. macOS compilation uses its standard SDK/libclang through libproc; Linux adapters add no system C-library dependency beyond the target's libc; readiness TLS additionally compiles ring as documented below.
+- The four-crate test selection includes private adapter sources and unit tests as well as the executable's process tests. macOS compilation uses its standard SDK/libclang through libproc; Linux adapters add no system C-library dependency beyond the target's libc; readiness TLS additionally compiles ring as documented above.
 - Linux/macOS/Windows CI runs clibox Rust process tests alongside npm distribution/consumer tests. The existing eight-target release matrix and Alpine consumers remain intact. Test termination may target only disposable test-owned processes; CLI kill tests decline when complete exclusive port ownership cannot be established.
 - Automated parser/process/mocked-adapter tests are the completion gate. Real GUI launching, desktop clipboard persistence, and application termination waiting remain deferred follow-up verification and must not be represented as completed by mocks.
 
+The isolated Windows Ctrl+C test helper must explicitly clear inherited Ctrl+C-ignore state before spawning clibox, including under Git Bash release jobs. Keep this normalization confined to the test-owned process and include helper stdout/stderr on failure; production signal behavior is unchanged.
+
 ## Dependencies and Integrations
-Utility adapters use regex, Unix signal-hook/libc, macOS libproc/Objective-C framework bindings, Windows windows-sys, and Linux x11rb with installed desktop tools. npm distribution is owned by `packages/clibox`. The root cargo-mono tag allowlist includes `clibox`; releases use `clibox@v<version>`. No new distribution channel, Homebrew, public GitHub Release binaries, docs website, or public library API is introduced.
+Uses clap, serde/serde_json, regex, tracing/tracing-subscriber, Unix signal-hook/libc, macOS libproc/Objective-C framework bindings, Windows windows-sys, and Linux x11rb with installed desktop tools. Transformations additionally use base64, pinned pure-Rust BLAKE3, chrono with pinned chrono-tz, sha2, ctrlc, and tempfile. npm distribution remains owned by `packages/clibox`; clibox is excluded from the root cargo-mono tag allowlist, and Release Project still creates `clibox@v<version>` after exact-commit CI without registry publication. Readiness uses Tokio, hickory-resolver, reqwest/hyper, Rustls/ring, and rustls-native-certs; dev-only TLS fixtures use rcgen and tokio-rustls. No docs website or public library API is introduced.
+
+GNU Linux releases use the pinned AlmaLinux 9/glibc 2.34 build boundary for both npm and stable APT/DNF distribution. The same executable bytes pass ELF compatibility checks before signed GitHub publication; see [native repository ownership](repository-linux-packages-contract.md). Musl remains a separate npm target and desktop tools remain optional user-installed runtime capabilities.
 
 ## Change Triggers
-Update the project index, both domain contracts, relevant root/domain AGENTS rules, Cargo/npm READMEs, CLI help, tests, and applicable release workflows together when command behavior, privacy, naming, versions, platforms, dependencies, or publication changes.
+Update the project index, both domain contracts, relevant root/domain AGENTS rules, native/npm READMEs, CLI help, tests, and applicable release workflows together when command behavior, privacy, naming, versions, platforms, dependencies, or publication changes.
 
 ## References
 - [Project index](project-clibox.md)
 - [npm distribution](packages-clibox-distribution-contract.md)
 - [Repository defaults](repository-defaults.md)
+
+## Issue #917 command contract
+
+### Command interfaces
+
+```text
+clibox text replace PATTERN REPLACEMENT
+  [--regex] [--first] [--require-match]
+  [--input FILE | --text TEXT]
+  [--output FILE | --in-place] [--force]
+
+clibox time format [VALUE]
+  [--from rfc3339|date|unix-s|unix-ms | --input-format FORMAT]
+  [--to rfc3339|unix-s|unix-ms | --format FORMAT]
+  [--timezone ZONE]
+
+clibox time add [VALUE]
+  [--from rfc3339|date|unix-s|unix-ms | --input-format FORMAT]
+  [--to rfc3339|unix-s|unix-ms | --format FORMAT]
+  [--timezone ZONE]
+  [--years N] [--months N] [--weeks N] [--days N]
+  [--hours N] [--minutes N] [--seconds N]
+
+clibox base64 encode
+  [--input FILE | --text TEXT]
+  [--url-safe] [--no-padding]
+  [--output FILE] [--force]
+
+clibox base64 decode
+  [--input FILE | --text TEXT]
+  [--url-safe] [--no-padding]
+  [--output FILE] [--force]
+
+clibox hash encode
+  [--algorithm sha256|sha512|blake3]
+  [--input FILE | --text TEXT]
+  [--format hex|base64|checksum]
+  [--output FILE] [--force]
+
+clibox hash verify EXPECTED
+  [--algorithm sha256|sha512|blake3]
+  [--input FILE | --text TEXT]
+  [--format hex|base64]
+  [--quiet | --json]
+  [--output FILE] [--force]
+
+clibox hash verify --check CHECKSUM_FILE
+  [--algorithm sha256|sha512|blake3]
+  [--quiet | --json]
+  [--output FILE] [--force]
+```
+
+### Common input, output, and failure behavior
+
+- File/string input selectors are mutually exclusive. Without either, read stdin until EOF. `--input -` explicitly selects stdin. Explicit file/string input does not consume stdin.
+- Direct strings provide their UTF-8 bytes without an implicit newline. Base64 and hashing support arbitrary binary file/stdin input; text replacement requires valid UTF-8.
+- Output defaults to stdout. Text and Base64 add no newline. Time values and encoded hashes end with one LF.
+- `--output` writes the command result to a file without duplicating it on stdout. `--force` is required to replace an existing output file.
+- Exit codes are `0` for success, `1` for runtime failure or checksum mismatch, and `2` for missing, malformed, or conflicting CLI arguments.
+- Keep diagnostics on stderr and command results on stdout. Provide English help, examples, and actionable errors.
+- Impose no fixed input/output size limit. Text replacement loads the complete input/result into memory; Base64 and hashing stream data. Resource exhaustion can fail the operation.
+- Streaming stdout may contain partial output before an input, decoding, write, or cancellation failure. Document this behavior.
+
+### File publication
+
+- Prepare file output in a temporary file in the destination directory and publish it only after processing succeeds.
+- Preserve existing access permissions when replacing a file; fail rather than silently discarding them. Ordinary forced output replacement requires metadata/security access but not read access to existing contents; in-place transformation still requires readable input.
+- Reject symbolic-link and multiply-linked destinations for replacement. `text --in-place` requires one explicitly selected regular input file and cannot be combined with `--output` or `--text`.
+- Do not create automatic backups or check for concurrent modifications. Atomic replacement does not provide locking or lost-update protection; the last successful replacement wins.
+- Clean up unpublished temporary files on handled failures/cancellation. Completed replacements are not undone.
+- Verification reports are complete results even when they report mismatches or per-entry errors: publish the completed report and return code `1`. `--quiet` produces no result file and conflicts with `--output`.
+
+### Text replacement
+
+- Default to case-sensitive literal replacement of every non-overlapping match. Treat replacement text literally in this mode.
+- `--regex` enables Rust `regex` syntax and `$1`/`${name}` replacement references. Follow its documented escaping and inline flags; do not add lookaround or pattern backreferences.
+- `--first` replaces only the first match in the entire input. `--require-match` makes zero matches a runtime failure; otherwise zero matches succeeds unchanged.
+- Reject empty search patterns and references to nonexistent capture groups. Allow an empty replacement, explicit zero-width regular expressions such as `^`, and unmatched optional groups according to the regex replacement semantics.
+- Preserve UTF-8 content, whitespace, and line endings except where explicitly changed by a match. Validate before publishing an in-place result.
+
+### Time formatting and arithmetic
+
+- Omitted `VALUE` captures the current instant once. The default input format is RFC 3339, the default output is RFC 3339, and the default processing/output timezone is UTC.
+- Require explicit `--from unix-s` or `--from unix-ms` for signed integer timestamps; do not guess units from digit counts.
+- `--from date` accepts `YYYY-MM-DD` at midnight. Custom input/output formats use a documented, platform-independent strftime-style implementation with fixed English/C-locale conventions.
+- Explicit input offsets establish the instant. Offset-free civil input uses `--timezone`; that option also selects the timezone for calendar arithmetic and output.
+- Support UTC and IANA timezone names. Bundle the same IANA database across all platform artifacts of a clibox version; never prefer the OS database. Rule updates arrive through clibox releases.
+- Support years `1`–`9999` and up to nanosecond precision. Reject leap seconds, invalid dates, unknown zones, unsupported format directives, and out-of-range results.
+- Preserve fractional precision unless the requested output is coarser. Integer Unix timestamp output uses mathematical floor, including negative timestamps.
+- `time add` requires at least one unit option. Values are signed integers; explicit zero is valid.
+- Combine years/months into a calendar-month adjustment, clamp to the destination month’s final day, then apply combined weeks/days as calendar days, then hours/minutes/seconds as elapsed time.
+- A calendar day differs from 24 elapsed hours across DST transitions. Reject nonexistent or ambiguous local times during parsing or calendar arithmetic; do not automatically shift them or choose an occurrence.
+- Do not change the system clock.
+
+### Base64
+
+- Default to the standard alphabet with padding. `--url-safe` selects the URL-safe alphabet; `--no-padding` selects unpadded encoding/decoding.
+- Do not automatically detect or mix alphabets or padding modes.
+- Encoding produces one unwrapped stream without an added newline.
+- Decoding ignores ASCII whitespace and rejects other invalid characters, invalid padding, and incomplete/noncanonical encodings for the selected mode.
+- Empty input succeeds with empty output. Decoding writes the original bytes without UTF-8 conversion or newline normalization.
+
+### Hash generation and verification
+
+- Support `sha256`, `sha512`, and fixed 256-bit BLAKE3. Default to SHA-256.
+- Hash exact input bytes without line-ending or text normalization.
+- `hash encode` defaults to lowercase hex. Base64 output uses the standard padded alphabet.
+- `--format checksum` requires a file input and emits a GNU-style checksum record, including its filename escaping rules and binary marker. The selected algorithm remains explicit rather than embedded in or inferred from the record.
+- With explicit `--output`, resolve a relative input and the output parent through the filesystem, then record a path relative to that parent; use an absolute path if Windows volumes/shares differ. Preserve supplied absolute input paths and supplied paths in stdout records. This makes generated file manifests directly verifiable from any cwd, including output through a symlinked directory. Shell redirection has no known manifest destination and cannot rebase records.
+- Direct verification accepts hex case-insensitively or explicitly selected standard padded Base64. Validate digest length against the selected algorithm.
+- `--check` is mutually exclusive with direct digest/input options. `--check -` reads the manifest from stdin.
+- Parse GNU-style checksum records using the selected algorithm. Resolve relative file paths against the manifest’s directory, or cwd for a stdin manifest. Preserve absolute-path behavior.
+- Process entries in order and continue after individual mismatches or file-read failures. Malformed records are reported as errors; an empty manifest is an error.
+- Return `1` if any record is malformed, mismatched, or unreadable. Do not silently ignore missing files.
+- Human output identifies the file or `stdin`/`text` source and its `ok`, `mismatch`, or `error` status. Never print the supplied text or expected/actual digests in verification results.
+- `--quiet` suppresses stdout. `--json` returns one object containing ordered `results` and `errors`; results include source identification, status, and applicable stable error code, while manifest-level errors include the line number when available. Neither format contains raw input content or digests.
+
+### Runtime, privacy, and compatibility
+
+- Implement transformations in Rust without invoking installed `sed`, `date`, Base64, or checksum tools. Use enum-backed command modes and algorithms.
+- Operate offline with current OS permissions. Add no application authentication, tenancy, persistent settings, cache, operation history, service, or remote telemetry.
+- Input/output files and temporary files required for atomic publication are the only new file state.
+- Add no automatic retries or fixed execution timeout. Support interruption of input reading and processing; cancellation does not reverse completed output publication.
+- Use structured `tracing` diagnostics on stderr, defaulting to warnings/errors with `RUST_LOG` for detail. Honor `NO_COLOR` and use color only on a TTY.
+- Logs and diagnostics must omit input content, digests, patterns, replacements, raw argv, and paths, including those embedded in dependency errors. Explicit verification-result filenames are command output, not diagnostic logs.
+- Preserve existing help/version and the implemented #916 interfaces, launcher argv/signal forwarding, exact version synchronization, script-free installation, eight target packages, and release boundaries.
+- No service SLO, telemetry dashboard, or additional compliance gate is required. Rollback uses an earlier pinned package version and does not restore overwritten files.
+
+
+## Implementation and compatibility decisions
+
+- `--in-place` explicitly authorizes replacement without a separate `--force`; `--force` affects ordinary `--output` replacement. An output filename `-` is a literal file; only input/manifest selectors treat `-` as stdin.
+- `clibox/src/cli.rs` composes the companion crates' system and transformation command enums plus readiness into one public command tree. `clibox-system/src/system.rs` owns OS-command dispatch; its `runtime.rs` and `error.rs` retain OS signal/child-status and safe contextual-error behavior. `clibox-transform/src/transform.rs` and its `transform_error.rs` retain transformation cancellation/publication supervision and safe exit-code diagnostics. Only the selected command family installs its signal handler; readiness waits dispatch through `clibox-wait/src/wait_command.rs` and its Tokio runtime, independently of OS utilities and transformations. A cancellable preparation worker validates semantic arguments before filesystem work and captures the time instant once. The transformation worker sends bounded chunks to an output worker; `clibox-transform/src/transform.rs` alone owns transformation cancellation supervision and final publication. Workers cannot publish. Handled cancellation returns 1 without joining blocked workers; process exit closes remaining worker handles. No fixed input/output size limit is added.
+- `clibox-transform/src/publication.rs` owns same-directory temporary paths, no-clobber or replacing rename, final link/type revalidation, and permissions. Unix ownership, mode and access ACLs are retained; macOS empty ACLs are explicitly restored. Windows owner/group/DACL and access attributes must be retained. Permission preservation failures are fatal. Destination inspection does not open file contents: Linux uses an O_PATH handle and the held inode through `/proc/self/fd` for POSIX ACL xattrs (missing procfs fails before publication); macOS uses non-following metadata and ACL pathname APIs because O_EVTONLY still requires data access; Windows requests FILE_READ_ATTRIBUTES and READ_CONTROL only. No original-file removal, backup, identity comparison, locking, or multi-file transaction is introduced.
+- Windows retains a DELETE/FILE_WRITE_ATTRIBUTES temporary-file handle before permission copying and publishes with FileRenameInfoEx, using REPLACE_IF_EXISTS/IGNORE_READONLY_ATTRIBUTE only for authorized replacement. This preserves the original read-only attribute throughout preparation, cancellation, and publication failure; the OS requires attribute-write permission for a read-only target. Unsupported filesystem capabilities fail without changing the original. The held handle clears only unpublished temporary attributes and marks that temporary inode for deletion on failure, even after a restrictive ACL is copied. Apply the original access attributes before its DACL; a copied FILE_WRITE_ATTRIBUTES denial must not prevent an otherwise permitted rename. Do not use tempfile's Windows persist path: it clears the temporary file's attributes before MoveFileEx and cannot replace a read-only target.
+- Custom formats follow the pinned Chrono strftime grammar in fixed English/C locale. Input `%Z` and output `%#z` are unsupported; unknown directives fail. Custom date-only input defaults to midnight and missing time components default to zero. RFC 3339 parsing requires an explicit offset, rejects leap seconds and more than nine fractional digits. Its output retains the input fractional digit count (integer seconds/date: zero; milliseconds: three; current instant: nine). Historical IANA sub-minute offsets require custom output with `%::z`; RFC 3339 cannot represent them and fails rather than rounding.
+- The timezone database is the pinned `chrono-tz` dependency's `IANA_TZDB_VERSION`; no OS database, `TZ`, `TZDIR`, or locale override participates in calculations. Dependency/database changes arrive with a clibox release.
+- GNU untagged manifests accept binary and text markers but always hash raw bytes. LF/CRLF record separators are accepted. Malformed records, including blank/comment lines, are errors; no missing entry is skipped. A filename `-` inside a record is a relative file, not another stdin selector. Unix non-UTF-8 filenames round-trip as native bytes in checksum records and use escaped bytes in reports.
+- Verification JSON has ordered `results` and `errors`. Each result contains `source` (`kind`: `file`, `stdin`, or `text`; file sources also have `path`), `status` (`ok`, `mismatch`, or `error`), and an optional stable `code`. Manifest errors contain `code` and an optional one-based `line`. No digests or text content are included. Human source names escape control characters.
+- Complete reports, including manifest read/parse errors and per-entry failures, publish with exit 1. Cancellation and output failure do not publish incomplete file reports.
+
+## Expanded validation
+
+Run the root Rust suite and formatter check, `cargo test --locked -p clibox -p clibox-system -p clibox-transform -p clibox-wait`, native artifact packaging, npm launcher/distribution tests and installed npm/pnpm consumer smoke tests. CI runs the Rust command suite on Linux, macOS, and Windows and exercises the seven commands through the installed launcher for all eight existing native artifacts, including Alpine musl consumers. Fixtures cover parsing/redaction, Unicode and binary data, strict Base64 chunk boundaries, exact hash vectors, timezone/DST/precision behavior, ordered manifests, permissions/ACLs/links, failed publication, last-writer-wins, cancellation, and partial/broken stdout. Remove repository-owned generated `dist` directories afterward.

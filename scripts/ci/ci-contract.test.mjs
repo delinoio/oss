@@ -33,6 +33,7 @@ const devhudJobs = [
   "devhud-mobile-contracts", "devhud-ios-simulator", "devhud-android-emulator", "devhud-protocol", "devhud-admin",
   "devhud-api", "devhud-oci", "devhud-supply-chain", "devhud-release-contracts",
 ];
+const achJobs = ["async-commit-hook"];
 
 const taskflowJobs = ["taskflow-conformance", "taskflow-docker"];
 
@@ -44,9 +45,20 @@ function namedStep(job, name) {
   return job.steps.find((candidate) => candidate.name === name);
 }
 
+test("async-commit-hook retains runner, interface, protocol and unsigned archive validation", () => {
+  const commands = workflow.jobs["async-commit-hook"].steps.map(({ run }) => run ?? "").join("\n");
+  for (const command of [
+    "go test -race ./cmds/async-commit-hook/...", "pnpm --filter async-commit-hook test",
+    "pnpm --filter @delinoio/async-commit-hook-api-client test", "pnpm proto:check",
+    "node --test scripts/release/async-commit-hook.test.mjs",
+    'python3 scripts/release/build-async-commit-hook.py --output "$RUNNER_TEMP/ach-release"',
+  ]) assert.ok(commands.includes(command), command);
+  assert.equal(commands.match(/pnpm install --frozen-lockfile --ignore-scripts/gu)?.length, 1);
+});
+
 test("CI keeps every legacy check and aggregates every required job", () => {
   const jobs = Object.keys(workflow.jobs);
-  for (const id of ["ci-contracts", ...legacyJobs, ...devhudJobs, ...taskflowJobs, "ci-result"]) assert.ok(jobs.includes(id), id);
+  for (const id of ["ci-contracts", ...legacyJobs, ...devhudJobs, ...taskflowJobs, ...achJobs, "ci-result"]) assert.ok(jobs.includes(id), id);
   const required = jobs.filter((id) => id !== "ci-result").sort();
   assert.deepEqual([...workflow.jobs["ci-result"].needs].sort(), required);
   assert.equal(workflow.jobs["ci-result"].if, "always()");
@@ -57,8 +69,8 @@ test("CI keeps every legacy check and aggregates every required job", () => {
 
 test("one change plan gates every domain job before runner allocation", () => {
   assert.equal(workflow.jobs.changes.steps.find(({ id }) => id === "plan").run, "node scripts/ci/plan.mjs");
-  assert.deepEqual(Object.keys(jobPaths).sort(), [...legacyJobs, ...devhudJobs, ...taskflowJobs].sort());
-  for (const id of [...legacyJobs, ...devhudJobs, ...taskflowJobs]) {
+  assert.deepEqual(Object.keys(jobPaths).sort(), [...legacyJobs, ...devhudJobs, ...taskflowJobs, ...achJobs].sort());
+  for (const id of [...legacyJobs, ...devhudJobs, ...taskflowJobs, ...achJobs]) {
     const job = workflow.jobs[id];
     assert.equal(job.needs, "changes", id);
     assert.equal(job.if, "${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['" + id + "'] }}", id);
@@ -245,6 +257,10 @@ test("OCI validation is multi-architecture, non-root, migration-bearing, and loc
   assert.doesNotMatch(source, /(?:docker|skopeo) push/iu);
   assert.doesNotMatch(source, /docker-daemon:/u);
   assert.match(apiDockerfileSource, /^FROM --platform=\$BUILDPLATFORM golang:/mu);
+  const moduleGoVersion = readFileSync(`${root}/go.mod`, "utf8").match(/^go (\S+)$/mu)?.[1];
+  const imageGoVersion = apiDockerfileSource.match(/^FROM --platform=\$BUILDPLATFORM golang:([\d.]+)-bookworm AS build$/mu)?.[1];
+  assert.ok(moduleGoVersion);
+  assert.equal(imageGoVersion, moduleGoVersion, "OCI builder must match the module toolchain floor");
 });
 
 test("Debian desktop validation installs, launches, unregisters, and removes the package", () => {

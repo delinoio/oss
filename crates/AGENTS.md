@@ -11,7 +11,8 @@
 
 - `crates/binpm`: Rust-based Node-free binary package manager for release assets.
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
-- `crates/clibox`: Rust CLI with approved crates.io and npm distribution.
+- `crates/clibox`: non-publishable Rust executable distributed through npm and native packages.
+- `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`: non-publishable clibox command-family implementations.
 - `crates/nodeup`: Rust-based Node.js version manager.
 - `crates/with-watch`: Rust-based filesystem-watching command wrapper.
 - `crates/serde-feather`: Size-first serde runtime-facing core crate.
@@ -157,8 +158,10 @@
 
 ### clibox Rules
 
-- Preserve help/version and the #919 `wait tcp`, `wait http`, and `wait file` contracts, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`.
-- Keep the explicitly approved crates.io publication, workspace, and cargo-mono release target. #916 utilities remain implemented and #917 retains its independently reserved command interfaces; do not add other domain commands implicitly.
+- Preserve the six issue #916 OS utility commands and seven issue #917 text/time/Base64/hash commands and three issue #919 readiness waits, compatible root help/version, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`. Keep OS adapters private and mockable, diagnostics redacted (including parser/tool failures), and stdout dedicated to results.
+- Keep transformations offline and in Rust, binary input streaming for Base64/hash, timezone rules bundled and pinned, and publication restricted to completed output with preserved access permissions. Replacement must not require reading the existing output contents; request only metadata/security access and still fail if permissions cannot be preserved. Reject linked replacement destinations and sanitize parser/dependency/runtime errors before stderr. No input content, patterns, replacements, digests, argv, or paths belong in diagnostics. OS-command signals and transformation cancellation retain their distinct exit/publication contracts behind one command tree.
+- All four clibox crates remain explicit workspace members with `publish = false` and are excluded from cargo-mono registry publication. Keep root command composition in `clibox`, OS utilities in `clibox-system`, offline transformations in `clibox-transform`, and readiness in `clibox-wait`, using direct path dependencies without companion-to-companion dependencies. Changes beyond the documented command contracts require an explicit contract update. Preserve already-tokenized child quotes/backslashes without assignment unescaping, safe Windows batch argv dispatch, partial port-enumeration errors, process/ownership revalidation before forceful termination, a shared five-second verification wait, and cancellation that leaves opened applications running. Validate clipboard text completely before replacement/output and retain Linux ownership with an installed background tool; never install tools automatically.
+- Preserve clap's generated missing-subcommand help for `run`, `port`, `clipboard`, `wait`, `text`, `time`, `base64`, and `hash` on stderr with exit code 2; keep root no-argument and explicit help output successful on stdout. Only generated help/version may bypass static redacted parser diagnostics.
 - Wait command kinds, HTTP methods, outcomes, and error classifications use enums. Poll immediately, delay only after unsuccessful attempts, clip all work/delays to monotonic deadlines, and cancel without target mutation or service termination.
 - Let every resolved TCP address attempt finish within the shared deadline until any succeeds; preserve terminal errors only for an all-address failure instead of discarding other addresses on one destination's error.
 - Use Rust networking and metadata only. HTTP verifies OS trust/hostname, completes at headers, disables proxies/credentials/redirects/client retries and custom CA overrides; file readiness follows symlinks but requires a regular file.
@@ -167,6 +170,12 @@
 - Keep one in-flight HTTP client/native trust initialization across attempt timeouts; retries await the retained result and cancellation must not wait for an uninterruptible OS trust call.
 - Wait results and all authored parser/runtime/tracing diagnostics must omit input locators, credentials, bodies, raw argv, and dependency errors. Static diagnostics survive quiet/log filtering; dependency log targets remain disabled even with detailed `RUST_LOG`. Respect `NO_COLOR` and TTY-only color.
 - Keep injected-clock, loopback/TLS, filesystem, privacy, and native signal tests. Trust fixtures must never modify user certificate stores. Preserve standalone runtime behavior and document crypto build-tool changes across the eight-target matrix.
-- Preserve the six utility command contracts, compatible root help/version, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`. Keep OS adapters private and mockable, diagnostics redacted (including parser/tool failures), and stdout dedicated to results.
-- clibox remains an approved workspace/cargo-mono crates.io release target. Changes beyond issues #916 and #919 require an explicit contract update. Preserve already-tokenized child quotes/backslashes without assignment unescaping, safe Windows batch argv dispatch, partial port-enumeration errors, process/ownership revalidation before forceful termination, a shared five-second verification wait, and cancellation that leaves opened applications running. Validate clipboard text completely before replacement/output and retain Linux ownership with an installed background tool; never install tools automatically.
-- Standalone crate packages must contain their own MIT license and pass process-level CLI tests and Cargo publish dry-run.
+- Delayed TCP readiness fixtures must retain a bound socket until listening starts; never release and reacquire ephemeral ports while parallel fixtures can reuse them.
+- Keep each clibox crate MIT licensed. Run all four crates' unit tests plus the executable process tests and npm/native packaging checks; Cargo publication dry-runs are not a clibox completion gate. Companion versions are internal and do not participate in product version bumps.
+- Cross-command tests must account for Windows `run env` variable conversion, including numeric `$1` references, separately from direct transformation capture parsing and literal npm launcher forwarding.
+- Checksum generation with explicit file output must rebase relative inputs against the manifest directory, resolving symlink parents before rebasing; preserve absolute inputs and stdout filename behavior.
+- Windows publication must retain temporary-file rename/cleanup access before copying permissions, replace read-only destinations without clearing their attributes, and leave originals unchanged on cancellation or failed publication. Apply temporary access attributes before the original DACL so denied attribute writes do not block an otherwise authorized replacement. Unsupported filesystem rename capabilities fail closed.
+
+- clibox GNU release builds use the shared pinned AlmaLinux 9/glibc 2.34 boundary for npm and stable APT/DNF distribution; preserve the existing musl targets and optional user-installed desktop tools.
+
+- The isolated Windows Ctrl+C test helper must explicitly clear inherited Ctrl+C-ignore state before spawning clibox, including under Git Bash release jobs. Keep this normalization confined to the test-owned process and include helper stdout/stderr on failure; production signal behavior is unchanged.

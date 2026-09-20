@@ -1,0 +1,248 @@
+syntax = "proto3";
+
+package async_commit_hook.v1;
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/async_commit_hook/v1;achv1";
+
+// This service accepts only existing local identities, never shell commands or file paths.
+service LocalService {
+  rpc GetVersion(GetVersionRequest) returns (GetVersionResponse);
+  rpc Pair(PairRequest) returns (PairResponse);
+  rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
+  rpc ListBranches(ListBranchesRequest) returns (ListBranchesResponse);
+  rpc ListCommits(ListCommitsRequest) returns (ListCommitsResponse);
+  rpc GetChanges(GetChangesRequest) returns (GetChangesResponse);
+  rpc ListRuns(ListRunsRequest) returns (ListRunsResponse);
+  rpc GetRun(GetRunRequest) returns (GetRunResponse);
+  rpc GetLogs(GetLogsRequest) returns (GetLogsResponse);
+  rpc GetReport(GetReportRequest) returns (GetReportResponse);
+  rpc GetFailures(GetFailuresRequest) returns (GetFailuresResponse);
+  rpc Compare(CompareRequest) returns (CompareResponse);
+  rpc Acknowledge(AcknowledgeRequest) returns (AcknowledgeResponse);
+  rpc Rerun(RerunRequest) returns (RerunResponse);
+  rpc Cancel(CancelRequest) returns (CancelResponse);
+}
+
+enum ExecutionState {
+  EXECUTION_STATE_UNSPECIFIED = 0;
+  EXECUTION_STATE_QUEUED = 1;
+  EXECUTION_STATE_PREPARING = 2;
+  EXECUTION_STATE_RUNNING = 3;
+  EXECUTION_STATE_COLLECTING = 4;
+  EXECUTION_STATE_PASSED = 5;
+  EXECUTION_STATE_FAILED = 6;
+  EXECUTION_STATE_BLOCKED = 7;
+  EXECUTION_STATE_CANCELLED = 8;
+  EXECUTION_STATE_REPLACED = 9;
+  EXECUTION_STATE_INTERRUPTED = 10;
+  EXECUTION_STATE_SKIPPED = 11;
+  EXECUTION_STATE_EXPIRED = 12;
+}
+message Diagnostic {
+  string code = 1;
+  string message = 2;
+  string hint = 3;
+}
+message Failure {
+  string id = 1;
+  string check = 2;
+  string test = 3;
+  string command = 4;
+  string message = 5;
+  string file = 6;
+  int32 line = 7;
+  string log_id = 8;
+}
+message Check {
+  string id = 1;
+  string name = 2;
+  ExecutionState state = 3;
+  bool optional = 4;
+  optional int32 exit_code = 5;
+  string shell = 6;
+  string inherited_from = 7;
+  repeated Diagnostic diagnostics = 8;
+  repeated Failure failures = 9;
+  string command = 10;
+  repeated Report reports = 11;
+}
+message Report {
+  string id = 1;
+  string name = 2;
+  uint64 size = 3;
+}
+message Run {
+  string id = 1;
+  uint64 sequence = 2;
+  string repository_id = 3;
+  string worktree_id = 4;
+  string branch = 5;
+  string commit = 6;
+  ExecutionState state = 7;
+  string os = 8;
+  string arch = 9;
+  string created_at = 10;
+  string finished_at = 11;
+  string acknowledged_at = 12;
+  string parent_id = 13;
+  repeated Check checks = 14;
+  repeated Diagnostic diagnostics = 15;
+  bool gate_passed = 16;
+  string gate_reason = 17;
+  // Total checks; ListRuns omits checks and diagnostics. Optional for older servers.
+  optional uint32 check_count = 18;
+}
+message Worktree {
+  string id = 1;
+  string path = 2;
+  string branch = 3;
+  bool available = 4;
+  string branch_id = 5;
+}
+message Repository {
+  string id = 1;
+  string name = 2;
+  repeated Worktree worktrees = 3;
+}
+message Branch {
+  string name = 1;
+  string commit = 2;
+  string id = 3;
+}
+message Commit {
+  string id = 1;
+  repeated string parents = 2;
+  string subject = 3;
+}
+message GetVersionRequest {}
+message GetVersionResponse {
+  uint32 api_version = 1;
+  string version = 2;
+}
+message PairRequest {
+  string code = 1;
+  string browser_name = 2;
+}
+message PairResponse {
+  string browser_id = 1;
+  string token = 2;
+}
+message ListRepositoriesRequest {
+  string cursor = 1;
+  uint32 limit = 2;
+}
+message ListRepositoriesResponse {
+  repeated Repository repositories = 1;
+  string next_cursor = 2;
+}
+message ListBranchesRequest {
+  string worktree_id = 1;
+  string cursor = 2;
+  uint32 limit = 3;
+}
+message ListBranchesResponse {
+  repeated Branch branches = 1;
+  string next_cursor = 2;
+}
+message ListCommitsRequest {
+  string worktree_id = 1;
+  string ref = 2;
+  uint32 offset = 3;
+  string branch_id = 4;
+}
+message ListCommitsResponse {
+  repeated Commit commits = 1;
+}
+message GetChangesRequest {
+  string worktree_id = 1;
+  string ref = 2;
+  string base = 3;
+  string branch_id = 4;
+}
+message GetChangesResponse {
+  string base = 1;
+  string head = 2;
+  string merge_base = 3;
+  string diff = 4;
+  bool truncated = 5;
+}
+message ListRunsRequest {
+  string repository_id = 1;
+  bool inbox = 2;
+  string cursor = 3;
+  uint32 limit = 4;
+  string branch = 5;
+  string worktree_id = 6;
+  // Select detached executions (empty stored branch), not all branches.
+  bool detached = 7;
+  string branch_id = 8;
+}
+message ListRunsResponse {
+  repeated Run runs = 1;
+  string next_cursor = 2;
+}
+message GetRunRequest {
+  string run_id = 1;
+}
+message GetRunResponse {
+  Run run = 1;
+}
+message GetLogsRequest {
+  string run_id = 1;
+  string check_id = 2;
+  int64 offset = 3;
+  uint32 limit = 4;
+}
+message GetLogsResponse {
+  string text = 1;
+  int64 next_offset = 2;
+  bool complete = 3;
+}
+message GetFailuresRequest {
+  string run_id = 1;
+}
+message GetFailuresResponse {
+  repeated Failure failures = 1;
+}
+message CompareRequest {
+  string run_id = 1;
+  string previous_id = 2;
+}
+message CompareResponse {
+  bool available = 1;
+  string reason = 2;
+  string run_id = 3;
+  string previous_id = 4;
+  repeated Failure new_failures = 5;
+  repeated Failure continuing_failures = 6;
+  repeated Failure resolved_failures = 7;
+}
+message AcknowledgeRequest {
+  string run_id = 1;
+}
+message AcknowledgeResponse {}
+message RerunRequest {
+  string run_id = 1;
+  bool failed_only = 2;
+}
+message RerunResponse {
+  string run_id = 1;
+  // The attempt is durably accepted even when background startup fails.
+  Diagnostic startup_diagnostic = 2;
+}
+message CancelRequest {
+  string run_id = 1;
+}
+message CancelResponse {}
+
+message GetReportRequest {
+  string run_id = 1;
+  string report_id = 2;
+  int64 offset = 3;
+  uint32 limit = 4;
+}
+message GetReportResponse {
+  string text = 1;
+  int64 next_offset = 2;
+  bool complete = 3;
+}
