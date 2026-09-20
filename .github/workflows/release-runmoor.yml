@@ -215,11 +215,7 @@ jobs:
           overwrite_files: false
           fail_on_unmatched_files: true
           files: dist/*
-          body: |
-            Runmoor for macOS 14+ arm64 and Ubuntu 22.04+ amd64/arm64.
-            Live GitHub repository/organization and App/PAT compatibility and real Tart execution have not been certified.
-            Verify SHA256SUMS and the accompanying Sigstore bundles before installation.
-            Updates are manual. Docker/Tart are operator-installed; macOS/Xcode images are not included.
+          body_path: scripts/release/runmoor-release-notes.md
       - name: Download and verify complete stable release draft
         env:
           GH_TOKEN: ${{ github.token }}
@@ -262,4 +258,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.plan.outputs.tag }}
-        run: gh release edit "$RELEASE_TAG" --draft=false --prerelease=false
+          RUNMOOR_RELEASE_NOTES: scripts/release/runmoor-release-notes.md
+        run: gh release edit "$RELEASE_TAG" --draft=false --prerelease=false --notes-file "$RUNMOOR_RELEASE_NOTES"

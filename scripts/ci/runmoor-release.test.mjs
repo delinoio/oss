@@ -35,12 +35,15 @@ test("Workflow keeps credentials, OIDC and actual signing out of every dry-run j
   assert.equal(release.with.draft, true);
   assert.equal(release.with.prerelease, false);
   assert.equal(release.with.overwrite_files, false);
+  assert.equal(release.with.body_path, "scripts/release/runmoor-release-notes.md");
   const finalVerificationStep = publish.steps.find((step) => step.name === "Download and verify complete stable release draft");
   assert.match(finalVerificationStep.run, /assetManifest\(draftDirectory, true\)/u);
   assert.match(finalVerificationStep.run, /verify\(draftDirectory, true, \{identity\}\)/u);
   const publishStable = publish.steps.find((step) => step.name === "Publish stable release");
-  assert.match(publishStable.run, /gh release edit "\$RELEASE_TAG" --draft=false --prerelease=false/u);
+  assert.match(publishStable.run, /gh release edit "\$RELEASE_TAG" --draft=false --prerelease=false --notes-file "\$RUNMOOR_RELEASE_NOTES"/u);
   assert.equal(publishStable.env.GH_TOKEN, "${{ github.token }}");
+  assert.equal(publishStable.env.RUNMOOR_RELEASE_NOTES, "scripts/release/runmoor-release-notes.md");
+  assert.match(readFileSync(new URL("../release/runmoor-release-notes.md", import.meta.url), "utf8"), /Live GitHub repository\/organization and App\/PAT compatibility and real Tart execution have not been certified\./u);
   assert.ok(publish.steps.indexOf(reuseStep) < publish.steps.indexOf(signStep));
   assert.ok(publish.steps.indexOf(signStep) < publish.steps.indexOf(preflightStep));
   assert.ok(publish.steps.indexOf(preflightStep) < publish.steps.indexOf(release));
