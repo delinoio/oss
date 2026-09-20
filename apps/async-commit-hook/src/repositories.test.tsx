@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -8,11 +8,16 @@ import { Workspace } from "./App";
 
 it("loads split repositories on demand and retains selection through a page error", async () => {
   let failNext = true;
-  const listRepositories = vi.fn((request: { cursor: string; limit: number }) => {
+  let releaseNext = () => {};
+  const nextRead = new Promise<void>((resolve) => { releaseNext = resolve; });
+  const listRepositories = vi.fn(async (request: { cursor: string; limit: number }) => {
     if (!request.cursor) return { repositories: [{ id: "repo", name: "Repository", worktrees: [{ id: "one", path: "/first", branch: "main" }] }], nextCursor: "page-two" };
     expect(request.cursor).toBe("page-two");
     expect(request.limit).toBe(50);
-    if (failNext) throw new ConnectError("Temporary page failure", Code.Unavailable);
+    if (failNext) {
+      await nextRead;
+      throw new ConnectError("Temporary page failure", Code.Unavailable);
+    }
     return { repositories: [{ id: "repo", name: "Repository", worktrees: [{ id: "two", path: "/second", branch: "feature" }] }] };
   });
   const listRuns = vi.fn(() => ({ runs: [] }));
@@ -28,8 +33,17 @@ it("loads split repositories on demand and retains selection through a page erro
     const first = await sidebar.findByRole("button", { name: /\/first/ });
     await waitFor(() => expect(first.getAttribute("aria-current")).toBe("true"));
     expect(listRepositories).toHaveBeenCalledOnce();
-    fireEvent.click(sidebar.getByRole("button", { name: "Load more workspaces" }));
+    const load = sidebar.getByRole("button", { name: "Load more workspaces" });
+    load.focus();
+    fireEvent.click(load);
+    await sidebar.findByRole("button", { name: "Loading workspaces…" });
+    expect(document.activeElement).toBe(load);
+    expect(load.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(load);
+    expect(listRepositories).toHaveBeenCalledTimes(2);
+    await act(async () => { releaseNext(); });
     await sidebar.findByRole("alert");
+    expect(document.activeElement).toBe(load);
     expect(first.getAttribute("aria-current")).toBe("true");
     failNext = false;
     fireEvent.click(sidebar.getByRole("button", { name: "Try again" }));

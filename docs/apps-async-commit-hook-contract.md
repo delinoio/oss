@@ -52,4 +52,4 @@ Checks and Inbox rows display the server-provided total check count without requ
 
 Expanded check logs poll only while that check is active, independently of other checks in the run. A transition to a terminal state triggers one final read; terminal logs support explicit refresh and page navigation without periodic integrity reads.
 
-The repository sidebar loads bounded worktree pages on demand through Connect Query. Load more workspaces preserves the current selection and merges repositories spanning pages by ID. Pending and failed page loads retain loaded history, with a retry action; keyboard activation and focus remain on the load control while more pages exist.
+The repository sidebar loads bounded worktree pages on demand through Connect Query. Load more workspaces preserves the current selection and merges repositories spanning pages by ID. Pending and failed page loads retain loaded history, with a retry action; keyboard activation and focus remain on the load control while more pages exist. Busy and last-page controls use aria-disabled and guarded activation without removing keyboard focus.

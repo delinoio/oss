@@ -374,9 +374,9 @@ export function Workspace({
         ))}
         {(repos.hasNextPage || (repos.data?.pages.length ?? 0) > 1) && (
           <button
-            disabled={repos.isFetchingNextPage}
-            aria-disabled={!repos.hasNextPage}
-            onClick={() => { if (repos.hasNextPage) void repos.fetchNextPage(); }}
+            aria-busy={repos.isFetchingNextPage}
+            aria-disabled={repos.isFetchingNextPage || !repos.hasNextPage}
+            onClick={() => { if (repos.hasNextPage && !repos.isFetchingNextPage) void repos.fetchNextPage(); }}
           >
             {repos.isFetchingNextPage ? "Loading workspaces…" : repos.hasNextPage ? "Load more workspaces" : "All workspaces loaded"}
           </button>
