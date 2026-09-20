@@ -7,6 +7,7 @@ mod hash;
 mod io;
 mod open;
 mod port;
+mod probe;
 mod publication;
 mod runtime;
 mod system;
@@ -14,6 +15,8 @@ mod text;
 mod time;
 mod transform;
 mod transform_error;
+mod wait;
+mod wait_command;
 
 use std::{io::IsTerminal, process::ExitCode};
 
@@ -21,7 +24,11 @@ use clap::{error::ErrorKind, CommandFactory, Parser};
 use tracing_subscriber::{filter::filter_fn, prelude::*, EnvFilter};
 
 fn main() -> ExitCode {
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
+    let filter = EnvFilter::builder()
+        .with_regex(false)
+        .with_default_directive(tracing::level_filters::LevelFilter::WARN.into())
+        .try_from_env()
+        .unwrap_or_else(|_| EnvFilter::new("warn"));
     tracing_subscriber::registry()
         .with(filter)
         .with(
@@ -61,10 +68,9 @@ fn main() -> ExitCode {
                 ExitCode::from(1)
             };
         }
-        Err(_) => {
-            transform_error::report(transform_error::Error::argument(
-                transform_error::Code::Arguments,
-            ));
+        Err(error) => {
+            // Static parser diagnostics must remain visible even when logging is off.
+            eprintln!("error: arguments: {}", cli::parser_message(error.kind()));
             return ExitCode::from(2);
         }
     };
@@ -75,7 +81,10 @@ fn main() -> ExitCode {
             ExitCode::from(1)
         };
     };
+    // Each command family owns its signal semantics. Wait-only CA environment
+    // cleanup must never affect delegated children or offline transformations.
     let command = match command {
+        cli::Command::Wait(command) => return ExitCode::from(wait_command::execute(command)),
         cli::Command::System(command) => {
             let result = runtime::install_signals()
                 .and_then(|()| system::execute(command, leading_separator));

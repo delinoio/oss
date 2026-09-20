@@ -21,6 +21,7 @@ fn help_and_no_arguments_succeed_on_stdout() {
             "time",
             "base64",
             "hash",
+            "wait",
         ] {
             assert!(
                 stdout
@@ -65,6 +66,9 @@ fn unknown_arguments_fail_on_stderr() {
 #[test]
 fn every_utility_has_help_and_examples() {
     for args in [
+        vec!["wait", "tcp", "--help"],
+        vec!["wait", "http", "--help"],
+        vec!["wait", "file", "--help"],
         vec!["run", "env", "--help"],
         vec!["port", "which", "--help"],
         vec!["port", "kill", "--help"],
@@ -108,5 +112,37 @@ fn invalid_shapes_fail_before_any_os_effect() {
         assert_eq!(output.status.code(), Some(2), "{args:?}");
         assert!(output.stdout.is_empty());
         assert!(!output.stderr.is_empty());
+    }
+}
+
+#[test]
+fn help_never_forces_color_on_a_pipe() {
+    let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
+        .arg("--help")
+        .env("CLICOLOR_FORCE", "1")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(!output.stdout.contains(&0x1b));
+}
+
+#[test]
+fn parser_failures_remain_redacted_and_visible_with_logging_disabled() {
+    for args in [
+        vec!["wait", "http", "https://SECRET-PARSER@localhost"],
+        vec!["hash", "encode", "--algorithm", "SECRET-PARSER"],
+        vec!["port", "which", "SECRET-PARSER"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
+            .args(args)
+            .env("RUST_LOG", "off")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains("error: arguments:"));
+        assert!(stderr.contains("--help"));
+        assert!(!stderr.contains("SECRET-PARSER"));
     }
 }

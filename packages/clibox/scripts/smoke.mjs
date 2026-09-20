@@ -64,6 +64,10 @@ try {
     mkdirSync(path.join(consumer, "checksums"));
     equal(invoke(["hash", "encode", "--input", "binary input.dat", "--format", "checksum", "--output", "checksums/sums"]), "", "Installed manifest output failed");
     equal(invoke(["hash", "verify", "--check", "checksums/sums", "--quiet"]), "", "Installed manifest-relative path verification failed");
+    const readyFile = path.join(consumer, "ready file");
+    writeFileSync(readyFile, "");
+    const ready = JSON.parse(execFileSync(process.execPath, [launcher, "wait", "file", readyFile, "--json", "--timeout", "5s"], { cwd: consumer, encoding: "utf8" }));
+    ensure(ready.kind === "file" && ready.status === "ready" && ready.attempts === 1 && ready.error === null, `${manager} readiness smoke failed`);
     const fixture = path.join(consumer, "utility-check.cjs");
     writeFileSync(fixture, "if (process.env.CLIBOX_TEST_EXIT) process.exit(37); process.stdout.write(JSON.stringify({ value: process.env.CLIBOX_TEST_VALUE, args: process.argv.slice(2) }));");
     const utility = JSON.parse(execFileSync(process.execPath, [launcher, "run", "env", "CLIBOX_TEST_VALUE=unicode 🦀", "--", process.execPath, fixture, "", "two words", "a&b|c"], { cwd: consumer, encoding: "utf8" }));

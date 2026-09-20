@@ -8,6 +8,7 @@ import { changedFiles, Event, jobPaths, planJobs } from "./plan.mjs";
 import { validateResults } from "./result.mjs";
 
 const native = Object.entries(jobPaths).filter(([, rule]) => rule.native).map(([id]) => id);
+const devhudNative = ["devhud-desktop", "devhud-ios-simulator", "devhud-android-emulator"];
 const selected = (event, paths) => Object.entries(planJobs(event, paths).jobs).filter(([, run]) => run).map(([id]) => id);
 
 test("PR never allocates native package jobs, including changes to CI itself", () => {
@@ -16,12 +17,12 @@ test("PR never allocates native package jobs, including changes to CI itself", (
     assert.ok(jobs.includes("devhud-frontend"), path);
     for (const id of native) assert.ok(!jobs.includes(id), `${path}: ${id}`);
   }
-  assert.equal(native.length, 3);
+  assert.deepEqual(native, ["linux-packages", ...devhudNative]);
 });
 
 test("main selects the existing full native matrix only when affected; manual selects every job", () => {
   for (const path of ["apps/devhud/src/App.tsx", "apps/devhud/src-tauri/src/main.rs", "protos/devhud/v1/settings.proto", "pnpm-lock.yaml", ".github/workflows/CI.yml"]) {
-    for (const id of native) assert.ok(selected(Event.Push, [path]).includes(id), `${path}: ${id}`);
+    for (const id of devhudNative) assert.ok(selected(Event.Push, [path]).includes(id), `${path}: ${id}`);
   }
   assert.deepEqual(selected(Event.Manual, []), Object.keys(jobPaths));
   assert.deepEqual(selected(Event.Push, ["docs/project-with-watch.md"]), []);
@@ -29,10 +30,34 @@ test("main selects the existing full native matrix only when affected; manual se
   assert.deepEqual(selected(Event.Push, []), []);
 });
 
+test("Linux packages run on affected main pushes and manual dispatch, never on PRs", () => {
+  for (const path of [
+    "crates/binpm/src/main.rs", "crates/cargo-mono/src/main.rs",
+    "crates/nodeup/src/main.rs", "crates/with-watch/src/main.rs",
+    "Cargo.toml", "Cargo.lock", ".cargo/config.toml", "rust-toolchain", "rust-toolchain.toml",
+    "packaging/linux/pins.json", "scripts/release/linux-packages.mjs",
+    "scripts/release/linux-packages.test.mjs", "scripts/release/linux-packages/build-rust.sh",
+    ".github/workflows/release-linux-packages.yml", "package.json", "pnpm-lock.yaml",
+    ".github/workflows/CI.yml", ".github/actions/setup-ci-node/action.yml",
+    "scripts/ci/plan.mjs", "scripts/ci/job-paths.json",
+  ]) {
+    assert.equal(planJobs(Event.PullRequest, [path]).jobs["linux-packages"], false, path);
+    assert.equal(planJobs(Event.Push, [path]).jobs["linux-packages"], true, path);
+  }
+  assert.equal(planJobs(Event.Manual, []).jobs["linux-packages"], true);
+  for (const paths of [[], ["docs/project-with-watch.md"], ["apps/devhud/src/App.tsx"]]) {
+    assert.equal(planJobs(Event.Push, paths).jobs["linux-packages"], false);
+  }
+  assert.deepEqual(
+    selected(Event.PullRequest, [".github/workflows/CI.yml"]),
+    Object.keys(jobPaths).filter((id) => !native.includes(id)),
+  );
+});
+
 test("Runmoor source and release scripts do not rebuild DevHud desktop/mobile", () => {
   for (const paths of [["cmds/runmoor/main.go"], ["scripts/release/runmoor.mjs", "scripts/release/runmoor.test.mjs"]]) {
     const jobs = selected(Event.Push, paths);
-    for (const id of native) assert.ok(!jobs.includes(id), id);
+    for (const id of devhudNative) assert.ok(!jobs.includes(id), id);
     if (paths[0].startsWith("cmds/")) assert.ok(jobs.includes("go-test"));
     else assert.ok(jobs.includes("devhud-release-contracts"));
   }
@@ -76,12 +101,12 @@ test("workspace, shared, runtime, and external contract inputs select their owne
     [".nvmrc", ["node-mpapp-test", "devhud-frontend", "devhud-api", "repository-environment"]],
     ["pnpm-lock.yaml", ["node-mpapp-test", "node-public-docs-test", "devhud-admin", "devhud-api", "devhud-frontend"]],
     [".cargo/config.toml", ["rust-fmt", "rust-clippy", "rust-test", "devhud-rust-conformance"]],
-    ["crates/binpm/src/main.rs", ["linux-packages"]],
-    ["crates/cargo-mono/src/main.rs", ["linux-packages"]],
-    ["crates/nodeup/src/main.rs", ["linux-packages"]],
-    ["crates/with-watch/src/main.rs", ["linux-packages"]],
-    ["rust-toolchain.toml", ["linux-packages"]],
-    ["Cargo.lock", ["linux-packages"]],
+    ["crates/binpm/src/main.rs", ["rust-fmt", "rust-clippy", "rust-test"]],
+    ["crates/cargo-mono/src/main.rs", ["rust-fmt", "rust-clippy", "rust-test"]],
+    ["crates/nodeup/src/main.rs", ["rust-fmt", "rust-clippy", "rust-test"]],
+    ["crates/with-watch/src/main.rs", ["rust-fmt", "rust-clippy", "rust-test"]],
+    ["rust-toolchain.toml", ["rust-fmt", "rust-clippy", "rust-test"]],
+    ["Cargo.lock", ["rust-fmt", "rust-clippy", "rust-test"]],
   ]) {
     for (const id of ids) assert.ok(selected(Event.PullRequest, [path]).includes(id), `${path}: ${id}`);
   }
@@ -157,6 +182,24 @@ function results(event, paths) {
     ...Object.fromEntries(Object.entries(jobs).map(([id, run]) => [id, { result: run ? "success" : "skipped" }])),
   };
 }
+
+test("aggregate requires Linux package skips on PRs and success when selected on main or manually", () => {
+  const id = "linux-packages";
+  for (const path of ["Cargo.lock", ".github/workflows/CI.yml"]) {
+    for (const event of Object.values(Event)) {
+      const needs = results(event, [path]);
+      assert.equal(needs[id].result, event === Event.PullRequest ? "skipped" : "success");
+      assert.equal(validateResults(needs), true);
+      const unexpected = event === Event.PullRequest ? "success" : "skipped";
+      for (const result of ["failure", "cancelled", unexpected, undefined]) {
+        needs[id].result = result;
+        assert.throws(() => validateResults(needs), /linux-packages/u);
+      }
+      delete needs[id];
+      assert.throws(() => validateResults(needs), /inventory/u);
+    }
+  }
+});
 
 test("aggregate accepts only success and skips explicitly authorized by the plan", () => {
   for (const event of Object.values(Event)) assert.equal(validateResults(results(event, ["apps/devhud/src/App.tsx"])), true);

@@ -1,7 +1,7 @@
 # Project: clibox
 
 ## Goal
-Provide a Rust CLI that JavaScript projects can pin through npm and their lockfiles. Issue #916 defines cross-platform environment execution, local port inspection/termination, resource opening, and text clipboard commands; issue #917 adds offline text replacement, time formatting/arithmetic, Base64 transformation, and hash generation/verification. Both command sets coexist with help/version.
+Provide a Rust CLI that JavaScript projects can pin through npm and their lockfiles. Issue #916 defines cross-platform environment execution, local port inspection/termination, resource opening, and text clipboard commands; issue #917 adds offline text replacement, time formatting/arithmetic, Base64 transformation, and hash generation/verification. Issue #919 adds stateless TCP, HTTP, and regular-file readiness waits. All three command sets coexist with help/version.
 
 ## Project ID
 `clibox`
@@ -25,6 +25,9 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 - The public OS commands are `run env`, `port which`, `port kill`, `open`, `clipboard copy`, and `clipboard paste`; no public Rust/JavaScript library API is provided.
 - OS effects use current-user/session permissions without elevation, persistence, automatic retries, or telemetry. Diagnostics omit clipboard text, environment values, complete argv, URLs, and paths.
 - The seven issue #917 commands share redacted diagnostics, cancellable processing, and permission-preserving atomic file publication. Timezone data is bundled identically across platform artifacts of a version. Handled transformation cancellation returns 1; OS utilities preserve their supported termination signals and delegated child status.
+- `wait tcp`, `wait http`, and `wait file` share immediate nonoverlapping polling, unlimited default waiting, monotonic bounded attempts, handled cancellation, and redacted human/quiet/JSON results.
+- Network checks run in Rust without external utilities. HTTPS verifies OS trust and hostname, negotiates HTTP/2 or HTTP/1.1, disables proxies/authentication/redirects, and finishes at response headers. Files are observed through metadata only.
+- Automated local fixtures and Linux/macOS/Windows process CI are the completion gate. All eight artifact checks and Alpine consumers remain required; musl crypto compilation uses target-native `musl-gcc` while final linking retains pinned self-contained `rust-lld`.
 - Automated parser, process, OS-adapter, and distribution tests are the completion gate. Real GUI, clipboard persistence, and application-wait verification remain follow-up work.
 - A docs website, Homebrew, and public GitHub Release binaries remain outside this project.
 
