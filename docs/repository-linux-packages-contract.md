@@ -8,6 +8,10 @@ Stable packages are binpm, cargo-mono, nodeup, with-watch, and derun. Runmoor re
 
 All six originating GitHub workflows publish stable releases. Runmoor's stable source release is accepted into the explicitly enabled native preview repository; source release status and native repository enrollment are separate contracts.
 
+## CI validation
+
+The `linux-packages` CI job runs compatibility builds, disposable signed repositories, and package lifecycle checks on native amd64/arm64 hosts for relevant main pushes and every manual dispatch. PRs skip both architectures, including when CI configuration changes force all eligible checks, to keep package builds and distribution installation matrices out of the PR feedback path. The shared planner marks this job as native packaging; `CI Result` retains its dependency and requires the planned skip on PRs and success when selected on main or manually. General Linux tests, OCI checks, and lightweight static package contracts remain eligible on PRs. Release workflows retain their full package build, installation, and publication validation.
+
 ## Build and input trust
 
 Rust GNU Linux binaries use the checksum-pinned AlmaLinux 9 image and the repository Rust toolchain. Bootstrap rustup 1.29.1 from the architecture-specific official archive URL in `pins.json`, verify its committed SHA-256 before execution, and disable self-updates. Never execute the mutable `sh.rustup.rs` bootstrap. Dynamic GLIBC requirements must not exceed 2.34; only explicitly mapped runtime libraries are allowed. x86-64 builds target the baseline ISA and ARM64 builds target generic ARMv8. Derun and Runmoor Linux builds disable CGO. Existing GitHub asset names and Sigstore identities remain authoritative.

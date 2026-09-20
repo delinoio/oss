@@ -377,7 +377,7 @@ Coverage expectations:
 
 Change-scoped execution rules:
 - A single `changes` job selects domain jobs before runner allocation using `scripts/ci/job-paths.json` and `scripts/ci/plan.mjs`. `ci-contracts` always runs. Go and environment checks retain all three operating systems when selected.
-- PRs run affected validation, including OCI checks, but never allocate the ten desktop, three iOS, or four Android package entries. Relevant main pushes run the complete existing native matrices. Manual dispatch runs every check and platform. There is no nightly CI schedule.
+- PRs run affected validation, including OCI checks, but never allocate the two Linux CLI package, ten desktop, three iOS, or four Android package entries. Relevant main pushes run the complete existing native matrices. Manual dispatch runs every check and platform. There is no nightly CI schedule.
 - PR comparisons use the base/head merge-base; main comparisons use the exact `before..sha` trees, including all commits in the push. Missing or invalid comparisons fail. Deleted and renamed files select both affected owners.
 - Node workspace jobs use `scripts/ci/run-affected.mjs` to invoke the installed Turbo Node entry point directly with `turbo run <task> --affected --filter <workspace>` arguments, without a shell or package-manager shim, and with the planner's exact `TURBO_SCM_BASE` and `TURBO_SCM_HEAD`. External inputs and forced runs omit `--affected`; an otherwise empty affected set is a successful no-op.
 - Central path rules cover Go, Rust, every Node workspace, repository environment tooling, DevHud domains, packaging, public docs, and package/release/review workflows. Runmoor-only release scripts do not select DevHud native packaging; shared DevHud packaging inputs still do.
@@ -434,7 +434,7 @@ Release automation baseline:
 - Follow `docs/repository-linux-packages-contract.md` for the six CLI APT/DNF repositories at `https://pkgs.oss.delino.io`. Native package publication is part of each selected CLI release, uses the dedicated `linux-packages` environment, and keeps Runmoor preview separate.
 - Runmoor's stable GitHub release status does not implicitly move its APT/DNF package out of the opt-in preview repository; validate source release status independently from native repository enrollment.
 - APT signing-certificate updates are distributed by the shared `delino-archive-keyring` dependency in both suites. Keep certificate versions immutable, retain historical public signing subkeys, and require a completed 30-day old-signer publication overlap before switching CI subkeys.
-- Rust CLI source, Cargo workspace/configuration and toolchain changes must select the Linux package CI job so both native architectures retain the AlmaLinux 9 compatibility baseline.
+- Relevant main pushes, including Rust CLI source, Cargo workspace/configuration and toolchain changes, must select the Linux package CI job so both native architectures retain the AlmaLinux 9 compatibility baseline. Manual CI dispatch always selects it. PRs skip this job even when CI configuration changes force all eligible checks; its `CI Result` dependency remains and must match the planned skip. General Linux validation, static package contracts, and release-time packaging checks remain enabled.
 
 ### Runmoor Contract
 
