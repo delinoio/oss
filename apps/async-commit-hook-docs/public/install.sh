@@ -1,7 +1,7 @@
 #!/bin/sh
 # Download, verify, then install. Requires Git, curl, tar, and cosign v3+.
 set -eu
-version=${ACH_VERSION:-0.1.0}
+version=${ACH_VERSION:-0.1.1}
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --version)
