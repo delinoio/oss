@@ -135,3 +135,5 @@
 - CI secret and remote-credential names cannot collide with generated control variables under the execution unit's target OS name semantics, independent of the exporter host. Validate before writing workflow or blueprint.
 
 - Accumulate invalidated session bootstrap task IDs across installation phases, including initial-disabled watch roots. Remove an ID only after a later refreshed receipt is retained, and activate remaining selected IDs after bootstrap.
+
+- Linux image-seal conformance must run without root privileges. Exercise seals through the retained creation descriptor; do not require reopening a mode-0500 executable for writing.

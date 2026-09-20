@@ -779,30 +779,34 @@ mod unix_owner {
             Ok(Prepared { scope, executable })
         }
     }
-}
 
-#[cfg(all(test, target_os = "linux"))]
-mod linux_owner_tests {
-    use std::{io::Write, os::fd::AsRawFd};
+    #[cfg(all(test, target_os = "linux"))]
+    mod linux_owner_tests {
+        use std::{io::Write, os::fd::AsRawFd};
 
-    use super::*;
+        use super::*;
 
-    #[test]
-    fn supervisor_image_is_an_immutable_anonymous_executable() {
-        let prepared = unix_owner::prepare().unwrap();
-        assert!(!prepared.scope.path().join("supervisor").exists());
-        assert!(prepared.executable.starts_with("/proc/self/fd"));
-        let mut writable = std::fs::OpenOptions::new()
-            .write(true)
-            .open(&prepared.executable)
-            .unwrap();
-        assert_eq!(
-            writable.write_all(b"changed").unwrap_err().raw_os_error(),
-            Some(nix::libc::EPERM)
-        );
-        assert!(writable.set_len(0).is_err());
-        let flags = unsafe { nix::libc::fcntl(writable.as_raw_fd(), nix::libc::F_GET_SEALS) };
-        assert_ne!(flags & nix::libc::F_SEAL_SEAL, 0);
-        assert!(!std::fs::read(&prepared.executable).unwrap().is_empty());
+        #[test]
+        fn supervisor_image_is_an_immutable_anonymous_executable() {
+            let prepared = prepare().unwrap();
+            assert!(!prepared.scope.path().join("supervisor").exists());
+            assert!(prepared.executable.starts_with("/proc/self/fd"));
+            // The image is mode 0500. Reopening for write tests root's DAC bypass,
+            // not memfd sealing, and fails on unprivileged CI runners. Duplicate the
+            // writer retained from image creation to exercise the seal itself.
+            let mut writable = prepared._image.try_clone().unwrap();
+            assert_eq!(
+                writable.metadata().unwrap().permissions().mode() & 0o777,
+                0o500
+            );
+            assert_eq!(
+                writable.write_all(b"changed").unwrap_err().raw_os_error(),
+                Some(nix::libc::EPERM)
+            );
+            assert!(writable.set_len(0).is_err());
+            let flags = unsafe { nix::libc::fcntl(writable.as_raw_fd(), nix::libc::F_GET_SEALS) };
+            assert_ne!(flags & nix::libc::F_SEAL_SEAL, 0);
+            assert!(!std::fs::read(&prepared.executable).unwrap().is_empty());
+        }
     }
 }
