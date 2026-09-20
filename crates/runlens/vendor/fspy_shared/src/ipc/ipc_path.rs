@@ -59,7 +59,7 @@ impl IpcPath {
     /// Runlens needs external observations too, preserving the platform path.
     pub fn to_path_buf(&self) -> std::path::PathBuf {
         let path = self.inner.to_cow_os_str();
-        vt_path::strip_path_prefix(&path, std::ffi::OsStr::new("")).map(std::path::Path::to_path_buf).unwrap_or_else(|_| std::path::PathBuf::from(&*path))
+        vt_path::strip_path_prefix(&path, std::ffi::OsStr::new("")).map(std::borrow::Cow::into_owned).unwrap_or_else(|_| std::path::PathBuf::from(&*path))
     }
 
     #[cfg(windows)]
@@ -78,7 +78,10 @@ impl IpcPath {
         f: F,
     ) -> R {
         let me = self.inner.to_cow_os_str();
-        f(vt_path::strip_path_prefix(&me, base.as_ref().as_os_str()))
+        match vt_path::strip_path_prefix(&me, base.as_ref().as_os_str()) {
+            Ok(path) => f(Ok(&path)),
+            Err(error) => f(Err(error)),
+        }
     }
 }
 

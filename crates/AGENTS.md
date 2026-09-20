@@ -224,6 +224,8 @@
 - Runlens variadic exec adapters must defer argument-budget enforcement to the OS, use checked allocation sizes, and preserve errno during cleanup.
 - Runlens Windows DLL injection requires exact active-code-page round trips, with a verified short-path fallback or a prelaunch Unsupported error.
 
+- Runlens Windows UNC namespace normalization must retain the absolute server/share root in external observations and prefix comparisons.
+
 ### clibox Rules
 
 - Preserve the help/version-only CLI, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`.

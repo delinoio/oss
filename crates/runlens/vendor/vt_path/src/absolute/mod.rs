@@ -170,7 +170,7 @@ impl AbsolutePath {
         else {
             return Ok(None);
         };
-        match RelativePathBuf::new(stripped_path) {
+        match RelativePathBuf::new(stripped_path.as_ref()) {
             Ok(relative_path) => Ok(Some(relative_path)),
             Err(FromPathError::NonRelative) => {
                 unreachable!("stripped path should always be relative")
@@ -230,7 +230,7 @@ impl AbsolutePath {
 /// An Error returned from [`AbsolutePath::strip_prefix`] if the stripped path is not a valid `RelativePath`
 #[derive(thiserror::Error, Debug)]
 pub struct StripPrefixError<'a> {
-    pub stripped_path: &'a Path,
+    pub stripped_path: std::borrow::Cow<'a, Path>,
     #[source]
     pub invalid_path_data_error: InvalidPathDataError,
 }

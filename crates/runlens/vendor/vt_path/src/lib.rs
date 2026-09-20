@@ -4,6 +4,7 @@ pub mod absolute;
 pub mod relative;
 
 use std::{
+    borrow::Cow,
     ffi::OsStr,
     io,
     path::{Path, StripPrefixError},
@@ -47,42 +48,37 @@ pub fn current_dir() -> io::Result<AbsolutePathBuf> {
 ///
 /// Returns an error if `base` is not a path prefix of `path` after applying the
 /// platform-specific prefix normalization above.
-pub fn strip_path_prefix<'a>(path: &'a OsStr, base: &OsStr) -> Result<&'a Path, StripPrefixError> {
+pub fn strip_path_prefix<'a>(path: &'a OsStr, base: &OsStr) -> Result<Cow<'a, Path>, StripPrefixError> {
     let path = strip_windows_path_prefix(path);
     let base = strip_windows_path_prefix(base);
-    Path::new(path).strip_prefix(base)
+    match path {
+        Cow::Borrowed(path) => Path::new(path).strip_prefix(&*base).map(Cow::Borrowed),
+        Cow::Owned(path) => Path::new(&path).strip_prefix(&*base).map(|p| Cow::Owned(p.to_path_buf())),
+    }
 }
 
-/// Strip the `\\?\`, `\\.\`, `\??\` prefix from a Windows path, if present.
-/// Does nothing on non-Windows platforms.
-///
-/// `\\?\` and `\\.\` are used to enable long paths and access to device paths.
-/// `\??\` is used in Nt* calls.
-/// The resulting path is not necessarily valid or points to the same location,
-/// but it is enough for lexical path-prefix comparisons.
-#[cfg_attr(
-    not(windows),
-    expect(
-        clippy::missing_const_for_fn,
-        reason = "uses non-const for loop and strip_prefix on Windows"
-    )
-)]
-fn strip_windows_path_prefix(p: &OsStr) -> &OsStr {
+/// Normalize namespace prefixes without turning UNC shares into relative paths.
+/// This is lexical only and does not query the filesystem.
+fn strip_windows_path_prefix(p: &OsStr) -> Cow<'_, OsStr> {
     #[cfg(windows)]
     {
         use os_str_bytes::OsStrBytesExt as _;
-
-        for prefix in [r"\\?\", r"\\.\", r"\??\"] {
+        // UNC needs an owned replacement: removing just the namespace would
+        // leave "UNC\\server\\share", which is incorrectly workspace-relative.
+        for prefix in [r"\\?\UNC\", r"\\.\UNC\", r"\??\UNC\"] {
             if let Some(stripped) = p.strip_prefix(prefix) {
-                return stripped;
+                let mut unc = std::ffi::OsString::from(r"\\");
+                unc.push(stripped);
+                return Cow::Owned(unc);
             }
         }
-        p
+        for prefix in [r"\\?\", r"\\.\", r"\??\"] {
+            if let Some(stripped) = p.strip_prefix(prefix) {
+                return Cow::Borrowed(stripped);
+            }
+        }
     }
-    #[cfg(not(windows))]
-    {
-        p
-    }
+    Cow::Borrowed(p)
 }
 
 #[cfg(test)]

@@ -24,3 +24,37 @@ fn windows_creation_modes_preserve_mutating_intent_with_read_access() {
     assert!(creation_mode(AccessMode::READ, 1, 0x1000).contains(AccessMode::WRITE));
     assert!(creation_mode(AccessMode::READ, 6, 0).contains(AccessMode::UNSUPPORTED));
 }
+
+
+#[cfg(windows)]
+#[test]
+fn windows_unc_ipc_paths_preserve_network_roots() {
+    use fspy_shared::ipc::IpcPath;
+    use std::path::Path;
+    for prefix in [r"\\?\UNC\", r"\??\UNC\", r"\\.\UNC\", r"\\"] {
+        let path = format!("{prefix}server\\share\\directory\\input.txt");
+        let wide = path.encode_utf16().collect::<Vec<_>>();
+        let ipc = IpcPath::from_wide(&wide);
+        let converted = ipc.to_path_buf();
+        assert!(converted.is_absolute());
+        assert_eq!(converted, Path::new(r"\\server\share\directory\input.txt"));
+        ipc.strip_path_prefix(Path::new(r"\\server\share"), |relative| {
+            assert_eq!(relative.unwrap(), Path::new(r"directory\input.txt"));
+        });
+        ipc.strip_path_prefix(Path::new(r"C:\worktree"), |relative| assert!(relative.is_err()));
+    }
+}
+
+#[test]
+fn normalized_prefixes_preserve_owned_relative_paths() {
+    use std::{ffi::OsStr, path::Path};
+    let (path, base, expected) = if cfg!(windows) {
+        (r"\\?\C:\repo\input", r"C:\repo", "input")
+    } else {
+        ("/repo/input", "/repo", "input")
+    };
+    assert_eq!(vt_path::strip_path_prefix(OsStr::new(path), OsStr::new(base)).unwrap().as_ref(), Path::new(expected));
+    let absolute = vt_path::AbsolutePath::new(Path::new(path)).unwrap();
+    let base = vt_path::AbsolutePath::new(Path::new(base)).unwrap();
+    assert_eq!(absolute.strip_prefix(base).unwrap().unwrap().as_str(), expected);
+}

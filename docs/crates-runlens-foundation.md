@@ -724,3 +724,5 @@ Nested Unix `execvp`/`execlp` and Linux `execvpe` retain libc’s shell fallback
 Unix variadic exec collection preserves native argument limits: argv storage uses checked allocation, while the OS enforces its effective argument/environment byte budget and returns the original errno.
 
 Windows injection validates the exact DLL pathname after ANSI encoding. An OS short-path alias is allowed only when it also round-trips exactly. If no representable name exists, initialization returns typed Unsupported before target creation; no lossy path reaches Detours.
+
+Windows NT/verbatim UNC observations retain their absolute network root when converted from collector records. Equivalent UNC bases can be stripped lexically; external shares never become current-worktree-relative observations.
