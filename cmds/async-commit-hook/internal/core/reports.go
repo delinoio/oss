@@ -250,6 +250,8 @@ func parseGoTest(b []byte, check, command, logID string) ([]Failure, error) {
 	seen := false
 	terminal := false
 	output := map[[2]string]*reportOutputTail{}
+	buildOutput := map[string]*reportOutputTail{}
+	buildOccurrences := map[string]int{}
 	tests := map[[2]string]bool{}
 	occurrences := map[[2]string]int{}
 	// The report is already bounded. Slice its lines without imposing a
@@ -258,13 +260,31 @@ func parseGoTest(b []byte, check, command, logID string) ([]Failure, error) {
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
 		}
-		var event struct{ Action, Package, Test, Output string }
+		var event struct{ Action, Package, Test, Output, ImportPath string }
 		if e := json.Unmarshal(line, &event); e != nil || event.Action == "" {
 			return nil, E("report-malformed", "invalid Go test JSON event", 1)
 		}
 		seen = true
 		key := [2]string{event.Package, event.Test}
 		switch event.Action {
+		case "build-output", "build-fail":
+			// Go interleaves BuildEvents with TestEvents. ImportPath is the
+			// build identity and need not equal any TestEvent.Package value.
+			if event.ImportPath == "" {
+				return nil, E("report-malformed", "Go build event has no import path", 1)
+			}
+			if event.Action == "build-output" {
+				if buildOutput[event.ImportPath] == nil {
+					buildOutput[event.ImportPath] = &reportOutputTail{}
+				}
+				buildOutput[event.ImportPath].append(event.Output)
+			} else {
+				terminal = true
+				buildOccurrences[event.ImportPath]++
+				id := Hash(Encode([]any{check, "go-build", event.ImportPath, buildOccurrences[event.ImportPath]}))
+				out = append(out, Failure{ID: id, Check: check, Test: event.ImportPath, Command: command, Message: strings.TrimSpace(buildOutput[event.ImportPath].String()), LogID: logID})
+				delete(buildOutput, event.ImportPath)
+			}
 		case "output":
 			if output[key] == nil {
 				output[key] = &reportOutputTail{}
