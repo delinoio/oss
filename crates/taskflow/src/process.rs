@@ -740,6 +740,8 @@ mod windows {
     }
     #[cfg(test)]
     mod tests {
+        use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+
         use windows_sys::Win32::System::SystemServices::{JOB_OBJECT_QUERY, JOB_OBJECT_TERMINATE};
 
         use super::*;
@@ -753,12 +755,13 @@ mod windows {
                 return;
             };
             if mode == "child" {
-                let _listener =
-                    std::net::TcpListener::bind(std::env::var("TFLOW_JOB_ADDRESS").unwrap())
-                        .unwrap();
-                std::fs::write(
-                    std::env::var("TFLOW_JOB_PID").unwrap(),
-                    std::process::id().to_string(),
+                let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+                // Publish readiness only after binding, without releasing a
+                // parent-reserved ephemeral port for another test to acquire.
+                crate::files::atomic_write(
+                    Path::new(&std::env::var("TFLOW_JOB_READY").unwrap()),
+                    &serde_json::to_vec(&(std::process::id(), listener.local_addr().unwrap()))
+                        .unwrap(),
                 )
                 .unwrap();
                 std::thread::sleep(Duration::from_secs(60));
@@ -776,7 +779,7 @@ mod windows {
                 .stderr(Stdio::null())
                 .spawn()
                 .unwrap();
-            let path = std::env::var("TFLOW_JOB_PID").unwrap();
+            let path = std::env::var("TFLOW_JOB_READY").unwrap();
             while !Path::new(&path).exists() {
                 std::thread::sleep(Duration::from_millis(10));
             }
@@ -794,10 +797,7 @@ mod windows {
             ] {
                 for access in [JOB_OBJECT_QUERY, JOB_OBJECT_TERMINATE] {
                     let directory = tempfile::tempdir().unwrap();
-                    let pid_file = directory.path().join("child.pid");
-                    let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-                    let address = socket.local_addr().unwrap();
-                    drop(socket);
+                    let ready_file = directory.path().join("child.json");
                     let mut environment: BTreeMap<String, String> = std::env::vars().collect();
                     environment.insert(
                         "TFLOW_JOB_FIXTURE_MODE".into(),
@@ -808,8 +808,10 @@ mod windows {
                         }
                         .into(),
                     );
-                    environment.insert("TFLOW_JOB_ADDRESS".into(), address.to_string());
-                    environment.insert("TFLOW_JOB_PID".into(), pid_file.to_str().unwrap().into());
+                    environment.insert(
+                        "TFLOW_JOB_READY".into(),
+                        ready_file.to_str().unwrap().into(),
+                    );
                     let command = Command::Argv(vec![
                         std::env::current_exe().unwrap().to_str().unwrap().into(),
                         "--exact".into(),
@@ -820,13 +822,37 @@ mod windows {
                         OwnedProcess::spawn(directory.path(), &command, None, Some(&environment))
                             .unwrap();
                     let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
-                    while !pid_file.exists() && tokio::time::Instant::now() < deadline {
+                    while !ready_file.exists() && tokio::time::Instant::now() < deadline {
                         tokio::time::sleep(Duration::from_millis(10)).await;
                     }
                     assert!(
-                        pid_file.exists(),
-                        "owned descendant did not bind its socket"
+                        ready_file.exists(),
+                        "{reason:?}, access={access}: owned descendant did not bind its socket"
                     );
+                    let (pid, address): (u32, std::net::SocketAddr) =
+                        serde_json::from_slice(&std::fs::read(&ready_file).unwrap()).unwrap();
+                    let handle = unsafe {
+                        OpenProcess(
+                            PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
+                            0,
+                            pid,
+                        )
+                    };
+                    assert!(
+                        !handle.is_null(),
+                        "open descendant: {}",
+                        std::io::Error::last_os_error()
+                    );
+                    // Retain the kernel object before cleanup; reopening a PID
+                    // afterward could inspect a different, reused process ID.
+                    let descendant = unsafe { OwnedHandle::from_raw_handle(handle) };
+                    let mut in_job = 0;
+                    assert_ne!(
+                        unsafe { IsProcessInJob(handle, owner.job as _, &mut in_job) },
+                        0
+                    );
+                    assert_ne!(in_job, 0, "fixture descendant escaped the owned job");
+                    assert_eq!(unsafe { WaitForSingleObject(handle, 0) }, WAIT_TIMEOUT);
                     let full_job = owner.job;
                     // Real access-denied faults exercise both API return values
                     // without invalid handles or process-global test hooks.
@@ -861,7 +887,10 @@ mod windows {
                         CloseHandle(restricted);
                     }
                     let error = result.unwrap_err();
-                    assert!(error.is::<CleanupFailure>(), "{reason:?}: {error:?}");
+                    assert!(
+                        error.is::<CleanupFailure>(),
+                        "{reason:?}, access={access}: {error:?}"
+                    );
                     assert!(!owner.cleaned, "failed API must retain cleanup ownership");
                     if reason != ExitReason::Completed {
                         owner.terminate().await.unwrap();
@@ -871,7 +900,42 @@ mod windows {
                     // Normal-root-exit faults take the destructor retry path;
                     // cancellation/deadline faults prove explicit retry first.
                     drop(owner);
-                    let _rebound = std::net::TcpListener::bind(address).unwrap();
+                    // Require the exact descendant to be dead when cleanup
+                    // returns. A port-rebind retry must never hide a live child.
+                    assert_eq!(
+                        unsafe { WaitForSingleObject(descendant.as_raw_handle(), 0) },
+                        WAIT_OBJECT_0,
+                        "{reason:?}, access={access}, pid={pid}: cleanup returned before \
+                         descendant exit"
+                    );
+                    drop(descendant);
+                    // Process exit and immediate Winsock address reuse are
+                    // separate observations. Keep the resource assertion, but
+                    // tolerate only bounded AddrInUse after proving exit above.
+                    // Do not enable SO_REUSEADDR: it can bind over a live owner.
+                    let started = tokio::time::Instant::now();
+                    let mut attempts = 0;
+                    let _rebound = loop {
+                        attempts += 1;
+                        match std::net::TcpListener::bind(address) {
+                            Ok(listener) => break listener,
+                            Err(error)
+                                if error.kind() == std::io::ErrorKind::AddrInUse
+                                    && started.elapsed() < Duration::from_secs(10) =>
+                            {
+                                tokio::time::sleep(Duration::from_millis(10)).await;
+                            }
+                            Err(error) => panic!(
+                                "{reason:?}, access={access}, pid={pid}: socket not released \
+                                 after {attempts} attempts: {error}"
+                            ),
+                        }
+                    };
+                    eprintln!(
+                        "Windows cleanup fixture: reason={reason:?} access={access} pid={pid} \
+                         rebind_attempts={attempts} rebind_elapsed_ms={}",
+                        started.elapsed().as_millis()
+                    );
                 }
             }
         }

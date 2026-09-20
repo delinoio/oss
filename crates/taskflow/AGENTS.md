@@ -145,3 +145,5 @@
 - Windows cleanup checks TerminateJobObject and job accounting, awaits zero active processes and direct-child reaping, then marks ownership clean. API/query/deadline failures remain CleanupFailure, leave Drop retry enabled, and cannot authorize successful receipts or replacement. Preserve kill-on-close as a final fallback.
 
 - Concurrent conformance tasks use separate receipt/marker files when asserting per-task line counts; uncoordinated append writes are not an atomic event log.
+
+- Windows cleanup fixtures retain the descendant's kernel handle before termination and require it to be signaled when cleanup returns. Check port release separately with bounded AddrInUse retries only after that proof; never use SO_REUSEADDR or PID reopening as cleanup evidence. Let descendants bind their own ephemeral sockets before atomically publishing readiness.
