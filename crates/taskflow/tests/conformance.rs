@@ -6097,3 +6097,34 @@ fn check_rejects_invalid_docker_ports_before_prerequisites() {
         task.validate().unwrap();
     }
 }
+
+#[tokio::test]
+async fn ci_export_requires_rustup_compatible_numeric_versions() {
+    let directory = fixture(
+        json!({"build":{"command":command(&["version"]),"input":[],"output":[],"platform":{"os":"linux","arch":"x64"}}}),
+    );
+    let original = graph(directory.path()).await;
+    for version in ["v1.95.0", "vv1.95.0", "1.95.0", "nightly-2026-01-01"] {
+        let mut g = (*original).clone();
+        g.workspace.config.ci = Some(
+            serde_json::from_value(json!({
+                "revision":"1111111111111111111111111111111111111111",
+                "rust":version, "runners":{"linux-x64":"ubuntu-latest"}
+            }))
+            .unwrap(),
+        );
+        let result = taskflow::ci::export(&g, vec!["build".into()], Path::new("ci.yml"));
+        if version.starts_with('v') {
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("exact Rust version"));
+            assert!(!directory.path().join("ci.yml").exists());
+            assert!(!directory.path().join("ci.taskflow.json").exists());
+        } else {
+            result.unwrap();
+            let workflow = std::fs::read_to_string(directory.path().join("ci.yml")).unwrap();
+            assert!(workflow.contains(&format!("rustup toolchain install '{version}'")));
+        }
+    }
+}

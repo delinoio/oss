@@ -95,7 +95,7 @@ impl Blueprint {
             .or_else(|| ci.rust.strip_prefix("beta-"))
             .is_some_and(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").is_ok());
         ensure!(
-            dated_rust || exact_version(&ci.rust),
+            dated_rust || (!ci.rust.starts_with('v') && exact_version(&ci.rust)),
             "CI requires an exact Rust version or dated toolchain"
         );
         for version in [&ci.node, &ci.pnpm, &ci.go].into_iter().flatten() {
