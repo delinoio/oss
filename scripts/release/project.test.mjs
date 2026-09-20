@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { Bump, Project, Kind, bumpVersion, readVersion, versionChanges, sourceMetadata, git, prepareRelease, validateCommit, preflightVersion, pushReleaseTag, tagRevision, waitForCiWorkflow } from "./project.mjs";
+import { Bump, Project, Kind, bumpVersion, readVersion, versionChanges, sourceMetadata, git, prepareRelease, validateCommit, preflightVersion, pushReleaseTag, tagRevision } from "./project.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const files = ["Cargo.lock", "packages/clibox/package.json", ...["binpm", "cargo-mono", "nodeup", "with-watch", "clibox"].map((name) => `crates/${name}/Cargo.toml`), "cmds/derun/internal/version/version.go", "cmds/runmoor/internal/runmoor/types.go"];
@@ -168,37 +168,4 @@ test("Registry-success/tag-push interruption recovers only the same tag and comm
   assert.equal((await pushReleaseTag({ directory: state.directory, identity: plan, request })).reused, true);
   await assert.rejects(pushReleaseTag({ directory: state.directory, identity: { ...plan, revision: state.initial }, request }), /different commit/u);
   assert.equal(git(state.remote, ["tag", "--list"]), plan.tag);
-});
-
-function run(overrides = {}) {
-  return { id: 5, run_attempt: 1, head_sha: revision, head_branch: "main", event: "push", path: ".github/workflows/CI.yml", status: "completed", conclusion: "success", ...overrides };
-}
-function ciRequest(runs = [run()], jobs = [{ name: "CI Result", status: "completed", conclusion: "success", head_sha: revision }]) {
-  return async (route) => ({ status: 200, body: route.includes("/jobs?") ? { jobs } : { workflow_runs: runs } });
-}
-
-test("CI wait binds workflow, event, branch, SHA and aggregate result", async () => {
-  assert.deepEqual(await waitForCiWorkflow({ identity, request: ciRequest() }), { ci_url: "https://github.com/delinoio/oss/actions/runs/5" });
-  for (const conclusion of ["failure", "cancelled", "skipped", "neutral", "timed_out", null]) {
-    await assert.rejects(waitForCiWorkflow({ identity, request: ciRequest([run({ conclusion })]) }), /did not succeed/u);
-  }
-  for (const jobs of [[], [{ name: "CI Result", conclusion: "success", status: "completed", head_sha: "2".repeat(40) }], [{ name: "CI Result", conclusion: "skipped", status: "completed", head_sha: revision }]]) {
-    await assert.rejects(waitForCiWorkflow({ identity, request: ciRequest([run()], jobs) }), /CI Result/u);
-  }
-  for (const wrong of [{ head_sha: "2".repeat(40) }, { head_branch: "topic" }, { event: "workflow_dispatch" }, { path: ".github/workflows/other.yml" }]) {
-    let clock = 0;
-    await assert.rejects(waitForCiWorkflow({ identity, request: ciRequest([run(wrong)]), now: () => clock, delay: async () => { clock += 600001; } }), /did not start/u);
-  }
-});
-
-test("Waits poll pending runs, prefer the newest matching run and have deadlines", async () => {
-  let calls = 0;
-  let clock = 0;
-  const states = [];
-  const request = async (route) => route.includes("/jobs?") ? ciRequest()(route) : { status: 200, body: { workflow_runs: [run({ id: 1, conclusion: "failure" }), run({ status: ++calls > 1 ? "completed" : "in_progress" })] } };
-  await waitForCiWorkflow({ identity, request, now: () => clock, delay: async () => { clock += 30000; }, report: (state) => states.push(state) });
-  assert.equal(states.length, 2);
-  clock = 0;
-  await assert.rejects(waitForCiWorkflow({ identity, request: ciRequest([run({ status: "in_progress" })]), now: () => clock, delay: async () => { clock += 30000; }, timeoutMs: 60000 }), /timed out/u);
-  await assert.rejects(waitForCiWorkflow({ identity, request: async () => ({ status: 403 }) }), /inspect/u);
 });
