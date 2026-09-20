@@ -59,15 +59,15 @@ impl OwnedProcess {
         #[cfg(unix)]
         let envelope = unix_owner::environment_envelope(environment)?;
         #[cfg(unix)]
-        let scope = unix_owner::prepare()?;
+        let prepared = unix_owner::prepare()?;
         #[cfg(unix)]
         let (lease, control) = std::os::unix::net::UnixStream::pair()?;
         #[cfg(unix)]
         lease.set_write_timeout(Some(Duration::from_secs(10)))?;
         #[cfg(unix)]
         let mut builder = {
-            let mut command = tokio::process::Command::new(scope.path().join("supervisor"));
-            command.arg("run").arg(scope.path()).args(&args);
+            let mut command = tokio::process::Command::new(&prepared.executable);
+            command.arg("run").arg(prepared.scope.path()).args(&args);
             command
                 .stdin(Stdio::from(std::os::fd::OwnedFd::from(control)))
                 .kill_on_drop(false)
@@ -115,7 +115,7 @@ impl OwnedProcess {
             pid,
             cleaned: false,
             #[cfg(unix)]
-            supervisor: Some(scope),
+            supervisor: Some(prepared.scope),
             #[cfg(unix)]
             lease: Some(lease),
             #[cfg(windows)]
@@ -697,19 +697,98 @@ mod unix_owner {
         Ok(bytes)
     }
 
-    pub fn prepare() -> Result<tempfile::TempDir> {
+    pub struct Prepared {
+        pub scope: tempfile::TempDir,
+        pub executable: std::path::PathBuf,
+        #[cfg(target_os = "linux")]
+        _image: std::fs::File,
+    }
+
+    #[cfg(target_os = "linux")]
+    fn executable_image(bytes: &[u8]) -> Result<std::fs::File> {
+        use std::{
+            io::Write,
+            os::fd::{AsRawFd, FromRawFd},
+        };
+
+        use nix::libc;
+        let flags = libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING;
+        let mut fd =
+            unsafe { libc::memfd_create(c"tflow-supervisor".as_ptr(), flags | libc::MFD_EXEC) };
+        // MFD_EXEC was introduced after memfd itself. Only an unsupported flag
+        // permits the legacy call; an explicit executable-memfd policy denial
+        // must fail closed, never fall back to a filesystem executable.
+        if fd < 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::EINVAL) {
+            fd = unsafe { libc::memfd_create(c"tflow-supervisor".as_ptr(), flags) };
+        }
+        if fd < 0 {
+            return Err(std::io::Error::last_os_error())
+                .context("create executable native supervisor image");
+        }
+        let mut image = unsafe { std::fs::File::from_raw_fd(fd) };
+        image.write_all(bytes)?;
+        image.set_permissions(std::fs::Permissions::from_mode(0o500))?;
+        let seals =
+            libc::F_SEAL_WRITE | libc::F_SEAL_GROW | libc::F_SEAL_SHRINK | libc::F_SEAL_SEAL;
+        if unsafe { libc::fcntl(image.as_raw_fd(), libc::F_ADD_SEALS, seals) } < 0 {
+            return Err(std::io::Error::last_os_error()).context("seal native supervisor image");
+        }
+        Ok(image)
+    }
+
+    pub fn prepare() -> Result<Prepared> {
         ensure!(!POISONED.load(Ordering::SeqCst), CleanupFailure);
         // A short private path is required by macOS sockaddr_un. User TMPDIR
         // can exceed its limit before adding a single socket component.
         let scope = tempfile::Builder::new()
             .prefix("tflow-")
             .tempdir_in("/tmp")?;
-        let path = scope.path().join("supervisor");
-        std::fs::write(
-            &path,
-            include_bytes!(concat!(env!("OUT_DIR"), "/taskflow-supervisor")),
-        )?;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o500))?;
-        Ok(scope)
+        let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/taskflow-supervisor"));
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::fd::AsRawFd;
+            let image = executable_image(bytes)?;
+            // Linux executes the sealed anonymous inode, so control/journal
+            // storage may be mounted noexec. CLOEXEC closes it after loading.
+            let executable = format!("/proc/self/fd/{}", image.as_raw_fd()).into();
+            Ok(Prepared {
+                scope,
+                executable,
+                _image: image,
+            })
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let executable = scope.path().join("supervisor");
+            std::fs::write(&executable, bytes)?;
+            std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o500))?;
+            Ok(Prepared { scope, executable })
+        }
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_owner_tests {
+    use std::{io::Write, os::fd::AsRawFd};
+
+    use super::*;
+
+    #[test]
+    fn supervisor_image_is_an_immutable_anonymous_executable() {
+        let prepared = unix_owner::prepare().unwrap();
+        assert!(!prepared.scope.path().join("supervisor").exists());
+        assert!(prepared.executable.starts_with("/proc/self/fd"));
+        let mut writable = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&prepared.executable)
+            .unwrap();
+        assert_eq!(
+            writable.write_all(b"changed").unwrap_err().raw_os_error(),
+            Some(nix::libc::EPERM)
+        );
+        assert!(writable.set_len(0).is_err());
+        let flags = unsafe { nix::libc::fcntl(writable.as_raw_fd(), nix::libc::F_GET_SEALS) };
+        assert_ne!(flags & nix::libc::F_SEAL_SEAL, 0);
+        assert!(!std::fs::read(&prepared.executable).unwrap().is_empty());
     }
 }

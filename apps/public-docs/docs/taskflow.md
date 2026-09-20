@@ -24,8 +24,9 @@ Native conformance fixtures exercise pnpm 10.26.2, Go 1.25, the selected Rust
 toolchain, Vitest 4.1.11, and Jest 29.7.0. Other command shapes may require the
 generic test adapter described in [Sharding and CI](taskflow/ci).
 
-Unix execution requires executable temporary storage. Linux requires a mounted proc filesystem, and
-macOS requires an available user launchd domain. TaskFlow reports an error when
+Linux requires a mounted proc filesystem and permission to execute anonymous memory-backed
+files (`memfd`); temporary storage may be mounted `noexec`. macOS requires executable
+private temporary storage and an available user launchd domain. TaskFlow reports an error when
 process ownership cannot be established or cleanup cannot be verified.
 
 ## First task
