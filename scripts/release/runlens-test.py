@@ -40,6 +40,40 @@ class ReleaseTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     release.version('0.1.0')
 
+    def test_installer_host_requires_expected_native_platform_and_minimum_os(self):
+        for system, machine, key, os_version in [
+            ('Darwin', 'x86_64', 'darwin-amd64', '13.7.1'),
+            ('Darwin', 'arm64', 'darwin-arm64', '13.7.1'),
+            ('Linux', 'x86_64', 'linux-amd64', '22.04'),
+            ('Linux', 'aarch64', 'linux-arm64', '22.04'),
+            ('Windows', 'AMD64', 'windows-amd64', '10.0.19045'),
+            ('Windows', 'ARM64', 'windows-arm64', '10.0.19045'),
+        ]:
+            with self.subTest(key=key), patch.object(release.platform, 'system', return_value=system), patch.object(release.platform, 'machine', return_value=machine), patch.object(release.platform, 'mac_ver', return_value=(os_version, (), '')), patch.object(release.platform, 'version', return_value=os_version), patch.object(release.platform, 'freedesktop_os_release', return_value={'ID': 'ubuntu', 'VERSION_ID': os_version}), patch.object(release, 'windows_native_architecture', return_value=key.split('-')[1]), patch.object(release.subprocess, 'check_output', return_value='0'), patch.object(release.platform, 'platform', return_value=f'{system}-{os_version}'), redirect_stdout(io.StringIO()):
+                release.install_host(SimpleNamespace(platform=key))
+                for wrong in release.PLATFORMS:
+                    if wrong != key:
+                        with self.assertRaises(ValueError):
+                            release.install_host(SimpleNamespace(platform=wrong))
+                with patch.object(release, 'minimum_os', return_value=False), self.assertRaises(ValueError):
+                    release.install_host(SimpleNamespace(platform=key))
+                if system == 'Darwin':
+                    with patch.object(release.subprocess, 'check_output', return_value='1'), self.assertRaises(ValueError):
+                        release.install_host(SimpleNamespace(platform=key))
+                if system == 'Windows':
+                    other = 'arm64' if key.endswith('amd64') else 'amd64'
+                    with patch.object(release, 'windows_native_architecture', return_value=other), self.assertRaises(ValueError):
+                        release.install_host(SimpleNamespace(platform=key))
+
+    def test_minimum_os_rejects_newer_or_different_systems(self):
+        with patch.object(release.platform, 'system', return_value='Darwin'), patch.object(release.platform, 'mac_ver', return_value=('14.0', (), '')):
+            self.assertFalse(release.minimum_os())
+        with patch.object(release.platform, 'system', return_value='Windows'), patch.object(release.platform, 'version', return_value='10.0.22631'):
+            self.assertFalse(release.minimum_os())
+        for os_release in [{'ID': 'ubuntu', 'VERSION_ID': '24.04'}, {'ID': 'debian', 'VERSION_ID': '22.04'}]:
+            with patch.object(release.platform, 'system', return_value='Linux'), patch.object(release.platform, 'freedesktop_os_release', return_value=os_release):
+                self.assertFalse(release.minimum_os())
+
     def test_inventory_and_minimum_os_gate(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

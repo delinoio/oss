@@ -269,3 +269,5 @@
 - Runlens static Linux targets retain caller LD_PRELOAD entries; remove only the tracer-owned library while preserving descendant loader behavior.
 
 - Serialize all Runlens release versions under one publication concurrency group; dry runs must not own or cancel that lock.
+
+- Every authenticated Runlens installer job must verify its declared platform and exact minimum OS on the executing native host before installation; mutable labels and newer-OS doctor success are insufficient evidence.

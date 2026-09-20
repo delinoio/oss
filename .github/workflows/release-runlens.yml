@@ -135,18 +135,32 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: [self-hosted, runlens-macos-13, X64]
-          - runner: [self-hosted, runlens-macos-13, ARM64]
-          - runner: [self-hosted, runlens-ubuntu-22.04, X64]
-          - runner: [self-hosted, runlens-ubuntu-22.04, ARM64]
-          - runner: [self-hosted, runlens-windows-10-22h2, X64]
-          - runner: [self-hosted, runlens-windows-10-22h2, ARM64]
+          - platform: darwin-amd64
+            runner: [self-hosted, runlens-macos-13, X64]
+          - platform: darwin-arm64
+            runner: [self-hosted, runlens-macos-13, ARM64]
+          - platform: linux-amd64
+            runner: [self-hosted, runlens-ubuntu-22.04, X64]
+          - platform: linux-arm64
+            runner: [self-hosted, runlens-ubuntu-22.04, ARM64]
+          - platform: windows-amd64
+            runner: [self-hosted, runlens-windows-10-22h2, X64]
+          - platform: windows-arm64
+            runner: [self-hosted, runlens-windows-10-22h2, ARM64]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Verify the native installer host and minimum OS
+        shell: bash
+        env:
+          EXPECTED_PLATFORM: ${{ matrix.platform }}
+        run: python scripts/release/runlens.py install-host --platform "$EXPECTED_PLATFORM"
       - uses: actions/download-artifact@v8
         with:
           name: runlens-signed

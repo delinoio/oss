@@ -138,3 +138,15 @@ test("Runlens serializes publication across all versions while dry runs stay ind
     "cancel-in-progress": false,
   });
 });
+
+test("every authenticated installer row verifies its actual platform and exact minimum OS", () => {
+  const matrix = release.jobs.install.strategy.matrix.include;
+  assert.deepEqual(matrix.map(row => row.platform).sort(), ["darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64", "windows-amd64", "windows-arm64"]);
+  const steps = release.jobs.install.steps;
+  const guard = steps.findIndex(step => step.name === "Verify the native installer host and minimum OS");
+  assert.ok(guard >= 0 && guard < steps.findIndex(step => step.uses === "actions/download-artifact@v8"));
+  assert.equal(steps[guard].env.EXPECTED_PLATFORM, "${{ matrix.platform }}");
+  assert.equal(steps[guard].run, 'python scripts/release/runlens.py install-host --platform "$EXPECTED_PLATFORM"');
+  assert.equal(steps[guard].if, undefined);
+  assert.equal(steps[guard]["continue-on-error"], undefined);
+});

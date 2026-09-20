@@ -57,6 +57,36 @@ def minimum_os():
     release = platform.freedesktop_os_release()
     return release.get('ID') == 'ubuntu' and release.get('VERSION_ID') == '22.04'
 
+def windows_native_architecture():
+    # Query native host identity even when Python itself runs under WOW64.
+    # https://learn.microsoft.com/windows/win32/api/wow64apiset/nf-wow64apiset-iswow64process2
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel.IsWow64Process2.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.USHORT), ctypes.POINTER(wintypes.USHORT)]
+    kernel.IsWow64Process2.restype = wintypes.BOOL
+    process, native = wintypes.USHORT(), wintypes.USHORT()
+    if not kernel.IsWow64Process2(kernel.GetCurrentProcess(), ctypes.byref(process), ctypes.byref(native)):
+        raise ValueError('cannot establish native Windows architecture')
+    architecture = {0x8664: 'amd64', 0xAA64: 'arm64'}.get(native.value)
+    if architecture is None:
+        raise ValueError('unsupported native Windows architecture')
+    return architecture
+
+def install_host(args):
+    if args.platform not in PLATFORMS or host_key() != args.platform:
+        raise ValueError('installer runner differs from its expected platform')
+    if platform.system() == 'Windows' and args.platform != f'windows-{windows_native_architecture()}':
+        raise ValueError('installer validation must use the native Windows architecture')
+    if platform.system() == 'Darwin':
+        translated = subprocess.check_output(['sysctl', '-in', 'sysctl.proc_translated'], text=True).strip()
+        if translated not in ('', '0'):
+            raise ValueError('installer validation cannot run under Rosetta')
+    if not minimum_os():
+        raise ValueError('installer validation requires the exact minimum OS')
+    print(json.dumps({'platform': args.platform, 'os_version': platform.platform(), 'minimum_os': True}))
+
 def licenses():
     metadata = json.loads(subprocess.check_output(['cargo', 'metadata', '--locked', '--format-version', '1'], cwd=SOURCE))
     sections = []
@@ -187,7 +217,7 @@ def homebrew(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['source-version', 'package', 'evidence', 'collect', 'readiness', 'homebrew'])
+    parser.add_argument('command', choices=['source-version', 'install-host', 'package', 'evidence', 'collect', 'readiness', 'homebrew'])
     parser.add_argument('--directory', type=Path)
     parser.add_argument('--version')
     parser.add_argument('--platform', choices=PLATFORMS)
@@ -196,6 +226,9 @@ def main():
     try:
         if args.command == 'source-version':
             print(version(source_version()))
+            return
+        if args.command == 'install-host':
+            install_host(args)
             return
         if args.directory is None or args.version is None:
             parser.error('--directory and --version are required for artifact commands')

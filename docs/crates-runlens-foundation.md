@@ -795,3 +795,9 @@ preloads across static exec with equivalent unit and native coverage.
 All Runlens publication versions share one workflow-wide concurrency group with
 cancellation disabled, covering validation, signing, install checks, release and
 Homebrew mutations. Dry runs use run-specific groups and cannot interrupt it.
+
+Each authenticated install matrix row declares its expected platform and checks
+the executing host before downloading or installing archives. The guard requires
+macOS 13, Windows NT 10.0.19045, or Ubuntu 22.04 and the matching native
+architecture. Rosetta and mismatched Windows native architecture are rejected;
+runner labels and a successful doctor on a newer OS cannot replace this check.
