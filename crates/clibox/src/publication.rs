@@ -155,8 +155,18 @@ pub fn publish(path: &Path, bytes: &[u8], replace: bool, cancel: &Cancellation) 
         .prefix(".clibox-")
         .tempfile_in(parent)
         .map_err(|_| Failure::Publish)?;
-    // NamedTempFile creates mode 0600 on Unix, and inherits the parent's ACL on
-    // Windows. It removes unpublished files on every handled return path.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // Creation's 0600 is filtered by umask. Restore owner access through the
+        // open handle before writing, even when the caller uses umask 0777.
+        temporary
+            .as_file()
+            .set_permissions(fs::Permissions::from_mode(0o600))
+            .map_err(|_| Failure::Permissions)?;
+    }
+    // Windows inherits the parent's ACL. Unpublished files are removed on every
+    // handled return path.
     config_runtime::write(temporary.as_file_mut(), bytes, cancel)?;
     publish_prepared(temporary, path, replace, cancel)
 }

@@ -923,3 +923,39 @@ fn yaml_version_directives_are_unique_per_document() {
         "---\n\"a\": 1\n---\n\"b\": 2\n",
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn restrictive_umask_keeps_new_outputs_readable_and_preserves_replacements() {
+    use std::os::unix::{fs::PermissionsExt, process::CommandExt};
+    for existing in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("input"), "A=1").unwrap();
+        let path = dir.path().join("out");
+        if existing {
+            fs::write(&path, "original").unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
+        }
+        let mut cmd = command(dir.path());
+        cmd.args(["dotenv", "merge", "input", "--output", "out", "--force"]);
+        // Change only the child process's mask, never the parallel test runner.
+        unsafe {
+            cmd.pre_exec(|| {
+                libc::umask(0o777);
+                Ok(())
+            });
+        }
+        let result = cmd.output().unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            if existing { 0o640 } else { 0o600 }
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"A=1\n");
+        no_temps(dir.path());
+    }
+}
