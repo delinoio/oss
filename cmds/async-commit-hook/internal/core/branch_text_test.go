@@ -30,7 +30,7 @@ func TestBranchLabelsNormalizeDisplayWithoutChangingObjectIDs(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(repo, ".git", "packed-refs"), []byte(id+" refs/heads/"+name+"\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	branches, err := Branches(ctx, repo)
+	branches, _, err := BranchPage(ctx, repo, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

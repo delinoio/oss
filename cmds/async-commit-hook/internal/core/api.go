@@ -340,11 +340,11 @@ func (a *API) ListBranches(ctx context.Context, r *connect.Request[pb.ListBranch
 	if e != nil {
 		return nil, apiError(e)
 	}
-	branches, e := Branches(ctx, path)
+	branches, cursor, e := BranchPage(ctx, path, r.Msg.Cursor, int(r.Msg.Limit))
 	if e != nil {
 		return nil, apiError(e)
 	}
-	out := &pb.ListBranchesResponse{}
+	out := &pb.ListBranchesResponse{NextCursor: cursor}
 	for _, v := range branches {
 		out.Branches = append(out.Branches, &pb.Branch{Name: strings.ToValidUTF8(v.Name, "\uFFFD"), Commit: v.Commit})
 	}

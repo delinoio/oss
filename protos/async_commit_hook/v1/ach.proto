@@ -135,9 +135,12 @@ message ListRepositoriesResponse {
 }
 message ListBranchesRequest {
   string worktree_id = 1;
+  string cursor = 2;
+  uint32 limit = 3;
 }
 message ListBranchesResponse {
   repeated Branch branches = 1;
+  string next_cursor = 2;
 }
 message ListCommitsRequest {
   string worktree_id = 1;

@@ -91,3 +91,5 @@
 - Accept interleaved Go build-output/build-fail events using ImportPath, separate bounded output tails and build failure identities. Preserve package/test failures and reject build events without an import path.
 
 - Agent install/reinstall/uninstall rejects final-component symlinks and nonregular configuration/skill files before backup, ownership or publication. OpenCode fallback discovery uses Lstat so dangling JSONC links cannot be bypassed.
+
+- Stream branch refs into count- and byte-bounded pages; use worktree-scoped lexical cursors and cancel/reap partial Git readers. Never buffer all refs before bounding a response.

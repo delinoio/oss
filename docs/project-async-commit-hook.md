@@ -44,3 +44,5 @@ Update the owning domain contract, evidence matrix and relevant AGENTS.md alongs
 Run-list transport carries total check counts without repeating check arrays across a page; detail navigation retrieves complete checks. The generated client preserves optional count presence for older-response compatibility.
 
 Repository discovery uses bounded worktree pages across the Connect, generated client and sidebar boundary. Stable IDs join split repository pages; display truncation never changes trusted filesystem paths or historical identity.
+
+Branch navigation uses bounded streaming pages with a worktree-scoped cursor shared by the command, protocol, client and app contracts.

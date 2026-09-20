@@ -28,3 +28,5 @@
 - async-commit-hook run lists carry optional check_count totals and omit check arrays/diagnostics; GetRun retains complete detail. Preserve older-response count fallback in clients.
 
 - async-commit-hook repository lists use cursor/limit requests and next_cursor responses, page across worktrees (maximum 50), and bound display fields to 4 KiB; one repository can span pages.
+
+- async-commit-hook branch lists accept cursor/limit and return next_cursor; default/max 50 refs and 128 KiB raw records per page, with 64 KiB per-record rejection. Cursors bind the worktree and raw lexical ref.

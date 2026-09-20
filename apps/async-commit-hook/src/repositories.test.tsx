@@ -57,3 +57,41 @@ it("loads split repositories on demand and retains selection through a page erro
     expect(listRuns.mock.calls.length).toBeGreaterThan(1);
   } finally { unmount(); client.clear(); }
 });
+
+it("pages branches without losing an unloaded selection or loaded options on errors", async () => {
+  let fail = true;
+  const listBranches = vi.fn((request: { cursor: string; limit: number }) => {
+    expect(request.limit).toBe(50);
+    if (!request.cursor) return { branches: [{ name: "alpha", commit: "one" }], nextCursor: "next" };
+    expect(request.cursor).toBe("next");
+    if (fail) throw new ConnectError("Temporary branch failure", Code.Unavailable);
+    return { branches: [{ name: "zulu", commit: "two" }] };
+  });
+  const transport = createRouterTransport((router) => router.service(LocalService, {
+    listRepositories: () => ({ repositories: [{ id: "repo", name: "Repository", worktrees: [{ id: "tree", path: "/repo", branch: "zulu" }] }] }),
+    getVersion: () => ({ apiVersion: 1 }), listBranches, listRuns: () => ({ runs: [] }),
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const { unmount } = render(<QueryClientProvider client={client}><TransportProvider transport={transport}>
+    <Workspace initialRun="" onPair={() => {}} />
+  </TransportProvider></QueryClientProvider>);
+  try {
+    const select = await screen.findByRole("combobox", { name: "Branch" });
+    await screen.findByRole("option", { name: "alpha" });
+    expect((select as HTMLSelectElement).value).toBe("zulu");
+    expect(listBranches).toHaveBeenCalledOnce();
+    const load = screen.getByRole("button", { name: "Load more branches" });
+    load.focus(); fireEvent.click(load);
+    await screen.findByRole("alert");
+    expect(document.activeElement).toBe(load);
+    expect((select as HTMLSelectElement).value).toBe("zulu");
+    expect(screen.getByRole("option", { name: "alpha" })).toBeDefined();
+    fail = false;
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByRole("button", { name: "All branches loaded" });
+    expect(screen.getAllByRole("option", { name: "zulu" })).toHaveLength(1);
+    fireEvent.change(select, { target: { value: "alpha" } });
+    expect((select as HTMLSelectElement).value).toBe("alpha");
+    expect(listBranches).toHaveBeenCalledTimes(3);
+  } finally { unmount(); client.clear(); }
+});

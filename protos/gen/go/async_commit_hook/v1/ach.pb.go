@@ -1164,6 +1164,8 @@ func (x *ListRepositoriesResponse) GetNextCursor() string {
 type ListBranchesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorktreeId    string                 `protobuf:"bytes,1,opt,name=worktree_id,json=worktreeId,proto3" json:"worktree_id,omitempty"`
+	Cursor        string                 `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	Limit         uint32                 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1205,9 +1207,24 @@ func (x *ListBranchesRequest) GetWorktreeId() string {
 	return ""
 }
 
+func (x *ListBranchesRequest) GetCursor() string {
+	if x != nil {
+		return x.Cursor
+	}
+	return ""
+}
+
+func (x *ListBranchesRequest) GetLimit() uint32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
 type ListBranchesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Branches      []*Branch              `protobuf:"bytes,1,rep,name=branches,proto3" json:"branches,omitempty"`
+	NextCursor    string                 `protobuf:"bytes,2,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1247,6 +1264,13 @@ func (x *ListBranchesResponse) GetBranches() []*Branch {
 		return x.Branches
 	}
 	return nil
+}
+
+func (x *ListBranchesResponse) GetNextCursor() string {
+	if x != nil {
+		return x.NextCursor
+	}
+	return ""
 }
 
 type ListCommitsRequest struct {
@@ -2575,12 +2599,16 @@ const file_async_commit_hook_v1_ach_proto_rawDesc = "" +
 	"\x18ListRepositoriesResponse\x12D\n" +
 	"\frepositories\x18\x01 \x03(\v2 .async_commit_hook.v1.RepositoryR\frepositories\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
-	"nextCursor\"6\n" +
+	"nextCursor\"d\n" +
 	"\x13ListBranchesRequest\x12\x1f\n" +
 	"\vworktree_id\x18\x01 \x01(\tR\n" +
-	"worktreeId\"P\n" +
+	"worktreeId\x12\x16\n" +
+	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\rR\x05limit\"q\n" +
 	"\x14ListBranchesResponse\x128\n" +
-	"\bbranches\x18\x01 \x03(\v2\x1c.async_commit_hook.v1.BranchR\bbranches\"_\n" +
+	"\bbranches\x18\x01 \x03(\v2\x1c.async_commit_hook.v1.BranchR\bbranches\x12\x1f\n" +
+	"\vnext_cursor\x18\x02 \x01(\tR\n" +
+	"nextCursor\"_\n" +
 	"\x12ListCommitsRequest\x12\x1f\n" +
 	"\vworktree_id\x18\x01 \x01(\tR\n" +
 	"worktreeId\x12\x10\n" +

@@ -308,11 +308,20 @@ export function Workspace({
     r.worktrees.some((w) => w.id === worktree),
   );
   const selectedTree = currentRepo?.worktrees.find((w) => w.id === worktree);
-  const branches = useQuery(
+  const branches = useInfiniteQuery(
     LocalQuery.listBranches,
-    { worktreeId: worktree },
-    { enabled: Boolean(worktree) },
+    { worktreeId: worktree, cursor: "", limit: 50 },
+    { enabled: Boolean(worktree), pageParamKey: "cursor", getNextPageParam: (page) => page.nextCursor || undefined },
   );
+  const branchOptions = useMemo(() => {
+    const merged = new Map<string, string>();
+    for (const page of branches.data?.pages ?? []) {
+      for (const item of page.branches) merged.set(item.name, item.name);
+    }
+    // The checkout branch may occur on an unloaded page. Keep its selection.
+    if (branch) merged.set(branch, branch);
+    return [...merged.values()];
+  }, [branches.data, branch]);
   useEffect(() => {
     if (!worktree && repositories[0]?.worktrees[0]) {
       const w = repositories[0].worktrees[0];
@@ -414,16 +423,22 @@ export function Workspace({
                 }}
               >
                 <option value="">Detached HEAD / current commit</option>
-                {branches.data?.branches.map((b) => (
-                  <option value={b.name} key={b.name}>
-                    {b.name}
+                {branchOptions.map((name) => (
+                  <option value={name} key={name}>
+                    {name}
                   </option>
                 ))}
               </select>
             </label>
           )}
         </div>
-        {branches.error && <ErrorNotice error={branches.error} />}
+        {branches.error && <ErrorNotice error={branches.error} retry={() => { void (branches.isFetchNextPageError ? branches.fetchNextPage() : branches.refetch()); }} />}
+        {(branches.hasNextPage || (branches.data?.pages.length ?? 0) > 1) && (
+          <button aria-busy={branches.isFetchingNextPage} aria-disabled={branches.isFetchingNextPage || !branches.hasNextPage}
+            onClick={() => { if (branches.hasNextPage && !branches.isFetchingNextPage) void branches.fetchNextPage(); }}>
+            {branches.isFetchingNextPage ? "Loading branches…" : branches.hasNextPage ? "Load more branches" : "All branches loaded"}
+          </button>
+        )}
         <nav className="tabs" aria-label="Workspace views">
           {(["checks", "changes", "commits", "inbox"] as Tab[]).map((v) => (
             <button

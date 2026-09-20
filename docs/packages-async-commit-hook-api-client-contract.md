@@ -40,3 +40,5 @@ Update project/protocol/app contracts with generated API changes.
 Run messages retain optional `check_count` presence, including explicit zero, through binary serialization. New list responses omit check arrays; consumers display the count, falling back to the array length only for older responses without it.
 
 Repository-list wire messages preserve request cursor/limit and response next_cursor. Pages may split one repository across responses; consumers merge by stable IDs rather than names. Omitted cursors in older responses mean the last page.
+
+Branch list messages preserve the additive cursor/limit/next_cursor contract and legacy cursor omission, covered by wire round trips.

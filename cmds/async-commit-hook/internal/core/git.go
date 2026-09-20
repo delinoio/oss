@@ -309,20 +309,6 @@ type Changes struct {
 	Truncated bool   `json:"truncated"`
 }
 
-func Branches(ctx context.Context, path string) ([]Branch, error) {
-	s, e := Git(ctx, path, "for-each-ref", "--format=%(refname:short)%09%(objectname)", "refs/heads/")
-	if e != nil {
-		return nil, e
-	}
-	out := []Branch{}
-	for _, l := range strings.Split(s, "\n") {
-		p := strings.SplitN(l, "\t", 2)
-		if len(p) == 2 {
-			out = append(out, Branch{p[0], p[1]})
-		}
-	}
-	return out, nil
-}
 func Commits(ctx context.Context, path, ref string, offset int) ([]Commit, error) {
 	sha, e := ResolveCommit(ctx, path, ref)
 	if e != nil {

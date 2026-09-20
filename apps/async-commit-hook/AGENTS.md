@@ -22,3 +22,5 @@
 - Poll expanded logs only while their check is active, fetch final bytes once on completion, and retain explicit refresh and pagination for terminal evidence.
 
 - Load repository pages on demand with Connect Query, merge split repositories/worktrees by ID, and retain loaded navigation and selection across next-page errors. Keep the load control focusable during loading and guard repeated activation.
+
+- Load branches on demand, retaining the selected branch even when its page is not loaded; preserve loaded options and selection through next-page errors.
