@@ -513,3 +513,10 @@ Local validation passed:
 - `pnpm ci:contracts`: all 56 tests passed.
 
 No runtime Go, Rust or frontend source changed, and all six committed version values remain `0.1.0`. Validation used temporary Git remotes and offline publication fixtures; no real release run, remote release tag, signing, GitHub Release, Homebrew update or Pages deployment was performed. The original real-machine and public-publication exclusions remain unchanged.
+
+
+## PR #931 published-command review repair (2026-09-20)
+
+Review thread `PRRT_kwDORRAKg86kIDDE` identified that the public guide still passed `0.1.0` explicitly to both installers and self-update after release preparation updated the six version fields. The primary shell and PowerShell commands now use the downloaded installers' synchronized defaults, and the primary `ach self-update` command selects the highest published stable version. The documented shell environment override, explicit-version selection and intentional rollback remain available; their separate command examples use a replaceable `MAJOR.MINOR.PATCH` placeholder. No additional documentation version field or runtime behavior is introduced.
+
+A production-output regression verifies all three primary commands and the explicit-version guidance after the real app build. The frontend-directory `pnpm test` passed type checking, 39 component tests, production build and five script tests. The 73 focused project/ach release and workflow tests, all 56 CI contract tests, `pnpm ci:workflows` and `git diff --check` also passed. Generated app/client `dist` output was removed after validation. No Go or Rust source changed; no release version, signing, release tag, Homebrew or deployment operation was performed. Hosted checks are not inferred from local validation.
