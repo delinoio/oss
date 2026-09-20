@@ -701,33 +701,49 @@ async fn run_task(
         .as_ref()
         .map(|s| config::duration(s))
         .transpose()?;
-    let stdout = tokio::spawn(stream_log(
+    let log_failed = CancellationToken::new();
+    let stdout = tokio::spawn(monitored_log(
         process.child.stdout.take().unwrap(),
         log.clone(),
         environment.secrets.clone(),
         options.show_secrets,
         options.quiet,
+        log_failed.clone(),
     ));
-    let stderr = tokio::spawn(stream_log(
+    let stderr = tokio::spawn(monitored_log(
         process.child.stderr.take().unwrap(),
         log,
         environment.secrets.clone(),
         options.show_secrets,
         options.quiet,
+        log_failed.clone(),
     ));
     tracing::info!(task = id, execution = %execution, causes = ?causes, "Task started");
     if task.service {
         if let Some(readiness) = &task.readiness {
-            let result = wait_ready(
-                &mut process,
-                readiness,
-                task.shell.as_deref(),
-                &project.directory,
-                &values,
-                &cancel,
-                timeout.map(|limit| limit.saturating_sub(process_started.elapsed())),
-            )
-            .await;
+            let readiness_cancel = cancel.child_token();
+            let result = {
+                let ready = wait_ready(
+                    &mut process,
+                    readiness,
+                    task.shell.as_deref(),
+                    &project.directory,
+                    &values,
+                    &readiness_cancel,
+                    timeout.map(|limit| limit.saturating_sub(process_started.elapsed())),
+                );
+                tokio::pin!(ready);
+                tokio::select! {
+                    biased;
+                    _ = log_failed.cancelled() => {
+                        readiness_cancel.cancel();
+                        // A failed logger must not drop an active readiness probe.
+                        let _ = ready.await;
+                        Err(anyhow::anyhow!("service output failed before readiness"))
+                    }
+                    result = &mut ready => result,
+                }
+            };
             if let Err(error) = result {
                 let reaped = process.terminate().await;
                 finish_logs_and_container(stdout, stderr, cleanup_container(docker)).await?;
@@ -750,36 +766,27 @@ async fn run_task(
             let _locks = locks;
             let remaining =
                 timeout.map(|duration| duration.saturating_sub(process_started.elapsed()));
-            let waited = process.wait(&stop, remaining).await;
-            let mut result = waited.as_ref().copied().unwrap_or(ProcessExit {
+            let completed = finish_service(
+                &mut process,
+                (stdout, stderr),
+                &stop,
+                &log_failed,
+                remaining,
+                cleanup_container(docker),
+            )
+            .await;
+            let result = completed.as_ref().copied().unwrap_or(ProcessExit {
                 code: 1,
                 reason: ExitReason::Completed,
             });
             if result.reason == ExitReason::TimedOut {
                 tracing::warn!(task = %event_id, code = "service-timeout", "Service exceeded its timeout");
             }
-            // Reap every owner before propagating any failure. In particular,
-            // cancellation is not successful cleanup without daemon verification.
-            let stdout = stdout.await.context("service stdout owner failed");
-            let stderr = stderr.await.context("service stderr owner failed");
-            let cleanup = if let Some(mut docker) = docker {
-                docker.cleanup().await
-            } else {
-                Ok(())
-            };
-            if cleanup.is_err() {
-                tracing::error!(task = %event_id, code = "service-container-cleanup-failed", "Failed to confirm container removal");
-                result = ProcessExit {
-                    code: 1,
-                    reason: ExitReason::Completed,
-                };
+            if completed.is_err() {
+                tracing::error!(task = %event_id, code = "service-owner-failed", "Service process, output, or container owner failed");
             }
             let _ = events.send((event_id, result));
-            cleanup?;
-            waited?;
-            stdout??;
-            stderr??;
-            Ok(())
+            completed.map(|_| ())
         });
         services.joins.lock().unwrap().push(join);
         return Ok(Receipt {
@@ -796,7 +803,7 @@ async fn run_task(
             diagnostic: None,
         });
     }
-    let waited = process.wait(&cancel, timeout).await;
+    let waited = wait_with_log_failure(&mut process, &cancel, &log_failed, timeout).await;
     let reaped = if waited.is_err() {
         process.terminate().await
     } else {
@@ -1047,6 +1054,68 @@ pub(crate) async fn finish_logs_and_container(
     stdout??;
     stderr??;
     Ok(())
+}
+
+async fn wait_with_log_failure(
+    process: &mut OwnedProcess,
+    cancel: &CancellationToken,
+    log_failed: &CancellationToken,
+    timeout: Option<Duration>,
+) -> Result<ProcessExit> {
+    let stop = cancel.child_token();
+    let waited = process.wait(&stop, timeout);
+    tokio::pin!(waited);
+    tokio::select! {
+        biased;
+        _ = log_failed.cancelled() => {
+            stop.cancel();
+            // Keep the same ownership future alive through termination/reaping.
+            waited.await
+        }
+        result = &mut waited => result,
+    }
+}
+
+async fn finish_service(
+    process: &mut OwnedProcess,
+    logs: (
+        tokio::task::JoinHandle<Result<()>>,
+        tokio::task::JoinHandle<Result<()>>,
+    ),
+    stop: &CancellationToken,
+    log_failed: &CancellationToken,
+    timeout: Option<Duration>,
+    cleanup: impl std::future::Future<Output = Result<()>>,
+) -> Result<ProcessExit> {
+    let waited = wait_with_log_failure(process, stop, log_failed, timeout).await;
+    let reaped = if waited.is_err() {
+        process.terminate().await
+    } else {
+        Ok(())
+    };
+    let output = finish_logs_and_container(logs.0, logs.1, cleanup).await;
+    reaped?;
+    let status = waited?;
+    output?;
+    Ok(status)
+}
+
+async fn monitored_log(
+    reader: impl AsyncRead + Unpin,
+    file: Arc<Mutex<File>>,
+    secrets: Vec<Vec<u8>>,
+    show: bool,
+    quiet: bool,
+    failed: CancellationToken,
+) -> Result<()> {
+    // Cancellation on drop also covers panics/aborted log owners. A successful
+    // EOF is normal and must leave a still-running service alone.
+    let failure = failed.drop_guard();
+    let result = stream_log(reader, file, secrets, show, quiet).await;
+    if result.is_ok() {
+        failure.disarm();
+    }
+    result
 }
 
 pub async fn stream_log(
@@ -1328,6 +1397,125 @@ mod output_cleanup_tests {
             assert!(cleaned.load(Ordering::SeqCst));
             assert_eq!(error.is::<crate::docker::CleanupFailure>(), cleanup_fails);
             assert_eq!(std::fs::read(&path).unwrap(), b"retained");
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_service_logs_stop_live_processes_and_await_cleanup() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("service.rs");
+        let binary = directory.path().join(if cfg!(windows) {
+            "service.exe"
+        } else {
+            "service"
+        });
+        std::fs::write(
+            &source,
+            r#"
+            fn main() {
+                let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+                std::fs::write("address", listener.local_addr().unwrap().to_string()).unwrap();
+                if std::env::args().nth(1).unwrap() == "stdout" { println!("live"); }
+                else { eprintln!("live"); }
+                loop { std::thread::sleep(std::time::Duration::from_secs(1)); }
+            }
+        "#,
+        )
+        .unwrap();
+        assert!(std::process::Command::new("rustc")
+            .arg(&source)
+            .arg("-o")
+            .arg(&binary)
+            .status()
+            .unwrap()
+            .success());
+        for stream in ["stdout", "stderr"] {
+            for cleanup_fails in [false, true] {
+                let path = directory.path().join("output.log");
+                std::fs::write(&path, "retained").unwrap();
+                let broken = Arc::new(Mutex::new(File::open(&path).unwrap()));
+                let good = Arc::new(Mutex::new(
+                    File::create(directory.path().join("good.log")).unwrap(),
+                ));
+                let failed = CancellationToken::new();
+                // A successful stream EOF alone does not stop a service.
+                monitored_log(
+                    tokio::io::empty(),
+                    good.clone(),
+                    vec![],
+                    false,
+                    true,
+                    failed.clone(),
+                )
+                .await
+                .unwrap();
+                assert!(!failed.is_cancelled());
+                let mut process = OwnedProcess::spawn(
+                    directory.path(),
+                    &crate::config::Command::Argv(vec![
+                        binary.to_str().unwrap().into(),
+                        stream.into(),
+                    ]),
+                    None,
+                    None,
+                )
+                .unwrap();
+                let stdout = tokio::spawn(monitored_log(
+                    process.child.stdout.take().unwrap(),
+                    if stream == "stdout" {
+                        broken.clone()
+                    } else {
+                        good.clone()
+                    },
+                    vec![],
+                    false,
+                    true,
+                    failed.clone(),
+                ));
+                let stderr = tokio::spawn(monitored_log(
+                    process.child.stderr.take().unwrap(),
+                    if stream == "stderr" { broken } else { good },
+                    vec![],
+                    false,
+                    true,
+                    failed.clone(),
+                ));
+                let cleaned = AtomicBool::new(false);
+                let cleanup = async {
+                    tokio::task::yield_now().await;
+                    cleaned.store(true, Ordering::SeqCst);
+                    if cleanup_fails {
+                        Err(anyhow::Error::new(crate::docker::CleanupFailure))
+                    } else {
+                        Ok(())
+                    }
+                };
+                let result = tokio::time::timeout(
+                    Duration::from_secs(10),
+                    finish_service(
+                        &mut process,
+                        (stdout, stderr),
+                        &CancellationToken::new(),
+                        &failed,
+                        None,
+                        cleanup,
+                    ),
+                )
+                .await;
+                if result.is_err() {
+                    process.terminate().await.unwrap();
+                }
+                let error = result.unwrap().unwrap_err();
+                assert_eq!(error.is::<crate::docker::CleanupFailure>(), cleanup_fails);
+                assert!(cleaned.load(Ordering::SeqCst));
+                assert!(process.child.try_wait().unwrap().is_some());
+                let address = std::fs::read_to_string(directory.path().join("address")).unwrap();
+                assert!(
+                    std::net::TcpListener::bind(address).is_ok(),
+                    "service retained its listener"
+                );
+                assert_eq!(std::fs::read(&path).unwrap(), b"retained");
+            }
         }
     }
 }
