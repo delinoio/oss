@@ -438,3 +438,4 @@ Release automation baseline:
 ### Linux CLI Package Distribution
 
 - Follow `docs/repository-linux-packages-contract.md` for the six CLI APT/DNF repositories at `https://pkgs.oss.delino.io`. Native package publication is part of each selected CLI release, uses the dedicated `linux-packages` environment, and keeps Runmoor preview separate.
+- Rust CLI source, Cargo workspace/configuration and toolchain changes must select the Linux package CI job so both native architectures retain the AlmaLinux 9 compatibility baseline.

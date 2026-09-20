@@ -36,6 +36,8 @@ The acceptance matrix is Ubuntu 22.04/24.04/26.04 LTS, Debian 12/13, Fedora 43/4
 
 Test incorrect identities, checksums, signatures, architectures, dependencies and channels; interrupted uploads; concurrent publication requests; retry without replacement; stale indexes; and partial APT/DNF promotion. Tests use isolated files, keys and object stores. Run workflow syntax/contracts, release fixtures and changed documentation-app tests. Remove generated dist directories before completion.
 
+Changes to any of the four Rust CLI sources, workspace Cargo inputs, Cargo configuration or Rust toolchain select the native package CI job. Both architectures must rebuild against AlmaLinux 9 and pass ELF compatibility inspection before merging these changes.
+
 First public releases follow the existing manual coordinator, one patch release at a time: binpm, nodeup, cargo-mono, with-watch, derun, runmoor. Verify each public package before continuing. Deployment is complete only when every project is installable on both architectures from its intended channel.
 
 ## Implemented operations

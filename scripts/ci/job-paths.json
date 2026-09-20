@@ -537,8 +537,17 @@
   },
   "linux-packages": {
     "paths": [
+      ".cargo/**",
       ".github/workflows/release-*.yml",
+      "Cargo.lock",
+      "Cargo.toml",
+      "crates/binpm/**",
+      "crates/cargo-mono/**",
+      "crates/nodeup/**",
+      "crates/with-watch/**",
       "packaging/linux/**",
+      "rust-toolchain",
+      "rust-toolchain.toml",
       "scripts/release/linux-packages*",
       "scripts/release/linux-packages/**",
       "package.json",
