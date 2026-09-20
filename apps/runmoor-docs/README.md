@@ -31,4 +31,4 @@ Hosting project creation, domain configuration, and publication are separate ope
 
 The seven Runmoor pages have moved from `public-docs`. The old `/runmoor` and child routes are removed without redirects or handoff pages; the public site links here through its top navigation, home, and project catalog.
 
-Keep the guides aligned with `docs/project-runmoor.md`, `docs/cmds-runmoor-foundation.md`, and `docs/apps-runmoor-docs-foundation.md`. Preserve all preview, verification, security, and licensing limits. The CLI release README remains available independently of this site.
+Keep the guides aligned with `docs/project-runmoor.md`, `docs/cmds-runmoor-foundation.md`, and `docs/apps-runmoor-docs-foundation.md`. Preserve all verification, security, and licensing limits. The CLI release README remains available independently of this site.

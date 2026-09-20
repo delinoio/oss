@@ -30,7 +30,7 @@ Each project must have one project index document and one or more domain contrac
 
 ## Repository Workflow
 
-- `docs/repository-workflow-contract.md`: CI selection and validation, manual CLI project/version releases, `delino-release-bot` setup, exact-commit recovery, and Runmoor preview publication.
+- `docs/repository-workflow-contract.md`: CI selection and validation, manual CLI project/version releases, `delino-release-bot` setup, exact-commit recovery, and Runmoor stable publication.
 
 ## Project Catalog
 

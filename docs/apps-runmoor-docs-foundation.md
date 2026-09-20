@@ -17,7 +17,7 @@
 - Package name: `runmoor-docs`, registered by the existing `apps/*` pnpm workspace glob.
 - Canonical production URL: `https://runmoor.delino.io`.
 - Stable clean routes: `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, and `/operations`.
-- The overview and six guides move from `apps/public-docs` without removing their content, examples, preview limitations, fork policies, shared-kernel boundaries, or external software licensing guidance. Internal links lose the old `/runmoor` prefix.
+- The overview and six guides move from `apps/public-docs` without removing their content, verification limitations, fork policies, shared-kernel boundaries, or external software licensing guidance. Internal links lose the old `/runmoor` prefix.
 - The former `/runmoor` and six child routes in `public-docs` are removed without compatibility pages or redirects. Its top navigation, home, and project catalog link to the standalone site.
 - Use the default Rspress theme with every stable route in the navigation and sidebar, plus visible GitHub repository links in the social navigation and footer.
 - Validate top-navigation, sidebar, social-link, and document-footer regions separately on every stable page. Removing a link from one region must fail even when article content or another region still links to that destination.
@@ -31,9 +31,9 @@
 - No user data or credentials are stored by this documentation app.
 
 ## Security
-- Preserve the preview verification limits, credential-reference guidance, signature verification steps, trusted-workload restrictions, and third-party licensing boundaries.
+- Preserve the stable-release verification limits, credential-reference guidance, signature verification steps, trusted-workload restrictions, and third-party licensing boundaries.
 - Do not publish internal credentials, private repository paths, or unsupported release claims.
-- Preserve the release-availability classifier previously applied by public-docs, including its negation fixtures. Rendered affirmative beta-channel, partial/staged GA, phased/fractional rollout, early-access, and early-announcement claims fail validation; preview-prerelease disclosures and explicit unavailable/unsupported/prohibited statements remain valid.
+- Preserve the release-availability classifier previously applied by public-docs, including its negation fixtures. Rendered affirmative beta-channel, partial/staged GA, phased/fractional rollout, early-access, and early-announcement claims fail validation; stable-channel disclosures and explicit unavailable/unsupported/prohibited statements remain valid.
 - The app-local public-content validator preserves the former public-docs credential/path safeguards. It rejects credential patterns and private filesystem/repository paths in rendered text and HTML comments, plus credential-bearing or forbidden HTML/CSS resource URLs after entity and URL decoding. Credential parameters, including authorization codes, are checked in ordinary queries, direct fragments, and the query portion of hash-routed fragments. Public route exceptions match complete route IDs (with optional query or fragment), never arbitrary paths beginning with a route name. Same-origin static assets remain permitted, as do documented environment/file credential placeholders and XDG paths. Rejections report the page and classification without echoing the rejected value.
 - Hosting credentials are managed outside the repository. Adding the app does not create a Cloudflare project, configure DNS, or publish the site.
 - Recursively inspect emitted CSS assets as well as HTML. Stylesheet resource URLs and imports use the same credential, internal-path, and clean-URL checks, resolved relative to the stylesheet's public location. Valid generated fonts, static assets, and external stylesheets remain permitted; diagnostics never echo rejected CSS or URL values.

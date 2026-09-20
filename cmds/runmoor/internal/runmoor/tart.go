@@ -94,7 +94,7 @@ func (t *TartDriver) check(ctx context.Context, c Config) error {
 		return e
 	}
 	if strings.TrimSpace(string(b)) != TartVersion {
-		return problem(ErrDependency, "This preview requires Tart 2.37.0.", "Install the documented Tart version yourself; Runmoor does not bundle it.")
+		return problem(ErrDependency, "Runmoor requires Tart 2.37.0.", "Install the documented Tart version yourself; Runmoor does not bundle it.")
 	}
 	return nil
 }

@@ -135,7 +135,7 @@ func TestCLIInitAndErrors(t *testing.T) {
 	}
 	out.Reset()
 	Execute([]string{"version"}, &out, &errs)
-	if !strings.Contains(out.String(), Version+" preview") {
+	if !strings.Contains(out.String(), "runmoor "+Version+" (") {
 		t.Fatal(out.String())
 	}
 }

@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const helpText = `Runmoor 0.1.0 preview - local ephemeral GitHub Actions runners
+const helpText = `Runmoor 0.1.0 - local ephemeral GitHub Actions runners
 
 Usage: runmoor [--config PATH] COMMAND [OPTIONS]
 
@@ -128,7 +128,7 @@ func Execute(args []string, out, errOut io.Writer) int {
 	}
 	path = abs
 	if command == "version" {
-		fmt.Fprintf(out, "runmoor %s preview (%s)\n", Version, Revision)
+		fmt.Fprintf(out, "runmoor %s (%s)\n", Version, Revision)
 		return 0
 	}
 	if command == "init" {
@@ -354,7 +354,7 @@ func printStatus(w io.Writer, s *Status, jsonOutput bool) {
 		writeJSON(w, s)
 		return
 	}
-	fmt.Fprintf(w, "Runmoor %s preview | manager running: %t | paused: %t | stopping: %t\n", s.Version, s.Running, s.Paused, s.Stopping)
+	fmt.Fprintf(w, "Runmoor %s | manager running: %t | paused: %t | stopping: %t\n", s.Version, s.Running, s.Paused, s.Stopping)
 	fmt.Fprintf(w, "Reserved: %d CPU, %d MiB, %d executions/setup VMs; macOS VMs: %d/2; pending cleanup: %d\n", s.Reserved.CPU, s.Reserved.MemoryMiB, s.Active, s.VMs, s.PendingCleanup)
 	for _, p := range s.Pools {
 		fmt.Fprintf(w, "%s [%s] %s: demand=%d total=%d busy=%d\n", p.Name, p.Generation, p.Phase, p.Demand, p.Total, p.Busy)
