@@ -42,6 +42,8 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 
 `queued_service_exit_prevents_reusing_ready_receipts` starts a real service, verifies its ready receipt can support input/schedule work while alive, releases it to exit, and waits for its owner to queue completion. The next due wave must reject the old ready receipt and terminate the session even when the service exited successfully. Session scheduling drains exits before processing triggers and after finite output validation.
 
+`partial_output_snapshots_require_matches_and_ignore_neighbors` rejects a JavaScript output glob when only neighboring JSON inputs exist, verifies those neighbors cannot alter output identity or override an unchanged report, and requires each declared pattern to match independently. Unowned links are not captured. Complete empty directory trees remain valid; partial roots retain live-filesystem link validation and cannot be restored as artifacts.
+
 `cache_verify_rejects_misdirected_and_inconsistent_artifacts` also rejects validly encoded file records that declare descendants beneath another regular file, without restoring any output.
 
 `uncached_output_digests_are_not_limited_by_artifact_size` executes a task with an output larger than 512 MiB, confirms successful local identity tracking, and retains the artifact capture bound. Local and captured identities share the `output-state-v2` digest domain; previous payload-based digests become safe cache misses.

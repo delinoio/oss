@@ -2541,6 +2541,66 @@ async fn go_sharding_preserves_separated_flag_values_and_package_failures() {
 }
 
 #[tokio::test]
+async fn partial_output_snapshots_require_matches_and_ignore_neighbors() {
+    let directory = fixture(
+        json!({"build":{"command":command(&["unchanged","generated/config.json","input edit"]),"input":[],"output":["generated/*.js"]}}),
+    );
+    files::atomic_write(&directory.path().join("generated/config.json"), b"input").unwrap();
+    let g = graph(directory.path()).await;
+    let project = &g.workspace.projects["app"];
+    let task = &g.tasks["app#build"].task;
+    assert!(cache::output_state(project, task).is_err());
+    assert!(!run(g.clone(), &["build"]).await.success);
+    files::atomic_write(&directory.path().join("generated/bundle.js"), b"output").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(
+        "/unowned-missing-input",
+        directory.path().join("generated/unrelated.json"),
+    )
+    .unwrap();
+    let snapshot = cache::snapshot(project, task).unwrap();
+    assert_eq!(
+        snapshot
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .collect::<Vec<_>>(),
+        ["generated/bundle.js"]
+    );
+    let first = run(g.clone(), &["build"]).await;
+    assert!(first.success && first.results["app#build"].changed);
+    let second = run(g.clone(), &["build"]).await;
+    assert!(second.success && !second.results["app#build"].changed);
+    assert_eq!(
+        first.results["app#build"].output,
+        second.results["app#build"].output
+    );
+    std::fs::write(
+        directory.path().join("generated/bundle.js"),
+        "changed output",
+    )
+    .unwrap();
+    assert_ne!(
+        cache::output_state(project, task).unwrap(),
+        second.results["app#build"].output
+    );
+    let mut both = task.clone();
+    both.output.as_mut().unwrap().push("generated/*.css".into());
+    assert!(cache::output_state(project, &both).is_err());
+    files::atomic_write(&directory.path().join("generated/style.css"), b"style").unwrap();
+    assert!(cache::output_state(project, &both).is_ok());
+    let mut empty_tree = task.clone();
+    empty_tree.output = Some(vec!["empty/**".into()]);
+    std::fs::create_dir(directory.path().join("empty")).unwrap();
+    assert!(cache::output_state(project, &empty_tree).is_ok());
+    if directory.path().join("EMPTY").is_dir() {
+        for alias in ["EMPTY", "EMPTY/**"] {
+            empty_tree.output = Some(vec![alias.into()]);
+            assert!(cache::output_state(project, &empty_tree).is_ok(), "{alias}");
+        }
+    }
+}
+
+#[tokio::test]
 async fn partial_output_globs_preserve_neighboring_inputs_and_watch_changes() {
     let directory = fixture(
         json!({"check":{"command":command(&["record","events","run"]),"input":["generated/**"],"output":["generated/*.js"],"watch":{"debounce":"20ms"}}}),

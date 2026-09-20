@@ -19,6 +19,7 @@
 - CI bundle validation verifies intrinsic artifact integrity even for terminal outputs that no downstream job restores.
 - CI bundle limits scale with declared artifacts: bound each encoded artifact independently, bound metadata separately, and validate the same limits before publication and after bounded reads.
 - CI output transfer requires exact files/directories or complete directory trees even for uncached tasks; reject partial ownership before export, capture, or restoration.
+- Local partial output snapshots include only declared matches and require at least one match per pattern; literal traversal anchors and neighboring inputs do not count as outputs. Exact directories and complete directory/** trees retain empty-root ownership.
 - Strip workspace-designated secret variables from every task that does not declare them, including tasks grouped into one CI unit.
 - Configuration validation checks remote endpoint, bucket, namespace, region, and credential-reference syntax without reading credentials or using the network, including mode off.
 - Graph validation rejects remote credential references in every task environment declaration before execution; runtime validation also checks CLI overrides.

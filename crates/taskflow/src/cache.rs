@@ -127,9 +127,50 @@ pub fn snapshot(project: &Project, task: &Task) -> Result<Vec<FileRecord>> {
     snapshot_inner(project, task, true)
 }
 
+enum OutputPattern {
+    Tree(PathBuf),
+    Glob(globset::GlobMatcher),
+}
+
+impl OutputPattern {
+    fn new(project: &Project, pattern: &str) -> Result<Self> {
+        if !pattern.contains(['*', '?', '[', '{'])
+            || pattern
+                .strip_suffix("/**")
+                .is_some_and(|root| !root.contains(['*', '?', '[', '{']))
+        {
+            // Match exact roots using the same filesystem spelling as traversal
+            // (for example Out/out on a case-insensitive destination).
+            let root = files::within(
+                &project.directory,
+                &project.directory.join(files::output_anchor(pattern)),
+            )?;
+            Ok(Self::Tree(
+                root.strip_prefix(&project.directory)?.to_path_buf(),
+            ))
+        } else {
+            Ok(Self::Glob(globset::Glob::new(pattern)?.compile_matcher()))
+        }
+    }
+
+    fn matches(&self, path: &str) -> bool {
+        match self {
+            Self::Tree(root) => Path::new(path).starts_with(root),
+            Self::Glob(pattern) => pattern.is_match(path),
+        }
+    }
+}
+
 fn snapshot_inner(project: &Project, task: &Task, capture: bool) -> Result<Vec<FileRecord>> {
     let mut entries = vec![];
     let mut total = 0;
+    let patterns: Vec<_> = task
+        .output
+        .iter()
+        .flatten()
+        .map(|p| OutputPattern::new(project, p))
+        .collect::<Result<_>>()?;
+    let mut found = vec![false; patterns.len()];
     for anchor in anchors(task)? {
         let path = files::within(&project.directory, &project.directory.join(&anchor))?;
         ensure!(
@@ -140,8 +181,21 @@ fn snapshot_inner(project: &Project, task: &Task, capture: bool) -> Result<Vec<F
         for entry in walkdir::WalkDir::new(&path).follow_links(false) {
             let entry = entry?;
             let path = entry.path();
-            files::within(&project.directory, path)?;
             let relative = files::slash(path.strip_prefix(&project.directory)?)?;
+            let mut owned = false;
+            for (index, pattern) in patterns.iter().enumerate() {
+                if pattern.matches(&relative) {
+                    found[index] = true;
+                    owned = true;
+                }
+            }
+            // Literal anchors bound traversal, not ownership. In particular a
+            // neighboring input cannot satisfy a required partial output or
+            // change that task's output identity.
+            if !owned {
+                continue;
+            }
+            files::within(&project.directory, path)?;
             ensure!(
                 !relative.split('/').any(files::reserved_name),
                 "output must not capture reserved state"
@@ -208,8 +262,18 @@ fn snapshot_inner(project: &Project, task: &Task, capture: bool) -> Result<Vec<F
             });
         }
     }
+    for (pattern, found) in task.output.iter().flatten().zip(found) {
+        ensure!(found, "required output pattern has no matches: {pattern}");
+    }
     entries.sort_by(|a, b| a.path.cmp(&b.path));
-    validate_links(project, &anchors(task)?, &entries)?;
+    // Partial roots are never replaced as a whole. Link validation must inspect
+    // unowned live ancestors instead of assuming the snapshot describes them.
+    let replaced = if validate_artifact_outputs(task).is_ok() {
+        anchors(task)?
+    } else {
+        vec![]
+    };
+    validate_links(project, &replaced, &entries)?;
     Ok(entries)
 }
 // Windows records file and directory links distinctly, including dangling
