@@ -83,3 +83,5 @@
 - Completion publication must unblock on worker ownership cancellation; error shutdown joins all runs even when their count exceeds the completion buffer. Do not impose a concurrency cap to avoid shutdown deadlocks.
 
 - Credential file reads require a regular nonsymlink file, verify the opened identity, and consume at most 64 KiB plus one overflow byte. Unix opens must not block on replacement FIFOs; diagnostics exclude paths and values.
+
+- Large response fixtures must assert the expanded-byte threshold and complete large-graph detail without duplicating maximal SQLite graphs across every pagination row; retain native Windows test budget for execution coverage.
