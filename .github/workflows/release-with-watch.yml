@@ -100,7 +100,20 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
+      - name: Build Linux with the pinned compatibility image
+        if: runner.os == 'Linux'
+        env:
+          RELEASE_PROJECT: with-watch
+          RELEASE_TARGET: ${{ matrix.target }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          image=$(node -p 'JSON.parse(require("node:fs").readFileSync("packaging/linux/pins.json")).rust_image')
+          docker run --rm -v "$PWD:/workspace" -w /workspace "$image" bash scripts/release/linux-packages/build-rust.sh "$RELEASE_PROJECT" "$RELEASE_TARGET"
+          sudo chown -R "$(id -u):$(id -g)" target
+
       - name: Build with-watch
+        if: runner.os != 'Linux'
         shell: bash
         run: |
           set -euo pipefail
@@ -287,3 +300,16 @@ jobs:
             --linux-amd64-sha256 "$linux_amd64_sha" \
             --linux-arm64-url "$linux_arm64_url" \
             --linux-arm64-sha256 "$linux_arm64_sha"
+
+  linux-packages:
+    name: Publish native Linux packages
+    needs: [prepare, publish]
+    if: needs.prepare.outputs.dry_run != 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-linux-packages.yml
+    with:
+      project: with-watch
+      version: ${{ needs.prepare.outputs.version }}
+      revision: ${{ github.sha }}
+      mode: publish

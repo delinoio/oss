@@ -1,337 +1,214 @@
-//! Bounded I/O, cancellation, and deliberately content-free diagnostics.
 use std::{
-    io::{Read, Write},
+    io::Read,
+    process::{Child, Command, ExitStatus, Stdio},
     sync::{
-        atomic::{AtomicUsize, Ordering},
-        mpsc, Arc,
+        atomic::{AtomicI32, Ordering},
+        mpsc,
     },
     time::Duration,
 };
 
-pub const LIMIT: usize = 64 * 1024 * 1024;
+use crate::error::{Code, Failure, Result};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Failure {
-    Arguments,
-    Encoding,
-    InputLimit,
-    OutputLimit,
-    DotenvSyntax,
-    YamlSyntax,
-    YamlVersion,
-    YamlTag,
-    YamlKey,
-    DuplicateKey,
-    MergeOperand,
-    Alias,
-    Cycle,
-    Depth,
-    Read,
-    Write,
-    DestinationExists,
-    UnsafeDestination,
-    Permissions,
-    Publish,
-    Cancelled,
-    Internal,
-}
+static SIGNAL: AtomicI32 = AtomicI32::new(0);
+pub const POLL: Duration = Duration::from_millis(20);
 
-impl Failure {
-    pub fn guidance(self) -> &'static str {
-        match self {
-            Self::Arguments => {
-                "Invalid, missing, or conflicting arguments; use the selected command's --help."
-            }
-            Self::Encoding => {
-                "Use valid UTF-8 without NUL bytes; an initial UTF-8 BOM is accepted."
-            }
-            Self::InputLimit => "Reduce aggregate raw input to at most 64 MiB.",
-            Self::OutputLimit => {
-                "Reduce serialized output or YAML alias expansion to at most 64 MiB."
-            }
-            Self::DotenvSyntax => {
-                "Check the indicated assignment: ASCII identifier, equals sign, balanced quotes, \
-                 and no trailing content after quotes."
-            }
-            Self::YamlSyntax => {
-                "Check YAML syntax or unresolved aliases at the indicated position."
-            }
-            Self::YamlVersion => "Use YAML 1.2 or omit the version directive.",
-            Self::YamlTag => {
-                "Use only YAML Core types or the merge-key extension, with a valid value for the \
-                 selected type."
-            }
-            Self::YamlKey => {
-                "Use string mapping keys; quote keys that resemble numbers, booleans, or null."
-            }
-            Self::DuplicateKey => "Remove the duplicate mapping key at the indicated position.",
-            Self::MergeOperand => {
-                "A merge requires a mapping or a sequence containing only mappings."
-            }
-            Self::Alias => "Define anchors before use within the same document.",
-            Self::Cycle => "Remove cyclic YAML references.",
-            Self::Depth => {
-                "Reduce collection nesting to at most 128 levels, including expanded aliases."
-            }
-            Self::Read => {
-                "Check that the selected input is readable with your current permissions."
-            }
-            Self::Write => {
-                "Check destination access and available space; stdout may contain partial output."
-            }
-            Self::DestinationExists => {
-                "Output already exists; use --force to authorize replacement."
-            }
-            Self::UnsafeDestination => {
-                "Select a regular destination with no symbolic link or additional hard links."
-            }
-            Self::Permissions => {
-                "Existing access permissions could not be preserved; check file access permissions."
-            }
-            Self::Publish => {
-                "Publication failed; check destination directory access and available space."
-            }
-            Self::Cancelled => {
-                "Operation interrupted; completed writes are not undone and stdout may be partial."
-            }
-            Self::Internal => {
-                "The operation could not complete; retry after checking system resources."
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Error {
-    pub kind: Failure,
-    pub input: Option<usize>,
-    pub document: Option<usize>,
-    pub line: Option<usize>,
-    pub column: Option<usize>,
-}
-pub type Result<T> = std::result::Result<T, Error>;
-impl From<Failure> for Error {
-    fn from(kind: Failure) -> Self {
-        Self {
-            kind,
-            input: None,
-            document: None,
-            line: None,
-            column: None,
-        }
-    }
-}
-impl Error {
-    pub fn at(mut self, line: usize, column: usize) -> Self {
-        self.line = Some(line);
-        self.column = Some(column);
-        self
-    }
-
-    pub fn input(mut self, ordinal: usize) -> Self {
-        self.input = Some(ordinal);
-        self
-    }
-
-    pub fn document(mut self, ordinal: usize) -> Self {
-        self.document = Some(ordinal);
-        self
-    }
-
-    pub fn report(&self, operation: &'static str) {
-        tracing::error!(operation, classification = ?self.kind, input = self.input,
-            document = self.document, line = self.line, column = self.column,
-            "error: {}", self.kind.guidance());
-    }
-}
-
-#[derive(Clone, Default)]
-pub struct Cancellation(Arc<AtomicUsize>);
-impl Cancellation {
-    pub fn install() -> Result<Self> {
-        let token = Self::default();
-        #[cfg(unix)]
-        for (signal, code) in [
-            (signal_hook::consts::SIGINT, 130),
-            (signal_hook::consts::SIGTERM, 143),
-        ] {
-            signal_hook::flag::register_usize(signal, token.0.clone(), code)
-                .map_err(|_| Failure::Internal)?;
-        }
-        #[cfg(windows)]
-        {
-            let state = token.0.clone();
-            ctrlc::set_handler(move || {
-                state.store(130, Ordering::SeqCst);
+pub fn install_signals() -> Result<()> {
+    #[cfg(unix)]
+    for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP, libc::SIGQUIT] {
+        // Only an atomic store runs in the signal handler. Blocking work stays in the
+        // command loop.
+        unsafe {
+            signal_hook::low_level::register(signal, move || {
+                SIGNAL.store(signal, Ordering::SeqCst);
             })
-            .map_err(|_| Failure::Internal)?;
         }
-        Ok(token)
+        .map_err(|e| Failure::io(&e))?;
     }
-
-    pub fn code(&self) -> usize {
-        self.0.load(Ordering::Relaxed)
-    }
-
-    pub fn check(&self) -> Result<()> {
-        if self.code() == 0 {
-            Ok(())
-        } else {
-            Err(Failure::Cancelled.into())
-        }
-    }
-
-    #[cfg(test)]
-    pub fn cancel(&self) {
-        self.0.store(130, Ordering::Relaxed);
-    }
-
-    // Blocking pipes/FIFOs cannot be polled portably with std::io. Keep only the
-    // I/O operation in a disposable worker; all temporary-file ownership stays
-    // with the main thread so cancellation still runs its cleanup destructors.
-    // A blocked worker owns no publication authority or application state.
-    pub fn blocking<T: Send + 'static>(
-        &self,
-        operation: impl FnOnce() -> Result<T> + Send + 'static,
-    ) -> Result<T> {
-        self.check()?;
-        let (tx, rx) = mpsc::sync_channel(1);
-        std::thread::Builder::new()
-            .spawn(move || {
-                let _ = tx.send(operation());
-            })
-            .map_err(|_| Failure::Internal)?;
-        loop {
-            self.check()?;
-            match rx.recv_timeout(Duration::from_millis(20)) {
-                Ok(result) => {
-                    self.check()?;
-                    return result;
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => (),
-                Err(_) => return Err(Failure::Internal.into()),
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::System::Console::*;
+        unsafe extern "system" fn handler(event: u32) -> i32 {
+            match event {
+                CTRL_C_EVENT => SIGNAL.store(2, Ordering::SeqCst),
+                CTRL_BREAK_EVENT => SIGNAL.store(21, Ordering::SeqCst),
+                _ => return 0,
             }
+            1
         }
+        if SetConsoleCtrlHandler(Some(handler), 1) == 0 {
+            return Err(Failure::io(&std::io::Error::last_os_error()));
+        }
+    }
+    Ok(())
+}
+
+pub fn cancelled() -> bool {
+    SIGNAL.load(Ordering::SeqCst) != 0
+}
+pub fn check_cancelled() -> Result<()> {
+    if cancelled() {
+        Err(Failure::new(
+            Code::Cancelled,
+            "Operation interrupted; already completed OS effects are not undone.",
+        ))
+    } else {
+        Ok(())
     }
 }
 
-pub fn read(mut reader: impl Read, remaining: usize, cancel: &Cancellation) -> Result<Vec<u8>> {
-    let mut bytes = Vec::new();
-    let mut chunk = [0; 16 * 1024];
+pub fn finish(code: i32) -> ! {
+    let signal = SIGNAL.load(Ordering::SeqCst);
+    if signal != 0 {
+        finish_signal(signal);
+    }
+    std::process::exit(code)
+}
+
+pub fn finish_signal(signal: i32) -> ! {
+    #[cfg(unix)]
+    {
+        let _ = signal_hook::low_level::emulate_default_handler(signal);
+    }
+    std::process::exit(128 + signal)
+}
+
+pub fn exit_child(status: ExitStatus) -> ! {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            finish_signal(signal);
+        }
+    }
+    // A child may handle cancellation and deliberately return its own exit code.
+    std::process::exit(status.code().unwrap_or(1))
+}
+
+pub fn delegated(mut command: Command) -> Result<ExitStatus> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(windows_sys::Win32::System::Threading::CREATE_NEW_PROCESS_GROUP);
+    }
+    let mut child = command.spawn().map_err(|_| {
+        Failure::new(
+            Code::SpawnFailed,
+            "Could not start the child command; check its executable, PATH, permissions and \
+             supported argument encoding.",
+        )
+    })?;
+    tracing::debug!(operation = "run-env", pid = child.id(), "Child started");
     loop {
-        cancel.check()?;
-        let amount = chunk.len().min(remaining - bytes.len() + 1);
-        let count = reader
-            .read(&mut chunk[..amount])
-            .map_err(|_| Failure::Read)?;
-        if count == 0 {
-            break;
+        let signal = SIGNAL.swap(0, Ordering::SeqCst);
+        if signal != 0 {
+            #[cfg(unix)]
+            unsafe {
+                libc::kill(child.id() as i32, signal);
+            }
+            #[cfg(windows)]
+            unsafe {
+                windows_sys::Win32::System::Console::GenerateConsoleCtrlEvent(
+                    windows_sys::Win32::System::Console::CTRL_BREAK_EVENT,
+                    child.id(),
+                );
+            }
         }
-        if count > remaining - bytes.len() {
-            return Err(Failure::InputLimit.into());
+        if let Some(status) = child.try_wait().map_err(|e| Failure::io(&e))? {
+            return Ok(status);
         }
-        bytes.extend_from_slice(&chunk[..count]);
+        std::thread::sleep(POLL);
+    }
+}
+
+/// Block on cancellable work without introducing a timeout or retaining content
+/// on disk.
+pub fn interruptible<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T> + Send + 'static,
+) -> Result<T> {
+    let (tx, rx) = mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let _ = tx.send(work());
+    });
+    loop {
+        check_cancelled()?;
+        match rx.recv_timeout(POLL) {
+            Ok(result) => return result,
+            Err(mpsc::RecvTimeoutError::Timeout) => (),
+            Err(_) => {
+                return Err(Failure::new(
+                    Code::IoFailed,
+                    "Operating system worker stopped unexpectedly.",
+                ))
+            }
+        }
+    }
+}
+
+pub fn read_bounded(mut reader: impl Read, limit: usize) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    reader
+        .by_ref()
+        .take((limit + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|e| Failure::io(&e))?;
+    if bytes.len() > limit {
+        return Err(Failure::new(
+            Code::TextTooLarge,
+            "Text exceeds the 16 MiB UTF-8 limit; no output was written.",
+        ));
     }
     Ok(bytes)
 }
 
-pub fn decode(bytes: Vec<u8>) -> Result<String> {
-    if bytes.contains(&0) {
-        return Err(Failure::Encoding.into());
-    }
-    let mut text = String::from_utf8(bytes).map_err(|_| Failure::Encoding)?;
-    if text.starts_with('\u{feff}') {
-        text.drain(..3);
-    }
-    Ok(text)
-}
-
-pub struct Output {
-    pub bytes: Vec<u8>,
-}
-impl Output {
-    pub fn new() -> Self {
-        Self { bytes: Vec::new() }
-    }
-
-    pub fn push(&mut self, text: &str) -> Result<()> {
-        if text.len() > LIMIT - self.bytes.len() {
-            return Err(Failure::OutputLimit.into());
+pub fn detached(command: &mut Command) {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // An opened application must not receive the waiting CLI's terminal
+        // cancellation.
+        unsafe {
+            command.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    Err(std::io::Error::last_os_error())
+                } else {
+                    Ok(())
+                }
+            });
         }
-        self.bytes.extend_from_slice(text.as_bytes());
-        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(
+            windows_sys::Win32::System::Threading::CREATE_NEW_PROCESS_GROUP
+                | windows_sys::Win32::System::Threading::DETACHED_PROCESS,
+        );
     }
 }
-pub fn write(mut writer: impl Write, bytes: &[u8], cancel: &Cancellation) -> Result<()> {
-    for chunk in bytes.chunks(16 * 1024) {
-        cancel.check()?;
-        writer.write_all(chunk).map_err(|_| Failure::Write)?;
-    }
-    cancel.check()?;
-    writer.flush().map_err(|_| Failure::Write.into())
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn exact_raw_and_serialized_limits_are_independent() {
-        let cancel = Cancellation::default();
-        let raw = vec![b'x'; LIMIT];
-        assert_eq!(read(raw.as_slice(), LIMIT, &cancel).unwrap().len(), LIMIT);
-        assert_eq!(
-            read(raw.as_slice(), LIMIT - 1, &cancel).unwrap_err().kind,
-            Failure::InputLimit
-        );
-        let mut output = Output::new();
-        output.push(std::str::from_utf8(&raw).unwrap()).unwrap();
-        assert_eq!(output.push("x").unwrap_err().kind, Failure::OutputLimit);
-        assert_eq!(output.bytes.len(), LIMIT);
-    }
-    #[test]
-    fn cancellation_interrupts_reading_writing_and_processing() {
-        struct Reader(Cancellation);
-        impl Read for Reader {
-            fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
-                self.0.cancel();
-                bytes[0] = b'x';
-                Ok(1)
+pub fn wait_child(child: &mut Child, kill_on_cancel: bool) -> Result<ExitStatus> {
+    loop {
+        if cancelled() {
+            if kill_on_cancel {
+                let _ = child.kill();
+                let _ = child.wait();
             }
+            return check_cancelled().and_then(|()| unreachable!());
         }
-        let cancel = Cancellation::default();
-        assert_eq!(
-            read(Reader(cancel.clone()), LIMIT, &cancel)
-                .unwrap_err()
-                .kind,
-            Failure::Cancelled
-        );
-        assert_eq!(
-            crate::yaml::normalize("a: 1", &cancel).unwrap_err().kind,
-            Failure::Cancelled
-        );
-        assert_eq!(
-            crate::dotenv::parse("A=1", &mut crate::dotenv::Values::new(), &cancel)
-                .unwrap_err()
-                .kind,
-            Failure::Cancelled
-        );
-        struct Writer(Cancellation);
-        impl Write for Writer {
-            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-                self.0.cancel();
-                Ok(bytes.len())
-            }
-
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
+        if let Some(status) = child.try_wait().map_err(|_| {
+            Failure::new(
+                Code::WaitUnavailable,
+                "Application tracking failed; the application may already have opened. Do not \
+                 retry automatically.",
+            )
+        })? {
+            return Ok(status);
         }
-        let cancel = Cancellation::default();
-        assert_eq!(
-            write(Writer(cancel.clone()), &[0; 32768], &cancel)
-                .unwrap_err()
-                .kind,
-            Failure::Cancelled
-        );
+        std::thread::sleep(POLL);
     }
 }

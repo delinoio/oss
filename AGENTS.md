@@ -359,7 +359,7 @@ Coverage expectations:
 - `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter binpm-docs test`.
 - `node-runmoor-docs-test`: validates the standalone Runmoor routes with one frozen install using `--ignore-scripts`, the shared change plan, and its exact Turbo comparison; it participates in `ci-result` and saves caches only after successful main validation.
 - `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter nodeup-docs test`.
-- `node-clibox-test`: runs `cargo test --locked -p clibox` for native configuration/process behavior, native CLI consumer installation and launcher/distribution tests on Linux, macOS, and Windows, selected by shared CI planning and required by `CI Result`.
+- `node-clibox-test`: runs `cargo test --locked -p clibox` for native utility/configuration/process/adapter behavior, native CLI consumer installation and launcher/distribution tests on Linux, macOS, and Windows, selected by shared CI planning and required by `CI Result`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`.
 - `ci-contracts`: validates workflow syntax and the repository CI contract with the checked-in Go `actionlint` tool and Node fixtures.
 - `devhud-frontend`, `devhud-extension`, and `devhud-admin`: run package-local type, lint, unit, component, accessibility, and deterministic frontend/package builds.
@@ -429,6 +429,13 @@ Release automation baseline:
 - After addressing pull request review comments and pushing updates, resolve the corresponding review threads.
 - If a project splits into multiple deployables, the project index must include path ownership and integration boundaries, and component-level domain docs must exist.
 
+### Linux CLI Package Distribution
+
+- Follow `docs/repository-linux-packages-contract.md` for the six CLI APT/DNF repositories at `https://pkgs.oss.delino.io`. Native package publication is part of each selected CLI release, uses the dedicated `linux-packages` environment, and keeps Runmoor preview separate.
+- Runmoor's stable GitHub release status does not implicitly move its APT/DNF package out of the opt-in preview repository; validate source release status independently from native repository enrollment.
+- APT signing-certificate updates are distributed by the shared `delino-archive-keyring` dependency in both suites. Keep certificate versions immutable, retain historical public signing subkeys, and require a completed 30-day old-signer publication overlap before switching CI subkeys.
+- Rust CLI source, Cargo workspace/configuration and toolchain changes must select the Linux package CI job so both native architectures retain the AlmaLinux 9 compatibility baseline.
+
 ### Runmoor Contract
 
 - Public Runmoor documentation is owned by `apps/runmoor-docs` at `https://runmoor.delino.io`; follow `docs/apps-runmoor-docs-foundation.md`. The former `public-docs` `/runmoor` and child routes are removed without handoff pages or redirects. Keep all public discovery links pointed at the standalone site.
@@ -444,7 +451,8 @@ Release automation baseline:
 - The Rust crate and installed command are `clibox`; the public npm entry point is `@delino/clibox`. Keep the Cargo manifest/lock, private npm source manifest, executable version, and all nine generated npm packages at the same exact version.
 - The npm launcher supports Node.js 22+, macOS/Windows x64 and arm64, and Linux x64/arm64 with separate glibc/musl packages. It resolves only the matching exact-version `@delino/clibox-*` optional dependency and has no shell, PATH fallback, install script, runtime download, or Rust compilation fallback.
 - Generate public npm packages from the private source workspace under ignored `dist` or temporary directories. Ordinary workspace installation must not resolve unpublished clibox dependencies. Never track generated tarballs or binaries.
-- Preserve help/version and issue #920's `dotenv list`, `dotenv merge`, and `yaml normalize` contracts: offline Rust processing, exact value/precision preservation, independent 64 MiB input/output limits, 128 YAML collection levels, atomic permission-preserving file publication, handled cancellation, and strictly redacted stderr diagnostics. Publish crates.io through Release Project, followed by `clibox@v<version>` and the npm workflow. No Homebrew or public GitHub Release assets are added.
+- clibox implements `run env`, `port which`, `port kill`, `open`, and text `clipboard copy`/`paste` alongside help/version. Preserve child argv/signal compatibility, revalidated port-owner termination with one shared five-second wait, explicit-app-only waiting, 16 MiB NUL-free UTF-8 clipboard validation and Linux background clipboard ownership. Use current-user/session authority without application persistence, elevation, automatic retries or sensitive diagnostic values.
+- Preserve issue #920's `dotenv list`, `dotenv merge`, and `yaml normalize` contracts: offline Rust processing, exact value/precision preservation, independent 64 MiB input/output limits, 128 YAML collection levels, atomic permission-preserving file publication, handled cancellation, and strictly redacted stderr diagnostics. Publish crates.io through Release Project, followed by `clibox@v<version>` and the npm workflow. No Homebrew or public GitHub Release assets are added.
 - `release-clibox.yml` validates all eight native targets and the full nine-package set before publication. Publish and verify platform packages before the main package; reuse only identical registry integrity on retries. Dry runs are secret-free and non-publishing.
 - `CLIBOX_NPM_PUBLISH_ENABLED=true` and an exact first-party Trusted Publisher on all nine packages are required for OIDC/provenance publication; only the guarded publish job receives `id-token: write`. That job must explicitly install the pinned OIDC-capable npm version before validating support and publishing, independent of Node's bundled npm.
 - Keep `docs/project-clibox.md`, both clibox domain contracts, root/domain AGENTS rules, release versioning, CI selection/aggregation, and distribution fixtures synchronized.

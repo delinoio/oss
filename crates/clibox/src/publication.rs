@@ -4,7 +4,7 @@ use std::{
     path::Path,
 };
 
-use crate::runtime::{self, Cancellation, Failure, Result};
+use crate::config_runtime::{self, Cancellation, Failure, Result};
 
 pub fn regular_input(path: &Path) -> Result<()> {
     let metadata = fs::symlink_metadata(path).map_err(|_| Failure::Read)?;
@@ -157,7 +157,7 @@ pub fn publish(path: &Path, bytes: &[u8], replace: bool, cancel: &Cancellation) 
         .map_err(|_| Failure::Publish)?;
     // NamedTempFile creates mode 0600 on Unix, and inherits the parent's ACL on
     // Windows. It removes unpublished files on every handled return path.
-    runtime::write(temporary.as_file_mut(), bytes, cancel)?;
+    config_runtime::write(temporary.as_file_mut(), bytes, cancel)?;
     publish_prepared(temporary, path, replace, cancel)
 }
 

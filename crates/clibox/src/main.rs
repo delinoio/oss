@@ -1,15 +1,22 @@
+mod clipboard;
+mod config_runtime;
 mod dotenv;
+mod environment;
+mod error;
+mod open;
+mod port;
 mod publication;
 mod runtime;
 mod yaml;
 
 use std::{
+    ffi::OsString,
     io::IsTerminal,
     path::{Path, PathBuf},
 };
 
 use clap::{Args, CommandFactory, Parser, Subcommand};
-use runtime::{Cancellation, Error, Failure, Result, LIMIT};
+use config_runtime::{Cancellation, Error, Failure, Result, LIMIT};
 
 const IO_HELP: &str =
     "Inputs must be UTF-8 (initial BOM accepted), without NUL. Aggregate raw input and serialized \
@@ -51,13 +58,65 @@ const YAML_HELP: &str =
      including aliases, is limited to 128 levels with a root collection at level one.";
 
 #[derive(Parser)]
-#[command(name = "clibox", version, about = "Local configuration-file utilities, distributed through Cargo and npm", after_long_help = IO_HELP)]
+#[command(
+    name = "clibox",
+    version,
+    about = "Cross-platform developer utilities distributed through Cargo and npm"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
 }
 #[derive(Subcommand)]
 enum Command {
+    #[command(flatten)]
+    Configuration(Configuration),
+    /// Run commands with a child-only environment.
+    Run {
+        #[command(subcommand)]
+        command: Run,
+    },
+    /// Inspect or forcibly terminate local port owners.
+    Port {
+        #[command(subcommand)]
+        command: port::Action,
+    },
+    /// Open one file, directory or registered URI.
+    #[command(
+        after_help = "Examples:\n  clibox open .\n  clibox open https://example.com\n  clibox \
+                      open report.txt --app TextEdit --wait\n\n--wait observes application \
+                      termination, not document or tab closure."
+    )]
+    Open {
+        target: OsString,
+        #[arg(long)]
+        app: Option<OsString>,
+        #[arg(long, requires = "app")]
+        wait: bool,
+    },
+    /// Copy or paste the desktop session's ordinary text clipboard.
+    Clipboard {
+        #[command(subcommand)]
+        command: clipboard::Action,
+    },
+}
+
+#[derive(Subcommand)]
+enum Run {
+    /// Set cross-env compatible assignments and wait for a child command.
+    #[command(
+        after_help = "Examples:\n  clibox run env NODE_ENV=production node build.js\n  clibox run \
+                      env -- node script.js\n\nInherits cwd and stdio. No shell expressions. \
+                      Empty child arguments and exit signals are preserved."
+    )]
+    Env {
+        #[arg(value_name = "KEY=VALUE ... COMMAND ARG", trailing_var_arg = true, allow_hyphen_values = true, num_args = 1..)]
+        args: Vec<OsString>,
+    },
+}
+
+#[derive(Subcommand)]
+enum Configuration {
     /// Inspect and combine dotenv files without loading the environment.
     Dotenv {
         #[command(subcommand)]
@@ -142,15 +201,15 @@ struct Job {
     in_place: bool,
 }
 impl Job {
-    fn new(command: Command) -> Result<Self> {
+    fn new(command: Configuration) -> Result<Self> {
         let (operation, inputs, output, in_place) = match command {
-            Command::Dotenv {
+            Configuration::Dotenv {
                 command: Dotenv::List { input, output },
             } => (Operation::DotenvList, vec![input], output, false),
-            Command::Dotenv {
+            Configuration::Dotenv {
                 command: Dotenv::Merge { files, output },
             } => (Operation::DotenvMerge, files, output, false),
-            Command::Yaml {
+            Configuration::Yaml {
                 command:
                     Yaml::Normalize {
                         input,
@@ -206,9 +265,9 @@ impl Job {
             let bytes = cancel
                 .blocking(move || {
                     if path.as_os_str() == "-" {
-                        runtime::read(std::io::stdin().lock(), remaining, &token)
+                        config_runtime::read(std::io::stdin().lock(), remaining, &token)
                     } else {
-                        runtime::read(
+                        config_runtime::read(
                             std::fs::File::open(path).map_err(|_| Failure::Read)?,
                             remaining,
                             &token,
@@ -217,7 +276,7 @@ impl Job {
                 })
                 .map_err(|e| e.input(index + 1))?;
             remaining -= bytes.len();
-            let text = runtime::decode(bytes).map_err(|e| e.input(index + 1))?;
+            let text = config_runtime::decode(bytes).map_err(|e| e.input(index + 1))?;
             match self.operation {
                 Operation::DotenvList | Operation::DotenvMerge => {
                     dotenv::parse(&text, &mut values, cancel)
@@ -240,7 +299,9 @@ impl Job {
             publication::publish(&path, &result, self.replace, cancel)?;
         } else {
             let token = cancel.clone();
-            cancel.blocking(move || runtime::write(std::io::stdout().lock(), &result, &token))?;
+            cancel.blocking(move || {
+                config_runtime::write(std::io::stdout().lock(), &result, &token)
+            })?;
         }
         cancel.check()?;
         tracing::debug!(operation = self.operation.name(), "operation_completed");
@@ -265,7 +326,13 @@ fn main() {
     std::panic::set_hook(Box::new(|_| {
         Error::from(Failure::Internal).report("runtime")
     }));
-    let cli = match Cli::try_parse() {
+    let raw: Vec<_> = std::env::args_os().collect();
+    // Clap consumes this separator, but run env must distinguish it from an
+    // assignment token and preserve the child command boundary.
+    let leading_separator = raw.get(1).is_some_and(|s| s == "run")
+        && raw.get(2).is_some_and(|s| s == "env")
+        && raw.get(3).is_some_and(|s| s == "--");
+    let cli = match Cli::try_parse_from(raw) {
         Ok(cli) => cli,
         Err(error)
             if matches!(
@@ -292,6 +359,48 @@ fn main() {
         };
         std::process::exit(code);
     };
+    match command {
+        Command::Configuration(command) => execute_configuration(command),
+        Command::Run {
+            command: Run::Env { mut args },
+        } => execute_utility(|| {
+            if leading_separator {
+                args.insert(0, "--".into());
+            }
+            runtime::exit_child(environment::execute(args)?);
+        }),
+        Command::Port { command } => execute_utility(|| port::execute(command)),
+        Command::Open { target, app, wait } => execute_utility(|| {
+            open::execute(target, app, wait)?;
+            Ok(0)
+        }),
+        Command::Clipboard { command } => execute_utility(|| {
+            clipboard::execute(command)?;
+            Ok(0)
+        }),
+    }
+}
+
+fn execute_utility(work: impl FnOnce() -> error::Result<i32>) -> ! {
+    let result = runtime::install_signals().and_then(|()| work());
+    let code = match result {
+        Ok(code) => code,
+        Err(error) => {
+            error.report("clibox");
+            if error.code == error::Code::InvalidInput {
+                2
+            } else {
+                1
+            }
+        }
+    };
+    runtime::finish(code);
+}
+
+fn execute_configuration(command: Configuration) -> ! {
+    // Configuration cancellation returns a numeric status after temporary-file
+    // cleanup; utility commands instead retain OS/child signal semantics. Install
+    // only the selected command family's handlers for each process.
     let job = match Job::new(command) {
         Ok(job) => job,
         Err(error) => {

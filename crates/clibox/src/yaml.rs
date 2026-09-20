@@ -12,7 +12,7 @@ use yaml_rust2::{
     scanner::{Marker, Scanner, TScalarStyle, TokenType},
 };
 
-use crate::runtime::{Cancellation, Error, Failure, Output, Result, LIMIT};
+use crate::config_runtime::{Cancellation, Error, Failure, Output, Result, LIMIT};
 
 const DEPTH: usize = 128;
 static INTEGER: LazyLock<Regex> =

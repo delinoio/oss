@@ -46,3 +46,7 @@ Update this index, the command contract, relevant AGENTS files, CLI/config/JSON 
 - [Project template](project-template.md).
 - [Issue #893](https://github.com/delinoio/oss/issues/893).
 - [Official scale-set client](https://github.com/actions/scaleset/tree/v0.4.0).
+
+## Native Linux packages
+
+Follow `docs/repository-linux-packages-contract.md` for APT/DNF release publication, supported systems, signatures, and recovery. Runmoor is preview-only and package installation never registers or starts a service.
