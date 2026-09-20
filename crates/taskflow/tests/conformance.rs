@@ -5124,3 +5124,45 @@ async fn shard_deadlines_leave_docker_cleanup_available() {
         assert!(!pid_alive(pid));
     }
 }
+
+#[tokio::test]
+async fn changed_outputs_override_unchanged_reports() {
+    for cached in [false, true] {
+        let root = fixture(json!({
+            "produce":{"command":command(&["copy-unchanged","source","produced",env!("CARGO_BIN_EXE_tflow")]),"input":["source"],"output":["produced"],"cache":cached,"tools":{"fixture":command(&["version"])}},
+            "consume":{"command":command(&["copy","produced","consumed"]),"input":[],"output":["consumed"],"dependsOn":["produce"]}
+        }));
+        let g = graph(root.path()).await;
+        // Only the producer has an independent cause. The consumer must rely on
+        // output propagation, including when the producer has no prior receipt.
+        for (source, expected_changed) in [("first", true), ("second", true), ("second", false)] {
+            std::fs::write(root.path().join("source"), source).unwrap();
+            let plan = Plan::create(&g, &[], &[PathBuf::from("source")], true).unwrap();
+            let result = runner::run_plan(
+                g.clone(),
+                plan,
+                RunOptions {
+                    force: true,
+                    ..Default::default()
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+            assert!(result.success, "{result:?}");
+            assert_eq!(result.results["app#produce"].changed, expected_changed);
+            assert_eq!(
+                result.results["app#consume"].outcome,
+                if expected_changed {
+                    Outcome::Executed
+                } else {
+                    Outcome::Suppressed
+                }
+            );
+            assert_eq!(
+                std::fs::read_to_string(root.path().join("consumed")).unwrap(),
+                source
+            );
+        }
+    }
+}

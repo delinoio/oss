@@ -8,6 +8,7 @@
 - Unix input cache state includes permissions, including file-link target permissions; portable CI structure fingerprints remain content-based.
 - Validate every affected-mode task filter before intersecting it with changes; a typo must fail even for an empty affected set.
 - Never collapse direct/input/schedule causes into a prerequisite cause. Cancellation and invalidation prohibit cache publication.
+- Declared output changes override task-reported unchanged; only a matching successful output baseline can suppress propagation.
 - Graph output ownership compares missing names using the destination filesystem's actual case/Unicode equivalence, including cross-project ancestors; probes must never mutate declared outputs.
 - Before staging artifact contents, probe every path prefix on the destination filesystem to reject case/Unicode aliases and unsupported names without mutating outputs.
 - Outputless cached tasks retain a validated semantic result identity separately from the empty file-snapshot digest, including historical cache hits and unchanged reports; sharded result identity includes the tested input version and is shared across partitions while sharded task cache keys remain partition-specific. Ordinary prerequisites never include the enclosing invocation's shard selection in their keys.

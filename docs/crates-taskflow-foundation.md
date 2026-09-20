@@ -38,7 +38,7 @@ The scheduler deduplicates prerequisites, limits concurrency, coordinates named 
 
 Cancellation applies to native metadata discovery, pending tasks, synchronous cache restoration/publication, and reporting as well as active commands; every cancelled receipt uses code 130. Discovery fallbacks propagate typed cancellation and cleanup failures. Top-level cancellation errors return 130 only after owned cleanup completes; genuine setup and cleanup failures retain failure status.
 
-Task-reported unchanged uses an execution-specific result file, not magic stdout. Accept it only for successful, current executions. External effects remain eligible after upstream unchanged results.
+Task-reported unchanged uses an execution-specific result file, not magic stdout. Accept it only for successful, current executions. Declared output digests override the report when they differ from the previous successful receipt or no successful baseline exists. Matching outputs can retain the report's suppression. External effects remain eligible after upstream unchanged results.
 
 ### Development sessions
 Subscribe before activation. Default file debounce is 200ms; default overlap is `queue` for files and `skip` for schedules, even when one task subscribes to both. An explicit overlap setting overrides both trigger defaults. Queue coalesces without losing independent causes; restart cancels and reaps first. Output changes cannot self-trigger their producer but remain visible to consumers. HMR services do not restart because companions run. Directory rename, move, and removal notifications conservatively rescan intersecting positive input roots; the resulting filtered snapshot determines whether work is enqueued.

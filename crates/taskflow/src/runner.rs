@@ -884,8 +884,14 @@ async fn publish(
     if !valid(receipt)? {
         return Ok(());
     }
+    let previous_output = previous(&graph.workspace.root, id)
+        .filter(Receipt::success)
+        .map(|receipt| receipt.output);
     if task.output.as_ref().is_some_and(|v| !v.is_empty()) {
         receipt.output = cache::output_state(project, task)?;
+        // An unchanged report cannot override observed artifact changes. With
+        // no successful baseline, consumers must see the newly produced output.
+        receipt.changed |= previous_output.as_ref() != Some(&receipt.output);
     }
     if task.cache {
         let mut artifact = cache::Artifact::capture(receipt.key.clone(), id.into(), project, task)?;
@@ -903,6 +909,7 @@ async fn publish(
             artifact.result_identity = Some(receipt.output.clone());
         } else {
             receipt.output = artifact.output_digest.clone();
+            receipt.changed |= previous_output.as_ref() != Some(&receipt.output);
         }
         let staged = if let Some(remote) = remote {
             tokio::select! {

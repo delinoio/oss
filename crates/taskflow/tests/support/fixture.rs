@@ -98,7 +98,13 @@ fn main() {
             print!("{}", fs::read_to_string(&args[2]).unwrap());
             eprint!("{}", fs::read_to_string(&args[3]).unwrap());
         }
-        "copy" => { write(&args[3], &fs::read(&args[2]).unwrap()); }
+        "copy" | "copy-unchanged" => {
+            write(&args[3], &fs::read(&args[2]).unwrap());
+            if args[1] == "copy-unchanged" {
+                assert!(std::process::Command::new(&args[4])
+                    .args(["result", "unchanged"]).status().unwrap().success());
+            }
+        }
         "write" => write(&args[2], args[3].as_bytes()),
         "record" | "unchanged" => {
             let mut file = fs::OpenOptions::new().create(true).append(true).open(&args[2]).unwrap();
