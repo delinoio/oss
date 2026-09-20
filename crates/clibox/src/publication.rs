@@ -513,6 +513,11 @@ fn preserve_permissions(original: &Original, temporary: &Path) -> Result<()> {
             UNPROTECTED_DACL_SECURITY_INFORMATION,
         },
     };
+    // Set access attributes while the temporary file still has its creation ACL.
+    // The original DACL may legitimately deny FILE_WRITE_ATTRIBUTES, while its
+    // parent still grants replacement. No pathname attribute writes follow it.
+    fs::set_permissions(temporary, original.metadata.permissions())
+        .map_err(|_| Error::runtime(Code::Permissions))?;
     let mut owner = std::ptr::null_mut();
     let mut group = std::ptr::null_mut();
     let mut dacl = std::ptr::null_mut();
@@ -564,8 +569,7 @@ fn preserve_permissions(original: &Original, temporary: &Path) -> Result<()> {
     if status != ERROR_SUCCESS {
         return Err(Error::runtime(Code::Permissions));
     }
-    let permissions = original.metadata.permissions();
-    fs::set_permissions(temporary, permissions).map_err(|_| Error::runtime(Code::Permissions))
+    Ok(())
 }
 
 #[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
@@ -843,33 +847,57 @@ mod tests {
                 LocalFree(descriptor);
             }
         }
-        for deny_data in [false, true] {
+        let readable = "D:P(A;;FA;;;OW)(A;;FR;;;WD)";
+        for (deny_data, deny_attributes, acl) in [
+            (false, false, readable),
+            (true, false, "D:P(D;;0x1;;;WD)(A;;FA;;;OW)(A;;FR;;;WD)"),
+            (false, true, "D:P(D;;0x100;;;WD)(A;;FA;;;OW)(A;;FR;;;WD)"),
+        ] {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("acl");
             fs::write(&path, b"original").unwrap();
             let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-            let readable = "D:P(A;;FA;;;OW)(A;;FR;;;WD)";
-            // Deny FILE_READ_DATA while retaining attributes/security access.
-            set_dacl(
-                &wide,
-                if deny_data {
-                    "D:P(D;;0x1;;;WD)(A;;FA;;;OW)(A;;FR;;;WD)"
-                } else {
-                    readable
-                },
-            );
+            // Deny data reads or attribute writes while retaining metadata/security reads.
+            set_dacl(&wide, acl);
             if deny_data {
                 assert_eq!(
                     fs::read(&path).unwrap_err().kind(),
                     io::ErrorKind::PermissionDenied
                 );
             }
+            if deny_attributes {
+                assert_eq!(
+                    fs::set_permissions(&path, fs::metadata(&path).unwrap().permissions())
+                        .unwrap_err()
+                        .kind(),
+                    io::ErrorKind::PermissionDenied
+                );
+            }
             let before = security(&wide);
+            let (cancelled, file) = Publication::prepare(Some(path.clone()), true).unwrap();
+            drop(file);
+            assert_eq!(
+                cancelled
+                    .publish(|| Err(Error::runtime(Code::Cancelled)))
+                    .unwrap_err()
+                    .code,
+                Code::Cancelled
+            );
+            assert_eq!(security(&wide), before);
+            assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
             let (publication, mut file) = Publication::prepare(Some(path.clone()), true).unwrap();
             file.as_mut().unwrap().write_all(b"changed").unwrap();
             drop(file);
             publication.publish(|| Ok(())).unwrap();
             assert_eq!(security(&wide), before);
+            if deny_attributes {
+                assert_eq!(
+                    fs::set_permissions(&path, fs::metadata(&path).unwrap().permissions())
+                        .unwrap_err()
+                        .kind(),
+                    io::ErrorKind::PermissionDenied
+                );
+            }
             if deny_data {
                 assert_eq!(
                     fs::read(&path).unwrap_err().kind(),
