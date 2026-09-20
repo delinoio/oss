@@ -29,7 +29,7 @@ The package manager installs the matching prebuilt executable. Rust, postinstall
 
 If the native package is missing, reinstall with optional dependencies enabled (`npm install --include=optional` or `pnpm install` without `--no-optional`). Do not copy `node_modules` between operating systems, architectures, or Linux libc environments; reinstall from your lockfile on the destination machine. If a lockfile omits the destination's optional package, regenerate it with your package manager and commit the corrected lockfile.
 
-If versions disagree, reinstall the dependency so `@delino/clibox` and its selected platform package have the same exact version. Cargo installation with `cargo install clibox` requires a compatible Rust toolchain on a supported macOS, Windows or Linux host.
+If versions disagree, reinstall the dependency so `@delino/clibox` and its selected platform package have the same exact version.
 
 The package provides the `clibox` command only, with no public JavaScript import API.
 

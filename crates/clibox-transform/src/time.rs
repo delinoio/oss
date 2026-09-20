@@ -301,14 +301,20 @@ mod tests {
     use clap::Parser;
 
     use super::*;
-    use crate::cli::{Cli, Command, TransformCommand};
+    use crate::cli::TransformCommand;
+
+    #[derive(Parser)]
+    struct Cli {
+        #[command(subcommand)]
+        command: TransformCommand,
+    }
 
     #[test]
     fn omitted_value_uses_injected_current_instant() {
         let cli = Cli::parse_from(["clibox", "time", "format"]);
-        let Some(Command::Transform(TransformCommand::Time {
+        let TransformCommand::Time {
             command: TimeCommand::Format(args),
-        })) = cli.command
+        } = cli.command
         else {
             panic!()
         };

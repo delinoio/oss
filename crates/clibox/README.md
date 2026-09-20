@@ -1,19 +1,14 @@
 # clibox
 
-A native Rust CLI, also available as `@delino/clibox` on npm for project-local version pinning.
+A native Rust CLI distributed through native packages and `@delino/clibox` on npm for project-local version pinning.
 
 Cross-platform utilities for child environments, local port owners, resource opening, the desktop text clipboard, text replacement, time formatting/arithmetic, Base64 encoding/decoding, checksum generation/verification, and TCP/HTTP/file readiness waits.
-
-```sh
-cargo install clibox
-clibox --help
-clibox --version
-```
 
 For JavaScript projects:
 
 ```sh
 pnpm add -D -E @delino/clibox
+pnpm exec clibox --help
 pnpm exec clibox --version
 ```
 

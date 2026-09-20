@@ -19,3 +19,16 @@
 - `CreateUploadTarget` remains an explicit oneof for new submission, new group, or existing group ownership. Reservation IDs, immutable nonzero staging generations, expected checksum/size, and observed ETag are required finalization bindings.
 - Crash diagnostics are typed, user-previewed, and redacted, with an explicit browser platform, browser-only unknown architecture, exact native Tauri/browser-empty and desktop CEF/mobile-browser-empty revisions, 256-byte build/code identifier ceilings, a 4 KiB summary, and a 32 KiB stack ceiling. Administrator mutation reasons are required, capped at 4 KiB of well-formed UTF-8, and reject credential and local-path patterns before persistence; audit responses expose only previously validated reasons. Administrator message graphs use a metadata-only upload projection and must not reach settings bodies, secrets, DOM, screenshots, public or signed asset locators, Deck results, agent output, or local paths.
 - CI must validate schema formatting, lint, compatibility, and generated-client freshness through package/root commands and the committed Turbo binary. Generated Go and TypeScript outputs are deterministic cacheable products and must never be edited by hand.
+
+### async-commit-hook
+- `protos/async_commit_hook/v1` owns package `async_commit_hook.v1`; follow `docs/protos-async-commit-hook-v1-contract.md`. Generate Go bindings and the isolated ach TypeScript client reproducibly. No arbitrary command or filesystem endpoint.
+- RerunResponse carries the accepted run_id even when startup fails, with an optional startup_diagnostic; pre-acceptance errors remain Connect errors.
+- Its run-list detached filter must distinguish an empty stored branch from omitted filtering and participate in cursor scope.
+
+- async-commit-hook run lists carry optional check_count totals and omit check arrays/diagnostics; GetRun retains complete detail. Preserve older-response count fallback in clients.
+
+- async-commit-hook repository lists use cursor/limit requests and next_cursor responses, page across worktrees (maximum 50), and bound display fields to 4 KiB; one repository can span pages.
+
+- async-commit-hook branch lists accept cursor/limit and return next_cursor; default/max 50 refs and 128 KiB raw records per page, with 64 KiB per-record rejection. Cursors bind the worktree and raw lexical ref.
+
+- async-commit-hook branch labels are display-only when Branch.id or Worktree.branch_id is present. Preserve additive branch_id fields, bounded worktree scope, legacy omission and exact-byte run filtering.

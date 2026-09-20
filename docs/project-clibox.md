@@ -7,7 +7,11 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 `clibox`
 
 ## Domain Ownership Map
-- `crates/clibox`: Rust executable and crates.io package.
+- `crates/clibox`: Rust executable, logging/panic initialization, and root CLI composition.
+- `crates/clibox-config`: dotenv/YAML command definitions, bounded processing, cancellation, and private atomic publication.
+- `crates/clibox-system`: OS command definitions, runtime, errors, and adapters.
+- `crates/clibox-transform`: offline command definitions, transformations, cancellation, and atomic publication.
+- `crates/clibox-wait`: readiness command definitions, validation, probes, polling, and reporting.
 - `packages/clibox`: private source workspace for the public npm launcher, platform packages, packaging, and publication tooling.
 
 ## Domain Contract Documents
@@ -15,13 +19,14 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 - [npm distribution](packages-clibox-distribution-contract.md)
 
 ## Cross-Domain Invariants
-- The crate and command are `clibox`; the public npm entry point is `@delino/clibox`.
-- Cargo and npm show command-specific help on stderr with exit code 2 when `run`, `port`, `clipboard`, `wait`, `text`, `time`, `base64`, `hash`, `dotenv`, or `yaml` is missing a subcommand. Root no-argument and explicit help remain successful stdout output; other invalid inputs retain redacted diagnostics.
+- The executable crate and command are `clibox`; the public npm entry point is `@delino/clibox`.
+- Native binaries and npm show command-specific help on stderr with exit code 2 when `run`, `port`, `clipboard`, `wait`, `text`, `time`, `base64`, `hash`, `dotenv`, or `yaml` is missing a subcommand. Root no-argument and explicit help remain successful stdout output; other invalid inputs retain redacted diagnostics.
 - Rust is explicitly selected instead of the repository's default Go language. Node.js 22+ is required only for the npm launcher; repository tooling uses Node.js 24.
-- The Cargo manifest, Cargo.lock, source npm manifest, nine generated npm packages, and executable version agree exactly.
+- The executable Cargo manifest, its Cargo.lock entry, source npm manifest, nine generated npm packages, and executable version agree exactly.
 - macOS and Windows MSVC support x64/arm64; Linux supports x64/arm64 with separate glibc and musl packages.
 - Consumers never compile Rust or run installation/download scripts. The npm launcher executes only its exact-version platform dependency.
-- Manual `Release Project` versioning, exact-commit CI, crates.io publication, and the `clibox@v<version>` tag precede the downstream npm workflow.
+- Manual `Release Project` versioning and exact-commit CI precede the `clibox@v<version>` tag and downstream npm/native workflow. clibox does not publish to crates.io or require a Cargo registry token.
+- All five Rust crates use `publish = false`. Only `clibox` depends on the four companions, through path dependencies. Companion versions begin at `0.1.0` and are not automatically bumped with product releases; no public Rust library API is added.
 - npm publication uses GitHub Actions OIDC and provenance from the complete verified CI artifact; setup and dry-run validation do not publish.
 - The public commands are `run env`, `port which`, `port kill`, `open`, `clipboard copy`, `clipboard paste`, `dotenv list`, `dotenv merge`, `yaml normalize`, `wait tcp`, `wait http`, `wait file`, `text replace`, `time format`, `time add`, `base64 encode`, `base64 decode`, `hash encode`, and `hash verify`; no public Rust/JavaScript library API is provided.
 - Configuration commands are offline Rust operations with 64 MiB input/output limits, private atomic file publication, cancellation, and redacted diagnostics. They introduce no application state or shell execution.

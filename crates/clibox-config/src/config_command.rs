@@ -49,7 +49,7 @@ const YAML_HELP: &str =
      including aliases, is limited to 128 levels with a root collection at level one.";
 
 #[derive(Subcommand)]
-pub(super) enum Configuration {
+pub enum Configuration {
     /// Inspect and combine dotenv files without loading the environment.
     Dotenv {
         #[command(subcommand)]
@@ -62,7 +62,7 @@ pub(super) enum Configuration {
     },
 }
 #[derive(Args)]
-pub(super) struct FileOutput {
+pub struct FileOutput {
     /// Write only to this filesystem destination (existing files require
     /// --force).
     #[arg(long, value_name = "FILE")]
@@ -72,7 +72,7 @@ pub(super) struct FileOutput {
     force: bool,
 }
 #[derive(Subcommand)]
-pub(super) enum Dotenv {
+pub enum Dotenv {
     /// List unique keys, never values; defaults to .env in the current
     /// directory only.
     #[command(after_long_help = format!("{DOTENV_HELP}\n\n{IO_HELP}\n\nExamples:\n  clibox dotenv list\n  clibox dotenv list --input -\n  clibox dotenv list --input local.env --output keys.txt"))]
@@ -96,7 +96,7 @@ pub(super) enum Dotenv {
     },
 }
 #[derive(Subcommand)]
-pub(super) enum Yaml {
+pub enum Yaml {
     /// Resolve YAML references and sort mappings; defaults to stdin.
     #[command(after_long_help = format!("{YAML_HELP}\n\n{IO_HELP}\n\nExamples:\n  clibox yaml normalize < config.yaml\n  clibox yaml normalize --input config.yaml --output normalized.yaml\n  clibox yaml normalize --input config.yaml --in-place"))]
     Normalize {
@@ -242,7 +242,7 @@ impl Job {
     }
 }
 
-pub(super) fn execute(command: Configuration) -> ! {
+pub fn execute(command: Configuration) -> ! {
     // Configuration cancellation returns a numeric status after temporary-file
     // cleanup; utility commands instead retain OS/child signal semantics. Install
     // only the selected command family's handlers for each process.

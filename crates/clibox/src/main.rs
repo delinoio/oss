@@ -1,34 +1,15 @@
-mod base64;
 mod cli;
-mod clipboard;
-mod config_command;
-mod config_publication;
-mod config_runtime;
-mod dotenv;
-mod environment;
-mod error;
-mod hash;
-mod io;
-mod open;
-mod port;
-mod probe;
-mod publication;
-mod runtime;
-mod system;
-mod text;
-mod time;
-mod transform;
-mod transform_error;
-mod wait;
-mod wait_command;
-mod yaml;
 
 use std::io::{IsTerminal, Write};
 
 use clap::{CommandFactory, Parser};
 use cli::{Cli, Command};
-use config_runtime::{Error, Failure};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
+
+#[derive(Debug)]
+enum Failure {
+    Arguments,
+}
 
 fn main() {
     // Filter expressions and dependency diagnostics can contain user input.
@@ -59,9 +40,7 @@ fn main() {
         .init();
     // Dependency panics can contain input slices; replace the panic payload and
     // location with a stable classification. Normal errors never panic.
-    std::panic::set_hook(Box::new(|_| {
-        Error::from(Failure::Internal).report("runtime")
-    }));
+    std::panic::set_hook(Box::new(|_| clibox_config::report_runtime_failure()));
     let raw: Vec<_> = std::env::args_os().collect();
     // Clap consumes this separator, but run env must distinguish it from an
     // assignment token and preserve the child command boundary.
@@ -112,34 +91,11 @@ fn main() {
     // Each command family owns its signal semantics. Wait-only CA environment
     // cleanup must never affect delegated children or offline processing.
     match command {
-        Command::Configuration(command) => config_command::execute(command),
-        Command::Wait(command) => std::process::exit(i32::from(wait_command::execute(command))),
-        Command::System(command) => execute_utility(|| system::execute(command, leading_separator)),
+        Command::Configuration(command) => clibox_config::execute(command),
+        Command::Wait(command) => std::process::exit(i32::from(clibox_wait::execute(command))),
+        Command::System(command) => clibox_system::execute(command, leading_separator),
         Command::Transform(command) => {
-            let status = match transform::execute(command) {
-                Ok(status) => status,
-                Err(error) => {
-                    transform_error::report(error);
-                    error.exit
-                }
-            };
-            std::process::exit(i32::from(status));
+            std::process::exit(i32::from(clibox_transform::execute(command)));
         }
     }
-}
-
-fn execute_utility(work: impl FnOnce() -> error::Result<i32>) -> ! {
-    let result = runtime::install_signals().and_then(|()| work());
-    let code = match result {
-        Ok(code) => code,
-        Err(error) => {
-            error.report("clibox");
-            if error.code == error::Code::InvalidInput {
-                2
-            } else {
-                1
-            }
-        }
-    };
-    runtime::finish(code);
 }

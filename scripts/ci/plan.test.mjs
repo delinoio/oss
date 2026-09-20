@@ -89,6 +89,39 @@ test("Runmoor docs select their checks and shared inputs force the workspace", (
   }
 });
 
+test("async-commit-hook source and shared validation inputs select its complete validation job", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of [
+      "cmds/async-commit-hook/main.go", "apps/async-commit-hook/src/App.tsx",
+      "apps/async-commit-hook/public/install.ps1", "packages/async-commit-hook-api-client/src/client.ts",
+      "protos/async_commit_hook/v1/service.proto", "packaging/async-commit-hook/release-metadata.json",
+      "scripts/release/build-async-commit-hook.py", "scripts/release/async-commit-hook.test.mjs",
+      "scripts/release/publish-async-commit-hook.py", "scripts/release/async-commit-hook-publish-fixtures.py",
+      ".github/workflows/release-async-commit-hook.yml", "docs/project-async-commit-hook.md",
+      "buf.yaml", "buf.gen.yaml", "go.mod", "go.sum", "package.json", "pnpm-lock.yaml",
+      "pnpm-workspace.yaml", ".nvmrc", ".npmrc", "turbo.json",
+      "scripts/check-proto-breaking.sh", "scripts/run-rsbuild-dev.mjs", "scripts/spawn-dev-server.mjs",
+      "scripts/dev-environment/process.mjs",
+    ]) assert.ok(selected(event, [path]).includes("async-commit-hook"), `${event}: ${path}`);
+    for (const path of ["cmds/runmoor/main.go", "apps/mpapp/App.tsx", "docs/project-with-watch.md"]) {
+      assert.ok(!selected(event, [path]).includes("async-commit-hook"), `${event}: ${path}`);
+    }
+  }
+});
+
+test("async-commit-hook failures, missing results and unauthorized skips fail the aggregate", () => {
+  const paths = ["cmds/async-commit-hook/main.go"];
+  assert.equal(validateResults(results(Event.PullRequest, paths)), true);
+  for (const result of ["failure", "cancelled", "skipped", undefined]) {
+    const needs = results(Event.PullRequest, paths);
+    needs["async-commit-hook"].result = result;
+    assert.throws(() => validateResults(needs), /async-commit-hook/u);
+  }
+  const needs = results(Event.PullRequest, paths);
+  delete needs["async-commit-hook"];
+  assert.throws(() => validateResults(needs), /inventory/u);
+});
+
 test("workspace, shared, runtime, and external contract inputs select their owners", () => {
   for (const [path, ids] of [
     ["apps/mpapp/App.tsx", ["node-mpapp-test", "node-mpapp-lint"]],
