@@ -29,7 +29,9 @@ export function validateIdentity(value) {
   return result;
 }
 export function validateRelease(release, plan, resolvedRevision) {
-  requireValue(resolvedRevision === plan.revision && release.tag_name === plan.tag && release.draft === false && release.prerelease === (plan.channel === Channel.Preview), 'RELEASE_IDENTITY_MISMATCH');
+  // All six source workflows publish stable GitHub releases. Native repository
+  // enrollment is a separate contract; Runmoor still requires explicit preview opt-in.
+  requireValue(resolvedRevision === plan.revision && release.tag_name === plan.tag && release.draft === false && release.prerelease === false, 'RELEASE_IDENTITY_MISMATCH');
   const expected = ['SHA256SUMS', 'SHA256SUMS.sigstore.json', ...architectures.flatMap((arch) => [`${plan.project}-linux-${arch}.tar.gz`, `${plan.project}-linux-${arch}.tar.gz.sigstore.json`])];
   for (const name of expected) requireValue(release.assets.filter((asset) => asset.name === name && asset.size > 0).length === 1, 'RELEASE_ASSET_MISSING');
   return expected;

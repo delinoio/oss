@@ -11,6 +11,13 @@ name=delino
 if [ "$channel" = preview ]; then name=delino-preview; fi
 mkdir -p /root/.config/delino-package-test
 printf 'preserve\n' > /root/.config/delino-package-test/sentinel
+verify_license() {
+  local license_file="/usr/share/doc/$project/copyright"
+  case "$project" in
+    derun|runmoor) grep -F 'TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION' "$license_file" ;;
+    *) grep -F 'Permission is hereby granted, free of charge' "$license_file" ;;
+  esac
+}
 if command -v apt-get >/dev/null; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
@@ -24,6 +31,7 @@ if command -v apt-get >/dev/null; then
   test "$(dpkg-query -W -f='${Architecture}' "$project")" = "$arch"
   "$project" --help >/dev/null
   if [ "$project" = runmoor ]; then "$project" version; else "$project" --version; fi | grep -F "$version"
+  verify_license
   apt-get remove -y "$project"
   if [ "$mode" = fixture ]; then
     curl -fsS "$origin/previous/${project}_0.0.0-1_${arch}.deb" -o /tmp/previous.deb
@@ -42,6 +50,7 @@ else
   test "$(rpm -q --qf '%{ARCH}' "$project")" = "$rpm_arch"
   "$project" --help >/dev/null
   if [ "$project" = runmoor ]; then "$project" version; else "$project" --version; fi | grep -F "$version"
+  verify_license
   dnf remove -y "$project"
   if [ "$mode" = fixture ]; then
     curl -fsS "$origin/previous/${project}-0.0.0-1.${rpm_arch}.rpm" -o /tmp/previous.rpm

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -126,6 +126,11 @@ test('release metadata rejects a wrong tag, commit, channel or missing signature
   assert.throws(() => validateRelease(release, plan, 'b'.repeat(40)));
   assert.throws(() => validateRelease({ ...release, prerelease: true }, plan, revision));
   assert.throws(() => validateRelease({ ...release, assets: release.assets.slice(1) }, plan, revision));
+  const runmoor = identity({ project: 'runmoor', version: '1.2.3', revision });
+  const runmoorRelease = { ...release, tag_name: runmoor.tag, assets: release.assets.map((asset) => ({ ...asset, name: asset.name.replace('binpm', 'runmoor') })) };
+  assert.equal(runmoor.channel, Channel.Preview);
+  assert.equal(validateRelease(runmoorRelease, runmoor, revision).length, 6);
+  assert.throws(() => validateRelease({ ...runmoorRelease, prerelease: true }, runmoor, revision));
 });
 
 test('signed recovery records reject tampering and an untrusted fingerprint', async (t) => {
@@ -145,4 +150,26 @@ test('signed recovery records reject tampering and an untrusted fingerprint', as
   const snapshot = signRecord({ generation: 'a'.repeat(64), files: [] }, signing, directory);
   assert.equal(verifyRecord(snapshot, signing, directory), snapshot);
   assert.throws(() => verifyRecord({ ...snapshot, generation: 'b'.repeat(64) }, signing, directory));
+});
+
+test('signing-key import rejects a stale public certificate with the same primary fingerprint', async (t) => {
+  const { importSigningKey } = await import('./linux-packages/package.mjs');
+  const { command } = await import('./linux-packages/release-input.mjs');
+  const directory = mkdtempSync(path.join(tmpdir(), 'dl-rotate-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const primary = path.join(directory, 'primary');
+  mkdirSync(primary, { mode: 0o700 });
+  const env = { ...process.env, GNUPGHOME: primary };
+  const passphrase = 'temporary-rotation-fixture';
+  const passFile = path.join(primary, 'passphrase');
+  writeFileSync(passFile, passphrase, { mode: 0o600 });
+  const unlock = ['--pinentry-mode', 'loopback', '--passphrase-file', passFile];
+  command('gpg', ['--batch', ...unlock, '--quick-generate-key', 'Rotation Fixture', 'rsa2048', 'cert', '1d'], { env });
+  const fingerprint = command('gpg', ['--batch', '--with-colons', '--list-secret-keys'], { env }).split('\n').find((line) => line.startsWith('fpr:')).split(':')[9];
+  const stale = command('gpg', ['--batch', '--armor', '--export', fingerprint], { env });
+  command('gpg', ['--batch', ...unlock, '--quick-add-key', fingerprint, 'rsa2048', 'sign', '1d'], { env });
+  const secretKey = command('gpg', ['--batch', ...unlock, '--armor', '--export-secret-subkeys', fingerprint], { env });
+  const publicKey = command('gpg', ['--batch', '--armor', '--export', fingerprint], { env });
+  assert.throws(() => importSigningKey(path.join(directory, 'stale'), { secretKey, passphrase, publicKey: stale, fingerprint }), /SIGNING_CERTIFICATE_MISMATCH/u);
+  assert.doesNotThrow(() => importSigningKey(path.join(directory, 'current'), { secretKey, passphrase, publicKey, fingerprint }));
 });

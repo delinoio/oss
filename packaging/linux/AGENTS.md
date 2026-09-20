@@ -7,3 +7,5 @@
 - Verify source release identity and signatures before packaging, and preserve complete signed candidates across retries. Both RPM package signatures and repository metadata signatures are mandatory.
 - Production signing and R2 writes belong only to the protected `linux-packages` environment. Tests and dry runs use disposable keys and temporary stores.
 - Cloudflare cache rules must be restricted to the package hostname, cache only immutable object paths, bypass mutable entrypoints and refuse negative caching for all error responses.
+
+- Verify signing subkeys against the exact public certificate clients receive before packaging, including after rotation. Include the full license text matching each package's declared license.

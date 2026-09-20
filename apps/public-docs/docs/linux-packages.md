@@ -6,7 +6,7 @@ Use the signed Delino repository at `https://pkgs.oss.delino.io` to install CLI 
 
 Packages support x86-64 and ARM64 on Ubuntu 22.04, 24.04 and 26.04 LTS; Debian 12 and 13; Fedora 43 and 44; and RHEL-compatible 9 and 10 systems, including UBI, Rocky Linux and AlmaLinux.
 
-The stable repository contains `binpm`, `cargo-mono`, `nodeup`, `with-watch` and `derun`. Runmoor is available only from the separately enabled preview repository. Package versions use the original CLI version followed by `-1`. Older releases published before native package support are unavailable through these repositories.
+The stable repository contains `binpm`, `cargo-mono`, `nodeup`, `with-watch` and `derun`. Runmoor's stable releases are available as native packages only from the separately enabled preview repository. Package versions use the original CLI version followed by `-1`. Older releases published before native package support are unavailable through these repositories.
 
 Arch Linux, Alpine Linux, DevHud and TTL are outside this repository's support scope.
 

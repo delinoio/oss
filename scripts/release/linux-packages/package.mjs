@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { architectures, dependencies, encode, sha256, requireValue, validateIdentity, pins } from './model.mjs';
@@ -19,7 +19,17 @@ export function importSigningKey(directory, { secretKey, passphrase, publicKey, 
   writeFileSync(publicFile, publicKey);
   const publicDescription = command('gpg', ['--batch', '--with-colons', '--show-keys', publicFile], { env });
   requireValue(publicDescription.split('\n').find((line) => line.startsWith('fpr:'))?.split(':')[9] === fingerprint, 'PUBLIC_KEY_MISMATCH');
-  return { directory, keyFile, passFile, fingerprint, publicKey: Buffer.from(publicKey), env, passphrase };
+  // The primary fingerprint alone cannot detect a rotated signing subkey missing
+  // from the certificate clients download. Verify with that certificate only.
+  const verifyEnv = { ...process.env, GNUPGHOME: mkdtempSync(path.join(directory, 'verify-')) };
+  command('gpg', ['--batch', '--no-autostart', '--import', publicFile], { env: verifyEnv });
+  const signing = { directory, keyFile, passFile, fingerprint, publicKey: Buffer.from(publicKey), env, verifyEnv, passphrase };
+  const probe = path.join(directory, 'certificate-probe');
+  writeFileSync(probe, randomBytes(32));
+  try { gpgSign(probe, signing); }
+  catch { throw new Error('SIGNING_CERTIFICATE_MISMATCH'); }
+  finally { rmSync(probe, { force: true }); rmSync(`${probe}.asc`, { force: true }); }
+  return signing;
 }
 export function temporarySigningKey(directory) {
   // Generate the certification key in a separate home, then discard it before the
@@ -43,7 +53,7 @@ export function temporarySigningKey(directory) {
 export function gpgSign(file, signing, clearsign = false) {
   const output = `${file}.${clearsign ? 'clearsigned' : 'asc'}`;
   command('gpg', ['--batch', '--yes', '--pinentry-mode', 'loopback', '--passphrase-file', signing.passFile, '--local-user', signing.fingerprint, '--digest-algo', 'SHA256', '--armor', '--output', output, clearsign ? '--clearsign' : '--detach-sign', file], { env: signing.env });
-  command('gpg', ['--batch', '--verify', output, ...(clearsign ? [] : [file])], { env: signing.env });
+  command('gpg', ['--batch', '--no-auto-key-retrieve', '--verify', output, ...(clearsign ? [] : [file])], { env: signing.verifyEnv });
   return output;
 }
 export function packageFiles(plan, input, output, signing) {
@@ -54,9 +64,9 @@ export function packageFiles(plan, input, output, signing) {
   }[plan.project];
   const result = [];
   const license = ['derun', 'runmoor'].includes(plan.project) ? 'Apache-2.0' : 'MIT';
-  // Preserve upstream declarations and the repository license verbatim; packaging does not relicense source.
+  // Preserve upstream declarations and include the complete applicable terms.
   const copyright = path.join(output, 'copyright');
-  writeFileSync(copyright, `Upstream: https://github.com/delinoio/oss\nSource: ${plan.tag} (${plan.revision})\nDeclared package license: ${license}\n\nRepository LICENSE (unmodified):\n${readFileSync('LICENSE', 'utf8')}\n`);
+  writeFileSync(copyright, `Upstream: https://github.com/delinoio/oss\nSource: ${plan.tag} (${plan.revision})\nDeclared package license: ${license}\n\n${readFileSync(`packaging/linux/licenses/${license}.txt`, 'utf8')}\n`);
   for (const arch of architectures) {
     for (const format of ['deb', 'rpm']) {
       const rpmArch = arch === 'amd64' ? 'x86_64' : 'aarch64';
@@ -124,7 +134,7 @@ export function verifyRecord(record, signing, directory) {
   const file = path.join(directory, 'verify-record.json');
   writeFileSync(file, encode(payload));
   writeFileSync(`${file}.asc`, signature);
-  command('gpg', ['--batch', '--verify', `${file}.asc`, file], { env: signing.env });
+  command('gpg', ['--batch', '--no-auto-key-retrieve', '--verify', `${file}.asc`, file], { env: signing.verifyEnv });
   return record;
 }
 export function signCandidate(record, signing, directory) {
