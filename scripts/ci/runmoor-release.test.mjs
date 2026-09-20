@@ -16,6 +16,9 @@ test("Workflow keeps credentials, OIDC and actual signing out of every dry-run j
   const publish = workflow.jobs.publish;
   assert.equal(publish.if, "needs.plan.outputs.mode == 'publish'");
   assert.deepEqual(publish.permissions, { contents: "write", "id-token": "write" });
+  const preflight = publish.steps.find((step) => step.name === "Reject conflicting tags and existing release assets").run;
+  assert.match(preflight, /assetManifest\('dist'\)/u);
+  assert.match(preflight, /\}, expectedAssets\);/u);
   const sign = publish.steps.find((step) => step.name === "Sign exact artifacts with Sigstore").run;
   assert.match(sign, /--signed true --identity "https:\/\/github.com\/\$\{GITHUB_WORKFLOW_REF\}"/u);
   const verifier = readFileSync(new URL("../release/runmoor.mjs", import.meta.url), "utf8");

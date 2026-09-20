@@ -10,6 +10,7 @@ const root = fileURLToPath(new URL("../..", import.meta.url));
 export const platforms = ["darwin-arm64", "linux-amd64", "linux-arm64"];
 export const archiveNames = platforms.map((platform) => `runmoor-${platform}.tar.gz`);
 const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
+const releaseAssetNames = [...archiveNames, "SHA256SUMS"];
 
 export function releasePlan({ version, revision, ref, mode = "dry-run" }) {
   if (!versionPattern.test(version ?? "")) throw new Error("An exact MAJOR.MINOR.PATCH version is required");
@@ -28,7 +29,14 @@ export function releasePlan({ version, revision, ref, mode = "dry-run" }) {
   };
 }
 
-export async function checkPublication(plan, request) {
+function sameAssetManifest(actual, expected) {
+  if (!Array.isArray(actual) || !Array.isArray(expected) || actual.length !== expected.length) return false;
+  const normalize = (asset) => ({ name: asset?.name, size: asset?.size, digest: asset?.digest });
+  const sort = (left, right) => String(left.name).localeCompare(String(right.name));
+  return JSON.stringify(actual.map(normalize).sort(sort)) === JSON.stringify(expected.map(normalize).sort(sort));
+}
+
+export async function checkPublication(plan, request, expectedAssets) {
   if (plan.mode !== "publish") throw new Error("Remote publication checks are unavailable in dry-run mode");
   const prefix = "/repos/delinoio/oss";
   const tag = await request(`${prefix}/git/ref/tags/${encodeURIComponent(plan.tag)}`);
@@ -47,11 +55,21 @@ export async function checkPublication(plan, request) {
   if (release.status === 200) {
     if (release.body?.draft === true) {
       if (release.body.tag_name !== plan.tag || release.body.prerelease !== false || release.body.target_commitish !== plan.revision) throw new Error("Existing release draft is not bound to the requested stable tag and source revision");
+      if (!sameAssetManifest(release.body.assets, expectedAssets)) throw new Error("Existing release draft assets do not match the verified release asset inventory");
       return;
     }
     throw new Error("A public release already exists; immutable artifacts cannot be overwritten");
   }
   if (release.status !== 404) throw new Error("Cannot establish whether a release already exists");
+}
+
+export function assetManifest(directory) {
+  const names = readdirSync(directory).sort();
+  if (JSON.stringify(names) !== JSON.stringify([...releaseAssetNames].sort())) throw new Error("Unexpected files in unsigned artifact directory");
+  return releaseAssetNames.map((name) => {
+    const bytes = readFileSync(path.join(directory, name));
+    return { name, size: bytes.length, digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}` };
+  });
 }
 
 // A small, fixed-name ustar writer avoids platform-specific GNU/BSD tar flags
