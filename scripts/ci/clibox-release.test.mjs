@@ -22,7 +22,13 @@ test("clibox release covers all eight native targets and Alpine consumer executi
   assert.equal(alpine.if, "endsWith(matrix.target, '-musl')");
   assert.match(alpine.run, /node:24-alpine/u);
   assert.match(alpine.run, /test:package/u);
-  assert.ok(steps.find(({ run }) => run?.includes("cargo build --locked --release -p clibox")));
+  const build = steps.find(({ run }) => run?.includes("cargo build --locked --release -p clibox"));
+  assert.ok(build);
+  for (const arch of ["X86_64", "AARCH64"]) {
+    assert.equal(build.env[`CARGO_TARGET_${arch}_UNKNOWN_LINUX_MUSL_LINKER`], "rust-lld");
+    assert.equal(build.env[`CARGO_TARGET_${arch}_UNKNOWN_LINUX_MUSL_RUSTFLAGS`], "-C link-self-contained=yes");
+  }
+  assert.ok(!steps.some(({ run }) => run?.includes("apt-get install -y musl-tools")));
   assert.ok(steps.find(({ run }) => run?.includes("package.mjs binary")));
 });
 
@@ -40,7 +46,7 @@ test("OIDC is restricted to exact-tag enabled publication after the complete ver
   assert.equal(publish.env.CLIBOX_NPM_PUBLISH_ENABLED, "${{ vars.CLIBOX_NPM_PUBLISH_ENABLED }}");
   assert.ok(release.jobs.package.steps.find(({ run }) => run?.includes("publish.mjs") && !run.includes("--publish")));
   assert.doesNotMatch(JSON.stringify(release), /secrets\.|NODE_AUTH_TOKEN|NPM_TOKEN|contents":"write|action-gh-release|homebrew/u);
-  assert.match(source(".github/workflows/release-clibox.yml"), /npm bootstrap pending/u);
+  assert.match(source(".github/workflows/release-clibox.yml"), /npm publication disabled/u);
   const uploaded = release.jobs.package.steps.find(({ uses }) => uses?.startsWith("actions/upload-artifact@"));
   const downloaded = release.jobs.publish.steps.find(({ uses }) => uses?.startsWith("actions/download-artifact@"));
   assert.equal(uploaded.with.name, downloaded.with.name);
