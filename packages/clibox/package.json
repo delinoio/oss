@@ -1,0 +1,14 @@
+{
+  "name": "@delino/clibox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A native CLI distributed through Cargo and npm",
+  "license": "MIT",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:package": "node scripts/smoke.mjs",
+    "package:npm": "node scripts/package.mjs",
+    "publish:npm": "node scripts/publish.mjs"
+  }
+}

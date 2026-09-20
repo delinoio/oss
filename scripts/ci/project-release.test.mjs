@@ -49,7 +49,7 @@ test("Publication follows exact-commit CI, pushes the selected tag, and does not
   assert.deepEqual(jobs.summary.needs, ["prepare", "ci", "registry", "tag"]);
 });
 
-test("Source and tap tokens are separately scoped and all six tag workflows remain available", () => {
+test("Source and tap tokens are separately scoped and all selected tag workflows remain available", () => {
   for (const name of ["prepare", "tag"]) {
     const token = workflow.jobs[name].steps.find((step) => step.uses === "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1");
     assert.equal(token.with.repositories, "oss");
@@ -62,7 +62,7 @@ test("Source and tap tokens are separately scoped and all six tag workflows rema
   for (const project of Object.values(Project)) {
     const release = yaml.load(source(`.github/workflows/release-${project}.yml`));
     assert.deepEqual(release.on.push.tags, [`${project}@v*`]);
-    if ([Project.CargoMono, Project.Runmoor].includes(project)) continue;
+    if ([Project.CargoMono, Project.Runmoor, Project.Clibox].includes(project)) continue;
     const steps = release.jobs.publish.steps;
     const token = steps.find((step) => step.uses === "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1");
     assert.equal(token.with.repositories, "homebrew-tap");

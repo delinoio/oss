@@ -1,0 +1,12 @@
+[package]
+name = "clibox"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "A native CLI distributed through Cargo and npm"
+readme = "README.md"
+repository = "https://github.com/delinoio/oss"
+include = ["src/**", "tests/**", "Cargo.toml", "README.md", "LICENSE"]
+
+[dependencies]
+clap = { version = "4.5.32", features = ["derive"] }

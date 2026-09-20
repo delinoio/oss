@@ -558,5 +558,26 @@
       "rust-toolchain",
       "rust-toolchain.toml"
     ]
+  },
+  "node-clibox-test": {
+    "paths": [
+      ".nvmrc",
+      "Cargo.toml",
+      "Cargo.lock",
+      "rust-toolchain",
+      "crates/clibox/**",
+      "packages/clibox/**",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "turbo.json",
+      ".github/workflows/release-clibox.yml",
+      "scripts/release/project.mjs",
+      "scripts/release/project.test.mjs"
+    ],
+    "workspace": "@delino/clibox",
+    "workspacePaths": [
+      "packages/clibox/**"
+    ]
   }
 }
