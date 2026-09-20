@@ -440,3 +440,8 @@ Before the merge commit, all four changed documentation apps passed their packag
 
 
 While validation was running, upstream advanced to `f038fd39` with Clibox utility implementation. A second merge includes that exact revision and its native Rust-test CI step without changing ach. The updated root Rust suite, all 43 CI contracts, workflow lint, 15 Clibox package tests and real npm/pnpm host consumer smoke tests passed before committing this integration. The DevHud frontend dependency was regenerated for the root Rust validation boundary.
+
+
+Final validation passed: root `go test -p 1 ./...`, `go vet ./...`, root `TMPDIR=/private/tmp RUSTC_WRAPPER= cargo test` after generating the required frontend dependency, and `cargo fmt --all --check`. The Clibox standalone `cargo publish -p clibox --dry-run` packaged and verified successfully and explicitly aborted before upload. Documentation-app, CI/release fixture, workflow and npm/pnpm consumer results are recorded above. The incoming hosted CI inventory had 38 passed checks and three skipped checks; outgoing CI and the new native Linux package installation matrix are not inferred from these local tests.
+
+Generated repository-owned `dist` output was removed before delivery. No release, signing credential, package repository, Homebrew tap or website was published or modified. The ach version stays `0.1.0`, and PR #901 remains non-draft. The approved exclusions and previously outstanding Edge validation are unchanged. This invocation has no bot threads to resolve and performs one final push without subsequent CI polling.
