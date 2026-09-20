@@ -231,10 +231,10 @@ async function listPages(route, field, request) {
   throw new Error("Workflow lookup exceeded its pagination bound");
 }
 
-export async function waitForWorkflow({ identity, stage, request, now = Date.now, delay = sleep, timeoutMs = 4 * 60 * 60 * 1000, report = () => {} }) {
-  requireValue(["ci", "release"].includes(stage), "Unknown workflow wait stage");
-  const workflow = stage === "ci" ? "CI.yml" : `release-${identity.project}.yml`;
-  const branch = stage === "ci" ? "main" : identity.tag;
+export async function waitForCiWorkflow({ identity, request, now = Date.now, delay = sleep, timeoutMs = 4 * 60 * 60 * 1000, report = () => {} }) {
+  const stage = "ci";
+  const workflow = "CI.yml";
+  const branch = "main";
   const prefix = `/repos/${repository}/actions`;
   const started = now();
   let lastState;
@@ -251,17 +251,10 @@ export async function waitForWorkflow({ identity, stage, request, now = Date.now
       const run_url = `https://github.com/${repository}/actions/runs/${run.id}`;
       if (run.status === "completed") {
         requireValue(run.conclusion === "success", `${stage} workflow ${run.id} did not succeed; rerun that exact workflow before resuming`);
-        if (stage === "ci") {
-          const jobs = await listPages(`${prefix}/runs/${run.id}/jobs?filter=latest`, "jobs", request);
-          const result = jobs.filter((job) => job.name === "CI Result");
-          requireValue(result.length === 1 && result[0].status === "completed" && result[0].conclusion === "success" && result[0].head_sha === identity.revision, "The exact commit's CI Result did not succeed");
-          return { ci_url: run_url };
-        }
-        requireValue(await tagRevision(identity.tag, request) === identity.revision, "Released tag no longer matches the source commit");
-        const release = await request(`/repos/${repository}/releases/tags/${encodeURIComponent(identity.tag)}`);
-        requireValue(release.status === 200 && release.body?.tag_name === identity.tag && release.body.draft === false && Array.isArray(release.body.assets) && release.body.assets.length > 0, "Successful workflow has no populated public release");
-        requireValue(release.body.prerelease === (identity.project === Project.Runmoor), "Unexpected release channel");
-        return { release_run_url: run_url, release_url: `https://github.com/${repository}/releases/tag/${encodeURIComponent(identity.tag)}` };
+        const jobs = await listPages(`${prefix}/runs/${run.id}/jobs?filter=latest`, "jobs", request);
+        const result = jobs.filter((job) => job.name === "CI Result");
+        requireValue(result.length === 1 && result[0].status === "completed" && result[0].conclusion === "success" && result[0].head_sha === identity.revision, "The exact commit's CI Result did not succeed");
+        return { ci_url: run_url };
       }
     } else requireValue(now() - started < 10 * 60 * 1000, "Expected workflow did not start within ten minutes");
     await delay(30000);
@@ -318,8 +311,8 @@ export async function main(command) {
     return;
   }
   if (command === "tag") { output(await pushReleaseTag({ directory: root, identity, request: githubRequest })); return; }
-  requireValue(["wait-ci", "wait-release"].includes(command), "Unknown release command");
-  output(await waitForWorkflow({ identity, stage: command === "wait-ci" ? "ci" : "release", request: githubRequest, report: log }));
+  requireValue(command === "wait-ci", "Unknown release command");
+  output(await waitForCiWorkflow({ identity, request: githubRequest, report: log }));
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

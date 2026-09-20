@@ -23,15 +23,15 @@ test("Selected release is manual, serialized, main-only and permission bounded",
   assert.equal(existsSync(new URL("../../.github/workflows/auto-publish.yml", import.meta.url)), false);
 });
 
-test("Publication follows exact-commit CI and only pushes the selected tag", () => {
+test("Publication follows exact-commit CI, pushes the selected tag, and does not await downstream release", () => {
   const jobs = workflow.jobs;
   assert.deepEqual(jobs.registry.needs, ["prepare", "ci"]);
   assert.deepEqual(jobs.tag.needs, ["prepare", "registry"]);
-  assert.deepEqual(jobs.release.needs, ["prepare", "tag"]);
+  assert.equal(jobs.release, undefined);
   const publish = jobs.registry.steps.find((step) => step.name === "Publish only the selected crate");
   assert.equal(publish.if, "needs.prepare.outputs.kind == 'rust'");
   assert.equal(publish.run, 'cargo run --locked -p cargo-mono -- publish --package "$RELEASE_PROJECT"');
-  for (const name of ["ci", "registry", "tag", "release"]) {
+  for (const name of ["ci", "registry", "tag"]) {
     const checkout = jobs[name].steps.find((step) => step.uses?.startsWith("actions/checkout@"));
     assert.equal(checkout.with.ref, "${{ needs.prepare.outputs.revision }}");
     assert.equal(checkout.with["persist-credentials"], false);
@@ -40,12 +40,13 @@ test("Publication follows exact-commit CI and only pushes the selected tag", () 
   const script = source("scripts/release/project.mjs");
   assert.doesNotMatch(script, /--force|push.+--tags|x-access-token:/u);
   assert.match(script, /:refs\/tags\/\$\{identity.tag\}/u);
-  for (const name of ["ci", "release"]) {
+  for (const name of ["ci"]) {
     assert.deepEqual(jobs[name].permissions, { contents: "read", actions: "read" });
     assert.ok(!JSON.stringify(jobs[name]).includes("PRIVATE_KEY"));
   }
+  assert.doesNotMatch(source(".github/workflows/release-project.yml"), /wait-release/u);
   assert.equal(jobs.summary.if, "always()");
-  assert.deepEqual(jobs.summary.needs, ["prepare", "ci", "registry", "tag", "release"]);
+  assert.deepEqual(jobs.summary.needs, ["prepare", "ci", "registry", "tag"]);
 });
 
 test("Source and tap tokens are separately scoped and all six tag workflows remain available", () => {
