@@ -179,6 +179,9 @@ func (p *Project) Validate() error {
 		seen = map[string]bool{}
 		for _, e := range c.Environment {
 			key := strings.ToUpper(e.Name)
+			if key == "ACH_MANAGED" {
+				return E("invalid-environment", name+": ACH_MANAGED is reserved for managed workspace recursion protection", 2)
+			}
 			if !envName.MatchString(e.Name) || seen[key] || (e.Credential != "" && !e.Secret) {
 				return E("invalid-environment", name+": invalid/duplicate name or non-secret credential", 2)
 			}

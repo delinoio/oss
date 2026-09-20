@@ -208,6 +208,8 @@ max_bytes = 0</pre
           still determine compatibility. All checks must agree whether an
           environment name is secret; names are compared case-insensitively for
           portability. Conflicting declarations are rejected before acceptance.
+          <code>ACH_MANAGED</code> is reserved for managed workspace recursion
+          protection and cannot be declared as an input, regardless of case.
           Prefer local secret-file
           references for queued work and daemon restarts. An environment-backed
           secret must be available to the worker/server process; start/restart

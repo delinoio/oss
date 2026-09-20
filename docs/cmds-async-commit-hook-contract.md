@@ -149,3 +149,5 @@ Agent configuration and product skill files must be regular files. Install, rein
 Branch discovery streams bounded pages using the protocol branch-pagination contract; it never buffers the complete Git ref listing. Raw ref names remain unchanged for ordering, with UTF-8 normalization only at transport.
 
 Managed Git commands use --no-replace-objects for all source/configuration/history reads and preparation. Local commit, tree or blob replacement refs remain untouched but cannot alter committed validation or materialization under the original object ID.
+
+ACH_MANAGED is a reserved case-insensitive environment name. Public, secret, credential-backed, optional and platform-excluded declarations all fail with invalid-environment (exit 2) before acceptance; the runner alone supplies its guard value.

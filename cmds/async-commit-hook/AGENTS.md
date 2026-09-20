@@ -95,3 +95,5 @@
 - Stream branch refs into count- and byte-bounded pages; use worktree-scoped lexical cursors and cancel/reap partial Git readers. Never buffer all refs before bounding a response.
 
 - Disable replacement objects on every managed Git invocation, including streamed tree/blob/config reads. Local refs/replace cannot reinterpret exact-commit receipt identity or execution source.
+
+- Reject ACH_MANAGED environment declarations case-insensitively across the complete graph before snapshotting or credential resolution; it is a runner-owned recursion guard.
