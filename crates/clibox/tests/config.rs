@@ -324,7 +324,11 @@ fn private_file_output_force_in_place_and_input_overlap() {
         &["dotenv", "merge", "-", "--output", "out"],
         b"Z=1\nA=2",
     );
-    assert!(result.status.success());
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
     assert!(result.stdout.is_empty());
     assert_eq!(fs::read(&output).unwrap(), b"A=2\nZ=1\n");
     #[cfg(unix)]
@@ -348,7 +352,11 @@ fn private_file_output_force_in_place_and_input_overlap() {
         &["dotenv", "merge", "out", "-", "--output", "out", "--force"],
         b"A=3",
     );
-    assert!(result.status.success());
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
     assert_eq!(fs::read(&output).unwrap(), b"A=3\nZ=1\n");
     #[cfg(unix)]
     {
@@ -364,7 +372,11 @@ fn private_file_output_force_in_place_and_input_overlap() {
         &["yaml", "normalize", "--input", "out", "--in-place"],
         b"",
     );
-    assert!(result.status.success());
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
     assert!(result.stdout.is_empty());
     assert_eq!(fs::read(&output).unwrap(), b"\"a\": 1\n\"z\": 2\n");
     let result = run(
@@ -372,7 +384,11 @@ fn private_file_output_force_in_place_and_input_overlap() {
         &["dotenv", "list", "--input", "-", "--output", "-"],
         b"A=value",
     );
-    assert!(result.status.success());
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
     assert_eq!(fs::read(dir.path().join("-")).unwrap(), b"A\n");
     no_temps(dir.path());
 }
@@ -626,7 +642,12 @@ fn concurrent_authorized_replacements_produce_one_complete_result() {
     }
     for mut child in children {
         wait(&mut child);
-        assert!(child.wait().unwrap().success());
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
     let result = fs::read_to_string(dir.path().join("out")).unwrap();
     assert!(payloads.contains(&result));

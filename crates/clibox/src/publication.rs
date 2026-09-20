@@ -181,13 +181,12 @@ fn publish_prepared(
     #[cfg(windows)]
     if existing.is_some() {
         use std::os::windows::ffi::OsStrExt;
+        // ReplaceFileW opens the replacement without sharing, so even our own
+        // staging writer must be closed first. Keep the TempPath guard alive to
+        // remove unpublished bytes if replacement fails.
+        let temporary = temporary.into_temp_path();
         let old: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
-        let new: Vec<u16> = temporary
-            .path()
-            .as_os_str()
-            .encode_wide()
-            .chain([0])
-            .collect();
+        let new: Vec<u16> = temporary.as_os_str().encode_wide().chain([0]).collect();
         // ReplaceFile preserves the destination DACL. Do not set IGNORE_ACL_ERRORS
         // or IGNORE_MERGE_ERRORS: inability to preserve access must fail closed.
         let success = unsafe {
