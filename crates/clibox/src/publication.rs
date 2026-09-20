@@ -51,28 +51,206 @@ impl Publication {
             .open(temporary)
             .and_then(|file| file.sync_all())
             .map_err(|_| Error::runtime(Code::WriteFailed))?;
+        #[cfg(windows)]
+        let mut windows = WindowsPublication::prepare(temporary)?;
+        #[cfg(windows)]
+        let mut readonly = false;
         // Recheck link/type policy and copy current permissions at publication,
         // without comparing file identities or providing lost-update protection.
         if let Some(original) = inspect(path, self.replace)? {
+            #[cfg(windows)]
+            {
+                readonly = original.metadata.permissions().readonly();
+            }
             preserve_permissions(&original, temporary)?;
         }
         // Cancellation during flushing/permission work must still prevent publication.
         before_commit()?;
-        let temporary = self.temporary.take().unwrap();
-        if self.replace {
-            temporary
-                .persist(path)
-                .map_err(|_| Error::runtime(Code::PublishFailed))?;
-        } else {
-            temporary.persist_noclobber(path).map_err(|error| {
-                Error::runtime(if error.error.kind() == io::ErrorKind::AlreadyExists {
+        #[cfg(windows)]
+        {
+            windows.persist(path, self.replace, readonly)?;
+            self.temporary.as_mut().unwrap().disable_cleanup(true);
+        }
+        #[cfg(not(windows))]
+        {
+            let temporary = self.temporary.take().unwrap();
+            if self.replace {
+                temporary
+                    .persist(path)
+                    .map_err(|_| Error::runtime(Code::PublishFailed))?;
+            } else {
+                temporary.persist_noclobber(path).map_err(|error| {
+                    Error::runtime(if error.error.kind() == io::ErrorKind::AlreadyExists {
+                        Code::OutputExists
+                    } else {
+                        Code::PublishFailed
+                    })
+                })?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+struct WindowsPublication {
+    file: File,
+    committed: bool,
+}
+
+#[cfg(windows)]
+impl WindowsPublication {
+    fn prepare(path: &Path) -> Result<Self> {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        use windows_sys::Win32::Storage::FileSystem::{DELETE, FILE_WRITE_ATTRIBUTES};
+
+        // Retain rename/cleanup authority before copying any restrictive ACL.
+        let file = fs::OpenOptions::new()
+            .access_mode(DELETE | FILE_WRITE_ATTRIBUTES)
+            .open(path)
+            .map_err(|_| Error::runtime(Code::Permissions))?;
+        let publication = Self {
+            file,
+            committed: false,
+        };
+        publication
+            .clear_temporary_attributes()
+            .map_err(|_| Error::runtime(Code::Permissions))?;
+        Ok(publication)
+    }
+
+    fn clear_temporary_attributes(&self) -> io::Result<()> {
+        use std::os::windows::io::AsRawHandle;
+
+        use windows_sys::Win32::Storage::FileSystem::{
+            FileBasicInfo, SetFileInformationByHandle, FILE_ATTRIBUTE_NORMAL, FILE_BASIC_INFO,
+        };
+        let information = FILE_BASIC_INFO {
+            FileAttributes: FILE_ATTRIBUTE_NORMAL,
+            ..Default::default()
+        };
+        if unsafe {
+            SetFileInformationByHandle(
+                self.file.as_raw_handle(),
+                FileBasicInfo,
+                (&information as *const FILE_BASIC_INFO).cast(),
+                std::mem::size_of_val(&information) as u32,
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    }
+
+    fn persist(&mut self, destination: &Path, replace: bool, readonly: bool) -> Result<()> {
+        use std::os::windows::{ffi::OsStrExt, io::AsRawHandle};
+
+        use windows_sys::Win32::Storage::FileSystem::{
+            FileRenameInfoEx, SetFileInformationByHandle, FILE_RENAME_INFO,
+        };
+
+        let destination =
+            std::path::absolute(destination).map_err(|_| Error::runtime(Code::PublishFailed))?;
+        let name: Vec<u16> = destination.as_os_str().encode_wide().collect();
+        let bytes = std::mem::size_of::<FILE_RENAME_INFO>()
+            .checked_add(
+                name.len()
+                    .checked_mul(2)
+                    .ok_or_else(|| Error::runtime(Code::PublishFailed))?,
+            )
+            .and_then(|size| u32::try_from(size).ok())
+            .ok_or_else(|| Error::runtime(Code::PublishFailed))?;
+        // usize backing storage supplies the SDK structure's pointer alignment.
+        let mut buffer = vec![0usize; (bytes as usize).div_ceil(std::mem::size_of::<usize>())];
+        let information = buffer.as_mut_ptr().cast::<FILE_RENAME_INFO>();
+        // FileRenameInfoEx can replace a read-only destination without temporarily
+        // changing the original's attributes. The OS still requires target write-
+        // attribute permission. Unsupported filesystems fail without modifying it.
+        // https://learn.microsoft.com/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information
+        const REPLACE_IF_EXISTS: u32 = 0x1;
+        const IGNORE_READONLY_ATTRIBUTE: u32 = 0x40;
+        let success = unsafe {
+            (*information).Anonymous.Flags = if replace {
+                REPLACE_IF_EXISTS
+                    | if readonly {
+                        IGNORE_READONLY_ATTRIBUTE
+                    } else {
+                        0
+                    }
+            } else {
+                0
+            };
+            (*information).FileNameLength = (name.len() * 2) as u32;
+            std::ptr::copy_nonoverlapping(
+                name.as_ptr(),
+                std::ptr::addr_of_mut!((*information).FileName).cast::<u16>(),
+                name.len(),
+            );
+            SetFileInformationByHandle(
+                self.file.as_raw_handle(),
+                FileRenameInfoEx,
+                information.cast(),
+                bytes,
+            )
+        };
+        if success == 0 {
+            let error = io::Error::last_os_error();
+            tracing::debug!(
+                action = "publish",
+                os_code = error.raw_os_error(),
+                "file publication failed"
+            );
+            return Err(Error::runtime(
+                if !replace && error.kind() == io::ErrorKind::AlreadyExists {
                     Code::OutputExists
                 } else {
                     Code::PublishFailed
-                })
-            })?;
+                },
+            ));
         }
+        self.committed = true;
         Ok(())
+    }
+}
+
+#[cfg(windows)]
+impl Drop for WindowsPublication {
+    fn drop(&mut self) {
+        use std::os::windows::io::AsRawHandle;
+
+        use windows_sys::Win32::Storage::FileSystem::{
+            FileDispositionInfo, SetFileInformationByHandle, FILE_DISPOSITION_INFO,
+        };
+        if self.committed {
+            return;
+        }
+        // Only the unpublished temporary inode is changed. Held access survives
+        // a copied restrictive ACL and permits cleanup of read-only output.
+        let result = self.clear_temporary_attributes().and_then(|()| {
+            let information = FILE_DISPOSITION_INFO { DeleteFile: true };
+            if unsafe {
+                SetFileInformationByHandle(
+                    self.file.as_raw_handle(),
+                    FileDispositionInfo,
+                    (&information as *const FILE_DISPOSITION_INFO).cast(),
+                    std::mem::size_of_val(&information) as u32,
+                )
+            } == 0
+            {
+                Err(io::Error::last_os_error())
+            } else {
+                Ok(())
+            }
+        });
+        if let Err(error) = result {
+            tracing::debug!(
+                action = "cleanup",
+                os_code = error.raw_os_error(),
+                "temporary cleanup failed"
+            );
+        }
     }
 }
 
@@ -400,6 +578,61 @@ mod tests {
     use std::io::Write;
 
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_readonly_publication_preserves_original_attributes_on_every_outcome() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        use windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ;
+
+        for failure in [None, Some(Code::Cancelled), Some(Code::PublishFailed)] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("read only output");
+            fs::write(&path, b"original").unwrap();
+            let mut permissions = fs::metadata(&path).unwrap().permissions();
+            permissions.set_readonly(true);
+            fs::set_permissions(&path, permissions).unwrap();
+            let (publication, mut file) = Publication::prepare(Some(path.clone()), true).unwrap();
+            file.as_mut().unwrap().write_all(b"replacement").unwrap();
+            drop(file);
+            // Deny delete sharing only for this disposable fixture's failure case.
+            let blocker = (failure == Some(Code::PublishFailed)).then(|| {
+                fs::OpenOptions::new()
+                    .read(true)
+                    .share_mode(FILE_SHARE_READ)
+                    .open(&path)
+                    .unwrap()
+            });
+            let result = publication.publish(|| {
+                assert!(fs::metadata(&path).unwrap().permissions().readonly());
+                assert_eq!(fs::read(&path).unwrap(), b"original");
+                if failure == Some(Code::Cancelled) {
+                    Err(Error::runtime(Code::Cancelled))
+                } else {
+                    Ok(())
+                }
+            });
+            match failure {
+                Some(code) => assert_eq!(result.unwrap_err().code, code),
+                None => result.unwrap(),
+            }
+            drop(blocker);
+            assert!(fs::metadata(&path).unwrap().permissions().readonly());
+            assert_eq!(
+                fs::read(&path).unwrap(),
+                if failure.is_none() {
+                    b"replacement".as_slice()
+                } else {
+                    b"original".as_slice()
+                }
+            );
+            assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+            let mut permissions = fs::metadata(&path).unwrap().permissions();
+            permissions.set_readonly(false);
+            fs::set_permissions(path, permissions).unwrap();
+        }
+    }
 
     #[test]
     fn publication_is_last_writer_wins_without_lost_update_detection() {
