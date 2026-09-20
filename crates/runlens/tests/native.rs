@@ -2371,10 +2371,13 @@ fn static_linux_rename_syscalls_cover_both_endpoints() {
 
 #[test]
 fn write_allowlists_cover_ancestor_membership_but_not_forbidden_siblings() {
+    // Membership alone is allowed, but accesses below newly created directories
+    // lack before-state ancestry and must remain inconclusive. Explicit policy
+    // violations still take precedence over that uncertainty.
     for (pattern, path, extra, deny, expected) in [
-        ("out/**", "out/result", None, "", 0),
-        ("build/out/**", "build/out/result", None, "", 0),
-        ("**/out/**", "build/out/result", None, "", 0),
+        ("out/**", "out/result", None, "", 4),
+        ("build/out/**", "build/out/result", None, "", 4),
+        ("**/out/**", "build/out/result", None, "", 4),
         ("out/**", "out/result", Some("forbidden-file"), "", 5),
         ("out/**", "out/result", Some("forbidden-dir/"), "", 5),
         (
@@ -2932,38 +2935,95 @@ fn report_parser_requires_kind_specific_known_metadata() {
 #[test]
 #[cfg(unix)]
 fn vanished_symlink_ancestor_cannot_establish_workspace_scope() {
-    let root = tempfile::tempdir().unwrap();
-    let external = tempfile::tempdir().unwrap();
-    fs::write(external.path().join("input.txt"), "external").unwrap();
-    let output = invoke(
-        root.path(),
-        &[
-            "run",
-            "--save",
-            "alias.json",
-            "--",
-            fixture(),
-            "transient-symlink",
-            external.path().to_str().unwrap(),
-        ],
-    );
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let value = parse(root.path(), "alias.json");
-    assert_eq!(
-        value["executions"][0]["accesses"]["${workspace}/transient/input.txt"]["in_scope"],
-        false
-    );
-    assert!(!root.path().join("transient").exists());
-    assert_eq!(
-        invoke(root.path(), &["policy", "check", "alias.json", "--json"])
-            .status
-            .code(),
-        Some(4)
-    );
+    for state in ["neither", "before", "after"] {
+        let root = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        fs::write(external.path().join("input.txt"), "external").unwrap();
+        if state == "before" {
+            fs::create_dir(root.path().join("transient")).unwrap();
+        }
+        fs::write(
+            root.path().join("runlens.toml"),
+            "schema_version = 1\n[policy]\nallow_reads = [\"${workspace}/**\", \
+             \"**/runlens-test-command\"]\n",
+        )
+        .unwrap();
+        let output = invoke(
+            root.path(),
+            &[
+                "run",
+                "--save",
+                "alias.json",
+                "--",
+                fixture(),
+                "transient-symlink",
+                external.path().to_str().unwrap(),
+                state,
+            ],
+        );
+        assert!(output.status.success(), "{state}: {output:?}");
+        let value = parse(root.path(), "alias.json");
+        assert_eq!(
+            value["executions"][0]["accesses"]["${workspace}/transient/input.txt"]["in_scope"],
+            false,
+            "{state}"
+        );
+        assert_eq!(root.path().join("transient").exists(), state == "after");
+        let checked = invoke(root.path(), &["policy", "check", "alias.json", "--json"]);
+        assert!(!checked.status.success(), "{state}: {checked:?}");
+        let checked: Value = serde_json::from_slice(&checked.stdout).unwrap();
+        assert!(
+            checked["findings"]
+                .as_object()
+                .unwrap()
+                .values()
+                .any(|finding| {
+                    finding["code"] == "unknown-evidence"
+                        && finding["evidence"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .any(|e| e["path"] == "${workspace}/transient/input.txt")
+                }),
+            "{state}: {checked}"
+        );
+    }
+}
+
+#[test]
+fn stable_directory_ancestors_preserve_missing_leaf_and_output_scope() {
+    for mode in ["read", "policy-write"] {
+        for existing in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            if existing {
+                fs::create_dir(root.path().join("out")).unwrap();
+            }
+            let output = invoke(
+                root.path(),
+                &[
+                    "run",
+                    "--save",
+                    "record.json",
+                    "--",
+                    fixture(),
+                    mode,
+                    "out/file",
+                ],
+            );
+            assert!(output.status.success(), "{output:?}");
+            let report = parse(root.path(), "record.json");
+            assert_eq!(
+                report["executions"][0]["accesses"]["${workspace}/out/file"]["in_scope"],
+                existing
+            );
+            let policy = invoke(root.path(), &["policy", "check", "record.json", "--json"]);
+            assert_eq!(
+                policy.status.code(),
+                Some(if existing { 0 } else { 4 }),
+                "{mode} existing={existing}: {policy:?}"
+            );
+        }
+    }
 }
 
 #[test]

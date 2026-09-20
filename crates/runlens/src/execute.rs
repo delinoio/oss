@@ -441,13 +441,14 @@ fn observed_in_scope(
         {
             return false;
         }
-        // A missing leaf is a valid failed attempt. A missing ancestor can
-        // instead have been a transient symlink into an external directory.
+        // A missing leaf is a valid failed attempt. Every ancestor must be a
+        // known directory both before and after execution: a removed or newly
+        // created directory cannot rule out a transient external symlink.
         if ancestor != path
-            && !current.as_ref().is_some_and(|metadata| metadata.is_dir())
-            && !previous.as_ref().is_some_and(|state| {
-                state.knowledge == Knowledge::Known && state.kind == Some(FileKind::Directory)
-            })
+            && (!current.as_ref().is_some_and(|metadata| metadata.is_dir())
+                || !previous.as_ref().is_some_and(|state| {
+                    state.knowledge == Knowledge::Known && state.kind == Some(FileKind::Directory)
+                }))
         {
             return false;
         }
