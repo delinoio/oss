@@ -202,14 +202,19 @@ pub async fn prepare(
         "--workdir".into(),
         format!("/workspace/{}", crate::files::slash(relative)?),
     ];
-    for key in task
-        .env
-        .keys()
-        .chain(task.env_inputs.iter())
-        .chain(task.secrets.iter())
-        .chain(overrides.keys())
-        .filter(|key| crate::environment::get(environment, key).is_some())
-    {
+    // Environment construction already chooses one effective host spelling.
+    // Forward that spelling once: expanding declarations can turn Windows
+    // aliases into distinct variables inside a Linux container.
+    for key in environment.keys().filter(|key| {
+        crate::environment::contains_name(
+            task.env
+                .keys()
+                .chain(task.env_inputs.iter())
+                .chain(task.secrets.iter())
+                .chain(overrides.keys()),
+            key,
+        )
+    }) {
         args.extend(["--env".into(), key.clone()]);
     }
     args.extend([

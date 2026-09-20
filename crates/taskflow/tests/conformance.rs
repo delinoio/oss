@@ -5169,8 +5169,8 @@ async fn one_task_rejects_output_aliases_before_capture() {
 async fn docker_forwards_cli_overrides_to_tasks_tools_and_shards() {
     let platform = json!({"executor":"docker","os":"linux","image":"fixture@sha256:0000000000000000000000000000000000000000000000000000000000000000"});
     let root = fixture(json!({
-        "finite":{"command":["fixture","finite"],"input":[],"output":["received"],"cache":true,"tools":{"fixture":["fixture","probe"]},"platform":platform},
-        "test":{"command":["fixture","shard"],"input":[],"tools":{"fixture":["fixture","probe"]},"shard":{"adapter":"generic","count":1,"list":["fixture","inventory"],"run":["fixture","shard"]},"platform":platform},
+        "finite":{"command":["fixture","finite"],"env":{"Tflow_Case":"declared"},"envInputs":["TFLOW_CASE","Tflow_Case"],"input":[],"output":["received"],"cache":true,"tools":{"fixture":["fixture","probe"]},"platform":platform},
+        "test":{"command":["fixture","shard"],"env":{"Tflow_Case":"declared"},"envInputs":["TFLOW_CASE","Tflow_Case"],"input":[],"tools":{"fixture":["fixture","probe"]},"shard":{"adapter":"generic","count":1,"list":["fixture","inventory"],"run":["fixture","shard"]},"platform":platform},
         "secret":{"command":command(&["version"]),"secrets":["TFLOW_SIBLING_SECRET"]}
     }));
     let tools = tempfile::tempdir().unwrap();
@@ -5200,11 +5200,14 @@ async fn docker_forwards_cli_overrides_to_tasks_tools_and_shards() {
                 &format!("TFLOW_CLI_VALUE={value}"),
                 "--env",
                 "TFLOW_SIBLING_SECRET=excluded",
+                "--env",
+                "tflow_case=override",
                 "--quiet",
             ])
             .env("PATH", &path)
             .env("DOCKER_CONTEXT", "forwarding-fixture")
             .env("TFLOW_INHERITED_VALUE", "host-only")
+            .env("TFLOW_CASE", "inherited")
             .output()
             .await
             .unwrap();

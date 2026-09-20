@@ -69,6 +69,7 @@
 - Maintain schema freshness and numbered issue #898 conformance scenarios. Report unavailable platform/service evidence accurately.
 - Keep `docs/crates-taskflow-conformance.md`, the native/Docker CI matrices, and their centralized `scripts/ci/job-paths.json` ownership synchronized. CI result bundles must prove complete task, artifact, and shard accounting against the exact plan; secret transport is forbidden for PR jobs.
 - Docker task commands, tool probes, and shard inventory/execution forward effective explicit CLI overrides alongside task-declared names; never forward the ambient host environment or another task's filtered secrets.
+- Docker forwarding selects each effective environment key once using host name comparison. Preserve the resolved spelling; never expand Windows declaration aliases into distinct Linux container variables.
 - Retain the validated Docker launch environment and working directory for awaited removal, absence verification, and destructor fallback.
 - Reject blank, option-shaped, or NUL-containing Docker port mappings during configuration validation, before prerequisites or Docker setup can run. Preserve supported Docker publish syntax without rewriting it.
 - Docker image references require one digest marker with a complete 64-character lowercase SHA-256 suffix; reject malformed digest syntax during configuration checks.

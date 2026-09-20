@@ -46,6 +46,15 @@ fn main() {
                     assert!(flags.contains(&"TFLOW_CLI_VALUE"), "CLI override missing: {flags:?}");
                     assert!(!flags.contains(&"TFLOW_INHERITED_VALUE"), "undeclared host variable forwarded");
                     assert!(!flags.contains(&"TFLOW_SIBLING_SECRET"), "another task's secret forwarded");
+                    let aliases: Vec<_> = flags.iter().copied().filter(|name| name.eq_ignore_ascii_case("tflow_case")).collect();
+                    if cfg!(windows) {
+                        assert_eq!(aliases, ["tflow_case"], "forward only the effective host spelling");
+                    } else {
+                        assert_eq!(aliases, ["TFLOW_CASE", "Tflow_Case", "tflow_case"], "distinct Unix names remain distinct and appear once");
+                        assert_eq!(std::env::var("TFLOW_CASE").unwrap(), "inherited");
+                        assert_eq!(std::env::var("Tflow_Case").unwrap(), "declared");
+                    }
+                    assert_eq!(std::env::var("tflow_case").unwrap(), "override");
                     let value = std::env::var("TFLOW_CLI_VALUE").unwrap();
                     let phase = args.last().unwrap();
                     let mut log = fs::OpenOptions::new().create(true).append(true).open(".taskflow/docker-phases").unwrap();

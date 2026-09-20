@@ -56,7 +56,7 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 
 `output_ownership_uses_destination_filesystem_aliases` probes actual case/Unicode equivalence and rejects overlapping clean output roots, including nested projects, before any output is created.
 
-`docker_forwards_cli_overrides_to_tasks_tools_and_shards` observes Docker argv and resolved values through a local CLI fixture for finite tasks, tool probes, inventory, and shard execution, excluding ambient values and sibling credentials.
+`docker_forwards_cli_overrides_to_tasks_tools_and_shards` observes Docker argv and resolved values through a local CLI fixture for finite tasks, tool probes, inventory, and shard execution, excluding ambient values and sibling credentials. Repeated declarations emit each effective name once; mixed-case task/input/CLI names collapse to the effective spelling on Windows while Unix retains the distinct names and values.
 
 `directory_notifications_rescan_descendant_inputs` covers directory-only notifications and real rename, move-in, and removal of a tree whose files match `src/*.rs`. Exact filtered snapshots suppress irrelevant and self-output changes.
 

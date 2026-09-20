@@ -193,7 +193,7 @@ fn same_name(left: &str, right: &str) -> bool {
     }
 }
 
-fn contains_name<'a>(names: impl IntoIterator<Item = &'a String>, key: &str) -> bool {
+pub(crate) fn contains_name<'a>(names: impl IntoIterator<Item = &'a String>, key: &str) -> bool {
     names.into_iter().any(|name| same_name(name, key))
 }
 
