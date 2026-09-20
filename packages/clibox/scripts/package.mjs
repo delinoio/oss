@@ -109,7 +109,11 @@ export function inspectTarball(file, { version, sourceRevision }) {
   const expectedFiles = [...expected.files, "package.json", "README.md", "LICENSE"].sort();
   ensure(JSON.stringify([...entries.keys()].sort()) === JSON.stringify(expectedFiles), "Unexpected package file inventory");
   const executable = target ? `bin/${target.binary}` : "bin/clibox.cjs";
-  ensure((entries.get(executable).mode & 0o111) === 0o111 && entries.get(executable).bytes.length > 0, "Missing executable mode or empty binary");
+  // NTFS has no POSIX execute bits, and npm may preserve mode 0644 for .exe
+  // payloads packed on Windows. Only Unix executables and the npm bin shim need
+  // the archive execute bits; the Windows loader uses the PE executable itself.
+  ensure(entries.get(executable).bytes.length > 0, "Empty executable");
+  if (target?.os !== platforms.Platform.Windows) ensure((entries.get(executable).mode & 0o111) === 0o111, "Missing executable mode");
   if (!target) for (const file of mainFiles) ensure(entries.get(file).bytes.equals(readFileSync(path.join(packageRoot, file))), `Launcher source mismatch: ${file}`);
   ensure(entries.get("LICENSE").bytes.equals(readFileSync(path.join(root, "crates/clibox/LICENSE"))), "License mismatch");
   ensure(entries.get("README.md").bytes.equals(readFileSync(path.join(packageRoot, "README.md"))), "README mismatch");

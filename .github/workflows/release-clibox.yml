@@ -96,6 +96,7 @@ jobs:
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
+          architecture: ${{ startsWith(matrix.target, 'aarch64-') && 'arm64' || 'x64' }}
       - uses: pnpm/action-setup@v5
         with:
           version: 10.26.2

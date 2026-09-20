@@ -18,7 +18,7 @@ JavaScript developers using `pnpm add -D -E @delino/clibox` followed by `pnpm ex
 - Resolve OS/architecture from Node and distinguish Linux glibc/musl using the Node diagnostic report header. Do not log the report or its environment contents.
 - Resolve only the selected installed dependency, verify its version, and launch its executable without a shell, preserving argv, cwd, environment, stdio, exit code, and termination signals.
 - Unsupported platforms, missing dependencies, version drift, and spawn failures report bounded structured stderr diagnostics. Missing dependencies include reinstall guidance with optional dependencies enabled. No PATH, download, or compile fallback is allowed.
-- Generated tarballs carry the exact source commit, expected file allowlist, README, and MIT license. Native binaries are version-checked before packing and packaged with executable permissions.
+- Generated tarballs carry the exact source commit, expected file allowlist, README, and MIT license. Native binaries are version-checked before packing. Unix binaries and the npm bin shim require archive execute bits; Windows PE payloads do not require POSIX execute bits.
 - Release verification requires exactly nine expected packages with matching source version, revision, metadata, and computed SHA-512 integrity. Publish platform packages first and confirm each registry integrity before publishing the main package. Existing identical versions are reused; conflicting versions fail without overwriting.
 
 ## Storage

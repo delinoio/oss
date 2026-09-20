@@ -28,3 +28,4 @@
 - Preserve platform/libc/version checks, literal native argv execution, inherited stdio, and signal/exit propagation. No runtime downloads, install hooks, public JavaScript API, or system binary fallback.
 - Keep tests runnable with Node built-ins, and smoke-test npm/pnpm consumer tarball installs with scripts disabled. Build/package/release tasks are package-owned; native integration and publication tasks are not Turbo-cacheable.
 - Validate complete artifact inventories and source identity before publication. Confirm all native dependencies before the main package and reject conflicting existing integrity.
+- Require archive execute bits for Unix native binaries and the npm bin shim; Windows PE payloads must remain valid when packed from NTFS without POSIX execute bits. Pin Node's release-build architecture to the selected Rust target.

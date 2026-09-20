@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 
-const { resolveBinary, launch } = require("../src/launcher.cjs");
+const { LauncherError, resolveBinary, launch } = require("../src/launcher.cjs");
 
 async function main() {
   try {
@@ -13,7 +13,8 @@ async function main() {
       process.kill(process.pid, signal);
     } else process.exitCode = code ?? 1;
   } catch (error) {
-    console.error(JSON.stringify({ event: "clibox_launcher_error", code: error.code ?? "launcher-failed", message: error.code ? error.message : "Unable to launch clibox. Reinstall the package for this platform." }));
+    const known = error instanceof LauncherError;
+    console.error(JSON.stringify({ event: "clibox_launcher_error", code: known ? error.code : "launcher-failed", message: known ? error.message : "Unable to launch clibox. Reinstall the package for this platform." }));
     process.exitCode = 1;
   }
 }

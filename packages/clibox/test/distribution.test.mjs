@@ -57,7 +57,7 @@ test("pack validates native executable versions and the complete nine-tarball bo
     mkdirSync(path.join(fixture, "bin"), { recursive: true });
     writeFileSync(path.join(fixture, "package.json"), JSON.stringify(packageManifest(target, version, sourceRevision)));
     writeFileSync(path.join(fixture, "bin", target.binary), "inert fixture binary");
-    chmodSync(path.join(fixture, "bin", target.binary), 0o755);
+    chmodSync(path.join(fixture, "bin", target.binary), target.os === "win32" ? 0o644 : 0o755);
     copyFileSync(path.join(root, "crates/clibox/LICENSE"), path.join(fixture, "LICENSE"));
     copyFileSync(path.join(packageRoot, "README.md"), path.join(fixture, "README.md"));
     npm(["pack", "--ignore-scripts", "--pack-destination", tarballs], { cwd: fixture });
