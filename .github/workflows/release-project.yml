@@ -172,36 +172,9 @@ jobs:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
         run: node scripts/release/project.mjs tag
 
-  release:
-    needs: [prepare, tag]
-    runs-on: ubuntu-latest
-    timeout-minutes: 245
-    permissions:
-      contents: read
-      actions: read
-    outputs:
-      run_url: ${{ steps.wait.outputs.release_run_url }}
-      release_url: ${{ steps.wait.outputs.release_url }}
-    env:
-      RELEASE_REVISION: ${{ needs.prepare.outputs.revision }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.prepare.outputs.revision }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-node@v6
-        with:
-          node-version-file: .nvmrc
-      - name: Wait for signed artifacts and distribution
-        id: wait
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/release/project.mjs wait-release
-
   summary:
     if: always()
-    needs: [prepare, ci, registry, tag, release]
+    needs: [prepare, ci, registry, tag]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -220,7 +193,7 @@ jobs:
             '| Phase | Result |', '| --- | --- |',
             ...Object.entries(jobs).map(([name, job]) => `| ${name} | ${job.result} |`), '',
           ];
-          for (const url of [jobs.ci.outputs.url, jobs.release.outputs.run_url, jobs.release.outputs.release_url]) {
+          for (const url of [jobs.ci.outputs.url]) {
             if (url) lines.push(`[${url.includes('/releases/') ? 'Release' : 'Workflow run'}](${url})`, '');
           }
           const failed = Object.entries(jobs).filter(([, job]) => job.result !== 'success').map(([name]) => name);
