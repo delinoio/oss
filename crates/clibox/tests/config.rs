@@ -1188,6 +1188,34 @@ fn yaml_rejects_nonprintable_source_and_incomplete_directives() {
 }
 
 #[test]
+fn yaml_source_positions_count_cr_lf_and_crlf_once() {
+    let dir = tempfile::tempdir().unwrap();
+    for (separator, line) in [("\r", 2), ("\n", 2), ("\r\n", 2), ("\r\r\n", 3)] {
+        for filter in ["debug", "off"] {
+            let source = format!("header: ok{separator}한글: \u{1}SECRET-CR");
+            fs::write(dir.path().join("input.yaml"), source).unwrap();
+            let result = command(dir.path())
+                .args(["yaml", "normalize", "--input", "input.yaml"])
+                .env("RUST_LOG", filter)
+                .output()
+                .unwrap();
+            assert_eq!(result.status.code(), Some(1));
+            assert!(result.stdout.is_empty());
+            let stderr = String::from_utf8(result.stderr).unwrap();
+            assert!(stderr.contains("YamlSyntax"), "{stderr}");
+            let position = if filter == "off" {
+                format!("line=Some({line}) column=Some(5)")
+            } else {
+                format!("line={line} column=5")
+            };
+            assert!(stderr.contains(&position), "{separator:?}: {stderr}");
+            assert!(!stderr.contains("SECRET-CR"));
+        }
+    }
+    yaml("b: 2\ra: 1\r", "\"a\": 1\n\"b\": 2\n");
+}
+
+#[test]
 fn yaml_escaped_bmp_noncharacters_remain_valid_and_idempotent() {
     yaml(
         "\"\\uFFFE\": &value \"\\uFFFF\"\ncopy: *value\nlist: [\"\\uFFFE\", \"\\U0000FFFF\"]\n",

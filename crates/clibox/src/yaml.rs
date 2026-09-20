@@ -641,6 +641,7 @@ fn emit_child(
 
 pub fn normalize(text: &str, cancel: &Cancellation) -> Result<Vec<u8>> {
     let (mut line, mut column) = (1, 1);
+    let mut previous_cr = false;
     for (index, ch) in text.chars().enumerate() {
         if index.is_multiple_of(4096) {
             cancel.check()?;
@@ -649,12 +650,15 @@ pub fn normalize(text: &str, cancel: &Cancellation) -> Result<Vec<u8>> {
         {
             return Err(Error::from(Failure::YamlSyntax).at(line, column));
         }
-        if ch == '\n' {
-            line += 1;
+        if matches!(ch, '\r' | '\n') {
+            if ch == '\r' || !previous_cr {
+                line += 1;
+            }
             column = 1;
         } else {
             column += 1;
         }
+        previous_cr = ch == '\r';
     }
     let edits = prepare_tags(text, cancel)?;
     let mut edits = edits.iter().peekable();
