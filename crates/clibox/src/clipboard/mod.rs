@@ -75,6 +75,42 @@ pub fn validate(bytes: &[u8]) -> Result<&str> {
     })
 }
 
+#[cfg(any(windows, test))]
+fn decode_windows_text(wide: &[u16]) -> Result<Vec<u8>> {
+    let mut text = String::new();
+    let mut terminated = false;
+    let units = wide.iter().copied().take(LIMIT + 1).take_while(|unit| {
+        if *unit == 0 {
+            terminated = true;
+            false
+        } else {
+            true
+        }
+    });
+    for scalar in char::decode_utf16(units) {
+        let scalar = scalar.map_err(|_| {
+            Failure::new(
+                Code::InvalidText,
+                "Windows clipboard text has invalid Unicode encoding.",
+            )
+        })?;
+        if text.len() + scalar.len_utf8() > LIMIT {
+            return Err(Failure::new(
+                Code::TextTooLarge,
+                "Clipboard text exceeds the 16 MiB UTF-8 limit; no output was written.",
+            ));
+        }
+        text.push(scalar);
+    }
+    if !terminated {
+        return Err(Failure::new(
+            Code::InvalidText,
+            "Windows clipboard text is not terminated; no output was written.",
+        ));
+    }
+    Ok(text.into_bytes())
+}
+
 fn copy(backend: &mut impl Backend, bytes: &[u8]) -> Result<()> {
     let text = validate(bytes)?;
     runtime::check_cancelled()?;
@@ -198,6 +234,29 @@ mod tests {
             assert!(paste(&mut fake, &mut out).is_err());
             assert!(out.is_empty());
         }
+    }
+    #[test]
+    fn windows_text_counts_utf8_bytes_not_backing_allocation() {
+        let mut wide: Vec<u16> = "한글 🦀\r\n".encode_utf16().chain(Some(0)).collect();
+        wide.extend([0xd800, 0xffff]);
+        assert_eq!(
+            decode_windows_text(&wide).unwrap(),
+            "한글 🦀\r\n".as_bytes()
+        );
+        assert_eq!(
+            decode_windows_text(&[0xd800, 0]).unwrap_err().code,
+            Code::InvalidText
+        );
+        assert!(decode_windows_text(&[b'x' as u16]).is_err());
+        let mut wide = vec![0x20ac; LIMIT / 3];
+        wide.extend([b'x' as u16, 0]);
+        assert_eq!(decode_windows_text(&wide).unwrap().len(), LIMIT);
+        let end = wide.len() - 1;
+        wide.insert(end, b'y' as u16);
+        assert_eq!(
+            decode_windows_text(&wide).unwrap_err().code,
+            Code::TextTooLarge
+        );
     }
     #[test]
     fn byte_boundary_and_nontext() {

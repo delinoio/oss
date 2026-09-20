@@ -111,7 +111,16 @@ impl Backend for Native {
     fn paste(&mut self) -> Result<Content> {
         let (_window, _clipboard) = access()?;
         let revision = unsafe { GetClipboardSequenceNumber() };
+        unsafe {
+            SetLastError(0);
+        }
         if unsafe { CountClipboardFormats() } == 0 {
+            if unsafe { GetLastError() } != 0 {
+                return Err(Failure::new(
+                    Code::PermissionDenied,
+                    "Could not inspect Windows clipboard formats.",
+                ));
+            }
             return Ok(Content::Empty);
         }
         if unsafe { IsClipboardFormatAvailable(13) } == 0 {
@@ -125,15 +134,10 @@ impl Backend for Native {
             ));
         }
         let size = unsafe { GlobalSize(memory) };
-        // Any valid text within the UTF-8 limit uses no more than LIMIT UTF-16
-        // code units. Bound the native allocation before making a Rust copy.
-        if size > (LIMIT + 1) * 2 + 16 {
-            return Err(Failure::new(
-                Code::TextTooLarge,
-                "Clipboard text exceeds the 16 MiB limit; no output was written.",
-            ));
-        }
-        if size < 2 || size % 2 != 0 {
+        // Allocation size is not text size: native owners may overallocate.
+        // Inspect only the bounded prefix through the NUL terminator instead of
+        // rejecting valid short text because its backing allocation is large.
+        if size < 2 {
             return Err(Failure::new(
                 Code::InvalidText,
                 "Windows clipboard text has invalid encoding.",
@@ -147,10 +151,9 @@ impl Backend for Native {
             ));
         }
         let text = {
-            let wide = unsafe { std::slice::from_raw_parts(pointer, size / 2) };
-            wide.iter()
-                .position(|c| *c == 0)
-                .and_then(|end| String::from_utf16(&wide[..end]).ok())
+            let units = (size / 2).min(LIMIT + 1);
+            let wide = unsafe { std::slice::from_raw_parts(pointer, units) };
+            decode_windows_text(wide)
         };
         unsafe {
             GlobalUnlock(memory);
@@ -161,14 +164,6 @@ impl Backend for Native {
                 "Clipboard changed during reading; run paste again if needed.",
             ));
         }
-        Ok(Content::Text(
-            text.ok_or_else(|| {
-                Failure::new(
-                    Code::InvalidText,
-                    "Windows clipboard text has invalid or unterminated Unicode encoding.",
-                )
-            })?
-            .into_bytes(),
-        ))
+        Ok(Content::Text(text?))
     }
 }
