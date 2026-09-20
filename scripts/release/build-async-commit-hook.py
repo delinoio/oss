@@ -20,7 +20,7 @@ def metadata():
     m = json.loads((ROOT / "packaging/async-commit-hook/release-metadata.json").read_text())
     if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", m["version"]):
         raise ValueError("invalid release version")
-    for package in ["apps/async-commit-hook", "packages/async-commit-hook-api-client"]:
+    for package in ["apps/async-commit-hook", "apps/async-commit-hook-docs", "packages/async-commit-hook-api-client"]:
         if json.loads((ROOT / package / "package.json").read_text())["version"] != m["version"]:
             raise ValueError("source versions disagree")
     source = (ROOT / "cmds/async-commit-hook/internal/core/model.go").read_text()
@@ -91,6 +91,8 @@ def build(destination):
     out.mkdir(parents=True, exist_ok=True)
     if any(out.iterdir()):
         raise ValueError("output directory must be empty")
+    # Always rebuild the UI before compilation; never package a stale embed.
+    subprocess.run(["pnpm", "--filter", "async-commit-hook", "build:embedded"], cwd=ROOT, check=True)
     hashes = {}
     with tempfile.TemporaryDirectory(prefix="ach-release-") as temporary:
         for target in m["targets"]:
@@ -106,7 +108,7 @@ def build(destination):
             print(json.dumps({"event": "archive.built", "target": target, "asset": asset, "sha256": hashes[asset]}), flush=True)
     (out / "async-commit-hook.rb").write_text(formula(m["version"], hashes))
     for name in ["install.sh", "install.ps1"]:
-        (out / name).write_bytes((ROOT / "apps/async-commit-hook/public" / name).read_bytes())
+        (out / name).write_bytes((ROOT / "apps/async-commit-hook-docs/public" / name).read_bytes())
     (out / "compatibility.json").write_text(json.dumps({**m, "cross_build": "passed for all six targets", "signed": False, "published": False}, indent=2) + "\n")
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(out.iterdir())}
     (out / "SHA256SUMS").write_text("".join(f"{digest}  {name}\n" for name, digest in hashes.items()))

@@ -101,6 +101,7 @@ jobs:
         run: |
           pnpm install --frozen-lockfile --ignore-scripts
           pnpm --filter devhud-admin build:embedded
+          pnpm --filter async-commit-hook build:embedded
 
       - name: Check go fmt
         run: |
@@ -160,6 +161,7 @@ jobs:
         run: |
           pnpm install --frozen-lockfile --ignore-scripts
           pnpm --filter devhud-admin build:embedded
+          pnpm --filter async-commit-hook build:embedded
 
       - name: Run go test
         # Native Git, PowerShell and durable SQLite integration exceed Go's
@@ -1657,8 +1659,10 @@ jobs:
         uses: ./.github/actions/setup-ci-node
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: |
+          pnpm --filter async-commit-hook build:embedded
           go test -race ./cmds/async-commit-hook/...
           pnpm --filter async-commit-hook test
+          pnpm --filter async-commit-hook-docs test
           pnpm --filter @delinoio/async-commit-hook-api-client test
           pnpm proto:check
           node --test scripts/release/async-commit-hook.test.mjs

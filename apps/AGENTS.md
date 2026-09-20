@@ -3,12 +3,12 @@
 - Follow root `AGENTS.md` and project-specific docs before adding or changing app code.
 - Keep app-specific contracts synchronized in the project index doc (`docs/project-*.md`) and relevant app-domain contract docs (`docs/apps-*.md`) in the same change.
 - Keep repository and domain rules in the appropriate `AGENTS.md` files.
-- Public documentation app content must not expose repository-internal implementation details. Use `docs/` as the internal source of truth, then curate `apps/public-docs`, `apps/binpm-docs`, `apps/nodeup-docs`, `apps/runmoor-docs`, and `apps/runlens-docs` around user-facing behavior, supported workflows, stable public interfaces, and explicitly contracted maintainer-facing paths.
+- Public documentation app content must not expose repository-internal implementation details. Use `docs/` as the internal source of truth, then curate `apps/public-docs`, `apps/binpm-docs`, `apps/nodeup-docs`, `apps/runmoor-docs`, `apps/runlens-docs`, and `apps/async-commit-hook-docs` around user-facing behavior, supported workflows, stable public interfaces, and explicitly contracted maintainer-facing paths.
 - Write all source and comments in English.
 - Follow Toss Design Guidelines for frontend UX/UI decisions across web and mobile apps.
 - For new static sites under `apps/`, default to Rsbuild/Rspress-style toolchains and Cloudflare Pages deployment unless a project contract documents a different platform.
 - Prefer Rspack-family build tools for app build pipelines when they fit the runtime and deployment target.
-- Root development uses `pnpm dev:public-docs`, `pnpm dev:nodeup-docs`, `pnpm dev:binpm-docs`, `pnpm dev:runmoor-docs`, and `pnpm dev:runlens-docs`; package-local development uses `pnpm dev`. Both entry points use fixed loopback ports: public-docs `46302`, nodeup-docs `46303`, binpm-docs `46304`, runmoor-docs `46309`, and runlens-docs `46310`. Development wrappers must prevent CLI address overrides, forward termination signals to their child server, wait for it to exit, and fail with an actionable conflict message instead of searching for or incrementing to another port.
+- Root development uses `pnpm dev:public-docs`, `pnpm dev:nodeup-docs`, `pnpm dev:binpm-docs`, `pnpm dev:runmoor-docs`, `pnpm dev:runlens-docs`, and `pnpm dev:async-commit-hook-docs`; package-local development uses `pnpm dev`. Both entry points use fixed loopback ports: public-docs `46302`, nodeup-docs `46303`, binpm-docs `46304`, runmoor-docs `46309`, runlens-docs `46310`, and async-commit-hook-docs `46311`. Development wrappers must prevent CLI address overrides, forward termination signals to their child server, wait for it to exit, and fail with an actionable conflict message instead of searching for or incrementing to another port.
 - DevHud frontend and administrator development use fixed ports `46305` and `46306`. Their package wrappers receive only the validated `DEVHUD_LOGTO_ISSUER` from the administrator configuration path, reject every other team-injected name, and never pass configuration through the root Turbo process. The frontend reduces that issuer to its origin for the exact development CSP required by pinned CEF. In team mode both launch issuers must match the private preflight comparison pin; in OSS mode they must exactly match the API wrapper's package-local value so Bootstrap and both browser policies agree. Follow `docs/repository-environment-contract.md`.
 - DevHud GitHub PATs and BYO R2 credentials remain in app-owned secure storage, never in the team development secret manager. `apps/mpapp/.env.example` public `EXPO_PUBLIC_*` configuration also remains package-local.
 - App file upload/download flows should default to Cloudflare R2 plus signed URLs unless the app contract documents a different storage or access pattern.
@@ -169,8 +169,10 @@
 - Runlens documentation production dispatches serialize the full workflow, never share the dry-run concurrency group, and reject stale main revisions in Wrangler pre-commands after artifact download and tool installation, immediately before deployment.
 
 ### async-commit-hook
-- `apps/async-commit-hook` owns the Rsbuild app and `/docs` at `https://ach.delino.io`. Follow `docs/apps-async-commit-hook-contract.md`.
-- Fixed development port 46308; root entry `pnpm dev:async-commit-hook`. Use generated Connect Query and React Query. Logs/source remain inert, authorization is local and revocable, and results never go to static hosting.
+- `apps/async-commit-hook` owns the embedded local Rsbuild UI. `apps/async-commit-hook-docs` owns the Rspress documentation-only https://ach.delino.io site and installer entrypoints. Follow their app-domain contracts.
+- Fixed development port 46308; root entry `pnpm dev:async-commit-hook`. Use generated Connect Query and React Query. Logs/source remain inert, every RPC is same-origin without browser pairing, and results never go to static hosting.
+- The local UI app exclusively generates and validates command webassets/dist via `build:embedded`. Generate before Go compilation, tests or packaging.
+- Documentation development uses fixed 127.0.0.1:46311 and preview uses 127.0.0.1:46281 through the shared wrapper; root entry is `pnpm dev:async-commit-hook-docs`. Conflicts fail without remapping. Preserve all migrated guide sections, legacy /docs links and installer URLs.
 
 ### Native CLI package documentation
 

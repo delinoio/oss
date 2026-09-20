@@ -8,7 +8,7 @@ on:
         description: Project to release
         required: true
         type: choice
-        options: [binpm, cargo-mono, nodeup, with-watch, derun, runmoor, clibox]
+        options: [binpm, cargo-mono, nodeup, with-watch, derun, runmoor, clibox, async-commit-hook]
       bump:
         description: SemVer increment
         required: true
@@ -53,7 +53,7 @@ jobs:
         env:
           CLIENT_ID: ${{ vars.DELINO_RELEASE_BOT_CLIENT_ID }}
           PRIVATE_KEY: ${{ secrets.DELINO_RELEASE_BOT_PRIVATE_KEY }}
-          REGISTRY_TOKEN: ${{ inputs.project != 'clibox' && secrets.CARGO_REGISTRY_TOKEN || '' }}
+          REGISTRY_TOKEN: ${{ inputs.project != 'clibox' && inputs.project != 'async-commit-hook' && secrets.CARGO_REGISTRY_TOKEN || '' }}
         run: |
           node --input-type=module <<'JS'
           import { requiresCargoPublish, versionChanges } from './scripts/release/project.mjs';
@@ -84,34 +84,8 @@ jobs:
           RELEASE_BOT_EMAIL: ${{ steps.identity.outputs.email }}
         run: node scripts/release/project.mjs prepare
 
-  ci:
-    needs: prepare
-    runs-on: ubuntu-latest
-    timeout-minutes: 245
-    permissions:
-      contents: read
-      actions: read
-    outputs:
-      url: ${{ steps.wait.outputs.ci_url }}
-    env:
-      RELEASE_REVISION: ${{ needs.prepare.outputs.revision }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.prepare.outputs.revision }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-node@v6
-        with:
-          node-version-file: .nvmrc
-      - name: Wait for the exact commit CI Result
-        id: wait
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/release/project.mjs wait-ci
-
   registry:
-    needs: [prepare, ci]
+    needs: [prepare]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -140,7 +114,7 @@ jobs:
       - name: Publish only the selected crate
         if: needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox'
         env:
-          CARGO_REGISTRY_TOKEN: ${{ inputs.project != 'clibox' && secrets.CARGO_REGISTRY_TOKEN || '' }}
+          CARGO_REGISTRY_TOKEN: ${{ inputs.project != 'clibox' && inputs.project != 'async-commit-hook' && secrets.CARGO_REGISTRY_TOKEN || '' }}
         run: cargo run --locked -p cargo-mono -- publish --package "$RELEASE_PROJECT"
 
   tag:
@@ -174,7 +148,7 @@ jobs:
 
   summary:
     if: always()
-    needs: [prepare, ci, registry, tag]
+    needs: [prepare, registry, tag]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -193,11 +167,12 @@ jobs:
             '| Phase | Result |', '| --- | --- |',
             ...Object.entries(jobs).map(([name, job]) => `| ${name} | ${job.result} |`), '',
           ];
-          for (const url of [jobs.ci.outputs.url]) {
-            if (url) lines.push(`[${url.includes('/releases/') ? 'Release' : 'Workflow run'}](${url})`, '');
-          }
           const failed = Object.entries(jobs).filter(([, job]) => job.result !== 'success').map(([name]) => name);
-          if (failed.length) lines.push(`Incomplete phases: ${failed.join(', ')}. Resolve the failed exact-commit workflow, then rerun this release run to reuse its version.`);
+          if (failed.length) lines.push(`Incomplete phases: ${failed.join(', ')}. Fix the failed phase, then rerun this release run to reuse any recorded version.`);
+          else if (process.env.RELEASE_PROJECT === 'async-commit-hook') lines.push(
+            'Version and tag preparation is complete. Signing, GitHub Release, Homebrew, and Pages require a separate manual run of [Release async-commit-hook](https://github.com/delinoio/oss/actions/workflows/release-async-commit-hook.yml).',
+            `Select main and version ${source.version}; dry_run defaults to true. Publication requires the dispatch commit to match ${source.revision}. If main has advanced, the existing tag check rejects publication; never move the tag.`,
+          );
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
           if (failed.length) process.exitCode = 1;
           JS

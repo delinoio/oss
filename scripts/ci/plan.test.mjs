@@ -93,7 +93,7 @@ test("async-commit-hook source and shared validation inputs select its complete 
   for (const event of [Event.PullRequest, Event.Push]) {
     for (const path of [
       "cmds/async-commit-hook/main.go", "apps/async-commit-hook/src/App.tsx",
-      "apps/async-commit-hook/public/install.ps1", "packages/async-commit-hook-api-client/src/client.ts",
+      "apps/async-commit-hook-docs/public/install.ps1", "packages/async-commit-hook-api-client/src/client.ts",
       "protos/async_commit_hook/v1/service.proto", "packaging/async-commit-hook/release-metadata.json",
       "scripts/release/build-async-commit-hook.py", "scripts/release/async-commit-hook.test.mjs",
       "scripts/release/publish-async-commit-hook.py", "scripts/release/async-commit-hook-publish-fixtures.py",

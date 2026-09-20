@@ -10,7 +10,10 @@ import { LocalService } from "./ach_pb.js";
 export const getVersion = LocalService.method.getVersion;
 
 /**
+ * Retained for v1 compatibility; always returns Unimplemented.
+ *
  * @generated from rpc async_commit_hook.v1.LocalService.Pair
+ * @deprecated
  */
 export const pair = LocalService.method.pair;
 

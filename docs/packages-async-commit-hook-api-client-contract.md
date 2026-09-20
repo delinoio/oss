@@ -7,7 +7,7 @@
 TypeScript, protobuf-es and Connect Query generated from async_commit_hook.v1.
 
 ## Users and Operators
-The ach static application and protocol maintainers.
+The ach embedded local application and protocol maintainers.
 
 ## Interfaces and Contracts
 Run-list requests use the generated `detached` boolean to select detached executions; an empty branch alone means unfiltered branches. Retain this discriminator in query keys and cursor requests.
@@ -19,7 +19,7 @@ Generated rerun responses preserve the accepted run ID and optional startup diag
 No owned persistence. Dist is generated, ignored and removed from the final worktree.
 
 ## Security
-Transport authorization belongs to the application. Never embed credentials or introduce unrestricted file/command endpoints.
+The same-origin transport and required API version header belong to the application. The deprecated Pair descriptor remains for v1 compatibility but its server returns Unimplemented. Never embed credentials or introduce unrestricted file/command endpoints.
 
 ## Logging
 No implicit logs or telemetry.

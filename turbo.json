@@ -116,14 +116,6 @@
         "^lint"
       ]
     },
-    "async-commit-hook#dev": {
-      "dependsOn": [
-        "^build"
-      ],
-      "cache": false,
-      "persistent": true,
-      "env": []
-    },
     "async-commit-hook#test": {
       "dependsOn": [
         "^build"

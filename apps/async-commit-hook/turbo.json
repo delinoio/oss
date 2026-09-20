@@ -1,0 +1,19 @@
+{
+  "extends": [
+    "//"
+  ],
+  "tasks": {
+    "dev": {
+      "dependsOn": [
+        "^build"
+      ],
+      "cache": false,
+      "persistent": true,
+      "env": []
+    },
+    "build:embedded": {
+      "cache": false,
+      "env": []
+    }
+  }
+}

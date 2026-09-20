@@ -107,7 +107,7 @@
 - Keep command identifiers stable and documented in `docs/project-cargo-mono.md` and `docs/crates-cargo-mono-foundation.md`.
 - Preserve `cargo mono` subcommand compatibility (`cargo-mono` binary naming contract).
 - Keep release-tag responsibility split: `bump` must not create tags, and `publish` may create tags only for packages listed in `[workspace.metadata.cargo-mono.publish.tag].packages`.
-- The manual `Release Project` coordinator publishes only the selected CLI crate after exact-commit CI succeeds, then pushes only its exact version tag with `delino-release-bot`. It may recover a missing remote tag after an already-published crate, but must reject a conflicting tag. There is no main-push workspace publisher.
+- The manual `Release Project` coordinator validates the exact version commit and publishes only the selected registry-eligible CLI crate without waiting for main CI. clibox skips registry publication and retains release-source validation before tagging. After registry publication succeeds, it pushes only that crate’s exact version tag with `delino-release-bot`. It may recover a missing remote tag after an already-published crate, but must reject a conflicting tag. There is no main-push workspace publisher.
 - Keep `publish` delegation aligned with the documented contract: `cargo mono publish` must invoke `cargo publish --no-verify` in both execute and dry-run modes.
 - Keep `publish` package ordering based on manifest-declared workspace path dependencies, including optional feature-gated dependencies; do not rely only on Cargo's default-feature resolve graph.
 - Ensure release automation (`bump`, `publish`) logs include structured operational context.
@@ -261,6 +261,7 @@
 - Cross-command tests must account for Windows `run env` variable conversion, including numeric `$1` references, separately from direct transformation capture parsing and literal npm launcher forwarding.
 - Checksum generation with explicit file output must rebase relative inputs against the manifest directory, resolving symlink parents before rebasing; preserve absolute inputs and stdout filename behavior.
 - Windows publication must retain temporary-file rename/cleanup access before copying permissions, replace read-only destinations without clearing their attributes, and leave originals unchanged on cancellation or failed publication. Apply temporary access attributes before the original DACL so denied attribute writes do not block an otherwise authorized replacement. Unsupported filesystem rename capabilities fail closed.
+- Windows DACL fixtures must probe attribute-write permission with a fresh handle requesting exactly FILE_WRITE_ATTRIBUTES, including allowed controls and checks after cancellation and publication. Reapplying unchanged attributes is not an access-denial probe.
 
 - clibox GNU release builds use the shared pinned AlmaLinux 9/glibc 2.34 boundary for npm and stable APT/DNF distribution; preserve the existing musl targets and optional user-installed desktop tools.
 

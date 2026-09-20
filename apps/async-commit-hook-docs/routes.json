@@ -1,0 +1,54 @@
+[
+  {
+    "text": "Overview",
+    "link": "/"
+  },
+  {
+    "text": "Installation",
+    "link": "/install"
+  },
+  {
+    "text": "Get started",
+    "link": "/start"
+  },
+  {
+    "text": "Configuration",
+    "link": "/configuration"
+  },
+  {
+    "text": "Final validation",
+    "link": "/validation"
+  },
+  {
+    "text": "CLI reference",
+    "link": "/commands"
+  },
+  {
+    "text": "Agents and MCP",
+    "link": "/agents"
+  },
+  {
+    "text": "Browser connection",
+    "link": "/web"
+  },
+  {
+    "text": "Privacy and trust",
+    "link": "/privacy"
+  },
+  {
+    "text": "Operations and recovery",
+    "link": "/recovery"
+  },
+  {
+    "text": "Compatibility and validation evidence",
+    "link": "/compatibility"
+  },
+  {
+    "text": "Committed symbolic links",
+    "link": "/symlinks"
+  },
+  {
+    "text": "Existing hooks and hook managers",
+    "link": "/existing-hooks"
+  }
+]

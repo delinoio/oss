@@ -308,6 +308,9 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/release-linux-packages.yml
+    # Required for the called job to resolve its protected environment secrets.
+    # Remove only when actions/runner#4453 is fixed and environment access is verified.
+    secrets: inherit
     with:
       project: with-watch
       version: ${{ needs.prepare.outputs.version }}

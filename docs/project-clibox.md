@@ -24,7 +24,7 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 - The executable Cargo manifest, its Cargo.lock entry, source npm manifest, nine generated npm packages, and executable version agree exactly.
 - macOS and Windows MSVC support x64/arm64; Linux supports x64/arm64 with separate glibc and musl packages.
 - Consumers never compile Rust or run installation/download scripts. The npm launcher executes only its exact-version platform dependency.
-- Manual `Release Project` versioning and exact-commit CI precede the `clibox@v<version>` tag and downstream npm/native workflow. clibox does not publish to crates.io or require a Cargo registry token.
+- Manual `Release Project` versioning and immutable release-source validation precede the `clibox@v<version>` tag and downstream npm/native workflow. clibox does not publish to crates.io or require a Cargo registry token. Main CI runs independently and does not gate the coordinator; downstream native builds, tests, and package validation remain required.
 - All four Rust crates use `publish = false`. Only `clibox` depends on the three companions, through path dependencies. Companion versions begin at `0.1.0` and are not automatically bumped with product releases; no public Rust library API is added.
 - npm publication uses GitHub Actions OIDC and provenance from the complete verified CI artifact; setup and dry-run validation do not publish.
 - The public OS commands are `run env`, `port which`, `port kill`, `open`, `clipboard copy`, and `clipboard paste`; no public Rust/JavaScript library API is provided.

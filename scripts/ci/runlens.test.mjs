@@ -150,3 +150,10 @@ test("every authenticated installer row verifies its actual platform and exact m
   assert.equal(steps[guard].if, undefined);
   assert.equal(steps[guard]["continue-on-error"], undefined);
 });
+
+test("documentation apps retain distinct fixed development ports after integration", () => {
+  const runlens = JSON.parse(read("apps/runlens-docs/package.json"));
+  const ach = JSON.parse(read("apps/async-commit-hook-docs/package.json"));
+  assert.match(runlens.scripts.dev, /runlens-docs dev 46310 -$/u);
+  assert.match(ach.scripts.dev, /async-commit-hook-docs dev 46311 -$/u);
+});

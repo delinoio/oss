@@ -9,12 +9,11 @@
 - Disable acknowledgement until an execution is terminal; opening or waiting for a result never acknowledges it.
 - Poll execution details only while active; terminal evidence verification must not repeat on a timer. Explicit refresh and mutation invalidation remain available.
 - Render source, logs, report data and failure diagnostics as inert text. Do not use HTML interpretation or remote telemetry.
-- Pairing codes are short-lived URL fragments or explicit user input. Remove fragments immediately; keep results only in in-memory query caches.
-- Authentication recovery clears stale authorization and cached results but retains an unconsumed in-memory pairing code; explicit disconnect still discards it.
-- Preserve keyboard navigation, dialog focus restoration, status words and recoverable network/version/authentication states.
-- Public documentation and installers live under `public`; internal implementation contracts remain in `docs/`.
-- Keep shell installer `--version` behavior aligned with the public guide, validate all arguments before downloads, and preserve signature/checksum verification for every selected version.
-- Public recovery guidance must distinguish confirmed descendant cleanup from lost ownership proof: incomplete cancellation blocks replacement, and a forcibly killed Linux supervisor requires host-reboot recovery. Do not claim actual minimum-OS machine qualification from local tests or cross-builds.
+- The daemon and on-demand viewer serve the same embedded UI. Use same-origin Connect with mandatory API version headers, no pairing or browser credential persistence; keep result caches in memory and run fragments refreshable.
+- Reject foreign/missing Origin, Host, method and version header before the development proxy rewrites a request. Production API security cannot depend on a dev-only CORS grant.
+- Preserve keyboard navigation, dialog focus restoration, status words and recoverable network/version states.
+- Public documentation and installers are owned by the separate async-commit-hook-docs app. The UI links to https://ach.delino.io.
+- `build:embedded` is the sole producer of command webassets/dist: clear the previous embed before building, validate real hashed assets and copy only after success. Include license files; never substitute a placeholder bundle.
 - Browser tests must use isolated jsdom storage, never Node file-backed Web Storage; retain the test-worker compatibility flag until Vitest overrides native storage consistently.
 - Run `pnpm test` from this directory after frontend changes. Generated `dist` is untracked and must be removed from the final worktree.
 

@@ -1,6 +1,6 @@
 # async-commit-hook release boundary
 
-- `release-metadata.json`, the Go version constant, app and client versions must match exactly.
+- `release-metadata.json`, the Go version constant, local UI, docs and client versions, and both public installer defaults must match exactly. `Release Project` updates all seven version fields in one version-only commit and prepares the exact tag; it must reject drift and missing or ambiguous declarations before writes, never publish or dispatch the publication workflow, and never require or inject a Cargo registry token for this project.
 - Archive bytes must be reproducible for identical executable bytes: fix both tar member and gzip-header metadata, omit gzip filenames, and retain fixed ZIP entry metadata.
 - Build all six targets with CGO disabled. Every archive contains exactly one regular `ach` or `ach.exe` file.
 - Publish only through the manually dispatched `release-async-commit-hook.yml` from `main`, after validation, archive checksums and Sigstore signing. The updater pins that exact workflow identity.
@@ -10,4 +10,4 @@
 - Resume only an unpublished draft whose exact ownership marker, target commit, version and workflow run ID match the current run. Reread ownership before replacing partial uploads, reject unexpected assets, and verify the full uploaded names, sizes, SHA-256 digests and uploaded states before publication. Published releases and unowned drafts are never overwritten.
 - Release artifact/installer fixtures under `scripts/release` use Node built-ins only and run without dependency installation. YAML workflow fixtures belong to `scripts/ci` and run after the frozen workspace install.
 - Do not label cross-compilation as native integration validation. Preserve the owner-approved exclusions in the evidence document.
-- Public installers are authored under `apps/async-commit-hook/public`; release preparation copies those exact bytes into downloadable assets.
+- Public installers are authored under `apps/async-commit-hook-docs/public`; release preparation copies those exact bytes into downloadable assets.

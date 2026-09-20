@@ -61,3 +61,14 @@ test('release tag identity is checked before signing and again before creation',
  assert.ok(publisher.lastIndexOf('build.verify_tag(version, revision)')<publisher.indexOf('published = api(endpoint, {"draft": False})'));
  assert.doesNotMatch(JSON.stringify(workflow.jobs.validate),/publish-async-commit-hook\.py --assets/);
 });
+
+
+test('release embeds the UI before Go validation and deploys only Rspress documentation', () => {
+ const validate = workflow.jobs.validate.steps.map((step) => step.run ?? '').join('\n');
+ assert.ok(validate.indexOf('pnpm --filter async-commit-hook build:embedded') < validate.indexOf('go test ./...'));
+ assert.match(validate, /pnpm --filter async-commit-hook-docs test/);
+ const artifact = workflow.jobs.validate.steps.find((step) => step.with?.name === 'ach-site');
+ assert.equal(artifact.with.path, 'apps/async-commit-hook-docs/doc_build');
+ const builder = readFileSync(new URL('scripts/release/build-async-commit-hook.py', root), 'utf8');
+ assert.ok(builder.indexOf('"build:embedded"') < builder.indexOf('for target in m["targets"]'));
+});

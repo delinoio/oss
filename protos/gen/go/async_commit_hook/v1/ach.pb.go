@@ -2754,11 +2754,11 @@ const file_async_commit_hook_v1_ach_proto_rawDesc = "" +
 	"\x1bEXECUTION_STATE_INTERRUPTED\x10\n" +
 	"\x12\x1b\n" +
 	"\x17EXECUTION_STATE_SKIPPED\x10\v\x12\x1b\n" +
-	"\x17EXECUTION_STATE_EXPIRED\x10\f2\x8a\v\n" +
+	"\x17EXECUTION_STATE_EXPIRED\x10\f2\x8f\v\n" +
 	"\fLocalService\x12_\n" +
 	"\n" +
-	"GetVersion\x12'.async_commit_hook.v1.GetVersionRequest\x1a(.async_commit_hook.v1.GetVersionResponse\x12M\n" +
-	"\x04Pair\x12!.async_commit_hook.v1.PairRequest\x1a\".async_commit_hook.v1.PairResponse\x12q\n" +
+	"GetVersion\x12'.async_commit_hook.v1.GetVersionRequest\x1a(.async_commit_hook.v1.GetVersionResponse\x12R\n" +
+	"\x04Pair\x12!.async_commit_hook.v1.PairRequest\x1a\".async_commit_hook.v1.PairResponse\"\x03\x88\x02\x01\x12q\n" +
 	"\x10ListRepositories\x12-.async_commit_hook.v1.ListRepositoriesRequest\x1a..async_commit_hook.v1.ListRepositoriesResponse\x12e\n" +
 	"\fListBranches\x12).async_commit_hook.v1.ListBranchesRequest\x1a*.async_commit_hook.v1.ListBranchesResponse\x12b\n" +
 	"\vListCommits\x12(.async_commit_hook.v1.ListCommitsRequest\x1a).async_commit_hook.v1.ListCommitsResponse\x12_\n" +

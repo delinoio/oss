@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 import yaml from "js-yaml";
 import { Bump, Project, requiresCargoPublish } from "../release/project.mjs";
@@ -24,15 +26,18 @@ test("Selected release is manual, serialized, main-only and permission bounded",
   assert.equal(existsSync(new URL("../../.github/workflows/auto-publish.yml", import.meta.url)), false);
 });
 
-test("Publication follows exact-commit CI, pushes the selected tag, and does not await downstream release", () => {
+test("Publication follows preparation without CI and tags only after registry success", () => {
   const jobs = workflow.jobs;
-  assert.deepEqual(jobs.registry.needs, ["prepare", "ci"]);
+  assert.deepEqual(Object.keys(jobs), ["prepare", "registry", "tag", "summary"]);
+  assert.deepEqual(jobs.registry.needs, ["prepare"]);
   assert.deepEqual(jobs.tag.needs, ["prepare", "registry"]);
-  assert.equal(jobs.release, undefined);
   const publish = jobs.registry.steps.find((step) => step.name === "Publish only the selected crate");
   assert.equal(publish.if, "needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox'");
   assert.equal(publish.run, 'cargo run --locked -p cargo-mono -- publish --package "$RELEASE_PROJECT"');
-  for (const name of ["ci", "registry", "tag"]) {
+  assert.equal(publish["continue-on-error"], undefined);
+  for (const name of ["registry", "tag"]) {
+    assert.equal(jobs[name].if, undefined);
+    assert.equal(jobs[name]["continue-on-error"], undefined);
     const checkout = jobs[name].steps.find((step) => step.uses?.startsWith("actions/checkout@"));
     assert.equal(checkout.with.ref, "${{ needs.prepare.outputs.revision }}");
     assert.equal(checkout.with["persist-credentials"], false);
@@ -41,16 +46,62 @@ test("Publication follows exact-commit CI, pushes the selected tag, and does not
   const script = source("scripts/release/project.mjs");
   assert.doesNotMatch(script, /--force|push.+--tags|x-access-token:/u);
   assert.match(script, /:refs\/tags\/\$\{identity.tag\}/u);
-  for (const name of ["ci"]) {
-    assert.deepEqual(jobs[name].permissions, { contents: "read", actions: "read" });
-    assert.ok(!JSON.stringify(jobs[name]).includes("PRIVATE_KEY"));
-  }
-  assert.doesNotMatch(source(".github/workflows/release-project.yml"), /wait-release/u);
+  assert.doesNotMatch(script, /waitForCiWorkflow|wait-ci|\/actions|CI\.yml/u);
+  assert.doesNotMatch(source(".github/workflows/release-project.yml"), /wait-ci|wait-release|ci_url|jobs\.ci|needs\.ci|actions: read/u);
   assert.equal(jobs.summary.if, "always()");
-  assert.deepEqual(jobs.summary.needs, ["prepare", "ci", "registry", "tag"]);
+  assert.deepEqual(jobs.summary.needs, ["prepare", "registry", "tag"]);
 });
 
-test("Source and tap tokens are separately scoped and all selected tag workflows remain available", () => {
+for (const project of [Project.Clibox, Project.AsyncCommitHook]) for (const [scenario, results] of [
+  ["success", ["success", "success", "success"]],
+  ["prepare failure", ["failure", "skipped", "skipped"]],
+  ["registry failure", ["success", "failure", "skipped"]],
+  ["tag failure", ["success", "success", "failure"]],
+]) test(`${project} release summary handles ${scenario} without CI outputs`, (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "release-summary-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const summaryFile = path.join(directory, "summary.md");
+  const outputs = results[0] === "success" ? {
+    previous_version: "1.2.2", version: "1.2.3", tag: `${project}@v1.2.3`, revision: "1".repeat(40),
+  } : {};
+  const jobs = {
+    prepare: { result: results[0], outputs },
+    registry: { result: results[1] },
+    tag: { result: results[2] },
+  };
+  const step = workflow.jobs.summary.steps.find((step) => step.name === "Report release outcome");
+  assert.equal(step.env.RESULTS, "${{ toJSON(needs) }}");
+  const script = /^node <<'JS'\n([\s\S]+)\nJS\n?$/u.exec(step.run);
+  assert.ok(script, "Summary must expose its Node script for fixture execution");
+  const result = spawnSync(process.execPath, ["-e", script[1]], {
+    encoding: "utf8",
+    env: { RELEASE_PROJECT: project, RESULTS: JSON.stringify(jobs), GITHUB_STEP_SUMMARY: summaryFile },
+  });
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, scenario === "success" ? 0 : 1, result.stderr);
+  assert.equal(result.stderr, "");
+  const summary = readFileSync(summaryFile, "utf8");
+  for (const [name, job] of Object.entries(jobs)) assert.ok(summary.includes(`| ${name} | ${job.result} |`));
+  assert.doesNotMatch(summary, /\| ci \||CI Result|Workflow run|undefined/u);
+  if (scenario === "success") {
+    assert.ok(summary.includes("Version: 1.2.2 → 1.2.3"));
+    assert.ok(summary.includes(`Commit: ${outputs.revision}`));
+    assert.ok(summary.includes(`Tag: ${project}@v1.2.3`));
+    assert.doesNotMatch(summary, /Incomplete phases/u);
+    if (project === Project.AsyncCommitHook) {
+      assert.match(summary, /separate manual run.*release-async-commit-hook\.yml/u);
+      assert.match(summary, /Select main and version 1\.2\.3; dry_run defaults to true/u);
+      assert.ok(summary.includes(`Publication requires the dispatch commit to match ${outputs.revision}`));
+      assert.match(summary, /never move the tag/u);
+    } else assert.doesNotMatch(summary, /separate manual run/u);
+  } else {
+    assert.match(summary, /Incomplete phases:.*rerun this release run to reuse any recorded version/u);
+    if (scenario === "prepare failure") assert.match(summary, /unresolved; inspect prepare logs/u);
+    assert.doesNotMatch(summary, /preparation is complete|separate manual run/u);
+  }
+});
+
+test("Source and tap tokens are separately scoped and project release triggers remain explicit", () => {
   for (const name of ["prepare", "tag"]) {
     const token = workflow.jobs[name].steps.find((step) => step.uses === "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1");
     assert.equal(token.with.repositories, "oss");
@@ -62,6 +113,13 @@ test("Source and tap tokens are separately scoped and all selected tag workflows
   }
   for (const project of Object.values(Project)) {
     const release = yaml.load(source(`.github/workflows/release-${project}.yml`));
+    if (project === Project.AsyncCommitHook) {
+      assert.deepEqual(Object.keys(release.on), ["workflow_dispatch"]);
+      assert.equal(release.on.workflow_dispatch.inputs.dry_run.default, true);
+      assert.match(JSON.stringify(release.jobs.validate), /refs\/heads\/main/u);
+      assert.equal(release.jobs.publish.environment, "async-commit-hook-release");
+      continue;
+    }
     assert.deepEqual(release.on.push.tags, [`${project}@v*`]);
     if ([Project.CargoMono, Project.Runmoor, Project.Clibox].includes(project)) continue;
     const steps = release.jobs.publish.steps;
@@ -81,9 +139,11 @@ test("Source and tap tokens are separately scoped and all selected tag workflows
   assert.match(tap, /credential\.helper=!gh auth git-credential/u);
 });
 
-test("clibox reaches source validation and tagging without Cargo publication credentials", () => {
+test("clibox and async-commit-hook reach source validation and tagging without Cargo publication credentials", () => {
   const prepare = workflow.jobs.prepare.steps.find((step) => step.name === "Validate configuration before committing");
-  assert.equal(prepare.env.REGISTRY_TOKEN, "${{ inputs.project != 'clibox' && secrets.CARGO_REGISTRY_TOKEN || '' }}");
+  const registryToken = "${{ inputs.project != 'clibox' && inputs.project != 'async-commit-hook' && secrets.CARGO_REGISTRY_TOKEN || '' }}";
+  assert.equal(prepare.env.REGISTRY_TOKEN, registryToken);
+  assert.equal(workflow.jobs.registry.steps.find((step) => step.name === "Publish only the selected crate").env.CARGO_REGISTRY_TOKEN, registryToken);
   assert.match(prepare.run, /requiresCargoPublish\(plan.project\)/u);
   const preflight = prepare.run.split("<<'JS'\n")[1].split("\nJS")[0];
   const environment = { CLIENT_ID: "fixture-id", PRIVATE_KEY: "fixture-key", RELEASE_BUMP: Bump.Patch };
@@ -94,6 +154,7 @@ test("clibox reaches source validation and tagging without Cargo publication cre
     stdio: "pipe",
   });
   assert.doesNotThrow(() => runPreflight(Project.Clibox));
+  assert.doesNotThrow(() => runPreflight(Project.AsyncCommitHook));
   assert.throws(() => runPreflight(Project.Binpm), /CARGO_REGISTRY_TOKEN is required/u);
   const registry = workflow.jobs.registry;
   assert.equal(registry.if, undefined);
