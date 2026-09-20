@@ -329,9 +329,9 @@ func (p Personal) CommandEnvironment(c Command, public map[string]string) ([]str
 				if ref.Env != "" {
 					value, ok = os.LookupEnv(ref.Env)
 				} else {
-					b, err := os.ReadFile(ref.File)
+					b, err := readCredentialFile(ref.File)
 					if err != nil {
-						return nil, nil, E("credential-unavailable", "cannot read credential reference "+e.Credential, 3)
+						return nil, nil, E("credential-unavailable", "credential reference "+e.Credential+" requires a readable regular file of at most 64 KiB", 3)
 					}
 					value = string(b)
 					ok = true

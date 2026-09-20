@@ -183,6 +183,7 @@ api_port = 46309
 [credentials.test-service]
 env = "LOCAL_TEST_TOKEN"
 # Instead of env, use file = "/absolute/path/to/private-token-file"
+# File credentials must be regular files, not symlinks, of at most 64 KiB.
 
 [retention]
 max_age_days = 0 # 0 means unlimited; maximum 106751 days

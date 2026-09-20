@@ -81,3 +81,5 @@
 - Reject non-UTF-8 declared public environment values before snapshot serialization or fingerprinting; JSON replacement must never change execution inputs or collapse their identity.
 
 - Completion publication must unblock on worker ownership cancellation; error shutdown joins all runs even when their count exceeds the completion buffer. Do not impose a concurrency cap to avoid shutdown deadlocks.
+
+- Credential file reads require a regular nonsymlink file, verify the opened identity, and consume at most 64 KiB plus one overflow byte. Unix opens must not block on replacement FIFOs; diagnostics exclude paths and values.
