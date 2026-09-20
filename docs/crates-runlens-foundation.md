@@ -810,3 +810,9 @@ Clean/repeat additionally budgets all planned preparations, targets, repetitions
 and imported baseline execution metadata before the first preparation. Planning
 reserves a digest and 4 KiB for built-in limitation notices. Invalid metadata is
 invalid-input even without --save; no child side effects occur before rejection.
+
+Windows NtDeleteFile records a write attempt before forwarding the original
+object attributes, including missing external paths. The native regression
+compares NT results and deletion behavior with untraced execution and requires
+a deny-write violation. Remove this local interception patch when upstream
+provides equivalent native deletion coverage with safe attribute copying.

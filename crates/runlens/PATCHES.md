@@ -254,3 +254,9 @@ caller preload bytes and dynamic-descendant loader behavior. The regression
 compares static environment output and a real caller-library symbol in a dynamic
 descendant against untraced execution. Removal: upstream must preserve caller
 preloads across static exec with equivalent unit and native coverage.
+
+Windows NtDeleteFile records a write attempt before forwarding the original
+object attributes, including missing external paths. The native regression
+compares NT results and deletion behavior with untraced execution and requires
+a deny-write violation. Remove this local interception patch when upstream
+provides equivalent native deletion coverage with safe attribute copying.

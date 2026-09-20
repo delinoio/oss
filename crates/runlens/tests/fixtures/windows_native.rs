@@ -126,3 +126,18 @@ pub fn malformed_file_attributes() {
     }
     println!("child-continued");
 }
+
+pub fn delete_file(path: &str) {
+    use winapi::shared::ntdef::OBJECT_ATTRIBUTES;
+    let path = path.strip_prefix(r"\\?\").unwrap_or(path);
+    let mut path = wide(&format!(r"\??\{path}"));
+    let mut name = unicode(&mut path);
+    // SAFETY: the complete object name remains live for the native call.
+    unsafe {
+        let mut attributes: OBJECT_ATTRIBUTES = mem::zeroed();
+        attributes.Length = mem::size_of::<OBJECT_ATTRIBUTES>() as u32;
+        attributes.ObjectName = &mut name;
+        let status = ntapi::ntioapi::NtDeleteFile(&mut attributes);
+        println!("{status}");
+    }
+}

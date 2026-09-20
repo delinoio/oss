@@ -593,7 +593,22 @@ static DETOUR_NT_SET_INFORMATION_FILE: Detour<
     })
 };
 
+static DETOUR_NT_DELETE_FILE: Detour<unsafe extern "system" fn(POBJECT_ATTRIBUTES) -> NTSTATUS> = unsafe {
+    // SAFETY: the replacement has the exact NtDeleteFile ABI. Observe the
+    // original object name before deletion, including failed attempts.
+    Detour::new(c"NtDeleteFile", ntapi::ntioapi::NtDeleteFile, {
+        unsafe extern "system" fn delete_file(attributes: POBJECT_ATTRIBUTES) -> NTSTATUS {
+            // SAFETY: handle_open copies untrusted attributes before parsing.
+            unsafe { handle_open(AccessMode::WRITE, attributes) };
+            // SAFETY: forward the original operands and preserve the NT result.
+            unsafe { (DETOUR_NT_DELETE_FILE.real())(attributes) }
+        }
+        delete_file
+    })
+};
+
 pub const DETOURS: &[DetourAny] = &[
+    DETOUR_NT_DELETE_FILE.as_any(),
     DETOUR_NT_SET_INFORMATION_FILE.as_any(),
     DETOUR_NT_CREATE_USER_PROCESS.as_any(),
     DETOUR_NT_CREATE_FILE.as_any(),

@@ -4997,3 +4997,58 @@ async fn metadata_redaction_and_field_limits_are_checked_before_launch() {
         assert!(!marker.exists());
     }
 }
+
+#[cfg(windows)]
+#[test]
+fn native_windows_delete_retains_external_write_attempts() {
+    for exists in [true, false] {
+        let root = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        let path = external.path().join("native-deletion");
+        if exists {
+            fs::write(&path, "delete-body-canary").unwrap();
+        }
+        let plain = Command::new(fixture())
+            .arg("windows-native-delete")
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(plain.status.success());
+        assert!(!path.exists());
+        if exists {
+            fs::write(&path, "delete-body-canary").unwrap();
+        }
+        fs::write(
+            root.path().join("runlens.toml"),
+            r#"schema_version = 1
+[policy]
+deny_writes = ["**/native-deletion"]
+"#,
+        )
+        .unwrap();
+        let traced = invoke(
+            root.path(),
+            &[
+                "run",
+                "--save",
+                "delete.json",
+                "--",
+                fixture(),
+                "windows-native-delete",
+                path.to_str().unwrap(),
+            ],
+        );
+        assert!(traced.status.success(), "{traced:?}");
+        assert_eq!(traced.stdout, plain.stdout);
+        assert!(!path.exists());
+        let report = parse(root.path(), "delete.json");
+        assert!(report["executions"][0]["accesses"].as_object().unwrap().iter().any(|(path, access)| path.ends_with("/native-deletion") && access["write"] == true));
+        let policy = invoke(root.path(), &["policy", "check", "delete.json", "--json"]);
+        assert_eq!(policy.status.code(), Some(5), "{policy:?}");
+        assert!(
+            !fs::read_to_string(root.path().join("delete.json"))
+                .unwrap()
+                .contains("delete-body-canary")
+        );
+    }
+}

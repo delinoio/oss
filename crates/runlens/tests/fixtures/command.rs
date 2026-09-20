@@ -512,6 +512,8 @@ fn main() {
         #[cfg(windows)]
         "windows-malformed-file-attributes" => windows_native::malformed_file_attributes(),
         #[cfg(windows)]
+        "windows-native-delete" => windows_native::delete_file(&args[1]),
+        #[cfg(windows)]
         "windows-native-child" => windows_native::spawn(&args[1]),
         #[cfg(windows)]
         "windows-native-leaf" => fs::write(&args[1], "native child output").unwrap(),
