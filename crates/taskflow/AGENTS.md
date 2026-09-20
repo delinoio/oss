@@ -39,6 +39,7 @@
 - Validate TCP readiness host/port syntax and HTTP(S) URL shape without DNS or network probes before service startup.
 - Every child belongs to a process-tree/container owner; replacement waits for reaping. Tests must assert actual cleanup. Service shutdown must await all owners and propagate every unverified process/container cleanup as failure.
 - Ready service receipts expose their semantic task key to dependent cache keys. Session waves reuse finite prerequisite receipts only while current output digests match; missing or modified outputs return to normal restore/execution before consumers run.
+- Drain queued service exits before session scheduling and again after prerequisite output validation, before ready receipts can authorize another wave.
 - Session task ownership ends on its individual receipt, including provided/suppressed/blocked outcomes. Scope completion notifications to their wave so late results cannot release replacement owners or overwrite newer receipts; retain propagation pending behind active consumers.
 - Either watch or schedule initial flag can activate a mixed subscription, with one shared initial execution. Tasks without subscriptions retain initial activation.
 - Choose default overlap from the current trigger (input queue, schedule skip), including mixed subscriptions; explicit overlap applies to both. Apply overlap policies to per-task execution ownership, not to membership in an unfinished wave.

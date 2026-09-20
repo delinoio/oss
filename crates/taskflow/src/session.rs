@@ -128,6 +128,7 @@ pub async fn start(
                 }
                 reload = false;
             }
+            drain_service_events(&services, &mut service_receiver, &active_set)?;
             if !invalid && !reload {
                 let now = Instant::now();
                 for (id, timer) in &mut timers {
@@ -158,15 +159,7 @@ pub async fn start(
                         let plan = Plan::for_tasks(&graph, seeds.clone())?;
                         let selected: BTreeSet<_> = plan.order.iter().cloned().collect();
                         let mut wave_options = options.clone();
-                        wave_options.provided = results.iter().filter(|(id, receipt)| {
-                            if !selected.contains(*id) || seeds.contains_key(*id) || !receipt.success() { return false; }
-                            let node = &graph.tasks[*id];
-                            // A live service is shared by its owners; finite artifacts
-                            // must still match before bypassing the normal executor.
-                            let valid = node.task.service || crate::cache::output_state(&graph.workspace.projects[&node.project], &node.task).is_ok_and(|output| output == receipt.output);
-                            if !valid { tracing::info!(task = *id, code = "session-output-invalid", "Revalidating prerequisite before the next session wave"); }
-                            valid
-                        }).map(|(id, r)| (id.clone(), r.clone())).collect();
+                        wave_options.provided = provided_receipts(&graph, &selected, &seeds, &results, &services, &mut service_receiver, &active_set)?;
                         let wave_id = next_wave;
                         next_wave += 1;
                         active_tasks.extend(selected.iter().cloned().map(|id| (id, wave_id)));
@@ -238,8 +231,7 @@ pub async fn start(
                 }
                 event = service_receiver.recv() => {
                     if let Some((id, status)) = event {
-                        services.controls.lock().unwrap().remove(&id);
-                        if active_set.contains(&id) && !status.cancelled() { anyhow::bail!("service {id} exited ({}); shutting down session", status.code); }
+                        service_exit(&services, &active_set, id, status)?;
                     }
                 }
                 Some((wave_id, receipt)) = completions.recv() => {
@@ -281,6 +273,70 @@ pub async fn start(
     drop(watcher);
     cleanup?;
     result
+}
+
+fn provided_receipts(
+    graph: &Graph,
+    selected: &BTreeSet<String>,
+    seeds: &BTreeMap<String, BTreeSet<Cause>>,
+    results: &BTreeMap<String, Receipt>,
+    services: &Services,
+    receiver: &mut tokio::sync::mpsc::UnboundedReceiver<(String, crate::process::ProcessExit)>,
+    active: &BTreeSet<String>,
+) -> Result<BTreeMap<String, Receipt>> {
+    let provided = results
+        .iter()
+        .filter(|(id, receipt)| {
+            if !selected.contains(*id) || seeds.contains_key(*id) || !receipt.success() {
+                return false;
+            }
+            let node = &graph.tasks[*id];
+            // A live service is shared by its owners; finite artifacts
+            // must still match before bypassing the normal executor.
+            let valid = node.task.service
+                || crate::cache::output_state(&graph.workspace.projects[&node.project], &node.task)
+                    .is_ok_and(|output| output == receipt.output);
+            if !valid {
+                tracing::info!(
+                    task = *id,
+                    code = "session-output-invalid",
+                    "Revalidating prerequisite before the next session wave"
+                );
+            }
+            valid
+        })
+        .map(|(id, r)| (id.clone(), r.clone()))
+        .collect();
+    // Output hashing can take time even without an await. Consume every known
+    // service exit before supplying ready receipts to a newly spawned wave.
+    drain_service_events(services, receiver, active)?;
+    Ok(provided)
+}
+
+fn service_exit(
+    services: &Services,
+    active: &BTreeSet<String>,
+    id: String,
+    status: crate::process::ProcessExit,
+) -> Result<()> {
+    services.controls.lock().unwrap().remove(&id);
+    ensure!(
+        !active.contains(&id) || status.cancelled(),
+        "service {id} exited ({}); shutting down session",
+        status.code
+    );
+    Ok(())
+}
+
+fn drain_service_events(
+    services: &Services,
+    receiver: &mut tokio::sync::mpsc::UnboundedReceiver<(String, crate::process::ProcessExit)>,
+    active: &BTreeSet<String>,
+) -> Result<()> {
+    while let Ok((id, status)) = receiver.try_recv() {
+        service_exit(services, active, id, status)?;
+    }
+    Ok(())
 }
 
 fn complete_task(
@@ -449,6 +505,116 @@ fn enqueue(
 #[cfg(test)]
 mod overlap_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn queued_service_exit_prevents_reusing_ready_receipts() {
+        let root = tempfile::tempdir().unwrap();
+        let binary = root.path().join(if cfg!(windows) {
+            "server.exe"
+        } else {
+            "server"
+        });
+        let source = root.path().join("server.rs");
+        std::fs::write(
+            &source,
+            r#"
+            fn main() {
+                if std::env::args().any(|a| a == "--ready") { return; }
+                while !std::path::Path::new("exit").exists() {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+            }
+        "#,
+        )
+        .unwrap();
+        assert!(std::process::Command::new("rustc")
+            .arg(&source)
+            .arg("-o")
+            .arg(&binary)
+            .status()
+            .unwrap()
+            .success());
+        std::fs::write(root.path().join("taskflow.yml"), serde_yaml::to_string(&serde_json::json!({
+            "version":1,"project":"app","tasks":{
+                "server":{"command":[binary],"service":true,"input":[],"readiness":{"type":"command","command":[binary,"--ready"],"timeout":"10s"}},
+                "check":{"command":[binary,"--ready"],"input":[],"dependsOn":[{"task":"server","waitFor":"ready"}]}
+            }
+        })).unwrap()).unwrap();
+        let graph =
+            Arc::new(Graph::build(Workspace::discover(root.path()).await.unwrap()).unwrap());
+        let (events, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let services = Arc::new(Services {
+            controls: Mutex::new(BTreeMap::new()),
+            events,
+            joins: Mutex::new(vec![]),
+        });
+        let plan = Plan::create(&graph, &["server".into()], &[], false).unwrap();
+        let ready = runner::run_plan(
+            graph.clone(),
+            plan,
+            RunOptions {
+                services: Some(services.clone()),
+                ..Default::default()
+            },
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(ready.results["app#server"].outcome, runner::Outcome::Ready);
+        let selected = BTreeSet::from(["app#check".into(), "app#server".into()]);
+        for cause in [
+            Cause::Schedule,
+            Cause::Input {
+                path: "source".into(),
+            },
+        ] {
+            let seeds = BTreeMap::from([("app#check".into(), BTreeSet::from([cause]))]);
+            assert!(provided_receipts(
+                &graph,
+                &selected,
+                &seeds,
+                &ready.results,
+                &services,
+                &mut receiver,
+                &selected
+            )
+            .unwrap()
+            .contains_key("app#server"));
+        }
+        std::fs::write(root.path().join("exit"), "exit normally").unwrap();
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while !services
+                .joins
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|join| join.is_finished())
+            {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let seeds = BTreeMap::from([("app#check".into(), BTreeSet::from([Cause::Schedule]))]);
+        // The process owner has queued a real exit while this next trigger is
+        // due. A cached Ready receipt cannot authorize that dependent wave.
+        let error = provided_receipts(
+            &graph,
+            &selected,
+            &seeds,
+            &ready.results,
+            &services,
+            &mut receiver,
+            &selected,
+        )
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("service app#server exited (0)"),
+            "{error:#}"
+        );
+        assert!(services.controls.lock().unwrap().is_empty());
+        services.shutdown().await.unwrap();
+    }
 
     #[tokio::test]
     async fn mixed_subscriptions_preserve_trigger_defaults_and_explicit_overrides() {

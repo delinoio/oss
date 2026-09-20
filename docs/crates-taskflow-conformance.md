@@ -40,6 +40,8 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 
 `non_unicode_inherited_environment_is_rejected_without_panicking` launches the real CLI with invalid Unix environment names and values for check, query, plan, and run. Each returns an ordinary error without exposing entry bytes or executing the task. Native discovery, metadata capture, and task environment construction share fallible inherited-environment decoding.
 
+`queued_service_exit_prevents_reusing_ready_receipts` starts a real service, verifies its ready receipt can support input/schedule work while alive, releases it to exit, and waits for its owner to queue completion. The next due wave must reject the old ready receipt and terminate the session even when the service exited successfully. Session scheduling drains exits before processing triggers and after finite output validation.
+
 `cache_verify_rejects_misdirected_and_inconsistent_artifacts` also rejects validly encoded file records that declare descendants beneath another regular file, without restoring any output.
 
 `uncached_output_digests_are_not_limited_by_artifact_size` executes a task with an output larger than 512 MiB, confirms successful local identity tracking, and retains the artifact capture bound. Local and captured identities share the `output-state-v2` digest domain; previous payload-based digests become safe cache misses.
