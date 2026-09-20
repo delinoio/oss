@@ -506,6 +506,10 @@ fn main() {
                 std::path::Path::new(&std::env::var_os("HOME").unwrap()).join("previous-run");
             assert!(!path.exists());
             fs::write(&path, "local cache").unwrap();
+            let cache =
+                std::path::PathBuf::from(std::env::var_os("XDG_CACHE_HOME").unwrap()).join("entry");
+            fs::write(&cache, "cache content").unwrap();
+            assert_eq!(fs::read_to_string(&cache).unwrap(), "cache content");
             assert!(std::env::var_os("RUNLENS_AMBIENT_SECRET").is_none());
             fs::write("out/result.txt", "stable").unwrap();
         }

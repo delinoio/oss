@@ -654,3 +654,8 @@ empty metadata cannot establish known equality in offline verification.
 An access beneath a vanished ancestor absent from both observations is outside
 known snapshot scope: the ancestor could have been a transient external symlink.
 Missing leaf attempts remain distinct from this unknown ancestor identity.
+
+Clean/repeat isolated HOME and cache access attempts remain in receipts under
+`${temporary}` with `in_scope=false`; their contents remain outside snapshots.
+Only Runlens-owned collector/library paths are omitted from access records.
+Temporary isolation therefore cannot erase evidence used by access policies.

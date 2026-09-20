@@ -74,7 +74,8 @@ async fn observe_inner(request: Request<'_>, hook: impl FnOnce()) -> Result<Exec
         .iter()
         .map(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))
         .collect::<Vec<_>>();
-    temporary.push(owned.path().canonicalize().map_err(|_| Error::storage())?);
+    let collector_root = owned.path().canonicalize().map_err(|_| Error::storage())?;
+    temporary.push(collector_root.clone());
     let refs = temporary.iter().map(PathBuf::as_path).collect::<Vec<_>>();
     let redactor = Redactor::new(request.root, &refs, &request.config.redaction)?;
     let exclusions = request
@@ -218,10 +219,9 @@ async fn observe_inner(request: Request<'_>, hook: impl FnOnce()) -> Result<Exec
                             raw_path
                         };
                         let path = raw_path.as_path();
-                        if temporary
-                            .iter()
-                            .any(|temporary| crate::privacy::within_root(path, temporary))
-                        {
+                        // Only tracer-owned IPC/library files are hidden. The
+                        // child's isolated HOME/cache is observable evidence.
+                        if crate::privacy::within_root(path, &collector_root) {
                             continue;
                         }
                         let key = redactor.path(path);

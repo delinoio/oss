@@ -2840,3 +2840,45 @@ fn vanished_symlink_ancestor_cannot_establish_workspace_scope() {
         Some(4)
     );
 }
+
+#[test]
+fn clean_retains_masked_home_and_cache_accesses_for_policy() {
+    let root = repository("env");
+    let output = invoke(
+        root.path(),
+        &["verify", "clean", "build", "--save", "env.json"],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value = parse(root.path(), "env.json");
+    let execution = &value["executions"][0];
+    for path in [
+        "${temporary}/HOME/previous-run",
+        "${temporary}/XDG_CACHE_HOME/entry",
+    ] {
+        assert_eq!(execution["accesses"][path]["write"], true, "{path}");
+        assert_eq!(execution["accesses"][path]["in_scope"], false);
+        assert!(execution["before"].get(path).is_none());
+        assert!(execution["after"].get(path).is_none());
+    }
+    assert_eq!(
+        execution["accesses"]["${temporary}/XDG_CACHE_HOME/entry"]["read"],
+        true
+    );
+    let config_path = root.path().join("runlens.toml");
+    let mut config = fs::read_to_string(&config_path).unwrap();
+    config.push_str("\n[policy]\ndeny_writes = [\"**/HOME/**\"]\n");
+    fs::write(config_path, config).unwrap();
+    assert_eq!(
+        invoke(root.path(), &["policy", "check", "env.json", "--json"])
+            .status
+            .code(),
+        Some(5)
+    );
+    let serialized = fs::read_to_string(root.path().join("env.json")).unwrap();
+    assert!(!serialized.contains("cache content"));
+    assert!(!serialized.contains(root.path().to_str().unwrap()));
+}

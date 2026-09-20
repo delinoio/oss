@@ -192,3 +192,4 @@
 - Retained evidence maps share a process-wide memory threshold, including repeat rounds and supplied reports. Cancellation handlers must be registered before owned child work. Reject known macOS restrictive code-signing flags and restricted segments by bounded passive inspection; never invoke the target to discover its version.
 - Runlens executable digests must be bound to the native launched image, not a pathname recheck; keep inspected handles alive through completion and make missing/mismatched identity incomplete.
 - Runlens Linux dynamic and static targets must both install inherited kernel syscall collection; libc interposition alone cannot establish completeness.
+- Runlens must retain redacted clean/repeat HOME and cache accesses as out-of-scope evidence; omit only tracer-private storage from access records.
