@@ -28,14 +28,16 @@ export async function publishArtifacts(artifacts, { dryRun = true, lookup = regi
     const reused = found !== null;
     if (!reused) {
       await publish(artifact);
-      // Registry metadata may lag a successful immutable upload for minutes.
-      // Allow 60 five-second delays, with each request separately capped at 30
-      // seconds, without repeating the publication write.
-      for (let attempt = 0; attempt <= 60; attempt++) {
+      // npm scans accepted uploads before exposing version metadata; its
+      // documented availability delay can exceed 15 minutes. Allow 20 minutes
+      // of polling delays, with each request separately capped at 30 seconds,
+      // without repeating the immutable upload.
+      // https://github.blog/changelog/2026-07-28-npm-publish-time-malware-scanning-and-dual-use-metadata/
+      for (let attempt = 0; attempt <= 120; attempt++) {
         found = await lookup(artifact);
         if (found !== null) break;
         report("publish_pending", { name: artifact.name, version: artifact.version, attempt: attempt + 1 });
-        if (attempt < 60) await delay(5000);
+        if (attempt < 120) await delay(10000);
       }
     }
     ensure(found === artifact.integrity, `Published package integrity was not confirmed: ${artifact.name}@${artifact.version}`);

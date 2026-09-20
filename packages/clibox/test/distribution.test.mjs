@@ -169,13 +169,13 @@ test("publication waits for delayed registry metadata without repeating uploads"
       if (!uploaded.has(name)) return null;
       const count = (reads.get(name) ?? 0) + 1;
       reads.set(name, count);
-      return count <= 12 ? null : integrity;
+      return count <= 100 ? null : integrity;
     },
     publish: async ({ name }) => {
       assert.ok(!uploaded.has(name), "a successful upload must not be repeated");
       if (name === "@delino/clibox") {
         assert.equal(uploaded.size, 8);
-        assert.ok([...reads.values()].every((count) => count === 13));
+        assert.ok([...reads.values()].every((count) => count === 101));
       }
       uploaded.add(name);
     },
@@ -183,8 +183,8 @@ test("publication waits for delayed registry metadata without repeating uploads"
     report: (action, details) => reports.push({ action, ...details }),
   });
   assert.equal(uploaded.size, 9);
-  assert.equal(waits.length, 9 * 12);
-  assert.ok(waits.every((milliseconds) => milliseconds === 5000));
+  assert.equal(waits.length, 9 * 100);
+  assert.ok(waits.every((milliseconds) => milliseconds === 10000));
   assert.equal(reports.filter(({ action }) => action === "publish_pending").length, waits.length);
 });
 
@@ -195,9 +195,9 @@ test("conflicting remote bytes and unconfirmed uploads stop before main publicat
   let reads = 0;
   await assert.rejects(publishArtifacts(artifacts, { dryRun: false, lookup: async () => { reads++; return null; }, publish: async ({ name }) => written.push(name), delay: async (milliseconds) => waits.push(milliseconds), report: quiet }), /not confirmed/u);
   assert.deepEqual(written, [names[0]]);
-  assert.equal(reads, artifacts.length + 1 + 61);
-  assert.equal(waits.length, 60);
-  assert.equal(waits.reduce((sum, milliseconds) => sum + milliseconds, 0), 300000);
+  assert.equal(reads, artifacts.length + 1 + 121);
+  assert.equal(waits.length, 120);
+  assert.equal(waits.reduce((sum, milliseconds) => sum + milliseconds, 0), 1200000);
 });
 
 test("registry inspection distinguishes absent, unauthorized and malformed responses", async () => {
