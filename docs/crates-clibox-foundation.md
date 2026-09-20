@@ -11,10 +11,11 @@ Developers invoking a pinned CLI in terminals, npm scripts, portable local workf
 
 ## Interfaces and Contracts
 - `clibox`, `clibox --help`, and `clibox -h` print help to stdout and exit successfully; `--version`/`-V` print `clibox <Cargo package version>`.
+- `clibox run`, `clibox port`, `clibox clipboard`, `clibox wait`, `clibox dotenv`, and `clibox yaml` without a subcommand print the corresponding command's help on stderr, leave stdout empty, and exit 2. Explicit `--help`/`-h` for those commands prints help on stdout and exits 0. Preserve clap's generated `DisplayHelpOnMissingArgumentOrSubcommand` output without replacing it with a generic diagnostic.
 - `clibox wait tcp HOST:PORT [--timeout DURATION] [--interval DURATION] [--attempt-timeout DURATION] [--quiet | --json]`.
 - `clibox wait http URL [--method get|head] [--status CODE] [--timeout DURATION] [--interval DURATION] [--attempt-timeout DURATION] [--quiet | --json]`.
 - `clibox wait file PATH [--timeout DURATION] [--interval DURATION] [--quiet | --json]`.
-- Accept exactly one target. Missing, malformed, extra, unknown, or conflicting arguments exit 2 with static actionable English stderr diagnostics and no JSON. Never render clap's raw parser errors, which can contain sensitive argv. Help includes examples and command limitations. There is no public Rust library API.
+- Accept exactly one target. Missing targets and malformed, extra, unknown, or conflicting arguments exit 2 with static actionable English stderr diagnostics and no JSON. Only generated help/version output may bypass these diagnostics; never render clap's raw input-error diagnostics, which can contain sensitive argv. Help includes examples and command limitations. There is no public Rust library API.
 - Wait commands do not consume stdin, launch subsequent commands, reverse-wait, continuously monitor, or accept mixed/multiple targets.
 
 ### Utility commands
@@ -137,7 +138,7 @@ Wait signal handlers are installed only by the Tokio wait runtime. Configuration
 - Scheduler tests use paused time: immediate first checks, unlimited waiting, after-completion delays, clipped budgets, no overlapping polls, retry recovery, and cancellation/resource drop during checks and delays.
 - Loopback TCP/HTTP and isolated TLS fixtures cover DNS/IPv4/IPv6, multiple addresses/refusal/cleanup, GET/HEAD, statuses/transitions, redirect policy, delayed headers, nonterminating bodies, trusted/untrusted certificates, hostname mismatch, partial trust loading, malformed root entries, and trust loading without usable roots.
 - File/process fixtures cover empty/delayed/relative/Unicode files, symlinks/dangling links/loops/special files, metadata without content access, typed permissions/error races, parser validation, output/exit behavior, handled Unix signals and isolated-console Windows Ctrl+C, proxy isolation, and secret markers under detailed or invalid log filters.
-- `node-clibox-test` runs Cargo unit/process tests on Linux, macOS, and Windows. Release builds run those tests for all eight targets before packaging and preserve Alpine consumer validation. Cross-platform evidence is produced by those jobs; local validation alone does not claim all platforms were executed.
+- `node-clibox-test` runs Cargo unit/process tests on Linux, macOS, and Windows. Help assertions account for clap's platform-specific executable name, including `clibox.exe` on Windows. Release builds run those tests for all eight targets before packaging and preserve Alpine consumer validation. Cross-platform evidence is produced by those jobs; local validation alone does not claim all platforms were executed.
 - ring requires a C compiler at build time: MSVC on Windows, Xcode clang on macOS, and native C compilers on GNU Linux. Both musl jobs install `musl-tools` and set the target-specific `CC` to `musl-gcc` for ring, while the final linker remains pinned `rust-lld` with self-contained Rust runtime objects. No runtime OpenSSL/shared crypto dependency is added. Linux HTTPS consumers need their OS CA certificates, including Alpine `ca-certificates`.
 - Preserve Cargo/npm exact version synchronization, all eight native targets, script-free installation, and launcher argv/signal forwarding. Remove generated repository-owned `dist` after validation. No actual package publication is part of implementation.
 
@@ -155,7 +156,7 @@ Uses clap, serde/serde_json, regex, tracing/tracing-subscriber, tempfile, the pu
 
 A scanner adapter validates YAML 1.2 directives and resolves all document-local Core tag handles before grammar parsing, compensating for the parser's permissive version handling and loss of earlier tag directives; width-preserving token substitutions retain diagnostic positions. YAML resolution retains a shared reference graph and computes output size before emission; numeric lexemes never convert through machine numbers. Unix destination inspection uses a read descriptor or a non-truncating write-only descriptor when read access is denied; neither path reads or changes destination content before publication. Both retain no-follow/nonblocking flags and handle-based regular-file/link checks. Unix mode/owner/group and Linux/macOS ACL preservation use native OS APIs; Windows replacement retains its destination DACL. Unix staging directories enforce mode 0700 independently of umask, clear inherited macOS ACL grants before file creation, and remain alive through permission copying and atomic rename; failure/cancellation cleans up both file and directory. Before `ReplaceFileW`, close the staging writer because Windows opens the replacement without sharing; retain the temporary-path cleanup guard through the call so failures remove unpublished bytes.
 
-No new distribution channel, Homebrew, public GitHub Release binaries, docs website, or public library API is introduced.
+Homebrew, a dedicated docs website, and a public library API remain excluded. GNU Linux GitHub Release archives and stable APT/DNF packages use the release contract below.
 
 ## Change Triggers
 Update the project index, both domain contracts, relevant root/domain AGENTS rules, Cargo/npm READMEs, CLI help, tests, and applicable release workflows together when command behavior, privacy, naming, versions, platforms, dependencies, or publication changes.
@@ -164,3 +165,7 @@ Update the project index, both domain contracts, relevant root/domain AGENTS rul
 - [Project index](project-clibox.md)
 - [npm distribution](packages-clibox-distribution-contract.md)
 - [Repository defaults](repository-defaults.md)
+
+GNU Linux releases use the pinned AlmaLinux 9/glibc 2.34 build boundary for both npm and stable APT/DNF distribution. The same executable bytes pass ELF compatibility checks before signed GitHub publication; see [native repository ownership](repository-linux-packages-contract.md). Musl remains a separate npm target and desktop tools remain optional user-installed runtime capabilities.
+
+The isolated Windows Ctrl+C test helper must explicitly clear inherited Ctrl+C-ignore state before spawning clibox, including under Git Bash release jobs. Keep this normalization confined to the test-owned process and include helper stdout/stderr on failure; production signal behavior is unchanged.

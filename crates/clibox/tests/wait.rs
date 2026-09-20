@@ -58,7 +58,6 @@ fn json(output: &Output, code: i32) -> Value {
 #[test]
 fn invalid_inputs_are_redacted_and_never_emit_json() {
     let invalid: Vec<Vec<&str>> = vec![
-        vec!["wait"],
         vec!["wait", "tcp"],
         vec!["wait", "file", ""],
         vec!["wait", "tcp", "localhost"],
@@ -467,8 +466,9 @@ fn windows_ctrl_c_is_handled_in_an_isolated_console() {
         .unwrap();
     assert!(
         output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stdout)
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 
@@ -486,6 +486,12 @@ fn windows_ctrl_c_helper() {
     unsafe extern "system" fn ignore(_: u32) -> i32 {
         1
     }
+    // Git Bash can leave the inherited Ctrl+C-ignore attribute set even in this
+    // new console. Reset it only in our disposable helper before spawning the
+    // CLI. Remove this normalization only if the launcher guarantees an enabled
+    // attribute; a real handler alone does not reset the inherited attribute.
+    // https://learn.microsoft.com/en-us/windows/console/setconsolectrlhandler
+    assert_ne!(unsafe { SetConsoleCtrlHandler(None, 0) }, 0);
     // A real handler (rather than the inheritable ignore flag) protects only
     // this disposable helper. Its clibox child still receives real Ctrl+C.
     assert_ne!(unsafe { SetConsoleCtrlHandler(Some(ignore), 1) }, 0);

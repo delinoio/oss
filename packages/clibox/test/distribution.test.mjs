@@ -1,3 +1,5 @@
+import { stage } from '../scripts/github-release.mjs';
+import { extractExecutable } from '../../../scripts/release/linux-packages/model.mjs';
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs, { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -125,6 +127,12 @@ test("pack validates native executable versions and the complete nine-tarball bo
     assert.deepEqual(tarEntries(readFileSync(file)).get(`bin/${target.binary}`).bytes, payload);
   }
   assert.deepEqual(verifySet(tarballs, sourceRevision).map(({ name }) => name), names);
+  const staged = stage(tarballs, path.join(directory, "github"), sourceRevision, () => []);
+  for (const [cpu, arch] of [["x64", "amd64"], ["arm64", "arm64"]]) {
+    const artifact = verifySet(tarballs, sourceRevision).find(({ name }) => name === `@delino/clibox-linux-${cpu}-gnu`);
+    const binary = tarEntries(readFileSync(path.join(tarballs, artifact.filename))).get("bin/clibox").bytes;
+    assert.deepEqual(extractExecutable(staged.files.get(`clibox-linux-${arch}.tar.gz`), "clibox"), binary);
+  }
   writeFileSync(path.join(tarballs, "unexpected.txt"), "unexpected");
   assert.throws(() => verifySet(tarballs, sourceRevision), /exactly nine/u);
 });

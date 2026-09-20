@@ -301,9 +301,10 @@ fn parse_path(value: &std::ffi::OsStr) -> Result<PathBuf, &'static str> {
     Ok(PathBuf::from(value))
 }
 
-/// Never render clap errors: they may embed argv, credentials, and suggestions
-/// derived from a secret value. Only static, actionable guidance crosses
-/// stderr.
+/// Never render clap's input-error diagnostics: they may embed argv,
+/// credentials, and suggestions derived from a secret value. Generated help
+/// and version output are handled separately; other failures use static
+/// guidance.
 pub fn parser_message(kind: clap::error::ErrorKind) -> &'static str {
     use clap::error::ErrorKind;
     match kind {

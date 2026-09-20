@@ -6,7 +6,7 @@ channel=${3:?channel}
 arch=${4:?architecture}
 origin=${5:?origin}
 mode=${6:-fixture}
-case "$project" in binpm|cargo-mono|nodeup|with-watch|derun|runmoor) ;; *) exit 2 ;; esac
+case "$project" in binpm|cargo-mono|nodeup|with-watch|derun|runmoor|clibox) ;; *) exit 2 ;; esac
 name=delino
 if [ "$channel" = preview ]; then name=delino-preview; fi
 mkdir -p /root/.config/delino-package-test

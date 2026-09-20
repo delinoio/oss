@@ -16,13 +16,13 @@ test('native publication is gated by installation and confined to its environmen
   assert.deepEqual(workflow.jobs.install.strategy.matrix, workflow.jobs['public-install'].strategy.matrix);
   assert.equal(workflow.jobs['public-install'].needs, 'publish');
 });
-test('all six release workflows wait on native packages without changing release identity', () => {
-  for (const project of ['binpm', 'cargo-mono', 'nodeup', 'with-watch', 'derun', 'runmoor']) {
+test('all seven release workflows wait on native packages without changing release identity', () => {
+  for (const project of ['binpm', 'cargo-mono', 'nodeup', 'with-watch', 'derun', 'runmoor', 'clibox']) {
     const source = read(`.github/workflows/release-${project}.yml`);
     const release = yaml.load(source);
     const job = release.jobs['linux-packages'];
     assert.equal(job.uses, './.github/workflows/release-linux-packages.yml');
-    assert.ok(job.needs.includes('publish'));
+    assert.ok(job.needs.includes(project === 'clibox' ? 'publish-release' : 'publish'));
     assert.equal(job.with.project, project);
     assert.equal(job.with.mode, 'publish');
     assert.equal(job.with.revision, '${{ github.sha }}');

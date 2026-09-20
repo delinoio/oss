@@ -30,7 +30,7 @@ clibox clipboard copy [TEXT]
 clibox clipboard paste
 ```
 
-Use `--help` after any command for English help and examples. Running `clibox` without arguments displays help. Invalid or missing arguments return exit code **2**; runtime failures return **1**. `run env` forwards the child program's exit status and supported termination signals.
+Use `--help` after any command for English help and examples. Running `clibox` without arguments or using explicit `--help` prints help to stdout and returns exit code **0**. Running `clibox run`, `clibox port`, `clibox clipboard`, `clibox wait`, `clibox dotenv`, or `clibox yaml` without a subcommand prints that command's help to stderr and returns exit code **2**. Other invalid or missing arguments return exit code **2** with an error diagnostic; runtime failures return **1**. `run env` forwards the child program's exit status and supported termination signals.
 
 ### Run with environment variables
 
@@ -278,3 +278,7 @@ English structured diagnostics go to stderr, with warnings/errors enabled by def
 For syntax errors, inspect the reported input/document ordinal and line/column in your local input. For file errors, check access permissions, the destination's link status, and free space. For limit errors, reduce the input, nesting, or expanded YAML result. Argument errors intentionally omit supplied values: use the command's `--help` to check syntax. Share redacted diagnostics when requesting support; avoid sharing secret configuration values.
 
 Licensed under MIT.
+
+## Linux APT and DNF
+
+Native packages are not published yet. After the first native package release, register the stable repository using the [Linux package setup guide](https://oss.delino.io/linux-packages), including its key fingerprint check. Then install with `sudo apt-get install clibox` or `sudo dnf install clibox` and check `clibox --version`. Native installation does not require Node.js. Update with `sudo apt-get install --only-upgrade clibox` or `sudo dnf upgrade clibox`; remove with `sudo apt-get remove clibox` or `sudo dnf remove clibox`. Desktop helpers remain separately installed runtime capabilities.

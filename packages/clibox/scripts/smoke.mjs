@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -47,6 +47,10 @@ try {
     writeFileSync(path.join(consumer, "config.yaml"), "z: 2\na: 1\n");
     ensure(cli(["yaml", "normalize", "--input", "config.yaml", "--in-place"]) === "", `${manager} file output leaked to stdout`);
     ensure(readFileSync(path.join(consumer, "config.yaml"), "utf8") === '"a": 1\n"z": 2\n', `${manager} in-place smoke failed`);
+    for (const group of ["run", "port", "clipboard", "wait", "dotenv", "yaml"]) {
+      const missing = spawnSync(process.execPath, [launcher, group], { cwd: consumer, encoding: "utf8" });
+      ensure(missing.status === 2 && missing.stdout === "" && missing.stderr.includes(`Usage: ${target.binary} ${group}`) && missing.stderr.includes("Commands:"), `${manager} ${group} missing-subcommand help smoke failed`);
+    }
     const readyFile = path.join(consumer, "ready file");
     writeFileSync(readyFile, "");
     const ready = JSON.parse(execFileSync(process.execPath, [launcher, "wait", "file", readyFile, "--json", "--timeout", "5s"], { cwd: consumer, encoding: "utf8" }));

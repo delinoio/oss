@@ -124,7 +124,6 @@ fn explicit_files_do_not_consume_stdin_or_discover_parents() {
 fn cli_conflicts_are_redacted_usage_errors() {
     let dir = tempfile::tempdir().unwrap();
     for args in [
-        vec!["dotenv"],
         vec!["dotenv", "merge"],
         vec!["dotenv", "merge", "-", "-"],
         vec!["dotenv", "list", "--force"],

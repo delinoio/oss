@@ -49,4 +49,4 @@ Update this index, the command contract, relevant AGENTS files, CLI/config/JSON 
 
 ## Native Linux packages
 
-Follow `docs/repository-linux-packages-contract.md` for APT/DNF release publication, supported systems, signatures, and recovery. Runmoor is preview-only and package installation never registers or starts a service.
+Follow `docs/repository-linux-packages-contract.md` for APT/DNF release publication, supported systems, signatures, and recovery. Runmoor uses stable and package installation never registers or starts a service.

@@ -64,10 +64,13 @@ fn main() {
         Err(error)
             if matches!(
                 error.kind(),
-                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
+                clap::error::ErrorKind::DisplayHelp
+                    | clap::error::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+                    | clap::error::ErrorKind::DisplayVersion
             ) =>
         {
-            std::process::exit(if error.print().is_ok() { 0 } else { 1 });
+            let code = error.exit_code();
+            std::process::exit(if error.print().is_ok() { code } else { 1 });
         }
         Err(error) => {
             let message = cli::parser_message(error.kind());
