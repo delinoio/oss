@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -36,11 +37,21 @@ func OpenStore(root string) (*Store, error) {
 			return nil, err
 		}
 	}
-	path := filepath.Join(root, "state.sqlite")
+	path, err := filepath.Abs(filepath.Join(root, "state.sqlite"))
+	if err != nil {
+		return nil, err
+	}
 	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
 		return nil, E("unsafe-state", "state database cannot be a symlink", 3)
 	}
-	db, err := sql.Open("sqlite", filepath.ToSlash(path)+"?_pragma=busy_timeout(15000)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)&_txlock=immediate")
+	// Keep filename bytes out of the URI query; a literal ? or # in state_dir
+	// must never change the database location or its connection parameters.
+	uriPath := filepath.ToSlash(path)
+	if !strings.HasPrefix(uriPath, "/") {
+		uriPath = "/" + uriPath
+	} // Windows drive letter.
+	uri := url.URL{Scheme: "file", Path: uriPath, RawQuery: "_pragma=busy_timeout(15000)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)&_txlock=immediate"}
+	db, err := sql.Open("sqlite", uri.String())
 	if err != nil {
 		return nil, err
 	}

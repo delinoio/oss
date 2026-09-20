@@ -111,3 +111,5 @@
 - Pre-push appends a selected gate before any post-acceptance startup/read/wait operation. Startup errors retain its saved run ID, commit and state plus a startup-failed recovery diagnostic; retries reuse the pending attempt and prior tip results remain visible.
 
 - Decode bounded, versioned, worktree-scoped branch identities before source/history queries. Preserve exact raw bytes for retained history even when the checkout is unavailable; reject conflicting legacy selectors.
+
+- Build SQLite file URIs from escaped absolute filename paths; state directory bytes must never become query/fragment parameters. Preserve WAL, FULL synchronization, foreign keys and immediate transactions.

@@ -169,3 +169,5 @@ All exact-commit gates, including check and every pre-push policy, reselect the 
 Working-tree config validate applies the same 1 MiB plus one overflow byte read limit as committed configuration before parsing. A growing or oversized input returns invalid-config (exit 2) without whole-file allocation; ordinary I/O failures remain errors.
 
 The local API carries worktree-scoped opaque branch identities separately from normalized labels. Source queries resolve those identities to exact raw Git refs, while run-list filtering uses the original SQLite branch bytes and remains available after source removal. Conflicting legacy selectors and identities are rejected.
+
+Configured state paths use escaped absolute [SQLite file URIs](https://www.sqlite.org/uri.html), preserving literal URI punctuation and raw Unix filename bytes independently of fixed connection parameters. Database reopening retains the same file and durability settings.
