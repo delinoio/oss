@@ -35,7 +35,22 @@ fn destination(path: &Path) -> Result<Option<(File, Metadata)>> {
         use std::os::windows::fs::OpenOptionsExt;
         options.custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT);
     }
-    let file = options.open(path).map_err(|_| Failure::Permissions)?;
+    let file = match options.open(path) {
+        Ok(file) => file,
+        #[cfg(unix)]
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            // Replacement reads metadata/ACLs, never destination content. A
+            // write-only descriptor supports those operations too, so retain
+            // write-only outputs without requiring read access. Keep NOFOLLOW
+            // and NONBLOCK, and never truncate or write through this handle.
+            options
+                .read(false)
+                .write(true)
+                .open(path)
+                .map_err(|_| Failure::Permissions)?
+        }
+        Err(_) => return Err(Failure::Permissions.into()),
+    };
     let metadata = file.metadata().map_err(|_| Failure::Permissions)?;
     if !metadata.is_file() {
         return Err(Failure::UnsafeDestination.into());

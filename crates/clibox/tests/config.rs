@@ -462,6 +462,38 @@ fn publication_failures_links_and_directory_destinations() {
     no_temps(dir.path());
 }
 
+#[cfg(unix)]
+#[test]
+fn replacement_preserves_read_only_and_write_only_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("out");
+    for mode in [0o400, 0o200] {
+        fs::write(&output, "original").unwrap();
+        fs::set_permissions(&output, fs::Permissions::from_mode(mode)).unwrap();
+        let result = run(
+            dir.path(),
+            &["dotenv", "merge", "-", "--output", "out", "--force"],
+            b"A=replaced",
+        );
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(result.stdout.is_empty());
+        assert_eq!(
+            fs::metadata(&output).unwrap().permissions().mode() & 0o777,
+            mode
+        );
+        // Restore read access only after verifying the published permissions.
+        fs::set_permissions(&output, fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(fs::read(&output).unwrap(), b"A=replaced\n");
+        no_temps(dir.path());
+    }
+}
+
 #[test]
 fn debug_diagnostics_never_disclose_input_keys_values_paths_or_argv() {
     let dir = tempfile::tempdir().unwrap();
