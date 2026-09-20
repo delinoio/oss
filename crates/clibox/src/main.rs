@@ -315,6 +315,10 @@ fn main() {
     let filter =
         tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into());
     tracing_subscriber::fmt()
+        // The subscriber's fallback uses eprintln!, which panics on closed
+        // stderr and can recursively panic through our redacted panic hook.
+        // Failed diagnostics must not change command or cancellation status.
+        .log_internal_errors(false)
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
         .with_ansi(std::io::stderr().is_terminal() && std::env::var_os("NO_COLOR").is_none())

@@ -542,6 +542,40 @@ fn broken_stdout_is_a_redacted_runtime_failure() {
     assert!(String::from_utf8_lossy(&result.stderr).contains("Write"));
 }
 
+#[test]
+fn closed_stderr_preserves_success_and_runtime_failure_statuses() {
+    use std::io::{BufRead, BufReader};
+
+    for (input, code, expected) in [("A=1", 0, "A=1\n"), ("invalid", 1, "")] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut child = command(dir.path())
+            .args(["dotenv", "merge", "-"])
+            .env("RUST_LOG", "clibox=debug")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stderr = BufReader::new(child.stderr.take().unwrap());
+        let mut ready = String::new();
+        stderr.read_line(&mut ready).unwrap();
+        assert!(ready.contains("operation_started"));
+        // Close the diagnostic consumer before allowing processing to finish.
+        // Both completion and content-error diagnostics must tolerate this.
+        drop(stderr);
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(input.as_bytes())
+            .unwrap();
+        wait(&mut child);
+        let result = child.wait_with_output().unwrap();
+        assert_eq!(result.status.code(), Some(code));
+        assert_eq!(result.stdout, expected.as_bytes());
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn signals_interrupt_blocked_stdin_and_stdout_with_expected_codes() {
@@ -576,6 +610,8 @@ fn signals_interrupt_blocked_stdin_and_stdout_with_expected_codes() {
                 let mut chunk = [0; 1];
                 std::io::Read::read_exact(child.stdout.as_mut().unwrap(), &mut chunk).unwrap();
             }
+            // Cancellation diagnostics must tolerate a closed stderr consumer.
+            drop(stderr);
             assert_eq!(unsafe { libc::kill(child.id() as i32, signal) }, 0);
             wait(&mut child);
             assert_eq!(child.wait().unwrap().code(), Some(code));
@@ -686,10 +722,11 @@ fn windows_console_interrupt_cleans_up_and_returns_130() {
         .spawn()
         .unwrap();
     let mut ready = String::new();
-    BufReader::new(child.stderr.take().unwrap())
-        .read_line(&mut ready)
-        .unwrap();
+    let mut stderr = BufReader::new(child.stderr.take().unwrap());
+    stderr.read_line(&mut ready).unwrap();
     assert!(ready.contains("operation_started"));
+    // Also exercise cancellation after the diagnostic consumer has gone away.
+    drop(stderr);
     // CTRL_BREAK is the targeted Windows console interrupt; CTRL_C cannot be
     // scoped to a process group. Both use the same installed ctrlc callback.
     assert_ne!(
