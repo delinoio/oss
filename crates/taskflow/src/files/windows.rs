@@ -13,19 +13,19 @@ use windows_sys::{
     Wdk::{
         Foundation::OBJECT_ATTRIBUTES,
         Storage::FileSystem::{
-            NtOpenFile, RtlDosPathNameToNtPathName_U_WithStatus, FILE_OPEN_FOR_BACKUP_INTENT,
-            FILE_SYNCHRONOUS_IO_NONALERT,
+            FileStandardInformation, NtOpenFile, NtQueryInformationFile,
+            RtlDosPathNameToNtPathName_U_WithStatus, FILE_OPEN_FOR_BACKUP_INTENT,
+            FILE_STANDARD_INFORMATION, FILE_SYNCHRONOUS_IO_NONALERT,
         },
     },
     Win32::{
         Foundation::{
             RtlNtStatusToDosError, NTSTATUS, OBJ_CASE_INSENSITIVE, STATUS_DELETE_PENDING,
-            UNICODE_STRING,
+            STATUS_FILE_DELETED, UNICODE_STRING,
         },
         Storage::FileSystem::{
-            FileStandardInfo, GetFileInformationByHandleEx, GetFinalPathNameByHandleW,
-            FILE_NAME_NORMALIZED, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
-            FILE_SHARE_WRITE, FILE_STANDARD_INFO, SYNCHRONIZE, VOLUME_NAME_DOS,
+            GetFinalPathNameByHandleW, FILE_NAME_NORMALIZED, FILE_READ_ATTRIBUTES,
+            FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, SYNCHRONIZE, VOLUME_NAME_DOS,
         },
         System::{WindowsProgramming::RtlFreeUnicodeString, IO::IO_STATUS_BLOCK},
     },
@@ -37,11 +37,22 @@ pub(super) fn canonicalize(path: &Path) -> io::Result<PathBuf> {
 }
 
 fn nt_error(status: NTSTATUS) -> io::Error {
-    if status == STATUS_DELETE_PENDING {
+    if matches!(status, STATUS_DELETE_PENDING | STATUS_FILE_DELETED) {
         io::Error::from(io::ErrorKind::NotFound)
     } else {
         io::Error::from_raw_os_error(unsafe { RtlNtStatusToDosError(status) } as i32)
     }
+}
+
+fn native_error(operation: &str, status: NTSTATUS) -> io::Error {
+    let error = nt_error(status);
+    tracing::debug!(operation, status, "Windows native path operation failed");
+    // Keep the stage and native status in returned errors as well: callers and
+    // test harnesses may not have a tracing subscriber installed.
+    io::Error::new(
+        error.kind(),
+        format!("Windows {operation} failed (NTSTATUS {status:#010x}): {error}"),
+    )
 }
 
 fn open_path(path: &Path) -> io::Result<File> {
@@ -64,12 +75,7 @@ fn open_path(path: &Path) -> io::Result<File> {
         )
     };
     if converted < 0 {
-        tracing::debug!(
-            operation = "convert-path",
-            status = converted,
-            "Windows path conversion failed"
-        );
-        return Err(nt_error(converted));
+        return Err(native_error("convert-path", converted));
     }
     let attributes = OBJECT_ATTRIBUTES {
         Length: std::mem::size_of::<OBJECT_ATTRIBUTES>() as u32,
@@ -97,8 +103,7 @@ fn open_path(path: &Path) -> io::Result<File> {
         RtlFreeUnicodeString(&mut name);
     }
     if status < 0 {
-        tracing::debug!(operation = "open-path", status, "Windows path open failed");
-        return Err(nt_error(status));
+        return Err(native_error("open-path", status));
     }
     // NtOpenFile transferred ownership of a successful, non-inheritable handle.
     Ok(unsafe { File::from_raw_handle(handle) })
@@ -128,7 +133,10 @@ fn resolve_handle_path(file: &File) -> io::Result<PathBuf> {
                 code = error.raw_os_error(),
                 "Windows handle path lookup failed"
             );
-            return Err(error);
+            return Err(io::Error::new(
+                error.kind(),
+                format!("Windows final-path lookup failed: {error}"),
+            ));
         }
         if length < buffer.len() {
             break length;
@@ -146,23 +154,23 @@ fn validate_handle_path(file: &File, resolved: io::Result<PathBuf>) -> io::Resul
     // A second path open could observe a replacement file instead. Return
     // NotFound for this deleted handle before propagating a lookup error, but
     // preserve permission errors for live files and metadata-query failures.
-    let mut info = FILE_STANDARD_INFO::default();
-    if unsafe {
-        GetFileInformationByHandleEx(
+    // The query can itself race deletion after a successful open. The Win32
+    // wrapper also maps native deletion errors to ERROR_ACCESS_DENIED, so retain
+    // NTSTATUS here just as we do for NtOpenFile. Never infer deletion from an
+    // undifferentiated access-denied error or from a second path open.
+    let mut info = FILE_STANDARD_INFORMATION::default();
+    let mut status_block = IO_STATUS_BLOCK::default();
+    let status = unsafe {
+        NtQueryInformationFile(
             handle,
-            FileStandardInfo,
+            &mut status_block,
             &mut info as *mut _ as _,
             std::mem::size_of_val(&info) as u32,
+            FileStandardInformation,
         )
-    } == 0
-    {
-        let error = io::Error::last_os_error();
-        tracing::debug!(
-            operation = "deletion-state",
-            code = error.raw_os_error(),
-            "Windows handle deletion query failed"
-        );
-        return Err(error);
+    };
+    if status < 0 {
+        return Err(native_error("deletion-state", status));
     }
     if info.DeletePending || info.NumberOfLinks == 0 {
         return Err(io::Error::from(io::ErrorKind::NotFound));
@@ -173,6 +181,38 @@ fn validate_handle_path(file: &File, resolved: io::Result<PathBuf>) -> io::Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_deletion_errors_remain_distinct_from_access_denial() {
+        use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, STATUS_ACCESS_DENIED};
+
+        // All three statuses lose their distinction at the Win32 boundary.
+        // Both native operations must preserve missing-file recovery without
+        // allowing live permission failures to fall back to the parent path.
+        for operation in ["open-path", "deletion-state"] {
+            for status in [
+                STATUS_DELETE_PENDING,
+                STATUS_FILE_DELETED,
+                STATUS_ACCESS_DENIED,
+            ] {
+                assert_eq!(
+                    unsafe { RtlNtStatusToDosError(status) },
+                    ERROR_ACCESS_DENIED
+                );
+                let error = native_error(operation, status);
+                assert_eq!(
+                    error.kind(),
+                    if status == STATUS_ACCESS_DENIED {
+                        io::ErrorKind::PermissionDenied
+                    } else {
+                        io::ErrorKind::NotFound
+                    }
+                );
+                assert!(error.to_string().contains(operation));
+                assert!(error.to_string().contains(&format!("{status:#010x}")));
+            }
+        }
+    }
 
     #[test]
     fn native_metadata_open_resolves_live_files_and_directories() {
@@ -202,6 +242,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("pending");
         std::fs::write(&path, "pending deletion").unwrap();
+        let metadata = open_path(&path).unwrap();
         let owner = std::fs::OpenOptions::new()
             .access_mode(DELETE)
             .open(&path)
@@ -225,10 +266,15 @@ mod tests {
             io::ErrorKind::NotFound
         );
         assert_eq!(
+            canonicalize_handle(&metadata).unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
+        assert_eq!(
             nt_error(STATUS_ACCESS_DENIED).kind(),
             io::ErrorKind::PermissionDenied
         );
         drop(owner);
+        drop(metadata);
         std::fs::write(&path, "replacement").unwrap();
         assert_eq!(canonicalize(&path).unwrap(), path.canonicalize().unwrap());
     }
