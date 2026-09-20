@@ -4,6 +4,15 @@ use std::{fs, process::Command, time::Duration};
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
+        #[cfg(unix)]
+        "transient-symlink" => {
+            std::os::unix::fs::symlink(&args[1], "transient").unwrap();
+            assert_eq!(
+                fs::read_to_string("transient/input.txt").unwrap(),
+                "external"
+            );
+            fs::remove_file("transient").unwrap();
+        }
         #[cfg(target_os = "linux")]
         "syscall-arities" => {
             // SAFETY: each libc syscall receives precisely its documented

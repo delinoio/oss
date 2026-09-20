@@ -650,3 +650,7 @@ Imported known filesystem states require the collector's kind-specific metadata:
 file size/digest and Unix executable bit, directory membership digest, or symlink
 target. Inapplicable metadata and known special-file states are rejected. Equal
 empty metadata cannot establish known equality in offline verification.
+
+An access beneath a vanished ancestor absent from both observations is outside
+known snapshot scope: the ancestor could have been a transient external symlink.
+Missing leaf attempts remain distinct from this unknown ancestor identity.

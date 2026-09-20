@@ -413,15 +413,25 @@ fn observed_in_scope(
         {
             break;
         }
-        if std::fs::symlink_metadata(ancestor).is_ok_and(|metadata| metadata.is_symlink()) {
+        let current = std::fs::symlink_metadata(ancestor).ok();
+        let Ok(previous) = before.get(&redactor.path(ancestor)) else {
+            return false;
+        };
+        if current
+            .as_ref()
+            .is_some_and(|metadata| metadata.is_symlink())
+            || previous.as_ref().is_some_and(|state| {
+                state.kind == Some(FileKind::Symlink) || state.knowledge == Knowledge::Unknown
+            })
+        {
             return false;
         }
-        if before
-            .get(&redactor.path(ancestor))
-            .ok()
-            .flatten()
-            .is_some_and(|state| {
-                state.kind == Some(FileKind::Symlink) || state.knowledge == Knowledge::Unknown
+        // A missing leaf is a valid failed attempt. A missing ancestor can
+        // instead have been a transient symlink into an external directory.
+        if ancestor != path
+            && !current.as_ref().is_some_and(|metadata| metadata.is_dir())
+            && !previous.as_ref().is_some_and(|state| {
+                state.knowledge == Knowledge::Known && state.kind == Some(FileKind::Directory)
             })
         {
             return false;

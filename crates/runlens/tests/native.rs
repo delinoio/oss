@@ -2803,3 +2803,40 @@ fn report_parser_requires_kind_specific_known_metadata() {
         assert!(report::validate(&value).is_err());
     }
 }
+
+#[test]
+#[cfg(unix)]
+fn vanished_symlink_ancestor_cannot_establish_workspace_scope() {
+    let root = tempfile::tempdir().unwrap();
+    let external = tempfile::tempdir().unwrap();
+    fs::write(external.path().join("input.txt"), "external").unwrap();
+    let output = invoke(
+        root.path(),
+        &[
+            "run",
+            "--save",
+            "alias.json",
+            "--",
+            fixture(),
+            "transient-symlink",
+            external.path().to_str().unwrap(),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value = parse(root.path(), "alias.json");
+    assert_eq!(
+        value["executions"][0]["accesses"]["${workspace}/transient/input.txt"]["in_scope"],
+        false
+    );
+    assert!(!root.path().join("transient").exists());
+    assert_eq!(
+        invoke(root.path(), &["policy", "check", "alias.json", "--json"])
+            .status
+            .code(),
+        Some(4)
+    );
+}
