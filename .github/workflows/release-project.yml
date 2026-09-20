@@ -84,34 +84,8 @@ jobs:
           RELEASE_BOT_EMAIL: ${{ steps.identity.outputs.email }}
         run: node scripts/release/project.mjs prepare
 
-  ci:
-    needs: prepare
-    runs-on: ubuntu-latest
-    timeout-minutes: 245
-    permissions:
-      contents: read
-      actions: read
-    outputs:
-      url: ${{ steps.wait.outputs.ci_url }}
-    env:
-      RELEASE_REVISION: ${{ needs.prepare.outputs.revision }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.prepare.outputs.revision }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-node@v6
-        with:
-          node-version-file: .nvmrc
-      - name: Wait for the exact commit CI Result
-        id: wait
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/release/project.mjs wait-ci
-
   registry:
-    needs: [prepare, ci]
+    needs: [prepare]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -174,7 +148,7 @@ jobs:
 
   summary:
     if: always()
-    needs: [prepare, ci, registry, tag]
+    needs: [prepare, registry, tag]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -193,11 +167,8 @@ jobs:
             '| Phase | Result |', '| --- | --- |',
             ...Object.entries(jobs).map(([name, job]) => `| ${name} | ${job.result} |`), '',
           ];
-          for (const url of [jobs.ci.outputs.url]) {
-            if (url) lines.push(`[${url.includes('/releases/') ? 'Release' : 'Workflow run'}](${url})`, '');
-          }
           const failed = Object.entries(jobs).filter(([, job]) => job.result !== 'success').map(([name]) => name);
-          if (failed.length) lines.push(`Incomplete phases: ${failed.join(', ')}. Resolve the failed exact-commit workflow, then rerun this release run to reuse its version.`);
+          if (failed.length) lines.push(`Incomplete phases: ${failed.join(', ')}. Fix the failed phase, then rerun this release run to reuse any recorded version.`);
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
           if (failed.length) process.exitCode = 1;
           JS
