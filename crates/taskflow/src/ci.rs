@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     cache::{self, Artifact},
-    discover::{Coverage, ProjectEdge, Workspace},
+    discover::{Coverage, PlatformDefaults, ProjectEdge, Workspace},
     files,
     graph::Graph,
     plan::Plan,
@@ -28,6 +28,8 @@ pub struct Blueprint {
     pub edges: BTreeSet<ProjectEdge>,
     pub coverage: Vec<Coverage>,
     pub units: Vec<Unit>,
+    #[serde(default, skip_serializing_if = "PlatformDefaults::is_empty")]
+    pub platform_defaults: PlatformDefaults,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Unit {
@@ -267,6 +269,7 @@ impl Blueprint {
         Ok(Self {
             version: 1,
             manifests: manifest_state(graph)?,
+            platform_defaults: graph.workspace.platform_defaults,
             targets,
             edges: graph.workspace.edges.clone(),
             coverage: graph.workspace.coverage.clone(),
@@ -300,6 +303,10 @@ impl Blueprint {
         // installation before Cargo's offline metadata cache has been populated.
         workspace.edges = self.edges.clone();
         workspace.coverage = self.coverage.clone();
+        // Reapply export-time defaults before resolving platform-conditional
+        // edges. Explicit task components still win on every runner host.
+        workspace =
+            workspace.select_platform(self.platform_defaults.os, self.platform_defaults.arch);
         workspace.generation = self.digest()?;
         Graph::build(workspace)
     }

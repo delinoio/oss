@@ -34,6 +34,18 @@ pub struct Coverage {
     pub complete: bool,
     pub message: String,
 }
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlatformDefaults {
+    pub os: Option<config::Os>,
+    pub arch: Option<config::Arch>,
+}
+impl PlatformDefaults {
+    pub fn is_empty(&self) -> bool {
+        self.os.is_none() && self.arch.is_none()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Workspace {
     pub root: PathBuf,
@@ -43,6 +55,8 @@ pub struct Workspace {
     pub coverage: Vec<Coverage>,
     pub metadata_files: BTreeSet<PathBuf>,
     pub generation: String,
+    #[serde(default, skip_serializing_if = "PlatformDefaults::is_empty")]
+    pub platform_defaults: PlatformDefaults,
 }
 
 pub async fn locate_root(start: &Path) -> Result<PathBuf> {
@@ -155,6 +169,8 @@ impl Workspace {
         if os.is_none() && arch.is_none() {
             return self;
         }
+        self.platform_defaults.os = self.platform_defaults.os.or(os);
+        self.platform_defaults.arch = self.platform_defaults.arch.or(arch);
         for config in self
             .projects
             .values_mut()
@@ -204,6 +220,7 @@ impl Workspace {
             coverage: vec![],
             metadata_files: BTreeSet::new(),
             generation: String::new(),
+            platform_defaults: PlatformDefaults::default(),
         };
         ws.add_project(&root, "root")?;
         let mut manifests = ws.config.workspace.manifests.clone();

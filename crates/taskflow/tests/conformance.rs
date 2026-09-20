@@ -84,6 +84,13 @@ async fn cargo_target_selectors_follow_the_selected_platform() {
     )
     .await
     .unwrap();
+    let config_path = directory.path().join("taskflow.yml");
+    let mut cfg: Value = serde_yaml::from_slice(&std::fs::read(&config_path).unwrap()).unwrap();
+    cfg["tasks"]["fixed"] = json!({"command":command(&["version"]),"input":[],"output":[],"platform":{"os":"linux","arch":"arm64"}});
+    cfg["ci"] = json!({"revision":"1111111111111111111111111111111111111111","rust":"nightly-2026-01-01","runners":{
+        "linux-x64":"linux", "linux-arm64":"linux-arm", "macos-x64":"macos", "macos-arm64":"macos-arm", "windows-x64":"windows", "windows-arm64":"windows-arm"
+    }});
+    std::fs::write(&config_path, serde_yaml::to_string(&cfg).unwrap()).unwrap();
     let workspace = Workspace::discover(directory.path()).await.unwrap();
     assert!(workspace.complete(), "{:?}", workspace.coverage);
     assert!(workspace
@@ -102,6 +109,42 @@ async fn cargo_target_selectors_follow_the_selected_platform() {
                 },
                 "{os:?} {arch:?}"
             );
+            let targets = vec!["a#build".into(), "fixed".into()];
+            let blueprint = taskflow::ci::Blueprint::new(&g, targets.clone()).unwrap();
+            let serialized = serde_json::to_vec(&blueprint).unwrap();
+            let blueprint: taskflow::ci::Blueprint = serde_json::from_slice(&serialized).unwrap();
+            let restored = blueprint.graph(directory.path()).await.unwrap();
+            assert_eq!(
+                restored.prerequisites("a#build"),
+                g.prerequisites("a#build")
+            );
+            for id in g.tasks.keys() {
+                assert_eq!(
+                    restored.tasks[id].task.platform.key(),
+                    g.tasks[id].task.platform.key()
+                );
+            }
+            assert_eq!(
+                restored.tasks["app#fixed"].task.platform.key(),
+                "linux-arm64"
+            );
+            for affected in [false, true] {
+                let changes = if affected {
+                    vec![PathBuf::from("b/src/lib.rs")]
+                } else {
+                    vec![]
+                };
+                let expected = Plan::create(&g, &targets, &changes, affected).unwrap();
+                let actual = Plan::create(&restored, &targets, &changes, affected).unwrap();
+                assert_eq!(actual.order, expected.order);
+                assert_eq!(actual.causes, expected.causes);
+            }
+            let reconstructed = taskflow::ci::Blueprint::new(&restored, targets).unwrap();
+            assert_eq!(
+                serde_json::to_value(&blueprint.units).unwrap(),
+                serde_json::to_value(&reconstructed.units).unwrap()
+            );
+            assert_eq!(blueprint.digest().unwrap(), reconstructed.digest().unwrap());
         }
     }
     // An explicit Cargo compilation target is independent of the host running
