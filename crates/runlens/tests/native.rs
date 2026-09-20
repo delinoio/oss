@@ -2044,3 +2044,103 @@ fn write_allowlists_cover_ancestor_membership_but_not_forbidden_siblings() {
         );
     }
 }
+
+#[cfg(unix)]
+fn check_removal_attempt(executable: &str, mode: &str, missing: bool) {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let outside = outside.path().canonicalize().unwrap();
+    let path = outside.join("blocked");
+    if !missing {
+        if mode == "delete-rmdir" || mode == "delete-directory-at" {
+            fs::create_dir(&path).unwrap();
+        } else {
+            fs::write(&path, "external content").unwrap();
+        }
+    }
+    fs::write(
+        root.path().join("runlens.toml"),
+        format!(
+            "schema_version=1\n[policy]\ndeny_writes=[{:?}]\n",
+            path.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+    let output = invoke(
+        root.path(),
+        &[
+            "run",
+            "--save",
+            "removed.json",
+            "--",
+            executable,
+            mode,
+            path.to_str().unwrap(),
+            outside.to_str().unwrap(),
+            if missing { "missing" } else { "present" },
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{mode}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value = parse(root.path(), "removed.json");
+    let execution = &value["executions"][0];
+    assert_eq!(execution["outcome"]["collection_complete"], true);
+    assert_eq!(execution["accesses"][path.to_str().unwrap()]["write"], true);
+    assert_eq!(
+        execution["accesses"][path.to_str().unwrap()]["in_scope"],
+        false
+    );
+    assert!(execution["changes"].get(path.to_str().unwrap()).is_none());
+    assert!(!path.exists());
+    assert_eq!(
+        invoke(root.path(), &["policy", "check", "removed.json", "--json"])
+            .status
+            .code(),
+        Some(5)
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn removal_attempts_cover_external_file_and_directory_boundaries() {
+    for mode in [
+        "delete-unlink",
+        "delete-unlinkat",
+        "delete-unlinkat-relative",
+        "delete-rmdir",
+        "delete-directory-at",
+        "delete-remove",
+    ] {
+        for missing in [false, true] {
+            check_removal_attempt(fixture(), mode, missing);
+        }
+    }
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn static_linux_removal_syscalls_cannot_pass_external_write_denials() {
+    let Ok(executable) = std::env::var("RUNLENS_STATIC_FIXTURE") else {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "CI requires a real static Linux fixture"
+        );
+        return;
+    };
+    for mode in [
+        #[cfg(target_arch = "x86_64")]
+        "delete-unlink",
+        #[cfg(target_arch = "x86_64")]
+        "delete-rmdir",
+        "delete-unlinkat",
+        "delete-unlinkat-relative",
+        "delete-directory-at",
+    ] {
+        for missing in [false, true] {
+            check_removal_attempt(&executable, mode, missing);
+        }
+    }
+}

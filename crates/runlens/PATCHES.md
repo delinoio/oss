@@ -78,3 +78,11 @@ and failed rename fixtures verify both paths, actual deletion versus mere attemp
 and external deny-write policy failures. Linux CI repeats these cases with the
 static fixture. Remove this patch when upstream records both rename endpoints and
 marks unresolved arguments as incomplete while preserving the child operation.
+
+Unix path removal hooks cover unlink, unlinkat (including AT_REMOVEDIR), rmdir,
+and the libc remove wrapper. Linux seccomp covers the corresponding raw syscalls
+for static children. Paths are write attempts even on failure; resolution failures
+remain incomplete without cancelling the syscall. Native successful/missing file
+and directory fixtures exercise external deny-write rules, absolute and dirfd
+paths, and absence of invented external snapshot changes. Remove this patch when
+upstream covers this removal family with the same failure and evidence semantics.

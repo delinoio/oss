@@ -58,6 +58,42 @@ fn main() {
             };
             assert_eq!(result == 0, args[1] == "input.txt");
         }
+        #[cfg(unix)]
+        "delete-unlink"
+        | "delete-unlinkat"
+        | "delete-unlinkat-relative"
+        | "delete-rmdir"
+        | "delete-directory-at"
+        | "delete-remove" => {
+            use std::{ffi::CString, os::fd::AsRawFd};
+            let path = CString::new(args[1].as_str()).unwrap();
+            let directory = fs::File::open(&args[2]).unwrap();
+            let relative = CString::new(
+                std::path::Path::new(&args[1])
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+            )
+            .unwrap();
+            // SAFETY: all path strings and the directory descriptor remain live.
+            let result = unsafe {
+                match args[0].as_str() {
+                    "delete-unlink" => libc::unlink(path.as_ptr()),
+                    "delete-rmdir" => libc::rmdir(path.as_ptr()),
+                    "delete-remove" => libc::remove(path.as_ptr()),
+                    "delete-unlinkat" => libc::unlinkat(libc::AT_FDCWD, path.as_ptr(), 0),
+                    "delete-unlinkat-relative" => {
+                        libc::unlinkat(directory.as_raw_fd(), relative.as_ptr(), 0)
+                    }
+                    "delete-directory-at" => {
+                        libc::unlinkat(directory.as_raw_fd(), relative.as_ptr(), libc::AT_REMOVEDIR)
+                    }
+                    _ => unreachable!(),
+                }
+            };
+            assert_eq!(result == 0, args[3] == "present");
+        }
         "policy-write" => {
             let output = std::path::Path::new(&args[1]);
             fs::create_dir_all(output.parent().unwrap()).unwrap();

@@ -2,6 +2,7 @@ mod execve;
 mod getdents;
 mod open;
 mod rename;
+mod remove;
 mod stat;
 
 use std::{
@@ -82,6 +83,10 @@ impl_handler!(
     #[cfg(target_arch = "x86_64")] rename,
     renameat,
     renameat2,
+
+    #[cfg(target_arch = "x86_64")] unlink,
+    #[cfg(target_arch = "x86_64")] rmdir,
+    unlinkat,
 
     #[cfg(target_arch = "x86_64")] getdents,
     getdents64,

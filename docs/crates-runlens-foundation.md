@@ -596,3 +596,9 @@ known allowed descendant changes. The bounded ancestor index follows concrete
 changed paths, including wildcard patterns, rather than permitting the whole root.
 Every sibling and leaf is still checked; explicit denies, direct write attempts,
 unknown evidence, and directory type changes retain their original classification.
+
+Unix removal collection covers unlink, unlinkat, rmdir, and libc remove. File and
+directory removals, including directory-relative AT_REMOVEDIR, are write attempts
+on the named path. Linux seccomp covers native static syscall callers as well.
+Missing-path failures retain attempts, and external changes are never invented
+as snapshot evidence; external deny-write policies still see the attempted path.
