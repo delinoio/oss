@@ -109,6 +109,12 @@ test("workspace, shared, runtime, and external contract inputs select their owne
     [".nvmrc", ["node-mpapp-test", "devhud-frontend", "devhud-api", "repository-environment"]],
     ["pnpm-lock.yaml", ["node-mpapp-test", "node-public-docs-test", "devhud-admin", "devhud-api", "devhud-frontend"]],
     [".cargo/config.toml", ["rust-fmt", "rust-clippy", "rust-test", "devhud-rust-conformance"]],
+    ["crates/binpm/src/main.rs", ["linux-packages"]],
+    ["crates/cargo-mono/src/main.rs", ["linux-packages"]],
+    ["crates/nodeup/src/main.rs", ["linux-packages"]],
+    ["crates/with-watch/src/main.rs", ["linux-packages"]],
+    ["rust-toolchain.toml", ["linux-packages"]],
+    ["Cargo.lock", ["linux-packages"]],
   ]) {
     for (const id of ids) assert.ok(selected(Event.PullRequest, [path]).includes(id), `${path}: ${id}`);
   }

@@ -38,6 +38,10 @@
 - Update `docs/project-ttl.md` and `docs/cmds-ttl-foundation.md` whenever TTL compiler command shape, cache backend, or runtime boundaries change.
 - Update `docs/project-ttl.md` and `docs/cmds-ttl-language-contract.md` whenever TTL syntax/type/invalidation/code-generation contracts change.
 
+- Derun exposes `--version` from its shared version constant. Native Linux Derun and Runmoor builds disable CGO and include amd64/arm64; package service/configuration ownership follows `docs/repository-linux-packages-contract.md`.
+
+- Derun Linux amd64 and arm64 assets must remain available consistently through native packages, the direct shell installer and the prebuilt Homebrew formula.
+
 ### async-commit-hook
 - `cmds/async-commit-hook` implements `ach`; follow `docs/cmds-async-commit-hook-contract.md`.
 - Preserve durable receipts, isolated committed source, cross-worker queue ownership, strict gate semantics, descendant-safe cancellation and source-independent history. Tests use temporary config/state/repositories, never real user configuration.

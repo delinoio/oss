@@ -440,6 +440,13 @@ Release automation baseline:
 - State, reports and logs remain local and account-owned; no telemetry. User commands require explicit repository trust. Cancellation must reconcile owned descendants before releasing exclusive scheduling groups.
 - Development uses frontend 46308 and local API 46309 with conflict failure; root DevHud development remains unchanged.
 
+### Linux CLI Package Distribution
+
+- Follow `docs/repository-linux-packages-contract.md` for the six CLI APT/DNF repositories at `https://pkgs.oss.delino.io`. Native package publication is part of each selected CLI release, uses the dedicated `linux-packages` environment, and keeps Runmoor preview separate.
+- Runmoor's stable GitHub release status does not implicitly move its APT/DNF package out of the opt-in preview repository; validate source release status independently from native repository enrollment.
+- APT signing-certificate updates are distributed by the shared `delino-archive-keyring` dependency in both suites. Keep certificate versions immutable, retain historical public signing subkeys, and require a completed 30-day old-signer publication overlap before switching CI subkeys.
+- Rust CLI source, Cargo workspace/configuration and toolchain changes must select the Linux package CI job so both native architectures retain the AlmaLinux 9 compatibility baseline.
+
 ### Runmoor Contract
 
 - Public Runmoor documentation is owned by `apps/runmoor-docs` at `https://runmoor.delino.io`; follow `docs/apps-runmoor-docs-foundation.md`. The former `public-docs` `/runmoor` and child routes are removed without handoff pages or redirects. Keep all public discovery links pointed at the standalone site.
@@ -457,5 +464,5 @@ Release automation baseline:
 - Generate public npm packages from the private source workspace under ignored `dist` or temporary directories. Ordinary workspace installation must not resolve unpublished clibox dependencies. Never track generated tarballs or binaries.
 - The initial CLI provides help/version only. Publish crates.io through Release Project, followed by `clibox@v<version>` and the npm workflow. No Homebrew or public GitHub Release assets are added.
 - `release-clibox.yml` validates all eight native targets and the full nine-package set before publication. Publish and verify platform packages before the main package; reuse only identical registry integrity on retries. Dry runs are secret-free and non-publishing.
-- `CLIBOX_NPM_PUBLISH_ENABLED` defaults to disabled for manual first-publication bootstrap. After all nine packages have the exact first-party Trusted Publisher configured, enable it for OIDC/provenance publication; only the guarded publish job receives `id-token: write`. That job must explicitly install the pinned OIDC-capable npm version before validating support and publishing, independent of Node's bundled npm.
+- `CLIBOX_NPM_PUBLISH_ENABLED=true` and an exact first-party Trusted Publisher on all nine packages are required for OIDC/provenance publication; only the guarded publish job receives `id-token: write`. That job must explicitly install the pinned OIDC-capable npm version before validating support and publishing, independent of Node's bundled npm.
 - Keep `docs/project-clibox.md`, both clibox domain contracts, root/domain AGENTS rules, release versioning, CI selection/aggregation, and distribution fixtures synchronized.

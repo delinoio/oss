@@ -68,3 +68,7 @@
 - `docs/apps-public-docs-foundation.md`
 - `docs/repository-defaults.md`
 - `docs/repository-environment-contract.md`
+
+## Native package guidance
+
+The public installation surface documents the exact repository key fingerprint, supported Linux distribution/architecture matrix, stable or explicit preview registration, and package-manager install/update/remove commands. Operational details remain in `docs/repository-linux-packages-contract.md`. Installation guidance must preserve the existing release-archive and other supported installation methods.

@@ -52,3 +52,7 @@ Provide a Rust-based CLI wrapper that reruns delegated shell utilities and arbit
 - `docs/project-template.md`
 - `docs/domain-template.md`
 - `docs/README.md`
+
+## Native Linux packages
+
+Follow `docs/repository-linux-packages-contract.md` for APT/DNF release publication, supported systems, signatures, and recovery. This project belongs to the stable channel.
