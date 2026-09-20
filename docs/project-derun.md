@@ -13,6 +13,8 @@ Provide a Go CLI that preserves terminal fidelity for AI-agent workflows and bri
 - `docs/cmds-derun-foundation.md`
 
 ## Cross-Domain Invariants
+- `cmds/derun/internal/version/version.go` is the canonical release version source, initialized from `derun@v0.1.0`; MCP `serverInfo.version` uses the same constant.
+- Manual version selection and bot-owned release orchestration follow `docs/repository-workflow-contract.md`; the `Release Project` workflow supports patch, minor, and major increments while preserving this project’s existing distribution channels.
 - CLI command identifiers and output contracts must remain stable for automation consumers.
 - Terminal stream behavior must preserve ordering and ANSI compatibility by default.
 - User-facing error messages must remain single-line and include deterministic `details` segments with safe diagnostic fields only (no secrets).

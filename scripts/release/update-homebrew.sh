@@ -229,24 +229,24 @@ tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir" "$rendered_file"' EXIT
 
 log "cloning tap repo: $tap_repo"
-gh repo clone "$tap_repo" "$tmp_dir/tap" -- --depth=1
+# The helper reads GH_TOKEN from the process environment. Never persist an
+# installation token in the clone URL or its Git configuration.
+tap_git() {
+  git -c credential.helper= -c 'credential.helper=!gh auth git-credential' "$@"
+}
+tap_git clone --depth=1 "https://github.com/${tap_repo}.git" "$tmp_dir/tap"
 
 pushd "$tmp_dir/tap" >/dev/null
 
-# Workaround: GitHub runner environments may not provide a git committer identity,
-# which causes `git commit` to fail with "empty ident name" in this script.
-# Scope: non-dry-run path only, inside the temporary tap clone created above.
-# Remove when release workflows or the execution environment guarantee commit identity.
-git config user.name "github-actions[bot]"
-git config user.email "github-actions@users.noreply.github.com"
+# Workflows resolve the dedicated app's public bot identity. Keep the existing
+# fallback for maintainers invoking this script outside a configured workflow.
+git config user.name "${RELEASE_BOT_NAME:-github-actions[bot]}"
+git config user.email "${RELEASE_BOT_EMAIL:-github-actions@users.noreply.github.com}"
 log "using commit identity: $(git config user.name) <$(git config user.email)>"
 
-remote_url="https://x-access-token:${tap_push_token}@github.com/${tap_repo}.git"
-git remote set-url origin "$remote_url"
-
-if git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
+if tap_git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
   log "checking out tap branch: main"
-  git fetch origin main --depth=1
+  tap_git fetch origin main --depth=1
   git checkout -B main origin/main
 else
   log "bootstrapping empty tap repository with main branch"
@@ -270,7 +270,7 @@ git status --short >&2
 log "creating commit for ${destination_path}"
 git commit -m "chore(${project}): bump Homebrew package to ${version}"
 log "pushing tap update to ${tap_repo} main"
-git push --set-upstream origin HEAD:main
+tap_git push --set-upstream origin HEAD:main
 log "tap push complete for ${project} ${version}"
 
 popd >/dev/null

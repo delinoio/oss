@@ -18,6 +18,7 @@ import (
 	"github.com/delinoio/oss/cmds/derun/internal/logging"
 	"github.com/delinoio/oss/cmds/derun/internal/retention"
 	"github.com/delinoio/oss/cmds/derun/internal/state"
+	"github.com/delinoio/oss/cmds/derun/internal/version"
 )
 
 type Server struct {
@@ -152,7 +153,7 @@ func (s *Server) handleRequest(req rpcRequest) rpcResponse {
 			},
 			"serverInfo": map[string]any{
 				"name":    "derun",
-				"version": "0.1.0",
+				"version": version.Version,
 			},
 		}
 		return response
