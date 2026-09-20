@@ -446,6 +446,10 @@ and converting UTF-16 match offsets back to UTF-8 without byte-length guesses.
 The same root comparison applies to exclusions; Unix roots stay case-sensitive.
 Windows creation, overwrite, supersede and delete-on-close options produce write
 attempts even with read-only desired access; FILE_OPEN alone remains non-mutating.
+Windows file-information updates record source-handle writes before deletion or
+metadata mutation. Rename/link destinations and unknown information classes
+currently remain unsupported evidence and make collection incomplete; the child
+operation still proceeds. Handle-local seek and I/O settings do not mutate files.
 Exclusion comparisons normalize ordinary DOS/UNC and extended Windows prefixes
 before extracting a relative path. Windows core fixtures cover both directions
 and missing descendants; the native excluded-input fixture prevents an omitted

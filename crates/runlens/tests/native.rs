@@ -38,6 +38,59 @@ fn fixture() -> &'static str {
 }
 #[cfg(windows)]
 #[test]
+fn windows_information_mutations_cannot_pass_external_write_boundaries() {
+    for mode in ["windows-rename", "windows-delete"] {
+        let root = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        let source = external.path().join("mutation-source");
+        let destination = external.path().join("mutation-destination");
+        fs::write(&source, "original").unwrap();
+        fs::write(
+            root.path().join("runlens.toml"),
+            "schema_version = 1\n[policy]\ndeny_writes = [\"**/mutation-source\"]\n",
+        )
+        .unwrap();
+        let result = invoke(
+            root.path(),
+            &[
+                "run",
+                "--save",
+                "mutation.json",
+                "--",
+                fixture(),
+                mode,
+                source.to_str().unwrap(),
+                destination.to_str().unwrap(),
+            ],
+        );
+        assert_eq!(
+            result.status.code(),
+            Some(if mode == "windows-rename" { 4 } else { 0 }),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(!source.exists());
+        assert_eq!(destination.exists(), mode == "windows-rename");
+        let report = parse(root.path(), "mutation.json");
+        let access = report["executions"][0]["accesses"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .find(|(path, _)| path.ends_with("/mutation-source"))
+            .unwrap()
+            .1;
+        assert_eq!(access["write"], true);
+        let policy = invoke(root.path(), &["policy", "check", "mutation.json", "--json"]);
+        assert_eq!(
+            policy.status.code(),
+            Some(5),
+            "{}",
+            String::from_utf8_lossy(&policy.stderr)
+        );
+    }
+}
+#[cfg(windows)]
+#[test]
 fn windows_readonly_creation_dispositions_record_external_write_attempts() {
     for mode in [
         "windows-create-readonly",

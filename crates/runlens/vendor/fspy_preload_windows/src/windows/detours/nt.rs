@@ -534,7 +534,45 @@ static DETOUR_NT_QUERY_DIRECTORY_FILE_EX: Detour<NtQueryDirectoryFileExFn> =
         })
     };
 
+static DETOUR_NT_SET_INFORMATION_FILE: Detour<
+    unsafe extern "system" fn(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, FILE_INFORMATION_CLASS) -> NTSTATUS,
+> = unsafe {
+    // SAFETY: the replacement has the exact NtSetInformationFile ABI.
+    Detour::new(c"NtSetInformationFile", ntapi::ntioapi::NtSetInformationFile, {
+        unsafe extern "system" fn set_information(
+            handle: HANDLE,
+            status: PIO_STATUS_BLOCK,
+            information: PVOID,
+            length: ULONG,
+            class: FILE_INFORMATION_CLASS,
+        ) -> NTSTATUS {
+            use fspy_shared::windows_access::{information_mutation, InformationMutation};
+            let mutation = information_mutation(class);
+            if mutation != InformationMutation::HandleOnly {
+                // Resolve before deletion/rename invalidates the old name. An
+                // unresolved handle or destination must not silently disappear.
+                let observed = unsafe { handle.to_absolute_path(|path| {
+                    if let Some(path) = path {
+                        global_client().send(PathAccess {
+                            mode: AccessMode::WRITE,
+                            path: IpcPath::from_wide(path.as_slice()),
+                        });
+                        Ok(true)
+                    } else { Ok(false) }
+                }) };
+                if observed != Ok(true) || mutation == InformationMutation::Unresolved {
+                    crate::windows::client::report_global_failure();
+                }
+            }
+            // SAFETY: preserve every argument and result even if collection failed.
+            unsafe { (DETOUR_NT_SET_INFORMATION_FILE.real())(handle, status, information, length, class) }
+        }
+        set_information
+    })
+};
+
 pub const DETOURS: &[DetourAny] = &[
+    DETOUR_NT_SET_INFORMATION_FILE.as_any(),
     DETOUR_NT_CREATE_USER_PROCESS.as_any(),
     DETOUR_NT_CREATE_FILE.as_any(),
     DETOUR_NT_OPEN_FILE.as_any(),

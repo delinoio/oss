@@ -13,8 +13,8 @@ use winapi::{
     um::{
         fileapi::GetFinalPathNameByHandleW,
         winnt::{
-            ACCESS_MASK, FILE_APPEND_DATA, FILE_READ_DATA, FILE_WRITE_DATA, GENERIC_READ,
-            GENERIC_WRITE,
+            ACCESS_MASK, DELETE, FILE_APPEND_DATA, FILE_READ_DATA, FILE_WRITE_DATA,
+            FILE_WRITE_ATTRIBUTES, FILE_WRITE_EA, GENERIC_ALL, GENERIC_READ, GENERIC_WRITE,
         },
     },
 };
@@ -96,7 +96,8 @@ pub unsafe fn get_path_name(handle: HANDLE) -> winsafe::SysResult<SmallVec<u16, 
 }
 
 pub const fn access_mask_to_mode(desired_access: ACCESS_MASK) -> AccessMode {
-    let has_write = (desired_access & (FILE_WRITE_DATA | FILE_APPEND_DATA | GENERIC_WRITE)) != 0;
+    let has_write = (desired_access & (FILE_WRITE_DATA | FILE_APPEND_DATA | GENERIC_WRITE
+        | FILE_WRITE_ATTRIBUTES | FILE_WRITE_EA | DELETE | GENERIC_ALL)) != 0;
     let has_read = (desired_access & (FILE_READ_DATA | GENERIC_READ)) != 0;
     if has_write {
         if has_read { AccessMode::READ.union(AccessMode::WRITE) } else { AccessMode::WRITE }

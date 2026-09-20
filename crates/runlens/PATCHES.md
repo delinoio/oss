@@ -107,3 +107,13 @@ FILE_DELETE_ON_CLOSE. Unknown dispositions report unsupported evidence. Portable
 shared classification tests cover every disposition with read-only access and
 the non-mutating FILE_OPEN control. Remove this patch when upstream preserves
 these mutation attempts in its native open hooks.
+
+Windows NtSetInformationFile now records source-handle write attempts before
+disposition, allocation, EOF or metadata updates. Delete and metadata access
+rights also classify as writes. Renames/links and unknown information classes
+mark collection incomplete because their additional destinations are not yet
+decoded; failed handle resolution does the same. Handle-local position and I/O
+settings are excluded. Portable classification regressions and Windows native
+rename/delete policy fixtures cover this conservative boundary. Remove the patch
+when upstream traces both endpoints and all supported mutation classes without
+turning missing evidence into a pass or interrupting the original operation.

@@ -15,6 +15,8 @@ Use a native architecture executable that permits library injection. SIP-protect
 
 Use a native x64 or arm64 PE executable. Scripts require an explicit interpreter. DLL injection and private Job Object ownership must be available; the job is assigned before the target resumes. Protected processes and mixed-architecture children are unsupported. Symlink source copying requires the applicable Windows capability.
 
+File creation and deletion count as write attempts even when no content is written. Windows rename and hard-link operations currently produce incomplete collection because destination tracking is limited. The command continues, but its report cannot establish a verification pass.
+
 ## Ubuntu and Linux artifacts
 
 Linux artifacts target glibc hosts. Alpine/musl hosts are excluded. A statically linked child executable on a supported glibc host is not automatically excluded: the backend uses seccomp user notifications and same-user process inspection for supported native static binaries. The kernel and calling environment must permit these operations. No privileged tracing deployment is included.

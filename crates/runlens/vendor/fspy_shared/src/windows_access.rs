@@ -11,3 +11,25 @@ pub const fn creation_mode(mode: AccessMode, disposition: u32, options: u32) -> 
     };
     if options & 0x0000_1000 != 0 { mode.union(AccessMode::WRITE) } else { mode }
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InformationMutation {
+    HandleOnly,
+    Write,
+    Unresolved,
+}
+
+// https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ntsetinformationfile
+pub const fn information_mutation(class: u32) -> InformationMutation {
+    match class {
+        // Position, mode, completion port, priority and notification settings
+        // affect the handle, not persisted filesystem state.
+        14 | 16 | 30 | 43 | 56 | 61 => InformationMutation::HandleOnly,
+        // Basic attributes, disposition, allocation, EOF, valid data length,
+        // extended disposition and case-sensitivity mutate the opened file.
+        4 | 13 | 19 | 20 | 39 | 64 | 71 | 75 => InformationMutation::Write,
+        // Renames/links have additional destination evidence not yet decoded.
+        // Unknown future classes also prevent a complete-collection claim.
+        _ => InformationMutation::Unresolved,
+    }
+}

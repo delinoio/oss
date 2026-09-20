@@ -5,6 +5,14 @@ fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
         #[cfg(windows)]
+        "windows-rename" | "windows-delete" => {
+            if args[0] == "windows-rename" {
+                fs::rename(&args[1], &args[2]).unwrap();
+            } else {
+                fs::remove_file(&args[1]).unwrap();
+            }
+        }
+        #[cfg(windows)]
         "windows-create-readonly"
         | "windows-open-if-readonly"
         | "windows-overwrite-readonly"
