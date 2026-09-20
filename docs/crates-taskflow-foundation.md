@@ -117,7 +117,7 @@ Service task timeouts cover process startup through readiness and continued serv
 
 Explicit `--changed` file lists cannot be combined with `--base` or `--head`; `plan` and `run` reject these ambiguous selectors before prerequisite execution.
 
-After an installation bootstrap, both finite runs and development sessions revalidate receipts against the refreshed graph using the normal task key calculation and current declared outputs. Missing or changed prerequisites invalidate dependent reuse. Stale tasks receive an activation cause before the final plan runs, so unchanged propagation cannot suppress their repair. Bootstrap service owners are shut down before rediscovery.
+After an installation bootstrap, both finite runs and development sessions revalidate receipts against the refreshed graph using the normal task key calculation and current declared outputs. Missing or changed prerequisites invalidate dependent reuse. Stale tasks receive an activation cause before the final plan runs, so unchanged propagation cannot suppress their repair. Bootstrap service owners are shut down before rediscovery. Receipt revalidation uses the same unsharded execution options as installation, including sessions requested with a shard partition.
 
 Docker accepts absolute local Unix socket paths or local Windows named pipes with the literal dot server, such as `npipe:////./pipe/docker_engine`. A remote host, including a host named localhost, is rejected before task setup. This follows the [Windows named-pipe server contract](https://learn.microsoft.com/en-us/windows/win32/ipc/pipe-names) and [Docker Desktop endpoint](https://docs.docker.com/desktop/troubleshoot-and-support/faqs/general/).
 

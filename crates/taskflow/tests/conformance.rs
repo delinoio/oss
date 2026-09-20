@@ -7698,3 +7698,30 @@ fn unix_supervisors_preserve_the_callers_output_permissions() {
         0o640
     );
 }
+
+#[test]
+fn session_sharded_install_revalidates_its_complete_bootstrap_receipt() {
+    let directory = fixture(json!({"install": {
+        "command": command(&["version"]), "install": true, "input": [], "output": [],
+        "shard": {"adapter":"generic","count":2,"list":command(&["inventory"]),"run":command(&["shard"])}
+    }}));
+    profile(directory.path(), &["install"]);
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+        .arg("--root")
+        .arg(directory.path())
+        .args(["--json", "start", "--shard", "0/2"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let result: runner::RunResult = serde_json::from_slice(&output.stdout).unwrap();
+    let receipt = &result.results["app#install"];
+    let (inventory, reports) = shard::read_reports(
+        &directory
+            .path()
+            .join(".taskflow/runs")
+            .join(&receipt.execution),
+    )
+    .unwrap();
+    assert_eq!(reports.len(), 2, "installation runs every partition");
+    assert!(shard::aggregate(&inventory, 2, &reports).unwrap());
+}

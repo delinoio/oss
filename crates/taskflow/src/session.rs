@@ -78,14 +78,14 @@ pub async fn start(
             let mut bootstrap_options = options.clone();
             bootstrap_options.shard = None;
             bootstrap_options.provided = bootstrap_results.clone();
-            let result = runner::run_plan(graph.clone(), install_plan, bootstrap_options, work_cancel.child_token()).await?;
+            let result = runner::run_plan(graph.clone(), install_plan, bootstrap_options.clone(), work_cancel.child_token()).await?;
             ensure!(result.success, "installation prerequisite failed");
             // Live owners cannot be transferred to a refreshed task identity.
             services.shutdown().await?;
             while service_receiver.try_recv().is_ok() {}
             graph = Arc::new(Graph::build(Workspace::discover(root).await?.select_platform(options.os, options.arch))?);
             bootstrap_results.extend(result.results);
-            (bootstrap_results, invalid_bootstrap) = runner::revalidate_bootstrap(&graph, bootstrap_results, &options, &work_cancel).await?;
+            (bootstrap_results, invalid_bootstrap) = runner::revalidate_bootstrap(&graph, bootstrap_results, &bootstrap_options, &work_cancel).await?;
             roots = roots_for_profile(&graph, profile)?;
             active_set = activation(&graph, &roots);
         }
