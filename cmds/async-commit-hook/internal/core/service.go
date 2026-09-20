@@ -2,8 +2,6 @@ package core
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -144,20 +142,7 @@ func (s *Service) Gate(ctx context.Context, path, commit string) (Gate, error) {
 	if e != nil {
 		return Gate{}, e
 	}
-	g := Gate{Commit: p.Commit, State: Queued, Reason: "no compatible execution; run ach run --commit " + p.Commit}
-	var id string
-	e = s.Store.DB.QueryRow("SELECT id FROM runs WHERE repo=? AND commit_oid=? AND fingerprint=? ORDER BY seq DESC LIMIT 1", p.RepositoryID, p.Commit, p.Fingerprint).Scan(&id)
-	if errors.Is(e, sql.ErrNoRows) {
-		return g, nil
-	}
-	if e != nil {
-		return g, e
-	}
-	r, e := s.Store.Run(id)
-	if e != nil {
-		return g, e
-	}
-	return s.GateRun(r), nil
+	return s.selectLatestAttempt(ctx, p, s.GateRun, false)
 }
 func (s *Service) GateRun(r Run) Gate {
 	g := Gate{Commit: r.Commit, RunID: r.ID, State: r.State, Reason: "latest attempt is " + string(r.State), Diagnostics: r.Diagnostics}
