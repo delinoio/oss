@@ -44,6 +44,9 @@ func TestLocalHTTPBoundaryWithoutPairing(t *testing.T) {
 		if w.Header().Get("Access-Control-Allow-Origin") != "" {
 			t.Fatal("unexpected CORS grant")
 		}
+		if test.status == 409 && (w.Header().Get("Content-Type") != "application/json" || !strings.Contains(w.Body.String(), `"message":"incompatible-version"`)) {
+			t.Fatal("version recovery diagnostic was lost", w.Header(), w.Body.String())
+		}
 	}
 	request := httptest.NewRequest("POST", s.WebURL("")+"async_commit_hook.v1.LocalService/Pair", strings.NewReader("{}"))
 	request.Header.Set("Origin", "http://127.0.0.1:46309")

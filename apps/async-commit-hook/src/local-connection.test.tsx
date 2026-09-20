@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { createRouterTransport } from "@connectrpc/connect";
+import { createClient, createRouterTransport } from "@connectrpc/connect";
 import { LocalService } from "@delinoio/async-commit-hook-api-client";
 import { expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -27,5 +27,22 @@ it("opens the workspace without pairing or reading legacy authorization", async 
     expect(location.hash).toBe("");
   } finally {
     unmount(); transport.mockRestore(); readStorage.mockRestore(); localStorage.clear();
+  }
+});
+
+it("retains version recovery guidance through the real Connect web transport", async () => {
+  const fetch = vi.fn().mockResolvedValue(new Response(
+    JSON.stringify({ code: "aborted", message: "incompatible-version" }),
+    { status: 409, headers: { "Content-Type": "application/json" } },
+  ));
+  vi.stubGlobal("fetch", fetch);
+  try {
+    const client = createClient(LocalService, connection.transportFor());
+    const error = await client.listRepositories({}).catch((error: unknown) => error);
+    expect(connection.describeError(error)).toMatch(/Reload this page from the URL printed by ach ui/);
+    expect(fetch.mock.calls[0][0]).toBe(`${window.location.origin}/async_commit_hook.v1.LocalService/ListRepositories`);
+    expect(new Headers(fetch.mock.calls[0][1].headers).get("X-Ach-Api-Version")).toBe("1");
+  } finally {
+    vi.unstubAllGlobals();
   }
 });

@@ -10,7 +10,7 @@ Rspress 2 with the existing repository dependency range, default theme, search a
 Developers and coding agents reading installation, configuration, exact-commit validation, CLI/MCP, privacy, platform limits and recovery guidance.
 
 ## Interfaces and Contracts
-Stable routes: `/`, `/install`, `/start`, `/configuration`, `/validation`, `/commands`, `/agents`, `/web`, `/privacy`, `/recovery`, `/compatibility`, `/symlinks`, `/existing-hooks`. All appear in navigation/sidebar, with visible repository links. Every original guide section is migrated without dropping examples or limits; only superseded hosted-UI/pairing behavior changes.
+Stable routes: `/`, `/install`, `/start`, `/configuration`, `/validation`, `/commands`, `/agents`, `/web`, `/privacy`, `/recovery`, `/compatibility`, `/symlinks`, `/existing-hooks`. All appear in grouped top navigation and the sidebar, with visible repository links. Every original guide section is migrated without dropping examples or limits; only superseded hosted-UI/pairing behavior changes.
 
 `/docs` redirects to `/docs/`, whose static compatibility page maps known section fragments to their exact new routes and unknown fragments to `/`. It never interprets old pairing, port or run fields. `/install.sh` and `/install.ps1` retain their URLs; their canonical sources are app public files copied unchanged by both Rspress and the release builder.
 

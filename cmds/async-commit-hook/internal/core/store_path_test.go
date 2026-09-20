@@ -25,7 +25,14 @@ func TestStatePathsPreserveURICharactersAndDurableSettings(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer store.Close()
-			if _, err = store.DB.Exec("INSERT INTO pairings(code_hash,expires) VALUES('retained','later')"); err != nil {
+			// Reproduce the retired v1 auth tables to verify that opening an
+			// existing database preserves them without relying on fresh creation.
+			if _, err = store.DB.Exec(`
+CREATE TABLE browsers(id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL, created TEXT NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE pairings(code_hash TEXT PRIMARY KEY, expires TEXT NOT NULL);
+INSERT INTO browsers(id,name,token_hash,created) VALUES('legacy','Browser','unused','earlier');
+INSERT INTO pairings(code_hash,expires) VALUES('retained','later');
+INSERT INTO installations(id,record) VALUES('retained','{"kind":"fixture"}');`); err != nil {
 				t.Fatal(err)
 			}
 			if info, err := os.Stat(filepath.Join(root, "state.sqlite")); err != nil || !info.Mode().IsRegular() {
@@ -55,6 +62,13 @@ func TestStatePathsPreserveURICharactersAndDurableSettings(t *testing.T) {
 			var expires string
 			if err = reopened.DB.QueryRow("SELECT expires FROM pairings WHERE code_hash='retained'").Scan(&expires); err != nil || expires != "later" {
 				t.Fatal("state was not retained", err)
+			}
+			var token, record string
+			if err = reopened.DB.QueryRow("SELECT token_hash FROM browsers WHERE id='legacy'").Scan(&token); err != nil || token != "unused" {
+				t.Fatal("legacy browser row was not retained", err)
+			}
+			if err = reopened.DB.QueryRow("SELECT record FROM installations WHERE id='retained'").Scan(&record); err != nil || record != `{"kind":"fixture"}` {
+				t.Fatal("installation state was not retained", err)
 			}
 			entries, err := os.ReadDir(parent)
 			if err != nil || len(entries) != 1 || entries[0].Name() != name {

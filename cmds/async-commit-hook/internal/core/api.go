@@ -57,7 +57,12 @@ func (s *Service) Handler() http.Handler {
 			return
 		}
 		if values := r.Header.Values("X-Ach-Api-Version"); len(values) != 1 || values[0] != "1" {
-			deny("incompatible-version", http.StatusConflict)
+			// Connect clients discard plain HTTP error bodies. Preserve this
+			// diagnostic on the wire so a stale tab can explain how to recover.
+			s.Log.Warn("http.request_denied", "code", "incompatible-version")
+			if err := connect.NewErrorWriter().Write(w, r, connect.NewError(connect.CodeAborted, errors.New("incompatible-version"))); err != nil {
+				s.Log.Warn("http.error_write_failed", "code", "incompatible-version")
+			}
 			return
 		}
 		mux.ServeHTTP(w, r)
