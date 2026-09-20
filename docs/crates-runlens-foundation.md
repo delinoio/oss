@@ -436,7 +436,9 @@ threshold, including repeat rounds; private index cleanup failures are surfaced.
 Cancellation handlers are installed before owned child work. Native cancellation
 fixtures synchronize on actual child readiness rather than assuming startup time.
 
-Offline checks never pass a report with no target execution.
+Offline checks never pass a report with no target execution. Cache and policy
+checks apply this guard independently of preparation records, including valid
+historical-only reports with no stored verdict.
 Windows root masking and scope classification use the native ordinal casing
 rules for workspace, home, and temporary roots, preserving component boundaries
 and converting UTF-16 match offsets back to UTF-8 without byte-length guesses.

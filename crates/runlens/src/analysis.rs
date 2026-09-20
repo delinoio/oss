@@ -153,19 +153,24 @@ pub fn cache(report: &Report, command: &Command) -> Result<Analysis> {
     Ok(result)
 }
 fn target_quality(result: &mut Analysis, report: &Report) -> Result<()> {
+    if report.targets().next().is_none() {
+        result.finding(
+            FindingCode::FailedExecution,
+            Classification::Unknown,
+            report
+                .executions
+                .first()
+                .map(|execution| evidence(execution, None, EvidenceSource::Outcome))
+                .into_iter()
+                .collect(),
+        )?;
+    }
     for execution in report
         .executions
         .iter()
         .filter(|e| e.role == Role::Preparation)
     {
         quality(result, execution)?;
-        if report.targets().next().is_none() {
-            result.finding(
-                FindingCode::FailedExecution,
-                Classification::Unknown,
-                vec![evidence(execution, None, EvidenceSource::Outcome)],
-            )?;
-        }
     }
     Ok(())
 }

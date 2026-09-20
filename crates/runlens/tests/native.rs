@@ -2239,3 +2239,45 @@ fn static_linux_open_modes_cannot_pass_external_write_denials() {
         check_open_mode(&executable, mode, mode != "open-read");
     }
 }
+
+#[test]
+fn historical_only_reports_cannot_pass_cache_or_policy_checks() {
+    let root = repository("read");
+    assert!(run(root.path(), "original.json", "read").status.success());
+    let mut value = parse(root.path(), "original.json");
+    value["executions"][0]["role"] = "baseline".into();
+    value["verification"] = Value::Null;
+    fs::write(
+        root.path().join("historical.json"),
+        serde_json::to_vec(&value).unwrap(),
+    )
+    .unwrap();
+    for args in [
+        vec![
+            "cache",
+            "check",
+            "historical.json",
+            "--command",
+            "build",
+            "--json",
+        ],
+        vec!["policy", "check", "historical.json", "--json"],
+    ] {
+        let output = invoke(root.path(), &args);
+        assert_eq!(
+            output.status.code(),
+            Some(4),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(result["verdict"], "inconclusive");
+        assert!(
+            result["findings"]
+                .as_object()
+                .unwrap()
+                .values()
+                .any(|f| f["code"] == "failed-execution")
+        );
+    }
+}
