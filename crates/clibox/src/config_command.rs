@@ -18,7 +18,8 @@ const IO_HELP: &str =
      published only on success. New Unix files use mode 0600; Windows files inherit the parent \
      ACL. Replacements preserve access permissions and reject symbolic links or multiple hard \
      links. Existing output requires --force (except --in-place). No backups, locks, or \
-     concurrent-change detection; the last successful replacement wins. Handled cancellation \
+     concurrent-change detection; the last successful replacement wins. Windows sharing rules may \
+     reject overlapping replacements; retry after competing handles close. Handled cancellation \
      cleans unpublished temporaries and never undoes completed writes. No persistent state, shell \
      execution, expansion, or network access.\n\nExit codes: 0 success, 1 \
      content/filesystem/limit/runtime failure, 2 invalid arguments, 130 Ctrl+C, 143 Unix SIGTERM. \

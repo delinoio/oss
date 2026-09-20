@@ -700,17 +700,35 @@ fn concurrent_authorized_replacements_produce_one_complete_result() {
                 .unwrap(),
         );
     }
-    for mut child in children {
+    let mut successful_payloads = Vec::new();
+    for (mut child, payload) in children.into_iter().zip(&payloads) {
         wait(&mut child);
         let output = child.wait_with_output().unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        if output.status.success() {
+            successful_payloads.push(payload);
+        } else {
+            let diagnostic = String::from_utf8_lossy(&output.stderr);
+            // ReplaceFileW opens its replacement exclusively. Another writer
+            // may encounter that handle after it becomes the destination, so
+            // Windows can reject overlapping inspection/publication. The
+            // contract guarantees a complete successful result, not that all
+            // writers succeed; no locks or automatic retries are promised.
+            #[cfg(not(windows))]
+            panic!("{diagnostic}");
+            #[cfg(windows)]
+            {
+                assert_eq!(output.status.code(), Some(1), "{diagnostic}");
+                assert!(
+                    diagnostic.contains("classification=Publish")
+                        || diagnostic.contains("classification=Permissions"),
+                    "{diagnostic}"
+                );
+            }
+        }
     }
+    assert!(!successful_payloads.is_empty());
     let result = fs::read_to_string(dir.path().join("out")).unwrap();
-    assert!(payloads.contains(&result));
+    assert!(successful_payloads.contains(&&result));
     // A replacement started after both have finished deterministically wins.
     assert!(run(
         dir.path(),
@@ -720,6 +738,43 @@ fn concurrent_authorized_replacements_produce_one_complete_result() {
     .status
     .success());
     assert_eq!(fs::read(dir.path().join("out")).unwrap(), b"C=last\n");
+    no_temps(dir.path());
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_sharing_conflict_preserves_destination_and_cleans_staging() {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    use windows_sys::Win32::Storage::FileSystem::{FILE_SHARE_READ, FILE_SHARE_WRITE};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("out");
+    fs::write(&path, "original").unwrap();
+    // Permit ordinary access but deny deletion/rename while this test-owned
+    // handle is live. This deterministically exercises Windows sharing failure.
+    let blocker = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+        .open(&path)
+        .unwrap();
+    let args = ["dotenv", "merge", "-", "--output", "out", "--force"];
+    let failed = run(dir.path(), &args, b"A=new");
+    assert_eq!(failed.status.code(), Some(1));
+    assert!(failed.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&failed.stderr).contains("classification=Publish"));
+    assert_eq!(fs::read(&path).unwrap(), b"original");
+    no_temps(dir.path());
+
+    drop(blocker);
+    let success = run(dir.path(), &args, b"A=new");
+    assert!(
+        success.status.success(),
+        "{}",
+        String::from_utf8_lossy(&success.stderr)
+    );
+    assert!(success.stdout.is_empty());
+    assert_eq!(fs::read(&path).unwrap(), b"A=new\n");
     no_temps(dir.path());
 }
 
