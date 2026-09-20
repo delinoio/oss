@@ -523,7 +523,10 @@ brew upgrade async-commit-hook</pre
         <p>
           Updates are explicit, refuse active checks/server processes, verify
           signatures/checksums, back up state, and retain the previous
-          executable. A pending-update diagnostic requires
+          executable. If the verified release executable is already byte-for-byte
+          identical, self-update reports <code>up-to-date</code> without creating
+          another backup or replacing it. A different local build is still
+          replaced even when its version number matches. A pending-update diagnostic requires
           <code>--recover</code> before restarting services. If replacement and
           automatic rollback both fail, restore the recorded binary backup while
           ach is stopped. For rollback across state versions, restore the

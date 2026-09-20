@@ -133,3 +133,5 @@
 - Native hook creation, refresh snapshots/staging/revalidation/rename and failed-publication rollback use an opened Git common-directory root for all directory/file access. Bind refreshes to the originally read file identity and bytes; replaced parent symlinks must not redirect reads, writes or cleanup outside that root.
 
 - Source RPCs pass their request context through worktree lookup, Git discovery, commit/config/base resolution and streamed branches/history/diffs. Preserve caller cancellation/deadline errors after child reaping, including optional-ref fallback and partial-page reader cleanup; internal pagination cancellation must not cancel the caller.
+
+- After signature/checksum/archive verification, compare the selected executable bytes with the installed binary before state backup or replacement. Identical bytes still validate the release version and return up-to-date without backup/journal creation; equal version strings with different bytes still require the complete replacement path.

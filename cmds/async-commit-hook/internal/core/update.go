@@ -304,40 +304,15 @@ func (s *Service) SelfUpdate(ctx context.Context, version string) (map[string]st
 	if e != nil {
 		return nil, e
 	}
-	backup, e := s.stateBackup()
-	if e != nil {
-		return nil, Wrap("update-backup-failed", e)
-	}
-	id := ID()
-	candidate := filepath.Join(filepath.Dir(executable), ".ach-new-"+id)
-	if runtime.GOOS == "windows" {
-		candidate += ".exe"
-	}
-	if e = AtomicWrite(candidate, binary, 0700); e != nil {
-		return nil, e
-	}
-	probe := exec.CommandContext(ctx, candidate, "version", "--json")
-	versionOutput, err := probe.Output()
-	var versionEnvelope struct {
-		Result struct {
-			Version string `json:"version"`
-		} `json:"result"`
-	}
-	if err != nil || json.Unmarshal(versionOutput, &versionEnvelope) != nil || versionEnvelope.Result.Version != version {
-		return nil, E("update-version-invalid", "verified candidate cannot report the selected release version", 3)
-	}
-	oldBinary, err := os.ReadFile(executable)
-	if err != nil {
-		return nil, err
-	}
-	parent, e := ProcessIdentity(os.Getpid())
+	journal, changed, e := s.prepareVerifiedUpdate(ctx, executable, version, binary)
 	if e != nil {
 		return nil, e
 	}
-	journal := UpdateJournal{Executable: executable, Candidate: candidate, Backup: executable + ".ach-backup-" + id, StateBackup: backup, SHA256: Hash(binary), OriginalSHA256: Hash(oldBinary), Phase: "prepared", Parent: parent}
-	if e = AtomicWrite(filepath.Join(s.Paths.Control, "update.json"), Encode(journal), 0600); e != nil {
-		return nil, e
+	if !changed {
+		s.Log.Info("update.unchanged", "version", version)
+		return map[string]string{"status": "up-to-date", "version": version}, nil
 	}
+	backup, candidate := journal.StateBackup, journal.Candidate
 	if runtime.GOOS == "windows" {
 		helper := exec.Command(candidate, "internal", "apply-update", "--config", s.Paths.Config)
 		Detached(helper)
@@ -352,6 +327,67 @@ func (s *Service) SelfUpdate(ctx context.Context, version string) (map[string]st
 	}
 	return map[string]string{"status": "updated", "version": version, "state_backup": backup, "binary_backup": journal.Backup}, nil
 }
+
+// Called only after both Sigstore bundles, the signed checksum and the archive
+// structure have been verified, while SelfUpdate holds the lifecycle lock.
+func (s *Service) prepareVerifiedUpdate(ctx context.Context, executable, version string, binary []byte) (UpdateJournal, bool, error) {
+	oldBinary, err := os.ReadFile(executable)
+	if err != nil {
+		return UpdateJournal{}, false, err
+	}
+	digest, originalDigest := Hash(binary), Hash(oldBinary)
+	if digest == originalDigest {
+		// Probe the identical installed bytes without creating a candidate, state
+		// backup, binary backup or journal. Version equality alone is insufficient.
+		return UpdateJournal{}, false, verifyUpdateVersion(ctx, executable, version)
+	}
+	id := ID()
+	candidate := filepath.Join(filepath.Dir(executable), ".ach-new-"+id)
+	if runtime.GOOS == "windows" {
+		candidate += ".exe"
+	}
+	prepared := false
+	defer func() {
+		if !prepared {
+			_ = os.Remove(candidate)
+		}
+	}()
+	if err = AtomicWrite(candidate, binary, 0700); err != nil {
+		return UpdateJournal{}, false, err
+	}
+	if err = verifyUpdateVersion(ctx, candidate, version); err != nil {
+		return UpdateJournal{}, false, err
+	}
+	backup, err := s.stateBackup()
+	if err != nil {
+		return UpdateJournal{}, false, Wrap("update-backup-failed", err)
+	}
+	parent, err := ProcessIdentity(os.Getpid())
+	if err != nil {
+		return UpdateJournal{}, false, err
+	}
+	journal := UpdateJournal{Executable: executable, Candidate: candidate, Backup: executable + ".ach-backup-" + id, StateBackup: backup, SHA256: digest, OriginalSHA256: originalDigest, Phase: "prepared", Parent: parent}
+	if err = AtomicWrite(filepath.Join(s.Paths.Control, "update.json"), Encode(journal), 0600); err != nil {
+		return UpdateJournal{}, false, err
+	}
+	prepared = true
+	return journal, true, nil
+}
+
+func verifyUpdateVersion(ctx context.Context, executable, version string) error {
+	probe := exec.CommandContext(ctx, executable, "version", "--json")
+	versionOutput, err := probe.Output()
+	var envelope struct {
+		Result struct {
+			Version string `json:"version"`
+		} `json:"result"`
+	}
+	if err != nil || json.Unmarshal(versionOutput, &envelope) != nil || envelope.Result.Version != version {
+		return E("update-version-invalid", "verified candidate cannot report the selected release version", 3)
+	}
+	return nil
+}
+
 func (s *Service) applyUpdate(j UpdateJournal) error {
 	b, e := os.ReadFile(j.Candidate)
 	if e != nil || Hash(b) != j.SHA256 {
