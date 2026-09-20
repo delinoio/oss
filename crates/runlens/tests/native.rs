@@ -4826,7 +4826,10 @@ fn static_execution_preserves_user_preload_for_dynamic_descendants() {
     .unwrap();
     fs::write(
         root.path().join("dynamic.c"),
-        r#"#include <dlfcn.h>
+        // RTLD_DEFAULT requires GNU feature visibility on the Ubuntu 22.04
+        // minimum target; retain this macro while the fixture uses that API.
+        r#"#define _GNU_SOURCE
+#include <dlfcn.h>
 #include <stdio.h>
 int main(void) {
     int (*probe)(void) = dlsym(RTLD_DEFAULT, "runlens_caller_probe");
@@ -4846,7 +4849,7 @@ int main(void) {
     );
     assert!(
         Command::new("cc")
-            .args(["dynamic.c", "-ldl", "-o", "dynamic-child"])
+            .args(["-std=c11", "dynamic.c", "-ldl", "-o", "dynamic-child"])
             .current_dir(root.path())
             .status()
             .unwrap()
