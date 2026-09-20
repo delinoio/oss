@@ -58,6 +58,7 @@
 - `docs/project-binpm.md`: binpm binary package manager project index.
 - `docs/apps-binpm-docs-foundation.md`: binpm Rspress documentation app, route, validation, canonical production URL, and Cloudflare Pages deployment contract.
 - `docs/project-cargo-mono.md`: Cargo subcommand project index.
+- `docs/project-clibox.md`: clibox Rust CLI and npm distribution project index.
 - `docs/project-nodeup.md`: Node.js version manager project index.
 - `docs/project-with-watch.md`: Command rerun watcher CLI project index.
 - `docs/project-derun.md`: Derun CLI project index.
@@ -84,6 +85,7 @@ Treat project IDs as stable enum-style values:
 enum ProjectId {
   Binpm = "binpm",
   CargoMono = "cargo-mono",
+  Clibox = "clibox",
   Nodeup = "nodeup",
   WithWatch = "with-watch",
   Derun = "derun",
@@ -103,6 +105,7 @@ enum ProjectId {
 - `binpm` -> `crates/binpm`, `apps/binpm-docs`
 - `with-watch` -> `crates/with-watch`
 - `cargo-mono` -> `crates/cargo-mono`
+- `clibox` -> `crates/clibox`, `packages/clibox`
 - `runmoor` -> `cmds/runmoor`, `apps/runmoor-docs`
 - `derun` -> `cmds/derun`
 - `ttl` -> `cmds/ttlc`
@@ -356,6 +359,7 @@ Coverage expectations:
 - `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter binpm-docs test`.
 - `node-runmoor-docs-test`: validates the standalone Runmoor routes with one frozen install using `--ignore-scripts`, the shared change plan, and its exact Turbo comparison; it participates in `ci-result` and saves caches only after successful main validation.
 - `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter nodeup-docs test`.
+- `node-clibox-test`: runs native CLI consumer installation and launcher/distribution tests on Linux, macOS, and Windows, selected by shared CI planning and required by `CI Result`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`.
 - `ci-contracts`: validates workflow syntax and the repository CI contract with the checked-in Go `actionlint` tool and Node fixtures.
 - `devhud-frontend`, `devhud-extension`, and `devhud-admin`: run package-local type, lint, unit, component, accessibility, and deterministic frontend/package builds.
@@ -385,7 +389,7 @@ Change-scoped execution rules:
 - When build or test commands change in project contracts, update this section and `.github/workflows/CI.yml` in the same commit.
 
 Release automation baseline:
-- CLI release orchestration is owned by `docs/repository-workflow-contract.md` and the manual `Release Project` workflow: only binpm, cargo-mono, nodeup, with-watch, derun, and runmoor are selectable. Do not restore main-push workspace publishing. Version commits and individual release-tag pushes use the repository-scoped `delino-release-bot` GitHub App; Homebrew uses a separate tap-scoped token. Preserve exact-commit CI gates, version-only run-ID recovery, non-forced pushes, and existing signed artifact workflows. Keep bot keys/tokens out of files, artifacts, logs, Git URLs, and configuration.
+- CLI release orchestration is owned by `docs/repository-workflow-contract.md` and the manual `Release Project` workflow: only binpm, cargo-mono, nodeup, with-watch, derun, runmoor, and clibox are selectable. Do not restore main-push workspace publishing. Version commits and individual release-tag pushes use the repository-scoped `delino-release-bot` GitHub App; Homebrew uses a separate tap-scoped token. Preserve exact-commit CI gates, version-only run-ID recovery, non-forced pushes, and existing signed artifact workflows. Keep bot keys/tokens out of files, artifacts, logs, Git URLs, and configuration.
 - Trigger contract: `release-project.yml` accepts only manual `main` runs in `delinoio/oss`, with closed `project` and `bump` choices. Its version commits must pass the exact main-push `CI Result` before registry uploads or tag pushes.
 - The coordinator ends after the verified release-tag push. The tag-triggered project release workflow runs asynchronously; downstream release failures are repaired from that workflow's Actions page and do not require retrying the coordinator when the tag push succeeded.
 - Publish command contract: `cargo run --locked -p cargo-mono -- publish --package "$RELEASE_PROJECT"` for Rust CLI targets; Go targets skip the registry phase.
@@ -434,3 +438,13 @@ Release automation baseline:
 
 - Runmoor release fixtures must run with Node built-ins and no workspace dependency installation; YAML workflow assertions belong to `scripts/ci/` under `pnpm ci:contracts`.
 - Runmoor release dry runs are secret-free and non-publishing. Only the guarded publication job can obtain OIDC/signing and release-write authority; preview releases use the exact `runmoor@v<MAJOR.MINOR.PATCH>` source identity and three documented platform archives.
+
+### clibox Contract
+
+- The Rust crate and installed command are `clibox`; the public npm entry point is `@delino/clibox`. Keep the Cargo manifest/lock, private npm source manifest, executable version, and all nine generated npm packages at the same exact version.
+- The npm launcher supports Node.js 22+, macOS/Windows x64 and arm64, and Linux x64/arm64 with separate glibc/musl packages. It resolves only the matching exact-version `@delino/clibox-*` optional dependency and has no shell, PATH fallback, install script, runtime download, or Rust compilation fallback.
+- Generate public npm packages from the private source workspace under ignored `dist` or temporary directories. Ordinary workspace installation must not resolve unpublished clibox dependencies. Never track generated tarballs or binaries.
+- The initial CLI provides help/version only. Publish crates.io through Release Project, followed by `clibox@v<version>` and the npm workflow. No Homebrew or public GitHub Release assets are added.
+- `release-clibox.yml` validates all eight native targets and the full nine-package set before publication. Publish and verify platform packages before the main package; reuse only identical registry integrity on retries. Dry runs are secret-free and non-publishing.
+- `CLIBOX_NPM_PUBLISH_ENABLED` defaults to disabled for manual first-publication bootstrap. After all nine packages have the exact first-party Trusted Publisher configured, enable it for OIDC/provenance publication; only the guarded publish job receives `id-token: write`.
+- Keep `docs/project-clibox.md`, both clibox domain contracts, root/domain AGENTS rules, release versioning, CI selection/aggregation, and distribution fixtures synchronized.

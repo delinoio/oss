@@ -5,6 +5,8 @@
 
 ### Scope in This Domain
 
+- `packages/clibox`: private source workspace generating the public `@delino/clibox` launcher and eight native npm packages.
+
 - `packages/devhud-api-client`: implemented generated TypeScript DevHud API client, Connect Query bindings, and safe handwritten wire helpers.
 
 ### DevHud Rules
@@ -19,3 +21,10 @@
 - Keep committed output under `src/gen` tool-owned and reproducible. Public exports use per-service namespaces such as `UploadQuery` and `AdminQuery` so same-named RPCs do not collide; do not handwrite generated messages or service descriptors.
 - Handwritten helpers may validate canonical UUID v7 values, checksums, bounded pagination, RFC 8785 settings bytes without a UTF-8 BOM, bounded NUL-free sensitive-content-safe administrator reasons, required crash client/related correlations, duration, browser-only unknown architecture, explicit browser and native platform revision rules, NUL-free 256-byte crash identifiers, redacted crash details, and typed Connect errors, but must not add persistence, implicit authentication, or another business transport.
 - The API client must retain package-local typecheck, lint, unit, and build commands for affected CI execution. Its generated output is cacheable only when derived from the committed schemas and lockfile.
+
+### clibox Rules
+
+- Follow `docs/packages-clibox-distribution-contract.md`. Keep the source workspace private, with no unpublished platform dependencies; generate public manifests and exact optional dependencies during packaging only.
+- Preserve platform/libc/version checks, literal native argv execution, inherited stdio, and signal/exit propagation. No runtime downloads, install hooks, public JavaScript API, or system binary fallback.
+- Keep tests runnable with Node built-ins, and smoke-test npm/pnpm consumer tarball installs with scripts disabled. Build/package/release tasks are package-owned; native integration and publication tasks are not Turbo-cacheable.
+- Validate complete artifact inventories and source identity before publication. Confirm all native dependencies before the main package and reject conflicting existing integrity.

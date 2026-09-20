@@ -9,6 +9,7 @@
 
 - `crates/binpm`: Rust-based Node-free binary package manager for release assets.
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
+- `crates/clibox`: Rust CLI with approved crates.io and npm distribution.
 - `crates/nodeup`: Rust-based Node.js version manager.
 - `crates/with-watch`: Rust-based filesystem-watching command wrapper.
 - `crates/serde-feather`: Size-first serde runtime-facing core crate.
@@ -149,3 +150,9 @@
 - DevHud native-host IPC and registration fixtures must remain callable from the package-local DevHud CI commands. Native binaries, installers, signing, release, and deployment tasks are non-cacheable and CI must not publish or install outside disposable layouts.
 - Keep logs sufficient for debugging install, dispatch, and runtime resolution flow.
 - Keep CLI logs colorized by default for human operators, with explicit opt-out controls.
+
+### clibox Rules
+
+- Preserve the help/version-only CLI, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`.
+- This scaffold has an explicitly approved crates.io publication contract; register it as a workspace and cargo-mono release target. Do not add domain commands implicitly.
+- Standalone crate packages must contain their own MIT license and pass process-level CLI tests and Cargo publish dry-run.
