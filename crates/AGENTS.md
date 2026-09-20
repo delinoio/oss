@@ -153,6 +153,7 @@
 
 ### clibox Rules
 
-- Preserve the help/version-only CLI, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`.
-- This scaffold has an explicitly approved crates.io publication contract; register it as a workspace and cargo-mono release target. Do not add domain commands implicitly.
+- Preserve help/version, the seven issue #917 text/time/Base64/hash commands, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`.
+- Keep transformations offline and in Rust, binary input streaming for Base64/hash, timezone rules bundled and pinned, and publication restricted to completed output with preserved access permissions. Reject linked replacement destinations and sanitize parser/dependency/runtime errors before stderr. No input content, patterns, replacements, digests, argv, or paths belong in diagnostics.
+- This CLI has an explicitly approved crates.io publication contract and remains a workspace and cargo-mono release target. Issue #916 commands are a separate scope; do not add them implicitly.
 - Standalone crate packages must contain their own MIT license and pass process-level CLI tests and Cargo publish dry-run.

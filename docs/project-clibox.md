@@ -1,7 +1,7 @@
 # Project: clibox
 
 ## Goal
-Provide a Rust CLI that JavaScript projects can pin through npm and their lockfiles. The initial CLI exposes help and version only.
+Provide a Rust CLI that JavaScript projects can pin through npm and their lockfiles. In addition to help/version, issue #917 defines portable offline text replacement, time formatting/arithmetic, Base64 transformation, and hash generation/verification.
 
 ## Project ID
 `clibox`
@@ -22,7 +22,8 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 - Consumers never compile Rust or run installation/download scripts. The npm launcher executes only its exact-version platform dependency.
 - Manual `Release Project` versioning, exact-commit CI, crates.io publication, and the `clibox@v<version>` tag precede the downstream npm workflow.
 - npm publication uses GitHub Actions OIDC and provenance from the complete verified CI artifact; setup and dry-run validation do not publish.
-- Domain commands, a docs website, Homebrew, and public GitHub Release binaries are outside this foundation.
+- The seven issue #917 commands share redacted diagnostics, cancellable processing, and permission-preserving atomic file publication. Timezone data is bundled identically across platform artifacts of a version.
+- Issue #916 commands remain a separate scope. A docs website, Homebrew, and public GitHub Release binaries remain excluded.
 
 ## Change Policy
 Update both domain contracts, this index, relevant AGENTS files, version synchronization, platform fixtures, and release workflows together when these boundaries change.
