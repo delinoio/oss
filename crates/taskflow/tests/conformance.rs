@@ -851,71 +851,106 @@ async fn scenario_09_native_go_rust_vitest_and_jest_sharding() {
 
 #[tokio::test]
 async fn scenarios_08_15_16_19_watch_and_timer_companions_preserve_server() {
-    let address = std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .to_string();
-    let dir = fixture(json!({
-        "server":{"command":command(&["server",&address,"server.pid"]),"input":[],"service":true,"readiness":{"type":"tcp","address":address,"timeout":"5s"},"dependsOn":["check"],"with":["check","poll"]},
-        "check":{"command":command(&["record","checks","check"]),"input":["source"],"watch":{"initial":true,"debounce":"30ms"}},
-        "poll":{"command":command(&["record","polls","poll"]),"input":[],"schedule":{"every":"100ms","initial":false},"overlap":"skip"}
-    }));
-    let mut cfg: Value =
-        serde_yaml::from_slice(&std::fs::read(dir.path().join("taskflow.yml")).unwrap()).unwrap();
-    cfg["start"] = json!({"default":["server"]});
-    files::atomic_write(
-        &dir.path().join("taskflow.yml"),
-        serde_yaml::to_string(&cfg).unwrap().as_bytes(),
-    )
-    .unwrap();
-    // Keep the watched input absent until the shared prerequisite/companion
-    // finishes activation. macOS may deliver pre-subscription creation events
-    // after that execution; those legitimately request another check and would
-    // obscure the initial-execution deduplication this fixture is testing.
-    let cancel = CancellationToken::new();
-    let token = cancel.clone();
-    let root = dir.path().to_path_buf();
-    let session = tokio::spawn(async move {
-        taskflow::session::start(
-            &root,
-            "default",
-            RunOptions {
-                quiet: true,
-                ..RunOptions::default()
-            },
-            token,
-        )
-        .await
-    });
-    wait_lines(&dir.path().join("server.pid"), "", 1).await;
-    let pid = std::fs::read_to_string(dir.path().join("server.pid")).unwrap();
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("checks"))
+    for watch_changes in [false, true] {
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
             .unwrap()
-            .matches("check")
-            .count(),
-        1
-    );
-    std::fs::write(dir.path().join("source"), "after").unwrap();
-    wait_lines(&dir.path().join("checks"), "check", 2).await;
-    wait_lines(&dir.path().join("polls"), "poll", 1).await;
-    let trace = std::fs::read_to_string(dir.path().join("checks")).unwrap();
-    assert_eq!(trace.matches("check").count(), 2, "{trace}");
-    assert!(std::fs::read_to_string(dir.path().join("polls"))
-        .unwrap()
-        .contains("poll"));
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("server.pid")).unwrap(),
-        pid
-    );
-    cancel.cancel();
-    tokio::time::timeout(Duration::from_secs(5), session)
-        .await
-        .unwrap()
-        .unwrap()
+            .local_addr()
+            .unwrap()
+            .to_string();
+        // Isolate activation accounting from mutation accounting. FSEvents may
+        // deliver a pre-baseline root-directory event even with absent inputs;
+        // that conservatively retained Input cause is not a second Activation.
+        let check = if watch_changes {
+            json!({"command":command(&["copy","source","checked"]),"input":["source"],"output":["checked"],"watch":{"initial":true,"debounce":"30ms"}})
+        } else {
+            json!({"command":command(&["record","checks","check"]),"input":[],"watch":{"initial":true,"debounce":"30ms"}})
+        };
+        let dir = fixture(json!({
+            "server":{"command":command(&["server",&address,"server.pid"]),"input":[],"service":true,"readiness":{"type":"tcp","address":address,"timeout":"5s"},"dependsOn":["check"],"with":["check","poll"]},
+            "check":check,
+            "poll":{"command":command(&["record","polls","poll"]),"input":[],"schedule":{"every":"100ms","initial":false},"overlap":"skip"}
+        }));
+        let mut cfg: Value =
+            serde_yaml::from_slice(&std::fs::read(dir.path().join("taskflow.yml")).unwrap())
+                .unwrap();
+        cfg["start"] = json!({"default":["server"]});
+        files::atomic_write(
+            &dir.path().join("taskflow.yml"),
+            serde_yaml::to_string(&cfg).unwrap().as_bytes(),
+        )
         .unwrap();
-    assert!(tokio::net::TcpStream::connect(&address).await.is_err());
+        if watch_changes {
+            std::fs::write(dir.path().join("source"), "before").unwrap();
+        }
+        let cancel = CancellationToken::new();
+        let token = cancel.clone();
+        let root = dir.path().to_path_buf();
+        let session = tokio::spawn(async move {
+            taskflow::session::start(
+                &root,
+                "default",
+                RunOptions {
+                    quiet: true,
+                    ..RunOptions::default()
+                },
+                token,
+            )
+            .await
+        });
+        wait_lines(&dir.path().join("server.pid"), "", 1).await;
+        let pid = std::fs::read_to_string(dir.path().join("server.pid")).unwrap();
+        if watch_changes {
+            let initial = runner::previous(dir.path(), "app#check").unwrap();
+            files::atomic_write(&dir.path().join("source"), b"after").unwrap();
+            tokio::time::timeout(Duration::from_secs(15), async {
+                loop {
+                    assert!(
+                        !session.is_finished(),
+                        "session exited before consuming input"
+                    );
+                    if runner::previous(dir.path(), "app#check").is_some_and(|receipt| {
+                        receipt.execution != initial.execution
+                            && receipt.success()
+                            && receipt
+                                .causes
+                                .iter()
+                                .any(|cause| matches!(cause, Cause::Input { .. }))
+                            && std::fs::read_to_string(dir.path().join("checked"))
+                                .ok()
+                                .as_deref()
+                                == Some("after")
+                    }) {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+        }
+        wait_lines(&dir.path().join("polls"), "poll", 1).await;
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("server.pid")).unwrap(),
+            pid
+        );
+        cancel.cancel();
+        tokio::time::timeout(Duration::from_secs(5), session)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        if !watch_changes {
+            assert_eq!(
+                std::fs::read_to_string(dir.path().join("checks"))
+                    .unwrap()
+                    .lines()
+                    .count(),
+                1,
+                "initial watch, prerequisite, and companion must share one execution"
+            );
+        }
+        assert!(tokio::net::TcpStream::connect(&address).await.is_err());
+    }
 }
 
 #[tokio::test]
