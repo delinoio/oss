@@ -130,7 +130,9 @@ async fn observe_inner(request: Request<'_>, hook: impl FnOnce()) -> Result<Exec
     // Finite pipe input is preserved. A terminal does not authorize interactive
     // prompts; give the child EOF instead of allocating a PTY.
     use std::io::IsTerminal;
-    native.stdin(if std::io::stdin().is_terminal() {
+    let stdin_inherited = !std::io::stdin().is_terminal();
+    let stdio_complete = platform::inherited_stdio_complete(stdin_inherited);
+    native.stdin(if !stdin_inherited {
         Stdio::null()
     } else {
         Stdio::inherit()
@@ -176,7 +178,8 @@ async fn observe_inner(request: Request<'_>, hook: impl FnOnce()) -> Result<Exec
     };
     let mut accesses: Entries<Access> = Entries::new(request.config.limits.memory_bytes / 8);
     let mut errors = Vec::new();
-    let mut complete = true;
+    let mut complete = stdio_complete;
+    tracing::debug!(execution_id=%id, stage="inherited-stdio", collection_complete=stdio_complete, "standard stream coverage");
     let mut exit_code = None;
     #[cfg(unix)]
     let mut signal = None;

@@ -153,6 +153,8 @@
 
 ### Runlens Rules
 
+- Inherited regular-file standard streams cannot establish complete collection without descriptor-I/O tracing; preserve the streams and mark such runs incomplete.
+
 - Follow docs/project-runlens.md and docs/crates-runlens-foundation.md. Run independent tests/fmt/Clippy with nightly-2026-08-02 in addition to root cargo test.
 - Keep fspy and dependency notices, immutable provenance, and a tested patch ledger. Do not reformat unrelated vendored sources or add root dependency patches.
 - Do not inject unused tracing environment markers or overwrite the caller's `FSPY` value; retain only required backend coordination mutations.

@@ -581,6 +581,10 @@ fn main() {
                 let _ = fs::metadata(format!("missing-{index}"));
             }
         }
+        "stdio" => {
+            print!("STDOUT-CANARY");
+            eprint!("STDERR-CANARY");
+        }
         "stdin" => {
             let mut input = String::new();
             use std::io::Read;

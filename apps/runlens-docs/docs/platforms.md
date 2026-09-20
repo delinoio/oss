@@ -32,3 +32,5 @@ If an inspected executable changes while Runlens prepares its snapshot, Runlens 
 Complete collection means completion within documented backend and snapshot coverage. It does not prove observation of every possible dependency. Environment reads, networking, clocks, randomness, detailed process timelines, and event ordering are not captured.
 
 Direct shebang scripts run with incomplete identity evidence because a script checksum does not identify its interpreter chain. Use an explicit supported native interpreter in argv when comparison requires executable identity.
+
+Redirecting standard input, output, or error through a pre-opened regular file keeps the requested I/O working but makes collection incomplete. Runlens cannot certify accesses through those inherited file handles. Pipes and terminals remain supported, and stream contents are never saved in a report.

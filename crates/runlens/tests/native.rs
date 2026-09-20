@@ -3342,3 +3342,70 @@ fn linux_null_empty_path_metadata_retains_directory_read_evidence() {
         true
     );
 }
+
+#[test]
+fn inherited_standard_files_preserve_io_but_cannot_certify_policy() {
+    for stream in ["stdin", "stdout", "stderr"] {
+        let root = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        let path = external.path().join("standard-file");
+        fs::write(&path, "STDIN-CANARY").unwrap();
+        fs::write(
+            root.path().join("runlens.toml"),
+            "schema_version = 1\n[policy]\ndeny_reads = [\"**/standard-file\"]\ndeny_writes = \
+             [\"**/standard-file\"]\n",
+        )
+        .unwrap();
+        let mut command = Command::new(binary());
+        command.current_dir(root.path()).args([
+            "--log-level",
+            "off",
+            "run",
+            "--save",
+            "stdio.json",
+            "--",
+            fixture(),
+            if stream == "stdin" { "stdin" } else { "stdio" },
+        ]);
+        match stream {
+            "stdin" => {
+                command.stdin(fs::File::open(&path).unwrap());
+            }
+            "stdout" => {
+                command.stdout(fs::File::create(&path).unwrap());
+            }
+            "stderr" => {
+                command.stderr(fs::File::create(&path).unwrap());
+            }
+            _ => unreachable!(),
+        }
+        let result = command.output().unwrap();
+        assert_eq!(result.status.code(), Some(4), "{stream}: {result:?}");
+        if stream == "stdin" {
+            assert_eq!(result.stdout, b"STDIN-CANARY");
+        } else {
+            assert!(
+                fs::read_to_string(&path)
+                    .unwrap()
+                    .contains(if stream == "stdout" {
+                        "STDOUT-CANARY"
+                    } else {
+                        "STDERR-CANARY"
+                    })
+            );
+        }
+        let report = parse(root.path(), "stdio.json");
+        assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 0);
+        assert_eq!(
+            report["executions"][0]["outcome"]["collection_complete"],
+            false
+        );
+        assert!(
+            !fs::read_to_string(root.path().join("stdio.json"))
+                .unwrap()
+                .contains("CANARY")
+        );
+        let policy = invoke(root.path(), &["policy", "check", "stdio.json", "--json"]);
+        assert_eq!(policy.status.code(), Some(4));
+    }
+}
