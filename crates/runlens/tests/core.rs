@@ -139,6 +139,27 @@ fn path_patterns_use_the_observed_platform_case_rules() {
     );
 }
 #[test]
+fn root_masking_respects_platform_case_and_component_boundaries() {
+    let root = std::path::Path::new("C:/Repo-Éclair");
+    let redactor = Redactor::new(root, &[], &config::Redaction::default()).unwrap();
+    let other_case = "c:/rEPO-éCLAIR/private/file";
+    assert_eq!(
+        redactor.path(std::path::Path::new(other_case)),
+        if cfg!(windows) {
+            "${workspace}/private/file"
+        } else {
+            other_case
+        }
+    );
+    let similar = "c:/rEPO-éCLAIR-other/private/file";
+    assert_eq!(redactor.path(std::path::Path::new(similar)), similar);
+    let matcher = config::patterns(&["private".into()]).unwrap();
+    assert_eq!(
+        snapshot::excluded(std::path::Path::new(other_case), root, &matcher, &[]),
+        cfg!(windows)
+    );
+}
+#[test]
 fn final_snapshot_record_and_directory_member_obey_byte_budget() {
     let root = tempfile::tempdir().unwrap();
     let root = root.path().canonicalize().unwrap();

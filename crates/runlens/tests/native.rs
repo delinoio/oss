@@ -668,6 +668,59 @@ environment_names = ["CUSTOM_REDACT"]
     }
 }
 #[test]
+#[cfg(windows)]
+fn differently_cased_workspace_accesses_remain_private_and_policy_visible() {
+    let root = repository("read");
+    let root_path = root.path().canonicalize().unwrap();
+    fs::create_dir(root.path().join("private")).unwrap();
+    fs::write(root.path().join("private/file"), "private contents").unwrap();
+    fs::write(
+        root.path().join("runlens.toml"),
+        "schema_version = 1\n[policy]\ndeny_reads = [\"private/**\"]\n",
+    )
+    .unwrap();
+    let alternate = format!(
+        "{}/private/file",
+        root_path.to_string_lossy().to_uppercase()
+    );
+    let observed = invoke(
+        root.path(),
+        &[
+            "run",
+            "--save",
+            "casing.json",
+            "--",
+            fixture(),
+            "read",
+            &alternate,
+        ],
+    );
+    assert!(
+        observed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&observed.stderr)
+    );
+    let value = parse(root.path(), "casing.json");
+    let accesses = value["executions"][0]["accesses"].as_object().unwrap();
+    let (_, access) = accesses
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case("${workspace}/private/file"))
+        .unwrap();
+    assert_eq!(access["in_scope"], true);
+    let serialized = fs::read_to_string(root.path().join("casing.json")).unwrap();
+    assert!(
+        !serialized
+            .to_uppercase()
+            .contains(&runlens::privacy::normalized(&root_path).to_uppercase())
+    );
+    assert_eq!(
+        invoke(root.path(), &["policy", "check", "casing.json", "--json"])
+            .status
+            .code(),
+        Some(5)
+    );
+}
+#[test]
 fn offline_policy_and_cache_follow_windows_case_rules() {
     let root = repository("read");
     fs::create_dir(root.path().join("Private")).unwrap();

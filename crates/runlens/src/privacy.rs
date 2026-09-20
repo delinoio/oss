@@ -125,6 +125,18 @@ pub(crate) fn windows_path(path: &str) -> String {
     }
 }
 fn replace_root(value: String, root: &str, placeholder: &str) -> String {
+    #[cfg(windows)]
+    let value = {
+        // Canonical Windows argv may use extended drive or UNC notation. Mask
+        // the complete prefix before handling ordinary path spellings.
+        let extended = if let Some(unc) = root.strip_prefix("//") {
+            format!("//?/UNC/{unc}")
+        } else {
+            format!("//?/{root}")
+        };
+        let value = replace_path_root(&value, &extended, placeholder);
+        replace_path_root(&value, &extended.replace('/', "\\"), placeholder)
+    };
     let value = replace_path_root(&value, root, placeholder);
     #[cfg(windows)]
     let value = replace_path_root(&value, &root.replace('/', "\\"), placeholder);
@@ -138,8 +150,7 @@ fn replace_path_root(value: &str, root: &str, placeholder: &str) -> String {
     let root_ends_in_separator = root.chars().next_back().is_some_and(separator);
     let mut result = String::with_capacity(value.len());
     let mut copied = 0;
-    for (start, _) in value.match_indices(root) {
-        let end = start + root.len();
+    for (start, end) in root_matches(value, root) {
         let starts_path = start == 0
             || value[..start].chars().next_back().is_some_and(|ch| {
                 ch.is_whitespace() || matches!(ch, '=' | '\'' | '"' | '(' | '[' | '{' | ',')
@@ -158,4 +169,78 @@ fn replace_path_root(value: &str, root: &str, placeholder: &str) -> String {
     }
     result.push_str(&value[copied..]);
     result
+}
+
+#[cfg(not(windows))]
+fn root_matches(value: &str, root: &str) -> Vec<(usize, usize)> {
+    value
+        .match_indices(root)
+        .map(|(start, _)| (start, start + root.len()))
+        .collect()
+}
+
+#[cfg(windows)]
+fn root_matches(value: &str, root: &str) -> Vec<(usize, usize)> {
+    use windows_sys::Win32::Globalization::{FIND_FROMSTART, FindStringOrdinal};
+    let source = value.encode_utf16().collect::<Vec<_>>();
+    let pattern = root.encode_utf16().collect::<Vec<_>>();
+    if pattern.is_empty() || source.len() > i32::MAX as usize || pattern.len() > i32::MAX as usize {
+        return Vec::new();
+    }
+    // Windows ordinal casing preserves UTF-16 lengths. Map native offsets back
+    // to UTF-8 boundaries instead of assuming Unicode folds preserve byte sizes.
+    let mut boundaries = vec![(0, 0)];
+    let mut units = 0;
+    for (offset, ch) in value.char_indices() {
+        units += ch.len_utf16();
+        boundaries.push((units, offset + ch.len_utf8()));
+    }
+    let byte_offset = |units| {
+        boundaries
+            .binary_search_by_key(&units, |p| p.0)
+            .ok()
+            .map(|i| boundaries[i].1)
+    };
+    let mut matches = Vec::new();
+    let mut offset = 0;
+    while offset < source.len() {
+        // SAFETY: both UTF-16 buffers have the explicit supplied lengths and
+        // remain alive for the call. No locale or null terminator is involved.
+        let found = unsafe {
+            FindStringOrdinal(
+                FIND_FROMSTART,
+                source[offset..].as_ptr(),
+                (source.len() - offset) as i32,
+                pattern.as_ptr(),
+                pattern.len() as i32,
+                1,
+            )
+        };
+        if found < 0 {
+            break;
+        }
+        let start = offset + found as usize;
+        offset = start + pattern.len();
+        if let (Some(start), Some(end)) = (byte_offset(start), byte_offset(offset)) {
+            matches.push((start, end));
+        }
+    }
+    matches
+}
+
+pub(crate) fn strip_path_root<'a>(value: &'a str, root: &str) -> Option<&'a str> {
+    if root.is_empty() {
+        return None;
+    }
+    root_matches(value, root)
+        .into_iter()
+        .find_map(|(start, end)| {
+            (start == 0
+                && (end == value.len() || root.ends_with('/') || value[end..].starts_with('/')))
+            .then_some(&value[end..])
+        })
+}
+
+pub(crate) fn within_root(path: &Path, root: &Path) -> bool {
+    strip_path_root(&normalized(path), &normalized(root)).is_some()
 }

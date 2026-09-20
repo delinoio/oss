@@ -168,6 +168,7 @@
 - Configured secret environment-name selection follows Windows case-insensitive key semantics before masking values in argv or path metadata; Unix selection remains case-sensitive.
 - Retain the inspected executable handle through snapshots and revalidate pathname identity at the launch boundary; a stale digest must never certify a replacement executable.
 - Normalize only complete workspace/home/temporary path roots; similarly prefixed external paths must remain distinguishable in policy and query evidence.
+- Windows root masking and scope/exclusion checks use native ordinal case-insensitive comparisons with component boundaries; preserve Unix case sensitivity and avoid leaking differently cased local roots.
 - Unsupported accesses, lexical aliases through parent components, and uncovered workspace paths prevent a policy pass; never collapse such paths across potentially changed symlinks to invent an identity. Known absolute external paths still support literal boundary checks without establishing cache coverage.
 - Offline path queries follow the report's OS syntax, including Windows drive and UNC paths; do not reinterpret Unix literal backslashes as separators.
 - Compile Windows input/output/exclusion/policy globs case-insensitively, including directory roots. Offline checks follow each execution's recorded OS, not the analyst's host OS.

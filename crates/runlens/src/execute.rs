@@ -171,7 +171,7 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
                         let path = raw_path.as_path();
                         if temporary
                             .iter()
-                            .any(|temporary| path.starts_with(temporary))
+                            .any(|temporary| crate::privacy::within_root(path, temporary))
                         {
                             continue;
                         }
@@ -331,10 +331,7 @@ fn observed_in_scope(
 ) -> bool {
     let normalized = crate::privacy::normalized(path);
     let root_text = crate::privacy::normalized(root);
-    if !(normalized == root_text
-        || normalized
-            .strip_prefix(&root_text)
-            .is_some_and(|suffix| suffix.starts_with('/')))
+    if crate::privacy::strip_path_root(&normalized, &root_text).is_none()
         || path
             .components()
             .any(|part| matches!(part, std::path::Component::ParentDir))
@@ -342,7 +339,9 @@ fn observed_in_scope(
         return false;
     }
     for ancestor in path.ancestors() {
-        if crate::privacy::normalized(ancestor) == root_text {
+        if crate::privacy::strip_path_root(&crate::privacy::normalized(ancestor), &root_text)
+            == Some("")
+        {
             break;
         }
         if std::fs::symlink_metadata(ancestor).is_ok_and(|metadata| metadata.is_symlink()) {

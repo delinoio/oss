@@ -432,6 +432,10 @@ Cancellation handlers are installed before owned child work. Native cancellation
 fixtures synchronize on actual child readiness rather than assuming startup time.
 
 Offline checks never pass a report with no target execution.
+Windows root masking and scope classification use the native ordinal casing
+rules for workspace, home, and temporary roots, preserving component boundaries
+and converting UTF-16 match offsets back to UTF-8 without byte-length guesses.
+The same root comparison applies to exclusions; Unix roots stay case-sensitive.
 Configured redaction environment names match keys case-insensitively on Windows
 and case-sensitively on Unix. Selected values are masked before argv and path
 metadata serialization regardless of their original Windows key spelling.

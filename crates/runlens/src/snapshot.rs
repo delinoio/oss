@@ -26,9 +26,15 @@ pub fn excluded(
     exclusions: &globset::GlobSet,
     temporary: &[PathBuf],
 ) -> bool {
-    let relative = path.strip_prefix(root).unwrap_or(path);
+    let path_text = crate::privacy::normalized(path);
+    let root_text = crate::privacy::normalized(root);
+    let relative = Path::new(
+        crate::privacy::strip_path_root(&path_text, &root_text)
+            .map(|s| s.trim_start_matches('/'))
+            .unwrap_or(&path_text),
+    );
     relative.components().any(|part| part.as_os_str() == ".git")
-        || temporary.iter().any(|p| path.starts_with(p))
+        || temporary.iter().any(|p| crate::privacy::within_root(path, p))
         // WalkDir prunes an excluded directory's entire subtree. Apply the
         // same boundary to accesses and membership, even after paths disappear.
         || relative.ancestors().any(|ancestor| exclusions.is_match(ancestor))
