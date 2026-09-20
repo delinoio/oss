@@ -117,3 +117,15 @@ settings are excluded. Portable classification regressions and Windows native
 rename/delete policy fixtures cover this conservative boundary. Remove the patch
 when upstream traces both endpoints and all supported mutation classes without
 turning missing evidence into a pass or interrupting the original operation.
+
+Unix path/descriptor mutation hooks now cover mkdir/mknod/mkfifo, hard links,
+symlinks, chmod/chown, truncation, timestamps, extended attributes and macOS file
+flags. Linux seccomp observes the corresponding raw syscalls, including static
+children and directory-relative variants. Hard links record both endpoints;
+symlink target text is not an input read. Failed calls remain attempts, and lost
+argument resolution remains incomplete. Native external-boundary fixtures cover
+creation, links and metadata success/failure, with static Linux counterparts.
+Explicit directory creation attempts still require the directory in write
+allowlists; the snapshot-only ancestor exception does not authorize an attempt.
+Remove this patch when upstream covers these mutation families with equivalent
+bounded evidence and continued child execution on collection errors.

@@ -450,6 +450,12 @@ Windows file-information updates record source-handle writes before deletion or
 metadata mutation. Rename/link destinations and unknown information classes
 currently remain unsupported evidence and make collection incomplete; the child
 operation still proceeds. Handle-local seek and I/O settings do not mutate files.
+Unix collection records directory and link creation, permissions, ownership,
+truncation, timestamps, extended attributes and macOS file flags independently of
+writable opens. Linux static children use corresponding seccomp syscall coverage.
+Direct creation of a parent such as `build` needs an explicit `build` write rule
+alongside `build/out/**`; snapshot-only ancestor exceptions do not authorize the
+creation attempt. Symlink target strings do not count as reading their targets.
 Exclusion comparisons normalize ordinary DOS/UNC and extended Windows prefixes
 before extracting a relative path. Windows core fixtures cover both directions
 and missing descendants; the native excluded-input fixture prevents an omitted

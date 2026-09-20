@@ -63,6 +63,7 @@ pub struct CStrPtr {
 }
 
 impl CStrPtr {
+    pub const fn is_null(self) -> bool { self.remote_ptr == 0 }
     // Reads the C string from the remote process into the provided buffer.
     // Returns:
     /// - `Ok(Some(n))` if a null-terminator was found at position n of the buffer,

@@ -6,6 +6,21 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 int main(int argc, char **argv) {
+    if (argc == 4 && !strncmp(argv[1], "mutate-", 7)) {
+        int fd = open(argv[3], O_RDONLY | O_DIRECTORY);
+        if (fd < 0) return 26;
+        const char *relative = argv[2] + strlen(argv[3]) + 1;
+        if (!strcmp(argv[1], "mutate-mkdirat")) syscall(SYS_mkdirat, fd, relative, 0700);
+        else if (!strcmp(argv[1], "mutate-chmodat")) syscall(SYS_fchmodat, fd, relative, 0600);
+        else if (!strcmp(argv[1], "mutate-chownat")) syscall(SYS_fchownat, fd, relative, getuid(), getgid(), 0);
+        else if (!strcmp(argv[1], "mutate-truncate")) syscall(SYS_truncate, argv[2], 0);
+        else if (!strcmp(argv[1], "mutate-utimensat")) syscall(SYS_utimensat, fd, relative, NULL, 0);
+        else if (!strcmp(argv[1], "mutate-linkat")) syscall(SYS_linkat, AT_FDCWD, "input.txt", fd, relative, 0);
+        else if (!strcmp(argv[1], "mutate-symlinkat")) syscall(SYS_symlinkat, "opaque-target", fd, relative);
+        else return 27;
+        close(fd);
+        return 0;
+    }
     if (argc == 3 && !strncmp(argv[1], "open-", 5)) {
         int flags = O_RDONLY;
         if (!strcmp(argv[1], "open-create")) flags |= O_CREAT;

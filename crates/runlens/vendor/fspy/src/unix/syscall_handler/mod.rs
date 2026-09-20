@@ -1,6 +1,7 @@
 mod execve;
 mod getdents;
 mod open;
+mod mutate;
 mod rename;
 mod remove;
 mod stat;
@@ -96,6 +97,35 @@ impl_handler!(
     #[cfg(target_arch = "x86_64")] access,
     faccessat,
     faccessat2,
+
+    #[cfg(target_arch = "x86_64")] mkdir,
+    #[cfg(target_arch = "x86_64")] mknod,
+    #[cfg(target_arch = "x86_64")] chmod,
+    #[cfg(target_arch = "x86_64")] chown,
+    #[cfg(target_arch = "x86_64")] lchown,
+    #[cfg(target_arch = "x86_64")] utime,
+    #[cfg(target_arch = "x86_64")] utimes,
+    truncate,
+    setxattr,
+    lsetxattr,
+    removexattr,
+    lremovexattr,
+    mkdirat,
+    mknodat,
+    fchmodat,
+    fchmodat2,
+    fchownat,
+    utimensat,
+    #[cfg(target_arch = "x86_64")] futimesat,
+    fchmod,
+    fchown,
+    ftruncate,
+    fsetxattr,
+    fremovexattr,
+    #[cfg(target_arch = "x86_64")] link,
+    linkat,
+    #[cfg(target_arch = "x86_64")] symlink,
+    symlinkat,
 
     execve,
     execveat,

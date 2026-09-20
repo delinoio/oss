@@ -4,6 +4,82 @@ use std::{fs, process::Command, time::Duration};
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
+        #[cfg(unix)]
+        mode if mode.starts_with("mutate-") => {
+            use std::{ffi::CString, os::fd::AsRawFd};
+            let path = CString::new(args[1].as_str()).unwrap();
+            let base = fs::File::open(&args[2]).unwrap();
+            let relative = CString::new(
+                std::path::Path::new(&args[1])
+                    .strip_prefix(&args[2])
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+            )
+            .unwrap();
+            // SAFETY: caller-owned strings and the directory descriptor stay
+            // live; failures are deliberate observations, not fixture failures.
+            unsafe {
+                match mode {
+                    "mutate-mkdir" => {
+                        libc::mkdir(path.as_ptr(), 0o700);
+                    }
+                    "mutate-mkdirat" => {
+                        libc::mkdirat(base.as_raw_fd(), relative.as_ptr(), 0o700);
+                    }
+                    "mutate-chmod" => {
+                        libc::chmod(path.as_ptr(), 0o600);
+                    }
+                    "mutate-chmodat" => {
+                        libc::fchmodat(base.as_raw_fd(), relative.as_ptr(), 0o600, 0);
+                    }
+                    "mutate-chown" => {
+                        libc::chown(path.as_ptr(), libc::getuid(), libc::getgid());
+                    }
+                    "mutate-chownat" => {
+                        libc::fchownat(
+                            base.as_raw_fd(),
+                            relative.as_ptr(),
+                            libc::getuid(),
+                            libc::getgid(),
+                            0,
+                        );
+                    }
+                    "mutate-truncate" => {
+                        libc::truncate(path.as_ptr(), 0);
+                    }
+                    "mutate-utimes" => {
+                        libc::utimes(path.as_ptr(), std::ptr::null());
+                    }
+                    "mutate-utimensat" => {
+                        libc::utimensat(base.as_raw_fd(), relative.as_ptr(), std::ptr::null(), 0);
+                    }
+                    "mutate-link" => {
+                        libc::link(c"input.txt".as_ptr(), path.as_ptr());
+                    }
+                    "mutate-linkat" => {
+                        libc::linkat(
+                            libc::AT_FDCWD,
+                            c"input.txt".as_ptr(),
+                            base.as_raw_fd(),
+                            relative.as_ptr(),
+                            0,
+                        );
+                    }
+                    "mutate-symlink" => {
+                        libc::symlink(c"opaque-target".as_ptr(), path.as_ptr());
+                    }
+                    "mutate-symlinkat" => {
+                        libc::symlinkat(
+                            c"opaque-target".as_ptr(),
+                            base.as_raw_fd(),
+                            relative.as_ptr(),
+                        );
+                    }
+                    _ => panic!("unknown mutation fixture"),
+                }
+            }
+        }
         #[cfg(windows)]
         "windows-rename" | "windows-delete" => {
             if args[0] == "windows-rename" {

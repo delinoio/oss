@@ -2271,7 +2271,9 @@ fn write_allowlists_cover_ancestor_membership_but_not_forbidden_siblings() {
         let root = tempfile::tempdir().unwrap();
         fs::write(
             root.path().join("runlens.toml"),
-            format!("schema_version = 1\n[policy]\nallow_writes = [{pattern:?}]\n{deny}\n"),
+            format!(
+                "schema_version = 1\n[policy]\nallow_writes = [\"build\", {pattern:?}]\n{deny}\n"
+            ),
         )
         .unwrap();
         let mut args = vec![
@@ -2540,5 +2542,118 @@ fn historical_only_reports_cannot_pass_cache_or_policy_checks() {
                 .values()
                 .any(|f| f["code"] == "failed-execution")
         );
+    }
+}
+
+#[cfg(unix)]
+fn check_path_mutation(executable: &str, mode: &str, failed: bool) {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let outside = outside.path().canonicalize().unwrap();
+    let path = outside.join(if failed { "missing/blocked" } else { "blocked" });
+    let creation = mode.contains("mkdir") || mode.contains("link");
+    if !failed && !creation {
+        fs::write(&path, "metadata target").unwrap();
+    }
+    fs::write(root.path().join("input.txt"), "hardlink source").unwrap();
+    fs::write(
+        root.path().join("runlens.toml"),
+        format!(
+            "schema_version=1\n[policy]\ndeny_writes=[{:?}]\n",
+            path.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+    let output = invoke(
+        root.path(),
+        &[
+            "run",
+            "--save",
+            "mutation.json",
+            "--",
+            executable,
+            mode,
+            path.to_str().unwrap(),
+            outside.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{mode}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report = parse(root.path(), "mutation.json");
+    let execution = &report["executions"][0];
+    assert_eq!(
+        execution["accesses"][path.to_str().unwrap()]["write"],
+        true,
+        "{mode}: {}",
+        execution["accesses"]
+    );
+    assert!(execution["changes"].get(path.to_str().unwrap()).is_none());
+    assert_eq!(fs::symlink_metadata(&path).is_ok(), !failed);
+    if mode.contains("symlink") {
+        assert!(
+            !execution["accesses"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .any(|p| p.ends_with("opaque-target"))
+        );
+    }
+    assert_eq!(
+        invoke(root.path(), &["policy", "check", "mutation.json", "--json"])
+            .status
+            .code(),
+        Some(5)
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn path_only_mutations_cannot_pass_external_write_denials() {
+    for mode in [
+        "mutate-mkdir",
+        "mutate-mkdirat",
+        "mutate-chmod",
+        "mutate-chmodat",
+        "mutate-chown",
+        "mutate-chownat",
+        "mutate-truncate",
+        "mutate-utimes",
+        "mutate-utimensat",
+        "mutate-link",
+        "mutate-linkat",
+        "mutate-symlink",
+        "mutate-symlinkat",
+    ] {
+        for failed in [false, true] {
+            check_path_mutation(fixture(), mode, failed);
+        }
+    }
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn static_linux_path_only_mutations_cannot_pass_external_write_denials() {
+    let Ok(executable) = std::env::var("RUNLENS_STATIC_FIXTURE") else {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "CI requires a real static Linux fixture"
+        );
+        return;
+    };
+    for mode in [
+        "mutate-mkdirat",
+        "mutate-chmodat",
+        "mutate-chownat",
+        "mutate-truncate",
+        "mutate-utimensat",
+        "mutate-linkat",
+        "mutate-symlinkat",
+    ] {
+        for failed in [false, true] {
+            check_path_mutation(&executable, mode, failed);
+        }
     }
 }
