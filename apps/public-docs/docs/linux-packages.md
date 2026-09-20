@@ -6,7 +6,7 @@ Use the signed Delino repository at `https://pkgs.oss.delino.io` to install CLI 
 
 Packages support x86-64 and ARM64 on Ubuntu 22.04, 24.04 and 26.04 LTS; Debian 12 and 13; Fedora 43 and 44; and RHEL-compatible 9 and 10 systems, including UBI, Rocky Linux and AlmaLinux.
 
-The stable repository contains `binpm`, `cargo-mono`, `nodeup`, `with-watch` and `derun`. Runmoor's stable releases are available as native packages only from the separately enabled preview repository. Package versions use the original CLI version followed by `-1`. Older releases published before native package support are unavailable through these repositories.
+The initial public repository contains **`binpm` only**, in stable. Native packages for `cargo-mono`, `nodeup`, `with-watch` and `derun` are not published yet; they will use stable when released. Runmoor native packages are also not published yet and will use the separately enabled preview repository. Package versions use the original CLI version followed by `-1`. Older releases published before native package support are unavailable through these repositories.
 
 Arch Linux, Alpine Linux, DevHud and TTL are outside this repository's support scope.
 
@@ -48,7 +48,7 @@ sudo apt-get install binpm
 binpm --version
 ```
 
-The source uses `Signed-By` to restrict this key to the Delino repository. Replace `binpm` with another stable package name as needed. APT also installs `delino-archive-keyring`, which keeps this repository’s public certificate current through authenticated package updates.
+The source uses `Signed-By` to restrict this key to the Delino repository. Only `binpm` is currently published. APT also installs `delino-archive-keyring`, which keeps this repository’s public certificate current through authenticated package updates.
 
 ## DNF: stable
 
@@ -74,6 +74,8 @@ binpm --version
 The repository enables both `gpgcheck=1` and `repo_gpgcheck=1`. If DNF requests a key confirmation, compare the fingerprint above before accepting.
 
 ## Enable Runmoor preview
+
+Runmoor is not yet published in the preview repository. Use the release archives described in the [Runmoor installation guide](https://runmoor.delino.io/install) for now. The registration and installation commands below apply after its first native package release.
 
 Preview is an explicit opt-in and remains enabled for later updates. After the key setup above, register the additional source for your package manager.
 

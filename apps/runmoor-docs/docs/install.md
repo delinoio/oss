@@ -26,7 +26,7 @@ Compare the printed hash with the exact archive entry in the verified `SHA256SUM
 
 ## Linux APT and DNF
 
-Runmoor's stable releases are available as native packages through the separately enabled Delino preview repository. Installation does not register or start a service. Packages support x86-64 and ARM64 on Ubuntu 22.04/24.04/26.04 LTS, Debian 12/13, Fedora 43/44, and RHEL-compatible 9/10 systems, including UBI, Rocky Linux and AlmaLinux.
+Runmoor native packages are not published yet. Use the release archives above for now. After the first native package release, Runmoor will be available through the separately enabled Delino preview repository; the commands below apply then. Installation does not register or start a service. Packages support x86-64 and ARM64 on Ubuntu 22.04/24.04/26.04 LTS, Debian 12/13, Fedora 43/44, and RHEL-compatible 9/10 systems, including UBI, Rocky Linux and AlmaLinux.
 
 The repository address is `https://pkgs.oss.delino.io`. Verify its public RSA 4096 key before registering it:
 

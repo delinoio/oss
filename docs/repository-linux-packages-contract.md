@@ -4,7 +4,7 @@
 
 The CLI release workflows own native APT and DNF distribution at `https://pkgs.oss.delino.io`. `packaging/linux/` owns pinned tools, public repository configuration, and package metadata; `scripts/release/linux-packages*` owns verification, packaging, repository generation, and resumable publication. This contract complements `repository-workflow-contract.md`.
 
-Stable packages are binpm, cargo-mono, nodeup, with-watch, and derun. Runmoor remains preview-only. Both amd64/x86_64 and arm64/aarch64 are required. Arch, Alpine, TTL, and DevHud are excluded. Public package names equal executable names. Version is the exact source SemVer with packaging revision 1. CLI installation owns `/usr/bin/<project>` and package documentation, plus the shared APT keyring dependency described below; it never initializes user configuration, downloads runtimes, registers services, or starts a daemon.
+The stable enrollment contract covers binpm, cargo-mono, nodeup, with-watch, and derun. Runmoor remains preview-only. Initial public deployment is limited to binpm; the other integrations remain implemented for future explicitly requested releases. Enrollment does not imply a package is already published. Both amd64/x86_64 and arm64/aarch64 are required. Arch, Alpine, TTL, and DevHud are excluded. Public package names equal executable names. Version is the exact source SemVer with packaging revision 1. CLI installation owns `/usr/bin/<project>` and package documentation, plus the shared APT keyring dependency described below; it never initializes user configuration, downloads runtimes, registers services, or starts a daemon.
 
 All six originating GitHub workflows publish stable releases. Runmoor's stable source release is accepted into the explicitly enabled native preview repository; source release status and native repository enrollment are separate contracts.
 
@@ -42,7 +42,7 @@ Test incorrect identities, checksums, signatures, architectures, dependencies an
 
 Changes to any of the four Rust CLI sources, workspace Cargo inputs, Cargo configuration or Rust toolchain select the native package CI job. Both architectures must rebuild against AlmaLinux 9 and pass ELF compatibility inspection before merging these changes.
 
-First public releases follow the existing manual coordinator, one patch release at a time: binpm, nodeup, cargo-mono, with-watch, derun, runmoor. Verify each public package before continuing. Deployment is complete only when every project is installable on both architectures from its intended channel.
+The current public rollout uses the existing manual coordinator for a binpm patch release only. Complete it after verifying binpm through the public domain on both architectures and every supported distribution. Do not dispatch the other five projects as part of this rollout. Future explicitly requested releases use the same per-project verification gate. Public documentation must mark unpublished CLI examples as unavailable until their own public installation checks pass.
 
 ## Implemented operations
 
