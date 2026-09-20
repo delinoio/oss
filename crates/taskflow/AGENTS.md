@@ -153,3 +153,5 @@
 - Local cache binding reads and rollback snapshots require no-follow regular files capped at 1 KiB; corrupt bindings cannot block fallback or repair. Object reads enforce their existing transfer bound on both metadata and actual bytes and reject special files.
 
 - Libtest runnable inventories subtract the ignored-only listing from the full listing. Never turn zero-executed ignored tests into passed units; all-ignored suites retain complete empty-shard accounting.
+
+- Workspace manifest declarations must be nonempty project-relative paths before native discovery. Reject Unix roots, Windows roots/UNC/drive-relative forms, and NUL on every exporter host; retain workspace containment checks after resolving relative paths.

@@ -434,3 +434,5 @@ Validation for this repair passed root `cargo test --locked` on macOS arm64 with
 `local_cache_reads_reject_and_repair_unsafe_manifests` covers oversized binding/object files and Unix FIFOs and links. Entry manifests have a 1 KiB bound; immutable artifact objects retain the 512 MiB transport bound with a capped reader. Cache publication discards unsafe rollback bindings and atomically repairs the leaf without changing a link target.
 
 `libtest_ids_distinguish_workspace_packages` now compares mixed and all-ignored real Cargo suites with unsharded runs. Ignored panic cases are absent from inventories and reports; all-ignored suites aggregate complete empty shards. The adapter obtains a second `--list --ignored` inventory because the normal libtest listing includes ignored cases even when normal execution omits them.
+
+`workspace_manifest_paths_are_portable_and_relative` rejects absolute paths even inside the current checkout, Unix and Windows rooted forms, UNC paths, drive-relative paths, empty paths, and NUL before native metadata discovery. Relative nested declarations remain valid and discovery still enforces repository containment.

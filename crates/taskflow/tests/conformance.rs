@@ -8388,3 +8388,47 @@ async fn installation_service_evidence_never_reuses_a_stopped_owner() {
     }
     let _rebound = std::net::TcpListener::bind(&address).unwrap();
 }
+
+#[test]
+fn workspace_manifest_paths_are_portable_and_relative() {
+    let directory = tempfile::tempdir().unwrap();
+    let absolute = directory
+        .path()
+        .join("Cargo.toml")
+        .to_str()
+        .unwrap()
+        .to_owned();
+    for manifest in [
+        absolute.as_str(),
+        "/Cargo.toml",
+        r"\Cargo.toml",
+        r"\\server\share\Cargo.toml",
+        "//server/share/Cargo.toml",
+        "C:/Cargo.toml",
+        r"C:\Cargo.toml",
+        "C:Cargo.toml",
+        "",
+        "Cargo.toml\0",
+    ] {
+        let config: config::Config = serde_json::from_value(
+            json!({"version":1,"project":"app","workspace":{"manifests":[manifest]}}),
+        )
+        .unwrap();
+        let error = config.validate().unwrap_err();
+        assert!(
+            error.to_string().contains("project-relative"),
+            "{manifest:?}: {error}"
+        );
+    }
+    for manifests in [
+        vec![],
+        vec!["Cargo.toml"],
+        vec!["native/Cargo.toml", "nested/../go.mod"],
+    ] {
+        let config: config::Config = serde_json::from_value(
+            json!({"version":1,"project":"app","workspace":{"manifests":manifests}}),
+        )
+        .unwrap();
+        config.validate().unwrap();
+    }
+}

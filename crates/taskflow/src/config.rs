@@ -449,6 +449,12 @@ impl Config {
             self.version
         );
         ensure!(identifier(&self.project), "invalid project ID");
+        for manifest in &self.workspace.manifests {
+            ensure!(
+                !manifest.is_empty() && !manifest.contains('\0') && project_relative(manifest),
+                "workspace manifests must be nonempty project-relative paths"
+            );
+        }
         if let Some(remote) = &self.remote {
             remote.validate()?;
         }
