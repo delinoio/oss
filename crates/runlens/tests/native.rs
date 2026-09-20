@@ -3479,3 +3479,92 @@ fn raw_shebang_execs_cannot_claim_complete_interpreter_coverage() {
         }
     }
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_extended_attribute_reads_cannot_bypass_read_denials() {
+    let mut executables = vec![fixture().to_owned()];
+    match std::env::var("RUNLENS_STATIC_FIXTURE") {
+        Ok(path) => executables.push(path),
+        Err(_) => assert!(
+            std::env::var_os("CI").is_none(),
+            "static fixture required in CI"
+        ),
+    }
+    for executable in executables {
+        for mode in [
+            "getxattr",
+            "lgetxattr",
+            "fgetxattr",
+            "listxattr",
+            "llistxattr",
+            "flistxattr",
+        ] {
+            for present in [true, false] {
+                if !present && mode.starts_with('f') {
+                    continue;
+                }
+                let root = tempfile::tempdir().unwrap();
+                let external = tempfile::tempdir().unwrap();
+                let path = external.path().join("attribute-input");
+                if present {
+                    fs::write(&path, "payload").unwrap();
+                    let name = std::ffi::CString::new(path.to_str().unwrap()).unwrap();
+                    // SAFETY: live strings and bounded value bytes.
+                    assert_eq!(
+                        unsafe {
+                            libc::setxattr(
+                                name.as_ptr(),
+                                c"user.runlens".as_ptr(),
+                                b"XATTR-CANARY".as_ptr().cast(),
+                                12,
+                                0,
+                            )
+                        },
+                        0
+                    );
+                }
+                fs::write(
+                    root.path().join("runlens.toml"),
+                    "schema_version = 1\n[policy]\ndeny_reads = [\"**/attribute-input\"]\n",
+                )
+                .unwrap();
+                let result = invoke(
+                    root.path(),
+                    &[
+                        "run",
+                        "--save",
+                        "attributes.json",
+                        "--",
+                        &executable,
+                        mode,
+                        path.to_str().unwrap(),
+                    ],
+                );
+                assert!(
+                    result.status.success(),
+                    "{executable}/{mode}/{present}: {result:?}"
+                );
+                let report = parse(root.path(), "attributes.json");
+                assert!(
+                    report["executions"][0]["accesses"]
+                        .as_object()
+                        .unwrap()
+                        .iter()
+                        .any(|(path, access)| path.ends_with("/attribute-input")
+                            && access["read"] == true)
+                );
+                assert!(
+                    !fs::read_to_string(root.path().join("attributes.json"))
+                        .unwrap()
+                        .contains("XATTR-CANARY")
+                );
+                let policy = invoke(
+                    root.path(),
+                    &["policy", "check", "attributes.json", "--json"],
+                );
+                assert_eq!(policy.status.code(), Some(5), "{policy:?}");
+            }
+        }
+    }
+}

@@ -6,6 +6,7 @@ mod rename;
 mod remove;
 mod stat;
 mod readlink;
+mod xattr;
 
 use std::{
     borrow::Cow,
@@ -112,6 +113,12 @@ impl_handler!(
     #[cfg(target_arch = "x86_64")] utime,
     #[cfg(target_arch = "x86_64")] utimes,
     truncate,
+    getxattr,
+    lgetxattr,
+    fgetxattr,
+    listxattr,
+    llistxattr,
+    flistxattr,
     setxattr,
     lsetxattr,
     removexattr,

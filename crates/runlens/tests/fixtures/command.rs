@@ -39,6 +39,59 @@ fn main() {
             );
         }
         #[cfg(target_os = "linux")]
+        "getxattr" | "lgetxattr" | "fgetxattr" | "listxattr" | "llistxattr" | "flistxattr" => {
+            let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            let mut buffer = [0u8; 4096];
+            // SAFETY: bounded output and live name/path. Opening descriptor
+            // variants write-only ensures an open-read cannot mask missing hooks.
+            unsafe {
+                match args[0].as_str() {
+                    "getxattr" | "lgetxattr" => {
+                        let number = if args[0] == "getxattr" {
+                            libc::SYS_getxattr
+                        } else {
+                            libc::SYS_lgetxattr
+                        };
+                        libc::syscall(
+                            number,
+                            path.as_ptr(),
+                            c"user.runlens".as_ptr(),
+                            buffer.as_mut_ptr(),
+                            buffer.len(),
+                        );
+                    }
+                    "listxattr" | "llistxattr" => {
+                        let number = if args[0] == "listxattr" {
+                            libc::SYS_listxattr
+                        } else {
+                            libc::SYS_llistxattr
+                        };
+                        libc::syscall(number, path.as_ptr(), buffer.as_mut_ptr(), buffer.len());
+                    }
+                    _ => {
+                        let fd = libc::open(path.as_ptr(), libc::O_WRONLY);
+                        if args[0] == "fgetxattr" {
+                            libc::syscall(
+                                libc::SYS_fgetxattr,
+                                fd,
+                                c"user.runlens".as_ptr(),
+                                buffer.as_mut_ptr(),
+                                buffer.len(),
+                            );
+                        } else {
+                            libc::syscall(
+                                libc::SYS_flistxattr,
+                                fd,
+                                buffer.as_mut_ptr(),
+                                buffer.len(),
+                            );
+                        }
+                        libc::close(fd);
+                    }
+                }
+            }
+        }
+        #[cfg(target_os = "linux")]
         "stat-empty-path" => {
             // A null AT_EMPTY_PATH lookup is valid on Linux 6.11+. The empty
             // string form works on older minimum-OS kernels as well.

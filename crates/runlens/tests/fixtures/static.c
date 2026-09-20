@@ -6,6 +6,20 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 int main(int argc, char **argv) {
+    if (argc == 3 && strstr(argv[1], "xattr")) {
+        char buffer[4096];
+        if (!strcmp(argv[1], "getxattr")) syscall(SYS_getxattr, argv[2], "user.runlens", buffer, sizeof(buffer));
+        else if (!strcmp(argv[1], "lgetxattr")) syscall(SYS_lgetxattr, argv[2], "user.runlens", buffer, sizeof(buffer));
+        else if (!strcmp(argv[1], "listxattr")) syscall(SYS_listxattr, argv[2], buffer, sizeof(buffer));
+        else if (!strcmp(argv[1], "llistxattr")) syscall(SYS_llistxattr, argv[2], buffer, sizeof(buffer));
+        else {
+            int fd = open(argv[2], O_WRONLY);
+            if (!strcmp(argv[1], "fgetxattr")) syscall(SYS_fgetxattr, fd, "user.runlens", buffer, sizeof(buffer));
+            else syscall(SYS_flistxattr, fd, buffer, sizeof(buffer));
+            close(fd);
+        }
+        return 0;
+    }
     if (argc == 3 && (!strcmp(argv[1], "execve-script") || !strcmp(argv[1], "execveat-script") || !strcmp(argv[1], "execveat-empty-script"))) {
         extern char **environ;
         char *args[] = {argv[2], NULL};
