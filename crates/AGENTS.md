@@ -170,6 +170,7 @@
 - New-access policies may infer absence only from a compatible baseline with complete collection; incompatible or incomplete baselines do not create definite new-access violations.
 - Linux OS identity includes distribution ID and VERSION_ID; legacy version-only, missing, or malformed identities cannot establish comparison compatibility.
 - Selected environment names cannot prove equality of omitted values. Keep their report comparisons inconclusive without persisting values or guessable value hashes.
+- Canonical isolated Windows HOME/cache paths must use normal drive/UNC spelling for Git compatibility, without inheriting user configuration.
 - Clean environment selection must reject reserved Git controls case-insensitively on Windows so casing cannot escape fresh checkout/configuration isolation.
 - Configured secret environment-name selection follows Windows case-insensitive key semantics before masking values in argv or path metadata; Unix selection remains case-sensitive.
 - Retain the inspected executable handle through snapshots and revalidate pathname identity at the launch boundary; a stale digest must never certify a replacement executable.

@@ -81,9 +81,12 @@ pub fn isolated_environment(root: &Path, names: &[String]) -> Result<Vec<(OsStri
     for name in ISOLATED_VARIABLES {
         let directory = root.join(if *name == "USERPROFILE" { "HOME" } else { name });
         fs::create_dir_all(&directory).map_err(|_| Error::storage())?;
-        // Use the same observed root spelling as the redactor, including
-        // macOS /var -> /private/var aliases and Windows extended paths.
+        // Resolve aliases such as macOS /var -> /private/var. Git for Windows
+        // cannot consume verbatim \\?\ paths in HOME/GIT_CONFIG_GLOBAL, so pass
+        // the normalized drive/UNC spelling; the redactor uses that spelling too.
         let directory = directory.canonicalize().map_err(|_| Error::storage())?;
+        #[cfg(windows)]
+        let directory = PathBuf::from(crate::privacy::normalized(&directory));
         env.push((name.into(), directory.into_os_string()));
     }
     Ok(env)

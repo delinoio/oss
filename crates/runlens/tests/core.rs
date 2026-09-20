@@ -569,3 +569,38 @@ fn script_digests_cannot_certify_the_interpreter_image() {
         assert!(runlens::platform::executable_identity(&path, &cancel).is_none());
     }
 }
+
+#[cfg(windows)]
+#[test]
+fn isolated_windows_environment_uses_git_compatible_paths() {
+    let directory = tempfile::tempdir().unwrap();
+    let env = runlens::clean::isolated_environment(directory.path(), &[]).unwrap();
+    for (key, value) in &env {
+        if ["HOME", "USERPROFILE", "XDG_CONFIG_HOME", "TMP", "TEMP"]
+            .iter()
+            .any(|name| key == name)
+        {
+            let value = value.to_str().unwrap();
+            assert!(!value.starts_with(r"\\?\"), "{key:?}");
+            assert!(!value.starts_with("//?/"), "{key:?}");
+            assert!(std::path::Path::new(value).is_dir());
+        }
+    }
+    let home = env.iter().find(|(key, _)| key == "HOME").unwrap().1.clone();
+    let config = std::path::Path::new(&home).join(".runlens-empty-gitconfig");
+    std::fs::write(&config, "").unwrap();
+    let result = std::process::Command::new("git")
+        .env_clear()
+        .envs(env)
+        .env("GIT_CONFIG_GLOBAL", config)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .args(["config", "--global", "--list"])
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(result.stdout.is_empty());
+}

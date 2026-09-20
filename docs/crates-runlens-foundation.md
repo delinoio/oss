@@ -690,3 +690,5 @@ Cache and required declaration audits check static input/output glob language in
 Linux kernel collection includes `readlink` and `readlinkat` attempts for dynamic/static targets, recording the link path rather than the returned target text. Empty-path descriptors resolve to the held link. Unresolvable caller arguments preserve the syscall and make evidence incomplete.
 
 Clean reports import supplied historical baseline executions on every completed report path, including stopped targets and incomplete collection. Policy findings therefore retain valid evidence references when explicitly saved, while historical outcomes remain excluded from current exit and cleanup classifications.
+
+Fresh Windows HOME/cache environment paths use canonical locations with ordinary drive/UNC syntax, avoiding Git-incompatible verbatim prefixes. Git still reads only the private empty configuration. Native Windows regression checks both environment spelling and Git global-config reads.

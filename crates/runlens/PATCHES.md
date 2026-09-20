@@ -179,3 +179,9 @@ libc dependency exports the same supported 64-bit GNU interface.
 - Reason/scope: inherited seccomp filters omitted `readlink` (x64) and `readlinkat` (both architectures), hiding dependencies on link text. Record read attempts on the named link, including empty-path O_PATH descriptors; never reinterpret returned target text as an access. Resolution errors keep the child syscall and mark evidence incomplete.
 - Regression: `linux_readlink_attempts_cannot_bypass_read_denials` runs dynamic and static raw syscalls, missing paths, and empty-path descriptors and checks external read denial plus absence of invented target accesses.
 - Removal: drop this local handler only when the pinned upstream observes both syscall families with equivalent failure/descriptor behavior and these native regressions pass.
+
+## Isolated Windows environment path spelling
+
+- Reason/scope: canonicalizing fresh HOME/cache paths yields Windows verbatim prefixes that Git rejects when used for global configuration. Preserve canonical location while passing ordinary drive/UNC spelling to child environment variables; this changes no selected source or credential isolation.
+- Regression: `isolated_windows_environment_uses_git_compatible_paths` checks every selected path and asks native Git to read the owned empty global configuration; clean/repeat integration tests exercise HEAD and clone operations.
+- Removal: retain normalized public path spelling until every supported preparation tool accepts verbatim environment paths and native Windows tests prove parity.
