@@ -103,3 +103,5 @@
 - Container result helpers use scoped temporary directories owned through cleanup, including tool probes and shard units. Auxiliary containers must not create permanent run directories; outer task results and logs remain retained.
 
 - Graph refresh compares watched input snapshots before replacing the baseline and preserves pending independent causes. Automatic metadata changes activate initial-disabled watchers; invalid configuration retains the last accepted snapshots until recovery. Identical metadata rewrites do not enqueue work.
+
+- Non-root project configurations may declare project identity, tasks, and dotenv policy. Reject nondefault workspace/start and any remote/ci configuration instead of silently ignoring root-only policy. Diagnostics identify the child configuration and field without configuration values.

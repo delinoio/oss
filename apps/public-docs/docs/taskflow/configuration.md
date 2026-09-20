@@ -4,6 +4,11 @@
 fields, duplicate YAML keys, invalid references, and prerequisite cycles are
 errors. Generate the editor schema with `tflow schema`.
 
+Declare `workspace`, `start`, `remote`, and `ci` in the workspace root configuration.
+Child project configurations contain their own `project`, `tasks`, and optional
+`dotenv` policy. Nondefault root settings in a child configuration are errors;
+TaskFlow does not merge or ignore them.
+
 ## Native discovery
 
 At the workspace root, reference native manifests instead of copying member lists:

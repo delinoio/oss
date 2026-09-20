@@ -294,6 +294,25 @@ impl Workspace {
         }
         let path = directory.join("taskflow.yml");
         let config = path.is_file().then(|| config::load(&path)).transpose()?;
+        if directory != self.root {
+            if let Some(config) = &config {
+                for (field, configured) in [
+                    (
+                        "workspace",
+                        config.workspace != config::WorkspaceConfig::default(),
+                    ),
+                    ("start", !config.start.is_empty()),
+                    ("remote", config.remote.is_some()),
+                    ("ci", config.ci.is_some()),
+                ] {
+                    ensure!(
+                        !configured,
+                        "{}: {field} is only supported in the workspace root configuration",
+                        path.display()
+                    );
+                }
+            }
+        }
         crate::files::slash(&directory)?;
         let id = if let Some(config) = &config {
             config.project.clone()

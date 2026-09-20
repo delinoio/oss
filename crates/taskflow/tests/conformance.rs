@@ -7361,3 +7361,63 @@ async fn metadata_refresh_preserves_initial_disabled_watch_causes() {
     token.cancel();
     (&mut session).await.unwrap().unwrap();
 }
+
+#[tokio::test]
+async fn child_projects_reject_root_only_configuration() {
+    let directory = fixture(json!({}));
+    files::atomic_write(
+        &directory.path().join("Cargo.toml"),
+        b"[workspace]\nmembers=['child']\nresolver='2'\n",
+    )
+    .unwrap();
+    files::atomic_write(
+        &directory.path().join("child/Cargo.toml"),
+        b"[package]\nname='child'\nversion='0.1.0'\nedition='2021'\n",
+    )
+    .unwrap();
+    files::atomic_write(
+        &directory.path().join("child/src/lib.rs"),
+        b"pub fn sample() {}\n",
+    )
+    .unwrap();
+    let cases = [
+        ("workspace", json!({"manifests":["Cargo.toml"]})),
+        ("workspace", json!({"cargoFeatures":["ignored"]})),
+        ("workspace", json!({"cargoTarget":"x86_64-pc-windows-msvc"})),
+        ("workspace", json!({"cargoNoDefaultFeatures":true})),
+        ("start", json!({"default":["check"]})),
+        (
+            "remote",
+            json!({"endpoint":"https://cache.example.test","bucket":"fixture","namespace":"fixture","accessKeyEnv":"ACCESS","secretKeyEnv":"SECRET","mode":"off"}),
+        ),
+        (
+            "ci",
+            json!({"revision":"1111111111111111111111111111111111111111","rust":"nightly-2026-01-01","runners":{"linux-x64":"ubuntu-22.04"}}),
+        ),
+    ];
+    let path = directory.path().join("child/taskflow.yml");
+    for (field, value) in cases {
+        let mut child = json!({"version":1,"project":"child","tasks":{"check":{"command":command(&["record","side-effect","ran"])}}});
+        child[field] = value;
+        files::atomic_write(&path, serde_yaml::to_string(&child).unwrap().as_bytes()).unwrap();
+        let error = Workspace::discover(directory.path()).await.unwrap_err();
+        let diagnostic = format!("{error:#}");
+        assert!(
+            diagnostic.contains(&format!("{field} is only supported")),
+            "{diagnostic}"
+        );
+        assert!(diagnostic.contains("taskflow.yml"));
+        let result = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .current_dir(directory.path())
+            .args(["run", "child#check"])
+            .output()
+            .unwrap();
+        assert!(!result.status.success(), "{field}");
+        assert!(!directory.path().join("child/side-effect").exists());
+    }
+    // Empty defaults do not declare root policy. Project dotenv and tasks keep
+    // their existing local scope.
+    files::atomic_write(&path, serde_yaml::to_string(&json!({"version":1,"project":"child","workspace":{},"start":{},"dotenv":false,"tasks":{"check":{"command":command(&["version"])}}})).unwrap().as_bytes()).unwrap();
+    let workspace = Workspace::discover(directory.path()).await.unwrap();
+    assert!(!workspace.projects["child"].config.as_ref().unwrap().dotenv);
+}

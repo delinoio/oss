@@ -24,7 +24,7 @@ pub struct Config {
     pub ci: Option<CiConfig>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct WorkspaceConfig {
     #[serde(default)]
