@@ -29,12 +29,12 @@ it("communicates every important outcome without relying on color", () => {
   expect(screen.getByText(/Evidence expired/)).toBeTruthy();
   expect(screen.getByText(/Running/)).toBeTruthy();
 });
-it("consumes pairing fragments without leaving credentials in history", () => {
+it("discards retired connection fields and preserves the run deep link", () => {
   history.replaceState(null, "", "/#port=46309&pair=private&run=receipt");
   const connection = readConnection();
-  expect(connection.code).toBe("private");
-  expect(location.hash).toBe("");
-  expect(describeError(new Error("fetch failed"))).toMatch(/local network/);
+  expect(connection).toEqual({ run: "receipt" });
+  expect(location.hash).toBe("#run=receipt");
+  expect(describeError(new Error("fetch failed"))).toMatch(/Run ach ui/);
 });
 it("supports dialog cancellation and restores focus", () => {
   HTMLDialogElement.prototype.showModal = vi.fn();
@@ -61,18 +61,7 @@ it("supports dialog cancellation and restores focus", () => {
   expect(document.activeElement).toBe(prior);
   prior.remove();
 });
-it("distinguishes local network permission denial from an offline service", async () => {
-  const permissions = Object.getOwnPropertyDescriptor(navigator, "permissions");
-  Object.defineProperty(navigator, "permissions", {
-    configurable: true,
-    value: { query: vi.fn().mockResolvedValue({ state: "denied", onchange: null }) },
-  });
-  try {
-    const { unmount } = render(<ErrorNotice error={new Error("fetch failed")} />);
-    expect(await screen.findByText(/Local network permission is denied/)).toBeTruthy();
-    unmount();
-  } finally {
-    if (permissions) Object.defineProperty(navigator, "permissions", permissions);
-    else Reflect.deleteProperty(navigator, "permissions");
-  }
+it("shows local server recovery without requesting network permissions", () => {
+  render(<ErrorNotice error={new Error("fetch failed")} />);
+  expect(screen.getByText(/Run ach ui/)).toBeTruthy();
 });

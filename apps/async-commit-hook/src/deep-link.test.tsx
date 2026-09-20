@@ -32,7 +32,7 @@ it.each(["first-page", "later-page", "unavailable"])("binds execution deep links
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const { unmount } = render(<QueryClientProvider client={client}><TransportProvider transport={transport}>
-    <Workspace initialRun="deep-run" onPair={() => {}} />
+    <Workspace initialRun="deep-run" />
   </TransportProvider></QueryClientProvider>);
   try {
     const sidebar = within(screen.getByRole("complementary", { name: "Repositories" }));
@@ -89,7 +89,7 @@ it.each(["missing", "error"])("does not assign another workspace when the linked
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const { unmount } = render(<QueryClientProvider client={client}><TransportProvider transport={transport}>
-    <Workspace initialRun="deep-run" onPair={() => {}} />
+    <Workspace initialRun="deep-run" />
   </TransportProvider></QueryClientProvider>);
   try {
     await screen.findByRole("alert");

@@ -7,7 +7,10 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/async_commit_hook/v1;
 // This service accepts only existing local identities, never shell commands or file paths.
 service LocalService {
   rpc GetVersion(GetVersionRequest) returns (GetVersionResponse);
-  rpc Pair(PairRequest) returns (PairResponse);
+  // Retained for v1 compatibility; always returns Unimplemented.
+  rpc Pair(PairRequest) returns (PairResponse) {
+    option deprecated = true;
+  }
   rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
   rpc ListBranches(ListBranchesRequest) returns (ListBranchesResponse);
   rpc ListCommits(ListCommitsRequest) returns (ListCommitsResponse);

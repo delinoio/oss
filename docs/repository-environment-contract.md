@@ -96,3 +96,5 @@ Changes to this contract require synchronized updates to `docs/README.md`, appli
 ## Native CLI repository publication
 
 The `linux-packages` GitHub Environment owns only the package signing subkey/passphrase and the two-bucket R2 object credentials listed in `repository-linux-packages-contract.md`. Its non-secret account ID and public fingerprint are Environment variables. Main and the seven exact project tag namespaces (including `clibox@v*`) may enter this boundary; pull requests and dry runs never receive these secrets. These values are unrelated to local service configuration, Infisical, Turbo development environments and DevHud credentials. Primary signing recovery material is operator-owned outside the repository and CI.
+
+The async-commit-hook local UI/API remain on configurable api_port (default 46309), with frontend development on fixed 46308. Its separate public-docs app uses fixed development 46310 and preview 46281 through the shared Rspress wrapper; root `pnpm dev:async-commit-hook-docs` delegates through Turbo to the package and never invokes Infisical. No new environment input is required.

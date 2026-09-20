@@ -115,3 +115,5 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - [Command](cmds-async-commit-hook-contract.md), [app](apps-async-commit-hook-contract.md), [protocol](protos-async-commit-hook-v1-contract.md), [client](packages-async-commit-hook-api-client-contract.md)
 - [Complete requirements](cmds-async-commit-hook-requirements.md) and [implementation evidence](cmds-async-commit-hook-evidence.md)
 - [Release and recovery](cmds-async-commit-hook-release-contract.md)
+
+- `apps-async-commit-hook-docs-foundation.md`: standalone Rspress public documentation, installer routes, fixed ports and hosting contract.

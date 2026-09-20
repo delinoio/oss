@@ -245,16 +245,16 @@ func (s *Service) Stop(force bool) error {
 	}
 	return nil
 }
-func (s *Service) WebURL(run, code string) string {
+func (s *Service) WebURL(run string) string {
 	fragment := url.Values{}
-	fragment.Set("port", strconv.Itoa(s.Personal.APIPort))
 	if run != "" {
 		fragment.Set("run", run)
 	}
-	if code != "" {
-		fragment.Set("pair", code)
+	address := "http://127.0.0.1:" + strconv.Itoa(s.Personal.APIPort) + "/"
+	if len(fragment) != 0 {
+		address += "#" + fragment.Encode()
 	}
-	return "https://ach.delino.io/#" + fragment.Encode()
+	return address
 }
 func (s *Service) Worker(ctx context.Context) error {
 	c, close, e := s.Enter("worker")

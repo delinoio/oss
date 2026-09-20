@@ -26,7 +26,7 @@ it("loads split repositories on demand and retains selection through a page erro
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const { unmount } = render(<QueryClientProvider client={client}><TransportProvider transport={transport}>
-    <Workspace initialRun="" onPair={() => {}} />
+    <Workspace initialRun="" />
   </TransportProvider></QueryClientProvider>);
   try {
     const sidebar = within(screen.getByRole("complementary", { name: "Repositories" }));
@@ -73,7 +73,7 @@ it("pages branches without losing an unloaded selection or loaded options on err
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const { unmount } = render(<QueryClientProvider client={client}><TransportProvider transport={transport}>
-    <Workspace initialRun="" onPair={() => {}} />
+    <Workspace initialRun="" />
   </TransportProvider></QueryClientProvider>);
   try {
     const select = await screen.findByRole("combobox", { name: "Branch" });
@@ -108,7 +108,7 @@ it("keeps colliding branch labels separate and sends opaque identities in every 
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const { unmount } = render(<QueryClientProvider client={client}><TransportProvider transport={transport}>
-    <Workspace initialRun="" onPair={() => {}} />
+    <Workspace initialRun="" />
   </TransportProvider></QueryClientProvider>);
   try {
     const select = await screen.findByRole("combobox", { name: "Branch" });
@@ -140,7 +140,7 @@ for (const outcome of ["selected", "empty", "error"] as const) {
     }));
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const { unmount } = render(<QueryClientProvider client={client}><TransportProvider transport={transport}>
-      <Workspace initialRun="" onPair={() => {}} />
+      <Workspace initialRun="" />
     </TransportProvider></QueryClientProvider>);
     try {
       await screen.findByText("Loading repositories…");

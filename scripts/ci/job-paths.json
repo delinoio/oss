@@ -38,7 +38,9 @@
       "pnpm-workspace.yaml",
       "protos/**",
       "servers/**",
-      "turbo.json"
+      "turbo.json",
+      "apps/async-commit-hook/**",
+      "packages/async-commit-hook-api-client/**"
     ]
   },
   "go-test": {
@@ -55,7 +57,9 @@
       "pnpm-workspace.yaml",
       "protos/**",
       "servers/**",
-      "turbo.json"
+      "turbo.json",
+      "apps/async-commit-hook/**",
+      "packages/async-commit-hook-api-client/**"
     ]
   },
   "repository-environment": {
@@ -100,7 +104,9 @@
       "scripts/spawn-dev-server.mjs",
       "servers/AGENTS.md",
       "servers/devhud-api/**",
-      "turbo.json"
+      "turbo.json",
+      "apps/async-commit-hook-docs/**",
+      "docs/apps-async-commit-hook-docs-foundation.md"
     ]
   },
   "rust-fmt": {
@@ -583,7 +589,9 @@
       "scripts/dev-environment/process.mjs",
       "scripts/run-rsbuild-dev.mjs",
       "scripts/spawn-dev-server.mjs",
-      "turbo.json"
+      "turbo.json",
+      "apps/async-commit-hook-docs/**",
+      "scripts/run-rspress-port.mjs"
     ]
   },
   "node-clibox-test": {

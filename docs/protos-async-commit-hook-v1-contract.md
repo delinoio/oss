@@ -7,24 +7,24 @@
 Protobuf and Connect over loopback HTTP. CLI/MCP call the same Go application service directly.
 
 ## Users and Operators
-Paired local browsers; one owning OS account.
+Browsers visiting the local ach UI; trusted local processes.
 
 ## Interfaces and Contracts
-Typed v1 services expose pairing, repositories/worktrees/branches, changes/commits, runs/checks, logs/reports/failures, comparisons, inbox, acknowledgement, cancellation and existing-run reruns. Product identifiers are UUID v7. Pagination and log cursors are bounded and scope-validated. Reject unsupported API/state versions. Browser requests never carry arbitrary shell commands or unrestricted filesystem paths.
+Typed v1 services expose repositories/worktrees/branches, changes/commits, runs/checks, logs/reports/failures, comparisons, inbox, acknowledgement, cancellation and existing-run reruns. Product identifiers are UUID v7. Pagination and log cursors are bounded and scope-validated. Reject unsupported API/state versions. Browser requests never carry arbitrary shell commands or unrestricted filesystem paths.
 
 `RerunResponse.run_id` is a durable acceptance receipt. Its additive optional `startup_diagnostic` reports post-acceptance runner startup failure while preserving a successful Connect response. The diagnostic uses `startup-failed`, a safe message and recovery hint. Pre-acceptance failures remain Connect errors with no receipt. Omitted diagnostics retain the existing successful-start response.
 
 ## Storage
-Browser tokens are stored hashed in SQLite, with explicit revocation. Pairing codes expire after five minutes and are consumed atomically once. All results stay on the local machine.
+All results stay on the local machine. New stores do not create browser/pairing tables. Existing tables and results are preserved but legacy credentials are never consulted. The deprecated Pair RPC remains a wire-compatible tombstone returning Unimplemented (pairing-removed), without side effects.
 
 ## Security
-Bind 127.0.0.1 only. Exact allowed Origins: https://ach.delino.io, http://localhost:46308, http://127.0.0.1:46308. Validate Host against the configured loopback endpoint. Require authentication on every result/control RPC; only pairing and bounded version information are unauthenticated. CORS preflight does not bypass RPC authentication. Revocation is checked on each request. File reads are scoped by stored execution/evidence IDs.
+Bind 127.0.0.1 only and validate Host exactly against the configured port. Every RPC requires POST, Origin exactly `http://127.0.0.1:<api_port>`, and exactly one `X-Ach-Api-Version: 1` header. Missing, null, duplicate and other origins/versions fail before dispatch. Version rejection retains the `incompatible-version` diagnostic in a Connect error envelope so stale clients can render recovery guidance. There are no remote/development CORS grants or authentication exceptions. Static navigation is GET/HEAD and requires the same Host. Local processes are trusted; this is browser-origin isolation rather than per-browser or per-OS-user authentication. File reads remain scoped by stored execution/evidence IDs.
 
 ## Logging
 Stable error codes and correlation IDs; never log Authorization, pairing codes, request secrets or raw reports.
 
 ## Build and Test
-Buf format/lint/breaking/freshness, Go/TypeScript serialization and transport tests, origin/auth/pairing/revocation tests. Generator filters keep DevHud and ach client outputs separate.
+Buf format/lint/breaking/freshness, Go/TypeScript serialization and transport tests, same-origin, Host, method, version-header and retired-pairing tests. Generator filters keep DevHud and ach client outputs separate.
 
 ## Dependencies and Integrations
 Connect-Go, protobuf-es, Connect Query and the shared command service.

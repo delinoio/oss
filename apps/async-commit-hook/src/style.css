@@ -109,14 +109,6 @@ button.danger {
   padding: 6px 10px;
   color: var(--muted);
 }
-.pair-layout {
-  max-width: 1200px;
-  margin: 90px auto;
-  display: grid;
-  grid-template-columns: 1.25fr 1fr;
-  gap: 100px;
-  padding: 30px;
-}
 .eyebrow {
   font-size: 11px;
   letter-spacing: 1.8px;
@@ -138,16 +130,6 @@ h3 {
 }
 p {
   line-height: 1.65;
-}
-.pair-intro h1 {
-  font-size: 56px;
-  line-height: 1.08;
-  margin: 22px 0;
-}
-.pair-intro > p:not(.eyebrow) {
-  max-width: 470px;
-  color: var(--muted);
-  font-size: 17px;
 }
 .terminal {
   margin-top: 38px;
@@ -172,17 +154,6 @@ p {
   margin-bottom: 0;
   color: #c2d1c3;
 }
-.pair-card {
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 34px;
-  box-shadow: 0 10px 35px #1d342608;
-}
-.pair-card > p:not(.eyebrow) {
-  color: var(--muted);
-  font-size: 13px;
-}
 label {
   display: block;
   font-size: 12px;
@@ -200,10 +171,6 @@ select {
   min-width: 0;
 }
 input {
-  width: 100%;
-}
-.pair-card .primary {
-  margin-top: 24px;
   width: 100%;
 }
 .workspace {
@@ -630,13 +597,6 @@ dialog .actions {
   .run-row time {
     display: none;
   }
-  .pair-layout {
-    gap: 40px;
-    margin-top: 40px;
-  }
-  .pair-intro h1 {
-    font-size: 43px;
-  }
   .run-heading {
     display: block;
   }
@@ -654,12 +614,6 @@ dialog .actions {
   }
   .sidebar-footer {
     display: none;
-  }
-  .pair-layout {
-    display: block;
-  }
-  .pair-card {
-    margin-top: 35px;
   }
   .topbar {
     padding: 0 18px;

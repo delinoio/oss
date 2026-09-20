@@ -49,14 +49,6 @@ func TestRepositoryPagesBoundLargeRegistryAndPreserveEveryWorktree(t *testing.T)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	code, err := s.PairingCode()
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, token, err := s.Pair(code, "registry-test")
-	if err != nil {
-		t.Fatal(err)
-	}
 	cursor := ""
 	seen := map[string]bool{}
 	pages := 0
@@ -66,8 +58,8 @@ func TestRepositoryPagesBoundLargeRegistryAndPreserveEveryWorktree(t *testing.T)
 			t.Fatal(err)
 		}
 		req := httptest.NewRequest("POST", "http://127.0.0.1:46309/async_commit_hook.v1.LocalService/ListRepositories", bytes.NewReader(payload))
-		req.Header.Set("Origin", "https://ach.delino.io")
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Origin", "http://127.0.0.1:46309")
+		req.Header.Set("X-Ach-Api-Version", "1")
 		req.Header.Set("Content-Type", "application/json")
 		response := httptest.NewRecorder()
 		s.Handler().ServeHTTP(response, req)

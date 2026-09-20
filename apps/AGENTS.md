@@ -3,7 +3,7 @@
 - Follow root `AGENTS.md` and project-specific docs before adding or changing app code.
 - Keep app-specific contracts synchronized in the project index doc (`docs/project-*.md`) and relevant app-domain contract docs (`docs/apps-*.md`) in the same change.
 - Keep repository and domain rules in the appropriate `AGENTS.md` files.
-- Public documentation app content must not expose repository-internal implementation details. Use `docs/` as the internal source of truth, then curate `apps/public-docs`, `apps/binpm-docs`, `apps/nodeup-docs`, and `apps/runmoor-docs` around user-facing behavior, supported workflows, stable public interfaces, and explicitly contracted maintainer-facing paths.
+- Public documentation app content must not expose repository-internal implementation details. Use `docs/` as the internal source of truth, then curate `apps/public-docs`, `apps/binpm-docs`, `apps/nodeup-docs`, `apps/runmoor-docs`, and `apps/async-commit-hook-docs` around user-facing behavior, supported workflows, stable public interfaces, and explicitly contracted maintainer-facing paths.
 - Write all source and comments in English.
 - Follow Toss Design Guidelines for frontend UX/UI decisions across web and mobile apps.
 - For new static sites under `apps/`, default to Rsbuild/Rspress-style toolchains and Cloudflare Pages deployment unless a project contract documents a different platform.
@@ -156,8 +156,10 @@
 - Update relevant docs in `docs/` for every behavior, structure, or interface change.
 
 ### async-commit-hook
-- `apps/async-commit-hook` owns the Rsbuild app and `/docs` at `https://ach.delino.io`. Follow `docs/apps-async-commit-hook-contract.md`.
-- Fixed development port 46308; root entry `pnpm dev:async-commit-hook`. Use generated Connect Query and React Query. Logs/source remain inert, authorization is local and revocable, and results never go to static hosting.
+- `apps/async-commit-hook` owns the embedded local Rsbuild UI. `apps/async-commit-hook-docs` owns the Rspress documentation-only https://ach.delino.io site and installer entrypoints. Follow their app-domain contracts.
+- Fixed development port 46308; root entry `pnpm dev:async-commit-hook`. Use generated Connect Query and React Query. Logs/source remain inert, every RPC is same-origin without browser pairing, and results never go to static hosting.
+- The local UI app exclusively generates and validates command webassets/dist via `build:embedded`. Generate before Go compilation, tests or packaging.
+- Documentation development uses fixed 127.0.0.1:46310 and preview uses 127.0.0.1:46281 through the shared wrapper; root entry is `pnpm dev:async-commit-hook-docs`. Conflicts fail without remapping. Preserve all migrated guide sections, legacy /docs links and installer URLs.
 
 ### Native CLI package documentation
 
