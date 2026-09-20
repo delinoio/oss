@@ -1580,6 +1580,8 @@ jobs:
           cache-on-failure: false
       - name: Install clean locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verify affected workspace runner
+        run: node --test scripts/ci/run-affected.test.mjs
       - name: Test launcher and native npm consumers
         env:
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['node-clibox-test'] }}
