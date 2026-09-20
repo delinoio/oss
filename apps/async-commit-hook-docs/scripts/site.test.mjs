@@ -46,6 +46,23 @@ test("preserves guide subjects and complete user-facing examples", async () => {
   }
 });
 
+test("published installation and upgrade commands follow release defaults", async () => {
+  const code = async (route) => [...(await read(`doc_build/${route}.html`)).matchAll(/<code\b[^>]*>([\s\S]*?)<\/code>/g)]
+    .map(([, value]) => decodeHTML(value.replace(/<[^>]*>/g, "")));
+  const installation = await code("install");
+  const recovery = await code("recovery");
+  const lines = [...installation, ...recovery].flatMap((block) => block.split("\n"));
+  for (const command of ["sh install-ach.sh", "./install-ach.ps1", "ach self-update"]) {
+    assert.ok(lines.includes(command), `Missing unpinned primary command: ${command}`);
+  }
+  for (const command of [
+    "sh install-ach.sh --version MAJOR.MINOR.PATCH",
+    "./install-ach.ps1 -Version MAJOR.MINOR.PATCH",
+  ]) assert.ok(installation.includes(command), `Missing explicit version guidance: ${command}`);
+  assert.ok(recovery.includes("ach self-update --version MAJOR.MINOR.PATCH"));
+  for (const line of lines) assert.doesNotMatch(line, /^(?:sh install-ach\.sh --version|\.\/install-ach\.ps1 -Version|ach self-update --version) \d/m);
+});
+
 test("legacy guide links map only to known documentation routes", async () => {
   const script = await read("doc_build/docs/redirect.js");
   for (const hash of ["", "#install", "#existing-hooks", "#pair=old&port=46309", "#https://evil.example"]) {

@@ -519,3 +519,42 @@ All six final unsigned executable archives were rebuilt after the final runtime 
 
 
 After the final readiness change, `go test ./...` and `go test -race ./cmds/async-commit-hook/...` both passed. The uncached core executions before the CLI-only follow-up took 155.033 seconds and 299.763 seconds respectively; the final reruns reused those unchanged core results and re-executed the changed CLI/integration packages, including both port-conflict modes. No data race was reported. The local smoke daemon and documentation preview were stopped, the two smoke browser tabs were closed, and repository-owned generated `dist` output is removed after validation rather than committed.
+
+## Release Project preparation integration (2026-09-20)
+
+`Release Project` now includes `async-commit-hook` as a Go project for version and tag preparation only. Patch, minor and major preparation updates exactly the Go constant, app/client manifests, release metadata and two public installer defaults in one version-only commit. Fixtures verify that unrelated bytes and projects remain unchanged and that drift, missing/duplicate/malformed declarations and foreign metadata identities fail before version writes. Temporary Git repositories verify same-run recovery after main advances, rejection of extra paths or hidden source changes, and same-commit tag reuse with conflicting-tag rejection.
+
+The registry phase retains immutable source validation while skipping Rust tools, Cargo publication and Cargo credentials for this project. Workflow fixtures preserve the existing seven projects' tag triggers and async-commit-hook's separate manual-main release, default dry run and protected publication environment. The success summary explicitly directs maintainers to that manual workflow with the prepared version and commit; failure summaries do not claim preparation succeeded. Publication still rejects a dispatch commit that differs from the prepared tag, and historical-source publication remains outside this integration.
+
+Local validation passed:
+
+- `node --test scripts/release/project.test.mjs scripts/release/async-commit-hook.test.mjs scripts/ci/project-release.test.mjs scripts/ci/async-commit-hook-release.test.mjs`: 73 tests, including offline installer/publication recovery fixtures.
+- `pnpm ci:workflows`: workflow validation passed.
+- `pnpm ci:contracts`: all 56 tests passed.
+
+No runtime Go, Rust or frontend source changed, and all six committed version values remain `0.1.0`. Validation used temporary Git remotes and offline publication fixtures; no real release run, remote release tag, signing, GitHub Release, Homebrew update or Pages deployment was performed. The original real-machine and public-publication exclusions remain unchanged.
+
+
+## PR #931 published-command review repair (2026-09-20)
+
+Review thread `PRRT_kwDORRAKg86kIDDE` identified that the public guide still passed `0.1.0` explicitly to both installers and self-update after release preparation updated the six version fields. The primary shell and PowerShell commands now use the downloaded installers' synchronized defaults, and the primary `ach self-update` command selects the highest published stable version. The documented shell environment override, explicit-version selection and intentional rollback remain available; their separate command examples use a replaceable `MAJOR.MINOR.PATCH` placeholder. No additional documentation version field or runtime behavior is introduced.
+
+A production-output regression verifies all three primary commands and the explicit-version guidance after the real app build. The frontend-directory `pnpm test` passed type checking, 39 component tests, production build and five script tests. The 73 focused project/ach release and workflow tests, all 56 CI contract tests, `pnpm ci:workflows` and `git diff --check` also passed. Generated app/client `dist` output was removed after validation. No Go or Rust source changed; no release version, signing, release tag, Homebrew or deployment operation was performed. Hosted checks are not inferred from local validation.
+
+
+## PR #933 merge repair (2026-09-20)
+
+Incoming head `7fb3a2df` had merge conflicts, no unresolved bot findings and no failing checks. The check inventory contained three successful external Cloudflare previews; it did not provide hosted Go or Rust validation. The repair merges upstream `b307ebdc`, including Release Project preparation, the Clibox Windows publication-permission fix and Clibox 0.1.3, while preserving the local ach UI and separate public Rspress documentation ownership.
+
+The release preparation adapter now synchronizes seven version fields: the Go constant, local UI/documentation/client manifests, release metadata and both installer defaults. Installer paths point to the documentation app. Version-only commit recovery, identity and drift rejection cover the added manifest and relocated scripts. Upstream installation/update guidance was retained in the new public guide: primary commands use synchronized installer defaults or the highest stable update, with explicit version and rollback alternatives preserved. The rendered production regression moved with that content; the deleted hosted UI guide was not restored. Earlier evidence sections remain historical and unchanged.
+
+Passed after conflict resolution:
+
+- Both frontend-directory `pnpm test` commands: 41 local UI component/transport tests plus four build/development fixtures, and seven documentation build/content/route/port tests, including the migrated installation/update command regression.
+- The focused project/ach release and workflow suite: 75 tests. All 57 CI contract tests and `pnpm ci:workflows` also passed.
+- Root `TMPDIR=/private/tmp RUSTC_WRAPPER= cargo test`, after generating the required DevHud frontend. The existing host workaround avoids unavailable sccache and the temporary-path alias documented in earlier evidence; no fixture or product behavior was changed for it.
+- Root `go test -p 1 ./...`, after generating both the ach and administrator embed inputs. Unchanged packages reused valid Go test cache results.
+- All six unsigned ach executable archives for darwin/linux/windows amd64/arm64, with executable inventories and checksum manifests verified in an external temporary directory.
+- `git diff --check`.
+
+This merge does not change ach runtime or protocol behavior. Cross-builds do not establish native Windows/Linux runtime qualification. Generated repository-owned `dist` output is removed after validation and is not committed. No signing, public release, package publication or site deployment was performed. PR #933 remains non-draft; outgoing hosted results are not inferred from local validation or monitored after the one-shot push.

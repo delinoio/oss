@@ -31,12 +31,12 @@ Retention is indefinite by default. Configured cleanup can remove unacknowledged
 ```
 ach daemon stop
 # Stop viewer/MCP processes and finish or cancel checks, then:
-ach self-update --version 0.1.0
+ach self-update
 ach self-update --recover
 # Homebrew installations:
 brew upgrade async-commit-hook
 ```
 
-Without `--version`, self-update selects the highest published stable version and refuses a downgrade. Intentional rollback requires an explicit version. Updates refuse active checks/server processes, verify signatures/checksums, back up state, and retain the previous executable. If the verified release executable is already byte-for-byte identical, self-update reports `up-to-date` without creating another backup or replacing it. A different local build is still replaced even when its version number matches. A pending-update diagnostic requires `--recover` before restarting services. If replacement and automatic rollback both fail, restore the recorded binary backup while ach is stopped. For rollback across state versions, restore the matching complete state backup and binary together. Unsupported state/API versions are rejected, never destructively converted. Direct updater does not replace Homebrew-owned files.
+Without `--version`, self-update selects the highest published stable version and refuses a downgrade. Intentional rollback requires an explicit version using `ach self-update --version MAJOR.MINOR.PATCH`, replacing `MAJOR.MINOR.PATCH` with the desired version. Updates refuse active checks/server processes, verify signatures/checksums, back up state, and retain the previous executable. If the verified release executable is already byte-for-byte identical, self-update reports `up-to-date` without creating another backup or replacing it. A different local build is still replaced even when its version number matches. A pending-update diagnostic requires `--recover` before restarting services. If replacement and automatic rollback both fail, restore the recorded binary backup while ach is stopped. For rollback across state versions, restore the matching complete state backup and binary together. Unsupported state/API versions are rejected, never destructively converted. Direct updater does not replace Homebrew-owned files.
 
 For cleanup failures, inspect doctor and the affected run before retrying prune. Product-owned hook/agent entries can be removed with their uninstall commands; edited or unrelated files are preserved. `ach hooks uninstall` removes both installed hooks, including an opted-in pre-push hook; no additional flag is required. For support, include version, OS, stable diagnostic codes and a redacted description in [GitHub Issues](https://github.com/delinoio/oss/issues). Review any material before sharing; no diagnostics are uploaded automatically.

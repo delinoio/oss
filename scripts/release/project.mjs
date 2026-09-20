@@ -3,7 +3,7 @@ import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const Project = Object.freeze({ Binpm: "binpm", CargoMono: "cargo-mono", Nodeup: "nodeup", WithWatch: "with-watch", Derun: "derun", Runmoor: "runmoor", Clibox: "clibox" });
+export const Project = Object.freeze({ Binpm: "binpm", CargoMono: "cargo-mono", Nodeup: "nodeup", WithWatch: "with-watch", Derun: "derun", Runmoor: "runmoor", Clibox: "clibox", AsyncCommitHook: "async-commit-hook" });
 export const Bump = Object.freeze({ Patch: "patch", Minor: "minor", Major: "major" });
 export const Kind = Object.freeze({ Rust: "rust", Go: "go" });
 const repository = "delinoio/oss";
@@ -17,7 +17,16 @@ const versions = Object.freeze({
   "with-watch": { kind: Kind.Rust, file: "crates/with-watch/Cargo.toml" },
   derun: { kind: Kind.Go, file: "cmds/derun/internal/version/version.go" },
   runmoor: { kind: Kind.Go, file: "cmds/runmoor/internal/runmoor/types.go" },
+  "async-commit-hook": { kind: Kind.Go, file: "cmds/async-commit-hook/internal/core/model.go" },
 });
+const asyncCommitHookVersions = Object.freeze([
+  { file: "apps/async-commit-hook/package.json", name: "async-commit-hook" },
+  { file: "apps/async-commit-hook-docs/package.json", name: "async-commit-hook-docs" },
+  { file: "packages/async-commit-hook-api-client/package.json", name: "@delinoio/async-commit-hook-api-client" },
+  { file: "packaging/async-commit-hook/release-metadata.json" },
+  { file: "apps/async-commit-hook-docs/public/install.sh", pattern: /^(version=\$\{ACH_VERSION:-)([^}\r\n]+)(\})$/gmu },
+  { file: "apps/async-commit-hook-docs/public/install.ps1", pattern: /^(param\(\[string\]\$Version = ")([^"\r\n]+)(", \[string\]\$InstallDir = "[^"\r\n]+"\))$/gmu },
+]);
 const shaPattern = /^[a-f0-9]{40}$/u;
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 
@@ -86,6 +95,25 @@ function replaceVersion(source, project, kind, next) {
   return { current, text: next ? source.replace(pattern, (_, header, body) => header + body.replace(/^version = "[^"]+"$/mu, `version = "${next}"`)) : source };
 }
 
+// Preserve every byte outside these release fields, including installer trust
+// identities. New or ambiguous layouts need an explicit versioning contract.
+function asyncCommitHookVersionChanges(read, current, next = current) {
+  return Object.fromEntries(asyncCommitHookVersions.map(({ file, name, pattern }) => {
+    const source = read(file);
+    if (!pattern) {
+      const metadata = JSON.parse(source);
+      requireValue(name ? metadata.name === name : metadata.tag_prefix === `${Project.AsyncCommitHook}@v` && metadata.executable === "ach", `Release identity mismatch: ${file}`);
+      requireValue([...source.matchAll(/"version"\s*:/gu)].length === 1, `Missing or ambiguous version declaration: ${file}`);
+      requireValue(metadata.version === current, `async-commit-hook source versions disagree: ${file}`);
+      pattern = /^(  "version": ")([^"\r\n]+)(",)$/gmu;
+    }
+    const matches = [...source.matchAll(pattern)];
+    requireValue(matches.length === 1, `Missing or ambiguous version declaration: ${file}`);
+    requireValue(matches[0][2] === current, `async-commit-hook source versions disagree: ${file}`);
+    return [file, source.replace(pattern, (_, prefix, version, suffix) => `${prefix}${next}${suffix}`)];
+  }));
+}
+
 export function readVersion(project, read = (file) => readFileSync(path.join(root, file), "utf8")) {
   const { file, kind } = descriptor(project);
   const current = replaceVersion(read(file), project, kind).current;
@@ -93,6 +121,7 @@ export function readVersion(project, read = (file) => readFileSync(path.join(roo
     const npm = JSON.parse(read("packages/clibox/package.json"));
     requireValue(npm.name === "@delino/clibox" && npm.version === current, "clibox Cargo/npm versions disagree");
   }
+  if (project === Project.AsyncCommitHook) asyncCommitHookVersionChanges(read, current);
   return current;
 }
 
@@ -110,6 +139,7 @@ export function versionChanges(project, bump, read) {
     requireValue([...source.matchAll(/^  "version": "[^"]+",$/gmu)].length === 1, "Missing or ambiguous npm source version");
     changes[file] = source.replace(/^  "version": "[^"]+",$/mu, `  "version": "${version}",`);
   }
+  if (project === Project.AsyncCommitHook) Object.assign(changes, asyncCommitHookVersionChanges(read, previous_version, version));
   return { project, bump, kind, previous_version, version, tag: `${project}@v${version}`, changes };
 }
 

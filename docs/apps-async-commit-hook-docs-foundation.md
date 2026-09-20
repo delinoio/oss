@@ -16,6 +16,10 @@ Stable routes: `/`, `/install`, `/start`, `/configuration`, `/validation`, `/com
 
 Development binds 127.0.0.1:46310 and preview 127.0.0.1:46281 using the shared fixed-port wrapper; host overrides and port conflicts fail. Root `pnpm dev:async-commit-hook-docs` delegates through Turbo without team configuration.
 
+Primary public shell and PowerShell install commands omit an explicit product version and use the downloaded installers' synchronized defaults (subject to the documented shell `ACH_VERSION` override). The primary upgrade command is `ach self-update`, which selects the highest published stable version and refuses implicit downgrades. Separate explicit-version examples use a clearly replaceable `MAJOR.MINOR.PATCH` placeholder for intentional selection or rollback; release preparation must not leave primary published commands pinned to a historical version. Production-output tests enforce these command and guidance boundaries.
+
+Release Project synchronizes the docs package and canonical installer defaults with the local UI, generated client, Go version and release metadata. These seven version fields are one atomic preparation boundary; published docs contain no pinned primary install/update commands.
+
 ## Storage
 Markdown lives in `docs`, public assets in `public`, and output in ignored `doc_build`. The site owns no user data, browser credentials or persistent results.
 
