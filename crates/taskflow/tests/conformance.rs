@@ -5547,3 +5547,37 @@ fn libtest_cross_targets_require_generic_before_execution() {
         generic.validate().unwrap();
     }
 }
+
+#[test]
+fn docker_digest_references_validate_the_complete_suffix() {
+    let digest = "ab01".repeat(16);
+    let images = [
+        (format!("repo@sha256:{digest}"), true),
+        (
+            format!("registry.example:5000/team/repo:tag@sha256:{digest}"),
+            true,
+        ),
+        (format!("repo@sha256:not-a-digest:{digest}"), false),
+        (format!("repo@sha256:{digest}@sha256:{digest}"), false),
+        (format!("@sha256:{digest}"), false),
+        (format!("bad name@sha256:{digest}"), false),
+        (format!("repo@sha256:{digest}:extra"), false),
+        (format!("repo@sha256:{digest}\n"), false),
+        (format!("repo@sha256:{}", digest.to_uppercase()), false),
+        (format!("repo@sha256:{}", &digest[..63]), false),
+        (format!("repo@sha256:{digest}0"), false),
+        (format!("repo@sha512:{digest}"), false),
+    ];
+    for (image, accepted) in images {
+        let task = json!({"command":["unused"],"platform":{"executor":"docker","os":"linux","image":image}});
+        let parsed: config::Task = serde_json::from_value(task.clone()).unwrap();
+        assert_eq!(parsed.validate().is_ok(), accepted, "{image}");
+        let root = fixture(json!({"container":task}));
+        let result = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .current_dir(root.path())
+            .args(["--root", ".", "check"])
+            .output()
+            .unwrap();
+        assert_eq!(result.status.success(), accepted, "{image}: {result:?}");
+    }
+}

@@ -558,11 +558,15 @@ impl Task {
                 .as_deref()
                 .context("Docker requires image")?;
             ensure!(
-                image.contains("@sha256:")
-                    && image
-                        .rsplit(':')
-                        .next()
-                        .is_some_and(|v| v.len() == 64 && v.bytes().all(|b| b.is_ascii_hexdigit())),
+                image.split_once("@sha256:").is_some_and(|(name, digest)| {
+                    !name.is_empty()
+                        && !name.contains('@')
+                        && !name.chars().any(|c| c.is_whitespace() || c == '\0')
+                        && digest.len() == 64
+                        && digest
+                            .bytes()
+                            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                }),
                 "Docker image must use an immutable SHA-256 digest"
             );
         }

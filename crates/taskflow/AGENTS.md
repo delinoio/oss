@@ -58,6 +58,7 @@
 - Keep `docs/crates-taskflow-conformance.md`, the native/Docker CI matrices, and their centralized `scripts/ci/job-paths.json` ownership synchronized. CI result bundles must prove complete task, artifact, and shard accounting against the exact plan; secret transport is forbidden for PR jobs.
 - Docker task commands, tool probes, and shard inventory/execution forward effective explicit CLI overrides alongside task-declared names; never forward the ambient host environment or another task's filtered secrets.
 - Retain the validated Docker launch environment and working directory for awaited removal, absence verification, and destructor fallback.
+- Docker image references require one digest marker with a complete 64-character lowercase SHA-256 suffix; reject malformed digest syntax during configuration checks.
 - Validate Docker OS selection after CLI defaults are applied; explicit task components retain precedence.
 - Validate the effective Docker context endpoint with the exact launch environment; a local DOCKER_HOST cannot authorize an overriding remote context.
 - Tool identities hash bounded stdout and stderr separately; native metadata parsers consume stdout only.

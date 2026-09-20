@@ -72,7 +72,7 @@ Default dotenv precedence: CLI > task > inherited > project dotenv > root dotenv
 
 Environment names follow host semantics at every boundary: case-insensitive ordinal comparison on Windows, case-sensitive comparison on Unix. This applies to precedence, secret scope/redaction, cache fingerprints, OS lookup retention, internal execution variables, and remote credential exclusion.
 
-Docker daemon lookup fills only missing host transport settings. Finite commands, tool probes, and shard inventory/execution forward effective explicit CLI overrides alongside declared task environment names; ambient host values and filtered sibling secrets do not become container inputs.
+Docker image references require one `@sha256:` marker followed by exactly 64 lowercase hexadecimal digits; configuration checks reject extra separators or malformed suffixes before launch. Docker daemon lookup fills only missing host transport settings. Finite commands, tool probes, and shard inventory/execution forward effective explicit CLI overrides alongside declared task environment names; ambient host values and filtered sibling secrets do not become container inputs.
 
 ## Logging
 Use `tracing` for task IDs, causes, outcomes, durations, cache decisions, and cleanup. Never log secret values or credential-bearing URLs. Preserve parseable JSON stdout and documented color opt-out. Persisted logs are always masked.

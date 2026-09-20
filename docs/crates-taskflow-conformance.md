@@ -261,3 +261,5 @@ The real Go flag suite also compares `-failfast` and `-failfast=false` across tw
 `failed_service_logs_stop_live_processes_and_await_cleanup` injects read-only persisted log handles into live TCP-listening Rust processes. Either output stream failure must reap the process, release the listener, await cleanup, preserve cleanup-error priority, and leave successful EOF non-cancelling.
 
 `libtest_cross_targets_require_generic_before_execution` validates both Cargo target argument forms and CLI preflight before any prerequisite runs, while keeping target commands valid through the generic protocol.
+
+`docker_digest_references_validate_the_complete_suffix` rejects extra digest separators, duplicate markers, absent names, uppercase digests, and invalid lengths before Docker launch; registry ports and image tags remain accepted.
