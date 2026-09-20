@@ -499,3 +499,17 @@ A network-disabled Linux arm64 container passed 15 related regressions covering 
 The final complete `go test -race ./cmds/async-commit-hook/...` passed (core 319.673 seconds, integration 23.373 seconds and CLI 3.428 seconds). No data races or test failures were reported. Generated repository-owned `dist` output was removed after validation. No signing, release, package repository, Homebrew tap or website publication was performed. Version `0.1.0` and the non-draft PR are preserved. The two approved exclusions remain unchanged; previously pending Edge validation remains outstanding and is not an approved exclusion. New hosted CI is not inferred from local validation or monitored after the single push.
 
 The single final remote inventory contained only the same three handled findings and the same incoming Windows/aggregate failures across 42 checks; it reported no merge conflict. These findings are resolved only after the single final push succeeds.
+
+## Release Project preparation integration (2026-09-20)
+
+`Release Project` now includes `async-commit-hook` as a Go project for version and tag preparation only. Patch, minor and major preparation updates exactly the Go constant, app/client manifests, release metadata and two public installer defaults in one version-only commit. Fixtures verify that unrelated bytes and projects remain unchanged and that drift, missing/duplicate/malformed declarations and foreign metadata identities fail before version writes. Temporary Git repositories verify same-run recovery after main advances, rejection of extra paths or hidden source changes, and same-commit tag reuse with conflicting-tag rejection.
+
+The registry phase retains immutable source validation while skipping Rust tools, Cargo publication and Cargo credentials for this project. Workflow fixtures preserve the existing seven projects' tag triggers and async-commit-hook's separate manual-main release, default dry run and protected publication environment. The success summary explicitly directs maintainers to that manual workflow with the prepared version and commit; failure summaries do not claim preparation succeeded. Publication still rejects a dispatch commit that differs from the prepared tag, and historical-source publication remains outside this integration.
+
+Local validation passed:
+
+- `node --test scripts/release/project.test.mjs scripts/release/async-commit-hook.test.mjs scripts/ci/project-release.test.mjs scripts/ci/async-commit-hook-release.test.mjs`: 73 tests, including offline installer/publication recovery fixtures.
+- `pnpm ci:workflows`: workflow validation passed.
+- `pnpm ci:contracts`: all 56 tests passed.
+
+No runtime Go, Rust or frontend source changed, and all six committed version values remain `0.1.0`. Validation used temporary Git remotes and offline publication fixtures; no real release run, remote release tag, signing, GitHub Release, Homebrew update or Pages deployment was performed. The original real-machine and public-publication exclusions remain unchanged.
