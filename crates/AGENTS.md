@@ -224,3 +224,5 @@
 - Standalone crate packages must contain their own MIT license and pass process-level CLI tests and Cargo publish dry-run.
 
 - Runlens Linux libc execveat must preserve every original operand and flag; inherited kernel collection owns its observations.
+
+- Runlens Unix PATH exec hooks preserve libc text-file shell fallback and report unsupported interpreter coverage without changing argv or child exit status.

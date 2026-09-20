@@ -718,3 +718,5 @@ Linux statfs/fstatfs reads, including libc statvfs/fstatvfs wrappers, record fil
 Conflict analysis matches Windows case aliases, including UNC paths and directory-read ancestors, and preserves each execution's stored key in evidence and usage results. Unix paths stay case-sensitive. Windows uses native ordinal comparison; other hosts retain explicit Unicode case-table uncertainty. Alias comparisons are capped at four million per analysis, returning partial findings and unknown evidence on exhaustion.
 
 Linux libc `execveat` is forwarded unchanged to inherited kernel collection. Relative paths, descriptor execution, no-follow errors and invalid flags preserve the child’s native semantics.
+
+Nested Unix `execvp`/`execlp` and Linux `execvpe` retain libc’s shell fallback for executable text without a shebang. That child-requested fallback still marks protected interpreter coverage incomplete when applicable.

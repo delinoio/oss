@@ -32,6 +32,7 @@ fn handle_exec(
     argv: *const *const libc::c_char,
     envp: *const *const libc::c_char,
 ) -> libc::c_int {
+    let shell_fallback = config.search_path.is_some();
     let Some(client) = global_client() else {
         return unsafe { execve::original()(prog, argv, envp) };
     };
@@ -45,7 +46,28 @@ fn handle_exec(
                 if let Some(pre_exec) = pre_exec {
                     if pre_exec.run().is_err() { client.report_failure(); }
                 }
-                Ok(execve::original()(raw_command.prog, raw_command.argv, raw_command.envp))
+                let result = execve::original()(raw_command.prog, raw_command.argv, raw_command.envp);
+                if result == -1 && shell_fallback && nix::errno::Errno::last() == nix::errno::Errno::ENOEXEC {
+                    // libc's PATH-searching exec family executes a text file via
+                    // /bin/sh on ENOEXEC. Preserve that contract while passing the
+                    // shell through normal unsupported-image/loss handling.
+                    let mut args = vec![c"/bin/sh".as_ptr(), raw_command.prog];
+                    let mut cursor = raw_command.argv;
+                    if !(*cursor).is_null() {
+                        cursor = cursor.add(1);
+                        while !(*cursor).is_null() {
+                            args.push(*cursor);
+                            cursor = cursor.add(1);
+                        }
+                    }
+                    args.push(std::ptr::null());
+                    return Ok(handle_exec(
+                        fspy_nostd_alloc::pooled_bump(),
+                        ExecResolveConfig::search_path_disabled(),
+                        c"/bin/sh".as_ptr(), args.as_ptr(), raw_command.envp,
+                    ));
+                }
+                Ok(result)
             },
         )
     };
@@ -108,6 +130,7 @@ unsafe extern "C" fn execlp(path: *const c_char, arg0: *const c_char, valist: ..
     // SAFETY: valist and arg0 are valid variadic arguments forwarded from the interposed execlp function
     unsafe {
         with_argv(valist, arg0, |args, _remaining| {
+            if global_client().is_none() { return execvp::original()(path, args.as_ptr()); }
             handle_exec(
                 fspy_nostd_alloc::pooled_bump(),
                 ExecResolveConfig::search_path_enabled(None),
@@ -165,6 +188,7 @@ intercept!(execvp(64): unsafe extern "C" fn(
     argv: *const *const libc::c_char,
 ) -> c_int);
 unsafe extern "C" fn execvp(prog: *const c_char, argv: *const *const c_char) -> c_int {
+    if global_client().is_none() { return unsafe { execvp::original()(prog, argv) }; }
     #[expect(
         clippy::no_effect_underscore_binding,
         reason = "suppresses unused warning on *::original"
@@ -206,6 +230,7 @@ mod linux_only {
         argv: *const *const libc::c_char,
         envp: *const *const libc::c_char,
     ) -> c_int {
+        if global_client().is_none() { return unsafe { execvpe::original()(file, argv, envp) }; }
         #[expect(
             clippy::no_effect_underscore_binding,
             reason = "suppresses unused warning on *::original"

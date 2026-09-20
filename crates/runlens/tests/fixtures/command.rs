@@ -6,6 +6,43 @@ mod windows_native;
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
+        #[cfg(unix)]
+        "path-exec" => {
+            let path = std::ffi::CString::new(args[2].as_bytes()).unwrap();
+            let argv = [
+                path.as_ptr(),
+                c"fallback-argument".as_ptr(),
+                std::ptr::null(),
+            ];
+            // SAFETY: terminated live strings and argv, with a valid current environment.
+            unsafe {
+                match args[1].as_str() {
+                    "execvp" => {
+                        libc::execvp(path.as_ptr(), argv.as_ptr());
+                    }
+                    "execlp" => {
+                        libc::execlp(
+                            path.as_ptr(),
+                            path.as_ptr(),
+                            argv[1],
+                            std::ptr::null::<libc::c_char>(),
+                        );
+                    }
+                    #[cfg(target_os = "linux")]
+                    "execvpe" => {
+                        unsafe extern "C" {
+                            static environ: *const *const libc::c_char;
+                        }
+                        libc::execvpe(path.as_ptr(), argv.as_ptr(), environ);
+                    }
+                    _ => panic!("unknown exec family"),
+                }
+            }
+            println!(
+                "{}",
+                std::io::Error::last_os_error().raw_os_error().unwrap()
+            );
+        }
         #[cfg(target_os = "linux")]
         "libc-execveat" => {
             let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();

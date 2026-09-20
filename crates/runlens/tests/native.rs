@@ -3875,3 +3875,79 @@ fn libc_execveat_preserves_flags_and_descriptor_semantics() {
         }
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn path_exec_families_preserve_native_text_shell_fallback() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    fs::write(
+        root.path().join("fallback"),
+        "printf '%s' \"$1\" > fallback-result\nexit 17\n",
+    )
+    .unwrap();
+    fs::set_permissions(
+        root.path().join("fallback"),
+        fs::Permissions::from_mode(0o700),
+    )
+    .unwrap();
+    let families = if cfg!(target_os = "linux") {
+        vec!["execvp", "execlp", "execvpe"]
+    } else {
+        vec!["execvp", "execlp"]
+    };
+    for family in families {
+        for path in ["fallback", "./fallback", "missing-program"] {
+            let direct = Command::new(fixture())
+                .current_dir(root.path())
+                .env("PATH", root.path())
+                .args(["path-exec", family, path])
+                .output()
+                .unwrap();
+            if path != "missing-program" {
+                assert_eq!(direct.status.code(), Some(17));
+                fs::remove_file(root.path().join("fallback-result")).unwrap();
+            }
+            let name = format!(
+                "{family}-{}.json",
+                if path.starts_with('.') {
+                    "relative"
+                } else {
+                    path
+                }
+            );
+            let traced = Command::new(binary())
+                .current_dir(root.path())
+                .env("PATH", root.path())
+                .args([
+                    "run",
+                    "--save",
+                    &name,
+                    "--",
+                    fixture(),
+                    "path-exec",
+                    family,
+                    path,
+                ])
+                .output()
+                .unwrap();
+            assert_eq!(traced.stdout, direct.stdout, "{family}/{path}: {traced:?}");
+            let report = parse(root.path(), &name);
+            assert_eq!(
+                report["executions"][0]["outcome"]["child_exit_code"],
+                direct.status.code().unwrap()
+            );
+            if path != "missing-program" {
+                assert_eq!(
+                    fs::read_to_string(root.path().join("fallback-result")).unwrap(),
+                    "fallback-argument"
+                );
+                #[cfg(target_os = "macos")]
+                assert_eq!(
+                    report["executions"][0]["outcome"]["collection_complete"],
+                    false
+                );
+            }
+        }
+    }
+}
