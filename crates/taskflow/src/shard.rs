@@ -90,12 +90,15 @@ pub fn validate_task(task: &crate::config::Task) -> Result<()> {
             let mut rest = args[2..].iter();
             while let Some(arg) = rest.next() {
                 let flag = arg.split('=').next().unwrap();
+                ensure!(
+                    flag != "--target",
+                    "Cargo --target requires generic sharding to preserve target runners"
+                );
                 if matches!(
                     flag,
                     "-p" | "--package"
                         | "--exclude"
                         | "--manifest-path"
-                        | "--target"
                         | "--target-dir"
                         | "--features"
                         | "--profile"

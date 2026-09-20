@@ -5509,3 +5509,41 @@ async fn queued_discovery_mutations_run_watchers_without_initial_execution() {
     assert!(process.await.unwrap().is_err());
     assert_eq!(observed.unwrap(), "during-discovery");
 }
+
+#[test]
+fn libtest_cross_targets_require_generic_before_execution() {
+    for selection in [
+        vec!["--target", "aarch64-unknown-linux-gnu"],
+        vec!["--target=aarch64-unknown-linux-gnu"],
+    ] {
+        let args: Vec<_> = ["cargo", "test"].into_iter().chain(selection).collect();
+        let task =
+            json!({"command":args,"dependsOn":["install"],"shard":{"adapter":"libtest","count":2}});
+        let parsed: config::Task = serde_json::from_value(task.clone()).unwrap();
+        assert!(parsed
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("target runners"));
+        let root = fixture(json!({
+            "install":{"command":command(&["write","unexpected","executed"])},
+            "test":task
+        }));
+        for args in [vec!["check"], vec!["run", "test"]] {
+            let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+                .current_dir(root.path())
+                .args(["--root", "."])
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(!output.status.success());
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("app#test"),
+                "{output:?}"
+            );
+            assert!(!root.path().join("unexpected").exists());
+        }
+        let generic: config::Task = serde_json::from_value(json!({"command":args,"shard":{"adapter":"generic","count":2,"list":command(&["inventory"]),"run":command(&["shard"])}})).unwrap();
+        generic.validate().unwrap();
+    }
+}

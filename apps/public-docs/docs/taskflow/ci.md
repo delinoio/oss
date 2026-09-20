@@ -19,8 +19,10 @@ one zero-based shard; its count must match configuration. An empty shard produce
 a valid empty report. Missing, duplicate, failed, and cancelled results cannot
 produce whole-suite success. Sharded tasks cannot own shared output directories.
 
-Custom Rust harnesses and unsupported native selection/output flags require
-`generic`. A generic `list` command writes this JSON to stdout:
+Custom Rust harnesses, Cargo target runners, and unsupported native selection/output flags require
+`generic`. The native `libtest` adapter accepts host-native tests and rejects explicit
+`--target` arguments during configuration checks. Use a generic adapter to keep
+your Cargo runner in charge of cross-target test listing and execution. A generic `list` command writes this JSON to stdout:
 
 ```json
 {"version":1,"tests":[{"id":"case-a","durationMs":20},{"id":"case-b"}]}
