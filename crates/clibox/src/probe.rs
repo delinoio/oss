@@ -143,12 +143,19 @@ impl Resolve for Resolver {
 fn native_tls(
     loaded: rustls_native_certs::CertificateResult,
 ) -> Result<rustls::ClientConfig, Code> {
-    if !loaded.errors.is_empty() || loaded.certs.is_empty() {
-        return Err(Code::TrustStore);
-    }
     let mut roots = rustls::RootCertStore::empty();
-    for certificate in loaded.certs {
-        roots.add(certificate).map_err(|_| Code::TrustStore)?;
+    // OS stores can contain unreadable or unsupported entries alongside usable
+    // roots. Keep usable roots without exposing loader errors or certificate data.
+    let (usable_roots, ignored_certificates) = roots.add_parsable_certificates(loaded.certs);
+    tracing::debug!(
+        kind = "http",
+        usable_roots,
+        ignored_certificates,
+        loader_errors = loaded.errors.len(),
+        "native_trust_loaded"
+    );
+    if roots.is_empty() {
+        return Err(Code::TrustStore);
     }
     tls_with_roots(roots)
 }

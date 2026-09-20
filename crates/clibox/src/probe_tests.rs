@@ -97,6 +97,9 @@ fn typed_errors_distinguish_retryable_readiness_from_terminal_faults() {
     let loaded = rustls_native_certs::load_certs_from_paths(Some(&dir.path().join("absent")), None);
     assert!(!loaded.errors.is_empty());
     assert!(matches!(native_tls(loaded), Err(Code::TrustStore)));
+    let mut malformed = rustls_native_certs::CertificateResult::default();
+    malformed.certs.push(vec![0].into());
+    assert!(matches!(native_tls(malformed), Err(Code::TrustStore)));
 }
 
 async fn tls_server(
@@ -166,6 +169,37 @@ async fn tls_trust_hostname_and_untrusted_certificates() {
             .await
             .unwrap(),
             expected
+        );
+        server.await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn tls_retains_usable_native_roots_when_other_entries_fail() {
+    for (loader_error, malformed_certificate) in [(true, false), (false, true), (true, true)] {
+        let (url, cert, server) = tls_server("127.0.0.1").await;
+        let dir = tempfile::tempdir().unwrap();
+        let mut loaded = if loader_error {
+            let loaded =
+                rustls_native_certs::load_certs_from_paths(Some(&dir.path().join("absent")), None);
+            assert!(!loaded.errors.is_empty());
+            loaded
+        } else {
+            rustls_native_certs::CertificateResult::default()
+        };
+        if malformed_certificate {
+            loaded.certs.push(vec![0].into());
+        }
+        loaded.certs.push(cert);
+        let client = http_client(Some(native_tls(loaded).unwrap())).unwrap();
+        assert_eq!(
+            timeout(
+                Duration::from_secs(3),
+                http(&client, &url, Method::Get, None)
+            )
+            .await
+            .unwrap(),
+            Ok(())
         );
         server.await.unwrap();
     }
