@@ -113,3 +113,5 @@
 - Decode bounded, versioned, worktree-scoped branch identities before source/history queries. Preserve exact raw bytes for retained history even when the checkout is unavailable; reject conflicting legacy selectors.
 
 - Build SQLite file URIs from escaped absolute filename paths; state directory bytes must never become query/fragment parameters. Preserve WAL, FULL synchronization, foreign keys and immediate transactions.
+
+- Go report completeness tracking retains only active package/test identities; remove terminal pass/skip/fail entries while keeping occurrence counts for stable repeated-test failure IDs.

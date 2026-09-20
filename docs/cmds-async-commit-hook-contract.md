@@ -171,3 +171,5 @@ Working-tree config validate applies the same 1 MiB plus one overflow byte read 
 The local API carries worktree-scoped opaque branch identities separately from normalized labels. Source queries resolve those identities to exact raw Git refs, while run-list filtering uses the original SQLite branch bytes and remains available after source removal. Conflicting legacy selectors and identities are rejected.
 
 Configured state paths use escaped absolute [SQLite file URIs](https://www.sqlite.org/uri.html), preserving literal URI punctuation and raw Unix filename bytes independently of fixed connection parameters. Database reopening retains the same file and durability settings.
+
+Go report completeness tracking removes completed package/test identities immediately. Repeated run/start events reactivate their identity, while the separate completed-occurrence map remains available for stable failure IDs across pass, skip and fail iterations.

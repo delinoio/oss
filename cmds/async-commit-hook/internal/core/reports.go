@@ -252,7 +252,7 @@ func parseGoTest(b []byte, check, command, logID string) ([]Failure, error) {
 	output := map[[2]string]*reportOutputTail{}
 	buildOutput := map[string]*reportOutputTail{}
 	buildOccurrences := map[string]int{}
-	tests := map[[2]string]bool{}
+	tests := map[[2]string]struct{}{}
 	occurrences := map[[2]string]int{}
 	// The report is already bounded. Slice its lines without imposing a
 	// smaller event limit or allocating a second copy of a large JSON line.
@@ -291,10 +291,10 @@ func parseGoTest(b []byte, check, command, logID string) ([]Failure, error) {
 			}
 			output[key].append(event.Output)
 		case "run", "start":
-			tests[key] = false
+			tests[key] = struct{}{}
 		case "pass", "skip", "fail":
 			terminal = true
-			tests[key] = true
+			delete(tests, key)
 			// Count every completed iteration, including passes, so repairing an
 			// earlier failure does not renumber a later repeated test failure.
 			occurrences[key]++
@@ -311,10 +311,8 @@ func parseGoTest(b []byte, check, command, logID string) ([]Failure, error) {
 	if !seen || !terminal {
 		return nil, E("report-malformed", "Go test report is empty, truncated or incomplete", 1)
 	}
-	for _, done := range tests {
-		if !done {
-			return nil, E("report-incomplete", "Go test report contains unfinished tests", 1)
-		}
+	if len(tests) != 0 {
+		return nil, E("report-incomplete", "Go test report contains unfinished tests", 1)
 	}
 	return out, nil
 }
