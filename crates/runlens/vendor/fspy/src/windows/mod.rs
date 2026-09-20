@@ -116,7 +116,8 @@ impl SpyImpl {
                 // payload_bytes is a valid buffer with correct length
                 let success = unsafe {
                     DetourCopyPayloadToProcess(
-                                    &PAYLOAD_ID,
+                        process_handle,
+                        &PAYLOAD_ID,
                         payload_bytes.as_ptr().cast(),
                         payload_bytes.len().try_into().unwrap(),
                     )

@@ -219,3 +219,10 @@ Windows Detours DLL names now require an exact UTF-16 → active-code-page → U
 Windows namespace normalization translates NT/verbatim UNC roots to ordinary \\server\share roots instead of stripping them into relative UNC paths. The internal prefix API carries owned normalized paths where needed. Native Windows IPC tests retain absolute external identity and strip an equivalent UNC base without accepting a local-worktree base. Remove when upstream handles UNC normalization through both external conversion and prefix comparison.
 
 Windows spawn removes the unused duplicated process handle after ResumeThread. Job assignment already happens while suspended and the wait task owns the original handle; a late DuplicateHandle error could falsely claim the command never started. Existing native receipt, initialization-failure and timeout/lingering-child regressions cover the ownership boundary. Remove this patch only if upstream keeps all fallible setup before resumption and retains job-wide reaping.
+
+The pre-resume DetourCopyPayloadToProcess call retains the original suspended
+child's process handle as its first argument. Removing the unused post-resume
+duplicate must not remove this required injection input. Both Windows native CI
+builds type-check the four-argument ABI before the receipt tests exercise payload
+delivery. Remove this repair only with an upstream spawn implementation that
+preserves the same suspended-child payload and ownership sequence.

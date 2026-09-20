@@ -730,5 +730,8 @@ Windows NT/verbatim UNC observations retain their absolute network root when con
 Frozen source copies preserve dangling symbolic links. On Windows the copied link’s directory/file kind comes from its own metadata, so preparation can create its target later without changing link semantics.
 
 Windows tracing finishes fallible setup and Job assignment while the child remains suspended. After resumption the original child handle transfers directly to lifecycle collection; no optional handle duplication can misclassify an already-started command as an initialization failure.
+The same original handle remains the required target for both Detours DLL
+injection and payload copying before resumption; removing a redundant duplicate
+does not change either native call's ABI or target ownership.
 
 The native source-selection regression asserts source/environment comparability independently of observed execution equivalence. Fresh processes may have different access sets despite the same HEAD; clean must fail on those observed deltas while reserving inconclusive for incompatible source policies or revisions. Test failures include the explicit offline comparison for diagnosis.
