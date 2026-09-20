@@ -1,27 +1,32 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, writeFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { archive, archiveNames, checkPublication, checksums, inspectArchive, releasePlan, verify } from "./runmoor.mjs";
+import { readVersion, Project, Bump, bumpVersion } from "./project.mjs";
+import { archive, archiveNames, assetManifest, checkPublication, checksums, inspectArchive, releasePlan, verify } from "./runmoor.mjs";
 
+const sourceVersion = readVersion(Project.Runmoor);
+const nextVersion = bumpVersion(sourceVersion, Bump.Patch);
+const sourceTag = `runmoor@v${sourceVersion}`;
 const revision = "1".repeat(40);
 const entries = [
   { name: "runmoor", data: Buffer.from("test executable fixture"), mode: 0o755 },
-  { name: "README.md", data: Buffer.from("preview"), mode: 0o644 },
+  { name: "README.md", data: Buffer.from("stable release"), mode: 0o644 },
   { name: "LICENSE", data: Buffer.from("license"), mode: 0o644 },
 ];
-test("Runmoor publication binds source version, revision, ref and preview status", () => {
-  const plan = releasePlan({ version: "0.1.0", revision, ref: "refs/heads/topic" });
-  assert.equal(plan.mode, "dry-run"); assert.equal(plan.prerelease, true);
-  assert.equal(plan.tag, "runmoor@v0.1.0"); assert.equal(plan.signatures.length, 4);
+test("Runmoor publication binds source version, revision, ref and stable release status", () => {
+  const plan = releasePlan({ version: sourceVersion, revision, ref: "refs/heads/topic" });
+  assert.equal(plan.mode, "dry-run"); assert.equal(plan.prerelease, false);
+  assert.equal(plan.tag, sourceTag); assert.equal(plan.signatures.length, 4);
   for (const fields of [
-    { version: "v0.1.0" }, { version: "0.1.1" }, { revision: "HEAD" },
+    { version: `v${sourceVersion}` }, { version: nextVersion }, { revision: "HEAD" },
     { ref: "refs/tags/another@v0.1.0" }, { mode: "publish", ref: "refs/heads/topic" },
     { mode: "fake-sign" },
-  ]) assert.throws(() => releasePlan({ version: "0.1.0", revision, ref: "refs/heads/main", ...fields }));
-  for (const ref of ["refs/heads/main", "refs/tags/runmoor@v0.1.0"]) {
-    assert.equal(releasePlan({ version: "0.1.0", revision, ref, mode: "publish" }).mode, "publish");
+  ]) assert.throws(() => releasePlan({ version: sourceVersion, revision, ref: "refs/heads/main", ...fields }));
+  for (const ref of ["refs/heads/main", `refs/tags/${sourceTag}`]) {
+    assert.equal(releasePlan({ version: sourceVersion, revision, ref, mode: "publish" }).mode, "publish");
   }
 });
 test("Runmoor archives are deterministic with exact files, permissions and checksums", () => {
@@ -46,7 +51,7 @@ test("Runmoor archives are deterministic with exact files, permissions and check
 });
 test("Signed verification invokes an injected verifier with exact artifact and identity binding", () => {
   const directory = mkdtempSync(path.join(tmpdir(), "runmoor-signature-fixture-"));
-  const identity = "https://github.com/delinoio/oss/.github/workflows/release-runmoor.yml@refs/tags/runmoor@v0.1.0";
+  const identity = `https://github.com/delinoio/oss/.github/workflows/release-runmoor.yml@refs/tags/${sourceTag}`;
   try {
     for (const name of archiveNames) writeFileSync(path.join(directory, name), archive(entries));
     checksums(directory);
@@ -72,11 +77,55 @@ test("Signed verification invokes an injected verifier with exact artifact and i
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
+test("Release asset manifests bind exact names, sizes and digests", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "runmoor-asset-manifest-test-"));
+  try {
+    const bytes = archive(entries);
+    for (const name of archiveNames) writeFileSync(path.join(directory, name), bytes);
+    writeFileSync(path.join(directory, "SHA256SUMS"), "checksums\n");
+    const manifest = assetManifest(directory);
+    assert.deepEqual(manifest, [...archiveNames, "SHA256SUMS"].map((name) => {
+      const data = readFileSync(path.join(directory, name));
+      return { name, size: data.length, digest: `sha256:${createHash("sha256").update(data).digest("hex")}` };
+    }));
+    for (const name of [...archiveNames, "SHA256SUMS"]) writeFileSync(path.join(directory, `${name}.sigstore.json`), "signature\n");
+    assert.deepEqual(assetManifest(directory, true).map(({ name }) => name), [...archiveNames, "SHA256SUMS", ...archiveNames.map((name) => `${name}.sigstore.json`), "SHA256SUMS.sigstore.json"]);
+    writeFileSync(path.join(directory, "unexpected"), "stale\n");
+    assert.throws(() => assetManifest(directory), /Unexpected files/u);
+    assert.throws(() => assetManifest(directory, true), /Unexpected files/u);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
 
-test("Publication refuses conflicting tags, existing releases and uncertain API results", async () => {
-  const plan = releasePlan({ version: "0.1.0", revision, ref: "refs/heads/main", mode: "publish" });
+
+test("Publication resumes a matching draft and refuses public or uncertain releases", async () => {
+  const plan = releasePlan({ version: sourceVersion, revision, ref: "refs/heads/main", mode: "publish" });
+  const expectedAssets = [...archiveNames, "SHA256SUMS"].flatMap((name, index) => [
+    { name, size: index + 1, digest: `sha256:${String(index + 1).repeat(64)}` },
+    { name: `${name}.sigstore.json`, size: index + 11, digest: `sha256:${String(index + 11).repeat(64)}` },
+  ]);
   await checkPublication(plan, async () => ({ status: 404, body: {} }));
   await checkPublication(plan, async (route) => ({ status: route.includes("/git/") ? 200 : 404, body: { object: { type: "commit", sha: revision } } }));
+  const inspectedDraft = await checkPublication(plan, async (route) => route.includes("/git/")
+    ? { status: 200, body: { object: { type: "commit", sha: revision } } }
+    : { status: 200, body: { tag_name: plan.tag, draft: true, prerelease: false, target_commitish: revision, assets: expectedAssets } });
+  assert.equal(inspectedDraft.tag_name, plan.tag);
+  await checkPublication(plan, async (route) => route.includes("/git/")
+    ? { status: 200, body: { object: { type: "commit", sha: revision } } }
+    : { status: 200, body: { tag_name: plan.tag, draft: true, prerelease: false, target_commitish: revision, assets: expectedAssets } }, expectedAssets);
+  for (const body of [
+    { tag_name: plan.tag, draft: true, prerelease: true, target_commitish: revision },
+    { tag_name: "runmoor@v9.9.9", draft: true, prerelease: false, target_commitish: revision },
+    { tag_name: plan.tag, draft: true, prerelease: false, target_commitish: "2".repeat(40) },
+  ]) await assert.rejects(checkPublication(plan, async (route) => route.includes("/git/")
+    ? { status: 200, body: { object: { type: "commit", sha: revision } } }
+    : { status: 200, body: { ...body, assets: expectedAssets } }, expectedAssets), /stable tag and source revision/u);
+  for (const assets of [
+    expectedAssets.slice(0, -1),
+    [...expectedAssets, { name: "stale", size: 1, digest: `sha256:${"5".repeat(64)}` }],
+    expectedAssets.map((asset, index) => index === 0 ? { ...asset, digest: `sha256:${"6".repeat(64)}` } : asset),
+  ]) await assert.rejects(checkPublication(plan, async (route) => route.includes("/git/")
+    ? { status: 200, body: { object: { type: "commit", sha: revision } } }
+    : { status: 200, body: { tag_name: plan.tag, draft: true, prerelease: false, target_commitish: revision, assets } }, expectedAssets), /asset inventory/u);
   for (const result of [
     { status: 403, body: {} },
     { status: 200, body: { object: { type: "commit", sha: "2".repeat(40) } } },

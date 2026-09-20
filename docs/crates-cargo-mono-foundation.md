@@ -26,7 +26,7 @@
 - Operators must be able to cap retry attempts via `cargo mono publish --max-attempts <count>` or `CARGO_MONO_PUBLISH_MAX_ATTEMPTS`, with precedence `--max-attempts` > env > default unlimited retries.
 - crates.io sparse-index prefetch must not enforce a separate client-side HTTP timeout; sparse index requests must rely on the HTTP client's default timeout behavior.
 - Publish tag creation is opt-in by default (no config means no tags), must remain local-only (`git tag` without push), and must use `<crate>@v<version>` naming.
-- Remote tag publication is owned by CI automation: `.github/workflows/auto-publish.yml` must run `git push --tags` after a successful `publish` command, with checkout credential persistence disabled and authentication bound to `secrets.GH_TOKEN` (non-`GITHUB_TOKEN`) so downstream tag-triggered workflows run.
+- Remote tag publication is owned by the manual `Release Project` workflow: after exact-commit CI and selected-package publication succeed, it pushes only that package’s exact tag with a repository-scoped `delino-release-bot` installation token. It may recover a missing remote tag after an already-published crate and must reject a conflicting tag. Checkout credential persistence is disabled; there is no main-push workspace publisher. See `docs/repository-workflow-contract.md`.
 - If `publish` tag configuration references unknown workspace packages, command execution must fail with `invalid-input`.
 - Direct installers must remain available at `scripts/install/cargo-mono.sh` and `scripts/install/cargo-mono.ps1`, and direct installs must verify `SHA256SUMS` for the selected artifact without requiring `cosign` or artifact Sigstore sidecars.
 - `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable `quick-install` and `compile` strategies.
@@ -78,7 +78,7 @@
 ## Dependencies and Integrations
 - Integrates with Cargo workspace metadata and release workflows.
 - Publish ordering uses workspace package manifest dependency declarations rather than only Cargo's default-feature resolve graph, so optional workspace path dependencies are published before dependents that expose them behind features.
-- Integrates with root automation (`auto-publish`) through stable command contracts, including CI-driven tag publication.
+- Integrates with manual `Release Project` orchestration through selected-package publication and exact remote tag recovery.
 - Integrates with tag-based binary distribution automation (`release-cargo-mono`) through stable artifact naming and bundle-signing contracts.
 - Integrates with direct installer scripts and `cargo-binstall` metadata for prebuilt binary distribution.
 

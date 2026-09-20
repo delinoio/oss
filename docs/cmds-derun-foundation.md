@@ -13,6 +13,7 @@
 - Engineers automating terminal-fidelity execution workflows
 
 ## Interfaces and Contracts
+- `cmds/derun/internal/version/version.go` is the canonical release version source, initialized from `derun@v0.1.0`; MCP `serverInfo.version` uses the same constant.
 - Command identifiers and flags must remain stable for automation clients.
 - Streaming output contract must preserve terminal ordering and ANSI behavior.
 - MCP output bridge payloads must remain parseable and backward compatible.

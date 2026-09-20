@@ -15,6 +15,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `docs/apps-binpm-docs-foundation.md`
 
 ## Cross-Domain Invariants
+- Manual version selection and bot-owned release orchestration follow `docs/repository-workflow-contract.md`; the `Release Project` workflow supports patch, minor, and major increments while preserving this project’s existing distribution channels.
 - `binpm` is implemented as a Rust CLI under `crates/binpm`.
 - `apps/binpm-docs` is the Rspress static documentation app for `binpm`.
 - `apps/binpm-docs` must use the repository-default Rspress/Rsbuild-family static documentation toolchain and Cloudflare Pages deployment contract unless this project index and `docs/apps-binpm-docs-foundation.md` document a replacement.

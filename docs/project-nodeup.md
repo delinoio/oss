@@ -15,6 +15,7 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - `docs/apps-nodeup-docs-foundation.md`
 
 ## Cross-Domain Invariants
+- Manual version selection and bot-owned release orchestration follow `docs/repository-workflow-contract.md`; the `Release Project` workflow supports patch, minor, and major increments while preserving this project’s existing distribution channels.
 - Stable channel naming and runtime dispatch semantics must be preserved.
 - `current` is the canonical selector for the newest Node.js release-index entry; `latest` remains a supported alias that resolves identically and reports canonical alias metadata in JSON output.
 - Exact-version runtime selectors are immutable pins for `nodeup update`; they are canonicalized to `v<semver>` when tracked and are semantically deduplicated with non-`v` inputs. Users who intend to move to a newer exact runtime must install or select that newer exact version explicitly with `nodeup toolchain install <version>`, `nodeup default <version>`, or `nodeup override set <version> --path <path>`.

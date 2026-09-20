@@ -35,27 +35,19 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       dry_run: ${{ steps.meta.outputs.dry_run }}
     steps:
-      - name: Resolve release metadata
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - name: Validate source and release metadata
         id: meta
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            tag="cargo-mono@v${{ github.event.inputs.version }}"
-            dry_run="${{ github.event.inputs.dry_run }}"
-          else
-            tag="${GITHUB_REF_NAME}"
-            dry_run="false"
-          fi
-
-          version="${tag#cargo-mono@v}"
-
-          {
-            echo "tag=$tag"
-            echo "version=$version"
-            echo "dry_run=$dry_run"
-          } >> "$GITHUB_OUTPUT"
+        env:
+          RELEASE_PROJECT: cargo-mono
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REQUESTED_DRY_RUN: ${{ inputs.dry_run }}
+        run: node scripts/release/project.mjs source
 
   build:
     name: Build (${{ matrix.asset_os }}-${{ matrix.asset_arch }})

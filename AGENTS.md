@@ -392,14 +392,11 @@ Change-scoped execution rules:
 - When build or test commands change in project contracts, update this section and `.github/workflows/CI.yml` in the same commit.
 
 Release automation baseline:
-- `auto-publish` is defined in `.github/workflows/auto-publish.yml`.
-- Trigger contract: runs on `push` to `main` and supports `workflow_dispatch`.
-- Branch guard contract: publish job runs only when `github.ref == 'refs/heads/main'`.
-- Publish command contract: `cargo run -p cargo-mono -- publish`.
-- Workflow permission contract: `permissions.contents: write`.
-- Tag push contract: after successful publish command execution, run `git push --tags` without no-tag fallback handling.
-- Tag push authentication contract: checkout must disable persisted credentials (`persist-credentials: false`) and clear `http.https://github.com/.extraheader` before pushing tags so `GH_TOKEN` auth is authoritative.
-- Required secret contract: `CARGO_REGISTRY_TOKEN` (crate publish) and `GH_TOKEN` (tag push authentication and Homebrew release workflow PR submissions). `GH_TOKEN` must be a dedicated non-`GITHUB_TOKEN` credential so tag pushes emit downstream `push` events for tag-triggered workflows.
+- CLI release orchestration is owned by `docs/repository-workflow-contract.md` and the manual `Release Project` workflow: only binpm, cargo-mono, nodeup, with-watch, derun, and runmoor are selectable. Do not restore main-push workspace publishing. Version commits and individual release-tag pushes use the repository-scoped `delino-release-bot` GitHub App; Homebrew uses a separate tap-scoped token. Preserve exact-commit CI gates, version-only run-ID recovery, non-forced pushes, and existing signed artifact workflows. Keep bot keys/tokens out of files, artifacts, logs, Git URLs, and configuration.
+- Trigger contract: `release-project.yml` accepts only manual `main` runs in `delinoio/oss`, with closed `project` and `bump` choices. Its version commits must pass the exact main-push `CI Result` before registry uploads or tag pushes.
+- The coordinator ends after the verified release-tag push. The tag-triggered project release workflow runs asynchronously; downstream release failures are repaired from that workflow's Actions page and do not require retrying the coordinator when the tag push succeeded.
+- Publish command contract: `cargo run --locked -p cargo-mono -- publish --package "$RELEASE_PROJECT"` for Rust CLI targets; Go targets skip the registry phase.
+- Authentication contract: checkout disables persisted credentials, read-only run inspection uses the built-in token, and fresh `delino-release-bot` installation tokens perform source/tag and Homebrew writes with separate repository scopes. Configuration is `DELINO_RELEASE_BOT_CLIENT_ID` (Actions variable), `DELINO_RELEASE_BOT_PRIVATE_KEY` (Actions secret), and `CARGO_REGISTRY_TOKEN` (Rust upload secret). No PAT is required by these workflows.
 - `release-cargo-mono` is defined in `.github/workflows/release-cargo-mono.yml`.
 - Trigger contract: runs on tag push `cargo-mono@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
 - Distribution contract: publishes signed multi-OS cargo-mono release artifacts to GitHub Releases for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`.
@@ -440,7 +437,7 @@ Release automation baseline:
 - Public Runmoor documentation is owned by `apps/runmoor-docs` at `https://runmoor.delino.io`; follow `docs/apps-runmoor-docs-foundation.md`. The former `public-docs` `/runmoor` and child routes are removed without handoff pages or redirects. Keep all public discovery links pointed at the standalone site.
 
 - Follow `docs/project-runmoor.md`, `docs/cmds-runmoor-foundation.md`, and `cmds/runmoor/AGENTS.md` for issue #893. Runmoor owns local ephemeral GitHub Actions runners through Docker and Tart, with host-only credentials, durable ownership, fair resource budgets, and single-job disposable environments.
-- Initial Runmoor binaries are preview prereleases for darwin-arm64, linux-amd64, and linux-arm64 under `runmoor@v<MAJOR.MINOR.PATCH>`; publication dry runs are credential-free and non-publishing. No Homebrew distribution is added.
+- Runmoor binaries use the stable release channel for darwin-arm64, linux-amd64, and linux-arm64 under `runmoor@v<MAJOR.MINOR.PATCH>`; publication dry runs are credential-free and non-publishing. No Homebrew distribution is added.
 
 - Runmoor release fixtures must run with Node built-ins and no workspace dependency installation; YAML workflow assertions belong to `scripts/ci/` under `pnpm ci:contracts`.
-- Runmoor release dry runs are secret-free and non-publishing. Only the guarded publication job can obtain OIDC/signing and release-write authority; preview releases use the exact `runmoor@v<MAJOR.MINOR.PATCH>` source identity and three documented platform archives.
+- Runmoor release dry runs are secret-free and non-publishing. Only the guarded publication job can obtain OIDC/signing and release-write authority; stable releases use the exact `runmoor@v<MAJOR.MINOR.PATCH>` source identity and three documented platform archives while disclosing the live GitHub/Tart verification limits.

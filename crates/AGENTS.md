@@ -107,6 +107,7 @@
 - Keep command identifiers stable and documented in `docs/project-cargo-mono.md` and `docs/crates-cargo-mono-foundation.md`.
 - Preserve `cargo mono` subcommand compatibility (`cargo-mono` binary naming contract).
 - Keep release-tag responsibility split: `bump` must not create tags, and `publish` may create tags only for packages listed in `[workspace.metadata.cargo-mono.publish.tag].packages`.
+- The manual `Release Project` coordinator publishes only the selected CLI crate after exact-commit CI succeeds, then pushes only its exact version tag with `delino-release-bot`. It may recover a missing remote tag after an already-published crate, but must reject a conflicting tag. There is no main-push workspace publisher.
 - Keep `publish` delegation aligned with the documented contract: `cargo mono publish` must invoke `cargo publish --no-verify` in both execute and dry-run modes.
 - Keep `publish` package ordering based on manifest-declared workspace path dependencies, including optional feature-gated dependencies; do not rely only on Cargo's default-feature resolve graph.
 - Ensure release automation (`bump`, `publish`) logs include structured operational context.
