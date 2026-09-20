@@ -540,14 +540,38 @@ fn clean_baselines_require_matching_source_selection() {
         invoke(root.path(), &args)
     };
     let matching = verify(&[], "matching.json");
+    let comparison = invoke(
+        root.path(),
+        &["compare", "baseline.json", "matching.json", "--json"],
+    );
     assert!(
-        matching.status.success(),
+        comparison.status.success(),
         "{}",
+        String::from_utf8_lossy(&comparison.stderr)
+    );
+    let comparison: Value = serde_json::from_slice(&comparison.stdout).unwrap();
+    assert_eq!(comparison["verdict"], "passed", "{comparison}");
+    assert!(
+        comparison["environment_differences"]
+            .as_object()
+            .unwrap()
+            .is_empty(),
+        "{comparison}"
+    );
+    // Matching source selection establishes comparability. A fresh native
+    // process can still observe different inputs (including descriptor paths),
+    // so clean equivalence must fail when the actual comparison finds a delta.
+    let equivalent = comparison["findings"].as_object().unwrap().is_empty()
+        && comparison["differences"].as_object().unwrap().is_empty();
+    assert_eq!(
+        matching.status.code(),
+        Some(if equivalent { 0 } else { 5 }),
+        "{}\ncomparison: {comparison}",
         String::from_utf8_lossy(&matching.stderr)
     );
     assert_eq!(
         parse(root.path(), "matching.json")["verification"],
-        "passed"
+        if equivalent { "passed" } else { "failed" }
     );
 
     // Even identical source bytes cannot establish equivalence across source
