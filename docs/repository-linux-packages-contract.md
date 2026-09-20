@@ -10,7 +10,7 @@ Stable packages are binpm, cargo-mono, nodeup, with-watch, and derun. Runmoor re
 
 Rust GNU Linux binaries use the checksum-pinned AlmaLinux 9 image and the repository Rust toolchain. Dynamic GLIBC requirements must not exceed 2.34; only explicitly mapped runtime libraries are allowed. x86-64 builds target the baseline ISA and ARM64 builds target generic ARMv8. Derun and Runmoor Linux builds disable CGO. Existing GitHub asset names and Sigstore identities remain authoritative.
 
-Only releases whose source contains this package-distribution contract can enter the repository. Resolve the exact tag to its commit, validate source version and channel, and verify the checksum manifest and both Linux archive Sigstore bundles against the originating release workflow and GitHub Actions OIDC issuer. Do not backfill older releases, rebuild a published version, overwrite an existing package identity, or expose signing authority to unverified archives.
+Only releases whose source contains this package-distribution contract can enter the repository. Resolve the exact tag to its commit, validate source version and channel, and verify the checksum manifest and both Linux archive Sigstore bundles against the originating release workflow, exact certificate commit SHA, repository and GitHub Actions OIDC issuer. Do not backfill older releases, rebuild a published version, overwrite an existing package identity, or expose signing authority to unverified archives.
 
 ## Repository publication
 
@@ -28,7 +28,7 @@ Cache immutable package and snapshot objects for one year. Bypass caching for mu
 
 The `linux-packages` GitHub Environment owns dedicated R2 object credentials limited to the two buckets and an RSA 4096 OpenPGP signing subkey. Keep the primary secret key and recovery material outside CI. Commit the public certificate and fingerprint only. APT uses a repository-specific Signed-By keyring. PR and dry-run paths use disposable signing identities and cannot consume production secrets or write R2.
 
-Restrict the environment to main and the six CLI release-tag patterns. Provision the buckets, custom domain, HTTPS and cache rules before enabling production publication. Public release coordinators must wait for package publication and its public verification. Recovery retries must target the exact release identity and never modify GitHub tags or existing release assets.
+Restrict the environment to main and the six CLI release-tag patterns. Provision the buckets, custom domain, HTTPS and cache rules before enabling production publication. The rollout operator must wait for the exact downstream package publication and public verification after Release Project finishes its asynchronous tag handoff. Recovery retries must target the exact release identity and never modify GitHub tags or existing release assets.
 
 ## Validation and rollout
 

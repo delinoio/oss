@@ -14,7 +14,7 @@ export function verifyBundle(file, bundle, plan) {
   const workflow = `https://github.com/delinoio/oss/.github/workflows/release-${plan.project}.yml`;
   // Both supported release entrypoints bind signatures to the same owned workflow.
   const ref = `(?:refs/tags/${plan.tag.replaceAll('.', '\\.')}|refs/heads/main)`;
-  command('cosign', ['verify-blob', '--bundle', bundle, '--certificate-identity-regexp', `^${workflow.replaceAll('.', '\\.')}@${ref}$`, '--certificate-oidc-issuer', 'https://token.actions.githubusercontent.com', file]);
+  command('cosign', ['verify-blob', '--bundle', bundle, '--certificate-identity-regexp', `^${workflow.replaceAll('.', '\\.')}@${ref}$`, '--certificate-oidc-issuer', 'https://token.actions.githubusercontent.com', '--certificate-github-workflow-sha', plan.revision, '--certificate-github-workflow-repository', 'delinoio/oss', file]);
 }
 export function downloadRelease(plan, output) {
   const api = (endpoint) => JSON.parse(command('gh', ['api', endpoint]));

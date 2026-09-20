@@ -1575,6 +1575,21 @@ jobs:
           node-version-file: .nvmrc
       - name: Build pinned package tools
         run: docker build -f packaging/linux/Tools.Dockerfile -t delino-linux-package-tools .
+      - name: Verify Rust compatibility builds
+        env:
+          TEST_ARCH: ${{ matrix.arch }}
+        run: |
+          image=$(node -p 'JSON.parse(require("fs").readFileSync("packaging/linux/pins.json")).rust_image')
+          target=x86_64-unknown-linux-gnu
+          if [ "$TEST_ARCH" = arm64 ]; then target=aarch64-unknown-linux-gnu; fi
+          docker run --rm -v "$PWD:/workspace" -w /workspace -e BUILD_TARGET="$target" "$image" bash -c 'for project in binpm cargo-mono nodeup with-watch; do bash scripts/release/linux-packages/build-rust.sh "$project" "$BUILD_TARGET"; done'
+          sudo chown -R "$(id -u):$(id -g)" target
+          TEST_TARGET="$target" node --input-type=module <<'JS'
+          import { readElf } from './scripts/release/linux-packages/release-input.mjs';
+          for (const project of ['binpm', 'cargo-mono', 'nodeup', 'with-watch']) {
+            readElf(`target/${process.env.TEST_TARGET}/release/${project}`, process.env.TEST_ARCH);
+          }
+          JS
       - name: Verify publisher recovery and security contracts
         run: node --test scripts/release/linux-packages.test.mjs
       - name: Generate disposable signed package repositories
