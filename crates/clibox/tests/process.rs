@@ -115,7 +115,17 @@ fn environment_inherits_streams_cwd_and_literal_arguments() {
     cmd.args(["run", "env", "CLIBOX_TEST_VALUE=한글 🦀", "--"])
         .arg(std::env::current_exe().unwrap());
     helper(&mut cmd, "inspect");
-    cmd.args(["", "a b", "&|;$(literal)", "--test-threads=1"])
+    let literals = [
+        "",
+        "a b",
+        "&|;$(literal)",
+        "O'Reilly",
+        r"a\\b",
+        r"\\server\share\tool.exe",
+        r#"\"quoted\""#,
+    ];
+    cmd.args(literals)
+        .arg("--test-threads=1")
         .env("CLIBOX_TEST_PARENT", "inherited")
         .current_dir(directory.path());
     let output = cmd.output().unwrap();
@@ -132,10 +142,13 @@ fn environment_inherits_streams_cwd_and_literal_arguments() {
         std::fs::canonicalize(value["cwd"].as_str().unwrap()).unwrap(),
         expected
     );
-    let args = value["args"].as_array().unwrap();
-    assert!(args.contains(&json!("")));
-    assert!(args.contains(&json!("a b")));
-    assert!(args.contains(&json!("&|;$(literal)")));
+    let expected = [
+        &["--exact", "fixture", "--nocapture"][..],
+        &literals,
+        &["--test-threads=1"],
+    ]
+    .concat();
+    assert_eq!(value["args"], json!(expected));
     assert!(String::from_utf8_lossy(&output.stderr).contains("FIXTURE_STDERR"));
 }
 #[test]
@@ -336,7 +349,18 @@ fn windows_npm_style_cmd_dispatch_preserves_argument_boundaries() {
     .unwrap();
     let shim = temp.path().join("test-shim.cmd");
     std::fs::write(&shim, "@echo off\r\nnode \"%~dp0inspect.cjs\" %*\r\n").unwrap();
-    let args = ["", "a b", "한글", "safe&literal", "a|b", "a>b", "(x)"];
+    let args = [
+        "",
+        "a b",
+        "한글",
+        "safe&literal",
+        "a|b",
+        "a>b",
+        "(x)",
+        "O'Reilly",
+        r"a\\b",
+        r"\\server\share\tool.exe",
+    ];
     let output = Command::new(CLI)
         .args(["run", "env", "--"])
         .arg(&shim)

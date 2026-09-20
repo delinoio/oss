@@ -69,23 +69,6 @@ fn value(value: &str, name: &str, parent: &Environment, windows: bool) -> String
         .into_owned()
 }
 
-fn unescape(arg: &OsStr) -> OsString {
-    let Some(text) = arg.to_str() else {
-        return arg.to_owned();
-    };
-    let mut out = String::new();
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        match (c, chars.peek().copied()) {
-            ('\\', Some('\\' | '\'')) => out.push(chars.next().unwrap()),
-            ('\\', Some('$' | '"')) => (),
-            ('\'', _) => (),
-            _ => out.push(c),
-        }
-    }
-    out.into()
-}
-
 fn command_convert(arg: OsString, env: &Environment, windows: bool) -> OsString {
     if !windows {
         return arg;
@@ -148,10 +131,12 @@ fn plan(args: Vec<OsString>, parent: Environment, windows: bool) -> Result<Plan>
             value(&raw, &key, &parent, windows).into(),
         );
     }
+    // The caller already tokenized argv. Assignment escaping must not strip
+    // literal child quotes or backslashes (including a Windows UNC prefix).
     let mut converted = args
         .into_iter()
         .skip(first)
-        .map(|a| command_convert(unescape(&a), &env, windows));
+        .map(|a| command_convert(a, &env, windows));
     let command = converted.next().filter(|s| !s.is_empty()).ok_or_else(|| {
         Failure::new(
             Code::InvalidInput,
@@ -295,7 +280,7 @@ mod tests {
         }
     }
     #[test]
-    fn command_conversion_and_escaping() {
+    fn command_conversion_preserves_tokenized_arguments() {
         let p = plan(
             args(&[
                 "FOO=bar",
@@ -310,7 +295,10 @@ mod tests {
             true,
         )
         .unwrap();
-        assert_eq!(p.args, args(&["%FOO%", "fallback", "", "'quoted'", r"a\b"]));
+        assert_eq!(
+            p.args,
+            args(&["%FOO%", "fallback", "", r"\'quoted\'", r"a\\b"])
+        );
         let p = plan(
             args(&["cmd", "$BASE", "${EMPTY:-fallback}"]),
             parent(),
@@ -318,6 +306,21 @@ mod tests {
         )
         .unwrap();
         assert_eq!(p.args, args(&["$BASE", "${EMPTY:-fallback}"]));
+        for windows in [false, true] {
+            let literals = [
+                "O'Reilly",
+                r"a\\b",
+                r"\\server\share\tool.exe",
+                r#"\"quoted\""#,
+            ];
+            for command in ["O'Reilly", r"\\server\share\tool.exe"] {
+                let mut tokens = vec![command];
+                tokens.extend(literals);
+                let p = plan(args(&tokens), parent(), windows).unwrap();
+                assert_eq!(p.command, command);
+                assert_eq!(p.args, args(&literals));
+            }
+        }
     }
     #[test]
     fn separator_and_missing_command() {
