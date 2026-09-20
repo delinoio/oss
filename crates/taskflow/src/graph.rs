@@ -324,7 +324,7 @@ impl Graph {
     }
 
     fn validate_outputs(&mut self) -> Result<()> {
-        let mut owners: Vec<(std::path::PathBuf, String)> = vec![];
+        let mut owners: Vec<(std::path::PathBuf, std::path::PathBuf, String)> = vec![];
         for node in self.tasks.values() {
             let project = &self.workspace.projects[&node.project];
             crate::cache::anchors(&node.task)?;
@@ -341,15 +341,21 @@ impl Graph {
                     "{}: output must have a literal owned directory or file prefix",
                     node.id
                 );
-                let absolute = files::within(&project.directory, &project.directory.join(&anchor))?;
-                for (path, owner) in &owners {
+                let lexical = files::normalize(&project.directory.join(&anchor));
+                let absolute = files::within(&project.directory, &lexical)?;
+                for (path, spelling, owner) in &owners {
+                    // anchors() deduplicates lexical containment within one task.
+                    // Filesystem aliases cannot take that exemption, even when
+                    // canonicalization has already made their paths identical.
                     ensure!(
-                        owner == &node.id || !output_paths_overlap(&absolute, path)?,
+                        (owner == &node.id
+                            && (lexical.starts_with(spelling) || spelling.starts_with(&lexical)))
+                            || !output_paths_overlap(&absolute, path)?,
                         "overlapping output ownership: {owner} and {}",
                         node.id
                     );
                 }
-                owners.push((absolute.clone(), node.id.clone()));
+                owners.push((absolute.clone(), lexical, node.id.clone()));
                 for consumer in self.tasks.values().filter(|c| c.id != node.id) {
                     let consumer_project = &self.workspace.projects[&consumer.project];
                     // Glob-language intersection is deliberately conservative.

@@ -52,6 +52,8 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 
 `uncached_output_digests_are_not_limited_by_artifact_size` executes a task with an output larger than 512 MiB, confirms successful local identity tracking, and retains the artifact capture bound. Local and captured identities share the `output-state-v2` digest domain; previous payload-based digests become safe cache misses.
 
+`one_task_rejects_output_aliases_before_capture` rejects case/Unicode aliases within one task, including existing roots and nested aliases, while retaining lexical root deduplication.
+
 `output_ownership_uses_destination_filesystem_aliases` probes actual case/Unicode equivalence and rejects overlapping clean output roots, including nested projects, before any output is created.
 
 `docker_forwards_cli_overrides_to_tasks_tools_and_shards` observes Docker argv and resolved values through a local CLI fixture for finite tasks, tool probes, inventory, and shard execution, excluding ambient values and sibling credentials.

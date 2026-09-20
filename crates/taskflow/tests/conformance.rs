@@ -4672,6 +4672,46 @@ async fn output_ownership_uses_destination_filesystem_aliases() {
 }
 
 #[tokio::test]
+async fn one_task_rejects_output_aliases_before_capture() {
+    for (first, second) in [("Out", "out"), ("é", "e\u{301}")] {
+        for existing in [false, true] {
+            for suffix in ["", "/child"] {
+                let root = fixture(json!({"build": {
+                    "command": command(&["version"]),
+                    "output": [format!("{first}/**"), format!("{second}{suffix}/**")]
+                }}));
+                let probe = tempfile::tempdir_in(root.path()).unwrap();
+                std::fs::create_dir(probe.path().join(first)).unwrap();
+                let aliases = probe.path().join(second).exists();
+                if existing {
+                    std::fs::create_dir(root.path().join(first)).unwrap();
+                }
+                let result = Graph::build(Workspace::discover(root.path()).await.unwrap());
+                if aliases {
+                    assert!(result
+                        .unwrap_err()
+                        .to_string()
+                        .contains("overlapping output ownership"));
+                } else {
+                    result.unwrap();
+                }
+                assert_eq!(root.path().join(first).exists(), existing);
+                assert!(!root.path().join(second).join("child").exists());
+            }
+        }
+    }
+    let root = fixture(json!({"build": {
+        "command": command(&["version"]),
+        "output": ["out/**", "out/child/**", "out/**"]
+    }}));
+    let graph = graph(root.path()).await;
+    assert_eq!(
+        cache::anchors(&graph.tasks["app#build"].task).unwrap(),
+        vec![PathBuf::from("out")]
+    );
+}
+
+#[tokio::test]
 async fn docker_forwards_cli_overrides_to_tasks_tools_and_shards() {
     let platform = json!({"executor":"docker","os":"linux","image":"fixture@sha256:0000000000000000000000000000000000000000000000000000000000000000"});
     let root = fixture(json!({
