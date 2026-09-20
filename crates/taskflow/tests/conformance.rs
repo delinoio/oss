@@ -6149,3 +6149,50 @@ fn explicit_changed_files_cannot_discard_a_git_base() {
         }
     }
 }
+
+#[tokio::test]
+async fn critical_path_priority_counts_shared_diamond_suffixes() {
+    let directory = fixture(json!({
+        "root":{"command":command(&["record","events","root"]),"input":[]},
+        "a":{"command":command(&["record","events","a"]),"input":[],"dependsOn":["root"]},
+        "b":{"command":command(&["record","events","b"]),"input":[],"dependsOn":["root"]},
+        "join":{"command":command(&["record","events","join"]),"input":[],"dependsOn":["a","b"]},
+        "other":{"command":command(&["record","events","other"]),"input":[]}
+    }));
+    let g = graph(directory.path()).await;
+    let initial = run(g.clone(), &["join", "other"]).await;
+    assert!(initial.success);
+    for (task, duration) in [
+        ("root", 1),
+        ("a", 1),
+        ("b", 100),
+        ("join", 100),
+        ("other", 150),
+    ] {
+        let id = format!("app#{task}");
+        let mut receipt = initial.results[&id].clone();
+        receipt.duration_ms = duration;
+        files::atomic_write(
+            &runner::receipt_path(directory.path(), &id),
+            &serde_json::to_vec(&receipt).unwrap(),
+        )
+        .unwrap();
+    }
+    std::fs::remove_file(directory.path().join("events")).unwrap();
+    let plan = Plan::create(&g, &["join".into(), "other".into()], &[], false).unwrap();
+    let result = runner::run_plan(
+        g,
+        plan,
+        RunOptions {
+            jobs: 1,
+            ..RunOptions::default()
+        },
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert!(result.success);
+    let events = std::fs::read_to_string(directory.path().join("events")).unwrap();
+    // root -> b -> join costs 201; visiting a first must not erase join's 100.
+    assert_eq!(events.lines().next(), Some("root"), "{events}");
+}

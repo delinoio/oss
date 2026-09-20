@@ -403,13 +403,17 @@ fn critical_duration(graph: &Graph, id: &str, seen: &mut BTreeSet<String>) -> u6
     if !seen.insert(id.into()) {
         return 0;
     }
-    previous(&graph.workspace.root, id).map_or(1, |r| r.duration_ms.max(1))
+    let duration = previous(&graph.workspace.root, id).map_or(1, |r| r.duration_ms.max(1))
         + graph
             .dependents(id)
             .iter()
             .map(|next| critical_duration(graph, next, seen))
             .max()
-            .unwrap_or(0)
+            .unwrap_or(0);
+    // Guard only the current ancestry. A diamond's shared suffix contributes
+    // to every alternative path, including a longer branch visited later.
+    seen.remove(id);
+    duration
 }
 pub fn receipt_path(root: &Path, id: &str) -> PathBuf {
     root.join(".taskflow/results")
