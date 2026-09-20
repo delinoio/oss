@@ -351,7 +351,7 @@ pub fn export(graph: &Graph, targets: Vec<String>, output: &Path) -> Result<()> 
         let mut steps = vec![
             json!({"uses":"actions/checkout@v6","with":{"fetch-depth":0,"persist-credentials":false}}),
             json!({"uses":"actions/checkout@v6","with":{"repository":"delinoio/oss","ref":ci.revision,"path":".taskflow/tools/source","persist-credentials":false}}),
-            json!({"name":"Build pinned TaskFlow","shell":"bash","env":{"RUSTUP_TOOLCHAIN":ci.rust},"run":format!("rustup toolchain install '{}' --profile minimal\ncargo build --locked --release --manifest-path .taskflow/tools/source/Cargo.toml -p taskflow --bin tflow", ci.rust.replace('\'', "'\"'\"'"))}),
+            json!({"name":"Build pinned TaskFlow","shell":"bash","env":{"RUSTUP_TOOLCHAIN":ci.rust},"run":format!("rustup toolchain install '{}' --profile minimal\ncargo build --locked --release --manifest-path .taskflow/tools/source/Cargo.toml --target-dir .taskflow/tools/source/target -p taskflow --bin tflow", ci.rust.replace('\'', "'\"'\"'"))}),
         ];
         if let Some(node) = &ci.node {
             steps.push(json!({"uses":"actions/setup-node@v6","with":{"node-version":node}}));

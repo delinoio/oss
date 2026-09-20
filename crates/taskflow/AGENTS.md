@@ -159,3 +159,5 @@
 - Service deadlines retain typed timeout identity through readiness, failed activation receipts, service-exit events, and CLI error conversion. Readiness-only failure remains code 1; service timeout is 124, with cleanup failures taking precedence.
 
 - Reject explicit reserved components in positive and negative input declarations before execution, including ASCII case aliases and restore prefixes. Broad globs retain the runtime reserved-tree exclusions.
+
+- Generated CI bootstrap builds explicitly set the Cargo target directory to the same source-checkout target tree used by subsequent CLI invocations, overriding consumer build.target-dir and CARGO_TARGET_DIR.

@@ -442,3 +442,5 @@ After the additional receipt/cache bounds, libtest inventory, and manifest-path 
 `service_timeout_shuts_down_and_reaps_the_session` verifies library and real CLI code 124 both before and after readiness, plus child reaping. `readiness_cancellation_and_deadlines_await_probe_owners` distinguishes readiness-only failure (1) from service deadline failure (124) while retaining probe cleanup assertions.
 
 `input_patterns_reject_reserved_state_components` validates positive/negative reserved input components, nested and cross-project forms, portable separators, ASCII case aliases, and restore prefixes. Broad globs and ordinary hidden directories such as `.github` remain valid; runtime traversal still excludes reserved trees.
+
+`ci_bootstrap_pins_the_cli_build_directory` executes the generated Cargo build invocation against a tiny TaskFlow source fixture with both consumer `build.target-dir` and `CARGO_TARGET_DIR` overrides. Every job emits the same pinned build path and the expected CLI binary is produced without writing either alternate output tree.

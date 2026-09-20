@@ -8495,3 +8495,79 @@ fn input_patterns_reject_reserved_state_components() {
         task.validate().unwrap();
     }
 }
+
+#[tokio::test]
+async fn ci_bootstrap_pins_the_cli_build_directory() {
+    let root = fixture(
+        json!({"build":{"command":["unused"],"input":[],"output":[],"platform":{"os":"linux","arch":"x64"}}}),
+    );
+    let mut g = (*graph(root.path()).await).clone();
+    g.workspace.config.ci = Some(serde_json::from_value(json!({"revision":"1111111111111111111111111111111111111111","rust":"nightly-2026-01-01","runners":{"linux-x64":"ubuntu-latest"}})).unwrap());
+    taskflow::ci::export(&g, vec!["build".into()], Path::new("ci.yml")).unwrap();
+    let workflow: Value =
+        serde_yaml::from_slice(&std::fs::read(root.path().join("ci.yml")).unwrap()).unwrap();
+    files::atomic_write(
+        &root.path().join(".cargo/config.toml"),
+        b"[build]\ntarget-dir='consumer-target'\n",
+    )
+    .unwrap();
+    files::atomic_write(&root.path().join(".taskflow/tools/source/Cargo.toml"), b"[package]\nname='taskflow'\nversion='0.0.0'\nedition='2021'\n[workspace]\n[[bin]]\nname='tflow'\npath='src/main.rs'\n").unwrap();
+    files::atomic_write(
+        &root.path().join(".taskflow/tools/source/src/main.rs"),
+        b"fn main() {}\n",
+    )
+    .unwrap();
+    taskflow::discover::output_tool(
+        root.path(),
+        &[
+            "cargo",
+            "generate-lockfile",
+            "--offline",
+            "--manifest-path",
+            ".taskflow/tools/source/Cargo.toml",
+        ],
+        &[],
+    )
+    .await
+    .unwrap();
+    let mut builds = BTreeSet::new();
+    for job in workflow["jobs"].as_object().unwrap().values() {
+        let step = job["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|step| step["name"] == "Build pinned TaskFlow")
+            .unwrap();
+        let build = step["run"]
+            .as_str()
+            .unwrap()
+            .lines()
+            .find(|line| line.starts_with("cargo build "))
+            .unwrap();
+        builds.insert(build.to_owned());
+    }
+    assert_eq!(
+        builds.len(),
+        1,
+        "every job must use the same bootstrap path"
+    );
+    let build = builds.pop_first().unwrap();
+    // Execute the emitted Cargo invocation against a tiny source checkout; no
+    // tool installation or large repository rebuild is needed for this fixture.
+    taskflow::discover::output_tool(
+        root.path(),
+        &build.split_whitespace().collect::<Vec<_>>(),
+        &[("CARGO_TARGET_DIR", "environment-target")],
+    )
+    .await
+    .unwrap();
+    assert!(root
+        .path()
+        .join(format!(
+            ".taskflow/tools/source/target/release/tflow{}",
+            std::env::consts::EXE_SUFFIX
+        ))
+        .is_file());
+    assert!(!root.path().join("consumer-target").exists());
+    assert!(!root.path().join("environment-target").exists());
+}
