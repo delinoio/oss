@@ -151,3 +151,7 @@ Branch discovery streams bounded pages using the protocol branch-pagination cont
 Managed Git commands use --no-replace-objects for all source/configuration/history reads and preparation. Local commit, tree or blob replacement refs remain untouched but cannot alter committed validation or materialization under the original object ID.
 
 ACH_MANAGED is a reserved case-insensitive environment name. Public, secret, credential-backed, optional and platform-excluded declarations all fail with invalid-environment (exit 2) before acceptance; the runner alone supplies its guard value.
+
+Agent configuration and skill edits detect concurrent client/editor changes through identity-and-content revalidation immediately before atomic publication/removal. Initially missing files use no-replace creation. A conflict preserves the changed file and returns agent-conflict; a rejected conflicting settings publication rolls back only an unchanged owned skill publication and restores prior ownership when that rollback succeeds. Backups retain original bytes, including an empty or initially absent JSON configuration.
+
+Agent publication I/O errors can follow a committed rename; retain intended ownership and the skill for retry rather than guessing that publication failed.

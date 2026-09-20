@@ -97,3 +97,5 @@
 - Disable replacement objects on every managed Git invocation, including streamed tree/blob/config reads. Local refs/replace cannot reinterpret exact-commit receipt identity or execution source.
 
 - Reject ACH_MANAGED environment declarations case-insensitively across the complete graph before snapshotting or credential resolution; it is a runner-owned recursion guard.
+
+- Agent merges snapshot file identity and exact bytes before parsing; revalidate both immediately before atomic replacement or removal, and use no-replace creation for initially absent paths. Rollback must compare exact published skill ownership before restoring/removing it.

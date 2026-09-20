@@ -102,24 +102,25 @@ func (s *Service) Agent(client, scope, repo string, remove bool) (InstallResult,
 	}
 	id := "agent:" + client + ":" + path
 	owned, ownedErr := s.installation(id)
-	old, e := os.ReadFile(path)
-	if e != nil && !os.IsNotExist(e) {
+	settingsFile, e := readAgentFile(path)
+	if e != nil {
 		return InstallResult{}, e
 	}
-	skillOld, skillErr := os.ReadFile(skill)
-	if skillErr != nil && !os.IsNotExist(skillErr) {
-		return InstallResult{}, skillErr
+	skillFile, e := readAgentFile(skill)
+	if e != nil {
+		return InstallResult{}, e
 	}
+	old, skillOld := settingsFile.data, skillFile.data
 	if remove && ownedErr != nil {
 		if !errors.Is(ownedErr, sql.ErrNoRows) {
 			return InstallResult{}, ownedErr
 		}
-		if os.IsNotExist(skillErr) && !bytes.Contains(old, []byte("async-commit-hook")) {
+		if skillFile.info == nil && !bytes.Contains(old, []byte("async-commit-hook")) {
 			return InstallResult{Path: path}, nil
 		}
 		return InstallResult{}, E("agent-conflict", "integration is not recorded as product-owned; preserve the existing configuration", 2)
 	}
-	if skillErr == nil && (ownedErr != nil || Hash(skillOld) != owned.SkillHash) {
+	if skillFile.info != nil && (ownedErr != nil || Hash(skillOld) != owned.SkillHash) {
 		return InstallResult{}, E("agent-conflict", "skill already exists or was edited; move it aside explicitly before changing integration", 2)
 	}
 	executable, e := os.Executable()
@@ -209,8 +210,16 @@ func (s *Service) Agent(client, scope, repo string, remove bool) (InstallResult,
 		updated = value.Pack()
 	}
 	backup := filepath.Join(s.Store.Root, "backups", ID()+"-agent-config")
-	if e = AtomicWrite(backup, old, 0600); e != nil {
+	if e = AtomicWrite(backup, settingsFile.data, 0600); e != nil {
 		return InstallResult{}, e
+	}
+	var publishedSkill agentFile
+	restoreOwnership := func() error {
+		if ownedErr == nil {
+			return s.saveInstallation(owned)
+		}
+		_, err := s.Store.DB.Exec("DELETE FROM installations WHERE id=?", id)
+		return err
 	}
 	if !remove {
 		// Record intended ownership before publication so a crash between the
@@ -218,18 +227,30 @@ func (s *Service) Agent(client, scope, repo string, remove bool) (InstallResult,
 		if e = s.saveInstallation(Installation{ID: id, Path: path, Hash: Hash(updated), Kind: "agent", Entry: entry, SkillPath: skill, SkillHash: Hash([]byte(AgentGuide))}); e != nil {
 			return InstallResult{}, e
 		}
-		if e = AtomicWrite(skill, []byte(AgentGuide), 0600); e != nil {
+		publishedSkill, e = skillFile.write([]byte(AgentGuide))
+		if e != nil {
+			var conflict *Error
+			if errors.As(e, &conflict) && conflict.Code == "agent-conflict" {
+				e = errors.Join(e, restoreOwnership())
+			}
 			return InstallResult{}, e
 		}
 	}
-	if e = AtomicWrite(path, updated, 0600); e != nil {
-		if !remove && os.IsNotExist(skillErr) {
-			_ = os.Remove(skill)
+	if _, e = settingsFile.write(updated); e != nil {
+		var conflict *Error
+		// An I/O error after rename may mean publication committed. Retain the
+		// intended ownership for recovery rather than guessing that it failed.
+		if !remove && errors.As(e, &conflict) && conflict.Code == "agent-conflict" {
+			// Only undo our exact skill publication; preserve concurrent edits.
+			if rollbackErr := publishedSkill.restore(skillFile); rollbackErr != nil {
+				return InstallResult{}, errors.Join(e, rollbackErr)
+			}
+			e = errors.Join(e, restoreOwnership())
 		}
 		return InstallResult{}, e
 	}
 	if remove {
-		if e = os.Remove(skill); e != nil && !os.IsNotExist(e) {
+		if e = skillFile.remove(); e != nil {
 			return InstallResult{}, e
 		}
 		_, e = s.Store.DB.Exec("DELETE FROM installations WHERE id=?", id)
