@@ -133,6 +133,10 @@ test('signed recovery records reject tampering and an untrusted fingerprint', as
   const directory = mkdtempSync(path.join(tmpdir(), 'dl-sig-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const signing = temporarySigningKey(path.join(directory, 'gnupg'));
+  const { command } = await import('./linux-packages/release-input.mjs');
+  const secretKeys = command('gpg', ['--batch', '--with-colons', '--list-secret-keys'], { env: signing.env });
+  assert.equal(secretKeys.split('\n').find((line) => line.startsWith('sec:')).split(':')[14], '#', 'fixture publisher must not retain the certification secret key');
+  assert.equal(secretKeys.split('\n').find((line) => line.startsWith('ssb:')).split(':')[14], '+', 'fixture publisher must retain the signing subkey');
   const { record } = fixture();
   const signed = signCandidate({ ...record, fingerprint: signing.fingerprint }, signing, directory);
   assert.equal(verifyCandidate(signed, signing, directory), signed);

@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { architectures, dependencies, encode, sha256, requireValue, validateIdentity, pins } from './model.mjs';
@@ -22,18 +22,23 @@ export function importSigningKey(directory, { secretKey, passphrase, publicKey, 
   return { directory, keyFile, passFile, fingerprint, publicKey: Buffer.from(publicKey), env, passphrase };
 }
 export function temporarySigningKey(directory) {
-  mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const env = { ...process.env, GNUPGHOME: directory };
+  // Generate the certification key in a separate home, then discard it before the
+  // fixture publisher starts. Importing into the original home retains its primary.
+  const primaryHome = `${directory}-primary`;
+  mkdirSync(primaryHome, { recursive: true, mode: 0o700 });
+  const env = { ...process.env, GNUPGHOME: primaryHome };
   const passphrase = randomBytes(24).toString('hex');
-  const passFile = path.join(directory, 'passphrase');
+  const passFile = path.join(primaryHome, 'passphrase');
   writeFileSync(passFile, passphrase, { mode: 0o600 });
-  const unlock = ['--pinentry-mode', 'loopback', '--passphrase-file', passFile];
-  command('gpg', ['--batch', ...unlock, '--quick-generate-key', 'Delino Package Fixture', 'rsa2048', 'cert', '1d'], { env });
-  const fingerprint = command('gpg', ['--batch', '--with-colons', '--list-secret-keys'], { env }).split('\n').find((line) => line.startsWith('fpr:')).split(':')[9];
-  command('gpg', ['--batch', ...unlock, '--quick-add-key', fingerprint, 'rsa2048', 'sign', '1d'], { env });
-  const secretKey = command('gpg', ['--batch', ...unlock, '--armor', '--export-secret-subkeys', fingerprint], { env });
-  const publicKey = command('gpg', ['--batch', '--armor', '--export', fingerprint], { env });
-  return importSigningKey(directory, { secretKey, publicKey, fingerprint, passphrase });
+  try {
+    const unlock = ['--pinentry-mode', 'loopback', '--passphrase-file', passFile];
+    command('gpg', ['--batch', ...unlock, '--quick-generate-key', 'Delino Package Fixture', 'rsa2048', 'cert', '1d'], { env });
+    const fingerprint = command('gpg', ['--batch', '--with-colons', '--list-secret-keys'], { env }).split('\n').find((line) => line.startsWith('fpr:')).split(':')[9];
+    command('gpg', ['--batch', ...unlock, '--quick-add-key', fingerprint, 'rsa2048', 'sign', '1d'], { env });
+    const secretKey = command('gpg', ['--batch', ...unlock, '--armor', '--export-secret-subkeys', fingerprint], { env });
+    const publicKey = command('gpg', ['--batch', '--armor', '--export', fingerprint], { env });
+    return importSigningKey(directory, { secretKey, publicKey, fingerprint, passphrase });
+  } finally { rmSync(primaryHome, { recursive: true, force: true }); }
 }
 export function gpgSign(file, signing, clearsign = false) {
   const output = `${file}.${clearsign ? 'clearsigned' : 'asc'}`;
