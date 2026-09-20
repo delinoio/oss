@@ -94,6 +94,10 @@ jobs:
         if: runner.os == 'Windows'
         working-directory: crates/runlens
         run: cargo test --locked --package fspy_preload_windows detours_long_results_preserve_setup_failures
+      - name: Windows native creation ownership regression
+        if: runner.os == 'Windows'
+        working-directory: crates/runlens
+        run: cargo test --locked --package fspy_preload_windows native_creation_ownership_is_nested_and_thread_local
       - name: Windows malformed process attributes regression
         if: runner.os == 'Windows'
         working-directory: crates/runlens

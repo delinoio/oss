@@ -36,3 +36,5 @@ Direct shebang scripts run with incomplete identity evidence because a script ch
 Redirecting standard input, output, or error through a pre-opened regular file keeps the requested I/O working but makes collection incomplete. Runlens cannot certify accesses through those inherited file handles. Pipes and terminals remain supported, and stream contents are never saved in a report.
 
 On Unix, commands that change process sessions/groups or request a separate group when spawning produce incomplete collection. Detached descendants can outlive observation and cannot be certified or reliably cleaned up by group-based ownership. Use finite children that stay in the command's process group for lifecycle verification.
+
+Windows children created directly through native process APIs that bypass normal CreateProcess tracing produce incomplete collection. The child continues inside inherited Job ownership, but its filesystem accesses cannot establish a verification pass.

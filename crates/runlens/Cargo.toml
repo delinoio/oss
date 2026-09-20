@@ -36,6 +36,8 @@ libc = "0.2.185"
 schemars = { version = "1", features = ["uuid1"] }
 
 [target.'cfg(windows)'.dependencies]
+ntapi = { workspace = true, optional = true }
+winapi = { workspace = true, optional = true, features = ["std"] }
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Globalization", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Console", "Win32_Storage_FileSystem", "Win32_Security"] }
 
 [workspace.package]
@@ -152,7 +154,7 @@ ignored = [
 ]
 
 [features]
-test-support = []
+test-support = ["dep:ntapi", "dep:winapi"]
 
 [[bin]]
 name = "runlens"

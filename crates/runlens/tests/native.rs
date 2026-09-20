@@ -3626,3 +3626,38 @@ fn detached_descendants_cannot_certify_a_complete_lifecycle() {
         }
     }
 }
+
+#[cfg(windows)]
+#[test]
+fn direct_windows_native_creation_cannot_claim_child_coverage() {
+    let root = tempfile::tempdir().unwrap();
+    let external = tempfile::tempdir().unwrap();
+    let output = external.path().join("native-output");
+    fs::write(
+        root.path().join("runlens.toml"),
+        "schema_version = 1\n[policy]\ndeny_writes = [\"**/native-output\"]\n",
+    )
+    .unwrap();
+    let result = invoke(
+        root.path(),
+        &[
+            "run",
+            "--save",
+            "native.json",
+            "--",
+            fixture(),
+            "windows-native-child",
+            output.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(result.status.code(), Some(4), "{result:?}");
+    assert_eq!(fs::read_to_string(&output).unwrap(), "native child output");
+    let report = parse(root.path(), "native.json");
+    assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 0);
+    assert_eq!(
+        report["executions"][0]["outcome"]["collection_complete"],
+        false
+    );
+    let policy = invoke(root.path(), &["policy", "check", "native.json", "--json"]);
+    assert_eq!(policy.status.code(), Some(4), "{policy:?}");
+}

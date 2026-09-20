@@ -1,6 +1,8 @@
 //! Native finite commands for tracing/installation validation. Never
 //! distributed.
 use std::{fs, process::Command, time::Duration};
+#[cfg(windows)]
+mod windows_native;
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
@@ -313,6 +315,10 @@ fn main() {
                 }
             }
         }
+        #[cfg(windows)]
+        "windows-native-child" => windows_native::spawn(&args[1]),
+        #[cfg(windows)]
+        "windows-native-leaf" => fs::write(&args[1], "native child output").unwrap(),
         #[cfg(windows)]
         "windows-rename" | "windows-delete" => {
             if args[0] == "windows-rename" {

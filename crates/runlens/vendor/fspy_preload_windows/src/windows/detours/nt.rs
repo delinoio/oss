@@ -69,6 +69,12 @@ static DETOUR_NT_CREATE_USER_PROCESS: Detour<
                 create_info: PPS_CREATE_INFO,
                 attribute_list: PPS_ATTRIBUTE_LIST,
             ) -> NTSTATUS {
+                // Direct native creation bypasses suspended injection in the
+                // CreateProcess wrappers. The child must still run unchanged,
+                // but its unobserved accesses cannot certify complete collection.
+                if !super::create_process::injection_owned() {
+                    crate::windows::client::report_global_failure();
+                }
                 // SAFETY: observing caller memory without changing the forwarded arguments
                 unsafe { handle_process_image(attribute_list) };
 

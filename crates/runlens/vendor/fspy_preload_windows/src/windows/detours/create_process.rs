@@ -28,6 +28,12 @@ use crate::windows::{
 thread_local! {
     static IS_HOOKING_CREATE_PROCESS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
+// NtCreateUserProcess is safe to regard as instrumented only while this same
+// thread owns the wrapper's suspended-create / inject / resume transaction.
+pub(super) fn injection_owned() -> bool {
+    IS_HOOKING_CREATE_PROCESS.try_with(std::cell::Cell::get).unwrap_or(false)
+}
+
 struct HookGuard;
 impl HookGuard {
     fn new() -> Option<Self> {
@@ -150,3 +156,19 @@ pub const DETOURS: &[DetourAny] = &[
     DETOUR_CREATE_PROCESS_W.as_any(),
     DETOUR_CREATE_PROCESS_A.as_any(),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn native_creation_ownership_is_nested_and_thread_local() {
+        assert!(!injection_owned());
+        let owner = HookGuard::new().unwrap();
+        assert!(injection_owned());
+        assert!(HookGuard::new().is_none());
+        assert!(injection_owned());
+        std::thread::spawn(|| assert!(!injection_owned())).join().unwrap();
+        drop(owner);
+        assert!(!injection_owned());
+    }
+}

@@ -185,6 +185,7 @@
 - Unix mutation coverage includes directory/link creation and metadata-only path/descriptor calls, including raw static Linux syscalls. Symlink target text is not a read, and direct directory creation attempts still require explicit write permission.
 - Write allowlists cover snapshot directory-membership ancestors of known allowed descendant changes; explicit denies, unrelated siblings, type changes, and direct ancestor access attempts remain independently enforced.
 - Linux doctor/preflight requires a known Ubuntu VERSION_ID at least 22.04 in addition to GNU/native architecture and seccomp capabilities; unknown, older, or other distributions cannot be reported as supported.
+- Direct Windows NtCreateUserProcess calls must mark child coverage incomplete unless the same thread owns a CreateProcess injection transaction; other threads cannot borrow that ownership.
 - Windows Detours LONG results must compare the returned code with NO_ERROR and propagate failures to transaction abort plus incomplete evidence; native Windows CI must exercise a real rejected attach call.
 - Unix open-mode classification is shared by preload and seccomp: creation/truncation and Linux O_TMPFILE add write attempts, and stdio update modes add both read and write regardless of binary-mode spelling.
 - Unix path removal must record write attempts for unlink/unlinkat/rmdir/remove, including AT_REMOVEDIR, missing paths, directory-relative paths, and Linux static syscalls; external deletion cannot evade literal write boundaries.
