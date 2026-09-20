@@ -6317,3 +6317,69 @@ async fn cache_verify_rejects_impossible_partial_shard_suites() {
         assert_eq!(report["entries"][0]["valid"], valid, "count={count}");
     }
 }
+
+#[tokio::test]
+async fn malformed_dotenv_diagnostics_never_expose_values() {
+    let canary = "taskflow-dotenv-secret-canary";
+    for line in [
+        format!("TOKEN=\"{canary}"),
+        format!("TOKEN='{canary}\nsecond-line"),
+        format!("TOKEN={canary} unexpected"),
+    ] {
+        let directory = fixture(json!({"check":{
+            "command":command(&["write","unexpected","ran"]),"input":[],"secrets":["TOKEN","VALID"]
+        }}));
+        std::fs::write(
+            directory.path().join(".env"),
+            format!("VALID={canary}\n{line}"),
+        )
+        .unwrap();
+        let g = graph(directory.path()).await;
+        let error = taskflow::environment::Environment::build(
+            &g.workspace,
+            &g.workspace.projects["app"],
+            &g.tasks["app#check"].task,
+            &BTreeMap::new(),
+            false,
+        )
+        .err()
+        .unwrap();
+        for diagnostic in [format!("{error:#}"), format!("{error:?}")] {
+            assert!(!diagnostic.contains(canary));
+            assert!(diagnostic.contains(".env"));
+            assert!(diagnostic.contains("line byte offset"));
+        }
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .current_dir(directory.path())
+            .env("RUST_LOG", "taskflow=trace")
+            .args(["--json", "run", "check"])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        for bytes in [&output.stdout, &output.stderr] {
+            assert!(!String::from_utf8_lossy(bytes).contains(canary));
+        }
+        assert!(!directory.path().join("unexpected").exists());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("invalid dotenv syntax"));
+        let result = run(g, &["check"]).await;
+        let receipt = &result.results["app#check"];
+        assert_eq!(receipt.outcome, Outcome::Failed);
+        assert!(receipt
+            .diagnostic
+            .as_deref()
+            .unwrap()
+            .contains("invalid dotenv syntax"));
+        assert!(!serde_json::to_string(&result).unwrap().contains(canary));
+        for entry in walkdir::WalkDir::new(directory.path().join(".taskflow")) {
+            let entry = entry.unwrap();
+            if entry.file_type().is_file() {
+                assert!(
+                    !String::from_utf8_lossy(&std::fs::read(entry.path()).unwrap())
+                        .contains(canary),
+                    "{}",
+                    entry.path().display()
+                );
+            }
+        }
+    }
+}

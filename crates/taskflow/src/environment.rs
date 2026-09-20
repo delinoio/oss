@@ -206,12 +206,30 @@ pub(crate) fn get<'a>(values: &'a BTreeMap<String, String>, key: &str) -> Option
 
 fn read_dotenv(path: &Path, values: &mut BTreeMap<String, String>) -> Result<()> {
     if path.is_file() {
-        for pair in dotenvy::from_path_iter(path)? {
-            let (key, value) = pair?;
+        for pair in dotenvy::from_path_iter(path).map_err(|error| dotenv_error(path, error))? {
+            let (key, value) = pair.map_err(|error| dotenv_error(path, error))?;
             insert(values, key, value);
         }
     }
     Ok(())
+}
+
+fn dotenv_error(path: &Path, error: dotenvy::Error) -> anyhow::Error {
+    // dotenvy embeds the original line (and potentially secret values) in its
+    // parse error. Environment construction has not collected redactions yet,
+    // so discard the original error and its source chain at this boundary.
+    match error {
+        dotenvy::Error::LineParse(_, offset) => anyhow::anyhow!(
+            "invalid dotenv syntax in {} at line byte offset {offset}",
+            path.display()
+        ),
+        dotenvy::Error::Io(error) => anyhow::anyhow!(
+            "cannot read dotenv file {}: {:?}",
+            path.display(),
+            error.kind()
+        ),
+        _ => anyhow::anyhow!("cannot load dotenv file {}", path.display()),
+    }
 }
 
 /// Byte-oriented streaming masking preserves incomplete matches between reads.

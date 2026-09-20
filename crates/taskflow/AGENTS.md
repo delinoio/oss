@@ -81,3 +81,4 @@
 - Critical-path duration traversal must count a shared suffix on every alternative branch; cycle guards track only current ancestry, not all visited nodes.
 - Docker libtest inventories must reject compiler-artifact executables outside the persistent /workspace mount or absent after build-container removal, before launching test listing. Test Cargo config, environment, and argv target directories in real Docker conformance.
 - Historical cache shard evidence must contain exactly one partition or a complete suite. Integrity verification rejects other partial cardinalities without relying on current task configuration.
+- Sanitize dotenv errors before returning from environment construction: parser lines and error source chains can contain secrets before redaction values exist. Diagnostics may contain the file path and logical-line byte offset, never dotenv contents.
