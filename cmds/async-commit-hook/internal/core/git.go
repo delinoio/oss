@@ -253,6 +253,20 @@ func (s *Store) Prepare(ctx context.Context, r Run) (string, error) {
 	if err := validateSourceRepresentation(r, runtime.GOOS, runtime.GOARCH); err != nil {
 		return "", err
 	}
+	// Acceptance does not transfer trust to a later checkout at the same path.
+	// Rediscover metadata and require the original registry identities before
+	// reading object format, fetching objects or creating the owned workspace.
+	common, root, _, err := Discover(ctx, r.Source)
+	if err != nil {
+		return "", err
+	}
+	repository, worktree, err := s.Registered(common, root)
+	if err != nil {
+		return "", err
+	}
+	if repository.ID != r.RepositoryID || worktree.ID != r.WorktreeID {
+		return "", E("repository-unregistered", "accepted run belongs to a different checkout identity; initialize the current checkout and submit a new run", 2)
+	}
 	dir := filepath.Join(s.Root, "workspaces", r.ID)
 	if _, err := os.Lstat(dir); err == nil {
 		return "", E("workspace-exists", "a previous owned workspace requires interruption recovery", 3)

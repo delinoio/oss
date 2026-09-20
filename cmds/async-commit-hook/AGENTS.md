@@ -125,3 +125,5 @@
 - Active-component discovery reclaims dead ordinary process records by PID and birth identity from both their owning SQLite store and account control directory. Preserve the control record on database failure for retry; never recreate a removed old state. Supervisors still require backend/boot completion proof.
 
 - Lifecycle discovery accepts only UUID-v7-named component records whose embedded ID matches the filename; preserve update recovery journals and other account control files.
+
+- Revalidate the current common-directory identity and exact registered repository/worktree IDs when preparing queued or rerun source, before reading/fetching objects or creating a workspace. A separately initialized replacement checkout never inherits an earlier attempt.

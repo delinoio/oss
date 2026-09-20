@@ -123,3 +123,58 @@ func TestLegacyPathRegistryUpgradePreservesIDsAndRequiresExplicitTrust(t *testin
 		t.Fatal("foreign key enforcement disabled", err)
 	}
 }
+
+func TestQueuedRunRejectsReusedCheckoutBeforePreparingSource(t *testing.T) {
+	for _, initialized := range []bool{false, true} {
+		t.Run(map[bool]string{false: "untrusted-replacement", true: "independently-trusted-replacement"}[initialized], func(t *testing.T) {
+			s, path := fixture(t, "version=1\n[checks.test]\ncommand=\"echo validated\"\n")
+			ctx := context.Background()
+			receipt, err := s.Submit(ctx, path, "", false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			original, err := s.Store.Run(receipt.RunID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = os.Rename(path, path+"-old"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = Git(ctx, filepath.Dir(path), "clone", "--quiet", "--no-hardlinks", "--", path+"-old", path); err != nil {
+				t.Fatal(err)
+			}
+			if sha, err := ResolveCommit(ctx, path, original.Commit); err != nil || sha != original.Commit {
+				t.Fatal("replacement lacks the accepted commit", err)
+			}
+			if initialized {
+				if _, _, err := s.Init(ctx, path); err != nil {
+					t.Fatal(err)
+				}
+			}
+			loaded, err := s.Store.Run(original.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if dir, err := s.Store.Prepare(ctx, loaded); err == nil || dir != "" {
+				t.Fatal("replacement source was prepared", dir, err)
+			}
+			if _, err := os.Stat(filepath.Join(s.Store.Root, "workspaces", loaded.ID)); !os.IsNotExist(err) {
+				t.Fatal("workspace created before trust validation", err)
+			}
+			if err := s.RunOne(original.ID); err != nil {
+				t.Fatal(err)
+			}
+			result, err := s.Store.Run(original.ID)
+			if err != nil || result.State != Failed || result.RepositoryID != original.RepositoryID {
+				t.Fatal("queued run used replacement source", result.State, err)
+			}
+			if _, _, err := s.Init(ctx, path); err != nil {
+				t.Fatal(err)
+			}
+			fresh := runFixture(t, s, path)
+			if fresh.RepositoryID == original.RepositoryID || !s.GateRun(fresh).Passed {
+				t.Fatal("explicit replacement registration did not permit a fresh attempt")
+			}
+		})
+	}
+}
