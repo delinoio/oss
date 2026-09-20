@@ -3568,3 +3568,61 @@ fn linux_extended_attribute_reads_cannot_bypass_read_denials() {
         }
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn detached_descendants_cannot_certify_a_complete_lifecycle() {
+    let mut executables = vec![fixture().to_owned()];
+    #[cfg(target_os = "linux")]
+    match std::env::var("RUNLENS_STATIC_FIXTURE") {
+        Ok(path) => executables.push(path),
+        Err(_) => assert!(
+            std::env::var_os("CI").is_none(),
+            "static fixture required in CI"
+        ),
+    }
+    for executable in executables.drain(..) {
+        for mode in ["detach-setsid", "detach-setpgid", "detach-spawn"] {
+            if mode == "detach-spawn" && executable != fixture() {
+                continue;
+            }
+            let root = tempfile::tempdir().unwrap();
+            let external = tempfile::tempdir().unwrap();
+            let output = external.path().join("detached-output");
+            let result = invoke(
+                root.path(),
+                &[
+                    "run",
+                    "--save",
+                    "detached.json",
+                    "--",
+                    &executable,
+                    mode,
+                    output.to_str().unwrap(),
+                ],
+            );
+            assert_eq!(
+                result.status.code(),
+                Some(4),
+                "{executable}/{mode}: {result:?}"
+            );
+            let report = parse(root.path(), "detached.json");
+            assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 0);
+            assert_eq!(
+                report["executions"][0]["outcome"]["collection_complete"],
+                false
+            );
+            let policy = invoke(root.path(), &["policy", "check", "detached.json", "--json"]);
+            assert_eq!(policy.status.code(), Some(4));
+            // The unsupported descendant is finite by construction. Await its
+            // final write before dropping the fixture's external directory.
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while fs::read(&output).unwrap_or_default() != b"done"
+                && std::time::Instant::now() < deadline
+            {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            assert_eq!(fs::read(&output).unwrap(), b"done");
+        }
+    }
+}

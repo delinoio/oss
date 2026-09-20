@@ -6,6 +6,22 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 int main(int argc, char **argv) {
+    if (argc == 3 && (!strcmp(argv[1], "detach-setsid") || !strcmp(argv[1], "detach-setpgid"))) {
+        int output = open(argv[2], O_WRONLY | O_CREAT | O_TRUNC, 0600), ready[2];
+        if (output < 0 || pipe(ready)) return 94;
+        pid_t pid = fork();
+        if (pid < 0) return 95;
+        if (pid == 0) {
+            close(ready[0]);
+            long result = !strcmp(argv[1], "detach-setsid") ? syscall(SYS_setsid) : syscall(SYS_setpgid, 0, 0);
+            if (result < 0) _exit(96);
+            write(ready[1], "x", 1); close(ready[1]);
+            close(0); close(1); close(2);
+            usleep(200000); write(output, "done", 4); _exit(0);
+        }
+        close(ready[1]); char byte;
+        return read(ready[0], &byte, 1) == 1 ? 0 : 97;
+    }
     if (argc == 3 && strstr(argv[1], "xattr")) {
         char buffer[4096];
         if (!strcmp(argv[1], "getxattr")) syscall(SYS_getxattr, argv[2], "user.runlens", buffer, sizeof(buffer));

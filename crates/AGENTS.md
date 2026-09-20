@@ -198,6 +198,7 @@
 - Before clean/repeat source preparation, reject baseline plus planned execution counts exceeding the schema execution limit; never run a target whose combined evidence cannot fit that limit.
 - Apply global read/write policy boundaries to current preparation and target executions. Target input/output declarations and baseline new-access comparisons remain target-scoped.
 - Retained evidence maps share a process-wide memory threshold, including repeat rounds and supplied reports. Cancellation handlers must be registered before owned child work. Reject known macOS restrictive code-signing flags and restricted segments by bounded passive inspection; never invoke the target to discover its version.
+- Unix session/group changes and spawn attributes that can detach descendants must mark collection incomplete before the operation, including raw static Linux calls; the managed group becoming empty is not proof of a complete detached tree.
 - Raw Linux execve/execveat of shebang scripts must report unsupported interpreter coverage, including directory-relative and empty-path descriptor forms.
 - Shebang scripts must not use their text digest as native executable identity; preserve the requested execution but mark unbound interpreter chains incomplete.
 - Windows snapshot stability requires present volume serial and file index identities, including the opened handle and final pathname; equal size and timestamps alone cannot prove stability.

@@ -43,6 +43,21 @@ unsafe fn handle_posix_spawn(
         return unsafe { original(pid, file, file_actions, attrp, argv, envp) };
     };
 
+    if !attrp.is_null() {
+        let mut flags = 0;
+        // SAFETY: attrp is the caller's live posix_spawn attributes; the getter
+        // copies flags without changing the requested spawn configuration.
+        let read = unsafe { libc::posix_spawnattr_getflags(attrp, &mut flags) };
+        // Darwin's SETSID extension is 0x0400 (not exposed by pinned libc).
+        #[cfg(target_os = "macos")]
+        let setsid = 0x0400;
+        #[cfg(target_os = "linux")]
+        let setsid = i32::from(libc::POSIX_SPAWN_SETSID);
+        if read != 0 || i32::from(flags) & (i32::from(libc::POSIX_SPAWN_SETPGROUP) | setsid) != 0 {
+            client.report_failure();
+        }
+    }
+
     // SAFETY: file, argv, and envp are valid pointers forwarded from the interposed posix_spawn(p) function
     let result = unsafe {
         client.handle_exec::<c_int>(

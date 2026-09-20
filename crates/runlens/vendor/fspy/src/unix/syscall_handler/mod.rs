@@ -7,6 +7,7 @@ mod remove;
 mod stat;
 mod readlink;
 mod xattr;
+mod lifecycle;
 
 use std::{
     borrow::Cow,
@@ -142,6 +143,9 @@ impl_handler!(
 
     #[cfg(target_arch = "x86_64")] readlink,
     readlinkat,
+
+    setsid,
+    setpgid,
 
     execve,
     execveat,

@@ -542,6 +542,47 @@ fn main() {
                 .unwrap();
             std::process::exit(status.code().unwrap_or(1));
         }
+        #[cfg(unix)]
+        "detach-setsid" | "detach-setpgid" | "detach-spawn" => {
+            use std::{io::Read, os::unix::process::CommandExt, process::Stdio};
+            let mut command = Command::new(std::env::current_exe().unwrap());
+            command
+                .args(["detach-child", &args[0], &args[1]])
+                .stdout(Stdio::piped());
+            if args[0] == "detach-spawn" {
+                command.process_group(0);
+            }
+            #[allow(
+                clippy::zombie_processes,
+                reason = "finite detached child intentionally outlives its parent to test lost \
+                          lifecycle coverage"
+            )]
+            let mut child = command.spawn().unwrap();
+            let mut ready = [0u8];
+            child.stdout.take().unwrap().read_exact(&mut ready).unwrap();
+            assert_eq!(ready, [1]);
+        }
+        #[cfg(unix)]
+        "detach-child" => {
+            use std::os::fd::AsRawFd;
+            let output = fs::File::create(&args[2]).unwrap();
+            // SAFETY: valid scalar process calls and live byte buffers. The
+            // bounded child outlives its parent and writes through a held file.
+            unsafe {
+                match args[1].as_str() {
+                    "detach-setsid" => assert!(libc::setsid() > 0),
+                    "detach-setpgid" => assert_eq!(libc::setpgid(0, 0), 0),
+                    _ => assert_eq!(libc::getpgrp(), libc::getpid()),
+                }
+                assert_eq!(libc::write(1, [1u8].as_ptr().cast(), 1), 1);
+                libc::close(0);
+                libc::close(1);
+                libc::close(2);
+                libc::usleep(200_000);
+                libc::write(output.as_raw_fd(), b"done".as_ptr().cast(), 4);
+                libc::_exit(0);
+            }
+        }
         "linger" => {
             #[allow(
                 clippy::zombie_processes,
