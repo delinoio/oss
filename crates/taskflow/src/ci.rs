@@ -63,7 +63,7 @@ pub fn manifest_state(graph: &Graph) -> Result<BTreeMap<String, String>> {
         .map(|p| {
             Ok((
                 files::relative_to(&graph.workspace.root, p)?,
-                files::file_state(p)?,
+                files::metadata_file_state(&graph.workspace.root, p)?,
             ))
         })
         .collect()
@@ -287,7 +287,7 @@ impl Blueprint {
             .map(|p| {
                 Ok((
                     files::relative_to(&workspace.root, p)?,
-                    files::file_state(p)?,
+                    files::metadata_file_state(&workspace.root, p)?,
                 ))
             })
             .collect::<Result<_>>()?;

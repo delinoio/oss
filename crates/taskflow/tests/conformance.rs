@@ -5872,6 +5872,60 @@ async fn dangling_input_links_track_target_deletion_and_recreation() {
     }
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn automatic_metadata_links_require_workspace_containment() {
+    use std::os::unix::fs::symlink;
+    for name in [".npmrc", "Cargo.lock", "rust-toolchain.toml"] {
+        let root =
+            fixture(json!({"check":{"command":command(&["version"]),"input":[],"output":[]}}));
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("private"), "private-metadata-sentinel").unwrap();
+        let g = graph(root.path()).await;
+        let link = root.path().join(name);
+        let snapshot = || {
+            files::input_state(
+                &g.workspace,
+                &g.workspace.projects["app"],
+                &g.tasks["app#check"].task,
+            )
+        };
+        for target in [
+            outside.path().join("private"),
+            outside.path().join("missing"),
+        ] {
+            symlink(target, &link).unwrap();
+            let error = snapshot().unwrap_err().to_string();
+            assert!(error.contains("escapes workspace"), "{error}");
+            assert!(!error.contains("private-metadata-sentinel"));
+            assert!(taskflow::ci::manifest_state(&g).is_err());
+            assert!(Workspace::discover(root.path()).await.is_err());
+            std::fs::remove_file(&link).unwrap();
+        }
+        symlink(outside.path(), root.path().join("bridge")).unwrap();
+        symlink("bridge/private", &link).unwrap();
+        assert!(snapshot().is_err(), "intermediate links cannot escape");
+        std::fs::remove_file(&link).unwrap();
+        symlink(name, &link).unwrap();
+        assert!(
+            snapshot().is_err(),
+            "cycles cannot be treated as missing metadata"
+        );
+        std::fs::remove_file(&link).unwrap();
+        symlink("internal-metadata", &link).unwrap();
+        let missing = snapshot().unwrap();
+        assert!(missing[name].ends_with(":missing"));
+        std::fs::write(root.path().join("internal-metadata"), "first").unwrap();
+        let first = snapshot().unwrap();
+        assert_ne!(first[name], missing[name]);
+        std::fs::write(root.path().join("internal-metadata"), "second").unwrap();
+        assert_ne!(snapshot().unwrap()[name], first[name]);
+        std::fs::remove_file(root.path().join("internal-metadata")).unwrap();
+        assert_eq!(snapshot().unwrap(), missing);
+        assert!(Workspace::discover(root.path()).await.is_ok());
+    }
+}
+
 #[tokio::test]
 async fn ready_service_identity_invalidates_cached_consumers() {
     let root = fixture(json!({

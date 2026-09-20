@@ -115,3 +115,5 @@
 - Revalidate installation receipts using the same unsharded bootstrap options that produced them, including when a development session selects one test partition.
 
 - Failed installation phases retain their RunResult receipts and termination status in run and start; timeout is 124 and cancellation is 130. Await session service cleanup before returning that result, and let unverified cleanup remain a failure.
+
+- Validate automatic metadata inputs with the same complete link-chain containment as declared inputs before hashing discovery generations, CI manifests, or task snapshots, including input-disabled tasks and missing targets.

@@ -260,7 +260,7 @@ impl Workspace {
             .map(|path| {
                 Ok((
                     crate::files::relative_to(&ws.root, path)?,
-                    crate::files::file_state(path)?,
+                    crate::files::metadata_file_state(&ws.root, path)?,
                 ))
             })
             .collect::<Result<BTreeMap<_, _>>>()?;

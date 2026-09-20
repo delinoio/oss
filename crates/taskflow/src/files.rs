@@ -323,6 +323,13 @@ fn validate_input_link(root: &Path, path: &Path) -> Result<()> {
     }
     Ok(())
 }
+// Metadata is an implicit input even when a task disables ordinary scanning.
+// Validate before hashing here as well as in permission-aware task snapshots.
+pub fn metadata_file_state(root: &Path, path: &Path) -> Result<String> {
+    validate_input_link(root, path)?;
+    file_state(path)
+}
+
 pub fn input_state(
     ws: &Workspace,
     project: &Project,
@@ -449,6 +456,7 @@ pub fn input_state(
         }
     }
     for path in &ws.metadata_files {
+        validate_input_link(&ws.root, path)?;
         result.insert(
             slash(path.strip_prefix(&ws.root)?)?,
             input_file_state(path)?,
