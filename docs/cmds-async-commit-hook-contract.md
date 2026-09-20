@@ -147,3 +147,5 @@ Go test JSON also accepts the interleaved `build-output` and `build-fail` action
 Agent configuration and product skill files must be regular files. Install, reinstall and uninstall return `agent-conflict` before backups, ownership changes or publication when either final path is a symlink (including dangling links) or another nonregular type. Existing links and their targets remain untouched; users can keep dotfile management and configure `ach mcp` manually. OpenCode JSONC-to-JSON selection uses link-aware discovery so a dangling JSONC link never redirects installation into another file. Parent directory symlinks are preserved rather than replaced.
 
 Branch discovery streams bounded pages using the protocol branch-pagination contract; it never buffers the complete Git ref listing. Raw ref names remain unchanged for ordering, with UTF-8 normalization only at transport.
+
+Managed Git commands use --no-replace-objects for all source/configuration/history reads and preparation. Local commit, tree or blob replacement refs remain untouched but cannot alter committed validation or materialization under the original object ID.

@@ -17,7 +17,8 @@ import (
 var objectID = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 
 func gitCommand(ctx context.Context, path string, args ...string) *exec.Cmd {
-	argv := append([]string{"-c", "core.quotePath=false", "-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=false", "-C", path}, args...)
+	// Local refs/replace must never reinterpret a receipt commit or its blobs.
+	argv := append([]string{"--no-replace-objects", "-c", "core.quotePath=false", "-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=false", "-C", path}, args...)
 	c := exec.CommandContext(ctx, "git", argv...)
 	env := SystemEnvironment()
 	env["GIT_CONFIG_NOSYSTEM"] = "1"

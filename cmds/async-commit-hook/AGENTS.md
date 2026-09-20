@@ -93,3 +93,5 @@
 - Agent install/reinstall/uninstall rejects final-component symlinks and nonregular configuration/skill files before backup, ownership or publication. OpenCode fallback discovery uses Lstat so dangling JSONC links cannot be bypassed.
 
 - Stream branch refs into count- and byte-bounded pages; use worktree-scoped lexical cursors and cancel/reap partial Git readers. Never buffer all refs before bounding a response.
+
+- Disable replacement objects on every managed Git invocation, including streamed tree/blob/config reads. Local refs/replace cannot reinterpret exact-commit receipt identity or execution source.
