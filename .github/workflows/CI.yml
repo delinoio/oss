@@ -328,6 +328,56 @@ jobs:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
 
+  linux-packages:
+    needs: changes
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['linux-packages'] }}
+    name: Linux package repository (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: ubuntu-latest, arch: amd64}
+          - {runner: ubuntu-24.04-arm, arch: arm64}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - name: Build pinned package tools
+        run: docker build -f packaging/linux/Tools.Dockerfile -t delino-linux-package-tools .
+      - name: Verify Rust compatibility builds
+        env:
+          TEST_ARCH: ${{ matrix.arch }}
+        run: |
+          image=$(node -p 'JSON.parse(require("fs").readFileSync("packaging/linux/pins.json")).rust_image')
+          target=x86_64-unknown-linux-gnu
+          if [ "$TEST_ARCH" = arm64 ]; then target=aarch64-unknown-linux-gnu; fi
+          docker run --rm -v "$PWD:/workspace" -w /workspace -e BUILD_TARGET="$target" "$image" bash -c 'for project in binpm cargo-mono nodeup with-watch; do bash scripts/release/linux-packages/build-rust.sh "$project" "$BUILD_TARGET"; done'
+          sudo chown -R "$(id -u):$(id -g)" target
+          TEST_TARGET="$target" node --input-type=module <<'JS'
+          import { readElf } from './scripts/release/linux-packages/release-input.mjs';
+          for (const project of ['binpm', 'cargo-mono', 'nodeup', 'with-watch']) {
+            readElf(`target/${process.env.TEST_TARGET}/release/${project}`, process.env.TEST_ARCH);
+          }
+          JS
+      - name: Verify publisher recovery and security contracts
+        run: node --test scripts/release/linux-packages.test.mjs
+      - name: Generate disposable signed package repositories
+        run: |
+          mkdir -p "$RUNNER_TEMP/package-fixture"
+          docker run --rm -v "$PWD:/workspace:ro" -v "$RUNNER_TEMP/package-fixture:/output" delino-linux-package-tools node scripts/release/linux-packages/fixture.mjs /output
+          docker run --rm -v "$PWD:/workspace:ro" delino-linux-package-tools node scripts/release/linux-packages/rotation-test.mjs
+      - name: Verify native package lifecycle on supported distributions
+        env:
+          TEST_ARCH: ${{ matrix.arch }}
+        run: |
+          for image in ubuntu:22.04 ubuntu:24.04 ubuntu:26.04 debian:12 debian:13 fedora:43 fedora:44 registry.access.redhat.com/ubi9/ubi:latest registry.access.redhat.com/ubi10/ubi:latest rockylinux:9 rockylinux/rockylinux:10 almalinux:9 almalinux:10; do
+            node scripts/release/linux-packages/smoke.mjs --fixture "$RUNNER_TEMP/package-fixture" --image "$image" --architecture "$TEST_ARCH"
+          done
+
   node-mpapp-test:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['node-mpapp-test'] }}
@@ -1664,6 +1714,8 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Verify affected workspace runner
         run: node --test scripts/ci/run-affected.test.mjs
+      - name: Test Rust utility commands and OS adapters
+        run: cargo test --locked -p clibox
       - name: Test launcher and native npm consumers
         env:
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['node-clibox-test'] }}
@@ -1714,6 +1766,7 @@ jobs:
       - devhud-release-contracts
       - taskflow-conformance
       - taskflow-docker
+      - linux-packages
     steps:
       - uses: actions/checkout@v6
         with:

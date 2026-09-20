@@ -10,6 +10,7 @@ For most macOS and Linux users, start with Homebrew. For Windows users, start wi
 
 | Method | Use this when |
 | --- | --- |
+| APT / DNF | You want Linux installation, updates and removal managed by your distribution’s package manager; see [Linux APT and DNF](#linux-apt-and-dnf). |
 | Homebrew | You are on macOS or Linux and already use Homebrew, or you want the simplest managed install path. |
 | Direct installers | You want a first-party release artifact without Homebrew or `cargo-binstall`. Use pinned commands in CI or audited environments. |
 | `cargo-binstall` | You already have Rust tooling and want to install from first-party GitHub Release assets without source-build fallback. |
@@ -286,3 +287,32 @@ Checksum mismatch and runtime download diagnostics include sanitized mirror sour
 
 The release index cache TTL defaults to 600 seconds and can be changed with `NODEUP_RELEASE_INDEX_TTL_SECONDS`.
 The value must be a non-negative integer number of seconds. Invalid values such as an empty string, `-1`, or `abc` keep the 600-second fallback and emit a safe diagnostic category without exposing the raw value.
+
+## Linux APT and DNF
+
+Delino provides a stable APT and DNF repository for this CLI. Packages support x86-64 and ARM64 on Ubuntu 22.04/24.04/26.04 LTS, Debian 12/13, Fedora 43/44, and RHEL-compatible 9/10 systems, including UBI, Rocky Linux and AlmaLinux.
+
+The repository address is `https://pkgs.oss.delino.io`. Verify its public RSA 4096 key before registering it:
+
+```sh
+curl -fsSLo delino-packages.asc https://pkgs.oss.delino.io/keys/delino-packages.asc
+gpg --show-keys --with-fingerprint delino-packages.asc
+```
+
+The full primary fingerprint must match `B08D E37A 14DD 10DD FD04 E66E 87CB 82A1 F70F BD30`. Stop on a mismatch.
+
+Follow the [Linux package setup guide](https://oss.delino.io/linux-packages) to register stable with your package manager. After registration:
+
+```sh
+# APT
+sudo apt-get install nodeup
+sudo apt-get install --only-upgrade nodeup
+sudo apt-get remove nodeup
+
+# DNF
+sudo dnf install nodeup
+sudo dnf upgrade nodeup
+sudo dnf remove nodeup
+```
+
+Use `nodeup --version` to check the installed CLI. Package removal preserves user configuration and data.

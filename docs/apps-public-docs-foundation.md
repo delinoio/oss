@@ -17,7 +17,7 @@
 ## Interfaces and Contracts
 - Rspress route, navigation, and sidebar contracts in `apps/public-docs/rspress.config.ts` must remain stable.
 - Documentation sources live in `apps/public-docs/docs`; the production output directory is `apps/public-docs/doc_build` and is not source-controlled.
-- Rspress clean URLs are enabled. Stable route IDs are `/`, `/getting-started`, `/projects-overview`, `/documentation-lifecycle`, `/devhud`, `/devhud/install`, `/devhud/guide`, `/devhud/privacy`, `/devhud/security`, `/devhud/support`, `/devhud/admin`, `/devhud/releases`, `/cargo-mono`, `/derun`, `/with-watch`, `/taskflow`, `/taskflow/configuration`, `/taskflow/commands`, `/taskflow/cache`, `/taskflow/ci`, and `/nodeup`; generated internal links must not use `.html` suffixes.
+- Rspress clean URLs are enabled. Stable route IDs are `/`, `/getting-started`, `/projects-overview`, `/documentation-lifecycle`, `/linux-packages`, `/devhud`, `/devhud/install`, `/devhud/guide`, `/devhud/privacy`, `/devhud/security`, `/devhud/support`, `/devhud/admin`, `/devhud/releases`, `/cargo-mono`, `/derun`, `/with-watch`, `/taskflow`, `/taskflow/configuration`, `/taskflow/commands`, `/taskflow/cache`, `/taskflow/ci`, and `/nodeup`; generated internal links must not use `.html` suffixes.
 - Public-facing routes and content groupings must map to canonical docs contracts.
 - Content must curate internal contracts from `docs/` into user-facing guidance and must not document repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 - Top-level in-site product page IDs currently include `devhud`, `cargo-mono`, `derun`, `with-watch`, and `taskflow`.
@@ -62,3 +62,11 @@
 - `docs/project-public-docs.md`
 - `docs/repository-defaults.md`
 - `docs/domain-template.md`
+
+## Native package guidance
+
+The public installation surface documents the exact repository key fingerprint, supported Linux distribution/architecture matrix, stable or explicit preview registration, and package-manager install/update/remove commands. Operational details remain in `docs/repository-linux-packages-contract.md`. The shared clean route is `/linux-packages`; exact system package-manager registration paths on that page are public interfaces permitted by its scoped content validator.
+
+The canonical public-docs production origin is `https://oss.delino.io`.
+
+Cloudflare Pages project `public-docs` owns production hosting and automatically deploys `main` from `delinoio/oss`. Its build root is the repository root, command is `pnpm --filter public-docs build`, and output is `apps/public-docs/doc_build`. The build environment pins `NODE_VERSION=24` and `PNPM_VERSION=10.26.2`, matching the repository toolchain. Its platform hostname is `public-docs-43x.pages.dev`; the custom-domain CNAME now targets that hostname instead of the previous Mintlify target.

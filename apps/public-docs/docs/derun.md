@@ -81,3 +81,7 @@ derun mcp
 
 - [Projects Overview](projects-overview)
 - [Documentation Lifecycle](documentation-lifecycle)
+
+## APT and DNF
+
+Follow [Linux Packages](/linux-packages) to verify the repository key and register stable. Then install `derun` with `sudo apt-get install derun` or `sudo dnf install derun`. Use the same package manager for updates and removal.

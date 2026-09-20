@@ -1,7 +1,7 @@
 # Project: clibox
 
 ## Goal
-Provide a Rust CLI that JavaScript projects can pin through npm and their lockfiles. The initial CLI exposes help and version only.
+Provide a Rust CLI that JavaScript projects can pin through npm and their lockfiles. The CLI provides cross-platform environment execution, local port inspection/termination, resource opening, and text clipboard commands alongside help/version. Issue #916 defines this utility boundary.
 
 ## Project ID
 `clibox`
@@ -17,12 +17,15 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 ## Cross-Domain Invariants
 - The crate and command are `clibox`; the public npm entry point is `@delino/clibox`.
 - Rust is explicitly selected instead of the repository's default Go language. Node.js 22+ is required only for the npm launcher; repository tooling uses Node.js 24.
-- The Cargo manifest, Cargo.lock, source npm manifest, nine generated npm packages, and executable version agree exactly. The initial source version is `0.1.0`.
+- The Cargo manifest, Cargo.lock, source npm manifest, nine generated npm packages, and executable version agree exactly.
 - macOS and Windows MSVC support x64/arm64; Linux supports x64/arm64 with separate glibc and musl packages.
 - Consumers never compile Rust or run installation/download scripts. The npm launcher executes only its exact-version platform dependency.
 - Manual `Release Project` versioning, exact-commit CI, crates.io publication, and the `clibox@v<version>` tag precede the downstream npm workflow.
-- First npm publication is manual from CI-produced tarballs; subsequent publication uses OIDC. This scaffold does not publish anything during setup.
-- Domain commands, a docs website, Homebrew, and public GitHub Release binaries are outside this foundation.
+- npm publication uses GitHub Actions OIDC and provenance from the complete verified CI artifact; setup and dry-run validation do not publish.
+- The public commands are `run env`, `port which`, `port kill`, `open`, `clipboard copy`, and `clipboard paste`; no public Rust/JavaScript library API is provided.
+- OS effects use current-user/session permissions without elevation, persistence, automatic retries, or telemetry. Diagnostics omit clipboard text, environment values, complete argv, URLs, and paths.
+- Automated parser, process, OS-adapter, and distribution tests are the completion gate. Real GUI, clipboard persistence, and application-wait verification remain follow-up work.
+- A docs website, Homebrew, and public GitHub Release binaries remain outside this project.
 
 ## Change Policy
 Update both domain contracts, this index, relevant AGENTS files, version synchronization, platform fixtures, and release workflows together when these boundaries change.
