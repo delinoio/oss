@@ -116,7 +116,9 @@ disposition, allocation, EOF or metadata updates. Delete and metadata access
 rights also classify as writes. Renames/links and unknown information classes
 mark collection incomplete because their additional destinations are not yet
 decoded; failed handle resolution does the same. Handle-local position and I/O
-settings are excluded. Portable classification regressions and Windows native
+settings are excluded. The bypass-access-check rename/link classes (56/57) remain
+unresolved too; I/O completion notification is the separate class 41. Portable
+classification regressions and Windows native
 rename/delete policy fixtures cover this conservative boundary. Remove the patch
 when upstream traces both endpoints and all supported mutation classes without
 turning missing evidence into a pass or interrupting the original operation.

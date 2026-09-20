@@ -24,7 +24,7 @@ pub const fn information_mutation(class: u32) -> InformationMutation {
     match class {
         // Position, mode, completion port, priority and notification settings
         // affect the handle, not persisted filesystem state.
-        14 | 16 | 30 | 43 | 56 | 61 => InformationMutation::HandleOnly,
+        14 | 16 | 30 | 41 | 43 | 61 => InformationMutation::HandleOnly,
         // Basic attributes, disposition, allocation, EOF, valid data length,
         // extended disposition and case-sensitivity mutate the opened file.
         4 | 13 | 19 | 20 | 39 | 64 | 71 | 75 => InformationMutation::Write,
