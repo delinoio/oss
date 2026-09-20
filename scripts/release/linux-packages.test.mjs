@@ -76,6 +76,8 @@ test('ELF checks reject wrong architecture, newer libc, runtime paths and CPU re
   assert.throws(() => inspectElf(elf, 'amd64', '', '(NEEDED) [libssl.so.3]', ''));
   assert.throws(() => inspectElf(elf, 'amd64', '', '', 'x86 ISA needed: x86-64-v3'));
   assert.deepEqual(dependencies(['libc.so.6', 'liblzma.so.5'], 'deb'), ['libc6 (>= 2.34)', 'liblzma5']);
+  for (const format of ['deb', 'rpm']) assert.ok(dependencies(['libc.so.6'], format, 'clibox').includes('ca-certificates'));
+  assert.ok(!dependencies(['libc.so.6'], 'deb', 'binpm').includes('ca-certificates'));
 });
 test('candidate recovery preserves the first complete signed bytes', async (t) => {
   const { state } = stores(t); const first = fixture();

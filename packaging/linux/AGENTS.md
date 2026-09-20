@@ -12,3 +12,5 @@
 
 - APT CLI packages depend on `delino-archive-keyring`, which owns `/usr/share/keyrings/delino-packages.gpg` in both suites. Certificate updates require an increased keyring version and preserve all historical signing subkeys. Stage with the current signer for at least 30 days before switching; never replace a certificate and signer together.
 - Rust bootstrap executables must use the architecture-specific rustup archive URL and checksum in `pins.json`, verified before execution; disable rustup self-updates.
+
+- clibox packages require `ca-certificates` in both formats for OS-trusted HTTPS readiness checks. Preserve Rustls/ring C compilation and the pinned GNU/musl link boundaries; ELF-derived dependencies alone cannot represent certificate data.

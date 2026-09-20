@@ -82,8 +82,9 @@ export function inspectElf(bytes, architecture, versionText, dynamicText, notesT
   requireValue(!/\((?:RPATH|RUNPATH)\)/u.test(dynamicText), 'UNEXPECTED_RUNTIME_PATH');
   return libraries;
 }
-export function dependencies(libraries, format) {
-  const values = new Set();
+export function dependencies(libraries, format, project) {
+  // OS certificate data is a runtime dependency that cannot be inferred from ELF.
+  const values = new Set(project === Project.Clibox ? ['ca-certificates'] : []);
   for (const library of libraries) {
     if (library === 'libgcc_s.so.1') values.add(format === 'deb' ? 'libgcc-s1' : 'libgcc');
     else if (library === 'liblzma.so.5') values.add(format === 'deb' ? 'liblzma5' : 'xz-libs');

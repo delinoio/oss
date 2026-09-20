@@ -113,13 +113,18 @@ jobs:
           image=$(node -p 'JSON.parse(require("node:fs").readFileSync("packaging/linux/pins.json")).rust_image')
           docker run --rm -v "$PWD:/workspace" -w /workspace "$image" bash scripts/release/linux-packages/build-rust.sh clibox "$RELEASE_TARGET"
           sudo chown -R "$(id -u):$(id -g)" target
+      - name: Prepare musl crypto compiler
+        if: endsWith(matrix.target, '-musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: Build and check native executable
         shell: bash
         env:
           CLIBOX_TARGET: ${{ matrix.target }}
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CC_aarch64_unknown_linux_musl: musl-gcc
           # Keep musl startup objects and libc matched to the pinned Rust runtime.
           # Ubuntu 22.04's musl-gcc produces a crashing x64 static PIE here; the
-          # pure-Rust CLI needs no system C libraries or external musl toolchain.
+          # final link still uses Rust runtime objects; musl-gcc only compiles ring.
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: rust-lld
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -C link-self-contained=yes
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: rust-lld
@@ -150,7 +155,7 @@ jobs:
           CLIBOX_TARGET: ${{ matrix.target }}
         run: |
           docker run --rm --volume "$GITHUB_WORKSPACE:/workspace" --workdir /workspace --env CLIBOX_TARGET node:24-alpine sh -eu -c '
-            apk add --no-cache git
+            apk add --no-cache git ca-certificates
             git config --global --add safe.directory /workspace
             npm install --global pnpm@10.26.2
             pnpm --filter @delino/clibox test:package --target "$CLIBOX_TARGET" --binary "/workspace/target/$CLIBOX_TARGET/release/clibox"

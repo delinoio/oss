@@ -81,7 +81,7 @@ export function packageFiles(plan, input, output, signing) {
       const name = format === 'deb' ? `${plan.project}_${plan.version}-1_${arch}.deb` : `${plan.project}-${plan.version}-1.${rpmArch}.rpm`;
       const config = { name: plan.project, arch, platform: 'linux', version: plan.version, release: '1', section: 'utils', priority: 'optional',
         maintainer: 'Delino', description, vendor: 'Delino', homepage: `https://github.com/delinoio/oss`, license,
-        mtime: new Date(input.epoch * 1000).toISOString(), depends: [...dependencies(input.binaries[arch].libraries, format), ...(format === 'deb' ? ['delino-archive-keyring (>= 1-1)'] : [])],
+        mtime: new Date(input.epoch * 1000).toISOString(), depends: [...dependencies(input.binaries[arch].libraries, format, plan.project), ...(format === 'deb' ? ['delino-archive-keyring (>= 1-1)'] : [])],
         contents: [
           { src: path.resolve(input.binaries[arch].file), dst: `/usr/bin/${plan.project}`, file_info: { mode: 0o755, mtime: new Date(input.epoch * 1000).toISOString() } },
           { src: path.resolve(copyright), dst: `/usr/share/doc/${plan.project}/copyright`, file_info: { mode: 0o644 } },
