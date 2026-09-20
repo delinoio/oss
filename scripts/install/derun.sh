@@ -89,7 +89,8 @@ install_via_package_manager() {
   return 1
 }
 
-install_direct() {
+# Keep the temporary directory in scope until its EXIT cleanup finishes.
+install_direct() (
   local tag
   tag="$(resolve_tag)"
 
@@ -127,11 +128,6 @@ install_direct() {
       ;;
   esac
 
-  if [ "$os" = "linux" ] && [ "$arch" = "arm64" ]; then
-    echo "[install.derun] linux arm64 direct artifacts are not published yet" >&2
-    exit 1
-  fi
-
   local ext="tar.gz"
   local asset_name="derun-${os}-${arch}.${ext}"
   local base_url="https://github.com/${repo}/releases/download/${tag}"
@@ -157,7 +153,7 @@ install_direct() {
   popd >/dev/null
 
   echo "[install.derun] installed derun to $install_dir/derun" >&2
-}
+)
 
 case "$method" in
   package-manager)

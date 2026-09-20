@@ -53,6 +53,10 @@ The tag triggers the existing project release workflow asynchronously, preservin
 
 Source version tests must not pin the current Runmoor or Derun release literal. Release tests use temporary Git repositories and injected API responses, never real tag, registry, or deployment mutations. Validate with `pnpm ci:workflows`, `pnpm ci:contracts`, and the project release tests. Initial app setup and validation do not dispatch a release.
 
+## APT and DNF publication
+
+The six CLI release workflows call `release-linux-packages.yml` after GitHub Release publication. Release Project ends after its tag phase; operators must separately await the exact downstream tag workflow, including protected native package publication and public installation verification, before starting the next project. Runmoor uses preview; the other five use stable. Follow `repository-linux-packages-contract.md` for exact inputs, package versions, tool pins, signatures and recovery. CI adds the `linux-packages` domain job to `CI Result`; it uses temporary keys and repositories on native amd64/arm64 hosts. Only the publisher's global concurrency group uses `queue: max`. The narrowly scoped actionlint compatibility adapter independently validates that exact declaration and leaves all other workflow checks intact.
+
 ## Runmoor validation and release
 
 `CI.yml` validates `apps/runmoor-docs` in `node-runmoor-docs-test`, using the shared change plan, one frozen install with `--ignore-scripts`, and the same exact Turbo comparison as other documentation jobs. The job is required by `ci-result` and only builds and validates documentation; it never deploys. Public Runmoor routes are owned by the standalone app, while `public-docs` validates their removal and links to `https://runmoor.delino.io`.

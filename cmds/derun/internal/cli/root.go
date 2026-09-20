@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/delinoio/oss/cmds/derun/internal/contracts"
+	"github.com/delinoio/oss/cmds/derun/internal/version"
 )
 
 const helpCommandName = "help"
@@ -13,6 +14,10 @@ func Execute(args []string) int {
 	if len(args) == 0 {
 		printUsage()
 		return 2
+	}
+	if len(args) == 1 && args[0] == "--version" {
+		fmt.Fprintf(os.Stdout, "derun %s\n", version.Version)
+		return 0
 	}
 	if isRootHelpFlag(args[0]) {
 		printUsage()

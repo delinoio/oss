@@ -101,3 +101,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `docs/README.md`
 - `docs/crates-binpm-foundation.md`
 - `docs/apps-binpm-docs-foundation.md`
+
+## Native Linux packages
+
+Follow `docs/repository-linux-packages-contract.md` for APT/DNF release publication, supported systems, signatures, and recovery. This project belongs to the stable channel.

@@ -7,6 +7,7 @@ const stableRouteIds = [
   "/getting-started",
   "/projects-overview",
   "/documentation-lifecycle",
+  "/linux-packages",
   "/devhud",
   "/devhud/install",
   "/devhud/guide",
@@ -287,6 +288,16 @@ const forbiddenContentFixtures = [
   ["classic GitHub PAT", "ghp_1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJ"],
   ["fine-grained GitHub PAT", "github_pat_11ABCDEFGHijklmnopQRSTUVwxyz0123456789"],
 ];
+// Only the package registration page may show these exact public installation paths.
+// Keep all other filesystem and repository-path checks unchanged.
+const packageInstallationPaths = ['/usr/share/keyrings/delino-packages.gpg', '/usr/share/keyrings', '/etc/apt/sources.list.d/delino.sources', '/etc/apt/sources.list.d/delino-preview.sources', '/etc/yum.repos.d/delino.repo', '/etc/yum.repos.d/delino-preview.repo'];
+function publicPathText(text, htmlFile) {
+  if (path.relative(outputDir, htmlFile) !== 'linux-packages.html') return text;
+  for (const allowed of [...packageInstallationPaths].sort((a, b) => b.length - a.length)) {
+    text = text.replaceAll(new RegExp(RegExp.escape(allowed) + '(?=$|[\\s"\'<>])', 'gu'), 'public-installation-path');
+  }
+  return text;
+}
 const forbiddenPathContent = [
   new RegExp(`(?:^|[\\s("'\\x60>])/(?!${stableRoutePathPattern}(?:\\.html)?(?:[?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
   /(?:^|[\s("'`>])(?:\.\.[\\/])+(?:[A-Za-z0-9._~-]+[\\/])+[^\s"'`<>]*/u,
@@ -460,7 +471,7 @@ for (const htmlFile of htmlFiles) {
   }
   for (const pattern of forbiddenPathContent) {
     const hrefTargets = hrefPathTargets(contents, htmlFile);
-    if (pattern.test(commentText) || pattern.test(renderedText) || hrefTargets.some((target) => pattern.test(target))) {
+    if (pattern.test(commentText) || pattern.test(publicPathText(renderedText, htmlFile)) || hrefTargets.some((target) => pattern.test(target))) {
       failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
     }
   }

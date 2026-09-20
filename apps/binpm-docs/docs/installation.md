@@ -252,3 +252,32 @@ Release installers verify binpm's own published release artifacts. That release 
 binpm package installs use HTTPS source-provider APIs and release asset URLs. Stored URLs are sanitized so query strings, fragments, credentials, and expiring signed URL details are not written into project files.
 
 When strict verification is requested for installed tools, `--require-verified` and `binpm verify --require-verified` fail unless a trusted provider digest, upstream checksum sidecar, upstream checksum manifest, or successfully verified package signature is available. Package signature verification is separate from release-installer verification for binpm itself: binpm currently supports GitHub.com Sigstore bundle sidecars named `<selected-asset>.sigstore.json` when `cosign verify-blob --bundle` validates the selected asset for the same repository and release tag. Raw signature, SBOM, attestation, provenance, certificate, and raw Sigstore sidecars do not satisfy strict verification by presence alone; diagnostics can list those unsupported sidecar names separately from trusted evidence.
+
+## Linux APT and DNF
+
+Delino provides a stable APT and DNF repository for this CLI. Packages support x86-64 and ARM64 on Ubuntu 22.04/24.04/26.04 LTS, Debian 12/13, Fedora 43/44, and RHEL-compatible 9/10 systems, including UBI, Rocky Linux and AlmaLinux.
+
+The repository address is `https://pkgs.oss.delino.io`. Verify its public RSA 4096 key before registering it:
+
+```sh
+curl -fsSLo delino-packages.asc https://pkgs.oss.delino.io/keys/delino-packages.asc
+gpg --show-keys --with-fingerprint delino-packages.asc
+```
+
+The full primary fingerprint must match `B08D E37A 14DD 10DD FD04 E66E 87CB 82A1 F70F BD30`. Stop on a mismatch.
+
+Follow the [Linux package setup guide](https://oss.delino.io/linux-packages) to register stable with your package manager. After registration:
+
+```sh
+# APT
+sudo apt-get install binpm
+sudo apt-get install --only-upgrade binpm
+sudo apt-get remove binpm
+
+# DNF
+sudo dnf install binpm
+sudo dnf upgrade binpm
+sudo dnf remove binpm
+```
+
+Use `binpm --version` to check the installed CLI. Package removal preserves user configuration and data.
