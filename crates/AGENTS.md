@@ -208,6 +208,7 @@
 - Windows snapshot stability requires present volume serial and file index identities, including the opened handle and final pathname; equal size and timestamps alone cannot prove stability.
 - Runlens executable digests must be bound to the native launched image, not a pathname recheck; keep inspected handles alive through completion and make missing/mismatched identity incomplete.
 - Linux metadata handlers distinguish NULL capability probes from AT_EMPTY_PATH descriptor reads; diagnostics must never print raw syscall arguments or paths.
+- Linux filesystem-statistics path/descriptor reads must count as input attempts, including statvfs wrappers and raw static syscalls.
 - Linux extended-attribute value/list reads must record path and descriptor input attempts without retaining attribute names or values.
 - Linux readlink/readlinkat collection records a read of the link itself, including empty-path descriptors; link target text is not an extra access.
 - Linux nested execution reuses the inherited seccomp listener; do not install a second USER_NOTIF listener from preload hooks.

@@ -94,6 +94,33 @@ fn main() {
             }
         }
         #[cfg(target_os = "linux")]
+        "statfs" | "statvfs" | "fstatfs" | "fstatvfs" => {
+            let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            // SAFETY: live pathname and exact output structures. Write-only
+            // descriptor opens cannot mask absent metadata read collection.
+            unsafe {
+                let mut raw = std::mem::MaybeUninit::<libc::statfs>::zeroed();
+                let mut vfs = std::mem::MaybeUninit::<libc::statvfs>::zeroed();
+                match args[0].as_str() {
+                    "statfs" => {
+                        libc::syscall(libc::SYS_statfs, path.as_ptr(), raw.as_mut_ptr());
+                    }
+                    "statvfs" => {
+                        libc::statvfs(path.as_ptr(), vfs.as_mut_ptr());
+                    }
+                    mode => {
+                        let fd = libc::open(path.as_ptr(), libc::O_WRONLY);
+                        if mode == "fstatfs" {
+                            libc::syscall(libc::SYS_fstatfs, fd, raw.as_mut_ptr());
+                        } else {
+                            libc::fstatvfs(fd, vfs.as_mut_ptr());
+                        }
+                        libc::close(fd);
+                    }
+                }
+            }
+        }
+        #[cfg(target_os = "linux")]
         "stat-empty-path" => {
             // A null AT_EMPTY_PATH lookup is valid on Linux 6.11+. The empty
             // string form works on older minimum-OS kernels as well.

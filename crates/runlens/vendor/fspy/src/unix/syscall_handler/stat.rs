@@ -1,3 +1,4 @@
+use fspy_shared::ipc::{AccessMode, PathAccess};
 use std::{io, ffi::c_int};
 
 use fspy_seccomp_unotify::supervisor::handler::arg::{CStrPtr, Caller, Fd, Ignored};
@@ -83,5 +84,17 @@ impl SyscallHandler {
         (dir_fd, path_ptr): (Fd, CStrPtr),
     ) -> io::Result<()> {
         self.handle_open(caller, dir_fd, path_ptr, libc::O_RDONLY)
+    }
+}
+
+// Filesystem capacity/type/flags are metadata inputs too; retain only access.
+impl SyscallHandler {
+    pub(super) fn statfs(&mut self, caller: Caller, (path,): (CStrPtr,)) -> io::Result<()> {
+        self.handle_open(caller, Fd::cwd(), path, libc::O_RDONLY)
+    }
+    pub(super) fn fstatfs(&mut self, caller: Caller, (fd,): (Fd,)) -> io::Result<()> {
+        let path = fd.get_path(caller)?;
+        self.record(PathAccess { mode: AccessMode::READ, path: path.as_os_str().into() });
+        Ok(())
     }
 }

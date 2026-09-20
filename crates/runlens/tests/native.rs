@@ -3721,3 +3721,58 @@ fn inherited_nonstandard_descriptors_preserve_io_but_prevent_policy_pass() {
         );
     }
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_filesystem_statistics_are_input_attempts() {
+    let mut executables = vec![fixture().to_owned()];
+    match std::env::var("RUNLENS_STATIC_FIXTURE") {
+        Ok(path) => executables.push(path),
+        Err(_) => assert!(
+            std::env::var_os("CI").is_none(),
+            "static fixture required in CI"
+        ),
+    }
+    for executable in executables {
+        for mode in ["statfs", "fstatfs", "statvfs", "fstatvfs"] {
+            if executable != fixture() && mode.ends_with("vfs") {
+                continue;
+            }
+            for present in [true, false] {
+                if !present && mode.starts_with('f') {
+                    continue;
+                }
+                let root = tempfile::tempdir().unwrap();
+                let external = tempfile::tempdir().unwrap();
+                let path = external.path().join("filesystem-input");
+                if present {
+                    fs::write(&path, "input").unwrap();
+                }
+                fs::write(
+                    root.path().join("runlens.toml"),
+                    "schema_version = 1\n[policy]\ndeny_reads = [\"**/filesystem-input\"]\n",
+                )
+                .unwrap();
+                let result = invoke(
+                    root.path(),
+                    &[
+                        "run",
+                        "--save",
+                        "fs.json",
+                        "--",
+                        &executable,
+                        mode,
+                        path.to_str().unwrap(),
+                    ],
+                );
+                assert!(result.status.success(), "{executable}/{mode}: {result:?}");
+                assert_eq!(
+                    invoke(root.path(), &["policy", "check", "fs.json", "--json"])
+                        .status
+                        .code(),
+                    Some(5)
+                );
+            }
+        }
+    }
+}

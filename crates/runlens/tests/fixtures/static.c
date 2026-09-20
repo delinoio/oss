@@ -5,7 +5,14 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/syscall.h>
+#include <sys/vfs.h>
 int main(int argc, char **argv) {
+    if (argc == 3 && (!strcmp(argv[1], "statfs") || !strcmp(argv[1], "fstatfs"))) {
+        struct statfs stats;
+        if (!strcmp(argv[1], "statfs")) syscall(SYS_statfs, argv[2], &stats);
+        else { int fd = open(argv[2], O_WRONLY); syscall(SYS_fstatfs, fd, &stats); close(fd); }
+        return 0;
+    }
     if (argc == 3 && (!strcmp(argv[1], "detach-setsid") || !strcmp(argv[1], "detach-setpgid"))) {
         int output = open(argv[2], O_WRONLY | O_CREAT | O_TRUNC, 0600), ready[2];
         if (output < 0 || pipe(ready)) return 94;

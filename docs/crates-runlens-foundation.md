@@ -712,3 +712,5 @@ Windows NtCreateUserProcess interception distinguishes same-thread CreateProcess
 Executable resolution follows the host environment's key semantics: only the exact PATH key participates on Unix, while Windows accepts case variants. A distinct Unix Path variable must never select a different program or replace an absent PATH.
 
 Unix prelaunch descriptor checks enumerate the process descriptor directory and inspect close-on-exec flags. Any nonstandard inherited descriptor or enumeration error makes collection incomplete without closing caller resources. Descriptor 3 and higher-numbered external-file fixtures preserve writes and prevent policy passes; collector/runtime-owned close-on-exec descriptors do not degrade ordinary runs.
+
+Linux statfs/fstatfs reads, including libc statvfs/fstatvfs wrappers, record filesystem metadata input attempts without persisting capacity or filesystem data. Dynamic and static fixtures exercise present/missing external paths and write-only descriptors against deny-read policies.
