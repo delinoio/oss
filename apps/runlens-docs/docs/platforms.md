@@ -30,3 +30,5 @@ Directory creation and metadata changes are write attempts. When a command creat
 If an inspected executable changes while Runlens prepares its snapshot, Runlens refuses that launch with an incomplete diagnostic. An executable digest is retained only when it can be tied to the launched image and remains stable through completion. Missing or mismatched identity evidence makes collection incomplete. Retry after the executable is stable. These checks do not provide an OS security boundary.
 
 Complete collection means completion within documented backend and snapshot coverage. It does not prove observation of every possible dependency. Environment reads, networking, clocks, randomness, detailed process timelines, and event ordering are not captured.
+
+Direct shebang scripts run with incomplete identity evidence because a script checksum does not identify its interpreter chain. Use an explicit supported native interpreter in argv when comparison requires executable identity.

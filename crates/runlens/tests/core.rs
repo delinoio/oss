@@ -558,3 +558,14 @@ fn exclusions_compare_dos_and_extended_windows_roots() {
         }
     }
 }
+
+#[test]
+fn script_digests_cannot_certify_the_interpreter_image() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("script");
+    let cancel = tokio_util::sync::CancellationToken::new();
+    for header in ["#!/bin/sh", "#!/usr/bin/env sh", "#!/custom/interpreter"] {
+        std::fs::write(&path, format!("{header}\nprintf output\n")).unwrap();
+        assert!(runlens::platform::executable_identity(&path, &cancel).is_none());
+    }
+}

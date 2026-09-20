@@ -634,6 +634,11 @@ abort and typed unsupported-collection marker, preserving child execution while
 preventing a complete receipt. Native Windows validation includes an explicitly
 invoked checker test using a real DetourAttach invalid-parameter failure.
 
+Shebang scripts execute as requested, but their text digest cannot identify the
+kernel-selected interpreter or a subsequent `env`/PATH selection. Until those
+interpreter chains are bound, their executable digest is absent and collection is
+incomplete. An explicit native interpreter argv can provide native identity.
+
 Executable compatibility requires identity bound to the launched native image:
 Linux uses the inspected descriptor with original argv[0], Windows briefly locks
 the canonical file and ancestor rename chain through process creation, and macOS

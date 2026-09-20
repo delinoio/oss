@@ -489,6 +489,16 @@ pub fn executable_identity(
     use sha2::{Digest, Sha256};
     let mut file = std::fs::File::open(path).ok()?;
     let before = file.metadata().ok()?;
+    // A script digest identifies its text, not the native interpreter selected
+    // by the kernel (possibly through env/PATH). Keep executing the requested
+    // script, but withhold compatibility evidence until the interpreter chain
+    // can be bound to retained native image identities.
+    let mut prefix = [0; 2];
+    use std::io::{Seek, SeekFrom};
+    if file.read(&mut prefix).ok()? == 2 && prefix == *b"#!" {
+        return None;
+    }
+    file.seek(SeekFrom::Start(0)).ok()?;
     let mut hash = Sha256::new();
     let mut buffer = [0u8; 65536];
     loop {

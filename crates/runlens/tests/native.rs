@@ -2975,3 +2975,34 @@ fn clean_and_repeat_collection_loss_is_inconclusive() {
         }
     }
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn shebang_execution_preserves_output_without_claiming_native_identity() {
+    use std::os::unix::fs::PermissionsExt;
+    for header in ["#!/bin/sh", "#!/usr/bin/env sh"] {
+        let root = tempfile::tempdir().unwrap();
+        let script = root.path().join("script");
+        fs::write(&script, format!("{header}\nprintf output > result\n")).unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+        let result = invoke(
+            root.path(),
+            &["run", "--save", "script.json", "--", "./script"],
+        );
+        assert_eq!(
+            result.status.code(),
+            Some(4),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("result")).unwrap(),
+            "output"
+        );
+        let report = parse(root.path(), "script.json");
+        let execution = &report["executions"][0];
+        assert!(execution["environment"]["executable_sha256"].is_null());
+        assert_eq!(execution["outcome"]["child_exit_code"], 0);
+        assert_eq!(execution["outcome"]["collection_complete"], false);
+    }
+}
