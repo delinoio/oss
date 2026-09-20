@@ -97,6 +97,7 @@ message Worktree {
   string path = 2;
   string branch = 3;
   bool available = 4;
+  string branch_id = 5;
 }
 message Repository {
   string id = 1;
@@ -106,6 +107,7 @@ message Repository {
 message Branch {
   string name = 1;
   string commit = 2;
+  string id = 3;
 }
 message Commit {
   string id = 1;
@@ -146,6 +148,7 @@ message ListCommitsRequest {
   string worktree_id = 1;
   string ref = 2;
   uint32 offset = 3;
+  string branch_id = 4;
 }
 message ListCommitsResponse {
   repeated Commit commits = 1;
@@ -154,6 +157,7 @@ message GetChangesRequest {
   string worktree_id = 1;
   string ref = 2;
   string base = 3;
+  string branch_id = 4;
 }
 message GetChangesResponse {
   string base = 1;
@@ -171,6 +175,7 @@ message ListRunsRequest {
   string worktree_id = 6;
   // Select detached executions (empty stored branch), not all branches.
   bool detached = 7;
+  string branch_id = 8;
 }
 message ListRunsResponse {
   repeated Run runs = 1;

@@ -167,3 +167,5 @@ Pre-push run-and-wait exposes each selected gate before post-acceptance runner s
 All exact-commit gates, including check and every pre-push policy, reselect the latest compatible attempt and compare its complete metadata snapshot after evidence hashing. Concurrent submissions or pruning force reevaluation; hashing never holds the SQLite writer lock. Read-only gates never accept a replacement. The final short transaction is the decision point, not a promise that future submissions cannot change the result.
 
 Working-tree config validate applies the same 1 MiB plus one overflow byte read limit as committed configuration before parsing. A growing or oversized input returns invalid-config (exit 2) without whole-file allocation; ordinary I/O failures remain errors.
+
+The local API carries worktree-scoped opaque branch identities separately from normalized labels. Source queries resolve those identities to exact raw Git refs, while run-list filtering uses the original SQLite branch bytes and remains available after source removal. Conflicting legacy selectors and identities are rejected.

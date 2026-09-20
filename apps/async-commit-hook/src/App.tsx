@@ -314,19 +314,28 @@ export function Workspace({
     { enabled: Boolean(worktree), pageParamKey: "cursor", getNextPageParam: (page) => page.nextCursor || undefined },
   );
   const branchOptions = useMemo(() => {
-    const merged = new Map<string, string>();
+    const merged = new Map<string, { value: string; name: string; id: string }>();
     for (const page of branches.data?.pages ?? []) {
-      for (const item of page.branches) merged.set(item.name, item.name);
+      for (const item of page.branches) {
+        const value = item.id || item.name;
+        merged.set(value, { value, name: item.name, id: item.id });
+      }
     }
-    // The checkout branch may occur on an unloaded page. Keep its selection.
-    if (branch) merged.set(branch, branch);
+    // Preserve the checkout identity before its branch page has loaded.
+    if (branch && !merged.has(branch)) {
+      const current = (selectedTree?.branchId || selectedTree?.branch) === branch;
+      merged.set(branch, { value: branch, name: current ? selectedTree!.branch : branch, id: current ? selectedTree!.branchId : "" });
+    }
     return [...merged.values()];
-  }, [branches.data, branch]);
+  }, [branches.data, branch, selectedTree]);
+  const selectedBranch = branchOptions.find((item) => item.value === branch);
+  const branchId = selectedBranch?.id || "";
+  const branchName = branchId ? "" : selectedBranch?.name || branch;
   useEffect(() => {
     if (!worktree && repositories[0]?.worktrees[0]) {
       const w = repositories[0].worktrees[0];
       setWorktree(w.id);
-      setBranch(w.branch);
+      setBranch(w.branchId || w.branch);
     }
   }, [worktree, repositories]);
   if (version.data && version.data.apiVersion !== 1)
@@ -365,7 +374,7 @@ export function Workspace({
                 aria-current={worktree === w.id ? "true" : undefined}
                 onClick={() => {
                   setWorktree(w.id);
-                  setBranch(w.branch);
+                  setBranch(w.branchId || w.branch);
                   setRun("");
                 }}
               >
@@ -423,9 +432,9 @@ export function Workspace({
                 }}
               >
                 <option value="">Detached HEAD / current commit</option>
-                {branchOptions.map((name) => (
-                  <option value={name} key={name}>
-                    {name}
+                {branchOptions.map((item) => (
+                  <option value={item.value} key={item.value}>
+                    {item.name}
                   </option>
                 ))}
               </select>
@@ -464,7 +473,8 @@ export function Workspace({
           <RunList
             repository={currentRepo?.id || ""}
             worktree={worktree}
-            branch={tab === "checks" ? branch : ""}
+            branch={tab === "checks" ? branchName : ""}
+            branchId={tab === "checks" ? branchId : ""}
             inbox={tab === "inbox"}
             onSelect={selectRun}
             focusRun={lastOpenedRun.current}
@@ -472,9 +482,9 @@ export function Workspace({
             setCursor={setRunCursor}
           />
         ) : tab === "changes" ? (
-          <Changes worktree={worktree} branch={branch} />
+          <Changes worktree={worktree} branch={branchName} branchId={branchId} />
         ) : (
-          <Commits worktree={worktree} branch={branch} />
+          <Commits worktree={worktree} branch={branchName} branchId={branchId} />
         )}
       </main>
     </div>
@@ -485,6 +495,7 @@ export function RunList({
   repository,
   worktree,
   branch,
+  branchId = "",
   inbox,
   onSelect,
   focusRun,
@@ -494,6 +505,7 @@ export function RunList({
   repository: string;
   worktree: string;
   branch: string;
+  branchId?: string;
   inbox: boolean;
   onSelect: (id: string) => void;
   focusRun: string;
@@ -508,7 +520,8 @@ export function RunList({
       repositoryId: repository,
       worktreeId: worktree,
       branch,
-      detached: !inbox && worktree !== "" && branch === "",
+      branchId,
+      detached: !inbox && worktree !== "" && branch === "" && branchId === "",
       inbox,
       cursor,
       limit: 50,
@@ -991,16 +1004,16 @@ function Comparison({ run, previous }: { run: string; previous: string }) {
     </div>
   );
 }
-function Changes({ worktree, branch }: { worktree: string; branch: string }) {
+function Changes({ worktree, branch, branchId }: { worktree: string; branch: string; branchId: string }) {
   const [base, setBase] = useState("");
   const [chosen, setChosen] = useState("");
   useEffect(() => {
     setBase("");
     setChosen("");
-  }, [worktree, branch]);
+  }, [worktree, branch, branchId]);
   const changes = useQuery(
     LocalQuery.getChanges,
-    { worktreeId: worktree, ref: branch, base: chosen },
+    { worktreeId: worktree, ref: branch, branchId, base: chosen },
     { enabled: Boolean(worktree) },
   );
   return (
@@ -1053,12 +1066,12 @@ function Changes({ worktree, branch }: { worktree: string; branch: string }) {
     </section>
   );
 }
-function Commits({ worktree, branch }: { worktree: string; branch: string }) {
+function Commits({ worktree, branch, branchId }: { worktree: string; branch: string; branchId: string }) {
   const [offset, setOffset] = useState(0);
-  useEffect(() => setOffset(0), [worktree, branch]);
+  useEffect(() => setOffset(0), [worktree, branch, branchId]);
   const commits = useQuery(
     LocalQuery.listCommits,
-    { worktreeId: worktree, ref: branch, offset },
+    { worktreeId: worktree, ref: branch, branchId, offset },
     { enabled: Boolean(worktree) },
   );
   return (

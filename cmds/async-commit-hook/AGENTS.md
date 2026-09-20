@@ -109,3 +109,5 @@
 - Windows materializes committed symlink entries as exact regular link-text files and sets managed core.symlinks=false, independent of privileges and source checkout settings. Include this fixed source representation in Windows fingerprints; reject legacy Windows preparation/rerun contexts rather than inherit native-link evidence. Unix links and fingerprints remain unchanged.
 
 - Pre-push appends a selected gate before any post-acceptance startup/read/wait operation. Startup errors retain its saved run ID, commit and state plus a startup-failed recovery diagnostic; retries reuse the pending attempt and prior tip results remain visible.
+
+- Decode bounded, versioned, worktree-scoped branch identities before source/history queries. Preserve exact raw bytes for retained history even when the checkout is unavailable; reject conflicting legacy selectors.

@@ -84,3 +84,36 @@ func BranchPage(ctx context.Context, path, cursor string, limit int) ([]Branch, 
 		size += len(line)
 	}
 }
+
+// Branch identities encode raw bytes independently of lossy display labels.
+func branchIdentity(worktree, branch string) string {
+	if branch == "" {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString([]byte("branch-v1:" + worktree + "\x00" + branch))
+}
+
+func branchSelection(worktree, id, legacy string, source bool) (string, error) {
+	if id == "" {
+		return legacy, nil
+	}
+	invalid := func() (string, error) {
+		return "", E("invalid-branch", "branch identity is malformed, belongs to another worktree or conflicts with a legacy selector", 2)
+	}
+	if legacy != "" || !ValidID(worktree) || len(id) > 2*branchRecordLimit {
+		return invalid()
+	}
+	raw, err := base64.RawURLEncoding.Strict().DecodeString(id)
+	prefix := "branch-v1:" + worktree + "\x00"
+	if err != nil || !strings.HasPrefix(string(raw), prefix) {
+		return invalid()
+	}
+	branch := strings.TrimPrefix(string(raw), prefix)
+	if branch == "" || len(branch) > branchRecordLimit || strings.ContainsAny(branch, "\x00\r\n\t") {
+		return invalid()
+	}
+	if source {
+		return "refs/heads/" + branch, nil
+	}
+	return branch, nil
+}

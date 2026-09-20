@@ -42,3 +42,5 @@ Run messages retain optional `check_count` presence, including explicit zero, th
 Repository-list wire messages preserve request cursor/limit and response next_cursor. Pages may split one repository across responses; consumers merge by stable IDs rather than names. Omitted cursors in older responses mean the last page.
 
 Branch list messages preserve the additive cursor/limit/next_cursor contract and legacy cursor omission, covered by wire round trips.
+
+Generated branch/worktree identities and branch_id request fields preserve raw-ref selection without exposing invalid UTF-8 strings. Keep omitted-field compatibility for older servers and test distinct identities sharing one display label.

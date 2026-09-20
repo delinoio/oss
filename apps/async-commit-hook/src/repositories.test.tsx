@@ -95,3 +95,32 @@ it("pages branches without losing an unloaded selection or loaded options on err
     expect(listBranches).toHaveBeenCalledTimes(3);
   } finally { unmount(); client.clear(); }
 });
+
+it("keeps colliding branch labels separate and sends opaque identities in every view", async () => {
+  const listRuns = vi.fn(() => ({ runs: [] }));
+  const getChanges = vi.fn(() => ({ diff: "selected branch", head: "two" }));
+  const listCommits = vi.fn(() => ({ commits: [] }));
+  const transport = createRouterTransport((router) => router.service(LocalService, {
+    listRepositories: () => ({ repositories: [{ id: "repo", name: "Repository", worktrees: [{ id: "tree", path: "/repo", branch: "bad-�", branchId: "raw-one" }] }] }),
+    getVersion: () => ({ apiVersion: 1 }),
+    listBranches: () => ({ branches: [{ id: "raw-one", name: "bad-�", commit: "one" }, { id: "raw-two", name: "bad-�", commit: "two" }] }),
+    listRuns, getChanges, listCommits,
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const { unmount } = render(<QueryClientProvider client={client}><TransportProvider transport={transport}>
+    <Workspace initialRun="" onPair={() => {}} />
+  </TransportProvider></QueryClientProvider>);
+  try {
+    const select = await screen.findByRole("combobox", { name: "Branch" });
+    await waitFor(() => expect(screen.getAllByRole("option", { name: "bad-�" })).toHaveLength(2));
+    expect((select as HTMLSelectElement).value).toBe("raw-one");
+    fireEvent.change(select, { target: { value: "raw-two" } });
+    await waitFor(() => expect(listRuns).toHaveBeenLastCalledWith(expect.objectContaining({ branchId: "raw-two", branch: "", detached: false }), expect.anything()));
+    fireEvent.click(screen.getByRole("button", { name: "Changes" }));
+    await waitFor(() => expect(getChanges).toHaveBeenCalledWith(expect.objectContaining({ branchId: "raw-two", ref: "" }), expect.anything()));
+    fireEvent.click(screen.getByRole("button", { name: "Commits" }));
+    await waitFor(() => expect(listCommits).toHaveBeenCalledWith(expect.objectContaining({ branchId: "raw-two", ref: "" }), expect.anything()));
+    fireEvent.click(screen.getByRole("button", { name: "Inbox" }));
+    await waitFor(() => expect(listRuns).toHaveBeenLastCalledWith(expect.objectContaining({ branchId: "", branch: "", detached: false, inbox: true }), expect.anything()));
+  } finally { unmount(); client.clear(); }
+});

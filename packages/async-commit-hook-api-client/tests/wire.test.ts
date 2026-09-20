@@ -1,6 +1,6 @@
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
-import { ExecutionState, RunSchema, RerunResponseSchema, LocalQuery, ListRepositoriesRequestSchema, ListRepositoriesResponseSchema, ListBranchesRequestSchema, ListBranchesResponseSchema } from "../src/index.js";
+import { ExecutionState, RunSchema, RerunResponseSchema, LocalQuery, ListRepositoriesRequestSchema, ListRepositoriesResponseSchema, ListBranchesRequestSchema, ListBranchesResponseSchema, WorktreeSchema, ListRunsRequestSchema, ListCommitsRequestSchema, GetChangesRequestSchema } from "../src/index.js";
 describe("v1 generated wire", () => {
   it("retains exact sequence and explicit nonpassing states", () => {
     const run = create(RunSchema, { id: "01900000-0000-7000-8000-000000000001", sequence: 9007199254740993n, state: ExecutionState.INTERRUPTED });
@@ -42,5 +42,17 @@ it("preserves scoped branch pagination and legacy responses", () => {
   for (const nextCursor of ["", "next-ref"]) {
     const response = create(ListBranchesResponseSchema, { branches: [{ name: "main", commit: "oid" }], nextCursor });
     expect(fromBinary(ListBranchesResponseSchema, toBinary(ListBranchesResponseSchema, response))).toEqual(response);
+  }
+});
+
+it("preserves opaque branch identities and legacy omissions", () => {
+  const branches = create(ListBranchesResponseSchema, { branches: [{ id: "one", name: "bad-�", commit: "a" }, { id: "two", name: "bad-�", commit: "b" }] });
+  expect(fromBinary(ListBranchesResponseSchema, toBinary(ListBranchesResponseSchema, branches))).toEqual(branches);
+  const tree = create(WorktreeSchema, { branch: "bad-�", branchId: "one" });
+  expect(fromBinary(WorktreeSchema, toBinary(WorktreeSchema, tree))).toEqual(tree);
+  for (const schema of [ListRunsRequestSchema, ListCommitsRequestSchema, GetChangesRequestSchema]) {
+    const request = create(schema, { worktreeId: "tree", branchId: "one" });
+    expect(fromBinary(schema, toBinary(schema, request))).toEqual(request);
+    expect(create(schema).branchId).toBe("");
   }
 });

@@ -24,3 +24,5 @@
 - Load repository pages on demand with Connect Query, merge split repositories/worktrees by ID, and retain loaded navigation and selection across next-page errors. Keep the load control focusable during loading and guard repeated activation.
 
 - Load branches on demand, retaining the selected branch even when its page is not loaded; preserve loaded options and selection through next-page errors.
+
+- Key branch options by opaque identity, not normalized display text, and pass branch_id to source/history queries. Keep current identities before their page loads and preserve legacy servers without IDs.

@@ -329,7 +329,7 @@ func (a *API) ListRepositories(ctx context.Context, req *connect.Request[pb.List
 	for _, r := range repos {
 		v := &pb.Repository{Id: r.ID, Name: registryLabel(r.Name)}
 		for _, w := range r.Worktrees {
-			v.Worktrees = append(v.Worktrees, &pb.Worktree{Id: w.ID, Path: registryLabel(w.Path), Branch: registryLabel(w.Branch), Available: w.Available})
+			v.Worktrees = append(v.Worktrees, &pb.Worktree{Id: w.ID, Path: registryLabel(w.Path), Branch: registryLabel(w.Branch), BranchId: branchIdentity(w.ID, w.Branch), Available: w.Available})
 		}
 		out.Repositories = append(out.Repositories, v)
 	}
@@ -346,7 +346,7 @@ func (a *API) ListBranches(ctx context.Context, r *connect.Request[pb.ListBranch
 	}
 	out := &pb.ListBranchesResponse{NextCursor: cursor}
 	for _, v := range branches {
-		out.Branches = append(out.Branches, &pb.Branch{Name: strings.ToValidUTF8(v.Name, "\uFFFD"), Commit: v.Commit})
+		out.Branches = append(out.Branches, &pb.Branch{Name: strings.ToValidUTF8(v.Name, "\uFFFD"), Commit: v.Commit, Id: branchIdentity(r.Msg.WorktreeId, v.Name)})
 	}
 	return connect.NewResponse(out), nil
 }
@@ -355,7 +355,11 @@ func (a *API) ListCommits(ctx context.Context, r *connect.Request[pb.ListCommits
 	if e != nil {
 		return nil, apiError(e)
 	}
-	commits, e := Commits(ctx, path, r.Msg.Ref, int(r.Msg.Offset))
+	ref, e := branchSelection(r.Msg.WorktreeId, r.Msg.BranchId, r.Msg.Ref, true)
+	if e != nil {
+		return nil, apiError(e)
+	}
+	commits, e := Commits(ctx, path, ref, int(r.Msg.Offset))
 	if e != nil {
 		return nil, apiError(e)
 	}
@@ -370,14 +374,22 @@ func (a *API) GetChanges(ctx context.Context, r *connect.Request[pb.GetChangesRe
 	if e != nil {
 		return nil, apiError(e)
 	}
-	v, e := Diff(ctx, path, r.Msg.Ref, r.Msg.Base)
+	ref, e := branchSelection(r.Msg.WorktreeId, r.Msg.BranchId, r.Msg.Ref, true)
+	if e != nil {
+		return nil, apiError(e)
+	}
+	v, e := Diff(ctx, path, ref, r.Msg.Base)
 	if e != nil {
 		return nil, apiError(e)
 	}
 	return connect.NewResponse(&pb.GetChangesResponse{Base: v.Base, Head: v.Head, MergeBase: v.MergeBase, Diff: v.Diff, Truncated: v.Truncated}), nil
 }
 func (a *API) ListRuns(_ context.Context, r *connect.Request[pb.ListRunsRequest]) (*connect.Response[pb.ListRunsResponse], error) {
-	page, e := a.s.Store.ListFiltered(r.Msg.RepositoryId, r.Msg.WorktreeId, r.Msg.Branch, r.Msg.Detached, r.Msg.Inbox, r.Msg.Cursor, int(r.Msg.Limit))
+	branch, e := branchSelection(r.Msg.WorktreeId, r.Msg.BranchId, r.Msg.Branch, false)
+	if e != nil {
+		return nil, apiError(e)
+	}
+	page, e := a.s.Store.ListFiltered(r.Msg.RepositoryId, r.Msg.WorktreeId, branch, r.Msg.Detached, r.Msg.Inbox, r.Msg.Cursor, int(r.Msg.Limit))
 	if e != nil {
 		return nil, apiError(e)
 	}

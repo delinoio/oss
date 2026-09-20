@@ -631,6 +631,7 @@ type Worktree struct {
 	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
 	Branch        string                 `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
 	Available     bool                   `protobuf:"varint,4,opt,name=available,proto3" json:"available,omitempty"`
+	BranchId      string                 `protobuf:"bytes,5,opt,name=branch_id,json=branchId,proto3" json:"branch_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -691,6 +692,13 @@ func (x *Worktree) GetAvailable() bool {
 		return x.Available
 	}
 	return false
+}
+
+func (x *Worktree) GetBranchId() string {
+	if x != nil {
+		return x.BranchId
+	}
+	return ""
 }
 
 type Repository struct {
@@ -757,6 +765,7 @@ type Branch struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Commit        string                 `protobuf:"bytes,2,opt,name=commit,proto3" json:"commit,omitempty"`
+	Id            string                 `protobuf:"bytes,3,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -801,6 +810,13 @@ func (x *Branch) GetName() string {
 func (x *Branch) GetCommit() string {
 	if x != nil {
 		return x.Commit
+	}
+	return ""
+}
+
+func (x *Branch) GetId() string {
+	if x != nil {
+		return x.Id
 	}
 	return ""
 }
@@ -1278,6 +1294,7 @@ type ListCommitsRequest struct {
 	WorktreeId    string                 `protobuf:"bytes,1,opt,name=worktree_id,json=worktreeId,proto3" json:"worktree_id,omitempty"`
 	Ref           string                 `protobuf:"bytes,2,opt,name=ref,proto3" json:"ref,omitempty"`
 	Offset        uint32                 `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
+	BranchId      string                 `protobuf:"bytes,4,opt,name=branch_id,json=branchId,proto3" json:"branch_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1333,6 +1350,13 @@ func (x *ListCommitsRequest) GetOffset() uint32 {
 	return 0
 }
 
+func (x *ListCommitsRequest) GetBranchId() string {
+	if x != nil {
+		return x.BranchId
+	}
+	return ""
+}
+
 type ListCommitsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Commits       []*Commit              `protobuf:"bytes,1,rep,name=commits,proto3" json:"commits,omitempty"`
@@ -1382,6 +1406,7 @@ type GetChangesRequest struct {
 	WorktreeId    string                 `protobuf:"bytes,1,opt,name=worktree_id,json=worktreeId,proto3" json:"worktree_id,omitempty"`
 	Ref           string                 `protobuf:"bytes,2,opt,name=ref,proto3" json:"ref,omitempty"`
 	Base          string                 `protobuf:"bytes,3,opt,name=base,proto3" json:"base,omitempty"`
+	BranchId      string                 `protobuf:"bytes,4,opt,name=branch_id,json=branchId,proto3" json:"branch_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1433,6 +1458,13 @@ func (x *GetChangesRequest) GetRef() string {
 func (x *GetChangesRequest) GetBase() string {
 	if x != nil {
 		return x.Base
+	}
+	return ""
+}
+
+func (x *GetChangesRequest) GetBranchId() string {
+	if x != nil {
+		return x.BranchId
 	}
 	return ""
 }
@@ -1522,7 +1554,8 @@ type ListRunsRequest struct {
 	Branch       string                 `protobuf:"bytes,5,opt,name=branch,proto3" json:"branch,omitempty"`
 	WorktreeId   string                 `protobuf:"bytes,6,opt,name=worktree_id,json=worktreeId,proto3" json:"worktree_id,omitempty"`
 	// Select detached executions (empty stored branch), not all branches.
-	Detached      bool `protobuf:"varint,7,opt,name=detached,proto3" json:"detached,omitempty"`
+	Detached      bool   `protobuf:"varint,7,opt,name=detached,proto3" json:"detached,omitempty"`
+	BranchId      string `protobuf:"bytes,8,opt,name=branch_id,json=branchId,proto3" json:"branch_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1604,6 +1637,13 @@ func (x *ListRunsRequest) GetDetached() bool {
 		return x.Detached
 	}
 	return false
+}
+
+func (x *ListRunsRequest) GetBranchId() string {
+	if x != nil {
+		return x.BranchId
+	}
+	return ""
 }
 
 type ListRunsResponse struct {
@@ -2563,20 +2603,22 @@ const file_async_commit_hook_v1_ach_proto_rawDesc = "" +
 	"gateReason\x12$\n" +
 	"\vcheck_count\x18\x12 \x01(\rH\x00R\n" +
 	"checkCount\x88\x01\x01B\x0e\n" +
-	"\f_check_count\"d\n" +
+	"\f_check_count\"\x81\x01\n" +
 	"\bWorktree\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x16\n" +
 	"\x06branch\x18\x03 \x01(\tR\x06branch\x12\x1c\n" +
-	"\tavailable\x18\x04 \x01(\bR\tavailable\"n\n" +
+	"\tavailable\x18\x04 \x01(\bR\tavailable\x12\x1b\n" +
+	"\tbranch_id\x18\x05 \x01(\tR\bbranchId\"n\n" +
 	"\n" +
 	"Repository\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12<\n" +
-	"\tworktrees\x18\x03 \x03(\v2\x1e.async_commit_hook.v1.WorktreeR\tworktrees\"4\n" +
+	"\tworktrees\x18\x03 \x03(\v2\x1e.async_commit_hook.v1.WorktreeR\tworktrees\"D\n" +
 	"\x06Branch\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
-	"\x06commit\x18\x02 \x01(\tR\x06commit\"L\n" +
+	"\x06commit\x18\x02 \x01(\tR\x06commit\x12\x0e\n" +
+	"\x02id\x18\x03 \x01(\tR\x02id\"L\n" +
 	"\x06Commit\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\aparents\x18\x02 \x03(\tR\aparents\x12\x18\n" +
@@ -2608,26 +2650,28 @@ const file_async_commit_hook_v1_ach_proto_rawDesc = "" +
 	"\x14ListBranchesResponse\x128\n" +
 	"\bbranches\x18\x01 \x03(\v2\x1c.async_commit_hook.v1.BranchR\bbranches\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
-	"nextCursor\"_\n" +
+	"nextCursor\"|\n" +
 	"\x12ListCommitsRequest\x12\x1f\n" +
 	"\vworktree_id\x18\x01 \x01(\tR\n" +
 	"worktreeId\x12\x10\n" +
 	"\x03ref\x18\x02 \x01(\tR\x03ref\x12\x16\n" +
-	"\x06offset\x18\x03 \x01(\rR\x06offset\"M\n" +
+	"\x06offset\x18\x03 \x01(\rR\x06offset\x12\x1b\n" +
+	"\tbranch_id\x18\x04 \x01(\tR\bbranchId\"M\n" +
 	"\x13ListCommitsResponse\x126\n" +
-	"\acommits\x18\x01 \x03(\v2\x1c.async_commit_hook.v1.CommitR\acommits\"Z\n" +
+	"\acommits\x18\x01 \x03(\v2\x1c.async_commit_hook.v1.CommitR\acommits\"w\n" +
 	"\x11GetChangesRequest\x12\x1f\n" +
 	"\vworktree_id\x18\x01 \x01(\tR\n" +
 	"worktreeId\x12\x10\n" +
 	"\x03ref\x18\x02 \x01(\tR\x03ref\x12\x12\n" +
-	"\x04base\x18\x03 \x01(\tR\x04base\"\x8d\x01\n" +
+	"\x04base\x18\x03 \x01(\tR\x04base\x12\x1b\n" +
+	"\tbranch_id\x18\x04 \x01(\tR\bbranchId\"\x8d\x01\n" +
 	"\x12GetChangesResponse\x12\x12\n" +
 	"\x04base\x18\x01 \x01(\tR\x04base\x12\x12\n" +
 	"\x04head\x18\x02 \x01(\tR\x04head\x12\x1d\n" +
 	"\n" +
 	"merge_base\x18\x03 \x01(\tR\tmergeBase\x12\x12\n" +
 	"\x04diff\x18\x04 \x01(\tR\x04diff\x12\x1c\n" +
-	"\ttruncated\x18\x05 \x01(\bR\ttruncated\"\xcf\x01\n" +
+	"\ttruncated\x18\x05 \x01(\bR\ttruncated\"\xec\x01\n" +
 	"\x0fListRunsRequest\x12#\n" +
 	"\rrepository_id\x18\x01 \x01(\tR\frepositoryId\x12\x14\n" +
 	"\x05inbox\x18\x02 \x01(\bR\x05inbox\x12\x16\n" +
@@ -2636,7 +2680,8 @@ const file_async_commit_hook_v1_ach_proto_rawDesc = "" +
 	"\x06branch\x18\x05 \x01(\tR\x06branch\x12\x1f\n" +
 	"\vworktree_id\x18\x06 \x01(\tR\n" +
 	"worktreeId\x12\x1a\n" +
-	"\bdetached\x18\a \x01(\bR\bdetached\"b\n" +
+	"\bdetached\x18\a \x01(\bR\bdetached\x12\x1b\n" +
+	"\tbranch_id\x18\b \x01(\tR\bbranchId\"b\n" +
 	"\x10ListRunsResponse\x12-\n" +
 	"\x04runs\x18\x01 \x03(\v2\x19.async_commit_hook.v1.RunR\x04runs\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +

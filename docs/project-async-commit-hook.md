@@ -46,3 +46,5 @@ Run-list transport carries total check counts without repeating check arrays acr
 Repository discovery uses bounded worktree pages across the Connect, generated client and sidebar boundary. Stable IDs join split repository pages; display truncation never changes trusted filesystem paths or historical identity.
 
 Branch navigation uses bounded streaming pages with a worktree-scoped cursor shared by the command, protocol, client and app contracts.
+
+Branch navigation preserves opaque worktree-scoped identities independently of normalized display labels across source browsing and retained execution history.

@@ -55,3 +55,5 @@ Expanded check logs poll only while that check is active, independently of other
 The repository sidebar loads bounded worktree pages on demand through Connect Query. Load more workspaces preserves the current selection and merges repositories spanning pages by ID. Pending and failed page loads retain loaded history, with a retry action; keyboard activation and focus remain on the load control while more pages exist. Busy and last-page controls use aria-disabled and guarded activation without removing keyboard focus.
 
 The branch selector loads bounded pages on demand through Connect Query, deduplicates names and retains the selected branch before its page loads. Page errors keep prior options and selection available with an explicit retry; loading controls retain focus.
+
+Branch navigation keys options by the opaque server identity, including the current branch before its page loads. Normalized labels are display-only; Changes, Commits and Checks send branch_id, while Inbox remains branch-unfiltered. Older servers without identities retain their legacy string selection.
