@@ -130,7 +130,10 @@ fn quality(result: &mut Analysis, execution: &Execution) -> Result<()> {
             vec![evidence(execution, None, EvidenceSource::Outcome)],
         )?;
     }
-    if execution.outcome.child_exit_code != Some(0) || !execution.outcome.errors.is_empty() {
+    if execution.outcome.child_exit_code != Some(0)
+        || execution.outcome.child_signal.is_some()
+        || !execution.outcome.errors.is_empty()
+    {
         result.finding(
             FindingCode::FailedExecution,
             Classification::Unknown,

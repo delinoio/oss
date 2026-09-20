@@ -145,6 +145,9 @@ pub fn validate(report: &Report) -> Result<()> {
         if let Some(hash) = &env.executable_sha256 {
             valid_digest(hash)?;
         }
+        if execution.outcome.child_exit_code.is_some() && execution.outcome.child_signal.is_some() {
+            return Err(Error::input("contradictory child termination outcome"));
+        }
         if execution.outcome.collection_complete
             && execution.outcome.errors.iter().any(|e| {
                 matches!(

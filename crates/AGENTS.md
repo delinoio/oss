@@ -153,6 +153,8 @@
 
 ### Runlens Rules
 
+- Report outcomes must not contain both a child exit code and termination signal. Any recorded signal prevents execution success and a verification pass, including in-memory analysis before serialization.
+
 - Executable resolution reads exactly PATH on Unix and uses case-insensitive environment-key lookup only on Windows.
 
 - Unix nonstandard descriptors lacking close-on-exec must make collection incomplete while preserving their inheritance; enumerate all open descriptors rather than an arbitrary low range.

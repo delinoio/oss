@@ -69,3 +69,5 @@ Conflict analysis additionally limits the combined number of target-execution
 pairs across different reports to 65,536. Preparation executions do not count.
 Exceeding that limit returns invalid input (exit 2) before analysis produces any
 results. Select fewer reports or reports containing fewer target executions.
+
+Child termination records an exit code or a signal, never both. Reports containing both are rejected as invalid input. A signal termination cannot pass verification even if collection completed successfully.

@@ -211,7 +211,10 @@ pub struct Outcome {
 }
 impl Outcome {
     pub fn success(&self) -> bool {
-        self.child_exit_code == Some(0) && self.collection_complete && self.errors.is_empty()
+        self.child_exit_code == Some(0)
+            && self.child_signal.is_none()
+            && self.collection_complete
+            && self.errors.is_empty()
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]

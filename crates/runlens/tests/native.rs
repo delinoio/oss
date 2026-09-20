@@ -4583,3 +4583,64 @@ fn new_access_policy_uses_report_os_aliases_and_preserves_current_evidence() {
         }
     }
 }
+
+#[test]
+fn contradictory_child_termination_is_rejected_and_never_passes_analysis() {
+    use runlens::{analysis, config, model::*, report};
+    let root = repository("read");
+    assert!(run(root.path(), "record.json", "read").status.success());
+    let template = report::read(&root.path().join("record.json")).unwrap();
+    assert!(template.executions[0].outcome.success());
+    for code in [Some(0), Some(1), None] {
+        let mut value = template.clone();
+        value.executions[0].outcome.child_exit_code = code;
+        value.executions[0].outcome.child_signal = Some(15);
+        assert!(!value.executions[0].outcome.success());
+        assert_eq!(report::validate(&value).is_err(), code.is_some());
+        let identity = &value.executions[0].command;
+        for checked in [
+            analysis::policy(
+                &value,
+                &Default::default(),
+                &Default::default(),
+                &Default::default(),
+                None,
+            )
+            .unwrap(),
+            analysis::cache(
+                &value,
+                &config::Command::direct(identity.argv.clone()),
+                identity,
+            )
+            .unwrap(),
+        ] {
+            assert_ne!(checked.verdict, Some(Verdict::Passed));
+            assert!(
+                checked
+                    .findings
+                    .iter()
+                    .any(|entry| entry.unwrap().1.code == FindingCode::FailedExecution)
+            );
+        }
+        // Write hostile bytes directly: report::save correctly rejects invalid
+        // models, while this fixture must exercise the external parser boundary.
+        fs::write(
+            root.path().join("termination.json"),
+            serde_json::to_vec(&value).unwrap(),
+        )
+        .unwrap();
+        let result = invoke(
+            root.path(),
+            &["policy", "check", "termination.json", "--json"],
+        );
+        assert_eq!(
+            result.status.code(),
+            Some(if code.is_some() { 2 } else { 4 }),
+            "{result:?}"
+        );
+        if code.is_some() {
+            assert!(result.stdout.is_empty());
+            assert!(report::read(&root.path().join("termination.json")).is_err());
+        }
+    }
+}
