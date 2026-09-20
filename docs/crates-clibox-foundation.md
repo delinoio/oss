@@ -182,6 +182,7 @@ clibox hash verify --check CHECKSUM_FILE
 - Hash exact input bytes without line-ending or text normalization.
 - `hash encode` defaults to lowercase hex. Base64 output uses the standard padded alphabet.
 - `--format checksum` requires a file input and emits a GNU-style checksum record, including its filename escaping rules and binary marker. The selected algorithm remains explicit rather than embedded in or inferred from the record.
+- With explicit `--output`, resolve a relative input and the output parent through the filesystem, then record a path relative to that parent; use an absolute path if Windows volumes/shares differ. Preserve supplied absolute input paths and supplied paths in stdout records. This makes generated file manifests directly verifiable from any cwd, including output through a symlinked directory. Shell redirection has no known manifest destination and cannot rebase records.
 - Direct verification accepts hex case-insensitively or explicitly selected standard padded Base64. Validate digest length against the selected algorithm.
 - `--check` is mutually exclusive with direct digest/input options. `--check -` reads the manifest from stdin.
 - Parse GNU-style checksum records using the selected algorithm. Resolve relative file paths against the manifest’s directory, or cwd for a stdin manifest. Preserve absolute-path behavior.

@@ -715,6 +715,98 @@ fn checksum_records_round_trip_escaped_filenames() {
 }
 
 #[test]
+fn generated_manifests_rebase_relative_inputs_to_their_own_directory() {
+    let dir = tempdir().unwrap();
+    let elsewhere = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("checksums/nested")).unwrap();
+    fs::write(dir.path().join("archive.zip"), b"original archive").unwrap();
+    // Catch resolution to a same-named file beside the output manifest.
+    fs::write(dir.path().join("checksums/archive.zip"), b"wrong archive").unwrap();
+    let absolute_manifest = dir.path().join("checksums/nested/absolute-output");
+    for (output, expected) in [
+        ("SHA256SUMS", "archive.zip"),
+        ("checksums/SHA256SUMS", "../archive.zip"),
+        (absolute_manifest.to_str().unwrap(), "../../archive.zip"),
+    ] {
+        let encoded = run_in(
+            &[
+                "hash",
+                "encode",
+                "--input",
+                "archive.zip",
+                "--format",
+                "checksum",
+                "--output",
+                output,
+            ],
+            b"",
+            Some(dir.path()),
+        );
+        assert!(encoded.status.success(), "{:?}", encoded.stderr);
+        assert!(encoded.stdout.is_empty());
+        let manifest = dir.path().join(output);
+        let record = fs::read_to_string(&manifest).unwrap();
+        let expected = expected.replace('/', std::path::MAIN_SEPARATOR_STR);
+        let escaped = expected.replace('\\', "\\\\");
+        assert!(record.ends_with(&format!(" *{escaped}\n")), "{record}");
+        let checked = run_in(
+            &[
+                "hash",
+                "verify",
+                "--check",
+                manifest.to_str().unwrap(),
+                "--quiet",
+            ],
+            b"",
+            Some(elsewhere.path()),
+        );
+        assert!(checked.status.success(), "{:?}", checked.stderr);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn generated_manifest_paths_resolve_symlink_parents_before_rebasing() {
+    use std::os::unix::fs::symlink;
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("actual/deep/checksums")).unwrap();
+    symlink("actual/deep", dir.path().join("alias")).unwrap();
+    let filename = "escaped\\name\n";
+    fs::write(dir.path().join("actual").join(filename), b"correct").unwrap();
+    fs::write(dir.path().join(filename), b"incorrect").unwrap();
+    let input = format!("alias/../{filename}");
+    let encoded = run_in(
+        &[
+            "hash",
+            "encode",
+            "--input",
+            &input,
+            "--format",
+            "checksum",
+            "--output",
+            "alias/checksums/sums",
+        ],
+        b"",
+        Some(dir.path()),
+    );
+    assert!(encoded.status.success(), "{:?}", encoded.stderr);
+    let record = fs::read(dir.path().join("actual/deep/checksums/sums")).unwrap();
+    assert_eq!(record[0], b'\\');
+    let checked = run_in(
+        &[
+            "hash",
+            "verify",
+            "--check",
+            "actual/deep/checksums/sums",
+            "--quiet",
+        ],
+        b"",
+        Some(dir.path()),
+    );
+    assert!(checked.status.success(), "{:?}", checked.stderr);
+}
+
+#[test]
 fn file_outputs_are_atomic_and_completed_failure_reports_are_published() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("destination");

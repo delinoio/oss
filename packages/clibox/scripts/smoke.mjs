@@ -61,6 +61,9 @@ try {
     writeFileSync(file, bytes);
     const manifest = invoke(["hash", "encode", "--input", file, "--format", "checksum"]);
     equal(invoke(["hash", "verify", "--check", "-", "--quiet"], { input: manifest }), "", "Installed manifest verification failed");
+    mkdirSync(path.join(consumer, "checksums"));
+    equal(invoke(["hash", "encode", "--input", "binary input.dat", "--format", "checksum", "--output", "checksums/sums"]), "", "Installed manifest output failed");
+    equal(invoke(["hash", "verify", "--check", "checksums/sums", "--quiet"]), "", "Installed manifest-relative path verification failed");
     const fixture = path.join(consumer, "utility-check.cjs");
     writeFileSync(fixture, "if (process.env.CLIBOX_TEST_EXIT) process.exit(37); process.stdout.write(JSON.stringify({ value: process.env.CLIBOX_TEST_VALUE, args: process.argv.slice(2) }));");
     const utility = JSON.parse(execFileSync(process.execPath, [launcher, "run", "env", "CLIBOX_TEST_VALUE=unicode 🦀", "--", process.execPath, fixture, "", "two words", "a&b|c"], { cwd: consumer, encoding: "utf8" }));

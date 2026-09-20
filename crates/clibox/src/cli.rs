@@ -161,7 +161,16 @@ pub enum VerifyFormat {
 #[derive(Subcommand)]
 pub enum HashCommand {
     /// Hash exact input bytes; append one LF to the encoded result.
-    #[command(after_help = IO_HELP)]
+    #[command(after_help = IO_HELP, after_long_help = "Examples:
+  clibox hash encode --input archive.zip --format checksum --output checksums/SHA256SUMS
+  clibox hash verify --check checksums/SHA256SUMS
+
+Checksum format requires a file input and uses GNU filename escaping.
+With --output, relative input paths are resolved and recorded relative to the
+manifest directory; different Windows volumes use an absolute path. Absolute
+inputs and stdout records retain their supplied paths. Use --output when saving
+a manifest in another directory; shell redirection cannot rebase its records.
+Use -h for shared input/output rules.")]
     Encode(HashEncode),
     /// Verify a digest or ordered GNU checksum manifest.
     #[command(after_help = IO_HELP, after_long_help = "Examples:

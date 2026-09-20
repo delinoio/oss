@@ -123,7 +123,10 @@ pub fn encode(args: HashEncode, writer: &mut dyn Write, cancel: &Cancellation) -
             .as_ref()
             .filter(|path| path.as_os_str() != "-")
             .ok_or_else(|| Error::argument(Code::Arguments))?;
-        Some(path_bytes(path))
+        Some(path_bytes(&checksum_filename(
+            path,
+            args.destination.output.as_deref(),
+        )?))
     } else {
         None
     };
@@ -155,6 +158,41 @@ pub fn encode(args: HashEncode, writer: &mut dyn Write, cancel: &Cancellation) -
     }
     write(writer, b"\n")?;
     Ok(0)
+}
+
+fn checksum_filename(input: &Path, output: Option<&Path>) -> Result<PathBuf> {
+    let Some(output) = output.filter(|_| !input.is_absolute()) else {
+        return Ok(input.to_owned());
+    };
+    // Verification resolves relative records from the manifest directory.
+    // Resolve filesystem paths before rebasing: lexical removal of `..` can
+    // select a different file when an input or output parent is a symlink.
+    let input = input
+        .canonicalize()
+        .map_err(|_| Error::runtime(Code::ReadFailed))?;
+    let parent = output
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+        .canonicalize()
+        .map_err(|_| Error::runtime(Code::WriteFailed))?;
+    let shared = input
+        .components()
+        .zip(parent.components())
+        .take_while(|(input, parent)| input == parent)
+        .count();
+    // Different Windows volumes/shares have no relative representation.
+    if shared == 0 {
+        return Ok(input);
+    }
+    let mut relative = PathBuf::new();
+    for _ in parent.components().skip(shared) {
+        relative.push("..");
+    }
+    for component in input.components().skip(shared) {
+        relative.push(component);
+    }
+    Ok(relative)
 }
 
 #[derive(Serialize)]
