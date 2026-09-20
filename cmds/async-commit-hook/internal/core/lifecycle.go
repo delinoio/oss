@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -9,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -56,16 +58,17 @@ func (s *Service) Active() ([]Component, error) {
 			if err != nil {
 				return nil, err
 			}
-			if !alive {
-				// Proof is final: this stopped supervisor cannot launch again.
-				// Remove its stale lease before retention can remove the journal.
-				if _, err = s.Store.DB.Exec("DELETE FROM components WHERE id=?", c.ID); err != nil {
-					return nil, err
-				}
-				if err = os.Remove(filepath.Join(s.Paths.Control, entry.Name())); err != nil && !os.IsNotExist(err) {
-					return nil, err
-				}
+		}
+		if !alive {
+			// Ordinary owners are gone by birth identity. Supervisors reach this
+			// point only after the stronger backend/boot proof above.
+			if err := s.removeComponentRow(c); err != nil {
+				return nil, err
 			}
+			if err := os.Remove(filepath.Join(s.Paths.Control, entry.Name())); err != nil && !os.IsNotExist(err) {
+				return nil, err
+			}
+			s.Log.Info("component.reclaimed", "component_id", c.ID, "kind", c.Kind)
 		}
 		if alive {
 			out = append(out, c)
@@ -73,6 +76,40 @@ func (s *Service) Active() ([]Component, error) {
 	}
 	return out, nil
 }
+func (s *Service) removeComponentRow(c Component) error {
+	db := s.Store.DB
+	if c.StateDir != "" && filepath.Clean(c.StateDir) != filepath.Clean(s.Store.Root) {
+		// Control is account-wide: a stopped component may belong to the previous
+		// state path. Open only its existing database, without initialization or chmod.
+		path, err := filepath.Abs(filepath.Join(c.StateDir, "state.sqlite"))
+		if err != nil {
+			return err
+		}
+		info, err := os.Lstat(path)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return E("unsafe-state", "component state database must be a regular file", 3)
+		}
+		uriPath := filepath.ToSlash(path)
+		if !strings.HasPrefix(uriPath, "/") {
+			uriPath = "/" + uriPath
+		}
+		uri := url.URL{Scheme: "file", Path: uriPath, RawQuery: "mode=rw&_pragma=busy_timeout(15000)"}
+		db, err = sql.Open("sqlite", uri.String())
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+	}
+	_, err := db.Exec("DELETE FROM components WHERE id=?", c.ID)
+	return err
+}
+
 func (s *Service) Enter(kind string) (Component, func(), error) {
 	p, err := ProcessIdentity(os.Getpid())
 	if err != nil {

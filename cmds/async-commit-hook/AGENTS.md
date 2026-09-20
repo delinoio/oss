@@ -121,3 +121,5 @@
 - Configurable state roots and reserved state directories must already have account-only permissions or be created privately. Never chmod or replace the DACL of an existing directory merely because it was selected as state.
 
 - Hook removal snapshots a regular nonsymlink file and revalidates its identity and exact bytes immediately before unlinking. Concurrent edits, replacements and newly created files produce hook-conflict and retain installation ownership for retry.
+
+- Active-component discovery reclaims dead ordinary process records by PID and birth identity from both their owning SQLite store and account control directory. Preserve the control record on database failure for retry; never recreate a removed old state. Supervisors still require backend/boot completion proof.
