@@ -32,6 +32,16 @@ pub struct Request<'a> {
     pub cancellation: CancellationToken,
 }
 pub async fn observe(request: Request<'_>) -> Result<Execution> {
+    observe_inner(request, || {}).await
+}
+#[cfg(feature = "test-support")]
+pub async fn observe_with_launch_hook(
+    request: Request<'_>,
+    hook: impl FnOnce(),
+) -> Result<Execution> {
+    observe_inner(request, hook).await
+}
+async fn observe_inner(request: Request<'_>, hook: impl FnOnce()) -> Result<Execution> {
     let id = uuid::Uuid::now_v7();
     let started = Instant::now();
     request.config.limits.validate()?;
@@ -89,7 +99,27 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
             "execution cancelled before launch",
         ));
     }
-    let mut native = fspy::Command::new(&executable);
+    // Linux resolves the retained descriptor at exec, including across renames.
+    #[cfg(target_os = "linux")]
+    let launch_path = executable_identity
+        .as_ref()
+        .map(|identity| identity.launch_path())
+        .unwrap_or_else(|| executable.clone());
+    #[cfg(windows)]
+    let launch_guard = executable_identity
+        .as_ref()
+        .map(|identity| platform::lock_launch(&executable, identity))
+        .transpose()?;
+    #[cfg(windows)]
+    let launch_path = launch_guard
+        .as_ref()
+        .map(|guard| guard.path.clone())
+        .unwrap_or_else(|| executable.clone());
+    #[cfg(target_os = "macos")]
+    let launch_path = executable.clone();
+    let mut native = fspy::Command::new(&launch_path);
+    #[cfg(unix)]
+    native.arg0(&executable);
     native
         .args(&request.command.argv[1..])
         .current_dir(&cwd)
@@ -109,9 +139,11 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
     // Snapshots can take arbitrarily longer than executable inspection. Check
     // the path again at the launch boundary, including newly protected images.
     platform::preflight(&executable)?;
-    let executable_sha256 = executable_identity
+    let mut executable_sha256 = executable_identity
+        .as_ref()
         .map(|identity| identity.revalidate(&executable))
         .transpose()?;
+    hook();
     tracing::info!(execution_id=%id,stage="spawn","starting requested command");
     let child = native
         .spawn_in(
@@ -128,6 +160,8 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
                  doctor",
             )
         })?;
+    #[cfg(windows)]
+    drop(launch_guard);
     let mut wait = child.wait_handle;
     let timeout = async {
         match request.command.timeout_ms {
@@ -163,11 +197,26 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
                 Ok(observations) => {
                     tracing::debug!(execution_id=%id, stage="collection", attached=observations.attached(), lost=observations.incomplete(), lifecycle_incomplete=termination.lifecycle_incomplete, "native collection status");
                     complete &= !observations.incomplete() && observations.attached();
+                    #[cfg(target_os = "macos")]
+                    if !executable_identity.as_ref().is_some_and(|identity| {
+                        identity.matches_image(observations.executable_id())
+                    }) {
+                        executable_sha256 = None;
+                    }
                     for observation in observations.iter() {
-                        if observation.mode.contains(fspy::AccessMode::ATTACHED) {
+                        if observation
+                            .mode
+                            .intersects(fspy::AccessMode::ATTACHED | fspy::AccessMode::IMAGE)
+                        {
                             continue;
                         }
                         let raw_path = observation.path.to_path_buf();
+                        #[cfg(target_os = "linux")]
+                        let raw_path = if raw_path == launch_path {
+                            executable.clone()
+                        } else {
+                            raw_path
+                        };
                         let path = raw_path.as_path();
                         if temporary
                             .iter()
@@ -221,6 +270,15 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
             complete = false;
             errors.push(ErrorCode::CleanupFailed);
         }
+    }
+    if executable_identity
+        .as_ref()
+        .and_then(|identity| identity.stable_digest())
+        != executable_sha256
+        || executable_sha256.is_none()
+    {
+        executable_sha256 = None;
+        complete = false;
     }
     if timed_out {
         errors.push(ErrorCode::Timeout);

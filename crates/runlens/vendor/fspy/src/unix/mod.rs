@@ -45,6 +45,8 @@ impl SpyImpl {
         // in the forked process, without touching the Rust allocator.
         unsafe {native.pre_exec(move || {if let Some(pre_exec)=&pre_exec {pre_exec.run()?;}Ok(())});}
         let mut child=tokio::task::spawn_blocking(move || native.spawn()).await.map_err(|e|SpawnError::OsSpawn(e.into()))?.map_err(SpawnError::OsSpawn)?;
+        #[cfg(target_os="macos")]
+        let root_pid=child.id();
         Ok(TrackedChild {
             stdin:child.stdin.take(),stdout:child.stdout.take(),stderr:child.stderr.take(),
             wait_handle:tokio::spawn(async move {
@@ -53,14 +55,28 @@ impl SpyImpl {
                 let supervisor_failed=match supervisor.stop().await {Ok((_,failed))=>failed,Err(_)=>true};
                 #[cfg(not(target_os="linux"))]
                 let supervisor_failed=false;
-                let accesses=ChannelAccesses::try_from(receiver).map(|ipc_accesses|PathAccessIterable {ipc_accesses,uses_seccomp,supervisor_failed});
+                let accesses=ChannelAccesses::try_from(receiver).map(|ipc_accesses|PathAccessIterable {ipc_accesses,uses_seccomp,supervisor_failed, #[cfg(target_os="macos")] root_pid});
                 Ok(ChildTermination {status,path_accesses:accesses,lifecycle_incomplete})
             }).map(|result|result?).boxed(),
         })
     }
 }
-pub struct PathAccessIterable {ipc_accesses:ChannelAccesses,uses_seccomp:bool,supervisor_failed:bool}
+pub struct PathAccessIterable {ipc_accesses:ChannelAccesses,uses_seccomp:bool,supervisor_failed:bool, #[cfg(target_os="macos")] root_pid:Option<u32>}
 impl PathAccessIterable {
+    #[cfg(target_os="macos")]
+    pub fn executable_id(&self)->Option<(u64,u64)> {
+        let prefix=format!("/{}:",self.root_pid?);
+        let mut identity=None;
+        for record in self.iter().filter(|a| a.mode.contains(fspy_shared::ipc::AccessMode::IMAGE)) {
+            let path=record.path.to_path_buf();
+            let Some(text)=path.to_str().and_then(|s|s.strip_prefix(&prefix)) else {continue};
+            let (dev,ino)=text.split_once(':')?;
+            let next=(dev.parse().ok()?,ino.parse().ok()?);
+            if identity.is_some_and(|previous|previous!=next) {return None;}
+            identity=Some(next);
+        }
+        identity
+    }
     pub fn incomplete(&self)->bool {self.supervisor_failed||self.ipc_accesses.incomplete()}
     pub fn attached(&self)->bool {self.uses_seccomp||self.iter().any(|a|a.mode.contains(fspy_shared::ipc::AccessMode::ATTACHED))}
     pub fn iter(&self)->impl Iterator<Item=PathAccess<'_>> {self.ipc_accesses.iter_path_accesses()}

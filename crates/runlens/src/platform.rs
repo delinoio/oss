@@ -395,7 +395,7 @@ pub struct ExecutableIdentity {
 impl ExecutableIdentity {
     /// Keep the inspected handle alive so pathname replacement cannot reuse its
     /// identity.
-    pub fn revalidate(self, path: &Path) -> Result<String> {
+    pub fn revalidate(&self, path: &Path) -> Result<String> {
         let unchanged = (|| {
             let current = same_file::Handle::from_path(path).ok()?;
             let metadata = current.as_file().metadata().ok()?;
@@ -407,8 +407,80 @@ impl ExecutableIdentity {
                 "executable changed before launch; retry with a stable executable",
             ));
         }
-        Ok(self.sha256)
+        Ok(self.sha256.clone())
     }
+
+    pub fn stable_digest(&self) -> Option<String> {
+        let current = self.handle.as_file().metadata().ok()?;
+        crate::snapshot::same(&self.metadata, &current).then(|| self.sha256.clone())
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn matches_image(&self, image: Option<(u64, u64)>) -> bool {
+        use std::os::unix::fs::MetadataExt;
+        image == Some((self.metadata.dev(), self.metadata.ino()))
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn launch_path(&self) -> std::path::PathBuf {
+        use std::os::fd::AsRawFd;
+        format!("/proc/self/fd/{}", self.handle.as_file().as_raw_fd()).into()
+    }
+}
+// CreateProcess reopens a pathname. Hold the canonical file against writes and
+// deletion, and its real ancestor directories against rename until spawn
+// returns. Directory handles allow writes so launching never blocks normal
+// child output.
+#[cfg(windows)]
+pub struct LaunchGuard {
+    pub path: std::path::PathBuf,
+    _handles: Vec<std::fs::File>,
+}
+#[cfg(windows)]
+pub fn lock_launch(path: &Path, identity: &ExecutableIdentity) -> Result<LaunchGuard> {
+    use std::os::windows::fs::OpenOptionsExt;
+    let path = path
+        .canonicalize()
+        .map_err(|_| Error::input("cannot resolve executable"))?;
+    let mut handles = Vec::new();
+    for ancestor in path
+        .ancestors()
+        .skip(1)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+    {
+        handles.push(
+            std::fs::OpenOptions::new()
+                .access_mode(0)
+                .share_mode(3)
+                .custom_flags(0x02000000)
+                .open(ancestor)
+                .map_err(|_| {
+                    Error::new(
+                        ErrorCode::Incomplete,
+                        "cannot stabilize executable directory during launch",
+                    )
+                })?,
+        );
+    }
+    handles.push(
+        std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(&path)
+            .map_err(|_| {
+                Error::new(
+                    ErrorCode::Incomplete,
+                    "cannot stabilize executable during launch",
+                )
+            })?,
+    );
+    identity.revalidate(&path)?;
+    Ok(LaunchGuard {
+        path,
+        _handles: handles,
+    })
 }
 pub fn executable_identity(
     path: &Path,

@@ -134,3 +134,14 @@ Explicit directory creation attempts still require the directory in write
 allowlists; the snapshot-only ancestor exception does not authorize an attempt.
 Remove this patch when upstream covers these mutation families with equivalent
 bounded evidence and continued child execution on collection errors.
+
+Native image identity is bound across launch. Linux executes the retained inspected
+file descriptor, preserving argv[0]; Windows holds the canonical executable against
+write/delete and real ancestor directories against rename until CreateProcess
+returns. macOS reports the main mapped image's vnode through PROC_PIDREGIONPATHINFO
+in the preload constructor before main. Its private IMAGE marker is scoped to the
+root PID and never serialized as an access. Missing/conflicting image evidence or
+changed retained metadata clears the digest and makes collection incomplete.
+`launched_image_identity_survives_or_detects_path_replacement` replaces the path
+after the last preflight and checks native execution and identity on each platform.
+Remove these patches when upstream supplies an equivalent launch-bound identity.

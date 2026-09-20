@@ -19,6 +19,8 @@ bitflags! {
         // Runlens: an observed child cannot be injected without changing it.
         const UNSUPPORTED = 1 << 3;
         const ATTACHED = 1 << 4;
+        // Private native image identity; never a filesystem access.
+        const IMAGE = 1 << 5;
     }
 }
 

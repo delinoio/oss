@@ -5,6 +5,9 @@
 // made usable before libc initialization.
 #![cfg(all(unix, not(target_env = "musl")))]
 
+#[cfg(target_os = "macos")]
+mod image_identity;
+
 pub mod convert;
 pub mod raw_exec;
 
@@ -67,6 +70,11 @@ impl<'a> Client<'a> {
 
         if let Some(sender) = &ipc_sender {
             sender.send(&PathAccess { mode: fspy_shared::ipc::AccessMode::ATTACHED, path: Path::new("/").into() });
+            #[cfg(target_os = "macos")]
+            if let Some((device, inode)) = image_identity::current() {
+                let marker = format!("/{}:{device}:{inode}", std::process::id());
+                sender.send(&PathAccess { mode: fspy_shared::ipc::AccessMode::IMAGE, path: Path::new(&marker).into() });
+            }
         }
         Some(Self { encoded_payload, ipc_sender })
     }

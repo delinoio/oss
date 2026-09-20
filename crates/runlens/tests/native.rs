@@ -2657,3 +2657,64 @@ fn static_linux_path_only_mutations_cannot_pass_external_write_denials() {
         }
     }
 }
+
+#[tokio::test]
+async fn launched_image_identity_survives_or_detects_path_replacement() {
+    use runlens::{config, execute, model::Role};
+    for replace in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let images = tempfile::tempdir().unwrap();
+        let executable = images.path().join("original.exe");
+        let replacement = images.path().join("replacement.exe");
+        fs::copy(fixture(), &executable).unwrap();
+        fs::copy(fixture(), &replacement).unwrap();
+        let root = root.path().canonicalize().unwrap();
+        fs::write(root.join("input"), "input").unwrap();
+        let command = config::Command::direct(vec![
+            executable.to_str().unwrap().into(),
+            "read-write".into(),
+        ]);
+        let config = config::Config::default();
+        let execution = execute::observe_with_launch_hook(
+            execute::Request {
+                root: &root,
+                command: &command,
+                name: None,
+                config: &config,
+                environment: std::env::vars_os().collect(),
+                temporary: vec![],
+                revision: None,
+                working_tree_included: false,
+                role: Role::Target,
+                repetition: 1,
+                cancellation: tokio_util::sync::CancellationToken::new(),
+            },
+            || {
+                if replace {
+                    let moved = fs::rename(&executable, images.path().join("retained.exe"));
+                    #[cfg(windows)]
+                    assert!(moved.is_err(), "launch guard must prevent replacement");
+                    #[cfg(unix)]
+                    {
+                        moved.unwrap();
+                        fs::rename(&replacement, &executable).unwrap();
+                    }
+                }
+            },
+        )
+        .await
+        .unwrap();
+        assert!(root.join("out").exists());
+        if replace && cfg!(unix) {
+            assert!(execution.environment.executable_sha256.is_none());
+            assert!(!execution.outcome.collection_complete);
+        } else {
+            assert!(execution.environment.executable_sha256.is_some());
+            assert!(
+                execution.outcome.collection_complete,
+                "{:?}",
+                execution.outcome
+            );
+        }
+    }
+}
