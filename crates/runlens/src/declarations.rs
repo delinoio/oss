@@ -46,8 +46,9 @@ fn intersect(
                     .nfa_size_limit(Some(8 * 1024 * 1024)),
             )
             .build_many(patterns)
+            .ok()
     };
-    let (Ok(left), Ok(right), Ok(valid)) = (
+    let (Some(left), Some(right), Some(valid)) = (
         build(&input.iter().map(|g| g.regex()).collect::<Vec<_>>()),
         build(&output.iter().map(|g| g.regex()).collect::<Vec<_>>()),
         // Globs match bytes. Restrict witnesses to nonempty, valid UTF-8 paths
