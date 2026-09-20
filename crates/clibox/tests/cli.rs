@@ -44,3 +44,14 @@ fn unknown_arguments_fail_on_stderr() {
         assert!(String::from_utf8(output.stderr).unwrap().contains("error:"));
     }
 }
+
+#[test]
+fn help_never_forces_color_on_a_pipe() {
+    let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
+        .arg("--help")
+        .env("CLICOLOR_FORCE", "1")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(!output.stdout.contains(&0x1b));
+}

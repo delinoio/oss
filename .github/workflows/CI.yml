@@ -1582,6 +1582,8 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Verify affected workspace runner
         run: node --test scripts/ci/run-affected.test.mjs
+      - name: Test native readiness commands
+        run: cargo test --locked -p clibox
       - name: Test launcher and native npm consumers
         env:
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['node-clibox-test'] }}

@@ -1,7 +1,7 @@
 # Project: clibox
 
 ## Goal
-Provide a Rust CLI that JavaScript projects can pin through npm and their lockfiles. The initial CLI exposes help and version only.
+Provide a Rust CLI that JavaScript projects can pin through npm and their lockfiles. The CLI exposes help/version and stateless TCP, HTTP, and regular-file readiness waits for local workflows and CI scripts (#919).
 
 ## Project ID
 `clibox`
@@ -22,7 +22,10 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 - Consumers never compile Rust or run installation/download scripts. The npm launcher executes only its exact-version platform dependency.
 - Manual `Release Project` versioning, exact-commit CI, crates.io publication, and the `clibox@v<version>` tag precede the downstream npm workflow.
 - npm publication uses GitHub Actions OIDC and provenance from the complete verified CI artifact; setup and dry-run validation do not publish.
-- Domain commands, a docs website, Homebrew, and public GitHub Release binaries are outside this foundation.
+- `wait tcp`, `wait http`, and `wait file` share immediate nonoverlapping polling, unlimited default waiting, monotonic bounded attempts, handled cancellation, and redacted human/quiet/JSON results. #916/#917 retain their separately agreed interfaces.
+- Network checks run in Rust without external utilities. HTTPS verifies OS trust and hostname, disables proxies/authentication/redirects, and finishes at response headers. Files are observed through metadata only.
+- No persistent state, remote telemetry, public library API, docs website, Homebrew, or public GitHub Release binaries are added.
+- Automated local fixtures and Linux/macOS/Windows process CI are the completion gate. All eight artifact checks and Alpine consumers remain required; musl crypto compilation uses target-native `musl-gcc` while final linking retains pinned self-contained `rust-lld`.
 
 ## Change Policy
 Update both domain contracts, this index, relevant AGENTS files, version synchronization, platform fixtures, and release workflows together when these boundaries change.

@@ -153,6 +153,10 @@
 
 ### clibox Rules
 
-- Preserve the help/version-only CLI, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`.
-- This scaffold has an explicitly approved crates.io publication contract; register it as a workspace and cargo-mono release target. Do not add domain commands implicitly.
+- Preserve help/version and the #919 `wait tcp`, `wait http`, and `wait file` contracts, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`.
+- Keep the explicitly approved crates.io publication, workspace, and cargo-mono release target. #916/#917 retain their independent command interfaces; do not add other domain commands implicitly.
+- Wait command kinds, HTTP methods, outcomes, and error classifications use enums. Poll immediately, delay only after unsuccessful attempts, clip all work/delays to monotonic deadlines, and cancel without target mutation or service termination.
+- Use Rust networking and metadata only. HTTP verifies OS trust/hostname, completes at headers, disables proxies/credentials/redirects/client retries and custom CA overrides; file readiness follows symlinks but requires a regular file.
+- All parser/runtime/tracing output must omit input locators, credentials, bodies, raw argv, and dependency errors. Static diagnostics survive quiet/log filtering; dependency log targets remain disabled even with detailed `RUST_LOG`. Respect `NO_COLOR` and TTY-only color.
+- Keep injected-clock, loopback/TLS, filesystem, privacy, and native signal tests. Trust fixtures must never modify user certificate stores. Preserve standalone runtime behavior and document crypto build-tool changes across the eight-target matrix.
 - Standalone crate packages must contain their own MIT license and pass process-level CLI tests and Cargo publish dry-run.

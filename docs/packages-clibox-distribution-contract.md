@@ -11,10 +11,12 @@ JavaScript developers using `pnpm add -D -E @delino/clibox` followed by `pnpm ex
 
 ## Interfaces and Contracts
 - The installed command is `clibox`; no public JavaScript import API is provided.
+- Cargo and npm expose the same `wait tcp HOST:PORT`, `wait http URL`, and `wait file PATH` interfaces from [the Rust contract](crates-clibox-foundation.md), including unlimited default waiting, bounded network attempts, human/quiet/JSON output, redacted errors, and exit codes 0/1/2/130/143. No launcher-side parsing or network implementation is added. #916/#917 interfaces remain independently reserved.
+- Consumer READMEs document duration units, target syntax, readiness limits, HTTP OS trust and unsupported connection features, file symlink/metadata semantics, retry/terminal failures, cancellation, and redacted `RUST_LOG` troubleshooting. Release internals remain in these contracts.
 - The source workspace is private and contains no dependency on an unpublished binary package. Public manifests are generated explicitly, never by an install lifecycle hook.
 - The main package pins all eight optional dependencies to its exact version. Platform packages declare `os`, `cpu`, and, for Linux, `libc`.
 - Linux GNU binaries target the build runner baselines: glibc 2.35 on x64 and 2.39 on arm64. Alpine uses the separate musl builds.
-- Both musl targets use the pinned Rust toolchain's `rust-lld` with `-C link-self-contained=yes`, keeping startup objects and libc matched. The pure-Rust CLI has no system C-library dependency. Ubuntu's external musl linker is not used; release jobs execute each binary on its native host and exercise npm/pnpm consumers in Alpine.
+- Both musl targets use the pinned Rust toolchain's `rust-lld` with `-C link-self-contained=yes`, keeping startup objects and libc matched. Rustls/ring adds build-time C compilation: install `musl-tools` and select target-specific `CC=musl-gcc` for ring on each native Linux runner, while retaining `rust-lld` for final linking. No dynamic OpenSSL or crypto runtime library is required. Windows uses MSVC and macOS uses Xcode clang. HTTPS uses the OS trust store (Linux/Alpine require OS CA certificates). Ubuntu's external musl linker is not used for final linking; release jobs execute each binary on its native host and exercise npm/pnpm consumers in Alpine.
 - Platform suffixes are `darwin-x64`, `darwin-arm64`, `win32-x64-msvc`, `win32-arm64-msvc`, `linux-x64-gnu`, `linux-arm64-gnu`, `linux-x64-musl`, and `linux-arm64-musl`; every name starts with `@delino/clibox-`.
 - Resolve OS/architecture from Node and distinguish Linux glibc/musl using the Node diagnostic report header. Do not log the report or its environment contents.
 - Resolve only the selected installed dependency, verify its version, and launch its executable without a shell, preserving argv, cwd, environment, stdio, exit code, and termination signals.
@@ -25,7 +27,7 @@ JavaScript developers using `pnpm add -D -E @delino/clibox` followed by `pnpm ex
 - Release verification requires exactly nine expected packages with matching source version, revision, metadata, and computed SHA-512 integrity. Publish platform packages first and confirm each registry integrity before publishing the main package. Existing identical versions are reused; conflicting versions fail without overwriting.
 
 ## Storage
-Generated packages and tarballs live under ignored `dist` or an explicitly supplied temporary output directory. Never track generated output; remove repository-owned `dist` directories after local verification. The installed runtime stores nothing.
+Generated packages and tarballs live under ignored `dist` or an explicitly supplied temporary output directory. Never track generated output; remove repository-owned `dist` directories after local verification. The installed runtime stores nothing; waits observe targets without file mutations or service termination. Operational rollback uses an earlier pinned package version and needs no state migration.
 
 ## Security
 Consumers need no install scripts, network downloads outside their package manager, or Rust compiler. Release jobs obtain OIDC only after all native builds and package checks succeed. Dry runs and regular CI never publish or receive registry credentials. Publication uses fixed npm registry HTTPS endpoints and never prints tokens or raw process environments.
@@ -35,9 +37,9 @@ Packaging and publication report structured events containing action, package, t
 
 ## Build and Test
 - `pnpm --filter @delino/clibox test` runs deterministic launcher and packaging/release fixtures.
-- `pnpm --filter @delino/clibox test:package` builds the host CLI, creates tarballs, and installs them in temporary npm and pnpm consumers with scripts disabled.
+- `pnpm --filter @delino/clibox test:package` builds the host CLI, creates tarballs, and installs them in temporary npm and pnpm consumers with scripts disabled, checking both help/version and JSON file readiness.
 - Package-local Turbo tasks include external Cargo/source inputs and disable caching for native packaging/integration checks.
-- CI's `node-clibox-test` participates in the shared change planner and `CI Result` aggregation. Release CI builds and smoke-tests all eight targets; Linux musl execution is also checked in Alpine.
+- CI's `node-clibox-test` runs native Rust unit/process readiness tests on Linux, macOS, and Windows and participates in the shared change planner and `CI Result` aggregation. Release CI runs Cargo unit/process tests, builds, and smoke-tests all eight targets; Linux musl execution is also checked in Alpine.
 - Fixtures cover selection, argument and signal forwarding, missing/mismatched dependencies, archive contents/modes, identical package integrity from isolated LF/CRLF source trees, version mismatch, partial publication recovery, conflicting registry integrity, and credential-free dry runs.
 
 ## Dependencies and Integrations

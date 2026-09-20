@@ -34,6 +34,10 @@ try {
     const launcher = path.join(consumer, "node_modules/@delino/clibox/bin/clibox.cjs");
     const help = execFileSync(process.execPath, [launcher, "--help"], { cwd: consumer, encoding: "utf8" });
     ensure(help.includes("Usage: clibox"), `${manager} help smoke failed`);
+    const readyFile = path.join(consumer, "ready file");
+    writeFileSync(readyFile, "");
+    const ready = JSON.parse(execFileSync(process.execPath, [launcher, "wait", "file", readyFile, "--json", "--timeout", "5s"], { cwd: consumer, encoding: "utf8" }));
+    ensure(ready.kind === "file" && ready.status === "ready" && ready.attempts === 1 && ready.error === null, `${manager} readiness smoke failed`);
     const installed = JSON.parse(readFileSync(path.join(consumer, "node_modules", native.name, "package.json"), "utf8"));
     ensure(installed.version === metadata().version, "Installed native version mismatch");
     event("consumer_smoke", { manager, target: target.suffix, version: installed.version });
