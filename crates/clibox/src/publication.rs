@@ -142,6 +142,89 @@ fn permissions(source: &File, metadata: &Metadata, target: &File) -> Result<()> 
     Ok(())
 }
 
+// The directory guard outlives the file even after its permissions are copied.
+// Renaming from this private child directory stays on the destination
+// filesystem.
+struct Staging {
+    file: tempfile::NamedTempFile,
+    #[cfg(unix)]
+    _directory: tempfile::TempDir,
+}
+impl Staging {
+    fn new(parent: &Path) -> Result<Self> {
+        #[cfg(unix)]
+        let directory = {
+            use std::os::unix::fs::PermissionsExt;
+            let directory = tempfile::Builder::new()
+                .prefix(".clibox-")
+                .tempdir_in(parent)
+                .map_err(|_| Failure::Publish)?;
+            fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700))
+                .map_err(|_| Failure::Permissions)?;
+            #[cfg(target_os = "macos")]
+            clear_directory_acl(directory.path())?;
+            if fs::metadata(directory.path())
+                .map_err(|_| Failure::Permissions)?
+                .permissions()
+                .mode()
+                & 0o777
+                != 0o700
+            {
+                return Err(Failure::Permissions.into());
+            }
+            directory
+        };
+        #[cfg(unix)]
+        let parent = directory.path();
+        let file = tempfile::Builder::new()
+            .prefix(".clibox-")
+            .tempfile_in(parent)
+            .map_err(|_| Failure::Publish)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // Creation's 0600 is filtered by umask. Restore owner access through
+            // the open handle before writing, even with caller umask 0777.
+            file.as_file()
+                .set_permissions(fs::Permissions::from_mode(0o600))
+                .map_err(|_| Failure::Permissions)?;
+        }
+        Ok(Self {
+            file,
+            #[cfg(unix)]
+            _directory: directory,
+        })
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn clear_directory_acl(path: &Path) -> Result<()> {
+    use std::os::fd::AsRawFd;
+    // Darwin ACL grants can bypass POSIX mode bits. Remove inherited grants
+    // before staging any bytes; Linux's 0700 mode also masks POSIX ACL grants.
+    // libc does not expose these macOS SDK <sys/acl.h> declarations.
+    unsafe extern "C" {
+        fn acl_init(count: libc::c_int) -> *mut libc::c_void;
+        fn acl_set_fd(fd: libc::c_int, acl: *mut libc::c_void) -> libc::c_int;
+        fn acl_free(acl: *mut libc::c_void) -> libc::c_int;
+    }
+    let directory = File::open(path).map_err(|_| Failure::Permissions)?;
+    // SAFETY: the initialized empty ACL and live directory descriptor remain
+    // valid through acl_set_fd, and the allocation is freed exactly once.
+    unsafe {
+        let acl = acl_init(0);
+        if acl.is_null() {
+            return Err(Failure::Permissions.into());
+        }
+        let result = acl_set_fd(directory.as_raw_fd(), acl);
+        acl_free(acl);
+        if result != 0 {
+            return Err(Failure::Permissions.into());
+        }
+    }
+    Ok(())
+}
+
 pub fn publish(path: &Path, bytes: &[u8], replace: bool, cancel: &Cancellation) -> Result<()> {
     cancel.check()?;
     if fs::symlink_metadata(path).is_ok() && !replace {
@@ -151,28 +234,14 @@ pub fn publish(path: &Path, bytes: &[u8], replace: bool, cancel: &Cancellation) 
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
-    let mut temporary = tempfile::Builder::new()
-        .prefix(".clibox-")
-        .tempfile_in(parent)
-        .map_err(|_| Failure::Publish)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        // Creation's 0600 is filtered by umask. Restore owner access through the
-        // open handle before writing, even when the caller uses umask 0777.
-        temporary
-            .as_file()
-            .set_permissions(fs::Permissions::from_mode(0o600))
-            .map_err(|_| Failure::Permissions)?;
-    }
-    // Windows inherits the parent's ACL. Unpublished files are removed on every
-    // handled return path.
-    config_runtime::write(temporary.as_file_mut(), bytes, cancel)?;
+    let mut temporary = Staging::new(parent)?;
+    // Windows inherits the parent's ACL. Both guards clean up on handled errors.
+    config_runtime::write(temporary.file.as_file_mut(), bytes, cancel)?;
     publish_prepared(temporary, path, replace, cancel)
 }
 
 fn publish_prepared(
-    temporary: tempfile::NamedTempFile,
+    temporary: Staging,
     path: &Path,
     replace: bool,
     cancel: &Cancellation,
@@ -184,9 +253,13 @@ fn publish_prepared(
     }
     #[cfg(unix)]
     if let Some((source, metadata)) = &existing {
-        permissions(source, metadata, temporary.as_file())?;
+        permissions(source, metadata, temporary.file.as_file())?;
     }
-    temporary.as_file().sync_all().map_err(|_| Failure::Write)?;
+    temporary
+        .file
+        .as_file()
+        .sync_all()
+        .map_err(|_| Failure::Write)?;
     cancel.check()?;
     #[cfg(windows)]
     if existing.is_some() {
@@ -194,7 +267,7 @@ fn publish_prepared(
         // ReplaceFileW opens the replacement without sharing, so even our own
         // staging writer must be closed first. Keep the TempPath guard alive to
         // remove unpublished bytes if replacement fails.
-        let temporary = temporary.into_temp_path();
+        let temporary = temporary.file.into_temp_path();
         let old: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
         let new: Vec<u16> = temporary.as_os_str().encode_wide().chain([0]).collect();
         // ReplaceFile preserves the destination DACL. Do not set IGNORE_ACL_ERRORS
@@ -215,9 +288,9 @@ fn publish_prepared(
         return Ok(());
     }
     if replace {
-        temporary.persist(path).map_err(|_| Failure::Publish)?;
+        temporary.file.persist(path).map_err(|_| Failure::Publish)?;
     } else {
-        temporary.persist_noclobber(path).map_err(|error| {
+        temporary.file.persist_noclobber(path).map_err(|error| {
             if error.error.kind() == std::io::ErrorKind::AlreadyExists {
                 Failure::DestinationExists
             } else {
@@ -231,16 +304,116 @@ fn publish_prepared(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn replacement_permissions_stay_private_until_publish_or_cancel() {
+        use std::os::unix::fs::PermissionsExt;
+        for cancelled in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("output");
+            fs::write(&path, "original").unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+            let mut staged = Staging::new(dir.path()).unwrap();
+            let private = staged.file.path().parent().unwrap().to_path_buf();
+            let cancel = Cancellation::default();
+            config_runtime::write(staged.file.as_file_mut(), b"replacement", &cancel).unwrap();
+            let (source, metadata) = destination(&path).unwrap().unwrap();
+            permissions(&source, &metadata, staged.file.as_file()).unwrap();
+            assert_eq!(
+                staged
+                    .file
+                    .as_file()
+                    .metadata()
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o644
+            );
+            assert_eq!(
+                fs::metadata(&private).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+            assert_eq!(private.parent().unwrap(), dir.path());
+            if cancelled {
+                cancel.cancel();
+                assert_eq!(
+                    publish_prepared(staged, &path, true, &cancel)
+                        .unwrap_err()
+                        .kind,
+                    Failure::Cancelled
+                );
+                assert_eq!(fs::read(&path).unwrap(), b"original");
+            } else {
+                publish_prepared(staged, &path, true, &cancel).unwrap();
+                assert_eq!(fs::read(&path).unwrap(), b"replacement");
+            }
+            assert!(!private.exists());
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o644
+            );
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn private_directory_removes_inherited_macos_acl_grants() {
+        use std::os::fd::AsRawFd;
+        unsafe extern "C" {
+            fn acl_get_fd(fd: libc::c_int) -> *mut libc::c_void;
+            fn acl_get_entry(
+                acl: *mut libc::c_void,
+                id: libc::c_int,
+                entry: *mut *mut libc::c_void,
+            ) -> libc::c_int;
+            fn acl_free(acl: *mut libc::c_void) -> libc::c_int;
+        }
+        let has_entries = |path: &Path| {
+            let file = File::open(path).unwrap();
+            // SAFETY: both pointers belong to this call, and the live ACL is
+            // released after examining its first entry (ACL_FIRST_ENTRY = 0).
+            unsafe {
+                let acl = acl_get_fd(file.as_raw_fd());
+                if acl.is_null() {
+                    // Darwin reports a missing ACL as ENOENT on a live file.
+                    assert_eq!(
+                        std::io::Error::last_os_error().raw_os_error(),
+                        Some(libc::ENOENT)
+                    );
+                    return false;
+                }
+                let mut entry = std::ptr::null_mut();
+                let result = acl_get_entry(acl, 0, &mut entry);
+                acl_free(acl);
+                result == 0
+            }
+        };
+        let dir = tempfile::tempdir().unwrap();
+        // Configure only a disposable fixture with the platform's ACL utility.
+        assert!(std::process::Command::new("/bin/chmod")
+            .args([
+                "+a",
+                "everyone allow list,search,file_inherit,directory_inherit"
+            ])
+            .arg(dir.path())
+            .status()
+            .unwrap()
+            .success());
+        assert!(has_entries(dir.path()));
+        let staged = Staging::new(dir.path()).unwrap();
+        assert!(!has_entries(staged.file.path().parent().unwrap()));
+        assert!(!has_entries(staged.file.path()));
+    }
+
     #[test]
     fn cancellation_after_staging_cleans_temporary_and_preserves_destination() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("output");
         fs::write(&path, "original").unwrap();
-        let staged = tempfile::Builder::new()
-            .prefix(".clibox-")
-            .tempfile_in(dir.path())
-            .unwrap();
-        let staged_path = staged.path().to_path_buf();
+        let staged = Staging::new(dir.path()).unwrap();
+        let staged_path = staged.file.path().to_path_buf();
         let cancel = Cancellation::default();
         cancel.cancel();
         assert_eq!(

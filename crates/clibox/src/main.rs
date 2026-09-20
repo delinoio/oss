@@ -25,18 +25,18 @@ const IO_HELP: &str =
      --output is always a filesystem path, including '-'. Empty/comment-only input produces zero \
      bytes; nonempty results end in LF. All input is validated before any result is emitted. A \
      stdout write failure or interruption may leave partial output.\n\nFile output uses a private \
-     temporary file in the destination directory and is published only on success. New Unix files \
-     use mode 0600; Windows files inherit the parent ACL. Replacements preserve access \
-     permissions and reject symbolic links or multiple hard links. Existing output requires \
-     --force (except --in-place). No backups, locks, or concurrent-change detection; the last \
-     successful replacement wins. Handled cancellation cleans unpublished temporaries and never \
-     undoes completed writes. No persistent state, shell execution, expansion, or network \
-     access.\n\nExit codes: 0 success, 1 content/filesystem/limit/runtime failure, 2 invalid \
-     arguments, 130 Ctrl+C, 143 Unix SIGTERM. Diagnostics are redacted structured stderr events: \
-     operation, input/document ordinal and line/column, never content, keys, values, paths or \
-     argv. Warnings/errors are enabled by default; RUST_LOG=clibox=debug adds operation detail. \
-     Use the reported position to inspect input locally. Diagnostic color requires a terminal and \
-     honors NO_COLOR.";
+     temporary file on the destination filesystem (inside a private directory on Unix) and is \
+     published only on success. New Unix files use mode 0600; Windows files inherit the parent \
+     ACL. Replacements preserve access permissions and reject symbolic links or multiple hard \
+     links. Existing output requires --force (except --in-place). No backups, locks, or \
+     concurrent-change detection; the last successful replacement wins. Handled cancellation \
+     cleans unpublished temporaries and never undoes completed writes. No persistent state, shell \
+     execution, expansion, or network access.\n\nExit codes: 0 success, 1 \
+     content/filesystem/limit/runtime failure, 2 invalid arguments, 130 Ctrl+C, 143 Unix SIGTERM. \
+     Diagnostics are redacted structured stderr events: operation, input/document ordinal and \
+     line/column, never content, keys, values, paths or argv. Warnings/errors are enabled by \
+     default; RUST_LOG=clibox=debug adds operation detail. Use the reported position to inspect \
+     input locally. Diagnostic color requires a terminal and honors NO_COLOR.";
 const DOTENV_HELP: &str =
     "Node.js dotenv baseline: ASCII keys [A-Za-z_][A-Za-z0-9_]*, optional export, whitespace, \
      comments, empty values and multiline single/double quotes. Every record is validated; \
