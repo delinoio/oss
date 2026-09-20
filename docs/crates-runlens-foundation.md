@@ -410,16 +410,15 @@ invalid input (exit 2) without partial output.
 ## Passive identity and failure boundaries
 
 Execution metadata includes the executable SHA-256 computed without invoking the
-target. The inspected file handle stays open through the before-snapshot; immediately
-before launch Runlens rechecks platform eligibility, pathname file identity, and
-metadata stability. A changed identity returns incomplete before launching the
-replacement. This is a launch-boundary race check, not an OS sandbox or a guarantee
-against a concurrent replacement after the final check.
-The replacement regression retains the inspected handle, renames the original to
-a spare path, and installs a different file at the original path with matching
-length and modification time. This keeps the identity check covered on Windows,
-where the temporary-file persistence API cannot overwrite an open destination;
-the extra rename can be removed when that API supports open-file replacement.
+target. The inspected file handle stays open through child completion. Before
+launch Runlens rechecks platform eligibility, pathname identity, and metadata;
+a changed identity stops that launch. Linux executes the inspected descriptor,
+Windows locks the canonical executable and ancestor rename chain through process
+creation, and macOS verifies the main mapped image's vnode before accepting its
+digest. Changed retained metadata or missing/mismatched image evidence clears the
+digest and makes collection incomplete. The command retains its argv and streams.
+These checks are observation safeguards, not an OS security sandbox. Native
+regressions cover replacements both before and after the final pathname check.
 Comparison requires known matching executable identity and OS metadata,
 equal source revision metadata, and the same working-tree inclusion policy;
 redacted arguments cannot establish equivalence. Linux OS metadata includes

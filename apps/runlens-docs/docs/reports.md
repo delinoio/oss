@@ -21,7 +21,7 @@ One JSON report format covers `run`, `clean`, and `repeat`. It includes:
 - Execution roles distinguish `target`, `preparation`, and historical `baseline`
   evidence. Baseline errors affect comparison certainty, not the current command's
   operational exit status.
-- Sanitized command identity and argv, working directory, environment names, available source metadata, OS/architecture, Runlens version, tracing-engine revision, and a passively computed executable SHA-256 when readable.
+- Sanitized command identity and argv, working directory, environment names, available source metadata, OS/architecture, Runlens version, tracing-engine revision, and a passively computed executable SHA-256 when its identity is verified against the launched image.
 - Declared snapshot scope, exclusions, input/output patterns, and coverage status.
 - Separate `accesses`, `before`, `after`, and `changes` maps.
 - Separate child exit/signal information, collection status, typed errors, and elapsed time.

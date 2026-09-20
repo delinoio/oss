@@ -27,6 +27,6 @@ Runlens supports finite noninteractive commands and supported child processes. D
 
 Directory creation and metadata changes are write attempts. When a command creates `build` before writing `build/out/result`, a write allowlist for `build/out/**` also needs an explicit `build` entry. A symlink's target text alone does not count as reading the target.
 
-If an inspected executable changes while Runlens prepares its snapshot, Runlens refuses that launch with an incomplete diagnostic. Retry after the executable is stable. The final identity check does not provide a security boundary against concurrent replacement.
+If an inspected executable changes while Runlens prepares its snapshot, Runlens refuses that launch with an incomplete diagnostic. An executable digest is retained only when it can be tied to the launched image and remains stable through completion. Missing or mismatched identity evidence makes collection incomplete. Retry after the executable is stable. These checks do not provide an OS security boundary.
 
 Complete collection means completion within documented backend and snapshot coverage. It does not prove observation of every possible dependency. Environment reads, networking, clocks, randomness, detailed process timelines, and event ordering are not captured.
