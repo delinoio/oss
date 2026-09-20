@@ -6,6 +6,17 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 int main(int argc, char **argv) {
+    if (argc == 3 && (!strcmp(argv[1], "execve-script") || !strcmp(argv[1], "execveat-script") || !strcmp(argv[1], "execveat-empty-script"))) {
+        extern char **environ;
+        char *args[] = {argv[2], NULL};
+        if (!strcmp(argv[1], "execve-script")) syscall(SYS_execve, argv[2], args, environ);
+        else {
+            int empty = !strcmp(argv[1], "execveat-empty-script");
+            int fd = empty ? open(argv[2], O_RDONLY) : AT_FDCWD;
+            syscall(SYS_execveat, fd, empty ? "" : argv[2], args, environ, empty ? AT_EMPTY_PATH : 0);
+        }
+        return 93;
+    }
     if (argc == 3 && !strncmp(argv[1], "readlink", 8)) {
         char buffer[4096];
 #ifdef SYS_readlink

@@ -3409,3 +3409,73 @@ fn inherited_standard_files_preserve_io_but_cannot_certify_policy() {
         assert_eq!(policy.status.code(), Some(4));
     }
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn raw_shebang_execs_cannot_claim_complete_interpreter_coverage() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut executables = vec![fixture().to_owned()];
+    match std::env::var("RUNLENS_STATIC_FIXTURE") {
+        Ok(path) => executables.push(path),
+        Err(_) => assert!(
+            std::env::var_os("CI").is_none(),
+            "static fixture required in CI"
+        ),
+    }
+    for executable in executables {
+        for mode in ["execve-script", "execveat-script", "execveat-empty-script"] {
+            let root = tempfile::tempdir().unwrap();
+            fs::write(
+                root.path().join("script"),
+                "#!/bin/sh\nprintf executed > result\n",
+            )
+            .unwrap();
+            fs::set_permissions(
+                root.path().join("script"),
+                fs::Permissions::from_mode(0o700),
+            )
+            .unwrap();
+            fs::write(
+                root.path().join("runlens.toml"),
+                "schema_version = 1\n[policy]\ndeny_reads = [\"**/bin/sh\"]\n",
+            )
+            .unwrap();
+            let result = invoke(
+                root.path(),
+                &[
+                    "run",
+                    "--save",
+                    "script.json",
+                    "--",
+                    &executable,
+                    mode,
+                    "./script",
+                ],
+            );
+            assert_eq!(
+                result.status.code(),
+                Some(4),
+                "{executable}/{mode}: {result:?}"
+            );
+            assert_eq!(
+                fs::read_to_string(root.path().join("result")).unwrap(),
+                "executed"
+            );
+            let report = parse(root.path(), "script.json");
+            let execution = &report["executions"][0];
+            assert_eq!(execution["outcome"]["child_exit_code"], 0);
+            assert_eq!(execution["outcome"]["collection_complete"], false);
+            assert!(
+                execution["accesses"]
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .any(|(path, access)| path.ends_with("/script")
+                        && access["read"] == true
+                        && access["unsupported"] == true)
+            );
+            let policy = invoke(root.path(), &["policy", "check", "script.json", "--json"]);
+            assert!(matches!(policy.status.code(), Some(4 | 5)), "{policy:?}");
+        }
+    }
+}

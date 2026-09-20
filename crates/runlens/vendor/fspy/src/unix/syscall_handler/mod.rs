@@ -43,6 +43,15 @@ impl SyscallHandler {
         path_ptr: CStrPtr,
         flags: c_int,
     ) -> io::Result<()> {
+        let path = self.resolve_path(caller, dir_fd, path_ptr)?;
+        self.record(PathAccess {
+            mode: fspy_shared_unix::access::open_flags(flags),
+            path: path.as_os_str().into(),
+        });
+        Ok(())
+    }
+
+    fn resolve_path(&mut self, caller: Caller, dir_fd: Fd, path_ptr: CStrPtr) -> io::Result<PathBuf> {
         let Some(path_len) = path_ptr.read(caller, &mut self.path_read_buf)? else {
             return Err(io::Error::other("unreadable syscall path"));
         };
@@ -54,11 +63,7 @@ impl SyscallHandler {
             }
             path = Cow::Owned(resolved_path);
         }
-        self.record(PathAccess {
-            mode: fspy_shared_unix::access::open_flags(flags),
-            path: path.as_os_str().into(),
-        });
-        Ok(())
+        Ok(path.into_owned())
     }
 
     fn handle_open_dir(&mut self, caller: Caller, fd: Fd) -> io::Result<()> {

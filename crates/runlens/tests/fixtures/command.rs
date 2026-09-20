@@ -5,6 +5,40 @@ fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
         #[cfg(target_os = "linux")]
+        "execve-script" | "execveat-script" | "execveat-empty-script" => {
+            let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            let argv = [path.as_ptr(), std::ptr::null()];
+            unsafe extern "C" {
+                static environ: *const *const libc::c_char;
+            }
+            // SAFETY: live pathname/argv and process-owned environment; a
+            // successful raw exec replaces this fixture without preload adaptation.
+            unsafe {
+                if args[0] == "execve-script" {
+                    libc::syscall(libc::SYS_execve, path.as_ptr(), argv.as_ptr(), environ);
+                } else {
+                    let empty = args[0] == "execveat-empty-script";
+                    let fd = if empty {
+                        libc::open(path.as_ptr(), libc::O_RDONLY)
+                    } else {
+                        libc::AT_FDCWD
+                    };
+                    libc::syscall(
+                        libc::SYS_execveat,
+                        fd,
+                        if empty { c"".as_ptr() } else { path.as_ptr() },
+                        argv.as_ptr(),
+                        environ,
+                        if empty { libc::AT_EMPTY_PATH } else { 0 },
+                    );
+                }
+            }
+            panic!(
+                "raw script exec failed: {}",
+                std::io::Error::last_os_error()
+            );
+        }
+        #[cfg(target_os = "linux")]
         "stat-empty-path" => {
             // A null AT_EMPTY_PATH lookup is valid on Linux 6.11+. The empty
             // string form works on older minimum-OS kernels as well.
