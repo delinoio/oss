@@ -726,3 +726,5 @@ Unix variadic exec collection preserves native argument limits: argv storage use
 Windows injection validates the exact DLL pathname after ANSI encoding. An OS short-path alias is allowed only when it also round-trips exactly. If no representable name exists, initialization returns typed Unsupported before target creation; no lossy path reaches Detours.
 
 Windows NT/verbatim UNC observations retain their absolute network root when converted from collector records. Equivalent UNC bases can be stripped lexically; external shares never become current-worktree-relative observations.
+
+Frozen source copies preserve dangling symbolic links. On Windows the copied link’s directory/file kind comes from its own metadata, so preparation can create its target later without changing link semantics.

@@ -226,6 +226,8 @@
 
 - Runlens Windows UNC namespace normalization must retain the absolute server/share root in external observations and prefix comparisons.
 
+- Runlens frozen-source copies preserve a Windows symbolic link’s own directory/file reparse type even when its target does not exist.
+
 ### clibox Rules
 
 - Preserve the help/version-only CLI, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`.

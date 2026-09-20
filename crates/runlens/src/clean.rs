@@ -317,7 +317,11 @@ fn copy_entry(source: &Path, destination: &Path, cancel: &CancellationToken) -> 
         }
         #[cfg(windows)]
         {
-            if source.is_dir() {
+            use std::os::windows::fs::FileTypeExt;
+            // Read the link's own reparse type: its target can be absent until
+            // preparation runs, so following it would turn a directory link
+            // into a file link and change the frozen checkout's semantics.
+            if metadata.file_type().is_symlink_dir() {
                 std::os::windows::fs::symlink_dir(target, destination)
             } else {
                 std::os::windows::fs::symlink_file(target, destination)
@@ -783,4 +787,57 @@ fn merge_findings(report: &mut Report, analysis: &analysis::Analysis) -> Result<
             .insert(format!("f{:08}", report.findings.len()), finding)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_copy_preserves_dangling_link_types_until_targets_exist() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let copied = root.path().join("copied");
+        fs::create_dir(&source).unwrap();
+        fs::create_dir(&copied).unwrap();
+        for directory in [false, true] {
+            let name = if directory { "dir-link" } else { "file-link" };
+            let target = if directory { "directory" } else { "file" };
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(target, source.join(name)).unwrap();
+            #[cfg(windows)]
+            if directory {
+                std::os::windows::fs::symlink_dir(target, source.join(name)).unwrap();
+            } else {
+                std::os::windows::fs::symlink_file(target, source.join(name)).unwrap();
+            }
+            copy_entry(
+                &source.join(name),
+                &copied.join(name),
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            assert_eq!(fs::read_link(copied.join(name)).unwrap(), Path::new(target));
+            assert!(!copied.join(name).exists());
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::FileTypeExt;
+                let kind = fs::symlink_metadata(copied.join(name)).unwrap().file_type();
+                assert_eq!(kind.is_symlink_dir(), directory);
+                assert_eq!(kind.is_symlink_file(), !directory);
+            }
+            if directory {
+                fs::create_dir(copied.join(target)).unwrap();
+                fs::write(copied.join(name).join("result"), "directory").unwrap();
+                assert_eq!(
+                    fs::read_to_string(copied.join(target).join("result")).unwrap(),
+                    "directory"
+                );
+            } else {
+                fs::write(copied.join(target), "file").unwrap();
+                assert_eq!(fs::read_to_string(copied.join(name)).unwrap(), "file");
+            }
+            assert!(!source.join(target).exists());
+        }
+    }
 }
