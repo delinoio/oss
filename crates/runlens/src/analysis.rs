@@ -900,6 +900,7 @@ pub fn conflicts(reports: &[Report]) -> Result<Analysis> {
         previous_targets = previous_targets.saturating_add(targets);
     }
     let mut result = Analysis::new(AnalysisKind::Conflicts);
+    let mut alias_budget = 4_000_000usize;
     for (index, left) in reports.iter().enumerate() {
         for right in &reports[index + 1..] {
             for a in left.targets() {
@@ -925,64 +926,105 @@ pub fn conflicts(reports: &[Report]) -> Result<Analysis> {
                     }
                     for entry in paths.iter() {
                         let (path, _) = entry?;
-                        let aa = a.accesses.get(&path)?;
-                        let ba = b.accesses.get(&path)?;
-                        let aw = aa.as_ref().is_some_and(|a| a.write)
-                            || a.changes
-                                .get(&path)?
-                                .is_some_and(|c| c != ChangeKind::Unknown);
-                        let bw = ba.as_ref().is_some_and(|a| a.write)
-                            || b.changes
-                                .get(&path)?
-                                .is_some_and(|c| c != ChangeKind::Unknown);
-                        let a_read = read_reference(a, &path)?;
-                        let b_read = read_reference(b, &path)?;
-                        let ar = a_read.is_some();
-                        let br = b_read.is_some();
-                        if aw && bw || aw && br || bw && ar {
-                            let references = if aw && bw {
-                                vec![write_reference(a, &path)?, write_reference(b, &path)?]
-                            } else if aw {
-                                vec![
-                                    write_reference(a, &path)?,
-                                    b_read.expect("read relationship checked"),
-                                ]
-                            } else {
-                                vec![
-                                    a_read.expect("read relationship checked"),
-                                    write_reference(b, &path)?,
-                                ]
-                            };
+                        let windows =
+                            a.environment.os == "windows" && b.environment.os == "windows";
+                        let mut uncertain = false;
+                        let aw = conflict_reference(
+                            a,
+                            &path,
+                            true,
+                            windows,
+                            &mut alias_budget,
+                            &mut uncertain,
+                        )?;
+                        let bw = conflict_reference(
+                            b,
+                            &path,
+                            true,
+                            windows,
+                            &mut alias_budget,
+                            &mut uncertain,
+                        )?;
+                        let ar = conflict_reference(
+                            a,
+                            &path,
+                            false,
+                            windows,
+                            &mut alias_budget,
+                            &mut uncertain,
+                        )?;
+                        let br = conflict_reference(
+                            b,
+                            &path,
+                            false,
+                            windows,
+                            &mut alias_budget,
+                            &mut uncertain,
+                        )?;
+                        if uncertain || alias_budget == 0 {
                             result.finding(
-                                if aw && bw {
+                                FindingCode::UnknownEvidence,
+                                Classification::Unknown,
+                                vec![
+                                    evidence(a, None, EvidenceSource::Outcome),
+                                    evidence(b, None, EvidenceSource::Outcome),
+                                ],
+                            )?;
+                            if !result
+                                .limitations
+                                .iter()
+                                .any(|s| s.starts_with("Windows conflict"))
+                            {
+                                result.limitations.push(
+                                    "Windows conflict aliases use native ordinal equality on \
+                                     Windows. Unicode aliases elsewhere are candidates with \
+                                     unknown case-table parity; exhausting four million alias \
+                                     comparisons retains partial findings with unknown evidence."
+                                        .into(),
+                                );
+                            }
+                            if alias_budget == 0 {
+                                return Ok(result);
+                            }
+                        }
+                        let both_write = aw.is_some() && bw.is_some();
+                        let pair = if both_write {
+                            aw.zip(bw)
+                        } else if aw.is_some() {
+                            aw.zip(br)
+                        } else {
+                            ar.zip(bw)
+                        };
+                        if let Some((left, right)) = pair {
+                            for (execution, reference) in [(a, &left), (b, &right)] {
+                                let stored = reference.path.as_deref().expect("path evidence");
+                                let access = execution.accesses.get(stored)?;
+                                let change = execution.changes.get(stored)?;
+                                result.usages.insert(
+                                    format!("{}:{stored}", execution.id),
+                                    Usage {
+                                        execution_id: execution.id,
+                                        command: execution.command.clone(),
+                                        producer_candidate: access
+                                            .as_ref()
+                                            .is_some_and(|a| a.write)
+                                            || change.is_some_and(|c| c != ChangeKind::Unknown),
+                                        consumer_candidate: access
+                                            .as_ref()
+                                            .is_some_and(|a| a.read || a.read_directory),
+                                        access,
+                                        change,
+                                    },
+                                )?;
+                            }
+                            result.finding(
+                                if both_write {
                                     FindingCode::PotentialWriteConflict
                                 } else {
                                     FindingCode::PotentialReadWriteConflict
                                 },
                                 Classification::Candidate,
-                                references,
-                            )?;
-                            result.usages.insert(
-                                format!("{}:{path}", a.id),
-                                Usage {
-                                    execution_id: a.id,
-                                    command: a.command.clone(),
-                                    access: aa,
-                                    change: a.changes.get(&path)?,
-                                    producer_candidate: aw,
-                                    consumer_candidate: ar,
-                                },
-                            )?;
-                            result.usages.insert(
-                                format!("{}:{path}", b.id),
-                                Usage {
-                                    execution_id: b.id,
-                                    command: b.command.clone(),
-                                    access: ba,
-                                    change: b.changes.get(&path)?,
-                                    producer_candidate: bw,
-                                    consumer_candidate: br,
-                                },
+                                vec![left, right],
                             )?;
                         }
                     }
@@ -992,6 +1034,79 @@ pub fn conflicts(reports: &[Report]) -> Result<Analysis> {
     }
     Ok(result)
 }
+fn conflict_reference(
+    execution: &Execution,
+    path: &str,
+    write: bool,
+    windows: bool,
+    remaining: &mut usize,
+    uncertain: &mut bool,
+) -> Result<Option<Evidence>> {
+    if !windows {
+        if !write {
+            return read_reference(execution, path);
+        }
+        return if execution.accesses.get(path)?.is_some_and(|a| a.write)
+            || execution
+                .changes
+                .get(path)?
+                .is_some_and(|c| c != ChangeKind::Unknown)
+        {
+            write_reference(execution, path).map(Some)
+        } else {
+            Ok(None)
+        };
+    }
+    // Keep stored keys in evidence. A bounded scan handles ordinal aliases and
+    // directory ancestors without merging differently spelled evidence records.
+    let mut matches = |stored: &str, directory: bool| {
+        let mut current = Some(path);
+        while let Some(candidate) = current {
+            if *remaining == 0 {
+                return false;
+            }
+            *remaining -= 1;
+            let (equal, unknown) = crate::privacy::windows_query_eq(candidate, stored);
+            *uncertain |= unknown;
+            if equal {
+                return true;
+            }
+            if !directory {
+                break;
+            }
+            current = candidate
+                .rsplit_once('/')
+                .map(|(parent, _)| parent)
+                .filter(|p| !p.is_empty());
+        }
+        false
+    };
+    for entry in execution.accesses.iter() {
+        let (stored, access) = entry?;
+        if (if write {
+            access.write
+        } else {
+            access.read || access.read_directory
+        }) && matches(&stored, !write && access.read_directory)
+        {
+            return Ok(Some(evidence(
+                execution,
+                Some(&stored),
+                EvidenceSource::Access,
+            )));
+        }
+    }
+    if write {
+        for entry in execution.changes.iter() {
+            let (stored, change) = entry?;
+            if change != ChangeKind::Unknown && matches(&stored, false) {
+                return write_reference(execution, &stored).map(Some);
+            }
+        }
+    }
+    Ok(None)
+}
+
 fn read_reference(execution: &Execution, path: &str) -> Result<Option<Evidence>> {
     let mut current = Some(path);
     while let Some(candidate) = current {

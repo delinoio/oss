@@ -3776,3 +3776,58 @@ fn linux_filesystem_statistics_are_input_attempts() {
         }
     }
 }
+
+#[test]
+fn windows_conflict_aliases_preserve_concrete_evidence() {
+    use runlens::{analysis, entries::Entries, model::*};
+    let root = tempfile::tempdir().unwrap();
+    assert!(run(root.path(), "seed.json", "read").status.success());
+    let template = runlens::report::read(&root.path().join("seed.json")).unwrap();
+    for (left_path, right_path, directory, writes) in [
+        ("C:/Repo/Out", "c:/repo/out", false, false),
+        ("C:/Repo/Out", "c:/repo/out", false, true),
+        ("//Server/Share/Dir/File", "//server/share/dir", true, false),
+        ("C:/Repo/Ä", "c:/repo/ä", false, false),
+    ] {
+        for os in ["windows", "linux"] {
+            let mut left = template.clone();
+            let mut right = template.clone();
+            for (report, path, write, read_directory) in [
+                (&mut left, left_path, true, false),
+                (&mut right, right_path, writes, directory),
+            ] {
+                let execution = &mut report.executions[0];
+                execution.id = uuid::Uuid::now_v7();
+                execution.environment.os = os.into();
+                execution.accesses = Entries::default();
+                execution.changes = Entries::default();
+                execution
+                    .accesses
+                    .insert(
+                        path.into(),
+                        Access {
+                            read: !write && !read_directory,
+                            write,
+                            read_directory,
+                            unsupported: false,
+                            in_scope: false,
+                        },
+                    )
+                    .unwrap();
+            }
+            let result = analysis::conflicts(&[left, right]).unwrap();
+            let candidates = result
+                .findings
+                .iter()
+                .map(Result::unwrap)
+                .map(|(_, f)| f)
+                .filter(|f| f.classification == Classification::Candidate)
+                .collect::<Vec<_>>();
+            assert_eq!(!candidates.is_empty(), os == "windows");
+            for candidate in candidates {
+                assert_eq!(candidate.evidence[0].path.as_deref(), Some(left_path));
+                assert_eq!(candidate.evidence[1].path.as_deref(), Some(right_path));
+            }
+        }
+    }
+}
