@@ -43,20 +43,32 @@ function listenOnPort(port) {
   });
 }
 
-function assertProcessIsNotLive(pid) {
+function assertProcessIsNotLive(pid, {
+  platform = process.platform,
+  kill = process.kill,
+  readFile = readFileSync,
+} = {}) {
   try {
-    process.kill(pid, 0);
+    kill(pid, 0);
   } catch (error) {
     assert.equal(error.code, "ESRCH");
     return;
   }
-  if (process.platform === "linux") {
-    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+  if (platform === "linux") {
+    let stat;
+    try {
+      stat = readFile(`/proc/${pid}/stat`, "utf8");
+    } catch (error) {
+      // Reaping can race with the successful kill(pid, 0) probe. Both kernel
+      // disappearance errors prove exit; permission and I/O errors do not.
+      if (error.code === "ENOENT" || error.code === "ESRCH") return;
+      throw error;
+    }
     const [state] = stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/u);
     assert.ok(state === "Z" || state === "X");
     return;
   }
-  if (process.platform === "darwin") {
+  if (platform === "darwin") {
     // macOS can retain a group-killed descendant as a zombie until launchd
     // reaps it. Zombies hold no resources, but kill(pid, 0) still succeeds.
     let state;
@@ -72,6 +84,47 @@ function assertProcessIsNotLive(pid) {
   }
   assert.fail(`process ${pid} is still live`);
 }
+
+test("Linux process assertions accept reaping between liveness and stat probes", () => {
+  for (const code of ["ENOENT", "ESRCH", "EACCES", "EIO"]) {
+    const failure = Object.assign(new Error("stat probe failed"), { code });
+    let probed = false;
+    const check = () => assertProcessIsNotLive(123, {
+      platform: "linux",
+      kill: (pid, signal) => {
+        assert.equal(pid, 123);
+        assert.equal(signal, 0);
+        probed = true;
+      },
+      readFile: (path, encoding) => {
+        assert.equal(probed, true);
+        assert.equal(path, "/proc/123/stat");
+        assert.equal(encoding, "utf8");
+        throw failure;
+      },
+    });
+    if (code === "ENOENT" || code === "ESRCH") {
+      assert.doesNotThrow(check);
+    } else {
+      assert.throws(check, (error) => error === failure);
+    }
+  }
+});
+
+test("Linux process assertions reject live states and accept only dead states", () => {
+  for (const state of ["R", "S", "D", "T", "Z", "X"]) {
+    const check = () => assertProcessIsNotLive(123, {
+      platform: "linux",
+      kill: () => {},
+      readFile: () => `123 (child (name)) ${state} 1 123 0`,
+    });
+    if (state === "Z" || state === "X") {
+      assert.doesNotThrow(check);
+    } else {
+      assert.throws(check, { code: "ERR_ASSERTION" });
+    }
+  }
+});
 
 test("returns the exit code after a child closes", async () => {
   const child = spawn(process.execPath, ["-e", "process.exit(7)"], {
