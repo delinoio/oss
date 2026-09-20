@@ -117,6 +117,7 @@ jobs:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -C link-self-contained=yes
         run: |
           set -euo pipefail
+          cargo test --locked -p clibox --target "$CLIBOX_TARGET"
           cargo build --locked --release -p clibox --target "$CLIBOX_TARGET"
           binary="target/$CLIBOX_TARGET/release/clibox"
           if [[ "$CLIBOX_TARGET" == *windows* ]]; then binary="$binary.exe"; fi

@@ -18,6 +18,7 @@ test("clibox release covers all eight native targets and Alpine consumer executi
   assert.deepEqual(matrix.map(({ target }) => target).sort(), platforms.targets.map(({ rust }) => rust).sort());
   for (const target of platforms.targets) assert.equal(matrix.find((entry) => entry.target === target.rust).suffix, target.suffix);
   const steps = release.jobs.build.steps;
+  assert.ok(steps.some(({ run }) => run?.includes('cargo test --locked -p clibox --target "$CLIBOX_TARGET"')));
   const alpine = steps.find(({ name }) => name === "Smoke-test musl consumers in Alpine");
   assert.equal(alpine.if, "endsWith(matrix.target, '-musl')");
   assert.match(alpine.run, /node:24-alpine/u);
@@ -69,6 +70,7 @@ test("clibox input changes select its aggregated consumer checks and force exter
   assert.equal(jobPaths[id].workspace, "@delino/clibox");
   assert.ok(ci.jobs["ci-result"].needs.includes(id));
   assert.deepEqual(ci.jobs[id].strategy.matrix.os, ["ubuntu-22.04", "macos-14", "windows-latest"]);
+  assert.ok(ci.jobs[id].steps.some(({ run }) => run === "cargo test --locked -p clibox"));
   for (const event of [Event.Push, Event.PullRequest]) {
     for (const file of ["packages/clibox/src/launcher.cjs", "crates/clibox/src/main.rs", ".github/workflows/release-clibox.yml", "scripts/release/project.mjs"]) {
       const plan = planJobs(event, [file]);
