@@ -897,3 +897,29 @@ fn yaml_rejects_nonprintable_source_and_incomplete_directives() {
         assert!(result.stdout.is_empty());
     }
 }
+
+#[test]
+fn yaml_version_directives_are_unique_per_document() {
+    let dir = tempfile::tempdir().unwrap();
+    for input in [
+        "%YAML 1.2\n%YAML 1.2\n---\na: 1",
+        "%YAML 1.2\n%TAG !s! tag:yaml.org,2002:\n%YAML 1.2\n---\na: 1",
+        "---\na: 1\n...\n%YAML 1.2\n%YAML 1.2\n---\nb: 2",
+    ] {
+        fs::write(dir.path().join("out"), "original").unwrap();
+        let result = run(
+            dir.path(),
+            &["yaml", "normalize", "--output", "out", "--force"],
+            input.as_bytes(),
+        );
+        assert_eq!(result.status.code(), Some(1));
+        assert!(result.stdout.is_empty());
+        assert!(String::from_utf8_lossy(&result.stderr).contains("YamlSyntax"));
+        assert_eq!(fs::read(dir.path().join("out")).unwrap(), b"original");
+        no_temps(dir.path());
+    }
+    yaml(
+        "%YAML 1.2\n---\na: 1\n...\n%YAML 1.2\n---\nb: 2",
+        "---\n\"a\": 1\n---\n\"b\": 2\n",
+    );
+}

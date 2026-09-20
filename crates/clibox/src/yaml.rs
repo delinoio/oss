@@ -124,6 +124,7 @@ fn prepare_tags(text: &str, cancel: &Cancellation) -> Result<Vec<Edit>> {
     let mut document = 0;
     let mut in_document = false;
     let mut pending = false;
+    let mut version_seen = false;
     for token in scanner.by_ref() {
         cancel.check()?;
         let mark = token.0;
@@ -136,7 +137,7 @@ fn prepare_tags(text: &str, cancel: &Cancellation) -> Result<Vec<Edit>> {
                 continue;
             }
             TokenType::VersionDirective(major, minor) => {
-                if in_document {
+                if in_document || version_seen {
                     return Err(at(Failure::YamlSyntax, mark).document(document + 1));
                 }
                 if (major, minor) != (1, 2) {
@@ -146,6 +147,7 @@ fn prepare_tags(text: &str, cancel: &Cancellation) -> Result<Vec<Edit>> {
                     directives.clear();
                 }
                 pending = true;
+                version_seen = true;
                 continue;
             }
             TokenType::TagDirective(handle, prefix) => {
@@ -171,6 +173,7 @@ fn prepare_tags(text: &str, cancel: &Cancellation) -> Result<Vec<Edit>> {
                     directives.clear();
                 }
                 pending = false;
+                version_seen = false;
                 document += 1;
                 in_document = true;
                 continue;
