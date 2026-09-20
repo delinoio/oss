@@ -219,7 +219,7 @@ pub async fn start(
                                             let snapshot = files::input_state(&graph.workspace, &graph.workspace.projects[&node.project], &node.task)?;
                                             // Queued mutations can already be represented in the first
                                             // snapshot. Preserve their input cause even with initial:false.
-                                            let before_baseline = received_at <= baseline_at && files::input_matches(&graph.workspace.projects[&node.project], &node.task, &path)?;
+                                            let before_baseline = received_at <= baseline_at && queued_input_event_may_match(&graph.workspace.projects[&node.project], &node.task, &path, event.kind)?;
                                             let changed = observed.get(id) != Some(&snapshot);
                                             tracing::debug!(task = %id, path = %path.display(), before_baseline, changed, event_age_ms = received_at.elapsed().as_millis(), "Observed watched input event");
                                             if before_baseline || changed {
@@ -518,9 +518,95 @@ fn enqueue(
     pending.due = due;
 }
 
+fn queued_input_event_may_match(
+    project: &crate::discover::Project,
+    task: &config::Task,
+    path: &Path,
+    kind: notify::EventKind,
+) -> Result<bool> {
+    if files::input_matches(project, task, path)? {
+        return Ok(true);
+    }
+    // A directory-only create/rename/remove can already be reflected in the
+    // first snapshot. Exact file glob matching loses that queued cause. Known
+    // file events retain exact filtering; ambiguous events use root overlap
+    // because a removed directory cannot be inspected afterward.
+    if matches!(
+        kind,
+        notify::EventKind::Create(notify::event::CreateKind::File)
+            | notify::EventKind::Remove(notify::event::RemoveKind::File)
+            | notify::EventKind::Modify(notify::event::ModifyKind::Data(_))
+    ) || files::output_matches(project, task, path)?
+    {
+        return Ok(false);
+    }
+    Ok(files::input_event_may_match(project, task, path))
+}
+
 #[cfg(test)]
 mod overlap_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn queued_directory_mutations_keep_causes_already_in_the_baseline() {
+        use notify::{
+            event::{CreateKind, ModifyKind, RemoveKind, RenameMode},
+            EventKind,
+        };
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("taskflow.yml"),
+            serde_yaml::to_string(&serde_json::json!({
+                "version":1,"project":"app","tasks":{"check":{
+                    "command":["unused"],"input":["src/*.rs","!src/ignored.rs"],
+                    "output":["src/generated/**"],"watch":{"initial":false}
+                }}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        files::atomic_write(
+            &root.path().join("src/main.rs"),
+            b"created during discovery",
+        )
+        .unwrap();
+        let graph = Graph::build(Workspace::discover(root.path()).await.unwrap()).unwrap();
+        let project = &graph.workspace.projects["app"];
+        let task = &graph.tasks["app#check"].task;
+        let source = project.directory.join("src");
+        assert!(!files::input_matches(project, task, &source).unwrap());
+        assert!(initial(&graph, &BTreeSet::from(["app#check".into()])).is_empty());
+        for kind in [
+            EventKind::Create(CreateKind::Folder),
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            EventKind::Remove(RemoveKind::Folder),
+            EventKind::Any,
+        ] {
+            if kind.is_remove() {
+                std::fs::remove_dir_all(&source).unwrap();
+            }
+            // Discovery has already consumed the mutation: an ordinary
+            // snapshot comparison cannot recover its initial-disabled cause.
+            let baseline = files::input_state(&graph.workspace, project, task).unwrap();
+            assert_eq!(
+                baseline,
+                files::input_state(&graph.workspace, project, task).unwrap()
+            );
+            assert!(queued_input_event_may_match(project, task, &source, kind).unwrap());
+        }
+        for (path, kind) in [
+            ("src/generated", EventKind::Create(CreateKind::Folder)),
+            ("src/generated/result", EventKind::Any),
+            ("src/ignored.rs", EventKind::Create(CreateKind::File)),
+            ("unrelated", EventKind::Create(CreateKind::Folder)),
+        ] {
+            assert!(
+                !queued_input_event_may_match(project, task, &project.directory.join(path), kind)
+                    .unwrap(),
+                "{path}"
+            );
+        }
+    }
 
     #[tokio::test]
     async fn queued_service_exit_prevents_reusing_ready_receipts() {

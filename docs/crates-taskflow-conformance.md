@@ -311,7 +311,9 @@ The real Go flag suite also compares `-failfast` and `-failfast=false` across tw
 
 `git_revision_operands_cannot_be_diff_options` uses real commits and a rename to verify valid comparisons and worktree untracked selection. Library and CLI reject option-shaped or empty base/head operands, including an output-file option, without creating that file.
 
-`queued_discovery_mutations_run_watchers_without_initial_execution` gates native metadata behind a real subprocess, edits an input while discovery is blocked, then verifies that an initial-disabled watcher consumes the edit without a second mutation.
+`queued_discovery_mutations_run_watchers_without_initial_execution` gates native metadata behind a real subprocess, edits a file or moves a populated directory into an input root while discovery is blocked, then verifies that an initial-disabled watcher consumes the mutation without a second change.
+
+`queued_directory_mutations_keep_causes_already_in_the_baseline` supplies directory-only create/rename/remove and ambiguous events after their mutation is already present in the first snapshot. Root overlap preserves the queued cause for an initial-disabled task whose file glob does not match the directory itself. Known excluded file events, unrelated roots, and the task's own output tree remain excluded.
 
 `failed_service_logs_stop_live_processes_and_await_cleanup` injects read-only persisted log handles into live TCP-listening Rust processes. Either output stream failure must reap the process, release the listener, await cleanup, preserve cleanup-error priority, and leave successful EOF non-cancelling.
 

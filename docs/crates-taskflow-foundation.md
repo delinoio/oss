@@ -46,6 +46,8 @@ Subscribe before activation. Mutations delivered during discovery or bootstrap r
 
 Shared companions are reference-counted by live owners; prerequisite and initial companion execution are deduplicated. Finite check failures retain subscriptions; server/readiness failure ends the session. A failed service log owner interrupts the active process or readiness probe immediately, then awaits process reaping, both drains, and container cleanup before failing the session. Successful stream EOF alone leaves the service running. Shutdown removes subscriptions, timers, queued runs, and process trees. Invalid configuration suspends new work until corrected. Readiness and service deadlines cancel and await the active readiness probe, its process owner, and both output drains before session cleanup returns; dropping a probe future does not satisfy cleanup.
 
+For mutations delivered before a snapshot baseline, directory-only and ambiguous events preserve causes by positive input-root overlap even if the snapshot already contains the change. Known file events retain exact glob filtering. Wholly owned output paths, including removed complete-tree roots, cannot reactivate their producer through this conservative directory rule.
+
 Either watch or schedule may request initial execution for a mixed subscription; both true flags share one activation, and both false flags defer work until a trigger. Tasks without subscriptions run initially.
 
 Intervals use monotonic time. Cron uses five fields, IANA zones, UTC by default, no catch-up bursts, and once per repeated local wall-clock minute. `every` and `cron` are mutually exclusive. Configuration reads and one-shot runs never activate subscriptions.

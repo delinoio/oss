@@ -212,21 +212,27 @@ pub fn input_matches(project: &Project, task: &crate::config::Task, path: &Path)
             _ => {}
         }
     }
+    Ok(matched && !output_matches(project, task, path)?)
+}
+
+pub(crate) fn output_matches(
+    project: &Project,
+    task: &crate::config::Task,
+    path: &Path,
+) -> Result<bool> {
+    let relative = relative_to(&project.directory, path)?;
     if matches_patterns(task.output.as_deref().unwrap_or(&[]), &relative)? {
-        return Ok(false);
+        return Ok(true);
     }
-    // Exact directory outputs own descendants too. Without this check an
-    // `output: [generated]` task would observe generated/file as its own input.
-    if task
+    // Complete trees own their root and descendants even when the directory
+    // was deleted before an event is handled. Partial globs own matches only.
+    Ok(task
         .output
         .iter()
         .flatten()
+        .map(|output| output.strip_suffix("/**").unwrap_or(output))
         .filter(|output| !output.contains(['*', '?', '[', '{']) && !output.starts_with('!'))
-        .any(|output| path.starts_with(normalize(&project.directory.join(output))))
-    {
-        return Ok(false);
-    }
-    Ok(matched)
+        .any(|output| path.starts_with(normalize(&project.directory.join(output)))))
 }
 pub fn file_state(path: &Path) -> Result<String> {
     if path.is_symlink() {

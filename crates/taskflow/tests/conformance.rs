@@ -6289,12 +6289,27 @@ async fn git_revision_operands_cannot_be_diff_options() {
 
 #[tokio::test]
 async fn queued_discovery_mutations_run_watchers_without_initial_execution() {
+    for directory_move in [false, true] {
+        queued_discovery_mutation(directory_move).await;
+    }
+}
+
+async fn queued_discovery_mutation(directory_move: bool) {
+    let (source, pattern) = if directory_move {
+        ("src/main.rs", "src/*.rs")
+    } else {
+        ("source", "source")
+    };
     let root = fixture(
-        json!({"check":{"command":command(&["copy","source","observed"]),"input":["source"],"output":["observed"],"watch":{"initial":false,"debounce":"20ms"}}}),
+        json!({"check":{"command":command(&["copy",source,"observed"]),"input":[pattern],"output":["observed"],"watch":{"initial":false,"debounce":"20ms"}}}),
     );
     profile(root.path(), &["check"]);
     std::fs::write(root.path().join("Cargo.toml"), "[workspace]\nmembers=[]\n").unwrap();
-    std::fs::write(root.path().join("source"), "before").unwrap();
+    if directory_move {
+        files::atomic_write(&root.path().join("staging/main.rs"), b"during-discovery").unwrap();
+    } else {
+        std::fs::write(root.path().join(source), "before").unwrap();
+    }
     let tools = tempfile::tempdir().unwrap();
     std::fs::hard_link(
         helper(),
@@ -6348,7 +6363,11 @@ async fn queued_discovery_mutations_run_watchers_without_initial_execution() {
     })
     .await
     .unwrap();
-    std::fs::write(root.path().join("source"), "during-discovery").unwrap();
+    if directory_move {
+        std::fs::rename(root.path().join("staging"), root.path().join("src")).unwrap();
+    } else {
+        std::fs::write(root.path().join(source), "during-discovery").unwrap();
+    }
     // Keep discovery behind a barrier while native notifications are delivered.
     tokio::time::sleep(Duration::from_millis(500)).await;
     files::atomic_write(&root.path().join(".taskflow/metadata.release"), b"release").unwrap();
