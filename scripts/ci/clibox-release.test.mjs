@@ -36,8 +36,8 @@ test("clibox release covers all eight native targets and Alpine consumer executi
 test("OIDC is restricted to exact-tag enabled publication after the complete verified artifact", () => {
   assert.deepEqual(release.permissions, { contents: "read" });
   for (const [id, job] of Object.entries(release.jobs)) {
-    if (id !== "publish") assert.equal(job.permissions, undefined, id);
-    for (const step of job.steps) if (step.uses?.startsWith("actions/checkout@")) assert.equal(step.with["persist-credentials"], false);
+    if (!["publish", "publish-release", "linux-packages"].includes(id)) assert.equal(job.permissions, undefined, id);
+    for (const step of job.steps ?? []) if (step.uses?.startsWith("actions/checkout@")) assert.equal(step.with["persist-credentials"], false);
   }
   assert.deepEqual(release.jobs.package.needs, ["prepare", "build"]);
   assert.deepEqual(release.jobs.publish.needs, ["prepare", "package"]);
@@ -46,7 +46,7 @@ test("OIDC is restricted to exact-tag enabled publication after the complete ver
   const publish = release.jobs.publish.steps.find(({ run }) => run?.includes("publish.mjs --publish"));
   assert.equal(publish.env.CLIBOX_NPM_PUBLISH_ENABLED, "${{ vars.CLIBOX_NPM_PUBLISH_ENABLED }}");
   assert.ok(release.jobs.package.steps.find(({ run }) => run?.includes("publish.mjs") && !run.includes("--publish")));
-  assert.doesNotMatch(JSON.stringify(release), /secrets\.|NODE_AUTH_TOKEN|NPM_TOKEN|contents":"write|action-gh-release|homebrew/u);
+  assert.doesNotMatch(JSON.stringify(release), /secrets\.|NODE_AUTH_TOKEN|NPM_TOKEN|action-gh-release|homebrew/u);
   assert.match(source(".github/workflows/release-clibox.yml"), /npm publication disabled/u);
   const uploaded = release.jobs.package.steps.find(({ uses }) => uses?.startsWith("actions/upload-artifact@"));
   const downloaded = release.jobs.publish.steps.find(({ uses }) => uses?.startsWith("actions/download-artifact@"));
@@ -83,4 +83,18 @@ test("clibox input changes select its aggregated consumer checks and force exter
   assert.equal(turbo.tasks["test:package"].cache, false);
   assert.equal(turbo.tasks["publish:npm"].cache, false);
   assert.ok(turbo.tasks.test.inputs.includes("$TURBO_ROOT$/crates/clibox/**"));
+});
+
+test("native publication follows the independently guarded signed GNU release", () => {
+  const job = release.jobs["publish-release"];
+  assert.deepEqual(job.needs, ["prepare", "package"]);
+  assert.deepEqual(job.permissions, { contents: "write", "id-token": "write" });
+  for (const condition of ["dry_run == 'false'", "github.repository == 'delinoio/oss'", "refs/tags/clibox@v"]) assert.ok(job.if.includes(condition));
+  assert.doesNotMatch(job.if, /NPM_PUBLISH_ENABLED/u);
+  assert.ok(release.jobs.package.steps.some(({ run }) => run?.includes("github-release.mjs") && !run.includes("--publish")));
+  const gnu = release.jobs.build.steps.find(({ name }) => name === "Build GNU Linux with the pinned compatibility image");
+  assert.equal(gnu.if, "endsWith(matrix.target, '-linux-gnu')");
+  assert.match(gnu.run, /build-rust.sh clibox/u);
+  assert.deepEqual(release.jobs["linux-packages"].needs, ["prepare", "publish-release"]);
+  for (const file of ["crates/clibox/src/main.rs", "packages/clibox/scripts/github-release.mjs"]) assert.equal(planJobs(Event.PullRequest, [file]).jobs["linux-packages"], true);
 });

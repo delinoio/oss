@@ -35,7 +35,8 @@ const build = async (records, _load, generation) => {
 };
 
 test('project, version, revision and channels are closed', () => {
-  assert.equal(identity({ project: 'runmoor', version: '1.0.0', revision }).channel, Channel.Preview);
+  assert.equal(identity({ project: 'runmoor', version: '1.0.0', revision }).channel, Channel.Stable);
+  assert.equal(identity({ project: 'clibox', version: '1.0.0', revision }).channel, Channel.Stable);
   for (const project of ['ttl', 'devhud', '../binpm', 'binpm;true']) assert.throws(() => identity({ project, version: '1.0.0', revision }));
   for (const version of ['01.0.0', 'v1.0.0', '1.0.0-rc.1', '1.0\n0']) assert.throws(() => identity({ project: 'binpm', version, revision }));
   assert.throws(() => safeKey('../keys'));
@@ -155,7 +156,7 @@ test('release metadata rejects a wrong tag, commit, channel or missing signature
   assert.throws(() => validateRelease({ ...release, assets: release.assets.slice(1) }, plan, revision));
   const runmoor = identity({ project: 'runmoor', version: '1.2.3', revision });
   const runmoorRelease = { ...release, tag_name: runmoor.tag, assets: release.assets.map((asset) => ({ ...asset, name: asset.name.replace('binpm', 'runmoor') })) };
-  assert.equal(runmoor.channel, Channel.Preview);
+  assert.equal(runmoor.channel, Channel.Stable);
   assert.equal(validateRelease(runmoorRelease, runmoor, revision).length, 6);
   assert.throws(() => validateRelease({ ...runmoorRelease, prerelease: true }, runmoor, revision));
 });

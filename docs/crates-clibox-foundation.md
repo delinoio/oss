@@ -72,3 +72,5 @@ Update the project index, npm contract, root/domain AGENTS rules, user READMEs/h
 - [Project index](project-clibox.md)
 - [npm distribution](packages-clibox-distribution-contract.md)
 - [Repository defaults](repository-defaults.md)
+
+GNU Linux releases use the pinned AlmaLinux 9/glibc 2.34 build boundary for both npm and stable APT/DNF distribution. The same executable bytes pass ELF compatibility checks before signed GitHub publication; see [native repository ownership](repository-linux-packages-contract.md). Musl remains a separate npm target and desktop tools remain optional user-installed runtime capabilities.

@@ -9,7 +9,7 @@ on:
         description: Exact source version without v prefix
         required: true
       dry_run:
-        description: Build and validate without npm publication
+        description: Build and validate without publication
         type: choice
         options: ["true", "false"]
         default: "true"
@@ -104,6 +104,15 @@ jobs:
         with:
           toolchain: nightly-2026-01-01
           targets: ${{ matrix.target }}
+      - name: Build GNU Linux with the pinned compatibility image
+        if: endsWith(matrix.target, '-linux-gnu')
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          image=$(node -p 'JSON.parse(require("node:fs").readFileSync("packaging/linux/pins.json")).rust_image')
+          docker run --rm -v "$PWD:/workspace" -w /workspace "$image" bash scripts/release/linux-packages/build-rust.sh clibox "$RELEASE_TARGET"
+          sudo chown -R "$(id -u):$(id -g)" target
       - name: Build and check native executable
         shell: bash
         env:
@@ -118,7 +127,9 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --locked -p clibox --target "$CLIBOX_TARGET"
-          cargo build --locked --release -p clibox --target "$CLIBOX_TARGET"
+          if [[ "$CLIBOX_TARGET" != *-linux-gnu ]]; then
+            cargo build --locked --release -p clibox --target "$CLIBOX_TARGET"
+          fi
           binary="target/$CLIBOX_TARGET/release/clibox"
           if [[ "$CLIBOX_TARGET" == *windows* ]]; then binary="$binary.exe"; fi
           "$binary" --help
@@ -172,6 +183,7 @@ jobs:
         run: |
           node packages/clibox/scripts/package.mjs main
           node packages/clibox/scripts/publish.mjs
+          node packages/clibox/scripts/github-release.mjs
       - uses: actions/upload-artifact@v7
         with:
           name: clibox-npm-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
@@ -213,8 +225,47 @@ jobs:
           CLIBOX_NPM_PUBLISH_ENABLED: ${{ vars.CLIBOX_NPM_PUBLISH_ENABLED }}
         run: node packages/clibox/scripts/publish.mjs --publish
 
+  publish-release:
+    needs: [prepare, package]
+    if: ${{ needs.prepare.outputs.dry_run == 'false' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/clibox@v') }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: clibox-npm-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
+          path: packages/clibox/dist/tarballs
+      - uses: sigstore/cosign-installer@v4.1.1
+      - name: Publish verified GNU archives and Sigstore bundles
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node packages/clibox/scripts/github-release.mjs --publish
+
+  linux-packages:
+    name: Publish native Linux packages
+    needs: [prepare, publish-release]
+    if: needs.prepare.outputs.dry_run != 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-linux-packages.yml
+    with:
+      project: clibox
+      version: ${{ needs.prepare.outputs.version }}
+      revision: ${{ github.sha }}
+      mode: publish
+
   summary:
-    needs: [prepare, build, package, publish]
+    needs: [prepare, build, package, publish, publish-release, linux-packages]
     if: always()
     runs-on: ubuntu-22.04
     steps:
@@ -226,14 +277,17 @@ jobs:
           PUBLISH_RESULT: ${{ needs.publish.result }}
           DRY_RUN: ${{ needs.prepare.outputs.dry_run }}
           NPM_ENABLED: ${{ vars.CLIBOX_NPM_PUBLISH_ENABLED }}
+          GITHUB_RELEASE_RESULT: ${{ needs.publish-release.result }}
+          LINUX_PACKAGES_RESULT: ${{ needs.linux-packages.result }}
         run: |
           if [ "$PACKAGE_RESULT" != success ]; then
             echo 'clibox packaging failed; no complete release artifact is ready.' >> "$GITHUB_STEP_SUMMARY"
           elif [ "$DRY_RUN" = true ]; then
-            echo 'Dry run complete: no npm publication was attempted.' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Dry run complete: no publication was attempted.' >> "$GITHUB_STEP_SUMMARY"
           elif [ "$NPM_ENABLED" != true ]; then
             echo 'npm publication disabled: verified artifacts are available. Publication requires CLIBOX_NPM_PUBLISH_ENABLED=true and the configured Trusted Publishers. See docs/packages-clibox-distribution-contract.md.' >> "$GITHUB_STEP_SUMMARY"
           else
             echo "npm publication result: $PUBLISH_RESULT" >> "$GITHUB_STEP_SUMMARY"
           fi
+          echo "GitHub Release: $GITHUB_RELEASE_RESULT; Linux packages: $LINUX_PACKAGES_RESULT" >> "$GITHUB_STEP_SUMMARY"
           echo "Source: $RELEASE_VERSION at $RELEASE_REVISION" >> "$GITHUB_STEP_SUMMARY"

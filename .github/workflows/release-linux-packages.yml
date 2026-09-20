@@ -12,7 +12,7 @@ on:
       project:
         required: true
         type: choice
-        options: [binpm, cargo-mono, nodeup, with-watch, derun, runmoor]
+        options: [binpm, cargo-mono, nodeup, with-watch, derun, runmoor, clibox]
       version:
         description: Exact already-published version (no v prefix)
         required: true

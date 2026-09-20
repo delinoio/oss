@@ -68,7 +68,7 @@ export function packageFiles(plan, input, output, signing) {
   mkdirSync(output, { recursive: true });
   const description = {
     binpm: 'Binary package manager for release assets', 'cargo-mono': 'Cargo subcommand for Rust monorepo management',
-    nodeup: 'Node.js version manager', 'with-watch': 'Rerun commands when inputs change', derun: 'Terminal relay and MCP server', runmoor: 'Local ephemeral GitHub Actions runners (preview)',
+    nodeup: 'Node.js version manager', 'with-watch': 'Rerun commands when inputs change', derun: 'Terminal relay and MCP server', runmoor: 'Local ephemeral GitHub Actions runners', clibox: 'Cross-platform developer utilities',
   }[plan.project];
   const result = [];
   const license = ['derun', 'runmoor'].includes(plan.project) ? 'Apache-2.0' : 'MIT';

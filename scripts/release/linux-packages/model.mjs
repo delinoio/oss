@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 
-export const Project = Object.freeze({ Binpm: 'binpm', CargoMono: 'cargo-mono', Nodeup: 'nodeup', WithWatch: 'with-watch', Derun: 'derun', Runmoor: 'runmoor' });
+export const Project = Object.freeze({ Binpm: 'binpm', CargoMono: 'cargo-mono', Nodeup: 'nodeup', WithWatch: 'with-watch', Derun: 'derun', Runmoor: 'runmoor', Clibox: 'clibox' });
 export const Channel = Object.freeze({ Stable: 'stable', Preview: 'preview' });
 export const Architecture = Object.freeze({ Amd64: 'amd64', Arm64: 'arm64' });
 export const Mode = Object.freeze({ DryRun: 'dry-run', Publish: 'publish' });
@@ -21,7 +21,7 @@ export function identity({ project, version, revision, mode = Mode.DryRun }) {
   requireValue(typeof version === 'string' && version.length <= 62 && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.test(version), 'INVALID_VERSION');
   requireValue(/^[a-f0-9]{40}$/u.test(revision ?? ''), 'INVALID_REVISION');
   requireValue(Object.values(Mode).includes(mode), 'INVALID_MODE');
-  return { project, version, revision, tag: `${project}@v${version}`, channel: project === Project.Runmoor ? Channel.Preview : Channel.Stable, package_revision: 1 };
+  return { project, version, revision, tag: `${project}@v${version}`, channel: Channel.Stable, package_revision: 1 };
 }
 export function validateIdentity(value) {
   const result = identity(value);
@@ -29,8 +29,8 @@ export function validateIdentity(value) {
   return result;
 }
 export function validateRelease(release, plan, resolvedRevision) {
-  // All six source workflows publish stable GitHub releases. Native repository
-  // enrollment is a separate contract; Runmoor still requires explicit preview opt-in.
+  // All seven enrolled CLIs publish stable GitHub releases and native packages.
+  // Preview remains a separate reserved suite, never selected by caller input.
   requireValue(resolvedRevision === plan.revision && release.tag_name === plan.tag && release.draft === false && release.prerelease === false, 'RELEASE_IDENTITY_MISMATCH');
   const expected = ['SHA256SUMS', 'SHA256SUMS.sigstore.json', ...architectures.flatMap((arch) => [`${plan.project}-linux-${arch}.tar.gz`, `${plan.project}-linux-${arch}.tar.gz.sigstore.json`])];
   for (const name of expected) requireValue(release.assets.filter((asset) => asset.name === name && asset.size > 0).length === 1, 'RELEASE_ASSET_MISSING');

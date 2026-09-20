@@ -13,7 +13,7 @@ JavaScript developers using `pnpm add -D -E @delino/clibox` followed by `pnpm ex
 - The installed command is `clibox`; no public JavaScript import API is provided. All target packages carry `run env`, `port which`, `port kill`, `open`, and text `clipboard copy`/`paste` from the Rust command contract without feature flags. Linux desktop tools are runtime capabilities, not npm install scripts or bundled dependencies.
 - The source workspace is private and contains no dependency on an unpublished binary package. Public manifests are generated explicitly, never by an install lifecycle hook.
 - The main package pins all eight optional dependencies to its exact version. Platform packages declare `os`, `cpu`, and, for Linux, `libc`.
-- Linux GNU binaries target the build runner baselines: glibc 2.35 on x64 and 2.39 on arm64. Alpine uses the separate musl builds.
+- Linux GNU binaries use the shared digest-pinned AlmaLinux 9 image, baseline CPU targets and glibc 2.34 on both x64 and arm64. Alpine uses the separate musl builds.
 - Both musl targets use the pinned Rust toolchain's `rust-lld` with `-C link-self-contained=yes`, keeping startup objects and libc matched. The Linux CLI has no additional system C-library dependency; X11 inspection uses pure-Rust x11rb and desktop integrations invoke separately installed tools. macOS adapters bind OS frameworks and use libproc with the standard SDK/libclang at build time. Ubuntu's external musl linker is not used; release jobs execute each binary on its native host and exercise npm/pnpm consumers in Alpine.
 - Platform suffixes are `darwin-x64`, `darwin-arm64`, `win32-x64-msvc`, `win32-arm64-msvc`, `linux-x64-gnu`, `linux-arm64-gnu`, `linux-x64-musl`, and `linux-arm64-musl`; every name starts with `@delino/clibox-`.
 - Resolve OS/architecture from Node and distinguish Linux glibc/musl using the Node diagnostic report header. Do not log the report or its environment contents.
@@ -43,7 +43,7 @@ Packaging and publication report structured events containing action, package, t
 ## Dependencies and Integrations
 `Release Project` synchronizes the Cargo and npm source versions in one version-only commit. `release-clibox.yml` accepts the exact version tag or a manual dry run. Publication requires the exact tag at the selected source commit and a matching crates.io version. The guarded publish job explicitly installs npm `11.6.2` before checking the OIDC minimum of `11.5.1` and publishing; Node.js 24's bundled npm is not the publication version contract.
 
-The `CLIBOX_NPM_PUBLISH_ENABLED` repository variable must be `true` for publication. All nine packages require a Trusted Publisher permitting publication from `delinoio/oss` and `release-clibox.yml`; tagged releases use OIDC and npm provenance. Leaving the variable unset or setting it to `false` limits the workflow to validated CI artifacts and reports publication as disabled. A rerun reconciles already-published identical bytes. Never rebuild or edit an artifact during a partial publication retry; retain the complete verified artifact set.
+The `CLIBOX_NPM_PUBLISH_ENABLED` repository variable must be `true` for npm publication. All nine packages require a Trusted Publisher permitting publication from `delinoio/oss` and `release-clibox.yml`; tagged releases use OIDC and npm provenance. Leaving the variable unset or setting it to `false` disables npm publication and reports it as disabled; signed GitHub Release and native package publication remain independently enabled for real tagged releases. A rerun reconciles already-published identical bytes. Never rebuild or edit an artifact during a partial publication retry; retain the complete verified artifact set.
 
 Public package READMEs describe installation, supported platforms, and troubleshooting. Publisher configuration, credentials, repository paths, and release internals stay in this document and the repository workflow contract.
 
@@ -57,3 +57,11 @@ Keep the project index, Rust contract, package tests, CI path rules, release coo
 - [Repository workflow](repository-workflow-contract.md)
 - [npm package metadata](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/)
 - [npm trusted publishing prerequisites](https://docs.npmjs.com/cli/v11/commands/npm-trust/#prerequisites)
+
+## GNU GitHub Release and native packages
+
+`github-release.mjs` verifies the complete nine-tarball set and extracts the exact GNU npm executable bytes. It checks ELF architecture, CPU requirements, runtime libraries and the glibc 2.34 ceiling, then creates deterministic single-executable `clibox-linux-amd64.tar.gz` and `clibox-linux-arm64.tar.gz` archives plus SHA256SUMS. Dry runs validate these without credentials or signatures.
+
+The separate `publish-release` job requires the exact first-party tag/commit, matching crates.io version and Actions OIDC. It resolves annotated tags, stages a stable draft, verifies all existing bytes and source-bound Sigstore bundles before writes, uploads only missing assets, verifies complete readback, and publishes. Conflicting bytes and incomplete public releases fail closed. An identical public release is read-only on retry. Retain the verified npm artifact set instead of rebuilding after partial publication.
+
+The common `release-linux-packages.yml` follows GitHub publication and produces stable APT/DNF packages for both architectures under [the native repository contract](repository-linux-packages-contract.md). Its protected Environment includes `clibox@v*`; this does not grant npm publication authority. Preview remains reserved. Native installs do not require Node.js and do not install desktop helpers, modify user configuration or start services.
