@@ -130,6 +130,13 @@ impl<'a> Client<'a> {
                 return f(raw_exec, None);
             }
         };
+        // Runlens installs one kernel filter before the root image, for both
+        // dynamic and static targets. Linux inherits it across fork/spawn/exec;
+        // requesting a second USER_NOTIF listener fails with EBUSY and falsely
+        // marks every nested exec incomplete. Keep environment preparation but
+        // reuse the inherited listener. See PATCHES.md for regression coverage.
+        #[cfg(target_os = "linux")]
+        let pre_exec = { let _ = pre_exec; None };
         RawExec::from_exec(exec, allocator, |raw_command| f(raw_command, pre_exec))
     }
 

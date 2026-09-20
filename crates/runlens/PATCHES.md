@@ -191,3 +191,9 @@ libc dependency exports the same supported 64-bit GNU interface.
 - Reason/scope: kernel collection treated Rust/libc's `statx` availability probe (NULL without AT_EMPTY_PATH) as an unreadable filename and marked normal executions incomplete. NULL with AT_EMPTY_PATH instead identifies the descriptor on Linux 6.11+. Handle both statx/fstatat forms, recording the latter's FD path; all other unreadable arguments remain incomplete. Audited debug events report syscall number/nullness/errno only, never paths or buffers.
 - Regression: `linux_null_empty_path_metadata_retains_directory_read_evidence`, fresh clean/repeat environments, nested execs, and real receipt tests run on native Linux. The fixture preserves the failing capability probe and both empty-string/NULL descriptor attempts.
 - Removal: use upstream only after these exact kernel operand semantics and redacted diagnostics are supported at the pinned revision.
+
+## Reuse inherited Linux seccomp listeners
+
+- Reason/scope: every root image now installs kernel collection, so preload nested-exec preparation must not install another USER_NOTIF listener. Linux rejects another listener with EBUSY. Keep argv/environment preparation while reusing the filter inherited across fork, posix_spawn, and exec, including a dynamic-to-static transition.
+- Regression: native receipt children, FSPY environment descendants, large variadic exec, dynamic inline-syscall and static-child fixtures on Linux; loss-injection cases still report incomplete.
+- Removal: upstream must distinguish root installation from inherited collection and pass these tests before dropping the patch.
