@@ -106,6 +106,8 @@ Fixtures use temporary directories and containers with UUID-v7 names. They do no
 ## Security
 Real remote transport tests use loopback MinIO and fixture-only credentials. The CI workflow consumes no repository secrets and never publishes. Native queries/installations are explicit in fixtures; untrusted PR execution disables remote access and secret injection.
 
+The MinIO fixture waits for `/minio/health/cluster` before configuring its alias or bucket. In the [pinned MinIO release's health handlers](https://github.com/minio/minio/blob/RELEASE.2025-09-07T16-13-09Z/cmd/healthcheck-handler.go), liveness and readiness can return HTTP 200 before initialization; the cluster handler requires storage, bucket metadata, IAM, and write quorum. The fixture uses a 60-second absolute deadline and bounded individual requests, with explicit status/attempt/timing diagnostics on failure. `minio_readiness_waits_for_initialized_storage_and_iam`, `minio_readiness_reports_unavailable_cluster_before_setup`, and `minio_readiness_deadline_cancels_stalled_health_requests` exercise delayed readiness, persistent unavailability, and stalled HTTP responses through real loopback listeners. Mock listeners are cancelled and awaited before assertions; the real container retains its cleanup owner on every exit.
+
 ## Logging
 Test assertions include typed receipts and native fixture diagnostics on failure. Production logs remain subject to the engine's designation mask and stable context rules.
 

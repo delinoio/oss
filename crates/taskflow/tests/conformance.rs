@@ -329,6 +329,159 @@ async fn scenario_10_local_docker_execution_uses_explicit_platform_and_cleans_co
     }
 }
 
+async fn wait_for_minio_cluster(endpoint: &str, budget: Duration) -> anyhow::Result<()> {
+    init_logging();
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_secs(1))
+        .timeout(Duration::from_secs(2))
+        .build()?;
+    let started = tokio::time::Instant::now();
+    let deadline = started + budget;
+    let mut attempts = 0;
+    let mut last_status = None;
+    // The pinned MinIO release returns 200 from /live and /ready even before
+    // object storage or IAM is initialized. /cluster gates both plus write
+    // quorum, which alias creation and bucket setup require. Keep this gate
+    // while the fixture uses that health contract; a liveness delay is unsafe.
+    let url = format!("{endpoint}/minio/health/cluster");
+    while tokio::time::Instant::now() < deadline {
+        attempts += 1;
+        match tokio::time::timeout_at(deadline, client.get(&url).send()).await {
+            Ok(Ok(response)) => {
+                last_status = Some(response.status().as_u16());
+                if response.status() == reqwest::StatusCode::OK {
+                    tracing::info!(target: "taskflow::conformance", attempts,
+                        elapsed_ms = started.elapsed().as_millis(), "MinIO cluster ready");
+                    return Ok(());
+                }
+                tracing::debug!(target: "taskflow::conformance", attempts, ?last_status,
+                    "MinIO cluster still initializing");
+            }
+            Ok(Err(error)) => {
+                tracing::debug!(target: "taskflow::conformance", attempts,
+                    timeout = error.is_timeout(), connect = error.is_connect(),
+                    "MinIO cluster probe unavailable");
+            }
+            Err(_) => break,
+        }
+        tokio::time::sleep_until(
+            deadline.min(tokio::time::Instant::now() + Duration::from_millis(100)),
+        )
+        .await;
+    }
+    tracing::error!(target: "taskflow::conformance", attempts, ?last_status,
+        elapsed_ms = started.elapsed().as_millis(), "MinIO cluster readiness timed out");
+    anyhow::bail!(
+        "MinIO cluster readiness timed out after {attempts} attempts (last HTTP status: \
+         {last_status:?})"
+    );
+}
+
+async fn minio_readiness_fixture(
+    statuses: Vec<Option<u16>>,
+    budget: Duration,
+) -> (anyhow::Result<()>, Vec<String>) {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let cancel = CancellationToken::new();
+    let stopped = cancel.clone();
+    let server = tokio::spawn(async move {
+        let mut requests = Vec::new();
+        loop {
+            let (mut stream, request) = tokio::select! {
+                _ = stopped.cancelled() => break,
+                received = async {
+                    let (stream, _) = listener.accept().await.unwrap();
+                    let mut stream = BufReader::new(stream);
+                    let mut request = String::new();
+                    stream.read_line(&mut request).await.unwrap();
+                    loop {
+                        let mut header = String::new();
+                        if stream.read_line(&mut header).await.unwrap() == 0 || header == "\r\n" {
+                            break;
+                        }
+                    }
+                    (stream, request)
+                } => received,
+            };
+            let status = if request.starts_with("GET /minio/health/cluster ") {
+                statuses[requests.len().min(statuses.len() - 1)]
+            } else {
+                // Liveness succeeds throughout initialization, as in MinIO.
+                Some(200)
+            };
+            requests.push(request);
+            tokio::select! {
+                _ = stopped.cancelled() => break,
+                _ = async {
+                    if let Some(status) = status {
+                        stream.write_all(format!(
+                            "HTTP/1.1 {status} Fixture\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                        ).as_bytes()).await.unwrap();
+                        stream.flush().await.unwrap();
+                    } else {
+                        std::future::pending::<()>().await;
+                    }
+                } => {}
+            }
+        }
+        requests
+    });
+    let result = tokio::time::timeout(
+        Duration::from_secs(10),
+        wait_for_minio_cluster(&endpoint, budget),
+    )
+    .await;
+    cancel.cancel();
+    let requests = server.await.unwrap();
+    (
+        result.expect("readiness must have a bounded deadline"),
+        requests,
+    )
+}
+
+#[tokio::test]
+async fn minio_readiness_waits_for_initialized_storage_and_iam() {
+    let (result, requests) = minio_readiness_fixture(
+        vec![Some(503), Some(503), Some(200)],
+        Duration::from_secs(5),
+    )
+    .await;
+    result.unwrap();
+    assert_eq!(requests.len(), 3);
+    assert!(requests
+        .iter()
+        .all(|request| request.starts_with("GET /minio/health/cluster ")));
+}
+
+#[tokio::test]
+async fn minio_readiness_reports_unavailable_cluster_before_setup() {
+    let (result, requests) =
+        minio_readiness_fixture(vec![Some(503)], Duration::from_millis(300)).await;
+    let error = result.unwrap_err().to_string();
+    assert!(
+        error.contains("MinIO cluster readiness timed out"),
+        "{error}"
+    );
+    assert!(error.contains("Some(503)"), "{error}");
+    assert!(!requests.is_empty());
+}
+
+#[tokio::test]
+async fn minio_readiness_deadline_cancels_stalled_health_requests() {
+    let (result, requests) = minio_readiness_fixture(vec![None], Duration::from_millis(300)).await;
+    let error = result.unwrap_err().to_string();
+    assert!(
+        error.contains("MinIO cluster readiness timed out"),
+        "{error}"
+    );
+    assert!(error.contains("1 attempts"), "{error}");
+    assert_eq!(requests.len(), 1);
+}
+
 #[tokio::test]
 #[ignore = "requires Docker and the pinned MinIO conformance image"]
 async fn scenario_22_real_s3_cache_restores_on_clean_runner_and_handles_denied_credentials() {
@@ -376,15 +529,9 @@ async fn scenario_22_real_s3_cache_restores_on_clean_runner_and_handles_denied_c
     )
     .unwrap();
     let endpoint = format!("http://{}", address.trim());
-    for _ in 0..100 {
-        if reqwest::get(format!("{endpoint}/minio/health/live"))
-            .await
-            .is_ok_and(|r| r.status().is_success())
-        {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
+    wait_for_minio_cluster(&endpoint, Duration::from_secs(60))
+        .await
+        .unwrap();
     taskflow::discover::output_tool(
         root.path(),
         &[
@@ -833,7 +980,7 @@ fn command(args: &[&str]) -> Value {
         .chain(args.iter().map(|v| (*v).to_owned()))
         .collect::<Vec<_>>())
 }
-fn fixture(tasks: Value) -> tempfile::TempDir {
+fn init_logging() {
     static LOGGING: OnceLock<()> = OnceLock::new();
     LOGGING.get_or_init(|| {
         let _ = tracing_subscriber::fmt()
@@ -844,6 +991,9 @@ fn fixture(tasks: Value) -> tempfile::TempDir {
             )
             .try_init();
     });
+}
+fn fixture(tasks: Value) -> tempfile::TempDir {
+    init_logging();
     let dir = tempfile::tempdir().unwrap();
     files::atomic_write(
         &dir.path().join("taskflow.yml"),
