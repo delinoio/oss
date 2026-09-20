@@ -48,6 +48,9 @@ fn unknown_arguments_fail_on_stderr() {
 #[test]
 fn every_command_has_help_and_examples() {
     for args in [
+        vec!["wait", "tcp", "--help"],
+        vec!["wait", "http", "--help"],
+        vec!["wait", "file", "--help"],
         vec!["run", "env", "--help"],
         vec!["port", "which", "--help"],
         vec!["port", "kill", "--help"],
@@ -95,4 +98,15 @@ fn invalid_shapes_fail_before_any_os_effect() {
         assert!(output.stdout.is_empty());
         assert!(!output.stderr.is_empty());
     }
+}
+
+#[test]
+fn help_never_forces_color_on_a_pipe() {
+    let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
+        .arg("--help")
+        .env("CLICOLOR_FORCE", "1")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(!output.stdout.contains(&0x1b));
 }

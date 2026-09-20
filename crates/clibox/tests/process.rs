@@ -20,7 +20,7 @@ fn fixture() {
     if mode == "inspect" {
         println!(
             "{MARKER}{}",
-            json!({"args": std::env::args().skip(1).collect::<Vec<_>>(), "value": std::env::var("CLIBOX_TEST_VALUE").ok(), "parent": std::env::var("CLIBOX_TEST_PARENT").ok(), "cwd": std::env::current_dir().unwrap(), "pid": std::process::id()})
+            json!({"args": std::env::args().skip(1).collect::<Vec<_>>(), "value": std::env::var("CLIBOX_TEST_VALUE").ok(), "parent": std::env::var("CLIBOX_TEST_PARENT").ok(), "ca_file": std::env::var("SSL_CERT_FILE").ok(), "ca_dir": std::env::var("SSL_CERT_DIR").ok(), "cwd": std::env::current_dir().unwrap(), "pid": std::process::id()})
         );
         eprintln!("FIXTURE_STDERR");
         return;
@@ -127,6 +127,8 @@ fn environment_inherits_streams_cwd_and_literal_arguments() {
     cmd.args(literals)
         .arg("--test-threads=1")
         .env("CLIBOX_TEST_PARENT", "inherited")
+        .env("SSL_CERT_FILE", "inherited-ca-file")
+        .env("SSL_CERT_DIR", "inherited-ca-dir")
         .current_dir(directory.path());
     let output = cmd.output().unwrap();
     assert!(
@@ -137,6 +139,8 @@ fn environment_inherits_streams_cwd_and_literal_arguments() {
     let value = marker(&output.stdout);
     assert_eq!(value["value"], "한글 🦀");
     assert_eq!(value["parent"], "inherited");
+    assert_eq!(value["ca_file"], "inherited-ca-file");
+    assert_eq!(value["ca_dir"], "inherited-ca-dir");
     let expected = std::fs::canonicalize(directory.path()).unwrap();
     assert_eq!(
         std::fs::canonicalize(value["cwd"].as_str().unwrap()).unwrap(),

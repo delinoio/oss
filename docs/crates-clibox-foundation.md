@@ -1,15 +1,23 @@
 # clibox Rust foundation
 
 ## Scope
-`crates/clibox` owns the Rust executable and public crates.io package `clibox`. Issue [#916](https://github.com/delinoio/oss/issues/916) extends the original help/version foundation with six developer utilities. Issue [#920](https://github.com/delinoio/oss/issues/920) adds three local dotenv/YAML configuration commands.
+`crates/clibox` owns the Rust executable and public crates.io package `clibox`. Issue [#919](https://github.com/delinoio/oss/issues/919) adds stateless TCP, HTTP, and file readiness waits. Issue [#916](https://github.com/delinoio/oss/issues/916) also implements six developer utilities. The complementary #917 interfaces remain reserved for independent implementation. Issue [#920](https://github.com/delinoio/oss/issues/920) adds three local dotenv/YAML configuration commands.
 
 ## Runtime and Language
-Rust 2021, MIT license, repository-pinned Rust toolchain, and `clap` parsing. The crate is an explicit Cargo workspace member and approved crates.io publication target. Native adapters are private implementation modules; there is no public Rust library API.
+Rust 2021, MIT license, repository-pinned Rust toolchain, and `clap` argument parsing. It is an explicit Cargo workspace member and approved crates.io publication target. Runtime operation uses Tokio, Hickory DNS, reqwest, Rustls with statically linked ring cryptography, and native OS certificate roots. Readiness waits invoke no installed networking or shell polling utilities. Environment/open/clipboard commands retain their explicitly delegated child and installed desktop-tool behavior. Native adapters are private implementation modules.
 
 ## Users and Operators
-Developers invoking a pinned CLI from terminals and npm scripts, and maintainers distributing the same executable through Cargo and npm.
+Developers invoking a pinned CLI in terminals, npm scripts, portable local workflows, and CI, and maintainers building and releasing the same executable through Cargo and npm. Operate with current-user permissions only.
 
 ## Interfaces and Contracts
+- `clibox`, `clibox --help`, and `clibox -h` print help to stdout and exit successfully; `--version`/`-V` print `clibox <Cargo package version>`.
+- `clibox wait tcp HOST:PORT [--timeout DURATION] [--interval DURATION] [--attempt-timeout DURATION] [--quiet | --json]`.
+- `clibox wait http URL [--method get|head] [--status CODE] [--timeout DURATION] [--interval DURATION] [--attempt-timeout DURATION] [--quiet | --json]`.
+- `clibox wait file PATH [--timeout DURATION] [--interval DURATION] [--quiet | --json]`.
+- Accept exactly one target. Missing, malformed, extra, unknown, or conflicting arguments exit 2 with static actionable English stderr diagnostics and no JSON. Never render clap's raw parser errors, which can contain sensitive argv. Help includes examples and command limitations. There is no public Rust library API.
+- Wait commands do not consume stdin, launch subsequent commands, reverse-wait, continuously monitor, or accept mixed/multiple targets.
+
+### Utility commands
 Root no-argument, `--help`/`-h`, and `--version`/`-V` behavior remains compatible. Every command has English help and examples. Malformed or missing CLI inputs return 2; runtime failures return 1. Delegated commands retain their own exit status and supported termination signals.
 
 ```text
@@ -61,20 +69,81 @@ Linux copy supplies text through stdin and returns after setup while the tool ow
 - Exit codes are 0 success, 1 runtime/content/filesystem/limit failure, 2 CLI usage, 130 handled Ctrl+C, and 143 handled Unix SIGTERM. Reading, processing, and output are interruptible. Stdout is result-only; a write failure or cancellation while emitting stdout can leave partial bytes. File output never duplicates the result on stdout.
 - Structured `tracing` diagnostics use stderr, warnings/errors by default and additional `RUST_LOG` detail. Color requires a TTY and respects `NO_COLOR`. Only operation, input/document ordinals, line/column, and stable classifications are permitted; never log input content, keys, values, paths, argv, environment, or raw dependency errors. Runtime is offline, executes no shell, and stores no configuration, caches, or history.
 
-Configuration and system utilities share the root CLI but have separate private runtimes. `config_runtime` bounds processing and returns numeric cancellation statuses after publication cleanup; `runtime` preserves OS and child signal behavior for system utilities. Only the selected command family's signal handlers are installed per invocation.
+Configuration, readiness waits, and system utilities share the root CLI but have separate private runtimes. The private `config_command` module owns configuration argument shapes and jobs, while `cli` composes all command families. `config_runtime` bounds processing and returns numeric cancellation statuses after publication cleanup; `runtime` preserves OS and child signal behavior for system utilities. The Tokio wait runtime separately owns readiness cancellation and final JSON. Only the selected command family's signal handlers are installed per invocation.
 
-## Storage and Security
-Explicit configuration-file publication is the only persistent state owned by configuration commands; unpublished staging files are cleaned on handled failure/cancellation and completed writes are not undone. Configuration processing accesses no network and delegates no commands. No persistent application configuration, cache, operation history, application authentication, tenancy, backend service, or telemetry is added. Use current-user/session permissions only. No automatic retries or fixed execution timeout applies apart from the shared port-termination wait. Users can interrupt child execution, stdin reading, OS work, and application waits. Cancellation does not undo completed clipboard replacement, termination, or launch.
+### Readiness commands (#919)
+
+### Polling and deadlines
+The first check starts immediately. Overall waiting is unlimited by default; `--timeout 0` explicitly means unlimited. Durations accept nonnegative integers suffixed `ms`, `s`, `m`, or `h`; bare `0` is accepted only for timeout. Interval and attempt timeout must be positive. Fractions, negative values, millisecond arithmetic overflow, and unrepresentable monotonic deadlines fail validation.
+
+The interval defaults to 250ms **after** an unsuccessful attempt completes. Polling attempts never overlap. Network attempts default to 3s. One monotonic overall budget includes DNS configuration/resolution, connection, trust initialization, TLS, response headers, and polling delays. Attempts and delays are clipped to its remaining duration. A successful observation after the overall deadline is not readiness within that deadline. The implementation has an injected Tokio clock for deterministic scheduler tests.
+
+Cancellation drops the active asynchronous operation and its connections, stops polling, and releases owned resources without terminating the service or mutating the file. Blocking read-only OS metadata/trust/configuration calls run off the runtime thread; runtime shutdown must not wait for an uninterruptible OS call after a handled deadline or cancellation. A successful result is a point-in-time observation and does not reserve the resource or guarantee continued availability.
+
+HTTP client/native trust initialization retains one in-flight blocking job across attempt timeouts. Later attempts await that same result instead of spawning overlapping native certificate loaders; the completed client is reused for the invocation. Overall timeout and cancellation still stop waiting promptly without waiting for that blocking job to return.
+
+### TCP
+Accept DNS names, strict IPv4, and bracketed IPv6 with an explicit decimal port 1–65535 (`localhost:3000`, `127.0.0.1:3000`, `[::1]:3000`). Resolve using system DNS configuration and hosts data, with no persistent cache or fallback public resolver. All returned addresses receive a connection opportunity within a shared attempt deadline; one stalled address/family cannot consume another address's opportunity. Stop when one connection succeeds and close it without sending application data. This establishes connectivity only, not application-protocol readiness.
+
+Retry DNS lookup failures, refusal, temporary network failures, and attempt timeouts. A permission or other terminal error for one destination does not discard other pending connections. Return readiness when any address connects; if every address fails, preserve a terminal classification over retryable failures regardless of completion order. Local permission denial, resolver initialization failure, local resource errors, and other non-readiness failures then terminate. Connection attempts within one polling attempt may run concurrently; polling attempts never do.
+
+### HTTP and TLS
+Plain HTTP uses HTTP/1.1; HTTPS negotiates HTTP/2 or HTTP/1.1 through ALPN. Enable reqwest's HTTP/2 feature explicitly for standalone builds and advertise both protocols in the preconfigured Rustls client; no h2c prior-knowledge mode is exposed.
+
+Accept absolute `http` and `https` URLs. Inspect raw authority before URL normalization, rejecting all user information including empty userinfo, malformed authority, and control/whitespace ambiguity. Default GET succeeds on any final 2xx; HEAD is selectable and `--status` selects exactly one final code in 200–599. Observe status at response headers and drop the response without reading, inspecting, printing, or waiting for the body. Do not follow redirects: a redirect succeeds only when its exact status is selected.
+
+Retry unexpected statuses, DNS/connection failures, temporary network failures (including truncated/closed connections), and attempt timeouts. Certificate trust/hostname failures, OS trust initialization failures, TLS protocol faults, invalid HTTP responses, permissions, and other runtime faults are terminal. DNS, connections, TLS negotiation, and response headers share one attempt budget. reqwest automatic retries and connection pooling are disabled; clibox owns polling retries.
+
+TLS uses OS roots and verifies hostname/trust. Preserve usable roots when other OS entries fail loading or parsing; trust initialization fails when no usable roots remain. Debug logs expose only aggregate root/error counts, never individual loader errors or certificate data. No proxy discovery, authentication, custom headers, custom CA options, client certificates, certificate-verification bypass, cookies, or implicit credentials. Explicitly disable proxy environment discovery and redirects even under Cargo feature unification. Clear only `SSL_CERT_FILE`/`SSL_CERT_DIR` in the single-threaded executable startup before native roots are loaded, because the current loader would otherwise replace OS trust with those overrides. This clearing is scoped to wait execution only; `run env` must preserve both variables in the child environment unless explicitly assigned; no caller environment or OS trust store is mutated. TLS tests inject isolated roots internally and never alter user trust. Rustls uses an explicitly selected ring provider and no client identity or TLS key-log configuration.
+
+### Files
+Relative paths resolve from the invocation cwd. Metadata success requires a regular file, including empty files. Follow symbolic links; dangling links and missing paths remain pending. Directories, special files, inaccessible ancestors, permission errors, link loops, and all other filesystem errors terminate. Metadata inspection does not read file contents or require content read permission. File existence does not prove writer completion; size stability, content matching, and write-completion detection are excluded. Paths may contain spaces, Unicode, or platform-native non-UTF-8 bytes.
+
+### Output and exit codes
+Default success is one human-readable summary containing wait kind, elapsed milliseconds, and attempt count. Failures and cancellation receive actionable stderr diagnostics. `--quiet` suppresses stdout only and conflicts with `--json`. For each started wait operation, JSON produces exactly one final object, including runtime initialization failure, timeout, and handled cancellation:
+
+```json
+{"kind":"tcp","status":"ready","elapsed_ms":1250,"attempts":3,"error":null}
+```
+
+`kind` is `tcp|http|file`; `status` is `ready|timeout|failed|cancelled`; elapsed milliseconds are nonnegative and attempts count started checks. `error` is null on success or `{ "code": "stable_classification", "message": "safe actionable explanation" }`. Timeout messages include the last retryable classification when available. Cancellation before the first check can report zero attempts.
+
+Exit codes are ready 0, runtime failure/overall timeout 1, invalid CLI input 2, Ctrl+C 130, and Unix SIGTERM 143. Results and diagnostics omit hosts, URLs, paths, credentials, response contents, and raw argv. Output write failures produce a safe stderr diagnostic and code 1; an unavailable stdout cannot receive a complete result.
+
+Stable error classifications are enum-backed: `dns_lookup`, `dns_configuration`, `connection_refused`, `network_unavailable`, `attempt_timeout`, `unexpected_status`, `tls_certificate`, `tls_protocol`, `trust_store`, `permission_denied`, `network_io`, `http_protocol`, `file_missing`, `not_regular_file`, `filesystem`, `runtime_initialization`, `signal_handler`, `interrupted`, `terminated`, and `overall_timeout`. Command kinds, methods, and outcomes are also enums. Dependency errors are classified by typed sources, never by formatting or logging their text.
+
+## Storage
+Wait operations add no persistent configuration, application cache, history, authentication, tenancy, backend, privileges, or migrations. Wait commands do not modify target files. Rollback is an earlier pinned package version; readiness observations have no persisted effect to reverse.
+
+Explicit configuration-file publication is the only persistent state owned by configuration commands; unpublished staging files are cleaned on handled failure/cancellation and completed writes are not undone. Configuration processing accesses no network and delegates no commands. No persistent application configuration, cache, operation history, application authentication, tenancy, backend service, or telemetry is added. Use current-user/session permissions only. For environment, port, open, and clipboard commands, no automatic retries or fixed execution timeout applies apart from the shared port-termination wait; readiness waits use the polling/deadline contract above. Users can interrupt child execution, stdin reading, OS work, and application waits. Cancellation does not undo completed clipboard replacement, termination, or launch.
 
 Cargo publication remains explicit and gated by the repository release coordinator. Rollback is installation of an earlier pinned version; previous OS effects are not undone. No feature flag is needed because each capability is explicitly invoked.
 
+## Security
+No raw argv/locator/credential/body logging, including parser failures or dependency errors. Cargo publication remains explicit and gated by the repository release coordinator. There is no feature flag, remote telemetry, metrics service, dashboard, compliance gate, separate SLO, performance target, or mandatory external-service/manual validation.
+
 ## Logging
-Structured Rust tracing goes to stderr, defaults to warnings/errors, and honors RUST_LOG for detailed diagnostics. Stdout is exclusively results or inherited child stdout. Color is TTY-only and honors NO_COLOR. Utility diagnostic context includes operation, backend, PID, port and stable failure code, never clipboard content, environment values, complete argv, full URLs or paths. Clap errors are redacted rather than echoing rejected values. Child output is inherited user-program output, not authored diagnostic output. Configuration diagnostics permit only operation, input/document ordinals, line/column, and stable failure classifications; keys, values, content, environment, and dependency error text are excluded. Dotenv diagnostic columns count Unicode scalar values, while token slices and resource limits continue to count UTF-8 bytes. Configuration debug events mark operation/input start and completion; panic payloads and locations are suppressed for all commands. Help/version are user output, not logs. Malformed arguments use sanitized structured usage diagnostics without supplied values. A closed diagnostic stream must not panic or change success, runtime-failure, or cancellation status; disable the tracing subscriber's internal fallback that prints raw write errors to stderr.
+Structured `tracing` diagnostics go to stderr, defaulting to warnings/errors. Routine pending checks are debug events; `RUST_LOG=clibox=debug` enables kind, attempt, elapsed time, numeric HTTP status, and stable failure classification. Filter out **all dependency targets**, even with `RUST_LOG=trace` or explicit dependency filters, and never echo malformed filter values. `NO_COLOR` disables color; otherwise color is allowed only on a TTY. Static failure diagnostics remain visible even if log filtering disables tracing.
+
+Structured Rust tracing goes to stderr, defaults to warnings/errors, and honors RUST_LOG for detailed diagnostics. Stdout is exclusively results or inherited child stdout. Color is TTY-only and honors NO_COLOR. Utility diagnostic context includes operation, backend, PID, port and stable failure code, never clipboard content, environment values, complete argv, full URLs or paths. Clap errors are redacted rather than echoing rejected values. Child output is inherited user-program output, not authored diagnostic output. Configuration diagnostics permit only operation, input/document ordinals, line/column, and stable failure classifications; keys, values, content, environment, and dependency error text are excluded. Dotenv diagnostic columns count Unicode scalar values, while token slices and resource limits continue to count UTF-8 bytes. Configuration debug events mark operation/input start and completion; panic payloads and locations are suppressed for all commands. Help/version are user output, not logs. Malformed arguments use static actionable usage diagnostics without supplied values. A closed diagnostic stream must not panic or change success, runtime-failure, or cancellation status; disable the tracing subscriber's internal fallback that prints raw write errors to stderr.
+
+Wait signal handlers are installed only by the Tokio wait runtime. Configuration commands install only their private cancellation runtime, and utilities retain native signal forwarding/reproduction. Never register more than one handler family per invocation.
 
 ## Build and Test
+- `cargo run -p clibox -- wait --help` and `cargo test --locked -p clibox`.
+- Root `cargo test` and `cargo fmt --all --check` remain required repository checks.
+- `cargo publish -p clibox --dry-run` verifies standalone crate packaging.
+- `pnpm --filter @delino/clibox test` and `pnpm --filter @delino/clibox test:package` validate the launcher and installed consumers.
+- Scheduler tests use paused time: immediate first checks, unlimited waiting, after-completion delays, clipped budgets, no overlapping polls, retry recovery, and cancellation/resource drop during checks and delays.
+- Loopback TCP/HTTP and isolated TLS fixtures cover DNS/IPv4/IPv6, multiple addresses/refusal/cleanup, GET/HEAD, statuses/transitions, redirect policy, delayed headers, nonterminating bodies, trusted/untrusted certificates, hostname mismatch, partial trust loading, malformed root entries, and trust loading without usable roots.
+- File/process fixtures cover empty/delayed/relative/Unicode files, symlinks/dangling links/loops/special files, metadata without content access, typed permissions/error races, parser validation, output/exit behavior, handled Unix signals and isolated-console Windows Ctrl+C, proxy isolation, and secret markers under detailed or invalid log filters.
+- `node-clibox-test` runs Cargo unit/process tests on Linux, macOS, and Windows. Release builds run those tests for all eight targets before packaging and preserve Alpine consumer validation. Cross-platform evidence is produced by those jobs; local validation alone does not claim all platforms were executed.
+- ring requires a C compiler at build time: MSVC on Windows, Xcode clang on macOS, and native C compilers on GNU Linux. Both musl jobs install `musl-tools` and set the target-specific `CC` to `musl-gcc` for ring, while the final linker remains pinned `rust-lld` with self-contained Rust runtime objects. No runtime OpenSSL/shared crypto dependency is added. Linux HTTPS consumers need their OS CA certificates, including Alpine `ca-certificates`.
+- Preserve Cargo/npm exact version synchronization, all eight native targets, script-free installation, and launcher argv/signal forwarding. Remove generated repository-owned `dist` after validation. No actual package publication is part of implementation.
+
 - `cargo test -p clibox` covers parser contracts, compatible environment transformations, process execution/signals, test-owned TCP/UDP IPv4/IPv6 sockets, mocked partial termination and shared deadlines, mocked open/clipboard adapters, invalid text boundaries, and secret-marker diagnostic checks.
 - Root `cargo test` and `cargo fmt --all --check` remain mandatory. Generate the existing DevHud frontend dependency before root Rust checks, then remove repository-owned generated dist directories after validation.
-- `cargo publish -p clibox --dry-run` checks standalone packaging, including private adapter sources and tests. macOS compilation uses its standard SDK/libclang through libproc; Linux builds add no system C-library dependency beyond the target's libc.
+- `cargo publish -p clibox --dry-run` checks standalone packaging, including private adapter sources and tests. macOS compilation uses its standard SDK/libclang through libproc; Linux adapters add no system C-library dependency beyond the target's libc; readiness TLS additionally compiles ring as documented below.
 - Linux/macOS/Windows CI runs clibox Rust process tests alongside npm distribution/consumer tests. The existing eight-target release matrix and Alpine consumers remain intact. Test termination may target only disposable test-owned processes; CLI kill tests decline when complete exclusive port ownership cannot be established.
 - Automated parser/process/mocked-adapter tests are the completion gate. Real GUI launching, desktop clipboard persistence, and application termination waiting remain deferred follow-up verification and must not be represented as completed by mocks.
 
@@ -85,8 +154,10 @@ Uses clap, serde/serde_json, regex, tracing/tracing-subscriber, tempfile, the pu
 
 A scanner adapter validates YAML 1.2 directives and resolves all document-local Core tag handles before grammar parsing, compensating for the parser's permissive version handling and loss of earlier tag directives; width-preserving token substitutions retain diagnostic positions. YAML resolution retains a shared reference graph and computes output size before emission; numeric lexemes never convert through machine numbers. Unix mode/owner/group and Linux/macOS ACL preservation use native OS APIs; Windows replacement retains its destination DACL. Unix staging directories enforce mode 0700 independently of umask, clear inherited macOS ACL grants before file creation, and remain alive through permission copying and atomic rename; failure/cancellation cleans up both file and directory. Before `ReplaceFileW`, close the staging writer because Windows opens the replacement without sharing; retain the temporary-path cleanup guard through the call so failures remove unpublished bytes.
 
+No new distribution channel, Homebrew, public GitHub Release binaries, docs website, or public library API is introduced.
+
 ## Change Triggers
-Update the project index, npm contract, root/domain AGENTS rules, user READMEs/help, tests and affected release/CI contracts together when commands, privacy, versions, platforms or publication change.
+Update the project index, both domain contracts, relevant root/domain AGENTS rules, Cargo/npm READMEs, CLI help, tests, and applicable release workflows together when command behavior, privacy, naming, versions, platforms, dependencies, or publication changes.
 
 ## References
 - [Project index](project-clibox.md)

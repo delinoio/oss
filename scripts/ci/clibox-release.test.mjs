@@ -29,7 +29,13 @@ test("clibox release covers all eight native targets and Alpine consumer executi
     assert.equal(build.env[`CARGO_TARGET_${arch}_UNKNOWN_LINUX_MUSL_LINKER`], "rust-lld");
     assert.equal(build.env[`CARGO_TARGET_${arch}_UNKNOWN_LINUX_MUSL_RUSTFLAGS`], "-C link-self-contained=yes");
   }
-  assert.ok(!steps.some(({ run }) => run?.includes("apt-get install -y musl-tools")));
+  const compiler = steps.find(({ name }) => name === "Prepare musl crypto compiler");
+  assert.equal(compiler.if, "endsWith(matrix.target, '-musl')");
+  assert.match(compiler.run, /apt-get install -y musl-tools/u);
+  assert.equal(build.env.CC_x86_64_unknown_linux_musl, "musl-gcc");
+  assert.equal(build.env.CC_aarch64_unknown_linux_musl, "musl-gcc");
+  assert.match(build.run, /cargo test --locked -p clibox --target/u);
+  assert.match(alpine.run, /ca-certificates/u);
   assert.ok(steps.find(({ run }) => run?.includes("package.mjs binary")));
 });
 
