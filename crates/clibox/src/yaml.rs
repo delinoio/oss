@@ -62,53 +62,213 @@ fn at(kind: Failure, mark: Marker) -> Error {
     Error::from(kind).at(mark.line(), mark.col() + 1)
 }
 
-// The dependency intentionally tolerates version directives. Check scanner
-// tokens (not source lines, which can be quoted/block-scalar content) until it
-// exposes a strict-version option. No dependency error text is ever forwarded.
-fn versions(text: &str, cancel: &Cancellation) -> Result<()> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CoreTag {
+    String,
+    Null,
+    Bool,
+    Integer,
+    Float,
+    Merge,
+    Sequence,
+    Mapping,
+    NonSpecific,
+}
+impl CoreTag {
+    fn named(name: &str) -> Option<Self> {
+        Some(match name {
+            "str" => Self::String,
+            "null" => Self::Null,
+            "bool" => Self::Bool,
+            "int" => Self::Integer,
+            "float" => Self::Float,
+            "merge" => Self::Merge,
+            "seq" => Self::Sequence,
+            "map" => Self::Mapping,
+            _ => return None,
+        })
+    }
+
+    fn code(self) -> char {
+        match self {
+            Self::String => 's',
+            Self::Null => 'n',
+            Self::Bool => 'b',
+            Self::Integer => 'i',
+            Self::Float => 'f',
+            Self::Merge => 'g',
+            Self::Sequence => 'q',
+            Self::Mapping => 'm',
+            Self::NonSpecific => '!',
+        }
+    }
+}
+struct Edit {
+    start: usize,
+    end: usize,
+    tag: Option<CoreTag>,
+}
+
+// yaml-rust2 tolerates version directives and drops earlier %TAG declarations
+// while processing a directive block. Validate/resolve scanner tokens ourselves
+// and present private short tags to its grammar parser. Replace directives with
+// comments and pad tag tokens to the same character width, preserving all
+// source positions. Remove this adapter when the dependency offers strict
+// versions and correct document-local directive handling. Scalars are never
+// text-rewritten.
+fn prepare_tags(text: &str, cancel: &Cancellation) -> Result<Vec<Edit>> {
     let mut scanner = Scanner::new(text.chars().take_while(|_| cancel.code() == 0));
-    let mut document = 1;
-    let mut started = false;
+    let mut chars = text.chars().enumerate().peekable();
+    let mut edits = Vec::new();
+    let mut directives = HashMap::<String, String>::new();
+    let mut document = 0;
+    let mut in_document = false;
+    let mut pending = false;
     for token in scanner.by_ref() {
         cancel.check()?;
+        let mark = token.0;
         match token.1 {
-            TokenType::VersionDirective(1, 2) => (),
-            TokenType::VersionDirective(..) => {
-                return Err(at(Failure::YamlVersion, token.0).document(if started {
-                    document + 1
-                } else {
-                    document
-                }))
+            TokenType::StreamStart(_) => continue,
+            TokenType::StreamEnd => {
+                if pending {
+                    return Err(at(Failure::YamlSyntax, mark).document(document + 1));
+                }
+                continue;
+            }
+            TokenType::VersionDirective(major, minor) => {
+                if in_document {
+                    return Err(at(Failure::YamlSyntax, mark).document(document + 1));
+                }
+                if (major, minor) != (1, 2) {
+                    return Err(at(Failure::YamlVersion, mark).document(document + 1));
+                }
+                if !pending {
+                    directives.clear();
+                }
+                pending = true;
+                continue;
+            }
+            TokenType::TagDirective(handle, prefix) => {
+                if in_document {
+                    return Err(at(Failure::YamlSyntax, mark).document(document + 1));
+                }
+                if !pending {
+                    directives.clear();
+                }
+                pending = true;
+                if !handle.is_empty() && directives.insert(handle, prefix).is_some() {
+                    return Err(at(Failure::YamlSyntax, mark).document(document + 1));
+                }
+                edits.push(Edit {
+                    start: mark.index(),
+                    end: mark.index() + 1,
+                    tag: None,
+                });
+                continue;
             }
             TokenType::DocumentStart => {
-                if started {
-                    document += 1;
+                if !pending {
+                    directives.clear();
                 }
-                started = true;
+                pending = false;
+                document += 1;
+                in_document = true;
+                continue;
+            }
+            TokenType::DocumentEnd => {
+                if pending {
+                    return Err(at(Failure::YamlSyntax, mark).document(document + 1));
+                }
+                directives.clear();
+                in_document = false;
+                continue;
             }
             _ => (),
         }
+        if pending {
+            return Err(at(Failure::YamlSyntax, mark).document(document + 1));
+        }
+        if !in_document {
+            document += 1;
+            in_document = true;
+        }
+        if let TokenType::Tag(handle, suffix) = token.1 {
+            let tag = if handle.is_empty() && suffix == "!" {
+                CoreTag::NonSpecific
+            } else {
+                let prefix =
+                    directives
+                        .get(&handle)
+                        .map(String::as_str)
+                        .unwrap_or(if handle == "!!" {
+                            "tag:yaml.org,2002:"
+                        } else {
+                            &handle
+                        });
+                let uri = format!("{prefix}{suffix}");
+                uri.strip_prefix("tag:yaml.org,2002:")
+                    .and_then(CoreTag::named)
+                    .ok_or_else(|| at(Failure::YamlTag, mark).document(document))?
+            };
+            while chars.peek().is_some_and(|(index, _)| *index < mark.index()) {
+                if chars
+                    .peek()
+                    .is_some_and(|(index, _)| index.is_multiple_of(4096))
+                {
+                    cancel.check()?;
+                }
+                chars.next();
+            }
+            let start = chars.next().ok_or_else(|| at(Failure::YamlSyntax, mark))?.0;
+            let verbatim = chars.peek().is_some_and(|(_, ch)| *ch == '<');
+            let mut end = start + 1;
+            if verbatim {
+                for (index, ch) in chars.by_ref() {
+                    end = index + 1;
+                    if ch == '>' {
+                        break;
+                    }
+                }
+            } else {
+                while let Some(&(index, ch)) = chars.peek() {
+                    if ch.is_ascii_whitespace() || matches!(ch, ',' | '[' | ']' | '{' | '}') {
+                        break;
+                    }
+                    end = index + 1;
+                    chars.next();
+                }
+            }
+            edits.push(Edit {
+                start,
+                end,
+                tag: Some(tag),
+            });
+        }
     }
     cancel.check()?;
-    if let Some(error) = scanner.get_error() {
-        return Err(at(Failure::YamlSyntax, *error.marker()).document(document));
-    }
-    Ok(())
+    // Grammar parsing reports scanner failures with the exact document ordinal.
+    Ok(edits)
 }
-
-fn tag_name(tag: Option<&Tag>) -> Result<Option<&str>> {
-    match tag {
-        None => Ok(None),
-        Some(tag) if tag.handle == "tag:yaml.org,2002:" => Ok(Some(&tag.suffix)),
-        Some(tag) if tag.handle.is_empty() && tag.suffix.starts_with("tag:yaml.org,2002:") => {
-            Ok(tag.suffix.strip_prefix("tag:yaml.org,2002:"))
-        }
-        // The non-specific ! tag disables implicit scalar resolution.
-        Some(tag) if tag.handle.is_empty() && tag.suffix == "!" => Ok(Some("str")),
-        _ => Err(Failure::YamlTag.into()),
-    }
+fn tag_name(tag: Option<&Tag>) -> Result<Option<CoreTag>> {
+    Ok(match tag {
+        None => None,
+        Some(tag) if tag.handle.is_empty() && tag.suffix == "!" => Some(CoreTag::NonSpecific),
+        Some(tag) if tag.handle == "!" => Some(match tag.suffix.as_str() {
+            "s" => CoreTag::String,
+            "n" => CoreTag::Null,
+            "b" => CoreTag::Bool,
+            "i" => CoreTag::Integer,
+            "f" => CoreTag::Float,
+            "g" => CoreTag::Merge,
+            "q" => CoreTag::Sequence,
+            "m" => CoreTag::Mapping,
+            _ => return Err(Failure::YamlTag.into()),
+        }),
+        _ => return Err(Failure::YamlTag.into()),
+    })
 }
 fn scalar(text: String, style: TScalarStyle, tag: Option<&Tag>) -> Result<Scalar> {
+    use CoreTag::*;
     let tag = tag_name(tag)?;
     let null = matches!(text.as_str(), "" | "~" | "null" | "Null" | "NULL");
     let boolean = matches!(
@@ -118,39 +278,36 @@ fn scalar(text: String, style: TScalarStyle, tag: Option<&Tag>) -> Result<Scalar
     let integer = INTEGER.is_match(&text);
     let float = FLOAT.is_match(&text);
     let resolved = match tag {
-        Some("str") => "str",
-        Some("null") if null => "null",
-        Some("bool") if boolean => "bool",
-        Some("int") if integer => "int",
-        Some("float") if float => "float",
-        Some("merge") if text == "<<" => "merge",
+        Some(String | NonSpecific) => String,
+        Some(Null) if null => Null,
+        Some(Bool) if boolean => Bool,
+        Some(Integer) if integer => Integer,
+        Some(Float) if float => Float,
+        Some(Merge) if text == "<<" => Merge,
         Some(_) => return Err(Failure::YamlTag.into()),
-        None if style != TScalarStyle::Plain => "str",
-        None if text == "<<" => "merge",
-        None if null => "null",
-        None if boolean => "bool",
-        None if integer => "int",
-        None if float => "float",
-        None => "str",
+        None if style != TScalarStyle::Plain => String,
+        None if text == "<<" => Merge,
+        None if null => Null,
+        None if boolean => Bool,
+        None if integer => Integer,
+        None if float => Float,
+        None => String,
     };
     Ok(match resolved {
-        "null" => Scalar::Atom("null".into()),
-        "bool" => Scalar::Atom(text.to_ascii_lowercase()),
-        "int" => Scalar::Atom(text),
-        // An explicit tag preserves !!float 1 as float. Keeping the exact
-        // decimal lexeme avoids both precision loss and huge exponent expansion.
-        "float" => Scalar::Atom(format!("!!float {text}")),
-        "merge" => Scalar::Merge,
+        Null => Scalar::Atom("null".into()),
+        Bool => Scalar::Atom(text.to_ascii_lowercase()),
+        Integer => Scalar::Atom(text),
+        // Explicit tags preserve !!float 1 without converting decimal precision
+        // or expanding arbitrarily large exponents into allocated digits.
+        Float => Scalar::Atom(format!("!!float {text}")),
+        Merge => Scalar::Merge,
         _ => Scalar::String(text),
     })
 }
-fn collection_tag(tag: Option<&Tag>, expected: &str) -> Result<()> {
-    if tag.is_some_and(|tag| tag.handle.is_empty() && tag.suffix == "!") {
-        return Ok(());
-    }
+fn collection_tag(tag: Option<&Tag>, expected: CoreTag) -> Result<()> {
     match tag_name(tag)? {
-        None => Ok(()),
-        Some(name) if name == expected => Ok(()),
+        None | Some(CoreTag::NonSpecific) => Ok(()),
+        Some(tag) if tag == expected => Ok(()),
         _ => Err(Failure::YamlTag.into()),
     }
 }
@@ -254,7 +411,10 @@ impl Graph<'_> {
                     }
                     self.cancel.check()?;
                 }
-                result.extend(explicit);
+                for (key, value) in explicit {
+                    self.cancel.check()?;
+                    result.insert(key, value);
+                }
                 Kind::Mapping(result)
             }
         };
@@ -381,8 +541,45 @@ fn emit_child(
 }
 
 pub fn normalize(text: &str, cancel: &Cancellation) -> Result<Vec<u8>> {
-    versions(text, cancel)?;
-    let mut parser = Parser::new(text.chars().take_while(|_| cancel.code() == 0));
+    let (mut line, mut column) = (1, 1);
+    for (index, ch) in text.chars().enumerate() {
+        if index.is_multiple_of(4096) {
+            cancel.check()?;
+        }
+        if !matches!(ch, '\t' | '\n' | '\r' | '\u{20}'..='\u{7e}' | '\u{85}' | '\u{a0}'..='\u{d7ff}' | '\u{e000}'..='\u{fffd}' | '\u{10000}'..='\u{10ffff}')
+        {
+            return Err(Error::from(Failure::YamlSyntax).at(line, column));
+        }
+        if ch == '\n' {
+            line += 1;
+            column = 1;
+        } else {
+            column += 1;
+        }
+    }
+    let edits = prepare_tags(text, cancel)?;
+    let mut edits = edits.iter().peekable();
+    let input = text
+        .chars()
+        .enumerate()
+        .map(|(index, ch)| {
+            while edits.peek().is_some_and(|edit| index >= edit.end) {
+                edits.next();
+            }
+            if let Some(edit) = edits.peek().filter(|edit| index >= edit.start) {
+                match (edit.tag, index - edit.start) {
+                    (None, _) => '#',
+                    (Some(_), 0) => '!',
+                    (Some(CoreTag::NonSpecific), _) => ' ',
+                    (Some(tag), 1) => tag.code(),
+                    _ => ' ',
+                }
+            } else {
+                ch
+            }
+        })
+        .take_while(|_| cancel.code() == 0);
+    let mut parser = Parser::new(input);
     let mut nodes = Vec::<Node>::new();
     let mut stack = Vec::<usize>::new();
     let mut anchors = HashMap::new();
@@ -456,11 +653,11 @@ pub fn normalize(text: &str, cancel: &Cancellation) -> Result<Vec<u8>> {
                 false,
             ),
             Event::SequenceStart(anchor, tag) => {
-                collection_tag(tag.as_ref(), "seq").map_err(|e| make(e.kind))?;
+                collection_tag(tag.as_ref(), CoreTag::Sequence).map_err(|e| make(e.kind))?;
                 (Raw::Sequence(Vec::new()), anchor, true)
             }
             Event::MappingStart(anchor, tag) => {
-                collection_tag(tag.as_ref(), "map").map_err(|e| make(e.kind))?;
+                collection_tag(tag.as_ref(), CoreTag::Mapping).map_err(|e| make(e.kind))?;
                 (Raw::Mapping(Vec::new()), anchor, true)
             }
         };

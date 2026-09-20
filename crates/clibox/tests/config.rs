@@ -769,3 +769,49 @@ fn windows_replacement_preserves_explicit_dacl() {
     assert_eq!(security(), before);
     assert_eq!(fs::read(&path).unwrap(), b"A=1\n");
 }
+
+#[test]
+fn core_tag_handles_verbatim_tags_and_nonspecific_tags_preserve_semantics() {
+    yaml(
+        "%TAG !a! tag:yaml.org,2002:\n%TAG !b! tag:yaml.org,2002:\n---\né: !a!str 1\nx: !b!float \
+         123\n",
+        "\"x\": !!float 123\n\"é\": \"1\"\n",
+    );
+    yaml(
+        "%TAG !! tag:example.com,2026:\n---\na: !<tag:yaml.org,2002:str> 1\n",
+        "\"a\": \"1\"\n",
+    );
+    yaml(
+        "[<<, ! [], ! {}, !!str <<, !<tag:yaml.org,2002:int> 12]",
+        "- \"<<\"\n- []\n- {}\n- \"<<\"\n- 12\n",
+    );
+    let dir = tempfile::tempdir().unwrap();
+    for input in [
+        "%TAG !a! tag:yaml.org,2002:\n%TAG !a! tag:yaml.org,2002:\n---\n1",
+        "%TAG !a! tag:yaml.org,2002:\na: 1",
+        "%TAG !! tag:example.com,2026:\n---\na: !!str x",
+        "!s 1",
+        "%TAG !a! tag:yaml.org,2002:\n---\n!a!str x\n---\n!a!str y",
+    ] {
+        let result = run(dir.path(), &["yaml", "normalize"], input.as_bytes());
+        assert_eq!(result.status.code(), Some(1), "{input}");
+        assert!(result.stdout.is_empty());
+    }
+}
+
+#[test]
+fn yaml_rejects_nonprintable_source_and_incomplete_directives() {
+    let dir = tempfile::tempdir().unwrap();
+    for input in [
+        "x: \"a\u{1}b\"",
+        "x: \"a\u{7f}b\"",
+        "x: \"a\u{ffff}b\"",
+        "%TAG !a! tag:yaml.org,2002:\n",
+        "%TAG !a! tag:yaml.org,2002:\n...\n",
+        "a: 1\n%TAG !a! tag:yaml.org,2002:\n---\nx: 2",
+    ] {
+        let result = run(dir.path(), &["yaml", "normalize"], input.as_bytes());
+        assert_eq!(result.status.code(), Some(1), "{input:?}");
+        assert!(result.stdout.is_empty());
+    }
+}
