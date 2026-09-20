@@ -94,6 +94,41 @@ fn main() {
             };
             assert_eq!(result == 0, args[3] == "present");
         }
+        #[cfg(unix)]
+        "open-create" | "open-truncate" | "open-read" | "stream-rplus" | "stream-wplus"
+        | "stream-aplus" | "stream-read" => {
+            let path = std::ffi::CString::new(args[1].as_str()).unwrap();
+            // SAFETY: NUL-terminated strings remain alive, and only successful
+            // handles are used and closed. Rejected opens still exercise attempts.
+            unsafe {
+                if args[0].starts_with("stream-") {
+                    let mode = match args[0].as_str() {
+                        "stream-rplus" => c"r+",
+                        "stream-wplus" => c"w+b",
+                        "stream-aplus" => c"ab+",
+                        _ => c"rb",
+                    };
+                    let stream = libc::fopen(path.as_ptr(), mode.as_ptr());
+                    if !stream.is_null() {
+                        if args[0] != "stream-read" {
+                            assert!(libc::fputc(65, stream) >= 0);
+                        }
+                        assert_eq!(libc::fclose(stream), 0);
+                    }
+                } else {
+                    let flags = libc::O_RDONLY
+                        | match args[0].as_str() {
+                            "open-create" => libc::O_CREAT,
+                            "open-truncate" => libc::O_TRUNC,
+                            _ => 0,
+                        };
+                    let fd = libc::open(path.as_ptr(), flags, 0o600 as libc::c_int);
+                    if fd >= 0 {
+                        assert_eq!(libc::close(fd), 0);
+                    }
+                }
+            }
+        }
         "policy-write" => {
             let output = std::path::Path::new(&args[1]);
             fs::create_dir_all(output.parent().unwrap()).unwrap();

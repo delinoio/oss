@@ -2144,3 +2144,98 @@ fn static_linux_removal_syscalls_cannot_pass_external_write_denials() {
         }
     }
 }
+
+#[cfg(unix)]
+fn check_open_mode(executable: &str, mode: &str, write: bool) {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let path = outside.path().canonicalize().unwrap().join("blocked");
+    if mode != "open-create" {
+        fs::write(&path, "existing contents").unwrap();
+    }
+    fs::write(
+        root.path().join("runlens.toml"),
+        format!(
+            "schema_version=1\n[policy]\ndeny_writes=[{:?}]\n",
+            path.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+    let output = invoke(
+        root.path(),
+        &[
+            "run",
+            "--save",
+            "modes.json",
+            "--",
+            executable,
+            mode,
+            path.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{mode}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value = parse(root.path(), "modes.json");
+    let execution = &value["executions"][0];
+    assert_eq!(execution["outcome"]["collection_complete"], true);
+    assert_eq!(
+        execution["accesses"][path.to_str().unwrap()]["read"],
+        true,
+        "{mode}"
+    );
+    assert_eq!(
+        execution["accesses"][path.to_str().unwrap()]["write"],
+        write,
+        "{mode}"
+    );
+    assert_eq!(
+        invoke(root.path(), &["policy", "check", "modes.json", "--json"])
+            .status
+            .code(),
+        Some(if write { 5 } else { 0 })
+    );
+    if mode == "open-create" {
+        assert!(path.exists());
+    }
+    if mode.starts_with("stream-") && write {
+        assert!(fs::read(&path).unwrap().contains(&65));
+    }
+}
+
+#[test]
+#[cfg(unix)]
+fn mutating_open_modes_cannot_pass_external_write_denials() {
+    for mode in [
+        "open-create",
+        "open-truncate",
+        "stream-rplus",
+        "stream-wplus",
+        "stream-aplus",
+        "open-read",
+        "stream-read",
+    ] {
+        check_open_mode(
+            fixture(),
+            mode,
+            mode != "open-read" && mode != "stream-read",
+        );
+    }
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn static_linux_open_modes_cannot_pass_external_write_denials() {
+    let Ok(executable) = std::env::var("RUNLENS_STATIC_FIXTURE") else {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "CI requires a real static Linux fixture"
+        );
+        return;
+    };
+    for mode in ["open-create", "open-truncate", "open-read"] {
+        check_open_mode(&executable, mode, mode != "open-read");
+    }
+}

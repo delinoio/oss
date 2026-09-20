@@ -6,6 +6,14 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 int main(int argc, char **argv) {
+    if (argc == 3 && !strncmp(argv[1], "open-", 5)) {
+        int flags = O_RDONLY;
+        if (!strcmp(argv[1], "open-create")) flags |= O_CREAT;
+        if (!strcmp(argv[1], "open-truncate")) flags |= O_TRUNC;
+        long fd = syscall(SYS_openat, AT_FDCWD, argv[2], flags, 0600);
+        if (fd >= 0) close((int)fd);
+        return 0;
+    }
     if (argc == 5 && !strncmp(argv[1], "delete-", 7)) {
         int directory = open(argv[3], O_RDONLY | O_DIRECTORY);
         if (directory < 0) return 24;

@@ -86,3 +86,10 @@ remain incomplete without cancelling the syscall. Native successful/missing file
 and directory fixtures exercise external deny-write rules, absolute and dirfd
 paths, and absence of invented external snapshot changes. Remove this patch when
 upstream covers this removal family with the same failure and evidence semantics.
+
+Unix libc and Linux seccomp share open-mode classification. O_CREAT/O_TRUNC and
+Linux O_TMPFILE add write attempts independently of O_ACCMODE; stdio '+' adds
+both read and write for r+/w+/a+ (including binary-mode spellings). Native external
+create/truncate/update-mode fixtures and static Linux openat fixtures enforce
+write boundaries, with read-only controls. Remove this patch when upstream shares
+correct creation/truncation/update-mode semantics across both collection paths.

@@ -1,7 +1,6 @@
 use std::ffi::CStr;
 
 use allocator_api2::{alloc::Allocator, vec::Vec};
-use bstr::ByteSlice;
 use fspy_nostd::{BorrowedFd, CWD};
 use fspy_shared::ipc::AccessMode;
 use libc::{c_char, c_int};
@@ -190,11 +189,7 @@ impl ToAccessMode for AccessMode {
 pub struct OpenFlags(pub c_int);
 impl ToAccessMode for OpenFlags {
     unsafe fn to_access_mode(self) -> AccessMode {
-        match self.0 & libc::O_ACCMODE {
-            libc::O_RDWR => AccessMode::READ | AccessMode::WRITE,
-            libc::O_WRONLY => AccessMode::WRITE,
-            _ => AccessMode::READ,
-        }
+        fspy_shared_unix::access::open_flags(self.0)
     }
 }
 
@@ -203,13 +198,7 @@ impl ToAccessMode for ModeStr {
     unsafe fn to_access_mode(self) -> AccessMode {
         // SAFETY: self.0 is a non-null pointer to a valid null-terminated C
         // string, as guaranteed by the libc calling convention.
-        let mode_str = unsafe { CStr::from_ptr(self.0) }.to_bytes().as_bstr();
-        let has_read = mode_str.contains(&b'r');
-        let has_write = mode_str.contains(&b'w') || mode_str.contains(&b'a');
-        match (has_read, has_write) {
-            (false, true) => AccessMode::WRITE,
-            (true, true) => AccessMode::READ | AccessMode::WRITE,
-            _ => AccessMode::READ,
-        }
+        let mode_str = unsafe { CStr::from_ptr(self.0) }.to_bytes();
+        fspy_shared_unix::access::stream_mode(mode_str)
     }
 }

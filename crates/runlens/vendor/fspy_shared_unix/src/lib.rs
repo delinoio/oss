@@ -1,5 +1,6 @@
 #![cfg(unix)]
 
+pub mod access;
 pub mod exec;
 pub(crate) mod open_exec;
 pub mod payload;

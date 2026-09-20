@@ -602,3 +602,9 @@ directory removals, including directory-relative AT_REMOVEDIR, are write attempt
 on the named path. Linux seccomp covers native static syscall callers as well.
 Missing-path failures retain attempts, and external changes are never invented
 as snapshot evidence; external deny-write policies still see the attempted path.
+
+Unix open observations include write attempts for creation/truncation independently
+of descriptor read/write access mode, and for Linux O_TMPFILE. Stdio update modes
+r+, w+, and a+ include both read and write, including binary-mode variants. Preload
+and raw/static Linux syscall collection use the same classification so external
+mutations cannot be misclassified as read-only because they lack workspace snapshots.
