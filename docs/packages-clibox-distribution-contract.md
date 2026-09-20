@@ -28,7 +28,7 @@ JavaScript developers using `pnpm add -D -E @delino/clibox` followed by `pnpm ex
 Generated packages and tarballs live under ignored `dist` or an explicitly supplied temporary output directory. Never track generated output; remove repository-owned `dist` directories after local verification. The installed runtime stores nothing.
 
 ## Security
-Consumers need no install scripts, network downloads outside their package manager, or Rust compiler. Release jobs obtain OIDC only after all native builds and package checks succeed. Dry runs and regular CI never publish or receive registry credentials. Publication uses fixed npm registry HTTPS endpoints and never prints tokens or raw process environments.
+Consumers need no install scripts, network downloads outside their package manager, or Rust compiler. Release jobs obtain OIDC only after all native builds and package checks succeed. Dry runs and regular CI never publish or receive registry credentials. npm publication uses fixed npm registry HTTPS endpoints; GitHub publication uses fixed first-party GitHub API/upload endpoints. Neither publisher prints tokens or raw process environments.
 
 ## Logging
 Packaging and publication report structured events containing action, package, target, version, revision, integrity, and outcome. Launcher diagnostics contain stable error codes and actionable messages, not raw argv or environment values.
