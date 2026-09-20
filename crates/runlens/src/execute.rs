@@ -137,7 +137,7 @@ async fn observe_inner(request: Request<'_>, hook: impl FnOnce()) -> Result<Exec
     let launch_path = executable.clone();
     let mut native = fspy::Command::new(&launch_path);
     #[cfg(unix)]
-    native.arg0(&executable);
+    native.arg0(&request.command.argv[0]);
     native
         .args(&request.command.argv[1..])
         .current_dir(&cwd)

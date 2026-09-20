@@ -833,3 +833,8 @@ Windows doctor and execution preflight require a successful IsWow64Process2
 query proving a non-emulated process whose native machine equals the compiled
 Runlens artifact architecture. Query failure, unknown machines and mixed
 x64/arm64 execution are unsupported before tracing starts.
+
+Unix execution preserves the exact requested argv[0], including PATH names,
+relative paths and aliases. Resolving and retaining the native executable for
+launch identity must not rewrite the command-visible argument zero. Native
+regressions compare each form with direct execution and retain the image digest.

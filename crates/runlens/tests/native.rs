@@ -5135,3 +5135,40 @@ fn overlapping_environment_secrets_leave_no_persisted_suffix() {
         "[redacted]"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn requested_path_and_relative_argv_zero_match_direct_execution() {
+    let root = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(fixture(), root.path().join("tool")).unwrap();
+    fs::create_dir(root.path().join("nested")).unwrap();
+    std::os::unix::fs::symlink(fixture(), root.path().join("nested/alias")).unwrap();
+    for (index, program) in ["tool", "./tool", "nested/alias"].into_iter().enumerate() {
+        let plain = Command::new(program)
+            .arg("argv0")
+            .current_dir(root.path())
+            .env("PATH", root.path())
+            .output()
+            .unwrap();
+        assert!(plain.status.success(), "{plain:?}");
+        assert_eq!(String::from_utf8_lossy(&plain.stdout).trim(), program);
+        let name = format!("argv-{index}.json");
+        let traced = cli_command()
+            .current_dir(root.path())
+            .env("PATH", root.path())
+            .args(["run", "--save", &name, "--", program, "argv0"])
+            .output()
+            .unwrap();
+        assert!(traced.status.success(), "{traced:?}");
+        assert_eq!(traced.stdout, plain.stdout);
+        let report = parse(root.path(), &name);
+        assert_eq!(report["executions"][0]["command"]["argv"][0], program);
+        assert_eq!(
+            report["executions"][0]["environment"]["executable_sha256"]
+                .as_str()
+                .unwrap()
+                .len(),
+            64
+        );
+    }
+}

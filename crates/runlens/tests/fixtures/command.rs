@@ -966,6 +966,7 @@ fn main() {
                 9
             );
         }
+        "argv0" => println!("{}", std::env::args().next().unwrap()),
         "stdio" => {
             print!("STDOUT-CANARY");
             eprint!("STDERR-CANARY");
