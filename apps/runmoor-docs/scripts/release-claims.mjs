@@ -1,5 +1,5 @@
 // Preserve the availability classifier and negation semantics that protected
-// Runmoor guides before they moved from public-docs. Preview remains supported.
+// Runmoor guides before they moved from public-docs. Stable-channel claims remain supported.
 const releaseAvailabilityClaim =
   /\b(?:partial|staged)\s+(?:GA|availability|general[- ]availability)\b|\b(?:partial|staged)\s+or\s+(?:staged|partial)\s+general[- ]availability\b|\b(?:beta|phased|fractional)\s+(?:GA|availability|general[- ]availability|rollout|channel)\b|\bearly[- ]access(?:\s+(?:GA|availability|general[- ]availability|rollout|channel))?\b|\bearly announcement\b/giu;
 const negativeAvailabilityPredicate =
