@@ -175,11 +175,34 @@ pub fn validate(report: &Report) -> Result<()> {
                 {
                     return Err(Error::input("invalid filesystem knowledge state"));
                 }
-                if state.knowledge == Knowledge::Known
-                    && state.kind == Some(FileKind::File)
-                    && (state.sha256.is_none() || state.size.is_none())
-                {
-                    return Err(Error::input("known file metadata requires size and digest"));
+                if state.knowledge == Knowledge::Known {
+                    let valid = match state.kind {
+                        Some(FileKind::File) => {
+                            state.sha256.is_some()
+                                && state.size.is_some()
+                                && state.link_target.is_none()
+                                && (state.executable.is_some()
+                                    == (execution.environment.os != "windows"))
+                        }
+                        Some(FileKind::Directory) => {
+                            state.sha256.is_some()
+                                && state.size.is_none()
+                                && state.executable.is_none()
+                                && state.link_target.is_none()
+                        }
+                        Some(FileKind::Symlink) => {
+                            state.link_target.is_some()
+                                && state.sha256.is_none()
+                                && state.size.is_none()
+                                && state.executable.is_none()
+                        }
+                        Some(FileKind::Other) | None => false,
+                    };
+                    if !valid {
+                        return Err(Error::input(
+                            "known state lacks required kind-specific metadata",
+                        ));
+                    }
                 }
                 if complete && state.knowledge == Knowledge::Unknown {
                     return Err(Error::input("complete snapshot contains unknown state"));

@@ -2754,3 +2754,52 @@ fn dynamic_linux_syscall_arities_preserve_results_and_observations() {
         true
     );
 }
+
+#[test]
+fn report_parser_requires_kind_specific_known_metadata() {
+    use runlens::{model::*, report};
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("input.txt"), "input").unwrap();
+    assert!(run(root.path(), "original.json", "read").status.success());
+    let original = report::read(&root.path().join("original.json")).unwrap();
+    for kind in [
+        FileKind::File,
+        FileKind::Directory,
+        FileKind::Symlink,
+        FileKind::Other,
+    ] {
+        let mut value = original.clone();
+        let state = FileState {
+            knowledge: Knowledge::Known,
+            kind: Some(kind),
+            size: None,
+            sha256: None,
+            executable: None,
+            link_target: None,
+            reason: None,
+        };
+        // Identical forged states have no derived change; metadata validation
+        // must reject them before they can establish output equality.
+        value.executions[0]
+            .before
+            .insert("${workspace}/forged".into(), state.clone())
+            .unwrap();
+        value.executions[0]
+            .after
+            .insert("${workspace}/forged".into(), state)
+            .unwrap();
+        assert!(report::validate(&value).is_err(), "{kind:?}");
+    }
+    if cfg!(unix) {
+        let mut value = original.clone();
+        let key = "${workspace}/input.txt";
+        let mut state = value.executions[0].before.get(key).unwrap().unwrap();
+        state.executable = None;
+        value.executions[0]
+            .before
+            .insert(key.into(), state.clone())
+            .unwrap();
+        value.executions[0].after.insert(key.into(), state).unwrap();
+        assert!(report::validate(&value).is_err());
+    }
+}

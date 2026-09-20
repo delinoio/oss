@@ -645,3 +645,8 @@ the executable digest and marks the receipt incomplete, including fast processes
 Linux seccomp syscall observation applies to dynamically linked and static native
 images, including inline kernel calls and descendants inheriting the filter.
 Preload hooks alone are not sufficient evidence of complete Linux collection.
+
+Imported known filesystem states require the collector's kind-specific metadata:
+file size/digest and Unix executable bit, directory membership digest, or symlink
+target. Inapplicable metadata and known special-file states are rejected. Equal
+empty metadata cannot establish known equality in offline verification.
