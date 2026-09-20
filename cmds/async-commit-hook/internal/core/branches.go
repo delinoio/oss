@@ -14,7 +14,8 @@ const branchPageBytes = 128 << 10
 
 // BranchPage streams raw refs, retaining one bounded page. Use lexical keysets
 // rather than Git's newer --start-after option to support Ubuntu 22.04's Git.
-func BranchPage(ctx context.Context, path, cursor string, limit int) ([]Branch, string, error) {
+func BranchPage(ctx context.Context, path, cursor string, limit int) (result []Branch, next string, err error) {
+	defer preserveGitCancellation(ctx, &err)
 	if limit == 0 {
 		limit = 50
 	}

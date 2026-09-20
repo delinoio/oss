@@ -31,7 +31,8 @@ func gitCommand(ctx context.Context, path string, args ...string) *exec.Cmd {
 	}
 	return c
 }
-func Git(ctx context.Context, path string, args ...string) (string, error) {
+func Git(ctx context.Context, path string, args ...string) (result string, err error) {
+	defer preserveGitCancellation(ctx, &err)
 	c := gitCommand(ctx, path, args...)
 	var errout bytes.Buffer
 	c.Stderr = &errout
@@ -42,6 +43,7 @@ func Git(ctx context.Context, path string, args ...string) (string, error) {
 	return strings.TrimSuffix(string(b), "\n"), nil
 }
 func Discover(ctx context.Context, path string) (common, root, branch string, err error) {
+	defer preserveGitCancellation(ctx, &err)
 	root, err = Git(ctx, path, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return
@@ -61,7 +63,8 @@ func Discover(ctx context.Context, path string) (common, root, branch string, er
 	branch, _ = Git(ctx, root, "symbolic-ref", "--quiet", "--short", "HEAD")
 	return
 }
-func ResolveCommit(ctx context.Context, path, ref string) (string, error) {
+func ResolveCommit(ctx context.Context, path, ref string) (commit string, err error) {
+	defer preserveGitCancellation(ctx, &err)
 	if ref == "" {
 		ref = "HEAD"
 	}
@@ -74,7 +77,8 @@ func ResolveCommit(ctx context.Context, path, ref string) (string, error) {
 	}
 	return v, nil
 }
-func CommitConfig(ctx context.Context, path, sha string) (Project, error) {
+func CommitConfig(ctx context.Context, path, sha string) (project Project, err error) {
+	defer preserveGitCancellation(ctx, &err)
 	unavailable := func() (Project, error) {
 		return Project{}, E("config-unavailable", "commit does not contain "+ProjectFile+"; commit the configuration before running", 2)
 	}
@@ -333,8 +337,8 @@ type Changes struct {
 	Truncated bool   `json:"truncated"`
 }
 
-func Diff(ctx context.Context, path, ref, base string) (Changes, error) {
-	out := Changes{}
+func Diff(ctx context.Context, path, ref, base string) (out Changes, e error) {
+	defer preserveGitCancellation(ctx, &e)
 	sha, e := ResolveCommit(ctx, path, ref)
 	if e != nil {
 		return out, e
@@ -386,4 +390,13 @@ func Diff(ctx context.Context, path, ref, base string) (Changes, error) {
 	// split a rune. Normalize only after deciding truncation from raw bytes.
 	out.Diff = strings.ToValidUTF8(string(data), "\uFFFD")
 	return out, e
+}
+
+// CommandContext terminates the Git process but Wait/pipe reads may report an
+// exit or EOF error. Preserve the caller's cancellation after process cleanup,
+// including helpers that intentionally translate unavailable optional refs.
+func preserveGitCancellation(ctx context.Context, err *error) {
+	if canceled := ctx.Err(); canceled != nil {
+		*err = canceled
+	}
 }

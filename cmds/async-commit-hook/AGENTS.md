@@ -132,4 +132,4 @@
 
 - Native hook creation, refresh snapshots/staging/revalidation/rename and failed-publication rollback use an opened Git common-directory root for all directory/file access. Bind refreshes to the originally read file identity and bytes; replaced parent symlinks must not redirect reads, writes or cleanup outside that root.
 
-- Source RPCs pass their request context through worktree lookup and Git discovery. Cancellation/deadline responses retain their Connect status and abandoned discovery children must be reaped.
+- Source RPCs pass their request context through worktree lookup, Git discovery, commit/config/base resolution and streamed branches/history/diffs. Preserve caller cancellation/deadline errors after child reaping, including optional-ref fallback and partial-page reader cleanup; internal pagination cancellation must not cancel the caller.

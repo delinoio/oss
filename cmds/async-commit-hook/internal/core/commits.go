@@ -14,7 +14,8 @@ const commitSubjectBytes = 4096
 const commitHeaderBytes = 16 << 10
 const commitPageSize = 100
 
-func Commits(ctx context.Context, path, ref string, offset int) ([]Commit, error) {
+func Commits(ctx context.Context, path, ref string, offset int) (result []Commit, err error) {
+	defer preserveGitCancellation(ctx, &err)
 	if offset < 0 || offset > 1000000 {
 		return nil, E("invalid-offset", "invalid commit offset", 2)
 	}
