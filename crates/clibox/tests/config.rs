@@ -594,6 +594,63 @@ fn yaml_output_limit_ignores_shadowed_escaped_merge_values() {
     assert!(String::from_utf8_lossy(&result.stderr).contains("OutputLimit"));
 }
 
+#[test]
+fn yaml_shares_long_shadowed_merge_chains_with_bounded_memory() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut source = "<<:\n  payload:\n    - &a0 {k0: 0}\n".to_owned();
+    for i in 1usize..5000 {
+        // Repeated and nearly identical operands must retain structural sharing.
+        source.push_str(&format!(
+            "    - &a{i} {{<<: [*a{}, *a{}], k{i}: 0}}\n",
+            i - 1,
+            i.saturating_sub(2)
+        ));
+    }
+    source.push_str("payload: kept\n");
+    assert!(source.len() < 1024 * 1024);
+    fs::write(dir.path().join("chain.yaml"), source).unwrap();
+    let mut cmd = command(dir.path());
+    cmd.args(["yaml", "normalize", "--input", "chain.yaml"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::process::CommandExt;
+        // Bound only this test-owned child: materializing every intermediate
+        // map would exceed this budget even though the final result is tiny.
+        unsafe {
+            cmd.pre_exec(|| {
+                let limit = libc::rlimit {
+                    rlim_cur: 256 * 1024 * 1024,
+                    rlim_max: 256 * 1024 * 1024,
+                };
+                if libc::setrlimit(libc::RLIMIT_AS, &limit) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+    let mut child = cmd.spawn().unwrap();
+    wait(&mut child);
+    let result = child.wait_with_output().unwrap();
+    assert!(result.status.success(), "{:?}", result.stderr);
+    assert_eq!(result.stdout, b"\"payload\": \"kept\"\n");
+    assert!(result.stderr.is_empty());
+}
+
+#[test]
+fn yaml_mapping_statistics_recover_after_shadowing_saturated_values() {
+    let mut source = "<<:\n  payload:\n    - &a0 x\n".to_owned();
+    for i in 1..125 {
+        source.push_str(&format!("    - &a{i} [*a{}, *a{}]\n", i - 1, i - 1));
+    }
+    // The inherited size exceeds usize, but its removal must restore the exact
+    // small size and depth instead of subtracting from a saturated total.
+    source.push_str("payload: kept\n");
+    yaml(&source, "\"payload\": \"kept\"\n");
+}
+
 fn wait(child: &mut std::process::Child) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
     while child.try_wait().unwrap().is_none() {

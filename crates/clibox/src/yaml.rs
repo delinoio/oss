@@ -6,6 +6,7 @@ use std::{
     sync::LazyLock,
 };
 
+use im_rc::{ordmap::DiffItem, OrdMap};
 use regex::Regex;
 use yaml_rust2::{
     parser::{Event, Parser, Tag},
@@ -41,7 +42,7 @@ struct Node {
 enum Kind {
     Scalar(Scalar),
     Sequence(Vec<Rc<Value>>),
-    Mapping(BTreeMap<String, Rc<Value>>),
+    Mapping(Mapping),
 }
 struct Value {
     kind: Kind,
@@ -56,6 +57,84 @@ impl Value {
             Kind::Mapping(v) => !v.is_empty(),
             _ => false,
         }
+    }
+}
+
+#[derive(Clone)]
+struct Entry {
+    value: Rc<Value>,
+    prefix: usize,
+}
+impl PartialEq for Entry {
+    fn eq(&self, other: &Self) -> bool {
+        // Diffing maps must not recursively compare their expanded values.
+        Rc::ptr_eq(&self.value, &other.value)
+    }
+}
+impl Entry {
+    fn weight(&self) -> (u64, u64) {
+        let block = usize::from(self.value.block());
+        let size = self
+            .prefix
+            .saturating_add(self.value.size)
+            .saturating_add(self.value.lines.saturating_mul(2 * block).saturating_add(1));
+        let lines = self.value.lines.saturating_add(block);
+        (size.min(LIMIT + 1) as u64, lines.min(LIMIT + 1) as u64)
+    }
+}
+
+#[derive(Clone, Default)]
+struct Mapping {
+    entries: OrdMap<Rc<str>, Entry>,
+    depths: OrdMap<usize, usize>,
+    size: u64,
+    lines: u64,
+}
+impl Mapping {
+    fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    fn insert(&mut self, key: Rc<str>, entry: Entry) {
+        if let Some(old) = self.entries.insert(key, entry.clone()) {
+            let (size, lines) = old.weight();
+            self.size -= size;
+            self.lines -= lines;
+            let count = self.depths[&old.value.depth];
+            if count == 1 {
+                self.depths.remove(&old.value.depth);
+            } else {
+                self.depths.insert(old.value.depth, count - 1);
+            }
+        }
+        let (size, lines) = entry.weight();
+        // Each contribution is capped independently, not the aggregate. This
+        // keeps subtraction exact when an oversized value is shadowed later.
+        // At most LIMIT source bytes can introduce distinct keys; multiplying
+        // that count by LIMIT + 1 fits u64 even on a 32-bit host.
+        self.size += size;
+        self.lines += lines;
+        let count = self.depths.get(&entry.value.depth).copied().unwrap_or(0);
+        self.depths.insert(entry.value.depth, count + 1);
+    }
+
+    fn merge(&mut self, other: &Self, cancel: &Cancellation) -> Result<()> {
+        cancel.check()?;
+        if self.is_empty() {
+            *self = other.clone();
+            return Ok(());
+        }
+        // Persistent trees share unchanged branches and key strings. Diff also
+        // skips shared branches, so repeated/near-identical merge operands do
+        // not rewalk every inherited key. Earlier operands retain precedence.
+        let prior = self.entries.clone();
+        for change in prior.diff(&other.entries) {
+            cancel.check()?;
+            if let DiffItem::Add(key, entry) = change {
+                self.insert(key.clone(), entry.clone());
+            }
+        }
+        Ok(())
     }
 }
 fn at(kind: Failure, mark: Marker) -> Error {
@@ -416,14 +495,14 @@ impl Graph<'_> {
                         _ => return Err(at(Failure::YamlKey, self.nodes[pair[0]].mark)),
                     }
                 }
-                let mut result = BTreeMap::new();
+                let mut result = Mapping::default();
                 for (merge, mark) in merges {
                     match &merge.kind {
-                        Kind::Mapping(map) => self.merge(&mut result, map)?,
+                        Kind::Mapping(map) => result.merge(map, self.cancel)?,
                         Kind::Sequence(sequence) => {
                             for value in sequence {
                                 if let Kind::Mapping(map) = &value.kind {
-                                    self.merge(&mut result, map)?;
+                                    result.merge(map, self.cancel)?;
                                 } else {
                                     return Err(at(Failure::MergeOperand, mark));
                                 }
@@ -435,7 +514,8 @@ impl Graph<'_> {
                 }
                 for (key, value) in explicit {
                     self.cancel.check()?;
-                    result.insert(key, value);
+                    let prefix = quoted_size(&key, self.cancel)?.saturating_add(1);
+                    result.insert(key.into(), Entry { value, prefix });
                 }
                 Kind::Mapping(result)
             }
@@ -477,9 +557,9 @@ impl Graph<'_> {
                 }
             }
             Kind::Mapping(values) => {
-                for (key, value) in values {
-                    add(quoted_size(key, self.cancel)?.saturating_add(1), value);
-                }
+                size = values.size.min((LIMIT + 1) as u64) as usize;
+                lines = values.lines.min((LIMIT + 1) as u64) as usize;
+                depth = values.depths.get_max().map_or(0, |(depth, _)| depth + 1);
             }
         }
         if matches!(&kind, Kind::Sequence(v) if v.is_empty())
@@ -501,18 +581,6 @@ impl Graph<'_> {
         self.active[id] = false;
         self.done[id] = Some(value.clone());
         Ok(value)
-    }
-
-    fn merge(
-        &self,
-        result: &mut BTreeMap<String, Rc<Value>>,
-        map: &BTreeMap<String, Rc<Value>>,
-    ) -> Result<()> {
-        for (key, value) in map {
-            self.cancel.check()?;
-            result.entry(key.clone()).or_insert_with(|| value.clone());
-        }
-        Ok(())
     }
 }
 
@@ -545,12 +613,12 @@ fn emit(value: &Value, indent: usize, output: &mut Output, cancel: &Cancellation
             }
         }
         Kind::Mapping(values) => {
-            for (key, value) in values {
+            for (key, entry) in &values.entries {
                 cancel.check()?;
                 output.push(&padding)?;
                 quote(key, cancel, |part| output.push(part))?;
                 output.push(":")?;
-                emit_child(value, indent, output, cancel)?;
+                emit_child(&entry.value, indent, output, cancel)?;
             }
         }
     }
