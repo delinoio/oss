@@ -107,7 +107,21 @@ impl OwnedProcess {
                     | windows_sys::Win32::System::Threading::CREATE_NEW_PROCESS_GROUP,
             );
         }
-        let mut child = builder.spawn().context("failed to spawn command")?;
+        let mut child = builder.spawn().map_err(|error| {
+            // Preserve safe OS diagnostics even when a caller logs only the
+            // outer error. Never include argv or environment values here.
+            let kind = error.kind();
+            let os_error = error.raw_os_error();
+            tracing::error!(
+                ?kind,
+                ?os_error,
+                phase = "spawn",
+                "Owned process launch failed"
+            );
+            anyhow::Error::new(error).context(format!(
+                "failed to spawn command ({kind:?}, OS error {os_error:?})"
+            ))
+        })?;
         let _ = &mut child;
         let pid = child.id().context("spawned child has no process ID")?;
         let mut owned = Self {

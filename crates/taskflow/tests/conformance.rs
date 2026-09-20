@@ -7995,3 +7995,35 @@ async fn unix_loader_hooks_run_only_inside_the_owned_task() {
     unrelated.kill().unwrap();
     unrelated.wait().unwrap();
 }
+
+#[cfg(target_os = "linux")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn linux_concurrent_supervisor_launches_do_not_expose_writable_executables() {
+    // A writable filesystem image can be inherited by another spawning thread
+    // before close-on-exec, producing ETXTBSY after its creating thread closes
+    // the file. Anonymous sealed images must remain executable throughout this
+    // overlap, and every capture must retain normal ownership/drain guarantees.
+    let directory = tempfile::tempdir().unwrap();
+    let command: config::Command = serde_json::from_value(command(&["version"])).unwrap();
+    let mut launches = tokio::task::JoinSet::new();
+    for _ in 0..16 {
+        let root = directory.path().to_owned();
+        let command = command.clone();
+        launches.spawn(async move {
+            for _ in 0..32 {
+                let output = taskflow::process::capture_with_env(
+                    &root,
+                    &command,
+                    &BTreeMap::new(),
+                    &CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+                assert_eq!(output, b"taskflow-fixture-1\n");
+            }
+        });
+    }
+    while let Some(result) = launches.join_next().await {
+        result.unwrap();
+    }
+}

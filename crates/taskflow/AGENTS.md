@@ -123,3 +123,5 @@
 - Native owner bootstraps use a closed system environment. Transport the bounded task environment privately over the EOF lease and apply it only after kernel ownership exists; loader hooks must never execute in the bootstrap helper. Never persist transport values in files, launchd plists, or diagnostics.
 
 - Linux launches the embedded supervisor from a sealed executable memfd, retaining its close-on-exec descriptor through spawn. Temporary control storage may be noexec. Unsupported MFD_EXEC flags may use the legacy kernel API; explicit executable-memory policy denials must fail closed without disk fallback.
+
+- Preserve structured launch error kind and OS code without command/environment contents. Linux conformance overlaps supervisor launches across threads to cover inherited writable-file ETXTBSY regressions.

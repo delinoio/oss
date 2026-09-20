@@ -196,6 +196,8 @@ Final local verification for these five repairs passed root `cargo test --locked
 
 During the next repair, main supplied a concrete native-owner design in async-commit-hook: a dedicated Linux subreaper and a macOS launchd supervisor with inherited resource-coalition accounting. Its `TestScopeStartBarrierAndOutput`, `TestScopeReapsDaemonizedDescendants`, and macOS `TestScopeRecoveryAfterSupervisorDeath` passed locally. This is evidence for that separate tool, not TaskFlow: TaskFlow's own detached-child reproduction still returned success with a survivor, which the reproduction explicitly killed and verified absent. At that checkpoint, adapting the private supervisor protocol to TaskFlow's independently usable Rust library was still unimplemented. Neither polling nor installing a process-wide subreaper in the embedding application can substitute for that per-command ownership boundary.
 
+`linux_concurrent_supervisor_launches_do_not_expose_writable_executables` overlaps 512 captured commands across eight runtime threads and sixteen independent sequences. It covers the Linux CI `ETXTBSY` failure mechanism: another fork can temporarily retain a writable descriptor for a filesystem executable even after its creating thread closes it. The sealed anonymous image has no filesystem write/execution exclusion window. Launch failures retain structured error kind and OS code so metadata fallbacks and task diagnostics cannot hide future distinct causes.
+
 ## Dependencies and Integrations
 See `docs/repository-workflow-contract.md` and the TaskFlow engine contract. No existing application workflow is migrated to TaskFlow.
 
