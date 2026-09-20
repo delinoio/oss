@@ -50,7 +50,7 @@ func (s *Service) claim(r Run, c Check) (bool, error) {
 			}
 			if c.Policy == Queue {
 				var earlier int
-				if err := tx.QueryRow("SELECT count(*) FROM checks c JOIN runs r ON c.run_id=r.id WHERE c.group_key=? AND r.seq<? AND c.state='queued' AND c.cancel='' AND NOT EXISTS (SELECT 1 FROM json_each(r.record, '$.config.checks') cfg, json_each(cfg.value, '$.depends_on') dep LEFT JOIN checks d ON d.run_id=c.run_id AND d.name=dep.value WHERE cfg.key=c.name AND dep.type='text' AND (d.state IS NULL OR d.state<>'passed'))", c.Group, r.Sequence).Scan(&earlier); err != nil {
+				if err := tx.QueryRow("SELECT count(*) FROM checks c JOIN runs r ON c.run_id=r.id WHERE c.group_key=? AND r.seq<? AND c.state='queued' AND c.cancel=''", c.Group, r.Sequence).Scan(&earlier); err != nil {
 					return err
 				}
 				if earlier > 0 {
