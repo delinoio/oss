@@ -107,3 +107,5 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - `docs/apps-devhud-operations-contract.md` (internal maintainer release, recovery, support, and high-severity runbooks)
 - `docs/apps-devhud-support-contract.md` (administrator support, diagnostics, retention, and high-severity triage)
 - `docs/repository-workflow-contract.md` (repository-level workflow and read-only CEF review contract)
+
+- [Linux CLI package repositories](repository-linux-packages-contract.md): APT/DNF build compatibility, signing, publication, recovery and rollout.

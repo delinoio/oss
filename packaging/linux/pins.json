@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "origin": "https://pkgs.oss.delino.io",
+  "public_bucket": "delino-oss-packages",
+  "state_bucket": "delino-oss-packages-state",
+  "rust_image": "almalinux:9@sha256:3a3fa7f043b142bc8008c8b308d39b47d2c84008addcd52f9f9a7a82d2a90474",
+  "tools_image": "node:24-bookworm@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4",
+  "tools": {
+    "nfpm": {
+      "version": "2.47.0",
+      "assets": {
+        "arm64": {
+          "url": "https://github.com/goreleaser/nfpm/releases/download/v2.47.0/nfpm_2.47.0_Linux_arm64.tar.gz",
+          "sha256": "1c0f5f2999b9a974bfb04fdb0cc3306096de530ac5dbb25d739cc5f5219c919c"
+        },
+        "amd64": {
+          "url": "https://github.com/goreleaser/nfpm/releases/download/v2.47.0/nfpm_2.47.0_Linux_x86_64.tar.gz",
+          "sha256": "0660ca602b2d2d2ae4781a06c692b3eeb9d437ffea05b831d76e41f4a3188783"
+        }
+      }
+    },
+    "aptly": {
+      "version": "1.6.3",
+      "assets": {
+        "amd64": {
+          "url": "https://github.com/aptly-dev/aptly/releases/download/v1.6.3/aptly_1.6.3_linux_amd64.zip",
+          "sha256": "535ed24eb706bc25a316b59d709a7e74e10165f2ffab8552097ba7e4816a3e7e"
+        },
+        "arm64": {
+          "url": "https://github.com/aptly-dev/aptly/releases/download/v1.6.3/aptly_1.6.3_linux_arm64.zip",
+          "sha256": "dd0988ebe8bfd547482e55de83f178c14e95d5d829d956ce683e0ca045cdb86c"
+        }
+      }
+    },
+    "createrepo_c": {
+      "version": "1.2.4",
+      "source": {
+        "url": "https://api.github.com/repos/rpm-software-management/createrepo_c/tarball/47ab8a418fb3abd58ef3760a7eace1481610c659",
+        "sha256": "ac864d8fcb61e5e36364e65c23b82942534d761e545a01182b6a0fef3b8e1339"
+      }
+    }
+  },
+  "rustup": {
+    "version": "1.29.1",
+    "assets": {
+      "x86_64-unknown-linux-gnu": {
+        "url": "https://static.rust-lang.org/rustup/archive/1.29.1/x86_64-unknown-linux-gnu/rustup-init",
+        "sha256": "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71"
+      },
+      "aarch64-unknown-linux-gnu": {
+        "url": "https://static.rust-lang.org/rustup/archive/1.29.1/aarch64-unknown-linux-gnu/rustup-init",
+        "sha256": "15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433"
+      }
+    }
+  }
+}

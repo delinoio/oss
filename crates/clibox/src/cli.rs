@@ -1,7 +1,9 @@
-use std::{io::IsTerminal, net::Ipv6Addr, path::PathBuf, time::Duration};
+use std::{ffi::OsString, io::IsTerminal, net::Ipv6Addr, path::PathBuf, time::Duration};
 
 use clap::{builder::TypedValueParser, Args, Parser, Subcommand, ValueEnum};
 use reqwest::Url;
+
+use crate::{clipboard, port};
 
 fn color_choice() -> clap::ColorChoice {
     if std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none() {
@@ -17,9 +19,8 @@ fn color_choice() -> clap::ColorChoice {
     color = color_choice(),
     version,
     about = "Portable developer utilities",
-    disable_help_subcommand = true,
     after_help = "Waits observe one target without reserving it or guaranteeing continued \
-                  readiness.\nExit codes: 0 ready, 1 failure/timeout, 2 invalid input, 130 \
+                  readiness.\nWait exit codes: 0 ready, 1 failure/timeout, 2 invalid input, 130 \
                   Ctrl+C, 143 Unix SIGTERM.\nRUST_LOG=clibox=debug enables redacted stderr \
                   diagnostics. NO_COLOR disables color."
 )]
@@ -30,9 +31,57 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
+    #[command(flatten)]
+    Utility(Utility),
     /// Wait for one resource to become ready (no stdin or subsequent command).
     #[command(subcommand)]
     Wait(Wait),
+}
+
+#[derive(Subcommand)]
+pub enum Utility {
+    /// Run commands with a child-only environment.
+    Run {
+        #[command(subcommand)]
+        command: Run,
+    },
+    /// Inspect or forcibly terminate local port owners.
+    Port {
+        #[command(subcommand)]
+        command: port::Action,
+    },
+    /// Open one file, directory or registered URI.
+    #[command(
+        after_help = "Examples:\n  clibox open .\n  clibox open https://example.com\n  clibox \
+                      open report.txt --app TextEdit --wait\n\n--wait observes application \
+                      termination, not document or tab closure."
+    )]
+    Open {
+        target: OsString,
+        #[arg(long)]
+        app: Option<OsString>,
+        #[arg(long, requires = "app")]
+        wait: bool,
+    },
+    /// Copy or paste the desktop session's ordinary text clipboard.
+    Clipboard {
+        #[command(subcommand)]
+        command: clipboard::Action,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum Run {
+    /// Set cross-env compatible assignments and wait for a child command.
+    #[command(
+        after_help = "Examples:\n  clibox run env NODE_ENV=production node build.js\n  clibox run \
+                      env -- node script.js\n\nInherits cwd and stdio. No shell expressions. \
+                      Empty child arguments and exit signals are preserved."
+    )]
+    Env {
+        #[arg(value_name = "KEY=VALUE ... COMMAND ARG", trailing_var_arg = true, allow_hyphen_values = true, num_args = 1..)]
+        args: Vec<OsString>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -257,10 +306,11 @@ pub fn parser_message(kind: clap::error::ErrorKind) -> &'static str {
     use clap::error::ErrorKind;
     match kind {
         ErrorKind::ArgumentConflict => {
-            "Conflicting options; --quiet and --json cannot be combined."
+            "Conflicting options; check command --help. --quiet and --json cannot be combined."
         }
         ErrorKind::MissingRequiredArgument | ErrorKind::MissingSubcommand => {
-            "Select wait tcp, http, or file and provide exactly one target. See clibox wait --help."
+            "Select a command and provide its required arguments. Wait commands require exactly \
+             one target. See clibox --help."
         }
         ErrorKind::ValueValidation | ErrorKind::InvalidValue => {
             "Invalid value. Check target syntax, get/head method, status 200-599, and integer \
