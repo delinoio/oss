@@ -77,3 +77,4 @@
 
 - CI Rust numeric versions must be valid unprefixed rustup toolchain names; reject v-prefixed versions before workflow files are written.
 - Reject simultaneous explicit changed files and Git base/head selectors before planning or prerequisite execution; neither selection may silently override the other.
+- Bound artifact capture incrementally by encoded record size, including empty entries, escaped paths, links, digests, and Base64 expansion, before retaining records or reading payloads. Keep local uncached identity hashing independent of transfer bounds.

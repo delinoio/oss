@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
-    io::Read,
+    io::{Read, Write},
     path::{Component, Path, PathBuf},
 };
 
@@ -162,8 +162,25 @@ impl OutputPattern {
 }
 
 fn snapshot_inner(project: &Project, task: &Task, capture: bool) -> Result<Vec<FileRecord>> {
+    snapshot_with_limit(project, task, capture, MAX_CACHE_BYTES)
+}
+
+fn snapshot_with_limit(
+    project: &Project,
+    task: &Task,
+    capture: bool,
+    limit: usize,
+) -> Result<Vec<FileRecord>> {
     let mut entries = vec![];
-    let mut total = 0;
+    // Include array punctuation, every escaped record field, and Base64 bytes.
+    // Uncached output identity hashing deliberately has no transfer-size bound.
+    let mut budget = BoundedWriter {
+        inner: std::io::sink(),
+        remaining: limit,
+    };
+    if capture {
+        budget.write_all(b"[]")?;
+    }
     let patterns: Vec<_> = task
         .output
         .iter()
@@ -200,6 +217,9 @@ fn snapshot_inner(project: &Project, task: &Task, capture: bool) -> Result<Vec<F
                 !relative.split('/').any(files::reserved_name),
                 "output must not capture reserved state"
             );
+            if capture && !entries.is_empty() {
+                budget.write_all(b",")?;
+            }
             let content = if entry.file_type().is_symlink() {
                 let target = files::slash(&std::fs::read_link(path)?)?;
                 validate_portable_link(&target)?;
@@ -210,20 +230,42 @@ fn snapshot_inner(project: &Project, task: &Task, capture: bool) -> Result<Vec<F
             } else if entry.file_type().is_dir() {
                 Content::Directory
             } else if entry.file_type().is_file() {
+                #[cfg(unix)]
+                let executable = {
+                    use std::os::unix::fs::PermissionsExt;
+                    entry.metadata()?.permissions().mode() & 0o111 != 0
+                };
+                #[cfg(not(unix))]
+                let executable = false;
                 let (digest, data) = if capture {
+                    // Reserve metadata before reading even an empty file. The
+                    // placeholder digest has the final SHA-256 encoded length.
+                    serde_json::to_writer(
+                        &mut budget,
+                        &FileRecord {
+                            path: relative.clone(),
+                            content: Content::File {
+                                data: String::new(),
+                                digest: "0".repeat(64),
+                                executable,
+                            },
+                        },
+                    )?;
+                    let raw_limit = budget.remaining / 4 * 3;
                     ensure!(
-                        entry.metadata()?.len() <= (MAX_CACHE_BYTES - total) as u64,
+                        entry.metadata()?.len() <= raw_limit as u64,
                         "task outputs exceed cache size limit"
                     );
                     let mut bytes = Vec::new();
                     std::fs::File::open(path)?
-                        .take((MAX_CACHE_BYTES - total) as u64 + 1)
+                        .take(raw_limit as u64 + 1)
                         .read_to_end(&mut bytes)?;
-                    total += bytes.len();
+                    let encoded_len = bytes.len().div_ceil(3) * 4;
                     ensure!(
-                        total <= MAX_CACHE_BYTES,
+                        encoded_len <= budget.remaining,
                         "task outputs exceed cache size limit"
                     );
+                    budget.remaining -= encoded_len;
                     (
                         files::digest(&bytes),
                         base64::engine::general_purpose::STANDARD.encode(bytes),
@@ -241,13 +283,6 @@ fn snapshot_inner(project: &Project, task: &Task, capture: bool) -> Result<Vec<F
                     }
                     (format!("{:x}", hash.finalize()), String::new())
                 };
-                #[cfg(unix)]
-                let executable = {
-                    use std::os::unix::fs::PermissionsExt;
-                    entry.metadata()?.permissions().mode() & 0o111 != 0
-                };
-                #[cfg(not(unix))]
-                let executable = false;
                 Content::File {
                     digest,
                     data,
@@ -256,10 +291,14 @@ fn snapshot_inner(project: &Project, task: &Task, capture: bool) -> Result<Vec<F
             } else {
                 bail!("unsupported special output file");
             };
-            entries.push(FileRecord {
+            let record = FileRecord {
                 path: relative,
                 content,
-            });
+            };
+            if capture && !matches!(record.content, Content::File { .. }) {
+                serde_json::to_writer(&mut budget, &record)?;
+            }
+            entries.push(record);
         }
     }
     for (pattern, found) in task.output.iter().flatten().zip(found) {
@@ -693,13 +732,35 @@ pub fn entry_path(root: &Path, key: &str) -> PathBuf {
     root.join(".taskflow/cache/entries")
         .join(format!("{key}.json"))
 }
+struct BoundedWriter<W> {
+    inner: W,
+    remaining: usize,
+}
+
+impl<W: Write> Write for BoundedWriter<W> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if bytes.len() > self.remaining {
+            return Err(std::io::Error::other(
+                "encoded cache artifact exceeds size limit",
+            ));
+        }
+        let count = self.inner.write(bytes)?;
+        self.remaining -= count;
+        Ok(count)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 pub fn encode(artifact: &Artifact) -> Result<Vec<u8>> {
-    let bytes = serde_json::to_vec(artifact)?;
-    ensure!(
-        bytes.len() <= MAX_CACHE_BYTES,
-        "encoded cache artifact exceeds size limit"
-    );
-    Ok(bytes)
+    let mut writer = BoundedWriter {
+        inner: Vec::new(),
+        remaining: MAX_CACHE_BYTES,
+    };
+    serde_json::to_writer(&mut writer, artifact)?;
+    Ok(writer.inner)
 }
 pub fn store(root: &Path, artifact: &Artifact) -> Result<Vec<u8>> {
     let bytes = encode(artifact)?;
@@ -806,6 +867,59 @@ pub fn valid_hash(value: &str) -> bool {
 #[cfg(test)]
 mod publication_tests {
     use super::*;
+
+    fn capture_fixture(root: &Path) -> (Project, Task) {
+        (
+            Project {
+                id: "app".into(),
+                directory: root.canonicalize().unwrap(),
+                native: BTreeSet::new(),
+                config: None,
+            },
+            serde_json::from_value(
+                serde_json::json!({"command":["unused"],"input":[],"output":["out/**"]}),
+            )
+            .unwrap(),
+        )
+    }
+
+    #[test]
+    fn capture_budget_counts_empty_records_and_base64_before_retaining_them() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("out")).unwrap();
+        let (project, task) = capture_fixture(root.path());
+        for size in [0, 1, 2, 3, 4, 200] {
+            std::fs::write(root.path().join("out/file"), vec![42; size]).unwrap();
+            let entries = snapshot(&project, &task).unwrap();
+            let encoded = serde_json::to_vec(&entries).unwrap();
+            assert!(snapshot_with_limit(&project, &task, true, encoded.len()).is_ok());
+            assert!(snapshot_with_limit(&project, &task, true, encoded.len() - 1).is_err());
+        }
+        std::fs::remove_file(root.path().join("out/file")).unwrap();
+        for i in 0..32 {
+            std::fs::create_dir(root.path().join(format!("out/directory-{i}"))).unwrap();
+            std::fs::write(root.path().join(format!("out/empty-{i}")), []).unwrap();
+        }
+        assert!(snapshot_with_limit(&project, &task, true, 1024).is_err());
+        // Identity-only snapshots remain available for large uncached outputs.
+        assert!(snapshot_with_limit(&project, &task, false, 0).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn capture_budget_counts_escaped_paths_and_link_metadata() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("out")).unwrap();
+        let target = "long-target-name-".repeat(8);
+        std::fs::write(root.path().join("out").join(&target), []).unwrap();
+        std::os::unix::fs::symlink(&target, root.path().join("out/link\"\n")).unwrap();
+        let (project, task) = capture_fixture(root.path());
+        let size = serde_json::to_vec(&snapshot(&project, &task).unwrap())
+            .unwrap()
+            .len();
+        assert!(snapshot_with_limit(&project, &task, true, size).is_ok());
+        assert!(snapshot_with_limit(&project, &task, true, size - 1).is_err());
+    }
 
     #[test]
     fn invalidation_at_each_publication_boundary_preserves_previous_entry() {
