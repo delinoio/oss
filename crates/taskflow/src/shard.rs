@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
+    io::Read,
     path::Path,
     sync::{Arc, Mutex},
     time::Instant,
@@ -824,10 +825,8 @@ pub async fn execute(
                     version: u32,
                     results: Vec<UnitResult>,
                 }
-                let report: GenericResult = serde_json::from_slice(
-                    &std::fs::read(&results_path)
-                        .context("generic adapter did not write results")?,
-                )?;
+                let report: GenericResult =
+                    serde_json::from_slice(&read_generic_result(&results_path)?)?;
                 ensure!(report.version == 1, "unknown generic result version");
                 results = report.results;
                 all_passed &= status == UnitStatus::Passed;
@@ -1031,4 +1030,27 @@ fn unit_status(exit: ProcessExit) -> UnitStatus {
         ExitReason::Completed if exit.code == 0 => UnitStatus::Passed,
         ExitReason::Completed => UnitStatus::Failed,
     }
+}
+
+fn read_generic_result(path: &Path) -> Result<Vec<u8>> {
+    let file = std::fs::File::open(path).context("generic adapter did not write results")?;
+    let metadata = file.metadata()?;
+    ensure!(
+        metadata.is_file(),
+        "generic adapter results must be a regular file"
+    );
+    ensure!(
+        metadata.len() <= process::METADATA_LIMIT,
+        "generic adapter results exceeded 64 MiB"
+    );
+    // The file may grow after the metadata query. Bound the actual reader too,
+    // and retain one extra byte only to distinguish the exact limit from overflow.
+    let mut bytes = Vec::new();
+    file.take(process::METADATA_LIMIT + 1)
+        .read_to_end(&mut bytes)?;
+    ensure!(
+        bytes.len() as u64 <= process::METADATA_LIMIT,
+        "generic adapter results exceeded 64 MiB"
+    );
+    Ok(bytes)
 }

@@ -195,6 +195,11 @@ fn main() {
             writeln!(file, "end:{}", std::process::id()).unwrap();
         }
         "inventory" => println!("{{\"version\":1,\"tests\":[{{\"id\":\"aa\"}},{{\"id\":\"bb\"}},{{\"id\":\"cc\"}}]}}"),
+        "oversized-shard" => {
+            let path = std::env::var("TFLOW_SHARD_RESULT").unwrap();
+            let file = fs::File::create(path).unwrap();
+            file.set_len(64 * 1024 * 1024 + 1).unwrap();
+        }
         "shard" | "shard-log" => {
             let input = fs::read_to_string(std::env::var("TFLOW_SHARD_INPUT").unwrap()).unwrap();
             if args[1] == "shard-log" {

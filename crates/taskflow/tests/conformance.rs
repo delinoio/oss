@@ -7421,3 +7421,23 @@ async fn child_projects_reject_root_only_configuration() {
     let workspace = Workspace::discover(directory.path()).await.unwrap();
     assert!(!workspace.projects["child"].config.as_ref().unwrap().dotenv);
 }
+
+#[tokio::test]
+async fn generic_shard_results_are_bounded_before_json_parsing() {
+    let root = fixture(
+        json!({"suite":{"command":command(&["version"]),"input":[],"output":[],"cache":true,"tools":{"fixture":command(&["version"])},"shard":{"adapter":"generic","count":1,"list":command(&["inventory"]),"run":command(&["oversized-shard"])}}}),
+    );
+    let result = run(graph(root.path()).await, &["suite"]).await;
+    assert!(!result.success);
+    let receipt = &result.results["app#suite"];
+    assert_eq!(receipt.outcome, Outcome::Failed);
+    assert!(
+        receipt
+            .diagnostic
+            .as_ref()
+            .unwrap()
+            .contains("results exceeded 64 MiB"),
+        "{receipt:?}"
+    );
+    assert!(runner::previous(root.path(), "app#suite").is_none());
+}

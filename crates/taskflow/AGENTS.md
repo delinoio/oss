@@ -105,3 +105,5 @@
 - Graph refresh compares watched input snapshots before replacing the baseline and preserves pending independent causes. Automatic metadata changes activate initial-disabled watchers; invalid configuration retains the last accepted snapshots until recovery. Identical metadata rewrites do not enqueue work.
 
 - Non-root project configurations may declare project identity, tasks, and dotenv policy. Reject nondefault workspace/start and any remote/ci configuration instead of silently ignoring root-only policy. Diagnostics identify the child configuration and field without configuration values.
+
+- Generic shard result files share the structured-metadata byte limit with inventory output. Validate regular-file size and bound the actual read before JSON decoding so concurrent growth cannot bypass the cap.

@@ -467,6 +467,8 @@ async fn capture_task_output(
     container.cleanup().await?;
     result
 }
+pub(crate) const METADATA_LIMIT: u64 = 64 * 1024 * 1024;
+
 async fn read_bounded(mut reader: impl AsyncRead + Unpin) -> Result<Vec<u8>> {
     let mut bytes = vec![];
     let mut block = [0; 8192];
@@ -476,7 +478,7 @@ async fn read_bounded(mut reader: impl AsyncRead + Unpin) -> Result<Vec<u8>> {
         if n == 0 {
             break;
         }
-        if bytes.len() + n <= 64 * 1024 * 1024 {
+        if (bytes.len() + n) as u64 <= METADATA_LIMIT {
             bytes.extend_from_slice(&block[..n]);
         } else {
             exceeded = true;
