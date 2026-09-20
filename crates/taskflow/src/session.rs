@@ -71,17 +71,21 @@ pub async fn start(
         let mut active_set = activation(&graph, &roots);
         let mut bootstrap_results = BTreeMap::new();
         let mut invalid_bootstrap = BTreeSet::new();
-        if active_set.iter().any(|id| graph.unresolved.contains(id)) {
-            let installs: Vec<_> = active_set.iter().filter(|id| graph.tasks[*id].task.install).cloned().collect();
-            ensure!(!installs.is_empty(), "unresolved native metadata requires an explicit install: true prerequisite");
-            let install_plan = Plan::create(&graph, &installs, &[], false)?;
-            let result = runner::run_plan(graph.clone(), install_plan, options.clone(), work_cancel.child_token()).await?;
+        let mut bootstrap_generations = BTreeSet::new();
+        while let Some(install) = runner::next_install(&graph, &graph.topological(&active_set)?, &bootstrap_results)? {
+            ensure!(bootstrap_generations.insert((graph.workspace.generation.clone(), install.clone())), "installation did not stabilize after graph refresh: {install}");
+            let install_plan = Plan::create(&graph, &[install], &[], false)?;
+            let mut bootstrap_options = options.clone();
+            bootstrap_options.shard = None;
+            bootstrap_options.provided = bootstrap_results.clone();
+            let result = runner::run_plan(graph.clone(), install_plan, bootstrap_options, work_cancel.child_token()).await?;
             ensure!(result.success, "installation prerequisite failed");
             // Live owners cannot be transferred to a refreshed task identity.
             services.shutdown().await?;
             while service_receiver.try_recv().is_ok() {}
             graph = Arc::new(Graph::build(Workspace::discover(root).await?.select_platform(options.os, options.arch))?);
-            (bootstrap_results, invalid_bootstrap) = runner::revalidate_bootstrap(&graph, result.results, &options, &work_cancel).await?;
+            bootstrap_results.extend(result.results);
+            (bootstrap_results, invalid_bootstrap) = runner::revalidate_bootstrap(&graph, bootstrap_results, &options, &work_cancel).await?;
             roots = roots_for_profile(&graph, profile)?;
             active_set = activation(&graph, &roots);
         }

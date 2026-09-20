@@ -457,18 +457,17 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
             let mut options = execution.options(cli.os, cli.arch)?;
             let mut plan = selection.plan(&graph).await?;
             runner::validate_shard_selection(&graph, &plan, &options)?;
-            if plan.order.iter().any(|id| graph.unresolved.contains(id)) {
-                let installs: Vec<_> = plan
-                    .order
-                    .iter()
-                    .filter(|id| graph.tasks[*id].task.install)
-                    .cloned()
-                    .collect();
+            let mut bootstrap_generations = BTreeSet::new();
+            while let Some(install) = runner::next_install(&graph, &plan.order, &options.provided)?
+            {
                 ensure!(
-                    !installs.is_empty(),
-                    "unresolved native metadata requires an explicit install: true prerequisite"
+                    bootstrap_generations
+                        .insert((graph.workspace.generation.clone(), install.clone())),
+                    "installation did not stabilize after graph refresh: {install}"
                 );
-                let bootstrap = Plan::create(&graph, &installs, &[], false)?;
+                // A later install can depend on relationships changed by this
+                // one. Refresh between install roots, not only before builds.
+                let bootstrap = Plan::create(&graph, &[install], &[], false)?;
                 let mut bootstrap_options = options.clone();
                 // The complete requested plan passed shard preflight above.
                 // Installation prepares metadata and always executes in full.
@@ -489,15 +488,14 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
                         .await?
                         .select_platform(cli.os, cli.arch),
                 )?);
-                let (provided, invalid) = runner::revalidate_bootstrap(
-                    &graph,
-                    result.results,
-                    &bootstrap_options,
-                    &cancel,
-                )
-                .await?;
-                options.provided.extend(provided);
+                let mut receipts = std::mem::take(&mut options.provided);
+                receipts.extend(result.results);
+                let (provided, invalid) =
+                    runner::revalidate_bootstrap(&graph, receipts, &bootstrap_options, &cancel)
+                        .await?;
+                options.provided = provided;
                 plan = selection.plan(&graph).await?;
+                runner::validate_shard_selection(&graph, &plan, &options)?;
                 for id in invalid {
                     if let Some(causes) = plan.causes.get_mut(&id) {
                         // A stale prerequisite must execute even if another

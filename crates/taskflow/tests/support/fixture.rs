@@ -121,6 +121,12 @@ fn main() {
                     .args(["result", "unchanged"]).status().unwrap().success());
             }
         }
+        "rewrite-config-once" => {
+            if !Path::new(&args[3]).exists() {
+                fs::copy(&args[2], "taskflow.yml").unwrap();
+                write(&args[3], b"done");
+            }
+        }
         "bootstrap-install" => {
             if !Path::new("installed").exists() {
                 assert!(std::process::Command::new("cargo").args(["generate-lockfile", "--offline"]).status().unwrap().success());

@@ -490,6 +490,22 @@ async fn prepare_inputs(
     })
 }
 
+pub(crate) fn next_install(
+    graph: &Graph,
+    order: &[String],
+    provided: &BTreeMap<String, Receipt>,
+) -> Result<Option<String>> {
+    let install = order
+        .iter()
+        .find(|id| graph.tasks[*id].task.install && !provided.contains_key(*id))
+        .cloned();
+    ensure!(
+        install.is_some() || !order.iter().any(|id| graph.unresolved.contains(id)),
+        "unresolved native metadata requires an explicit install: true prerequisite"
+    );
+    Ok(install)
+}
+
 /// Installation can change declarations, inputs, native metadata, or outputs.
 /// A receipt may cross rediscovery only if its complete refreshed identity and
 /// output contract still hold, including every prerequisite it relied on.

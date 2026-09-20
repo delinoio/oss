@@ -109,3 +109,5 @@
 - Generic shard result files share the structured-metadata byte limit with inventory output. Validate regular-file size and bound the actual read before JSON decoding so concurrent growth cannot bypass the cap.
 
 - Session-provided receipts retain their validated semantic identity but clear historical changed flags for each new wave, including ready services. Only results produced by the current wave propagate changes.
+
+- Run selected install roots in topological bootstrap phases even when native metadata is already complete. Rediscover and replan between roots, revalidate all retained receipts, and reject a repeated unstabilized install in one graph generation before executing stale dependents.

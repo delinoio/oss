@@ -7492,3 +7492,51 @@ async fn reused_session_receipts_do_not_replay_historical_changes() {
         }
     }
 }
+
+#[tokio::test]
+async fn resolved_graph_installs_refresh_before_newly_selected_work() {
+    for session in [false, true] {
+        let root = fixture(json!({
+            "install":{"command":command(&["rewrite-config-once","next.yml","installed"]),"install":true,"input":[],"output":["installed"]},
+            "old":{"command":command(&["record","events","old"]),"input":[]},
+            "new":{"command":command(&["record","events","new"]),"input":[]},
+            "build":{"command":command(&["record","events","build"]),"input":[],"dependsOn":["install","old"]}
+        }));
+        profile(root.path(), &["build"]);
+        let mut next: Value =
+            serde_yaml::from_slice(&std::fs::read(root.path().join("taskflow.yml")).unwrap())
+                .unwrap();
+        next["tasks"]["build"]["dependsOn"] = json!(["install", "second-install", "new"]);
+        next["tasks"]["second-install"] = json!({"command":command(&["rewrite-config-once","final.yml","second-installed"]),"install":true,"input":[],"output":["second-installed"]});
+        files::atomic_write(
+            &root.path().join("next.yml"),
+            serde_yaml::to_string(&next).unwrap().as_bytes(),
+        )
+        .unwrap();
+        next["tasks"]["build"]["command"] = command(&["record", "events", "fresh-build"]);
+        files::atomic_write(
+            &root.path().join("final.yml"),
+            serde_yaml::to_string(&next).unwrap().as_bytes(),
+        )
+        .unwrap();
+        assert!(graph(root.path()).await.unresolved.is_empty());
+        let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .current_dir(root.path())
+            .args(if session {
+                vec!["--json", "start"]
+            } else {
+                vec!["--json", "run", "build"]
+            })
+            .output()
+            .await
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let events = std::fs::read_to_string(root.path().join("events")).unwrap();
+        assert!(
+            !events.lines().any(|line| matches!(line, "old" | "build")),
+            "{events}"
+        );
+        assert!(events.lines().any(|line| line == "new"), "{events}");
+        assert!(events.lines().any(|line| line == "fresh-build"), "{events}");
+    }
+}
