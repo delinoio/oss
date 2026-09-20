@@ -147,6 +147,7 @@ Wait signal handlers are installed only by the Tokio wait runtime. Configuration
 - Linux/macOS/Windows CI runs clibox Rust process tests alongside npm distribution/consumer tests. The existing eight-target release matrix and Alpine consumers remain intact. Test termination may target only disposable test-owned processes; CLI kill tests decline when complete exclusive port ownership cannot be established.
 - Automated parser/process/mocked-adapter tests are the completion gate. Real GUI launching, desktop clipboard persistence, and application termination waiting remain deferred follow-up verification and must not be represented as completed by mocks.
 
+- Windows DACL preservation fixtures compare the ACL entries and protection/control semantics, allowing only the OS-maintained `SE_DACL_AUTO_INHERITED` bookkeeping bit to change; they do not require byte-identical self-relative security descriptors.
 - Unit/process tests cover CLI defaults/conflicts, dotenv syntax and precedence, YAML Core/merge/alias semantics, precision and idempotence, encoding, exact/exceeded aggregate input and output limits, depth/expansion, file permissions/links/failure cleanup/concurrent replacement, interruption, broken stdout, and secret-marker privacy under trace logging. npm packaging also checks the native executable version against both source manifests.
 
 ## Dependencies and Integrations

@@ -835,7 +835,43 @@ fn windows_replacement_preserves_explicit_dacl() {
             },
             0
         );
-        data
+        let mut control = 0;
+        let mut revision = 0;
+        let mut present = 0;
+        let mut defaulted = 0;
+        let mut dacl = std::ptr::null_mut();
+        // Compare the actual ACL and its protection/control semantics, not the
+        // self-relative descriptor's storage layout. ReplaceFileW may set
+        // SE_DACL_AUTO_INHERITED while preserving every ACE and protection from
+        // parent inheritance. That bookkeeping bit grants no additional access.
+        // SAFETY: data holds a valid OS-produced descriptor throughout these
+        // queries and the ACL copy; no returned pointer outlives the buffer.
+        unsafe {
+            assert_ne!(
+                GetSecurityDescriptorControl(data.as_mut_ptr().cast(), &mut control, &mut revision),
+                0
+            );
+            assert_ne!(
+                GetSecurityDescriptorDacl(
+                    data.as_mut_ptr().cast(),
+                    &mut present,
+                    &mut dacl,
+                    &mut defaulted,
+                ),
+                0
+            );
+            assert_ne!(present, 0);
+            assert!(!dacl.is_null());
+            assert_ne!(IsValidAcl(dacl), 0);
+            assert_ne!(control & SE_DACL_PROTECTED, 0);
+            (
+                control & !SE_DACL_AUTO_INHERITED,
+                revision,
+                defaulted,
+                std::slice::from_raw_parts(dacl.cast::<u8>(), usize::from((*dacl).AclSize))
+                    .to_vec(),
+            )
+        }
     };
     let before = security();
     let result = run(
