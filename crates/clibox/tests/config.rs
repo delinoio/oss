@@ -615,6 +615,7 @@ fn broken_stdout_is_a_redacted_runtime_failure() {
     .unwrap();
     let mut child = command(dir.path())
         .args(["dotenv", "merge", "input"])
+        .env("RUST_LOG", "off")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -627,14 +628,92 @@ fn broken_stdout_is_a_redacted_runtime_failure() {
 }
 
 #[test]
+fn filtered_configuration_errors_remain_actionable_and_redacted() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("out"), "original").unwrap();
+    for filter in [
+        "off",
+        "clibox=off",
+        "clibox::config_runtime=off",
+        "yaml_rust2=trace",
+    ] {
+        for (args, input, code, classification) in [
+            (
+                vec!["dotenv", "merge", "-", "--output", "out", "--force"],
+                "SECRET_MARKER invalid",
+                1,
+                "DotenvSyntax",
+            ),
+            (
+                vec!["yaml", "normalize", "--output", "out", "--force"],
+                "SECRET_MARKER: [",
+                1,
+                "YamlSyntax",
+            ),
+            (
+                vec!["dotenv", "list", "--input", "SECRET_MARKER"],
+                "",
+                1,
+                "Read",
+            ),
+            (
+                vec!["dotenv", "merge", "-", "--output", "SECRET_MARKER/out"],
+                "A=SECRET_MARKER",
+                1,
+                "Publish",
+            ),
+            (
+                vec!["dotenv", "merge", "-", "--output", "out"],
+                "A=SECRET_MARKER",
+                1,
+                "DestinationExists",
+            ),
+            (
+                vec!["dotenv", "merge", "-", "--force"],
+                "SECRET_MARKER",
+                2,
+                "Arguments",
+            ),
+        ] {
+            let mut child = command(dir.path())
+                .args(args)
+                .env("RUST_LOG", filter)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap();
+            let _ = child.stdin.take().unwrap().write_all(input.as_bytes());
+            let output = child.wait_with_output().unwrap();
+            assert_eq!(output.status.code(), Some(code));
+            assert!(output.stdout.is_empty());
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            assert!(stderr.contains("error:"), "{filter}: {stderr}");
+            assert!(stderr.contains(classification), "{filter}: {stderr}");
+            assert_eq!(stderr.lines().count(), 1);
+            assert!(!stderr.contains("SECRET_MARKER"));
+            assert!(!stderr.contains(&dir.path().display().to_string()));
+            assert!(!stderr.contains('\u{1b}'));
+            assert_eq!(fs::read(dir.path().join("out")).unwrap(), b"original");
+            no_temps(dir.path());
+        }
+    }
+}
+
+#[test]
 fn closed_stderr_preserves_success_and_runtime_failure_statuses() {
     use std::io::{BufRead, BufReader};
 
-    for (input, code, expected) in [("A=1", 0, "A=1\n"), ("invalid", 1, "")] {
+    for (filter, input, code, expected) in [
+        ("clibox=debug", "A=1", 0, "A=1\n"),
+        ("clibox=debug", "invalid", 1, ""),
+        ("off", "A=1", 0, "A=1\n"),
+        ("off", "invalid", 1, ""),
+    ] {
         let dir = tempfile::tempdir().unwrap();
         let mut child = command(dir.path())
             .args(["dotenv", "merge", "-"])
-            .env("RUST_LOG", "clibox=debug")
+            .env("RUST_LOG", filter)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -642,8 +721,10 @@ fn closed_stderr_preserves_success_and_runtime_failure_statuses() {
             .unwrap();
         let mut stderr = BufReader::new(child.stderr.take().unwrap());
         let mut ready = String::new();
-        stderr.read_line(&mut ready).unwrap();
-        assert!(ready.contains("operation_started"));
+        if filter != "off" {
+            stderr.read_line(&mut ready).unwrap();
+            assert!(ready.contains("operation_started"));
+        }
         // Close the diagnostic consumer before allowing processing to finish.
         // Both completion and content-error diagnostics must tolerate this.
         drop(stderr);

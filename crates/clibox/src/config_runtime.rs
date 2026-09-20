@@ -139,9 +139,27 @@ impl Error {
     }
 
     pub fn report(&self, operation: &'static str) {
-        tracing::error!(operation, classification = ?self.kind, input = self.input,
-            document = self.document, line = self.line, column = self.column,
-            "error: {}", self.kind.guidance());
+        if tracing::enabled!(tracing::Level::ERROR) {
+            tracing::error!(operation, classification = ?self.kind, input = self.input,
+                document = self.document, line = self.line, column = self.column,
+                "error: {}", self.kind.guidance());
+        } else {
+            // Ambient logging filters must not silence actionable failures.
+            // Only the same static guidance, enum, and numeric positions cross
+            // this fallback. Ignore write errors so closed stderr cannot panic
+            // or replace the command's failure/cancellation status.
+            let _ = writeln!(
+                std::io::stderr(),
+                "error: {} operation={operation} classification={:?} input={:?} document={:?} \
+                 line={:?} column={:?}",
+                self.kind.guidance(),
+                self.kind,
+                self.input,
+                self.document,
+                self.line,
+                self.column,
+            );
+        }
     }
 }
 
