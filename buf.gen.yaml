@@ -20,6 +20,8 @@ plugins:
       - pnpm
       - exec
       - protoc-gen-es
+    types:
+      - "devhud.v1"
     out: packages/devhud-api-client/src/gen
     opt:
       - target=ts
@@ -28,7 +30,30 @@ plugins:
       - pnpm
       - exec
       - protoc-gen-connect-query
+    types:
+      - "devhud.v1"
     out: packages/devhud-api-client/src/gen
+    opt:
+      - target=ts
+      - import_extension=js
+
+  - local:
+      - pnpm
+      - exec
+      - protoc-gen-es
+    out: packages/async-commit-hook-api-client/src/gen
+    types:
+      - "async_commit_hook.v1"
+    opt:
+      - target=ts
+      - import_extension=js
+  - local:
+      - pnpm
+      - exec
+      - protoc-gen-connect-query
+    out: packages/async-commit-hook-api-client/src/gen
+    types:
+      - "async_commit_hook.v1"
     opt:
       - target=ts
       - import_extension=js
@@ -37,3 +62,4 @@ inputs:
   - directory: protos
     paths:
       - protos/devhud/v1
+      - protos/async_commit_hook/v1

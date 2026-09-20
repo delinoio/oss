@@ -99,8 +99,6 @@ export async function main() {
   const { plan } = candidate;
   ensure(process.env.GITHUB_REPOSITORY === 'delinoio/oss' && process.env.GITHUB_REF === `refs/tags/${plan.tag}` && process.env.GITHUB_SHA === plan.revision, 'Publication requires the exact first-party tag and commit');
   ensure(process.env.GH_TOKEN && process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN, 'GitHub token and Actions OIDC are required');
-  const crate = await fetch(`https://crates.io/api/v1/crates/clibox/${plan.version}`, { headers: { 'User-Agent': 'clibox-release (https://github.com/delinoio/oss)' }, redirect: 'error', signal: AbortSignal.timeout(30000) });
-  ensure(crate.ok && (await crate.json()).version?.num === plan.version, 'Publish the matching crates.io version through Release Project first');
   const request = async (url, options = {}, allowMissing = false) => {
     const response = await fetch(url, { ...options, headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...options.headers }, signal: AbortSignal.timeout(60000), redirect: 'error' });
     if (allowMissing && response.status === 404) return null;

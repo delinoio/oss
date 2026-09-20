@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "version": "0.1.0",
+  "tag_prefix": "async-commit-hook@v",
+  "executable": "ach",
+  "site": "https://ach.delino.io",
+  "targets": [
+    {"os": "darwin", "arch": "amd64", "minimum": "macOS 13"},
+    {"os": "darwin", "arch": "arm64", "minimum": "macOS 13"},
+    {"os": "windows", "arch": "amd64", "minimum": "Windows 10 22H2"},
+    {"os": "windows", "arch": "arm64", "minimum": "Windows 10 22H2"},
+    {"os": "linux", "arch": "amd64", "minimum": "Ubuntu 22.04 LTS"},
+    {"os": "linux", "arch": "arm64", "minimum": "Ubuntu 22.04 LTS"}
+  ],
+  "real_machine_validation": "not performed; explicitly excluded by owner",
+  "publication": "manual only; not performed during implementation"
+}

@@ -1,0 +1,340 @@
+package core
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+)
+
+type Installation struct {
+	ID        string `json:"id"`
+	Path      string `json:"path"`
+	Hash      string `json:"hash"`
+	Original  []byte `json:"original,omitempty"`
+	Kind      string `json:"kind"`
+	Entry     string `json:"entry,omitempty"`
+	SkillPath string `json:"skill_path,omitempty"`
+	SkillHash string `json:"skill_hash,omitempty"`
+}
+type InstallResult struct {
+	Installed bool   `json:"installed"`
+	Path      string `json:"path"`
+	Manual    string `json:"manual,omitempty"`
+	Backup    string `json:"backup,omitempty"`
+	Example   string `json:"example,omitempty"`
+}
+
+func (s *Service) installation(id string) (Installation, error) {
+	var b []byte
+	err := s.Store.DB.QueryRow("SELECT record FROM installations WHERE id=?", id).Scan(&b)
+	var out Installation
+	if err == nil {
+		err = json.Unmarshal(b, &out)
+	}
+	return out, err
+}
+func (s *Service) saveInstallation(i Installation) error {
+	_, e := s.Store.DB.Exec("INSERT INTO installations(id,record) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET record=excluded.record", i.ID, Encode(i))
+	return e
+}
+func quoteSh(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
+func hookPath(ctx context.Context, root, kind string) (string, error) {
+	// Read effective hooksPath without the execution helper's managed-hooks override.
+	c := exec.CommandContext(ctx, "git", "-C", root, "config", "--path", "--get", "core.hooksPath")
+	b, e := c.Output()
+	dir := strings.TrimSpace(string(b))
+	if e != nil {
+		var exit *exec.ExitError
+		if !errors.As(e, &exit) || exit.ExitCode() != 1 {
+			return "", E("hooks-discovery-failed", "cannot read effective core.hooksPath", 3)
+		}
+	}
+	if dir == "" {
+		command := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "--path-format=absolute", "--git-path", "hooks")
+		raw, err := command.Output()
+		e = err
+		dir = strings.TrimSpace(string(raw))
+		if e != nil {
+			return "", e
+		}
+	} else if !filepath.IsAbs(dir) {
+		dir = filepath.Join(root, dir)
+	}
+	return filepath.Join(dir, kind), nil
+}
+func (s *Service) Hook(ctx context.Context, repo string, prePush, remove bool) ([]InstallResult, error) {
+	lock, err := TryLock(filepath.Join(s.Paths.Control, "installations.lock"))
+	if err != nil {
+		return nil, err
+	}
+	if lock == nil {
+		return nil, E("installation-busy", "another hook/agent edit is active; retry", 3)
+	}
+	defer lock.Close()
+	common, root, _, e := Discover(ctx, repo)
+	if e != nil {
+		return nil, e
+	}
+	kinds := []string{"post-commit"}
+	if prePush || remove {
+		kinds = append(kinds, "pre-push")
+	}
+	out := []InstallResult{}
+	executable, e := os.Executable()
+	if e != nil {
+		return out, e
+	}
+	for _, kind := range kinds {
+		path, e := hookPath(ctx, root, kind)
+		if e != nil {
+			return out, e
+		}
+		id := "hook:" + path
+		owned, ownedErr := s.installation(id)
+		if remove {
+			if errors.Is(ownedErr, sql.ErrNoRows) {
+				continue // Unrelated hooks are outside the uninstall scope.
+			}
+			if ownedErr != nil {
+				return out, ownedErr
+			}
+			snapshot, err := readAgentFile(path)
+			if err != nil {
+				return out, hookFileError(err)
+			}
+			if err := s.removeHook(owned, snapshot); err != nil {
+				return out, err
+			}
+			out = append(out, InstallResult{Path: path})
+			continue
+		}
+		command := quoteSh(executable) + " run --repo . --commit HEAD --automatic --config " + quoteSh(s.Paths.Config)
+		if kind == "pre-push" {
+			command = quoteSh(executable) + " pre-push --config " + quoteSh(s.Paths.Config)
+		}
+		if !repositoryHookDirectory(common, filepath.Dir(path)) {
+			// An absent hook in a shared directory is still shared policy. Do not
+			// publish a repository opt-in into every repository using this path.
+			command = scopedHookCommand(root, command)
+			out = append(out, InstallResult{Path: path, Manual: command + " (custom or shared hooks directory; integrate manually for this worktree only; preserve stdin for pre-push)", Example: hookExample(kind, command)})
+			continue
+		}
+		native, err := os.OpenRoot(common)
+		if err != nil {
+			return out, err
+		}
+		defer native.Close()
+		snapshot, err := readNativeHook(native, kind)
+		if err != nil {
+			return out, err
+		}
+		body := hookBody(executable, s.Paths.Config, kind)
+		if snapshot.info != nil {
+			if ownedErr == nil && ownsHookContents(owned, snapshot.data) {
+				result, err := s.refreshHook(native, owned, snapshot, body)
+				if err != nil {
+					return out, err
+				}
+				out = append(out, result)
+				continue
+			}
+			out = append(out, InstallResult{Path: path, Manual: command + " (add this to your existing " + kind + " hook or hook manager; preserve stdin for pre-push)", Example: hookExample(kind, command)})
+			continue
+		}
+		if e = s.createNativeHook(common, kind, Installation{ID: id, Path: path, Hash: Hash(body), Kind: "hook"}, body); e != nil {
+			return out, e
+		}
+		out = append(out, InstallResult{Installed: true, Path: path})
+	}
+	return out, nil
+}
+
+// Use the same identity-and-bytes snapshot as agent edits. The installation lock
+// serializes ach only; external editors and hook managers do not take that lock.
+func (s *Service) removeHook(owned Installation, snapshot agentFile) error {
+	if snapshot.info != nil && !ownsHookContents(owned, snapshot.data) {
+		return hookFileError(agentFileConflict())
+	}
+	if err := snapshot.remove(); err != nil {
+		return hookFileError(err)
+	}
+	_, err := s.Store.DB.Exec("DELETE FROM installations WHERE id=?", owned.ID)
+	return err
+}
+
+func hookFileError(err error) error {
+	var typed *Error
+	if errors.As(err, &typed) && typed.Code == "agent-conflict" {
+		return E("hook-conflict", "owned hook changed during integration; changes were preserved; retry after concurrent edits finish", 2)
+	}
+	return err
+}
+
+// Keep creation and rollback beneath the opened common directory. A parent
+// symlink installed after discovery must never redirect writes outside it.
+func (s *Service) createNativeHook(common, kind string, record Installation, body []byte) error {
+	root, err := os.OpenRoot(common)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if err := root.Mkdir("hooks", 0755); err != nil && !os.IsExist(err) {
+		return err
+	}
+	return s.publishNativeHook(root, kind, record, body)
+}
+
+func (s *Service) publishNativeHook(root *os.Root, kind string, record Installation, body []byte) error {
+	if kind != "post-commit" && kind != "pre-push" {
+		return E("invalid-hook", "unsupported hook", 2)
+	}
+	info, err := root.Lstat("hooks")
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return E("hook-conflict", "native hooks directory changed; preserve it and integrate manually", 2)
+	}
+	relative := filepath.Join("hooks", kind)
+	f, err := root.OpenFile(relative, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0755)
+	if err != nil {
+		return err
+	}
+	created, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return err
+	}
+	n, err := f.Write(body)
+	if err == nil {
+		err = f.Sync()
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return errors.Join(err, rollbackCreatedHook(root, relative, created, body[:n]))
+	}
+	if err := s.saveInstallation(record); err != nil {
+		return errors.Join(err, rollbackCreatedHook(root, relative, created, body))
+	}
+	return nil
+}
+
+func rollbackCreatedHook(root *os.Root, path string, created os.FileInfo, body []byte) error {
+	current, err := root.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	contents, err := root.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	// A concurrently replaced or edited hook is no longer ours to remove.
+	if !current.Mode().IsRegular() || !os.SameFile(created, current) || Hash(contents) != Hash(body) {
+		return E("hook-rollback-conflict", "hook changed during failed installation; preserve it and inspect manually: "+path, 3)
+	}
+	return root.Remove(path)
+}
+
+func hookExample(kind, command string) string {
+	stdin := ""
+	if kind == "pre-push" {
+		stdin = "      # If another command consumes stdin, use one wrapper that saves and replays it.\n      use_stdin: true\n"
+	}
+	return "# Existing shell hook: add this command without deleting other commands.\n" + command + "\n\n# Lefthook configuration: merge this named command into the existing hook.\n" + kind + ":\n  commands:\n    async-commit-hook:\n" + stdin + "      run: |\n        " + command + "\n"
+}
+
+func hookBody(executable, config, kind string) []byte {
+	args := "run --repo . --commit HEAD --automatic"
+	if kind == "pre-push" {
+		args = "pre-push \"$@\""
+	}
+	return []byte("#!/bin/sh\n# ach-owned v1: remove with ach hooks uninstall\nexec " + quoteSh(executable) + " " + args + " --config " + quoteSh(config) + "\n")
+}
+
+func ownsHookContents(owned Installation, body []byte) bool {
+	// A refresh records both exact versions before publication. If interrupted,
+	// the next install/uninstall recognizes either side of that atomic rename.
+	return Hash(body) == owned.Hash || len(owned.Original) != 0 && bytes.Equal(body, owned.Original)
+}
+
+func (s *Service) refreshHook(root *os.Root, owned Installation, snapshot agentFile, body []byte) (InstallResult, error) {
+	result := InstallResult{Path: owned.Path}
+	if err := unchangedNativeHook(root, snapshot); err != nil {
+		return result, err
+	}
+	if !bytes.Equal(snapshot.data, body) {
+		result.Backup = filepath.Join(s.Store.Root, "backups", ID()+"-hook")
+		if err := AtomicWrite(result.Backup, snapshot.data, 0600); err != nil {
+			return result, err
+		}
+		owned.Hash = Hash(body)
+		owned.Original = snapshot.data
+		if err := s.saveInstallation(owned); err != nil {
+			return result, err
+		}
+		if err := replaceOwnedHook(root, snapshot, body); err != nil {
+			return result, err
+		}
+	}
+	if len(owned.Original) != 0 {
+		owned.Hash = Hash(body)
+		owned.Original = nil
+		if err := s.saveInstallation(owned); err != nil {
+			return result, err
+		}
+	}
+	result.Installed = true
+	return result, nil
+}
+
+func replaceOwnedHook(root *os.Root, previous agentFile, body []byte) error {
+	temporary := filepath.Join("hooks", ".ach-hook-"+ID())
+	f, err := root.OpenFile(temporary, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0755)
+	if err != nil {
+		return err
+	}
+	defer root.Remove(temporary)
+	if _, err = f.Write(body); err == nil {
+		err = f.Sync()
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	if err := unchangedNativeHook(root, previous); err != nil {
+		return err
+	}
+	return root.Rename(temporary, previous.path)
+}
+
+// Automatic publication is restricted to the native common-directory hooks
+// location. A redirected/symlinked directory has no provable repository owner.
+func repositoryHookDirectory(common, directory string) bool {
+	native := filepath.Join(common, "hooks")
+	if filepath.Clean(directory) != native {
+		return false
+	}
+	resolved, err := filepath.EvalSymlinks(directory)
+	if os.IsNotExist(err) {
+		// A dangling hooks symlink is not an absent directory we may create.
+		_, statErr := os.Lstat(directory)
+		return os.IsNotExist(statErr)
+	}
+	return err == nil && resolved == native
+}
+func scopedHookCommand(root, command string) string {
+	return "if [ \"$(git rev-parse --show-toplevel 2>/dev/null)\" = " + quoteSh(filepath.ToSlash(root)) + " ]; then " + command + "; fi"
+}

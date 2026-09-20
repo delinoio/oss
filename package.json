@@ -26,9 +26,10 @@
     "proto:generate:cached": "turbo run //#proto:generate",
     "proto:lint": "buf format --diff --exit-code && buf lint",
     "proto:breaking": "./scripts/check-proto-breaking.sh",
-    "proto:fresh": "turbo run //#proto:generate --force && git diff --exit-code -- 'protos/gen' 'packages/devhud-api-client/src/gen' && test -z \"$(git ls-files --others --exclude-standard -- 'protos/gen' 'packages/devhud-api-client/src/gen')\"",
+    "proto:fresh": "turbo run //#proto:generate --force && git diff --exit-code -- 'protos/gen' 'packages/devhud-api-client/src/gen' 'packages/async-commit-hook-api-client/src/gen' && test -z \"$(git ls-files --others --exclude-standard -- 'protos/gen' 'packages/devhud-api-client/src/gen' 'packages/async-commit-hook-api-client/src/gen')\"",
     "proto:check": "pnpm proto:lint && pnpm proto:breaking && pnpm proto:fresh",
-    "dev:runlens-docs": "pnpm --filter runlens-docs dev"
+    "dev:runlens-docs": "pnpm --filter runlens-docs dev",
+    "dev:async-commit-hook": "pnpm --filter async-commit-hook dev"
   },
   "pnpm": {
     "overrides": {
