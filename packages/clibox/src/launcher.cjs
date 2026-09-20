@@ -12,7 +12,7 @@ class LauncherError extends Error {
 }
 
 function resolveBinary(manifestPath = path.join(__dirname, "..", "package.json"), target = selectTarget()) {
-  if (!target) throw new LauncherError(Failure.Unsupported, "This platform is not supported by @delino/clibox. Use a supported OS/architecture or cargo install clibox.");
+  if (!target) throw new LauncherError(Failure.Unsupported, "This platform is not supported by @delino/clibox. Use a supported OS/architecture.");
   const { version } = JSON.parse(readFileSync(manifestPath, "utf8"));
   let dependencyPath;
   let dependency;

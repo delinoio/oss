@@ -1633,7 +1633,7 @@ jobs:
       - name: Verify affected workspace runner
         run: node --test scripts/ci/run-affected.test.mjs
       - name: Test Rust utilities, readiness commands, and OS adapters
-        run: cargo test --locked -p clibox
+        run: cargo test --locked -p clibox -p clibox-system -p clibox-transform -p clibox-wait
       - name: Test launcher and native npm consumers
         env:
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['node-clibox-test'] }}

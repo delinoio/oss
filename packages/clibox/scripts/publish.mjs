@@ -47,8 +47,6 @@ export async function main() {
     ensure(process.env.GITHUB_REPOSITORY === "delinoio/oss" && process.env.GITHUB_REF === `refs/tags/clibox@v${artifacts[0].version}` && process.env.GITHUB_SHA === sourceRevision, "npm publication requires the exact first-party release tag and commit");
     ensure(process.env.CLIBOX_NPM_PUBLISH_ENABLED === "true", "npm trusted publishing is not enabled");
     ensure(process.env.ACTIONS_ID_TOKEN_REQUEST_URL && process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN, "npm publication requires GitHub Actions OIDC");
-    const response = await fetch(`https://crates.io/api/v1/crates/clibox/${artifacts[0].version}`, { headers: { "User-Agent": "clibox-release (https://github.com/delinoio/oss)" }, redirect: "error", signal: AbortSignal.timeout(30000) });
-    ensure(response.ok && (await response.json()).version?.num === artifacts[0].version, "Publish the matching crates.io version through Release Project first");
   }
   await publishArtifacts(artifacts, {
     dryRun: !values.publish,

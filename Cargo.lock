@@ -1685,38 +1685,82 @@ name = "clibox"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
- "blake3",
- "chrono",
- "chrono-tz",
  "clap",
- "ctrlc",
- "futures-util",
- "h2",
- "hickory-resolver",
- "http",
- "hyper",
+ "clibox-system",
+ "clibox-transform",
+ "clibox-wait",
+ "libc",
+ "rcgen",
+ "rustls",
+ "serde_json",
+ "sha2 0.10.9",
+ "socket2",
+ "tempfile",
+ "tracing",
+ "tracing-subscriber",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "clibox-system"
+version = "0.1.0"
+dependencies = [
+ "clap",
  "libc",
  "libproc",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
- "rcgen",
  "regex",
+ "serde",
+ "serde_json",
+ "signal-hook",
+ "tempfile",
+ "tracing",
+ "windows-sys 0.61.2",
+ "x11rb",
+]
+
+[[package]]
+name = "clibox-transform"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "blake3",
+ "chrono",
+ "chrono-tz",
+ "clap",
+ "ctrlc",
+ "libc",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tracing",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "clibox-wait"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "futures-util",
+ "h2",
+ "hickory-resolver",
+ "http",
+ "hyper",
+ "rcgen",
  "reqwest 0.12.28",
  "rustls",
  "rustls-native-certs 0.8.4",
  "serde",
  "serde_json",
- "sha2 0.10.9",
- "signal-hook",
- "socket2",
  "tempfile",
  "tokio",
  "tokio-rustls",
  "tracing",
- "tracing-subscriber",
- "windows-sys 0.61.2",
- "x11rb",
 ]
 
 [[package]]
