@@ -90,6 +90,10 @@ pub fn anchors(task: &Task) -> Result<Vec<PathBuf>> {
     }
     let mut values: Vec<PathBuf> = vec![];
     for pattern in task.output.iter().flatten() {
+        ensure!(
+            !pattern.split(['/', '\\']).any(files::reserved_name),
+            "output must not address reserved state"
+        );
         let anchor = files::output_anchor(pattern);
         ensure!(
             !anchor.as_os_str().is_empty() && anchor != Path::new("."),
@@ -138,6 +142,10 @@ fn snapshot_inner(project: &Project, task: &Task, capture: bool) -> Result<Vec<F
             let path = entry.path();
             files::within(&project.directory, path)?;
             let relative = files::slash(path.strip_prefix(&project.directory)?)?;
+            ensure!(
+                !relative.split('/').any(files::reserved_name),
+                "output must not capture reserved state"
+            );
             let content = if entry.file_type().is_symlink() {
                 let target = files::slash(&std::fs::read_link(path)?)?;
                 validate_portable_link(&target)?;
@@ -324,7 +332,8 @@ impl Artifact {
             let path = Path::new(&entry.path);
             ensure!(
                 !entry.path.is_empty()
-                    && path.components().all(|c| matches!(c, Component::Normal(_))),
+                    && path.components().all(|c| matches!(c, Component::Normal(_)))
+                    && !entry.path.split(['/', '\\']).any(files::reserved_name),
                 "unsafe cache entry path"
             );
             ensure!(

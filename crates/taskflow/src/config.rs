@@ -605,7 +605,7 @@ impl Task {
                 project_relative(output)
                     && !output
                         .split(['/', '\\'])
-                        .any(|v| v == ".." || v == ".taskflow" || v == ".git"),
+                        .any(|v| v == ".." || crate::files::reserved_name(v)),
                 "output must stay inside the project"
             );
             globset::Glob::new(output).context("invalid output glob")?;

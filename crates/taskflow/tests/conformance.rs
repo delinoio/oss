@@ -4181,6 +4181,56 @@ async fn pending_cancellation_uses_operator_exit_code() {
 }
 
 #[test]
+fn reserved_output_aliases_are_rejected_on_every_host() {
+    for path in [
+        ".TASKFLOW/cache/**",
+        ".GiT/**",
+        "out/.git/config",
+        ".TaskFlow-Restore-old/**",
+    ] {
+        let directory = fixture(
+            json!({"build":{"command":command(&["record","unexpected","ran"]),"output":[path]}}),
+        );
+        for action in ["check", "run"] {
+            let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+                .current_dir(directory.path())
+                .args(["--root", ".", action])
+                .args(if action == "run" {
+                    vec!["build"]
+                } else {
+                    vec![]
+                })
+                .output()
+                .unwrap();
+            assert!(!output.status.success(), "{path}: {output:?}");
+            assert!(!directory.path().join("unexpected").exists());
+        }
+        let files = vec![cache::FileRecord {
+            path: path.trim_end_matches("/**").into(),
+            content: cache::Content::Directory,
+        }];
+        let artifact = cache::Artifact {
+            version: 1,
+            key: files::digest(b"reserved"),
+            task: "app#build".into(),
+            output_digest: cache::output_digest(&files).unwrap(),
+            files,
+            result_identity: None,
+            shards: None,
+        };
+        assert!(
+            artifact.validate_integrity(&artifact.key).is_err(),
+            "{path}"
+        );
+    }
+    let task: config::Task = serde_json::from_value(
+        json!({"command":["unused"],"output":[".git-output/**",".taskflow-report/**"]}),
+    )
+    .unwrap();
+    task.validate().unwrap();
+}
+
+#[test]
 fn check_rejects_windows_rooted_outputs_on_every_host() {
     for path in [
         "C:/build/**",

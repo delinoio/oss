@@ -42,6 +42,7 @@
 - Either watch or schedule initial flag can activate a mixed subscription, with one shared initial execution. Tasks without subscriptions retain initial activation.
 - Choose default overlap from the current trigger (input queue, schedule skip), including mixed subscriptions; explicit overlap applies to both. Apply overlap policies to per-task execution ownership, not to membership in an unfinished wave.
 - Reject absolute, rooted, and Windows drive-relative input and output patterns during configuration validation on every host, including negative patterns.
+- Reserve ASCII case aliases of .git, .taskflow, and .taskflow-restore-* components on every host, including configuration, output capture, and artifact validation.
 - Explicit positive input globs may traverse otherwise ignored trees; prune only using conservative literal directory prefixes, never directory-name substrings. Reserved .git, .taskflow, and .taskflow-restore-* trees remain excluded.
 - Directory mutation notifications rescan every intersecting positive input root, even when the directory was deleted or does not itself match a glob; only a changed filtered snapshot enqueues work.
 - Timestamp delivered watcher events before discovery and preserve matching input causes queued before each baseline, including initial-disabled subscriptions.

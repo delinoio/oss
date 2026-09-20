@@ -103,8 +103,12 @@ pub fn canonical_path(path: &Path) -> Result<PathBuf> {
     }
     Ok(path.to_path_buf())
 }
-fn reserved_name(name: &str) -> bool {
-    matches!(name, ".git" | ".taskflow") || name.starts_with(".taskflow-restore-")
+pub(crate) fn reserved_name(name: &str) -> bool {
+    // These names cross cache/CI platform boundaries. Reserve their ASCII case
+    // aliases even on a case-sensitive producer so they cannot target internal
+    // state when consumed on a case-insensitive filesystem.
+    let name = name.to_ascii_lowercase();
+    matches!(name.as_str(), ".git" | ".taskflow") || name.starts_with(".taskflow-restore-")
 }
 pub fn ignored_directory(path: &Path) -> bool {
     path.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
