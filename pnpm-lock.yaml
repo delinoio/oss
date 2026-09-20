@@ -271,6 +271,8 @@ importers:
         specifier: 6.0.1
         version: 6.0.1
 
+  packages/clibox: {}
+
   packages/devhud-api-client:
     dependencies:
       '@bufbuild/protobuf':

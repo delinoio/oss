@@ -1,4 +1,23 @@
 {
+  "linux-packages": {
+    "paths": [
+      ".cargo/**",
+      ".github/workflows/release-*.yml",
+      "Cargo.lock",
+      "Cargo.toml",
+      "crates/binpm/**",
+      "crates/cargo-mono/**",
+      "crates/nodeup/**",
+      "crates/with-watch/**",
+      "packaging/linux/**",
+      "rust-toolchain",
+      "rust-toolchain.toml",
+      "scripts/release/linux-packages*",
+      "scripts/release/linux-packages/**",
+      "package.json",
+      "pnpm-lock.yaml"
+    ]
+  },
   "go-quality": {
     "paths": [
       ".npmrc",
@@ -535,23 +554,25 @@
       "turbo.json"
     ]
   },
-  "linux-packages": {
+  "node-clibox-test": {
     "paths": [
-      ".cargo/**",
-      ".github/workflows/release-*.yml",
-      "Cargo.lock",
+      ".nvmrc",
       "Cargo.toml",
-      "crates/binpm/**",
-      "crates/cargo-mono/**",
-      "crates/nodeup/**",
-      "crates/with-watch/**",
-      "packaging/linux/**",
+      "Cargo.lock",
       "rust-toolchain",
-      "rust-toolchain.toml",
-      "scripts/release/linux-packages*",
-      "scripts/release/linux-packages/**",
+      "crates/clibox/**",
+      "packages/clibox/**",
       "package.json",
-      "pnpm-lock.yaml"
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "turbo.json",
+      ".github/workflows/release-clibox.yml",
+      "scripts/release/project.mjs",
+      "scripts/release/project.test.mjs"
+    ],
+    "workspace": "@delino/clibox",
+    "workspacePaths": [
+      "packages/clibox/**"
     ]
   }
 }

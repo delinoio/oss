@@ -8,7 +8,7 @@ on:
         description: Project to release
         required: true
         type: choice
-        options: [binpm, cargo-mono, nodeup, with-watch, derun, runmoor]
+        options: [binpm, cargo-mono, nodeup, with-watch, derun, runmoor, clibox]
       bump:
         description: SemVer increment
         required: true
@@ -19,7 +19,7 @@ on:
 permissions:
   contents: read
 
-# Serialize version commits and tap updates across all six projects.
+# Serialize version commits and tap updates across all selectable projects.
 concurrency:
   group: release-project
   cancel-in-progress: false
