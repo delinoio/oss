@@ -16,10 +16,12 @@ test("Workflow keeps credentials, OIDC and actual signing out of every dry-run j
   const publish = workflow.jobs.publish;
   assert.equal(publish.if, "needs.plan.outputs.mode == 'publish'");
   assert.deepEqual(publish.permissions, { contents: "write", "id-token": "write" });
-  const preflight = publish.steps.find((step) => step.name === "Reject conflicting tags and existing release assets").run;
-  assert.match(preflight, /assetManifest\('dist'\)/u);
+  const preflightStep = publish.steps.find((step) => step.name === "Reject conflicting tags and validate existing release assets");
+  const preflight = preflightStep.run;
+  assert.match(preflight, /assetManifest\('dist', true\)/u);
   assert.match(preflight, /\}, expectedAssets\);/u);
-  const sign = publish.steps.find((step) => step.name === "Sign exact artifacts with Sigstore").run;
+  const signStep = publish.steps.find((step) => step.name === "Sign exact artifacts with Sigstore");
+  const sign = signStep.run;
   assert.match(sign, /--signed true --identity "https:\/\/github.com\/\$\{GITHUB_WORKFLOW_REF\}"/u);
   const verifier = readFileSync(new URL("../release/runmoor.mjs", import.meta.url), "utf8");
   assert.match(verifier, /"verify-blob", "--bundle"/u);
@@ -31,5 +33,7 @@ test("Workflow keeps credentials, OIDC and actual signing out of every dry-run j
   const publishStable = publish.steps.find((step) => step.name === "Publish stable release");
   assert.match(publishStable.run, /gh release edit "\$RELEASE_TAG" --draft=false --prerelease=false/u);
   assert.equal(publishStable.env.GH_TOKEN, "${{ github.token }}");
+  assert.ok(publish.steps.indexOf(signStep) < publish.steps.indexOf(preflightStep));
+  assert.ok(publish.steps.indexOf(preflightStep) < publish.steps.indexOf(release));
   assert.ok(publish.steps.indexOf(release) < publish.steps.indexOf(publishStable));
 });

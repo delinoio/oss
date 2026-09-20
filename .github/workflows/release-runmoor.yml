@@ -127,20 +127,6 @@ jobs:
         with:
           name: runmoor-unsigned-archives
           path: dist
-      - name: Reject conflicting tags and existing release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ needs.plan.outputs.version }}
-        run: |
-          node --input-type=module <<'JS'
-          import { assetManifest, releasePlan, checkPublication } from './scripts/release/runmoor.mjs';
-          const plan = releasePlan({version: process.env.RELEASE_VERSION, revision: process.env.GITHUB_SHA, ref: process.env.GITHUB_REF, mode: 'publish'});
-          const expectedAssets = assetManifest('dist');
-          await checkPublication(plan, async (path) => {
-            const response = await fetch(`https://api.github.com${path}`, {headers: {Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/vnd.github+json'}, redirect: 'error', signal: AbortSignal.timeout(30000)});
-            return {status: response.status, body: response.status === 200 ? await response.json() : {}};
-          }, expectedAssets);
-          JS
       - uses: sigstore/cosign-installer@v4.1.1
       - name: Sign exact artifacts with Sigstore
         run: |
@@ -149,6 +135,20 @@ jobs:
             cosign sign-blob --yes --bundle "${artifact}.sigstore.json" "$artifact"
           done
           node scripts/release/runmoor.mjs verify --output dist --signed true --identity "https://github.com/${GITHUB_WORKFLOW_REF}"
+      - name: Reject conflicting tags and validate existing release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          node --input-type=module <<'JS'
+          import { assetManifest, releasePlan, checkPublication } from './scripts/release/runmoor.mjs';
+          const plan = releasePlan({version: process.env.RELEASE_VERSION, revision: process.env.GITHUB_SHA, ref: process.env.GITHUB_REF, mode: 'publish'});
+          const expectedAssets = assetManifest('dist', true);
+          await checkPublication(plan, async (path) => {
+            const response = await fetch(`https://api.github.com${path}`, {headers: {Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/vnd.github+json'}, redirect: 'error', signal: AbortSignal.timeout(30000)});
+            return {status: response.status, body: response.status === 200 ? await response.json() : {}};
+          }, expectedAssets);
+          JS
       - name: Create stable release draft
         uses: softprops/action-gh-release@v2
         with:

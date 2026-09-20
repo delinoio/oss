@@ -88,16 +88,21 @@ test("Release asset manifests bind exact names, sizes and digests", () => {
       const data = readFileSync(path.join(directory, name));
       return { name, size: data.length, digest: `sha256:${createHash("sha256").update(data).digest("hex")}` };
     }));
+    for (const name of [...archiveNames, "SHA256SUMS"]) writeFileSync(path.join(directory, `${name}.sigstore.json`), "signature\n");
+    assert.deepEqual(assetManifest(directory, true).map(({ name }) => name), [...archiveNames, "SHA256SUMS", ...archiveNames.map((name) => `${name}.sigstore.json`), "SHA256SUMS.sigstore.json"]);
     writeFileSync(path.join(directory, "unexpected"), "stale\n");
     assert.throws(() => assetManifest(directory), /Unexpected files/u);
+    assert.throws(() => assetManifest(directory, true), /Unexpected files/u);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
 
 test("Publication resumes a matching draft and refuses public or uncertain releases", async () => {
   const plan = releasePlan({ version: sourceVersion, revision, ref: "refs/heads/main", mode: "publish" });
-  const expectedAssets = archiveNames.map((name, index) => ({ name, size: index + 1, digest: `sha256:${String(index + 1).repeat(64)}` }));
-  expectedAssets.push({ name: "SHA256SUMS", size: 4, digest: `sha256:${"4".repeat(64)}` });
+  const expectedAssets = [...archiveNames, "SHA256SUMS"].flatMap((name, index) => [
+    { name, size: index + 1, digest: `sha256:${String(index + 1).repeat(64)}` },
+    { name: `${name}.sigstore.json`, size: index + 11, digest: `sha256:${String(index + 11).repeat(64)}` },
+  ]);
   await checkPublication(plan, async () => ({ status: 404, body: {} }));
   await checkPublication(plan, async (route) => ({ status: route.includes("/git/") ? 200 : 404, body: { object: { type: "commit", sha: revision } } }));
   await checkPublication(plan, async (route) => route.includes("/git/")

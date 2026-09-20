@@ -63,10 +63,11 @@ export async function checkPublication(plan, request, expectedAssets) {
   if (release.status !== 404) throw new Error("Cannot establish whether a release already exists");
 }
 
-export function assetManifest(directory) {
+export function assetManifest(directory, signed = false) {
+  const expectedNames = signed ? [...releaseAssetNames, ...releaseAssetNames.map((name) => `${name}.sigstore.json`)] : releaseAssetNames;
   const names = readdirSync(directory).sort();
-  if (JSON.stringify(names) !== JSON.stringify([...releaseAssetNames].sort())) throw new Error("Unexpected files in unsigned artifact directory");
-  return releaseAssetNames.map((name) => {
+  if (JSON.stringify(names) !== JSON.stringify([...expectedNames].sort())) throw new Error(`Unexpected files in ${signed ? "signed" : "unsigned"} artifact directory`);
+  return expectedNames.map((name) => {
     const bytes = readFileSync(path.join(directory, name));
     return { name, size: bytes.length, digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}` };
   });
