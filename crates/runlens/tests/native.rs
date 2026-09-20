@@ -2725,8 +2725,13 @@ async fn launched_image_identity_survives_or_detects_path_replacement() {
             assert!(!execution.outcome.collection_complete);
         } else {
             assert!(execution.environment.executable_sha256.is_some());
-            assert!(
+            // This in-process API test inherits the test runner's OS streams.
+            // Redirected test logs are regular files, so image identity can
+            // remain known while independent descriptor coverage is incomplete.
+            use std::io::IsTerminal;
+            assert_eq!(
                 execution.outcome.collection_complete,
+                runlens::platform::inherited_stdio_complete(!std::io::stdin().is_terminal()),
                 "{:?}",
                 execution.outcome
             );
