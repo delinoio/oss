@@ -1299,6 +1299,7 @@ dependencies = [
  "hex",
  "libc",
  "regex",
+ "regex-automata",
  "rusqlite",
  "same-file",
  "schemars",

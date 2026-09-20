@@ -28,6 +28,7 @@ rusqlite = { version = "0.39.0", features = ["bundled"] }
 globset = "0.4.18"
 tempfile = "3.14.0"
 regex = "1.11.3"
+regex-automata = "0.4.14"
 same-file = "1.0.6"
 walkdir = "2.5.0"
 which = "8.0.0"

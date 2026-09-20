@@ -295,14 +295,22 @@ fn coverage(
             )?;
         }
     }
-    for input in &command.inputs {
-        if command.outputs.contains(input) {
-            result.finding(
-                FindingCode::InputOutputOverlap,
-                Classification::Violation,
-                vec![evidence(execution, None, EvidenceSource::Outcome)],
-            )?;
-        }
+    match crate::declarations::overlap(
+        &command.inputs,
+        &command.outputs,
+        &execution.environment.os,
+    )? {
+        crate::declarations::Overlap::Yes => result.finding(
+            FindingCode::InputOutputOverlap,
+            Classification::Violation,
+            vec![evidence(execution, None, EvidenceSource::Outcome)],
+        )?,
+        crate::declarations::Overlap::Unknown => result.finding(
+            FindingCode::UnknownEvidence,
+            Classification::Unknown,
+            vec![evidence(execution, None, EvidenceSource::Outcome)],
+        )?,
+        crate::declarations::Overlap::No => {}
     }
     Ok(())
 }

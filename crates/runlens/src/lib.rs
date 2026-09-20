@@ -3,6 +3,7 @@
 pub mod analysis;
 pub mod clean;
 pub mod config;
+mod declarations;
 pub mod entries;
 pub mod error;
 pub mod execute;

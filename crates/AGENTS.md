@@ -164,6 +164,7 @@
 - Preflight conflict analysis against the aggregate limit of 65,536 cross-report target pairs before inspecting paths or creating findings; preparation executions do not count.
 - Comparison compatibility includes source revision and working-tree inclusion policy; identical observed bytes cannot make different source selections comparable.
 - Offline cache and policy checks require at least one target independently of preparation records; historical-only reports cannot pass.
+- Audit declared input/output glob intersections independently of observed paths; bounded analysis exhaustion is inconclusive, never proof that declarations are disjoint.
 - Cache and policy input/output declarations bind to the selected command's normalized argv and working directory and any recorded name. A mismatched or redacted identity is inconclusive; reading config and reports must never execute a command.
 - Cancellation during after-state snapshots must retain the cancelled invocation status and incomplete evidence even after the target exits successfully.
 - New-access policies may infer absence only from a compatible baseline with complete collection; incompatible or incomplete baselines do not create definite new-access violations.

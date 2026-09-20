@@ -3139,3 +3139,32 @@ fn explain_matches_windows_case_aliases_in_accesses_and_changes() {
         }
     }
 }
+
+#[test]
+fn cache_rejects_declared_overlap_without_an_observed_intersection() {
+    use runlens::{analysis, config::Command, entries::Entries, model::*};
+    let root = repository("read");
+    assert!(run(root.path(), "overlap.json", "read").status.success());
+    let mut report = runlens::report::read(&root.path().join("overlap.json")).unwrap();
+    report.executions[0].accesses = Entries::default();
+    report.executions[0].changes = Entries::default();
+    let expected = report.executions[0].command.clone();
+    let mut command = Command::direct(expected.argv.clone());
+    command.inputs = vec!["src/**".into()];
+    command.outputs = vec!["src/generated/**".into()];
+    let check = analysis::cache(&report, &command, &expected).unwrap();
+    assert_eq!(check.verdict, Some(Verdict::Failed));
+    assert!(
+        check
+            .findings
+            .iter()
+            .any(|entry| entry.unwrap().1.code == FindingCode::InputOutputOverlap)
+    );
+    command.outputs = vec!["build/**".into()];
+    assert_eq!(
+        analysis::cache(&report, &command, &expected)
+            .unwrap()
+            .verdict,
+        Some(Verdict::Passed)
+    );
+}

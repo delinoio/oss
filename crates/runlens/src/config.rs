@@ -203,6 +203,14 @@ pub fn patterns(values: &[String]) -> Result<globset::GlobSet> {
 }
 pub fn patterns_for_os(values: &[String], os: &str) -> Result<globset::GlobSet> {
     let mut set = globset::GlobSetBuilder::new();
+    for glob in declaration_globs(values, os)? {
+        set.add(glob);
+    }
+    set.build()
+        .map_err(|_| Error::input("invalid path patterns"))
+}
+pub(crate) fn declaration_globs(values: &[String], os: &str) -> Result<Vec<globset::Glob>> {
+    let mut globs = Vec::new();
     if values.len() > 4096 {
         return Err(Error::input("too many path patterns"));
     }
@@ -219,7 +227,7 @@ pub fn patterns_for_os(values: &[String], os: &str) -> Result<globset::GlobSet> 
         // A directory glob also covers the directory itself, with exactly the
         // same case semantics as its descendants.
         for pattern in std::iter::once(value.as_str()).chain(value.strip_suffix("/**")) {
-            set.add(
+            globs.push(
                 globset::GlobBuilder::new(pattern)
                     .literal_separator(true)
                     .backslash_escape(false)
@@ -229,8 +237,7 @@ pub fn patterns_for_os(values: &[String], os: &str) -> Result<globset::GlobSet> 
             );
         }
     }
-    set.build()
-        .map_err(|_| Error::input("invalid path patterns"))
+    Ok(globs)
 }
 pub fn relative_pattern_path(path: &str) -> &str {
     if path == "${workspace}" {
