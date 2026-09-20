@@ -58,7 +58,12 @@ func TestHookRollbackPreservesConcurrentEdits(t *testing.T) {
 	if err = os.WriteFile(path, []byte("user edit"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err = rollbackCreatedHook(path, info, []byte("owned")); err == nil {
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err = rollbackCreatedHook(root, filepath.Base(path), info, []byte("owned")); err == nil {
 		t.Fatal("changed hook was removed")
 	}
 	got, err := os.ReadFile(path)

@@ -142,31 +142,8 @@ func (s *Service) Hook(ctx context.Context, repo string, prePush, remove bool) (
 			out = append(out, InstallResult{Path: path, Manual: command + " (add this to your existing " + kind + " hook or hook manager; preserve stdin for pre-push)", Example: hookExample(kind, command)})
 			continue
 		}
-		if e = os.MkdirAll(filepath.Dir(path), 0755); e != nil {
+		if e = s.createNativeHook(common, kind, Installation{ID: id, Path: path, Hash: Hash(body), Kind: "hook"}, body); e != nil {
 			return out, e
-		}
-		f, e := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0755)
-		if e != nil {
-			return out, e
-		}
-		created, e := f.Stat()
-		if e != nil {
-			_ = f.Close()
-			return out, e
-		}
-		n, e := f.Write(body)
-		if e == nil {
-			e = f.Sync()
-		}
-		closeErr := f.Close()
-		if e == nil {
-			e = closeErr
-		}
-		if e != nil {
-			return out, errors.Join(e, rollbackCreatedHook(path, created, body[:n]))
-		}
-		if e = s.saveInstallation(Installation{ID: id, Path: path, Hash: Hash(body), Kind: "hook"}); e != nil {
-			return out, errors.Join(e, rollbackCreatedHook(path, created, body))
 		}
 		out = append(out, InstallResult{Installed: true, Path: path})
 	}
@@ -194,15 +171,66 @@ func hookFileError(err error) error {
 	return err
 }
 
-func rollbackCreatedHook(path string, created os.FileInfo, body []byte) error {
-	current, err := os.Lstat(path)
+// Keep creation and rollback beneath the opened common directory. A parent
+// symlink installed after discovery must never redirect writes outside it.
+func (s *Service) createNativeHook(common, kind string, record Installation, body []byte) error {
+	root, err := os.OpenRoot(common)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if err := root.Mkdir("hooks", 0755); err != nil && !os.IsExist(err) {
+		return err
+	}
+	return s.publishNativeHook(root, kind, record, body)
+}
+
+func (s *Service) publishNativeHook(root *os.Root, kind string, record Installation, body []byte) error {
+	if kind != "post-commit" && kind != "pre-push" {
+		return E("invalid-hook", "unsupported hook", 2)
+	}
+	info, err := root.Lstat("hooks")
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return E("hook-conflict", "native hooks directory changed; preserve it and integrate manually", 2)
+	}
+	relative := filepath.Join("hooks", kind)
+	f, err := root.OpenFile(relative, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0755)
+	if err != nil {
+		return err
+	}
+	created, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return err
+	}
+	n, err := f.Write(body)
+	if err == nil {
+		err = f.Sync()
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return errors.Join(err, rollbackCreatedHook(root, relative, created, body[:n]))
+	}
+	if err := s.saveInstallation(record); err != nil {
+		return errors.Join(err, rollbackCreatedHook(root, relative, created, body))
+	}
+	return nil
+}
+
+func rollbackCreatedHook(root *os.Root, path string, created os.FileInfo, body []byte) error {
+	current, err := root.Lstat(path)
 	if os.IsNotExist(err) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	contents, err := os.ReadFile(path)
+	contents, err := root.ReadFile(path)
 	if err != nil {
 		return err
 	}
@@ -210,7 +238,7 @@ func rollbackCreatedHook(path string, created os.FileInfo, body []byte) error {
 	if !current.Mode().IsRegular() || !os.SameFile(created, current) || Hash(contents) != Hash(body) {
 		return E("hook-rollback-conflict", "hook changed during failed installation; preserve it and inspect manually: "+path, 3)
 	}
-	return os.Remove(path)
+	return root.Remove(path)
 }
 
 func hookExample(kind, command string) string {
