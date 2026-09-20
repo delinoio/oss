@@ -135,3 +135,5 @@
 - Source RPCs pass their request context through worktree lookup, Git discovery, commit/config/base resolution and streamed branches/history/diffs. Preserve caller cancellation/deadline errors after child reaping, including optional-ref fallback and partial-page reader cleanup; internal pagination cancellation must not cancel the caller.
 
 - After signature/checksum/archive verification, compare the selected executable bytes with the installed binary before state backup or replacement. Identical bytes still validate the release version and return up-to-date without backup/journal creation; equal version strings with different bytes still require the complete replacement path.
+
+- Agent uninstall publishes/backups settings only when removing an owned entry changes them. Missing or already-unintegrated settings remain absent or byte/identity-equivalent while owned skill and installation records are cleaned up; recover an absent OpenCode JSON fallback by its exact ownership record. Revalidate no-op settings before deleting ownership.

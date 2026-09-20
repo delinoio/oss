@@ -82,6 +82,19 @@ func (s *Service) Agent(client, scope, repo string, remove bool) (InstallResult,
 			alternative := strings.TrimSuffix(path, "c")
 			if _, e = os.Lstat(alternative); e == nil {
 				path = alternative
+			} else if remove && os.IsNotExist(e) {
+				// Both files may already be removed. Recover the exact owned JSON
+				// destination instead of losing its remaining skill/record cleanup.
+				_, primaryErr := s.installation("agent:" + client + ":" + path)
+				if errors.Is(primaryErr, sql.ErrNoRows) {
+					if _, alternateErr := s.installation("agent:" + client + ":" + alternative); alternateErr == nil {
+						path = alternative
+					} else if !errors.Is(alternateErr, sql.ErrNoRows) {
+						return InstallResult{}, alternateErr
+					}
+				} else if primaryErr != nil {
+					return InstallResult{}, primaryErr
+				}
 			}
 		}
 		parent = "mcp"
@@ -127,6 +140,7 @@ func (s *Service) Agent(client, scope, repo string, remove bool) (InstallResult,
 	if e != nil {
 		return InstallResult{}, e
 	}
+	settingsChanged := !remove
 	var updated []byte
 	var entry string
 	if client == "codex" {
@@ -144,6 +158,7 @@ func (s *Service) Agent(client, scope, repo string, remove bool) (InstallResult,
 				return InstallResult{}, E("agent-conflict", "Codex ach MCP entry was modified", 2)
 			}
 			text = text[:i] + text[j:]
+			settingsChanged = true
 		}
 		// TOML quoted, escaped and dotted keys can name the same table. Inspect
 		// semantic keys without rewriting the user's comments or formatting.
@@ -191,6 +206,7 @@ func (s *Service) Agent(client, scope, repo string, remove bool) (InstallResult,
 		}
 		patch := []map[string]any{}
 		if existing != nil {
+			settingsChanged = true
 			patch = append(patch, map[string]any{"op": "remove", "path": pointer})
 		}
 		if !remove {
@@ -209,9 +225,12 @@ func (s *Service) Agent(client, scope, repo string, remove bool) (InstallResult,
 		}
 		updated = value.Pack()
 	}
-	backup := filepath.Join(s.Store.Root, "backups", ID()+"-agent-config")
-	if e = AtomicWrite(backup, settingsFile.data, 0600); e != nil {
-		return InstallResult{}, e
+	backup := ""
+	if settingsChanged {
+		backup = filepath.Join(s.Store.Root, "backups", ID()+"-agent-config")
+		if e = AtomicWrite(backup, settingsFile.data, 0600); e != nil {
+			return InstallResult{}, e
+		}
 	}
 	var publishedSkill agentFile
 	restoreOwnership := func() error {
@@ -236,7 +255,14 @@ func (s *Service) Agent(client, scope, repo string, remove bool) (InstallResult,
 			return InstallResult{}, e
 		}
 	}
-	if _, e = settingsFile.write(updated); e != nil {
+	if settingsChanged {
+		_, e = settingsFile.write(updated)
+	} else {
+		// Parsing defaults are not user files. Preserve absent/unchanged settings
+		// while still rejecting a concurrent edit before discarding ownership.
+		e = settingsFile.unchanged()
+	}
+	if e != nil {
 		var conflict *Error
 		// An I/O error after rename may mean publication committed. Retain the
 		// intended ownership for recovery rather than guessing that it failed.
