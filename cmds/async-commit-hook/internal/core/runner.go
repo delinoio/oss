@@ -536,6 +536,10 @@ func (s *Service) finalize(r Run) error {
 	return s.Store.SaveRun(r)
 }
 func (s *Service) Work(ctx context.Context, persistent bool, component string) error {
+	return s.work(ctx, persistent, component, s.runOne)
+}
+
+func (s *Service) work(ctx context.Context, persistent bool, component string, runOne func(context.Context, string) error) error {
 	var wg sync.WaitGroup
 	// A graceful stop drains using its own context. An unexpected worker return
 	// still cancels every owned command before relinquishing process ownership.
@@ -592,7 +596,13 @@ func (s *Service) Work(ctx context.Context, persistent bool, component string) e
 				wg.Add(1)
 				go func(id string) {
 					defer wg.Done()
-					done <- completion{id, s.runOne(owned, id)}
+					// Shutdown stops receiving completions. Never let a full queue
+					// prevent an already-reaped run from joining its worker.
+					result := completion{id, runOne(owned, id)}
+					select {
+					case done <- result:
+					case <-owned.Done():
+					}
 				}(id)
 			}
 		}

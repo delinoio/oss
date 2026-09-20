@@ -79,3 +79,5 @@
 - Account lifecycle compatibility includes personal credential reference mappings, never their resolved values. Reject reuse/startup under changed references while any old owner remains.
 
 - Reject non-UTF-8 declared public environment values before snapshot serialization or fingerprinting; JSON replacement must never change execution inputs or collapse their identity.
+
+- Completion publication must unblock on worker ownership cancellation; error shutdown joins all runs even when their count exceeds the completion buffer. Do not impose a concurrency cap to avoid shutdown deadlocks.
