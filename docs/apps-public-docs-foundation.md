@@ -67,3 +67,5 @@
 The public installation surface documents the exact repository key fingerprint, supported Linux distribution/architecture matrix, stable or explicit preview registration, and package-manager install/update/remove commands. Operational details remain in `docs/repository-linux-packages-contract.md`. The shared clean route is `/linux-packages`; exact system package-manager registration paths on that page are public interfaces permitted by its scoped content validator.
 
 The canonical public-docs production origin is `https://oss.delino.io`.
+
+Cloudflare Pages project `public-docs` owns production hosting and automatically deploys `main` from `delinoio/oss`. Its build root is the repository root, command is `pnpm --filter public-docs build`, and output is `apps/public-docs/doc_build`. The build environment pins `NODE_VERSION=24` and `PNPM_VERSION=10.26.2`, matching the repository toolchain. Its platform hostname is `public-docs-43x.pages.dev`; the custom-domain CNAME now targets that hostname instead of the previous Mintlify target.

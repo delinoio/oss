@@ -34,6 +34,8 @@ Restrict the environment to main and the six CLI release-tag patterns. Provision
 
 The acceptance matrix is Ubuntu 22.04/24.04/26.04 LTS, Debian 12/13, Fedora 43/44, UBI 9/10, Rocky Linux 9/10, and AlmaLinux 9/10 on both architectures. Verify repository registration, signature validation, installation, upgrade, version/help execution, dependency resolution, removal and preservation of user data. Container checks do not certify Runmoor's Docker/Tart service integration.
 
+Rocky Linux 10 uses the project's `rockylinux/rockylinux:10` image; the separate Docker Official Image namespace does not publish `rockylinux:10`. Installation logs identify the exact distribution image, project, architecture and fixture/live mode.
+
 Test incorrect identities, checksums, signatures, architectures, dependencies and channels; interrupted uploads; concurrent publication requests; retry without replacement; stale indexes; and partial APT/DNF promotion. Tests use isolated files, keys and object stores. Run workflow syntax/contracts, release fixtures and changed documentation-app tests. Remove generated dist directories before completion.
 
 Changes to any of the four Rust CLI sources, workspace Cargo inputs, Cargo configuration or Rust toolchain select the native package CI job. Both architectures must rebuild against AlmaLinux 9 and pass ELF compatibility inspection before merging these changes.
@@ -47,6 +49,8 @@ First public releases follow the existing manual coordinator, one patch release 
 The committed public key's primary fingerprint is `B08DE37A14DD10DDFD04E66E87CB82A1F70FBD30`. CI receives only the encrypted signing subkey export. The operator owns the offline primary certificate, revocation material and passphrase backup. The current signing subkey expires after two years; rotate the signing subkey and committed public certificate before expiry while preserving the primary fingerprint. A primary-key replacement requires an explicitly documented user trust migration.
 
 The protected Environment contains secrets `LINUX_PACKAGES_R2_ACCESS_KEY_ID`, `LINUX_PACKAGES_R2_SECRET_ACCESS_KEY`, `LINUX_PACKAGES_SIGNING_SUBKEY` (base64), and `LINUX_PACKAGES_SIGNING_PASSPHRASE`; non-secret variables are `LINUX_PACKAGES_R2_ACCOUNT_ID` and `LINUX_PACKAGES_SIGNING_FINGERPRINT`. R2 credentials have Object Read & Write on exactly the public and state buckets, without bucket-administration permissions. The custom domain has minimum TLS 1.2; the managed r2.dev URL stays disabled and the state bucket has no public domain.
+
+Cloudflare's `Delino packages immutable objects` cache rule matches only this hostname and `/apt/pool/`, `/by-hash/`, or `/snapshots/` paths. It makes those responses eligible for caching, honors origin cache-control with bypass when absent, and sets HTTP status codes 400 and above to No store. The complementary `Delino packages mutable entrypoints` rule bypasses caching for every other path on the same hostname. Do not extend either rule to other domains. Both rules were activated during provisioning; public compressed-path 404 probes return `CF-Cache-Status: BYPASS`.
 
 The reusable `release-linux-packages.yml` validates exact project/version/revision input, builds and tests temporary signed repositories on all thirteen images and both native runner architectures, and only then enters the protected publisher. The public installation matrix follows publication. Manual execution defaults to `dry-run`; `publish` retries only an already-published supported release.
 

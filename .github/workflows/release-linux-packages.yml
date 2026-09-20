@@ -81,7 +81,7 @@ jobs:
         host:
           - {runner: ubuntu-latest, arch: amd64}
           - {runner: ubuntu-24.04-arm, arch: arm64}
-        image: ['ubuntu:22.04', 'ubuntu:24.04', 'ubuntu:26.04', 'debian:12', 'debian:13', 'fedora:43', 'fedora:44', 'registry.access.redhat.com/ubi9/ubi:latest', 'registry.access.redhat.com/ubi10/ubi:latest', 'rockylinux:9', 'rockylinux:10', 'almalinux:9', 'almalinux:10']
+        image: ['ubuntu:22.04', 'ubuntu:24.04', 'ubuntu:26.04', 'debian:12', 'debian:13', 'fedora:43', 'fedora:44', 'registry.access.redhat.com/ubi9/ubi:latest', 'registry.access.redhat.com/ubi10/ubi:latest', 'rockylinux:9', 'rockylinux/rockylinux:10', 'almalinux:9', 'almalinux:10']
     steps:
       - uses: actions/checkout@v6
         with:
@@ -148,7 +148,7 @@ jobs:
         host:
           - {runner: ubuntu-latest, arch: amd64}
           - {runner: ubuntu-24.04-arm, arch: arm64}
-        image: ['ubuntu:22.04', 'ubuntu:24.04', 'ubuntu:26.04', 'debian:12', 'debian:13', 'fedora:43', 'fedora:44', 'registry.access.redhat.com/ubi9/ubi:latest', 'registry.access.redhat.com/ubi10/ubi:latest', 'rockylinux:9', 'rockylinux:10', 'almalinux:9', 'almalinux:10']
+        image: ['ubuntu:22.04', 'ubuntu:24.04', 'ubuntu:26.04', 'debian:12', 'debian:13', 'fedora:43', 'fedora:44', 'registry.access.redhat.com/ubi9/ubi:latest', 'registry.access.redhat.com/ubi10/ubi:latest', 'rockylinux:9', 'rockylinux/rockylinux:10', 'almalinux:9', 'almalinux:10']
     steps:
       - uses: actions/checkout@v6
         with:

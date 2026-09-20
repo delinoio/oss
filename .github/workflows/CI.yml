@@ -1600,7 +1600,7 @@ jobs:
         env:
           TEST_ARCH: ${{ matrix.arch }}
         run: |
-          for image in ubuntu:22.04 ubuntu:24.04 ubuntu:26.04 debian:12 debian:13 fedora:43 fedora:44 registry.access.redhat.com/ubi9/ubi:latest registry.access.redhat.com/ubi10/ubi:latest rockylinux:9 rockylinux:10 almalinux:9 almalinux:10; do
+          for image in ubuntu:22.04 ubuntu:24.04 ubuntu:26.04 debian:12 debian:13 fedora:43 fedora:44 registry.access.redhat.com/ubi9/ubi:latest registry.access.redhat.com/ubi10/ubi:latest rockylinux:9 rockylinux/rockylinux:10 almalinux:9 almalinux:10; do
             node scripts/release/linux-packages/smoke.mjs --fixture "$RUNNER_TEMP/package-fixture" --image "$image" --architecture "$TEST_ARCH"
           done
 

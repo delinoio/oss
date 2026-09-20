@@ -39,3 +39,5 @@ Provide the Rspress-based public documentation site for user-facing product and 
 The `/linux-packages` clean route owns shared key verification, APT/DNF registration, channel selection, installation, update and removal guidance for the six CLI projects. It does not duplicate their product guides.
 
 The canonical public-docs production origin is `https://oss.delino.io`.
+
+The Cloudflare Pages `public-docs` project deploys `main` automatically with the build and custom-domain settings recorded in `apps-public-docs-foundation.md`.
