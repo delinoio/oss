@@ -160,6 +160,8 @@ Wait signal handlers are installed only by the Tokio wait runtime. Configuration
 - Unit/process tests cover CLI defaults/conflicts, dotenv syntax and precedence, YAML Core/merge/alias semantics, precision and idempotence, encoding, exact/exceeded aggregate input and output limits, depth/expansion, file permissions/links/failure cleanup/concurrent replacement, interruption, broken stdout, and secret-marker privacy under trace logging. npm packaging also checks the native executable version against both source manifests.
 
 
+Windows repository integration also drives the Node launcher with a real native child in a disposable console, checking both Ctrl+C and Ctrl+Break, configuration exit 130, transformation exit 1, unchanged destinations, and removed staging. Standalone Cargo packages skip this integration when the npm workspace is absent; native-only cancellation tests still run.
+
 The isolated Windows Ctrl+C test helper must explicitly clear inherited Ctrl+C-ignore state before spawning clibox, including under Git Bash release jobs. Keep this normalization confined to the test-owned process and include helper stdout/stderr on failure; production signal behavior is unchanged.
 
 ## Dependencies and Integrations

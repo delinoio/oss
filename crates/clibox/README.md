@@ -413,6 +413,8 @@ A write failure or interruption **while emitting stdout can leave partial output
 
 ### Exit codes and diagnostics
 
+On Windows, Ctrl+C or Ctrl+Break lets the native command finish cancellation cleanup before the npm/pnpm launcher returns its exit code.
+
 | Outcome | Exit code |
 |---|---:|
 | Success | 0 |
