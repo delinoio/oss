@@ -479,6 +479,17 @@ impl Artifact {
     }
 
     pub fn validate(&self, key: &str, id: &str, project: &Project, task: &Task) -> Result<()> {
+        self.validate_owned_roots(key, id, project, task)
+            .map(|_| ())
+    }
+
+    fn validate_owned_roots(
+        &self,
+        key: &str,
+        id: &str,
+        project: &Project,
+        task: &Task,
+    ) -> Result<Vec<PathBuf>> {
         validate_artifact_outputs(task)?;
         self.validate_integrity(key)?;
         ensure!(self.task == id, "cache task identity mismatch");
@@ -490,7 +501,7 @@ impl Artifact {
                 .count;
             crate::shard::validate_reports(inventory, count, reports)?;
         }
-        let roots = anchors(task)?;
+        let roots = self.destination_roots(project, task)?;
         for entry in &self.files {
             ensure!(
                 roots
@@ -501,18 +512,17 @@ impl Artifact {
         }
         validate_links(project, &roots, &self.files)?;
         let seen: BTreeSet<_> = self.files.iter().map(|entry| entry.path.as_str()).collect();
-        for root in roots {
+        for root in &roots {
             ensure!(
-                seen.contains(files::slash(&root)?.as_str()),
+                seen.contains(files::slash(root)?.as_str()),
                 "cache is missing a required output root"
             );
         }
-        Ok(())
+        Ok(roots)
     }
 
     pub fn restore(&self, key: &str, id: &str, project: &Project, task: &Task) -> Result<()> {
-        self.validate(key, id, project, task)?;
-        let roots = anchors(task)?;
+        let roots = self.validate_owned_roots(key, id, project, task)?;
         for root in &roots {
             files::within(&project.directory, &project.directory.join(root))?;
         }
@@ -614,7 +624,50 @@ impl Artifact {
         Ok(())
     }
 
-    fn validate_destination_paths(&self, staging: &Path) -> Result<()> {
+    fn destination_roots(&self, project: &Project, task: &Task) -> Result<Vec<PathBuf>> {
+        let roots = anchors(task)?;
+        let recorded: BTreeSet<_> = self
+            .files
+            .iter()
+            .map(|entry| Path::new(&entry.path))
+            .collect();
+        if roots.iter().all(|root| recorded.contains(root.as_path())) {
+            return Ok(roots);
+        }
+        // Captures retain the filesystem's actual spelling. Resolve declarations
+        // against an isolated copy of those names, including on a clean runner
+        // where no output exists yet. Never lowercase names or follow live output
+        // links to infer ownership; equivalence belongs to this destination.
+        let probe = tempfile::Builder::new()
+            .prefix(".taskflow-restore-roots-")
+            .tempdir_in(&project.directory)?;
+        let names = self.validate_destination_paths(probe.path())?;
+        let records: BTreeMap<_, _> = self
+            .files
+            .iter()
+            .map(|entry| {
+                Ok((
+                    names.join(&entry.path).canonicalize()?,
+                    PathBuf::from(&entry.path),
+                ))
+            })
+            .collect::<Result<_>>()?;
+        roots
+            .iter()
+            .map(|root| {
+                let identity = names
+                    .join(root)
+                    .canonicalize()
+                    .context("cache is missing a required output root")?;
+                records
+                    .get(&identity)
+                    .cloned()
+                    .context("cache is missing a required output root")
+            })
+            .collect()
+    }
+
+    fn validate_destination_paths(&self, staging: &Path) -> Result<PathBuf> {
         // Probe names on the actual restore filesystem, without writing any
         // artifact payload or touching existing outputs. Case sensitivity and
         // Unicode equivalence can vary by volume/directory, not just by OS.
@@ -638,7 +691,7 @@ impl Artifact {
                 }
             }
         }
-        Ok(())
+        Ok(names)
     }
 }
 

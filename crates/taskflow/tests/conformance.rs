@@ -3794,6 +3794,89 @@ async fn tool_identity_includes_stderr_without_contaminating_metadata() {
 }
 
 #[tokio::test]
+async fn artifact_roots_follow_destination_filesystem_equivalence() {
+    for (declared, actual) in [
+        ("Out", "out"),
+        ("é", "e\u{301}"),
+        ("Out/Files", "out/files"),
+    ] {
+        let output = format!("{actual}/file");
+        let root = fixture(json!({"build":{
+            "command":command(&["write",&output,"artifact"]),"input":[],"output":[format!("{declared}/**")],"cache":true,"tools":{"fixture":command(&["version"])}
+        }}));
+        let probe = tempfile::tempdir_in(root.path()).unwrap();
+        std::fs::create_dir_all(probe.path().join(actual)).unwrap();
+        let aliases = probe.path().join(declared).exists();
+        drop(probe);
+        let g = graph(root.path()).await;
+        let project = &g.workspace.projects["app"];
+        let task = &g.tasks["app#build"].task;
+        files::atomic_write(&root.path().join(&output), b"artifact").unwrap();
+        let mut captured_task = task.clone();
+        captured_task.output = Some(vec![format!("{actual}/**")]);
+        let artifact = cache::Artifact::capture(
+            files::digest(b"root-alias"),
+            "app#build".into(),
+            project,
+            &captured_task,
+        )
+        .unwrap();
+        assert_eq!(
+            artifact
+                .validate(&artifact.key, "app#build", project, task)
+                .is_ok(),
+            aliases
+        );
+        let clean = tempfile::tempdir().unwrap();
+        let mut destination = project.clone();
+        destination.directory = clean.path().canonicalize().unwrap();
+        let restored = artifact.restore(&artifact.key, "app#build", &destination, task);
+        if aliases {
+            restored.unwrap();
+            assert_eq!(
+                std::fs::read(clean.path().join(&output)).unwrap(),
+                b"artifact"
+            );
+            assert_eq!(
+                cache::output_state(&destination, task).unwrap(),
+                artifact.output_digest
+            );
+            assert_eq!(
+                run(g.clone(), &["build"]).await.results["app#build"].outcome,
+                Outcome::Executed
+            );
+            assert_eq!(
+                run(g.clone(), &["build"]).await.results["app#build"].outcome,
+                Outcome::LocalCache
+            );
+            std::fs::remove_dir_all(root.path().join(actual)).unwrap();
+            assert_eq!(
+                run(g.clone(), &["build"]).await.results["app#build"].outcome,
+                Outcome::Restored
+            );
+            assert_eq!(
+                std::fs::read(root.path().join(&output)).unwrap(),
+                b"artifact"
+            );
+        } else {
+            assert!(restored.is_err());
+            assert_eq!(std::fs::read_dir(clean.path()).unwrap().count(), 0);
+            assert_eq!(
+                std::fs::read(root.path().join(&output)).unwrap(),
+                b"artifact"
+            );
+        }
+        for directory in [root.path(), clean.path()] {
+            assert!(!std::fs::read_dir(directory).unwrap().any(|entry| entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".taskflow-restore-")));
+        }
+    }
+}
+
+#[tokio::test]
 async fn cache_restore_rejects_filesystem_aliases_before_replacing_outputs() {
     for (first, second) in [("A", "a"), ("é", "e\u{301}")] {
         for directory_alias in [false, true] {
