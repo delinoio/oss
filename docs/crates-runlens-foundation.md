@@ -206,6 +206,11 @@ Required release targets:
 | Windows | 10 22H2 | x64, arm64 |
 | Ubuntu | 22.04 | x64, arm64 |
 
+Linux doctor and execution preflight require the bounded OS identity to identify
+Ubuntu with a numeric `YY.MM` release at least 22.04. Unknown identities, older
+releases, and other distributions fail the `minimum-os` check before launching
+a target, even when seccomp user notification is available.
+
 Linux release artifacts target glibc hosts. Alpine/musl hosts and mixed-architecture execution are excluded. This does not automatically exclude a supported statically linked child executable on a supported glibc host.
 
 Support claims require actual execution evidence on the relevant target and documented backend prerequisites. Cross-compilation or upstream source presence alone does not establish support. Unsupported protected executables and process behaviors must be documented and diagnosed.

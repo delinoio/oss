@@ -169,6 +169,7 @@
 - Retain the inspected executable handle through snapshots and revalidate pathname identity at the launch boundary; a stale digest must never certify a replacement executable.
 - Normalize only complete workspace/home/temporary path roots; similarly prefixed external paths must remain distinguishable in policy and query evidence.
 - Windows root masking and scope/exclusion checks use native ordinal case-insensitive comparisons with component boundaries; preserve Unix case sensitivity and avoid leaking differently cased local roots.
+- Linux doctor/preflight requires a known Ubuntu VERSION_ID at least 22.04 in addition to GNU/native architecture and seccomp capabilities; unknown, older, or other distributions cannot be reported as supported.
 - Unix rename tracing must record both source and destination write attempts, including directory-relative, extended macOS, and static Linux syscall variants; syscall failure does not erase attempted access.
 - Unsupported accesses, lexical aliases through parent components, and uncovered workspace paths prevent a policy pass; never collapse such paths across potentially changed symlinks to invent an identity. Known absolute external paths still support literal boundary checks without establishing cache coverage.
 - Offline path queries follow the report's OS syntax, including Windows drive and UNC paths; do not reinterpret Unix literal backslashes as separators.

@@ -74,6 +74,13 @@ pub fn doctor() -> Doctor {
         });
     }
     let os_version = os_version();
+    #[cfg(target_os = "linux")]
+    checks.push(Check {
+        name: "minimum-os",
+        passed: os_version.as_deref().is_some_and(supported_linux_identity),
+        guidance: "Ubuntu 22.04 or newer is required; unknown or other distributions are \
+                   unsupported.",
+    });
     #[cfg(target_os = "macos")]
     checks.push(Check {
         name: "minimum-os",
@@ -169,6 +176,29 @@ pub fn os_version() -> Option<String> {
         None
     }
 }
+#[cfg(any(target_os = "linux", test))]
+fn supported_linux_identity(identity: &str) -> bool {
+    let Some(version) = identity.strip_prefix("ubuntu:") else {
+        return false;
+    };
+    let Some((year, month)) = version.split_once('.') else {
+        return false;
+    };
+    if year.len() != 2
+        || month.len() != 2
+        || !year
+            .bytes()
+            .chain(month.bytes())
+            .all(|b| b.is_ascii_digit())
+    {
+        return false;
+    }
+    let (Ok(year), Ok(month)) = (year.parse::<u32>(), month.parse::<u32>()) else {
+        return false;
+    };
+    (1..=12).contains(&month) && (year, month) >= (22, 4)
+}
+
 pub(crate) fn known_linux_identity(value: &str) -> bool {
     value.split_once(':').is_some_and(|(id, version)| {
         !id.is_empty()
@@ -413,6 +443,35 @@ pub fn executable_identity(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn linux_minimum_requires_known_ubuntu_at_or_above_2204() {
+        for identity in [
+            "ubuntu:22.04",
+            "ubuntu:22.10",
+            "ubuntu:24.04",
+            "ubuntu:26.04",
+        ] {
+            assert!(supported_linux_identity(identity), "{identity}");
+        }
+        for identity in [
+            "ubuntu:20.04",
+            "ubuntu:22.03",
+            "ubuntu:22.00",
+            "ubuntu:24.13",
+            "ubuntu:22.4",
+            "ubuntu:22.04.1",
+            "ubuntu:24",
+            "ubuntu:24.04-beta",
+            "ubuntu:+24.04",
+            "debian:12",
+            "pop:22.04",
+            "22.04",
+            "",
+        ] {
+            assert!(!supported_linux_identity(identity), "{identity}");
+        }
+    }
 
     #[test]
     fn linux_identity_requires_distribution_and_version_without_shell_evaluation() {
