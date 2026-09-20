@@ -22,6 +22,29 @@ pub struct Check {
     pub passed: bool,
     pub guidance: &'static str,
 }
+#[cfg(any(windows, test))]
+fn supported_windows_machine(machines: Option<(u16, u16)>, expected: u16) -> bool {
+    // IsWow64Process2 returns IMAGE_FILE_MACHINE_UNKNOWN (0) for a native
+    // process. Bind that result to this artifact's actual compiled architecture.
+    matches!(expected, 0x8664 | 0xaa64)
+        && matches!(machines, Some((0, native)) if native == expected)
+}
+#[cfg(windows)]
+fn native_windows_process() -> bool {
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, IsWow64Process2};
+    let mut process = 0;
+    let mut native = 0;
+    // SAFETY: the pseudo-handle is current-process-owned, and both u16 outputs
+    // remain live. Failed queries provide no trustworthy architecture evidence.
+    let success = unsafe { IsWow64Process2(GetCurrentProcess(), &mut process, &mut native) };
+    let expected = match std::env::consts::ARCH {
+        "x86_64" => 0x8664,
+        "aarch64" => 0xaa64,
+        _ => 0,
+    };
+    supported_windows_machine((success != 0).then_some((process, native)), expected)
+}
+
 pub fn doctor() -> Doctor {
     let mut checks = vec![
         Check {
@@ -73,6 +96,13 @@ pub fn doctor() -> Doctor {
                        substituted.",
         });
     }
+    #[cfg(target_os = "windows")]
+    checks.push(Check {
+        name: "native-process",
+        passed: native_windows_process(),
+        guidance: "Install the native Windows architecture artifact; emulation and unknown native \
+                   machine identity are unsupported.",
+    });
     let os_version = os_version();
     #[cfg(target_os = "linux")]
     checks.push(Check {
@@ -708,5 +738,30 @@ mod tests {
         }
         assert!(linux_os_identity(&" ".repeat(65537)).is_none());
         assert!(!known_linux_identity("22.04"));
+    }
+}
+
+#[cfg(test)]
+mod native_windows_tests {
+    use super::*;
+    #[test]
+    fn windows_architecture_requires_native_process_and_artifact_parity() {
+        for expected in [0x8664, 0xaa64] {
+            assert!(supported_windows_machine(Some((0, expected)), expected));
+            assert!(!supported_windows_machine(None, expected));
+            assert!(!supported_windows_machine(Some((0, 0)), expected));
+            assert!(!supported_windows_machine(
+                Some((0x14c, expected)),
+                expected
+            ));
+            assert!(!supported_windows_machine(
+                Some((expected, expected)),
+                expected
+            ));
+        }
+        assert!(!supported_windows_machine(Some((0x8664, 0xaa64)), 0x8664));
+        assert!(!supported_windows_machine(Some((0, 0xaa64)), 0x8664));
+        assert!(!supported_windows_machine(Some((0, 0x8664)), 0xaa64));
+        assert!(!supported_windows_machine(Some((0, 0)), 0));
     }
 }

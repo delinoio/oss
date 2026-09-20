@@ -280,3 +280,5 @@
 - Runlens macOS readlink/readlinkat hooks record reads of the link itself, preserve buffers and native results, and never persist returned target text.
 
 - Runlens secret masking must cover overlapping matches in original text without leaking suffixes or rematching replacement markers; environment iteration order cannot affect privacy.
+
+- Runlens Windows doctor/preflight must verify native process and artifact architecture parity with IsWow64Process2, rejecting failed queries and emulation before tracing.

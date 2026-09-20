@@ -828,3 +828,8 @@ Secret-value masking uses the union of literal matches in the original text.
 Overlapping selected/sensitive environment values, repeated self-overlaps and
 Unicode matches cannot expose suffixes or depend on environment ordering;
 replacement markers are never matched again as secret values.
+
+Windows doctor and execution preflight require a successful IsWow64Process2
+query proving a non-emulated process whose native machine equals the compiled
+Runlens artifact architecture. Query failure, unknown machines and mixed
+x64/arm64 execution are unsupported before tracing starts.
