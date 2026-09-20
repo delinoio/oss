@@ -322,3 +322,5 @@ The cache capture unit regressions use bounded fixtures to check empty file/dire
 `outputless_suppression_requires_the_latest_attempt_to_succeed` covers absent and empty output declarations, first-run failures, imported failed receipts, successful baseline establishment, suppression after success, and a later failure invalidating that baseline. The cancellation-during-restore fixture now verifies that cancellation leaves no suppressible receipt while the prior cache artifact remains valid and available for future restoration.
 
 `late_remote_commit_cancellation_preserves_cli_success` sends SIGINT to the real Unix CLI during an acknowledged or lost remote manifest response, after local publication. Completed receipts, invocation success, and exit code remain successful; the portable publication unit test verifies the same aggregate boundary and cancellation before publication.
+
+`cancelled_setup_never_consumes_a_baseline_or_launches` covers pre-cancelled uncontended resource locks and no-probe task setup, plus cancellation during synchronous input hashing. Pending cancellation preserves the previous receipt, and neither path reaches command launch.

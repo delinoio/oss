@@ -83,3 +83,5 @@
 - Historical cache shard evidence must contain exactly one partition or a complete suite. Integrity verification rejects other partial cardinalities without relying on current task configuration.
 - Sanitize dotenv errors before returning from environment construction: parser lines and error source chains can contain secrets before redaction values exist. Diagnostics may contain the file path and logical-line byte offset, never dotenv contents.
 - Suppressing prerequisite-only work requires a successful baseline even without declared outputs. Invalidate the persisted baseline under the task lock before each new attempt, retaining it only in memory for output comparison; failures and interrupted attempts must not expose an older success to later suppression.
+
+- Check cancellation before task setup, before each resource lock attempt, after lock acquisition, and immediately before command launch. Pending work must not invalidate a prior baseline or launch side effects; acquired Docker ownership still requires awaited cleanup.

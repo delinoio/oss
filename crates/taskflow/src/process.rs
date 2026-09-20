@@ -307,6 +307,13 @@ impl std::fmt::Display for Cancelled {
 }
 impl std::error::Error for Cancelled {}
 
+pub(crate) fn check_cancelled(cancel: &CancellationToken) -> Result<()> {
+    if cancel.is_cancelled() {
+        return Err(Cancelled.into());
+    }
+    Ok(())
+}
+
 pub(crate) fn aborts_discovery(error: &anyhow::Error) -> bool {
     error.is::<Cancelled>() || error.is::<CleanupFailure>()
 }

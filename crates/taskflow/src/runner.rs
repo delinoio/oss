@@ -451,6 +451,7 @@ async fn run_task(
     options: &RunOptions,
     cancel: CancellationToken,
 ) -> Result<Receipt> {
+    crate::process::check_cancelled(&cancel)?;
     let node = &graph.tasks[id];
     let project = &graph.workspace.projects[&node.project];
     let task = &node.task;
@@ -468,6 +469,7 @@ async fn run_task(
         );
     }
     let locks = acquire_locks(&graph.workspace.root, id, &task.resources, &cancel).await?;
+    crate::process::check_cancelled(&cancel)?;
     let old = previous(&graph.workspace.root, id).filter(Receipt::success);
     // Hold the old baseline only inside this attempt. A failed or interrupted
     // replacement must not leave an earlier success eligible for suppression.
@@ -681,6 +683,7 @@ async fn run_task(
         }
     }
     let execution = uuid::Uuid::now_v7().to_string();
+    crate::process::check_cancelled(&cancel)?;
     let run_directory = graph.workspace.root.join(".taskflow/runs").join(&execution);
     std::fs::create_dir_all(&run_directory)?;
     let result_file = run_directory.join("result.json");
@@ -715,6 +718,10 @@ async fn run_task(
         .await?;
         command = prepared.0;
         docker = Some(prepared.1);
+    }
+    if cancel.is_cancelled() {
+        cleanup_container(docker).await?;
+        return Err(crate::process::Cancelled.into());
     }
     if task.shard.is_some() {
         let mut receipt = crate::shard::execute(
@@ -1063,6 +1070,7 @@ pub async fn acquire_locks(
     resources: &[String],
     cancel: &CancellationToken,
 ) -> Result<Vec<File>> {
+    crate::process::check_cancelled(cancel)?;
     let names: BTreeSet<_> = std::iter::once(format!("task:{id}"))
         .chain(resources.iter().map(|s| format!("resource:{s}")))
         .collect();
@@ -1079,6 +1087,7 @@ pub async fn acquire_locks(
             .write(true)
             .open(path)?;
         loop {
+            crate::process::check_cancelled(cancel)?;
             match file.try_lock() {
                 Ok(()) => break,
                 Err(std::fs::TryLockError::WouldBlock) => {
@@ -1295,6 +1304,77 @@ mod output_cleanup_tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use super::*;
+
+    #[tokio::test]
+    async fn cancelled_setup_never_consumes_a_baseline_or_launches() {
+        for during_hash in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            std::fs::write(
+                directory.path().join("taskflow.yml"),
+                "version: 1\nproject: app\ntasks:\n  check:\n    command: [must-not-launch]\n    \
+                 input: [large]\n",
+            )
+            .unwrap();
+            // A cancelled no-probe task must stop after synchronous input work
+            // too. The receipt's removal marks the attempt's setup boundary.
+            File::create(directory.path().join("large"))
+                .unwrap()
+                .set_len(64 * 1024 * 1024)
+                .unwrap();
+            let graph = Graph::build(
+                crate::discover::Workspace::discover(directory.path())
+                    .await
+                    .unwrap(),
+            )
+            .unwrap();
+            let baseline = Receipt::skipped(
+                "app#check",
+                Outcome::Executed,
+                BTreeSet::from([Cause::Direct]),
+            );
+            persist(directory.path(), &baseline).unwrap();
+            let cancel = CancellationToken::new();
+            let watcher = if during_hash {
+                let stop = cancel.clone();
+                let receipt = receipt_path(directory.path(), "app#check");
+                Some(std::thread::spawn(move || {
+                    let deadline = Instant::now() + Duration::from_secs(10);
+                    while receipt.exists() {
+                        assert!(Instant::now() < deadline);
+                        std::thread::yield_now();
+                    }
+                    stop.cancel();
+                }))
+            } else {
+                cancel.cancel();
+                assert!(acquire_locks(directory.path(), "app#check", &[], &cancel)
+                    .await
+                    .unwrap_err()
+                    .is::<crate::process::Cancelled>());
+                assert!(!directory.path().join(".taskflow/locks").exists());
+                None
+            };
+            let error = run_task(
+                &graph,
+                "app#check",
+                BTreeSet::from([Cause::Direct]),
+                &BTreeMap::new(),
+                &RunOptions::default(),
+                cancel,
+            )
+            .await
+            .unwrap_err();
+            if let Some(watcher) = watcher {
+                watcher.join().unwrap();
+            }
+            assert!(error.is::<crate::process::Cancelled>(), "{error:#}");
+            assert!(!directory.path().join(".taskflow/runs").exists());
+            assert_eq!(
+                previous(directory.path(), "app#check").is_some(),
+                !during_hash
+            );
+        }
+    }
 
     #[tokio::test]
     async fn publication_cancellation_replaces_success_exit_code() {
