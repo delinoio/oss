@@ -171,6 +171,7 @@
 - Cross-command tests must account for Windows `run env` variable conversion, including numeric `$1` references, separately from direct transformation capture parsing and literal npm launcher forwarding.
 - Checksum generation with explicit file output must rebase relative inputs against the manifest directory, resolving symlink parents before rebasing; preserve absolute inputs and stdout filename behavior.
 - Windows publication must retain temporary-file rename/cleanup access before copying permissions, replace read-only destinations without clearing their attributes, and leave originals unchanged on cancellation or failed publication. Apply temporary access attributes before the original DACL so denied attribute writes do not block an otherwise authorized replacement. Unsupported filesystem rename capabilities fail closed.
+- Windows DACL fixtures must probe attribute-write permission with a fresh handle requesting exactly FILE_WRITE_ATTRIBUTES, including allowed controls and checks after cancellation and publication. Reapplying unchanged attributes is not an access-denial probe.
 
 - clibox GNU release builds use the shared pinned AlmaLinux 9/glibc 2.34 boundary for npm and stable APT/DNF distribution; preserve the existing musl targets and optional user-installed desktop tools.
 
