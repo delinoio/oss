@@ -1,15 +1,24 @@
+mod base64;
 mod cli;
 mod clipboard;
 mod config_command;
+mod config_publication;
 mod config_runtime;
 mod dotenv;
 mod environment;
 mod error;
+mod hash;
+mod io;
 mod open;
 mod port;
 mod probe;
 mod publication;
 mod runtime;
+mod system;
+mod text;
+mod time;
+mod transform;
+mod transform_error;
 mod wait;
 mod wait_command;
 mod yaml;
@@ -17,7 +26,7 @@ mod yaml;
 use std::io::{IsTerminal, Write};
 
 use clap::{CommandFactory, Parser};
-use cli::{Cli, Command, Run, Utility};
+use cli::{Cli, Command};
 use config_runtime::{Error, Failure};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
@@ -78,12 +87,12 @@ fn main() {
                 tracing::error!(
                     operation = "arguments",
                     classification = ?Failure::Arguments,
-                    "error: {message}"
+                    "error: arguments: {message}"
                 );
             } else {
                 // Invalid arguments still need actionable guidance when log
                 // filtering disables tracing, without exposing clap's argv.
-                let _ = writeln!(std::io::stderr(), "error: {message}");
+                let _ = writeln!(std::io::stderr(), "error: arguments: {message}");
             }
             std::process::exit(2);
         }
@@ -100,28 +109,22 @@ fn main() {
         };
         std::process::exit(code);
     };
+    // Each command family owns its signal semantics. Wait-only CA environment
+    // cleanup must never affect delegated children or offline processing.
     match command {
         Command::Configuration(command) => config_command::execute(command),
         Command::Wait(command) => std::process::exit(i32::from(wait_command::execute(command))),
-        Command::Utility(command) => match command {
-            Utility::Run {
-                command: Run::Env { mut args },
-            } => execute_utility(|| {
-                if leading_separator {
-                    args.insert(0, "--".into());
+        Command::System(command) => execute_utility(|| system::execute(command, leading_separator)),
+        Command::Transform(command) => {
+            let status = match transform::execute(command) {
+                Ok(status) => status,
+                Err(error) => {
+                    transform_error::report(error);
+                    error.exit
                 }
-                runtime::exit_child(environment::execute(args)?);
-            }),
-            Utility::Port { command } => execute_utility(|| port::execute(command)),
-            Utility::Open { target, app, wait } => execute_utility(|| {
-                open::execute(target, app, wait)?;
-                Ok(0)
-            }),
-            Utility::Clipboard { command } => execute_utility(|| {
-                clipboard::execute(command)?;
-                Ok(0)
-            }),
-        },
+            };
+            std::process::exit(i32::from(status));
+        }
     }
 }
 

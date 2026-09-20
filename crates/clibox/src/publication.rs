@@ -1,443 +1,911 @@
-//! One-file publication: private staging, permission preservation, then rename.
 use std::{
-    fs::{self, File, Metadata, OpenOptions},
-    path::Path,
+    fs::{self, File},
+    io,
+    path::{Path, PathBuf},
 };
 
-use crate::config_runtime::{self, Cancellation, Failure, Result};
+use tempfile::{Builder, TempPath};
 
-pub fn regular_input(path: &Path) -> Result<()> {
-    let metadata = fs::symlink_metadata(path).map_err(|_| Failure::Read)?;
-    if !metadata.is_file() || metadata.file_type().is_symlink() {
-        return Err(Failure::UnsafeDestination.into());
-    }
-    Ok(())
+use crate::transform_error::{Code, Error, Result};
+
+pub struct Publication {
+    temporary: Option<TempPath>,
+    destination: Option<PathBuf>,
+    replace: bool,
 }
 
-fn destination(path: &Path) -> Result<Option<(File, Metadata)>> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(m) => m,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(_) => return Err(Failure::Publish.into()),
-    };
-    if !metadata.is_file() || metadata.file_type().is_symlink() {
-        return Err(Failure::UnsafeDestination.into());
-    }
-    let mut options = OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        options.custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT);
-    }
-    let file = match options.open(path) {
-        Ok(file) => file,
-        #[cfg(unix)]
-        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
-            // Replacement reads metadata/ACLs, never destination content. A
-            // write-only descriptor supports those operations too, so retain
-            // write-only outputs without requiring read access. Keep NOFOLLOW
-            // and NONBLOCK, and never truncate or write through this handle.
-            options
-                .read(false)
-                .write(true)
-                .open(path)
-                .map_err(|_| Failure::Permissions)?
-        }
-        Err(_) => return Err(Failure::Permissions.into()),
-    };
-    let metadata = file.metadata().map_err(|_| Failure::Permissions)?;
-    if !metadata.is_file() {
-        return Err(Failure::UnsafeDestination.into());
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        if metadata.nlink() != 1 {
-            return Err(Failure::UnsafeDestination.into());
-        }
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::io::AsRawHandle;
-
-        use windows_sys::Win32::Storage::FileSystem::*;
-        let mut info = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
-        // SAFETY: the file handle is live and info points to writable storage.
-        if unsafe { GetFileInformationByHandle(file.as_raw_handle(), info.as_mut_ptr()) } == 0 {
-            return Err(Failure::Permissions.into());
-        }
-        let info = unsafe { info.assume_init() };
-        if info.nNumberOfLinks != 1 || info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-            return Err(Failure::UnsafeDestination.into());
-        }
-    }
-    Ok(Some((file, metadata)))
-}
-
-#[cfg(unix)]
-fn permissions(source: &File, metadata: &Metadata, target: &File) -> Result<()> {
-    use std::os::unix::{fs::MetadataExt, io::AsRawFd};
-    let current = target.metadata().map_err(|_| Failure::Permissions)?;
-    if (current.uid(), current.gid()) != (metadata.uid(), metadata.gid()) {
-        // Preserve the identities to which owner/group permission bits apply.
-        if unsafe { libc::fchown(target.as_raw_fd(), metadata.uid(), metadata.gid()) } != 0 {
-            return Err(Failure::Permissions.into());
-        }
-    }
-    target
-        .set_permissions(metadata.permissions())
-        .map_err(|_| Failure::Permissions)?;
-    #[cfg(target_os = "macos")]
-    {
-        // Copy only the ACL. Never copy content, resource forks, or other state.
-        if unsafe {
-            libc::fcopyfile(
-                source.as_raw_fd(),
-                target.as_raw_fd(),
-                std::ptr::null_mut(),
-                libc::COPYFILE_ACL,
-            )
-        } != 0
-        {
-            return Err(Failure::Permissions.into());
-        }
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let name = c"system.posix_acl_access";
-        // Linux POSIX ACLs are kernel-owned xattrs; this avoids a libacl runtime
-        // dependency in standalone/musl packages. ENODATA means mode bits only.
-        let size =
-            unsafe { libc::fgetxattr(source.as_raw_fd(), name.as_ptr(), std::ptr::null_mut(), 0) };
-        if size < 0 {
-            let code = std::io::Error::last_os_error().raw_os_error();
-            if !matches!(code, Some(libc::ENODATA | libc::ENOTSUP)) {
-                return Err(Failure::Permissions.into());
-            }
-            let removed = unsafe { libc::fremovexattr(target.as_raw_fd(), name.as_ptr()) };
-            if removed != 0
-                && !matches!(
-                    std::io::Error::last_os_error().raw_os_error(),
-                    Some(libc::ENODATA | libc::ENOTSUP)
-                )
-            {
-                return Err(Failure::Permissions.into());
-            }
-        } else {
-            let mut acl = vec![0u8; size as usize];
-            let actual = unsafe {
-                libc::fgetxattr(
-                    source.as_raw_fd(),
-                    name.as_ptr(),
-                    acl.as_mut_ptr().cast(),
-                    acl.len(),
-                )
-            };
-            if actual != size
-                || unsafe {
-                    libc::fsetxattr(
-                        target.as_raw_fd(),
-                        name.as_ptr(),
-                        acl.as_ptr().cast(),
-                        acl.len(),
-                        0,
-                    )
-                } != 0
-            {
-                return Err(Failure::Permissions.into());
-            }
-        }
-    }
-    Ok(())
-}
-
-// The directory guard outlives the file even after its permissions are copied.
-// Renaming from this private child directory stays on the destination
-// filesystem.
-struct Staging {
-    file: tempfile::NamedTempFile,
-    #[cfg(unix)]
-    _directory: tempfile::TempDir,
-}
-impl Staging {
-    fn new(parent: &Path) -> Result<Self> {
-        #[cfg(unix)]
-        let directory = {
-            use std::os::unix::fs::PermissionsExt;
-            let directory = tempfile::Builder::new()
-                .prefix(".clibox-")
-                .tempdir_in(parent)
-                .map_err(|_| Failure::Publish)?;
-            fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700))
-                .map_err(|_| Failure::Permissions)?;
-            #[cfg(target_os = "macos")]
-            clear_directory_acl(directory.path())?;
-            if fs::metadata(directory.path())
-                .map_err(|_| Failure::Permissions)?
-                .permissions()
-                .mode()
-                & 0o777
-                != 0o700
-            {
-                return Err(Failure::Permissions.into());
-            }
-            directory
+impl Publication {
+    pub fn prepare(destination: Option<PathBuf>, replace: bool) -> Result<(Self, Option<File>)> {
+        let mut publication = Self {
+            temporary: None,
+            destination,
+            replace,
         };
-        #[cfg(unix)]
-        let parent = directory.path();
-        let file = tempfile::Builder::new()
+        let Some(path) = &publication.destination else {
+            return Ok((publication, None));
+        };
+        inspect(path, replace)?;
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        let file = Builder::new()
             .prefix(".clibox-")
             .tempfile_in(parent)
-            .map_err(|_| Failure::Publish)?;
-        #[cfg(unix)]
+            .map_err(|_| Error::runtime(Code::WriteFailed))?;
+        let (file, temporary) = file.into_parts();
+        publication.temporary = Some(temporary);
+        Ok((publication, Some(file)))
+    }
+
+    pub fn publish(mut self, before_commit: impl FnOnce() -> Result<()>) -> Result<()> {
+        let Some(path) = &self.destination else {
+            return Ok(());
+        };
+        let temporary = self.temporary.as_ref().unwrap();
+        // Flush through a writable handle before restoring a read-only mode/ACL.
+        // FlushFileBuffers on Windows does not accept a read-only handle.
+        fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(temporary)
+            .and_then(|file| file.sync_all())
+            .map_err(|_| Error::runtime(Code::WriteFailed))?;
+        #[cfg(windows)]
+        let mut windows = WindowsPublication::prepare(temporary)?;
+        #[cfg(windows)]
+        let mut readonly = false;
+        // Recheck link/type policy and copy current permissions at publication,
+        // without comparing file identities or providing lost-update protection.
+        if let Some(original) = inspect(path, self.replace)? {
+            #[cfg(windows)]
+            {
+                readonly = original.metadata.permissions().readonly();
+            }
+            preserve_permissions(&original, temporary)?;
+        }
+        // Cancellation during flushing/permission work must still prevent publication.
+        before_commit()?;
+        #[cfg(windows)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            // Creation's 0600 is filtered by umask. Restore owner access through
-            // the open handle before writing, even with caller umask 0777.
-            file.as_file()
-                .set_permissions(fs::Permissions::from_mode(0o600))
-                .map_err(|_| Failure::Permissions)?;
+            windows.persist(path, self.replace, readonly)?;
+            self.temporary.as_mut().unwrap().disable_cleanup(true);
         }
-        Ok(Self {
+        #[cfg(not(windows))]
+        {
+            let temporary = self.temporary.take().unwrap();
+            if self.replace {
+                temporary
+                    .persist(path)
+                    .map_err(|_| Error::runtime(Code::PublishFailed))?;
+            } else {
+                temporary.persist_noclobber(path).map_err(|error| {
+                    Error::runtime(if error.error.kind() == io::ErrorKind::AlreadyExists {
+                        Code::OutputExists
+                    } else {
+                        Code::PublishFailed
+                    })
+                })?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+struct WindowsPublication {
+    file: File,
+    committed: bool,
+}
+
+#[cfg(windows)]
+impl WindowsPublication {
+    fn prepare(path: &Path) -> Result<Self> {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        use windows_sys::Win32::Storage::FileSystem::{DELETE, FILE_WRITE_ATTRIBUTES};
+
+        // Retain rename/cleanup authority before copying any restrictive ACL.
+        let file = fs::OpenOptions::new()
+            .access_mode(DELETE | FILE_WRITE_ATTRIBUTES)
+            .open(path)
+            .map_err(|_| Error::runtime(Code::Permissions))?;
+        let publication = Self {
             file,
-            #[cfg(unix)]
-            _directory: directory,
-        })
+            committed: false,
+        };
+        publication
+            .clear_temporary_attributes()
+            .map_err(|_| Error::runtime(Code::Permissions))?;
+        Ok(publication)
     }
-}
 
-#[cfg(target_os = "macos")]
-fn clear_directory_acl(path: &Path) -> Result<()> {
-    use std::os::fd::AsRawFd;
-    // Darwin ACL grants can bypass POSIX mode bits. Remove inherited grants
-    // before staging any bytes; Linux's 0700 mode also masks POSIX ACL grants.
-    // libc does not expose these macOS SDK <sys/acl.h> declarations.
-    unsafe extern "C" {
-        fn acl_init(count: libc::c_int) -> *mut libc::c_void;
-        fn acl_set_fd(fd: libc::c_int, acl: *mut libc::c_void) -> libc::c_int;
-        fn acl_free(acl: *mut libc::c_void) -> libc::c_int;
-    }
-    let directory = File::open(path).map_err(|_| Failure::Permissions)?;
-    // SAFETY: the initialized empty ACL and live directory descriptor remain
-    // valid through acl_set_fd, and the allocation is freed exactly once.
-    unsafe {
-        let acl = acl_init(0);
-        if acl.is_null() {
-            return Err(Failure::Permissions.into());
+    fn clear_temporary_attributes(&self) -> io::Result<()> {
+        use std::os::windows::io::AsRawHandle;
+
+        use windows_sys::Win32::Storage::FileSystem::{
+            FileBasicInfo, SetFileInformationByHandle, FILE_ATTRIBUTE_NORMAL, FILE_BASIC_INFO,
+        };
+        let information = FILE_BASIC_INFO {
+            FileAttributes: FILE_ATTRIBUTE_NORMAL,
+            ..Default::default()
+        };
+        if unsafe {
+            SetFileInformationByHandle(
+                self.file.as_raw_handle(),
+                FileBasicInfo,
+                (&information as *const FILE_BASIC_INFO).cast(),
+                std::mem::size_of_val(&information) as u32,
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
         }
-        let result = acl_set_fd(directory.as_raw_fd(), acl);
-        acl_free(acl);
-        if result != 0 {
-            return Err(Failure::Permissions.into());
-        }
+        Ok(())
     }
-    Ok(())
-}
 
-pub fn publish(path: &Path, bytes: &[u8], replace: bool, cancel: &Cancellation) -> Result<()> {
-    cancel.check()?;
-    if fs::symlink_metadata(path).is_ok() && !replace {
-        return Err(Failure::DestinationExists.into());
-    }
-    let parent = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    let mut temporary = Staging::new(parent)?;
-    // Windows inherits the parent's ACL. Both guards clean up on handled errors.
-    config_runtime::write(temporary.file.as_file_mut(), bytes, cancel)?;
-    publish_prepared(temporary, path, replace, cancel)
-}
+    fn persist(&mut self, destination: &Path, replace: bool, readonly: bool) -> Result<()> {
+        use std::os::windows::{ffi::OsStrExt, io::AsRawHandle};
 
-fn publish_prepared(
-    temporary: Staging,
-    path: &Path,
-    replace: bool,
-    cancel: &Cancellation,
-) -> Result<()> {
-    cancel.check()?;
-    let existing = destination(path)?;
-    if existing.is_some() && !replace {
-        return Err(Failure::DestinationExists.into());
-    }
-    #[cfg(unix)]
-    if let Some((source, metadata)) = &existing {
-        permissions(source, metadata, temporary.file.as_file())?;
-    }
-    temporary
-        .file
-        .as_file()
-        .sync_all()
-        .map_err(|_| Failure::Write)?;
-    cancel.check()?;
-    #[cfg(windows)]
-    if existing.is_some() {
-        use std::os::windows::ffi::OsStrExt;
-        // ReplaceFileW opens the replacement without sharing, so even our own
-        // staging writer must be closed first. Keep the TempPath guard alive to
-        // remove unpublished bytes if replacement fails.
-        let temporary = temporary.file.into_temp_path();
-        let old: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
-        let new: Vec<u16> = temporary.as_os_str().encode_wide().chain([0]).collect();
-        // ReplaceFile preserves the destination DACL. Do not set IGNORE_ACL_ERRORS
-        // or IGNORE_MERGE_ERRORS: inability to preserve access must fail closed.
+        use windows_sys::Win32::Storage::FileSystem::{
+            FileRenameInfoEx, SetFileInformationByHandle, FILE_RENAME_INFO,
+        };
+
+        let destination =
+            std::path::absolute(destination).map_err(|_| Error::runtime(Code::PublishFailed))?;
+        let name: Vec<u16> = destination.as_os_str().encode_wide().collect();
+        let bytes = std::mem::size_of::<FILE_RENAME_INFO>()
+            .checked_add(
+                name.len()
+                    .checked_mul(2)
+                    .ok_or_else(|| Error::runtime(Code::PublishFailed))?,
+            )
+            .and_then(|size| u32::try_from(size).ok())
+            .ok_or_else(|| Error::runtime(Code::PublishFailed))?;
+        // usize backing storage supplies the SDK structure's pointer alignment.
+        let mut buffer = vec![0usize; (bytes as usize).div_ceil(std::mem::size_of::<usize>())];
+        let information = buffer.as_mut_ptr().cast::<FILE_RENAME_INFO>();
+        // FileRenameInfoEx can replace a read-only destination without temporarily
+        // changing the original's attributes. The OS still requires target write-
+        // attribute permission. Unsupported filesystems fail without modifying it.
+        // https://learn.microsoft.com/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information
+        const REPLACE_IF_EXISTS: u32 = 0x1;
+        const IGNORE_READONLY_ATTRIBUTE: u32 = 0x40;
         let success = unsafe {
-            windows_sys::Win32::Storage::FileSystem::ReplaceFileW(
-                old.as_ptr(),
-                new.as_ptr(),
-                std::ptr::null(),
-                0,
-                std::ptr::null(),
-                std::ptr::null(),
+            (*information).Anonymous.Flags = if replace {
+                REPLACE_IF_EXISTS
+                    | if readonly {
+                        IGNORE_READONLY_ATTRIBUTE
+                    } else {
+                        0
+                    }
+            } else {
+                0
+            };
+            (*information).FileNameLength = (name.len() * 2) as u32;
+            std::ptr::copy_nonoverlapping(
+                name.as_ptr(),
+                std::ptr::addr_of_mut!((*information).FileName).cast::<u16>(),
+                name.len(),
+            );
+            SetFileInformationByHandle(
+                self.file.as_raw_handle(),
+                FileRenameInfoEx,
+                information.cast(),
+                bytes,
             )
         };
         if success == 0 {
-            return Err(Failure::Publish.into());
+            let error = io::Error::last_os_error();
+            tracing::debug!(
+                action = "publish",
+                os_code = error.raw_os_error(),
+                "file publication failed"
+            );
+            return Err(Error::runtime(
+                if !replace && error.kind() == io::ErrorKind::AlreadyExists {
+                    Code::OutputExists
+                } else {
+                    Code::PublishFailed
+                },
+            ));
         }
-        return Ok(());
+        self.committed = true;
+        Ok(())
     }
-    if replace {
-        temporary.file.persist(path).map_err(|_| Failure::Publish)?;
-    } else {
-        temporary.file.persist_noclobber(path).map_err(|error| {
-            if error.error.kind() == std::io::ErrorKind::AlreadyExists {
-                Failure::DestinationExists
+}
+
+#[cfg(windows)]
+impl Drop for WindowsPublication {
+    fn drop(&mut self) {
+        use std::os::windows::io::AsRawHandle;
+
+        use windows_sys::Win32::Storage::FileSystem::{
+            FileDispositionInfo, SetFileInformationByHandle, FILE_DISPOSITION_INFO,
+        };
+        if self.committed {
+            return;
+        }
+        // Only the unpublished temporary inode is changed. Held access survives
+        // a copied restrictive ACL and permits cleanup of read-only output.
+        let result = self.clear_temporary_attributes().and_then(|()| {
+            let information = FILE_DISPOSITION_INFO { DeleteFile: true };
+            if unsafe {
+                SetFileInformationByHandle(
+                    self.file.as_raw_handle(),
+                    FileDispositionInfo,
+                    (&information as *const FILE_DISPOSITION_INFO).cast(),
+                    std::mem::size_of_val(&information) as u32,
+                )
+            } == 0
+            {
+                Err(io::Error::last_os_error())
             } else {
-                Failure::Publish
+                Ok(())
             }
+        });
+        if let Err(error) = result {
+            tracing::debug!(
+                action = "cleanup",
+                os_code = error.raw_os_error(),
+                "temporary cleanup failed"
+            );
+        }
+    }
+}
+
+struct Original {
+    metadata: fs::Metadata,
+    #[cfg(not(target_os = "macos"))]
+    file: File,
+    #[cfg(target_os = "macos")]
+    path: std::ffi::CString,
+}
+
+fn inspect(path: &Path, replace: bool) -> Result<Option<Original>> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(Error::runtime(Code::ReadFailed)),
+    };
+    if !replace {
+        return Err(Error::runtime(Code::OutputExists));
+    }
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err(Error::runtime(Code::UnsafeDestination));
+    }
+    #[cfg(not(target_os = "macos"))]
+    let original = {
+        let file = open_original(path).map_err(|error| {
+            tracing::debug!(
+                action = "inspect-output",
+                os_code = error.raw_os_error(),
+                "permission inspection failed"
+            );
+            Error::runtime(Code::Permissions)
         })?;
+        let metadata = file
+            .metadata()
+            .map_err(|_| Error::runtime(Code::Permissions))?;
+        Original { metadata, file }
+    };
+    #[cfg(target_os = "macos")]
+    let original = {
+        use std::os::unix::ffi::OsStrExt;
+        // Darwin has no O_PATH equivalent: even O_EVTONLY requires data access.
+        // lstat and acl_get_link_np inspect metadata/security without opening
+        // content or following the final symlink. As with replacement itself,
+        // these observations do not lock against concurrent changes.
+        let path = std::ffi::CString::new(path.as_os_str().as_bytes())
+            .map_err(|_| Error::runtime(Code::Permissions))?;
+        Original { metadata, path }
+    };
+    if !original.metadata.is_file() || multiple_links(&original)? {
+        return Err(Error::runtime(Code::UnsafeDestination));
+    }
+    Ok(Some(original))
+}
+
+#[cfg(target_os = "linux")]
+fn open_original(path: &Path) -> io::Result<File> {
+    use std::os::{fd::FromRawFd, unix::ffi::OsStrExt};
+    let path = std::ffi::CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    // OpenOptions masks custom flags with !O_ACCMODE. musl includes O_PATH in
+    // O_ACCMODE, so that route silently requests content access instead. Use
+    // libc directly until Rust preserves metadata-only opens on musl too.
+    let fd = unsafe {
+        libc::open(
+            path.as_ptr(),
+            libc::O_PATH | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if fd < 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(unsafe { File::from_raw_fd(fd) })
+    }
+}
+
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+fn open_original(path: &Path) -> io::Result<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+}
+
+#[cfg(windows)]
+fn open_original(path: &Path) -> io::Result<File> {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES, READ_CONTROL,
+    };
+    fs::OpenOptions::new()
+        .access_mode(FILE_READ_ATTRIBUTES | READ_CONTROL)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+}
+
+#[cfg(unix)]
+fn multiple_links(original: &Original) -> Result<bool> {
+    use std::os::unix::fs::MetadataExt;
+    Ok(original.metadata.nlink() != 1)
+}
+
+#[cfg(windows)]
+fn multiple_links(original: &Original) -> Result<bool> {
+    use std::os::windows::io::AsRawHandle;
+
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_REPARSE_POINT,
+    };
+    let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+    if unsafe { GetFileInformationByHandle(original.file.as_raw_handle(), &mut info) } == 0 {
+        return Err(Error::runtime(Code::Permissions));
+    }
+    Ok(info.nNumberOfLinks != 1 || info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0)
+}
+
+#[cfg(unix)]
+fn preserve_permissions(original: &Original, temporary: &Path) -> Result<()> {
+    use std::os::{fd::AsRawFd, unix::fs::MetadataExt};
+    let metadata = &original.metadata;
+    let target = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(temporary)
+        .map_err(|_| Error::runtime(Code::Permissions))?;
+    let target_metadata = target
+        .metadata()
+        .map_err(|_| Error::runtime(Code::Permissions))?;
+    // Ownership affects effective access too. Do not silently widen permissions
+    // by publishing a file under another owner/group. chown can clear mode bits,
+    // so mode and ACL restoration follows it.
+    if (metadata.uid(), metadata.gid()) != (target_metadata.uid(), target_metadata.gid())
+        && unsafe { libc::fchown(target.as_raw_fd(), metadata.uid(), metadata.gid()) } != 0
+    {
+        return Err(Error::runtime(Code::Permissions));
+    }
+    target
+        .set_permissions(metadata.permissions())
+        .map_err(|_| Error::runtime(Code::Permissions))?;
+    preserve_acl(original, &target)
+}
+
+#[cfg(target_os = "linux")]
+fn preserve_acl(original: &Original, target: &File) -> Result<()> {
+    use std::os::fd::AsRawFd;
+    // Linux POSIX access ACLs are kernel xattrs; using libc avoids a new libacl
+    // dependency in the self-contained musl artifacts.
+    let key = c"system.posix_acl_access";
+    // fgetxattr does not accept O_PATH on supported kernels. The procfs magic
+    // link keeps lookup bound to our held inode even if its pathname changes;
+    // getxattr requests ACL metadata, not read access to file contents. Missing
+    // procfs or inaccessible security metadata fails before replacement.
+    let source = std::ffi::CString::new(format!("/proc/self/fd/{}", original.file.as_raw_fd()))
+        .map_err(|_| Error::runtime(Code::Permissions))?;
+    let length = unsafe { libc::getxattr(source.as_ptr(), key.as_ptr(), std::ptr::null_mut(), 0) };
+    if length < 0 {
+        let error = io::Error::last_os_error().raw_os_error();
+        if error == Some(libc::ENODATA) || error == Some(libc::ENOTSUP) {
+            let removed = unsafe { libc::fremovexattr(target.as_raw_fd(), key.as_ptr()) };
+            if removed == 0
+                || matches!(
+                    io::Error::last_os_error().raw_os_error(),
+                    Some(libc::ENODATA | libc::ENOTSUP)
+                )
+            {
+                return Ok(());
+            }
+        }
+        tracing::debug!(
+            action = "read-acl",
+            os_code = io::Error::last_os_error().raw_os_error(),
+            "permission preservation failed"
+        );
+        return Err(Error::runtime(Code::Permissions));
+    }
+    let mut value = vec![0u8; length as usize];
+    let read = unsafe {
+        libc::getxattr(
+            source.as_ptr(),
+            key.as_ptr(),
+            value.as_mut_ptr().cast(),
+            value.len(),
+        )
+    };
+    if read != length
+        || unsafe {
+            libc::fsetxattr(
+                target.as_raw_fd(),
+                key.as_ptr(),
+                value.as_ptr().cast(),
+                value.len(),
+                0,
+            )
+        } != 0
+    {
+        tracing::debug!(
+            action = "copy-acl",
+            os_code = io::Error::last_os_error().raw_os_error(),
+            "permission preservation failed"
+        );
+        return Err(Error::runtime(Code::Permissions));
     }
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn preserve_acl(original: &Original, target: &File) -> Result<()> {
+    use std::os::fd::AsRawFd;
+    // Darwin's extended ACL API is supplied by libSystem, not an external tool.
+    // libc does not expose these declarations; their ABI is in sys/acl.h.
+    unsafe extern "C" {
+        fn acl_init(count: libc::c_int) -> *mut libc::c_void;
+        fn acl_get_link_np(path: *const libc::c_char, kind: libc::c_int) -> *mut libc::c_void;
+        fn acl_set_fd_np(fd: libc::c_int, acl: *mut libc::c_void, kind: libc::c_int)
+            -> libc::c_int;
+        fn acl_free(acl: *mut libc::c_void) -> libc::c_int;
+    }
+    const ACL_TYPE_EXTENDED: libc::c_int = 0x100;
+    unsafe {
+        let mut acl = acl_get_link_np(original.path.as_ptr(), ACL_TYPE_EXTENDED);
+        // Darwin represents an absent extended ACL as ENOENT even for an existing
+        // regular file. Apply an empty ACL to remove any inherited temp ACL.
+        if acl.is_null() && io::Error::last_os_error().raw_os_error() == Some(libc::ENOENT) {
+            acl = acl_init(0);
+        }
+        if acl.is_null() {
+            tracing::debug!(
+                action = "read-acl",
+                os_code = io::Error::last_os_error().raw_os_error(),
+                "permission preservation failed"
+            );
+            return Err(Error::runtime(Code::Permissions));
+        }
+        let result = acl_set_fd_np(target.as_raw_fd(), acl, ACL_TYPE_EXTENDED);
+        acl_free(acl);
+        if result != 0 {
+            tracing::debug!(
+                action = "write-acl",
+                os_code = io::Error::last_os_error().raw_os_error(),
+                "permission preservation failed"
+            );
+            return Err(Error::runtime(Code::Permissions));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn preserve_permissions(original: &Original, temporary: &Path) -> Result<()> {
+    use std::os::windows::{ffi::OsStrExt, io::AsRawHandle};
+
+    use windows_sys::Win32::{
+        Foundation::{LocalFree, ERROR_SUCCESS},
+        Security::{
+            Authorization::{GetSecurityInfo, SetNamedSecurityInfoW, SE_FILE_OBJECT},
+            GetSecurityDescriptorControl, DACL_SECURITY_INFORMATION, GROUP_SECURITY_INFORMATION,
+            OWNER_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, SE_DACL_PROTECTED,
+            UNPROTECTED_DACL_SECURITY_INFORMATION,
+        },
+    };
+    // Set access attributes while the temporary file still has its creation ACL.
+    // The original DACL may legitimately deny FILE_WRITE_ATTRIBUTES, while its
+    // parent still grants replacement. No pathname attribute writes follow it.
+    fs::set_permissions(temporary, original.metadata.permissions())
+        .map_err(|_| Error::runtime(Code::Permissions))?;
+    let mut owner = std::ptr::null_mut();
+    let mut group = std::ptr::null_mut();
+    let mut dacl = std::ptr::null_mut();
+    let mut descriptor = std::ptr::null_mut();
+    let information =
+        OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION;
+    let status = unsafe {
+        GetSecurityInfo(
+            original.file.as_raw_handle(),
+            SE_FILE_OBJECT,
+            information,
+            &mut owner,
+            &mut group,
+            &mut dacl,
+            std::ptr::null_mut(),
+            &mut descriptor,
+        )
+    };
+    if status != ERROR_SUCCESS {
+        return Err(Error::runtime(Code::Permissions));
+    }
+    let mut control = 0;
+    let mut revision = 0;
+    let valid =
+        unsafe { GetSecurityDescriptorControl(descriptor, &mut control, &mut revision) } != 0;
+    let mut path: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
+    let flags = information
+        | if control & SE_DACL_PROTECTED != 0 {
+            PROTECTED_DACL_SECURITY_INFORMATION
+        } else {
+            UNPROTECTED_DACL_SECURITY_INFORMATION
+        };
+    let status = if valid {
+        unsafe {
+            SetNamedSecurityInfoW(
+                path.as_mut_ptr(),
+                SE_FILE_OBJECT,
+                flags,
+                owner,
+                group,
+                dacl,
+                std::ptr::null(),
+            )
+        }
+    } else {
+        1
+    };
+    unsafe { LocalFree(descriptor) };
+    if status != ERROR_SUCCESS {
+        return Err(Error::runtime(Code::Permissions));
+    }
+    Ok(())
+}
+
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+fn preserve_acl(_: &Original, _: &File) -> Result<()> {
+    Err(Error::runtime(Code::Permissions))
 }
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
     use super::*;
 
-    #[cfg(unix)]
+    #[cfg(windows)]
     #[test]
-    fn replacement_permissions_stay_private_until_publish_or_cancel() {
-        use std::os::unix::fs::PermissionsExt;
-        for cancelled in [false, true] {
+    fn windows_readonly_publication_preserves_original_attributes_on_every_outcome() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        use windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ;
+
+        for failure in [None, Some(Code::Cancelled), Some(Code::PublishFailed)] {
             let dir = tempfile::tempdir().unwrap();
-            let path = dir.path().join("output");
-            fs::write(&path, "original").unwrap();
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
-            let mut staged = Staging::new(dir.path()).unwrap();
-            let private = staged.file.path().parent().unwrap().to_path_buf();
-            let cancel = Cancellation::default();
-            config_runtime::write(staged.file.as_file_mut(), b"replacement", &cancel).unwrap();
-            let (source, metadata) = destination(&path).unwrap().unwrap();
-            permissions(&source, &metadata, staged.file.as_file()).unwrap();
-            assert_eq!(
-                staged
-                    .file
-                    .as_file()
-                    .metadata()
+            let path = dir.path().join("read only output");
+            fs::write(&path, b"original").unwrap();
+            let mut permissions = fs::metadata(&path).unwrap().permissions();
+            permissions.set_readonly(true);
+            fs::set_permissions(&path, permissions).unwrap();
+            let (publication, mut file) = Publication::prepare(Some(path.clone()), true).unwrap();
+            file.as_mut().unwrap().write_all(b"replacement").unwrap();
+            drop(file);
+            // Deny delete sharing only for this disposable fixture's failure case.
+            let blocker = (failure == Some(Code::PublishFailed)).then(|| {
+                fs::OpenOptions::new()
+                    .read(true)
+                    .share_mode(FILE_SHARE_READ)
+                    .open(&path)
                     .unwrap()
-                    .permissions()
-                    .mode()
-                    & 0o777,
-                0o644
-            );
-            assert_eq!(
-                fs::metadata(&private).unwrap().permissions().mode() & 0o777,
-                0o700
-            );
-            assert_eq!(private.parent().unwrap(), dir.path());
-            if cancelled {
-                cancel.cancel();
-                assert_eq!(
-                    publish_prepared(staged, &path, true, &cancel)
-                        .unwrap_err()
-                        .kind,
-                    Failure::Cancelled
-                );
+            });
+            let result = publication.publish(|| {
+                assert!(fs::metadata(&path).unwrap().permissions().readonly());
                 assert_eq!(fs::read(&path).unwrap(), b"original");
-            } else {
-                publish_prepared(staged, &path, true, &cancel).unwrap();
-                assert_eq!(fs::read(&path).unwrap(), b"replacement");
-            }
-            assert!(!private.exists());
-            assert_eq!(
-                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-                0o644
-            );
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn private_directory_removes_inherited_macos_acl_grants() {
-        use std::os::fd::AsRawFd;
-        unsafe extern "C" {
-            fn acl_get_fd(fd: libc::c_int) -> *mut libc::c_void;
-            fn acl_get_entry(
-                acl: *mut libc::c_void,
-                id: libc::c_int,
-                entry: *mut *mut libc::c_void,
-            ) -> libc::c_int;
-            fn acl_free(acl: *mut libc::c_void) -> libc::c_int;
-        }
-        let has_entries = |path: &Path| {
-            let file = File::open(path).unwrap();
-            // SAFETY: both pointers belong to this call, and the live ACL is
-            // released after examining its first entry (ACL_FIRST_ENTRY = 0).
-            unsafe {
-                let acl = acl_get_fd(file.as_raw_fd());
-                if acl.is_null() {
-                    // Darwin reports a missing ACL as ENOENT on a live file.
-                    assert_eq!(
-                        std::io::Error::last_os_error().raw_os_error(),
-                        Some(libc::ENOENT)
-                    );
-                    return false;
+                if failure == Some(Code::Cancelled) {
+                    Err(Error::runtime(Code::Cancelled))
+                } else {
+                    Ok(())
                 }
-                let mut entry = std::ptr::null_mut();
-                let result = acl_get_entry(acl, 0, &mut entry);
-                acl_free(acl);
-                result == 0
+            });
+            match failure {
+                Some(code) => assert_eq!(result.unwrap_err().code, code),
+                None => result.unwrap(),
             }
-        };
-        let dir = tempfile::tempdir().unwrap();
-        // Configure only a disposable fixture with the platform's ACL utility.
-        assert!(std::process::Command::new("/bin/chmod")
-            .args([
-                "+a",
-                "everyone allow list,search,file_inherit,directory_inherit"
-            ])
-            .arg(dir.path())
-            .status()
-            .unwrap()
-            .success());
-        assert!(has_entries(dir.path()));
-        let staged = Staging::new(dir.path()).unwrap();
-        assert!(!has_entries(staged.file.path().parent().unwrap()));
-        assert!(!has_entries(staged.file.path()));
+            drop(blocker);
+            assert!(fs::metadata(&path).unwrap().permissions().readonly());
+            assert_eq!(
+                fs::read(&path).unwrap(),
+                if failure.is_none() {
+                    b"replacement".as_slice()
+                } else {
+                    b"original".as_slice()
+                }
+            );
+            assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+            let mut permissions = fs::metadata(&path).unwrap().permissions();
+            permissions.set_readonly(false);
+            fs::set_permissions(path, permissions).unwrap();
+        }
     }
 
     #[test]
-    fn cancellation_after_staging_cleans_temporary_and_preserves_destination() {
+    fn publication_is_last_writer_wins_without_lost_update_detection() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("output");
-        fs::write(&path, "original").unwrap();
-        let staged = Staging::new(dir.path()).unwrap();
-        let staged_path = staged.file.path().to_path_buf();
-        let cancel = Cancellation::default();
-        cancel.cancel();
+        fs::write(&path, b"original").unwrap();
+        let (first, mut first_file) = Publication::prepare(Some(path.clone()), true).unwrap();
+        let (second, mut second_file) = Publication::prepare(Some(path.clone()), true).unwrap();
+        first_file.as_mut().unwrap().write_all(b"first").unwrap();
+        second_file.as_mut().unwrap().write_all(b"second").unwrap();
+        drop(first_file);
+        drop(second_file);
+        second.publish(|| Ok(())).unwrap();
+        first.publish(|| Ok(())).unwrap();
+        assert_eq!(fs::read(path).unwrap(), b"first");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn a_concurrently_created_destination_is_not_clobbered_without_force() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("output");
+        let (publication, file) = Publication::prepare(Some(path.clone()), false).unwrap();
+        drop(file);
+        fs::write(&path, b"concurrent").unwrap();
         assert_eq!(
-            publish_prepared(staged, &path, true, &cancel)
-                .unwrap_err()
-                .kind,
-            Failure::Cancelled
+            publication.publish(|| Ok(())).unwrap_err().code,
+            Code::OutputExists
         );
-        assert_eq!(fs::read(&path).unwrap(), b"original");
-        assert!(!staged_path.exists());
+        assert_eq!(fs::read(path).unwrap(), b"concurrent");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn a_failed_publication_cleans_up_its_temporary_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("output");
+        let (publication, file) = Publication::prepare(Some(path.clone()), true).unwrap();
+        drop(file);
+        fs::create_dir(&path).unwrap();
+        assert_eq!(
+            publication.publish(|| Ok(())).unwrap_err().code,
+            Code::UnsafeDestination
+        );
+        assert!(path.is_dir());
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn cancellation_at_the_publication_boundary_keeps_the_original() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("output");
+        fs::write(&path, b"original").unwrap();
+        let (publication, mut file) = Publication::prepare(Some(path.clone()), true).unwrap();
+        file.as_mut().unwrap().write_all(b"changed").unwrap();
+        drop(file);
+        assert_eq!(
+            publication
+                .publish(|| Err(Error::runtime(Code::Cancelled)))
+                .unwrap_err()
+                .code,
+            Code::Cancelled
+        );
+        assert_eq!(fs::read(path).unwrap(), b"original");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_posix_access_acl_is_preserved() {
+        use std::os::fd::AsRawFd;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("acl");
+        let original = File::create(&path).unwrap();
+        // Linux UAPI posix_acl_xattr: LE version, then tag/permissions/id entries.
+        // A named user and mask make this an extended ACL, not just mode bits.
+        let mut acl = 2u32.to_le_bytes().to_vec();
+        for (tag, permissions, id) in [
+            (1u16, 2u16, u32::MAX),
+            (2, 4, 65534),
+            (4, 0, u32::MAX),
+            (16, 4, u32::MAX),
+            (32, 0, u32::MAX),
+        ] {
+            acl.extend_from_slice(&tag.to_le_bytes());
+            acl.extend_from_slice(&permissions.to_le_bytes());
+            acl.extend_from_slice(&id.to_le_bytes());
+        }
+        let key = c"system.posix_acl_access";
+        assert_eq!(
+            unsafe {
+                libc::fsetxattr(
+                    original.as_raw_fd(),
+                    key.as_ptr(),
+                    acl.as_ptr().cast(),
+                    acl.len(),
+                    0,
+                )
+            },
+            0
+        );
+        let (publication, mut output) = Publication::prepare(Some(path.clone()), true).unwrap();
+        output.as_mut().unwrap().write_all(b"changed").unwrap();
+        drop(output);
+        publication.publish(|| Ok(())).unwrap();
+        let replacement = fs::OpenOptions::new().write(true).open(&path).unwrap();
+        let mut actual = vec![0u8; acl.len()];
+        assert_eq!(
+            unsafe {
+                libc::fgetxattr(
+                    replacement.as_raw_fd(),
+                    key.as_ptr(),
+                    actual.as_mut_ptr().cast(),
+                    actual.len(),
+                )
+            },
+            acl.len() as isize
+        );
+        assert_eq!(actual, acl);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_protected_dacl_is_preserved() {
+        use std::os::windows::ffi::OsStrExt;
+
+        use windows_sys::Win32::{
+            Foundation::LocalFree,
+            Security::{
+                Authorization::{
+                    ConvertSecurityDescriptorToStringSecurityDescriptorW,
+                    ConvertStringSecurityDescriptorToSecurityDescriptorW, GetNamedSecurityInfoW,
+                    SE_FILE_OBJECT,
+                },
+                SetFileSecurityW, SetSecurityDescriptorControl, DACL_SECURITY_INFORMATION,
+                GROUP_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION,
+                PROTECTED_DACL_SECURITY_INFORMATION, SE_DACL_AUTO_INHERITED,
+            },
+        };
+        fn security(path: &[u16]) -> Vec<u16> {
+            unsafe {
+                let info = DACL_SECURITY_INFORMATION
+                    | OWNER_SECURITY_INFORMATION
+                    | GROUP_SECURITY_INFORMATION;
+                let mut descriptor = std::ptr::null_mut();
+                assert_eq!(
+                    GetNamedSecurityInfoW(
+                        path.as_ptr(),
+                        SE_FILE_OBJECT,
+                        info,
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                        &mut descriptor
+                    ),
+                    0
+                );
+                let mut text = std::ptr::null_mut();
+                let mut length = 0;
+                // SetNamedSecurityInfo records that the descriptor uses Windows'
+                // current inheritance model by adding AUTO_INHERITED, including
+                // to protected ACLs. It does not change access semantics:
+                // https://learn.microsoft.com/windows/win32/secauthz/automatic-propagation-of-inheritable-aces
+                // Compare owner/group, every ACE, and DACL protection exactly,
+                // excluding only this bookkeeping bit in the retrieved copy.
+                assert_ne!(
+                    SetSecurityDescriptorControl(descriptor, SE_DACL_AUTO_INHERITED, 0),
+                    0
+                );
+                assert_ne!(
+                    ConvertSecurityDescriptorToStringSecurityDescriptorW(
+                        descriptor,
+                        1,
+                        info,
+                        &mut text,
+                        &mut length
+                    ),
+                    0
+                );
+                let text_copy = std::slice::from_raw_parts(text, length as usize).to_vec();
+                LocalFree(text.cast());
+                LocalFree(descriptor);
+                text_copy
+            }
+        }
+        fn set_dacl(path: &[u16], sddl: &str) {
+            let sddl: Vec<u16> = sddl.encode_utf16().chain(Some(0)).collect();
+            unsafe {
+                let mut descriptor = std::ptr::null_mut();
+                assert_ne!(
+                    ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                        sddl.as_ptr(),
+                        1,
+                        &mut descriptor,
+                        std::ptr::null_mut()
+                    ),
+                    0
+                );
+                assert_ne!(
+                    SetFileSecurityW(
+                        path.as_ptr(),
+                        DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                        descriptor
+                    ),
+                    0
+                );
+                LocalFree(descriptor);
+            }
+        }
+        let readable = "D:P(A;;FA;;;OW)(A;;FR;;;WD)";
+        for (deny_data, deny_attributes, acl) in [
+            (false, false, readable),
+            (true, false, "D:P(D;;0x1;;;WD)(A;;FA;;;OW)(A;;FR;;;WD)"),
+            (false, true, "D:P(D;;0x100;;;WD)(A;;FA;;;OW)(A;;FR;;;WD)"),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("acl");
+            fs::write(&path, b"original").unwrap();
+            let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+            // Deny data reads or attribute writes while retaining metadata/security reads.
+            set_dacl(&wide, acl);
+            if deny_data {
+                assert_eq!(
+                    fs::read(&path).unwrap_err().kind(),
+                    io::ErrorKind::PermissionDenied
+                );
+            }
+            if deny_attributes {
+                assert_eq!(
+                    fs::set_permissions(&path, fs::metadata(&path).unwrap().permissions())
+                        .unwrap_err()
+                        .kind(),
+                    io::ErrorKind::PermissionDenied
+                );
+            }
+            let before = security(&wide);
+            let (cancelled, file) = Publication::prepare(Some(path.clone()), true).unwrap();
+            drop(file);
+            assert_eq!(
+                cancelled
+                    .publish(|| Err(Error::runtime(Code::Cancelled)))
+                    .unwrap_err()
+                    .code,
+                Code::Cancelled
+            );
+            assert_eq!(security(&wide), before);
+            assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+            let (publication, mut file) = Publication::prepare(Some(path.clone()), true).unwrap();
+            file.as_mut().unwrap().write_all(b"changed").unwrap();
+            drop(file);
+            publication.publish(|| Ok(())).unwrap();
+            assert_eq!(security(&wide), before);
+            if deny_attributes {
+                assert_eq!(
+                    fs::set_permissions(&path, fs::metadata(&path).unwrap().permissions())
+                        .unwrap_err()
+                        .kind(),
+                    io::ErrorKind::PermissionDenied
+                );
+            }
+            if deny_data {
+                assert_eq!(
+                    fs::read(&path).unwrap_err().kind(),
+                    io::ErrorKind::PermissionDenied
+                );
+                set_dacl(&wide, readable);
+            }
+            assert_eq!(fs::read(path).unwrap(), b"changed");
+        }
     }
 }

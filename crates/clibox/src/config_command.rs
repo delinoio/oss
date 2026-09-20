@@ -3,8 +3,9 @@ use std::path::{Path, PathBuf};
 use clap::{Args, Subcommand};
 
 use crate::{
+    config_publication,
     config_runtime::{self, Cancellation, Failure, Result, LIMIT},
-    dotenv, publication, yaml,
+    dotenv, yaml,
 };
 
 const IO_HELP: &str =
@@ -182,7 +183,7 @@ impl Job {
     fn run(self, cancel: &Cancellation) -> Result<()> {
         tracing::debug!(operation = self.operation.name(), "operation_started");
         if self.in_place {
-            publication::regular_input(&self.inputs[0])?;
+            config_publication::regular_input(&self.inputs[0])?;
         }
         let mut remaining = LIMIT;
         let mut values = dotenv::Values::new();
@@ -228,7 +229,7 @@ impl Job {
         }
         cancel.check()?;
         if let Some(path) = self.output {
-            publication::publish(&path, &result, self.replace, cancel)?;
+            config_publication::publish(&path, &result, self.replace, cancel)?;
         } else {
             let token = cancel.clone();
             cancel.blocking(move || {

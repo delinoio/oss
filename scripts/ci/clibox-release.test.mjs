@@ -18,13 +18,14 @@ test("clibox release covers all eight native targets and Alpine consumer executi
   assert.deepEqual(matrix.map(({ target }) => target).sort(), platforms.targets.map(({ rust }) => rust).sort());
   for (const target of platforms.targets) assert.equal(matrix.find((entry) => entry.target === target.rust).suffix, target.suffix);
   const steps = release.jobs.build.steps;
-  assert.ok(steps.some(({ run }) => run?.includes('cargo test --locked -p clibox --target "$CLIBOX_TARGET"')));
+  assert.equal(steps.flatMap(({ run }) => run?.split("\n") ?? []).filter((line) => line.trim() === 'cargo test --locked -p clibox --target "$CLIBOX_TARGET"').length, 1);
   const alpine = steps.find(({ name }) => name === "Smoke-test musl consumers in Alpine");
   assert.equal(alpine.if, "endsWith(matrix.target, '-musl')");
   assert.match(alpine.run, /node:24-alpine/u);
   assert.match(alpine.run, /test:package/u);
   const build = steps.find(({ run }) => run?.includes("cargo build --locked --release -p clibox"));
   assert.ok(build);
+  assert.match(build.run, /cargo test --locked -p clibox --target/u);
   for (const arch of ["X86_64", "AARCH64"]) {
     assert.equal(build.env[`CARGO_TARGET_${arch}_UNKNOWN_LINUX_MUSL_LINKER`], "rust-lld");
     assert.equal(build.env[`CARGO_TARGET_${arch}_UNKNOWN_LINUX_MUSL_RUSTFLAGS`], "-C link-self-contained=yes");
@@ -76,7 +77,9 @@ test("clibox input changes select its aggregated consumer checks and force exter
   assert.equal(jobPaths[id].workspace, "@delino/clibox");
   assert.ok(ci.jobs["ci-result"].needs.includes(id));
   assert.deepEqual(ci.jobs[id].strategy.matrix.os, ["ubuntu-22.04", "macos-14", "windows-latest"]);
-  assert.ok(ci.jobs[id].steps.some(({ run }) => run === "cargo test --locked -p clibox"));
+  assert.equal(ci.jobs[id].steps.filter(({ run }) => run === "cargo test --locked -p clibox").length, 1);
+  const smoke = source("packages/clibox/scripts/smoke.mjs");
+  for (const command of ["text", "time", "base64", "hash"]) assert.ok(smoke.includes('invoke(["' + command + '"'));
   for (const event of [Event.Push, Event.PullRequest]) {
     for (const file of ["packages/clibox/src/launcher.cjs", "crates/clibox/src/main.rs", ".github/workflows/release-clibox.yml", "scripts/release/project.mjs"]) {
       const plan = planJobs(event, [file]);
