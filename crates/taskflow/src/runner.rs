@@ -1028,8 +1028,7 @@ async fn run_task(
         receipt.exit_code = 130;
     }
     if receipt.success() {
-        let unchanged = if result_file.exists() {
-            let report: TaskReport = serde_json::from_slice(&std::fs::read(&result_file)?)?;
+        let unchanged = if let Some(report) = read_task_report(&result_file)? {
             ensure!(
                 report.version == 1 && report.execution == execution,
                 "task result belongs to another execution"
@@ -1169,6 +1168,49 @@ pub fn persist(root: &Path, receipt: &Receipt) -> Result<()> {
     #[cfg(test)]
     let _ = CANCEL_AFTER_PERSIST.try_with(CancellationToken::cancel);
     Ok(())
+}
+
+// The execution report contains only a version, UUID, and one result enum.
+// Bound both the file length and actual read after the process owner is reaped;
+// process cancellation cannot interrupt a blocking special-file read here.
+fn read_task_report(path: &Path) -> Result<Option<TaskReport>> {
+    const LIMIT: u64 = 1024;
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    ensure!(metadata.is_file(), "task result must be a regular file");
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+    let file = options.open(path).context("cannot open task result")?;
+    let metadata = file.metadata()?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        ensure!(
+            metadata.file_attributes()
+                & windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT
+                == 0,
+            "task result must not be a reparse point"
+        );
+    }
+    ensure!(metadata.is_file(), "task result must be a regular file");
+    ensure!(metadata.len() <= LIMIT, "task result exceeded 1 KiB");
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut std::io::Read::take(file, LIMIT + 1), &mut bytes)?;
+    ensure!(bytes.len() as u64 <= LIMIT, "task result exceeded 1 KiB");
+    Ok(Some(serde_json::from_slice(&bytes)?))
 }
 
 #[derive(Debug, Serialize, Deserialize)]

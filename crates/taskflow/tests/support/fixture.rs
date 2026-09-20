@@ -171,6 +171,33 @@ fn main() {
             }
         }
         "write" => write(&args[2], args[3].as_bytes()),
+        "task-report" => {
+            let path = std::env::var("TFLOW_RESULT_FILE").unwrap();
+            let id = std::env::var("TFLOW_EXECUTION_ID").unwrap();
+            let report = format!("{{\"version\":1,\"execution\":\"{id}\",\"result\":\"unchanged\"}}");
+            match args[2].as_str() {
+                "absent" => {},
+                "valid" => write(&path, report.as_bytes()),
+                "boundary" => { let mut bytes = report.into_bytes(); bytes.resize(1024, b' '); write(&path, &bytes); },
+                "oversize" => fs::File::create(&path).unwrap().set_len(1024 * 1024 * 1024).unwrap(),
+                "directory" => fs::create_dir(&path).unwrap(),
+                "foreign" => write(&path, b"{\"version\":1,\"execution\":\"other\",\"result\":\"unchanged\"}"),
+                "invalid" => write(&path, b"invalid"),
+                #[cfg(unix)]
+                "link" | "dangling" => {
+                    let target = Path::new(&path).with_extension("target");
+                    if args[2] == "link" { write(target.to_str().unwrap(), report.as_bytes()); }
+                    std::os::unix::fs::symlink(target, &path).unwrap();
+                },
+                #[cfg(unix)]
+                "fifo" => {
+                    unsafe extern "C" { fn mkfifo(path: *const std::ffi::c_char, mode: u32) -> i32; }
+                    let path = std::ffi::CString::new(path).unwrap();
+                    assert_eq!(unsafe { mkfifo(path.as_ptr(), 0o600) }, 0);
+                },
+                _ => panic!("unknown report fixture"),
+            }
+        }
         "record" | "unchanged" => {
             let mut file = fs::OpenOptions::new().create(true).append(true).open(&args[2]).unwrap();
             writeln!(file, "{}", args[3]).unwrap();

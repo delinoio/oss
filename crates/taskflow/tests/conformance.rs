@@ -8251,3 +8251,57 @@ async fn session_retains_invalidated_watch_roots_across_install_phases() {
         assert!(directory.path().join("installed2").exists());
     }
 }
+
+#[tokio::test]
+async fn task_result_reports_are_bounded_regular_execution_files() {
+    let modes = [
+        "absent",
+        "valid",
+        "boundary",
+        "oversize",
+        "directory",
+        "foreign",
+        "invalid",
+    ];
+    let mut modes = modes.to_vec();
+    if cfg!(unix) {
+        modes.extend(["link", "dangling", "fifo"]);
+    }
+    for mode in modes {
+        let directory = fixture(json!({
+            "report":{"command":command(&["task-report",mode]),"input":[],"output":[],"cache":true,"tools":{"fixture":command(&["version"])}},
+            "consume":{"command":command(&["write","consumed","yes"]),"input":[],"dependsOn":["report"]}
+        }));
+        // Bound the CLI independently: its own task timeout has already ended
+        // when report validation runs, and a FIFO must never block this caller.
+        let child = tokio::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .args(["--json", "run", "consume"])
+            .current_dir(directory.path())
+            .kill_on_drop(true)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let output = tokio::time::timeout(Duration::from_secs(20), child.wait_with_output())
+            .await
+            .expect("task report blocked the CLI")
+            .unwrap();
+        let valid = matches!(mode, "absent" | "valid" | "boundary");
+        assert_eq!(
+            output.status.success(),
+            valid,
+            "{mode}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let result: runner::RunResult = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(result.success, valid, "{mode}");
+        assert_eq!(directory.path().join("consumed").exists(), valid, "{mode}");
+        if valid {
+            assert_eq!(result.results["app#report"].changed, mode == "absent");
+        } else {
+            assert_eq!(result.results["app#report"].outcome, Outcome::Failed);
+            assert!(runner::previous(directory.path(), "app#report").is_none());
+            assert_eq!(result.results["app#consume"].outcome, Outcome::Blocked);
+        }
+    }
+}

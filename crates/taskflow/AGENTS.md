@@ -137,3 +137,5 @@
 - Accumulate invalidated session bootstrap task IDs across installation phases, including initial-disabled watch roots. Remove an ID only after a later refreshed receipt is retained, and activate remaining selected IDs after bootstrap.
 
 - Linux image-seal conformance must run without root privileges. Exercise seals through the retained creation descriptor; do not require reopening a mode-0500 executable for writing.
+
+- Execution result reports are optional regular files capped at 1 KiB. Reject links, reparse points, and special files without blocking; bound both the opened file length and actual read before parsing and execution-ID validation.
