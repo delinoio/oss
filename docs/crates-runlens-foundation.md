@@ -816,3 +816,10 @@ object attributes, including missing external paths. The native regression
 compares NT results and deletion behavior with untraced execution and requires
 a deny-write violation. Remove this local interception patch when upstream
 provides equivalent native deletion coverage with safe attribute copying.
+
+macOS readlink/readlinkat interception records attempted reads of the link path
+before forwarding, including missing and directory-relative paths. It never
+records returned link text as another input. Native fixtures compare byte counts,
+text and errors with untraced execution and enforce external read policies.
+Remove when upstream supplies equivalent macOS link-read coverage. Linux keeps
+its existing seccomp hooks to avoid recursive descriptor-path resolution.

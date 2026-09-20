@@ -5052,3 +5052,56 @@ deny_writes = ["**/native-deletion"]
         );
     }
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_readlink_calls_retain_external_link_reads_without_target_text() {
+    for mode in ["libc-readlink", "libc-readlinkat"] {
+        for present in [true, false] {
+            let root = tempfile::tempdir().unwrap();
+            let external = tempfile::tempdir().unwrap();
+            let path = external.path().join("dependency-link");
+            if present {
+                std::os::unix::fs::symlink("LINK-TEXT-CANARY", &path).unwrap();
+            }
+            let plain = Command::new(fixture())
+                .args([mode, path.to_str().unwrap()])
+                .output()
+                .unwrap();
+            fs::write(
+                root.path().join("runlens.toml"),
+                "schema_version = 1\n[policy]\ndeny_reads = ['**/dependency-link']\n",
+            )
+            .unwrap();
+            let traced = invoke(
+                root.path(),
+                &[
+                    "run",
+                    "--save",
+                    "link.json",
+                    "--",
+                    fixture(),
+                    mode,
+                    path.to_str().unwrap(),
+                ],
+            );
+            assert!(traced.status.success(), "{traced:?}");
+            assert_eq!(traced.stdout, plain.stdout);
+            let report = parse(root.path(), "link.json");
+            let accesses = report["executions"][0]["accesses"].as_object().unwrap();
+            assert!(
+                accesses
+                    .iter()
+                    .any(|(path, access)| path.ends_with("/dependency-link")
+                        && access["read"] == true)
+            );
+            assert!(
+                !fs::read_to_string(root.path().join("link.json"))
+                    .unwrap()
+                    .contains("LINK-TEXT-CANARY")
+            );
+            let policy = invoke(root.path(), &["policy", "check", "link.json", "--json"]);
+            assert_eq!(policy.status.code(), Some(5), "{policy:?}");
+        }
+    }
+}

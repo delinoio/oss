@@ -319,6 +319,50 @@ fn main() {
                 }
             }
         }
+        #[cfg(target_os = "macos")]
+        "libc-readlink" | "libc-readlinkat" => {
+            let path = std::path::Path::new(&args[1]);
+            let full = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            let mut buffer = [0u8; 4096];
+            // SAFETY: names and bounded output remain live. The fixture owns
+            // the directory descriptor and forwards it without changing cwd.
+            let result = unsafe {
+                if args[0] == "libc-readlink" {
+                    libc::readlink(full.as_ptr(), buffer.as_mut_ptr().cast(), buffer.len())
+                } else {
+                    let parent =
+                        std::ffi::CString::new(path.parent().unwrap().to_str().unwrap()).unwrap();
+                    let name = std::ffi::CString::new(path.file_name().unwrap().to_str().unwrap())
+                        .unwrap();
+                    let fd = libc::open(parent.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY);
+                    assert!(fd >= 0);
+                    let result = libc::readlinkat(
+                        fd,
+                        name.as_ptr(),
+                        buffer.as_mut_ptr().cast(),
+                        buffer.len(),
+                    );
+                    let error = std::io::Error::last_os_error().raw_os_error().unwrap();
+                    libc::close(fd);
+                    if result < 0 {
+                        println!("error={error}");
+                        return;
+                    }
+                    result
+                }
+            };
+            if result < 0 {
+                println!(
+                    "error={}",
+                    std::io::Error::last_os_error().raw_os_error().unwrap()
+                );
+            } else {
+                println!(
+                    "bytes={result}:{}",
+                    String::from_utf8_lossy(&buffer[..result as usize])
+                );
+            }
+        }
         #[cfg(target_os = "linux")]
         "readlink" | "readlinkat" | "readlinkat-empty" => {
             let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();

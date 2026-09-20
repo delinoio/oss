@@ -276,3 +276,5 @@
 - Runlens must reject unrepresentable argv and masked report metadata before child launch; clean/repeat budget the full plan and imported baseline metadata before any preparation. Keep preflight and report metadata validation shared.
 
 - Runlens Windows NtDeleteFile must record attempted writes before deletion, including failed calls and external paths, without changing native results.
+
+- Runlens macOS readlink/readlinkat hooks record reads of the link itself, preserve buffers and native results, and never persist returned target text.

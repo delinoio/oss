@@ -8,3 +8,6 @@ mod spawn;
 mod stat;
 mod lifecycle;
 mod chdir;
+
+#[cfg(target_os = "macos")]
+mod readlink;
