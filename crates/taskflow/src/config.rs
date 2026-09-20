@@ -616,6 +616,10 @@ impl Task {
         }
         for input in self.input.iter().flatten() {
             if let Input::Pattern(pattern) = input {
+                ensure!(
+                    !pattern.contains('\0'),
+                    "input patterns must not contain NUL"
+                );
                 let pattern = pattern.strip_prefix('!').unwrap_or(pattern);
                 ensure!(
                     project_relative(pattern),
@@ -625,6 +629,10 @@ impl Task {
             }
         }
         for output in self.output.iter().flatten() {
+            ensure!(
+                !output.contains('\0'),
+                "output patterns must not contain NUL"
+            );
             ensure!(
                 !output.is_empty() && !output.starts_with('!'),
                 "invalid output pattern"

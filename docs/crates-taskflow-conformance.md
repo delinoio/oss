@@ -36,6 +36,8 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 
 `check_rejects_windows_rooted_outputs_on_every_host` rejects drive, UNC, rooted, and drive-relative output paths before checking or CI export on every host.
 
+`check_rejects_nul_in_complete_input_and_output_patterns` rejects NUL before and after wildcard components, including negative input globs. Configuration loading, `check`, and `run` fail before either the installation prerequisite or selected command writes its marker.
+
 `reserved_output_aliases_are_rejected_on_every_host` rejects ASCII case aliases of `.git`, `.taskflow`, and `.taskflow-restore-*` before task execution and during artifact integrity validation, including nested components. Similar ordinary names remain valid. The portable rule prevents a case-sensitive cache producer from authorizing internal-state paths on a case-insensitive consumer.
 
 `non_unicode_inherited_environment_is_rejected_without_panicking` launches the real CLI with invalid Unix environment names and values for check, query, plan, and run. Each returns an ordinary error without exposing entry bytes or executing the task. Native discovery, metadata capture, and task environment construction share fallible inherited-environment decoding.

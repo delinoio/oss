@@ -49,6 +49,7 @@
 - Either watch or schedule initial flag can activate a mixed subscription, with one shared initial execution. Tasks without subscriptions retain initial activation.
 - Choose default overlap from the current trigger (input queue, schedule skip), including mixed subscriptions; explicit overlap applies to both. Apply overlap policies to per-task execution ownership, not to membership in an unfinished wave.
 - Reject absolute, rooted, and Windows drive-relative input and output patterns during configuration validation on every host, including negative patterns.
+- Reject NUL anywhere in complete input/output patterns before compiling globs or deriving traversal anchors, including wildcard suffixes and negative inputs; invalid patterns must never launch prerequisites or commands.
 - Reserve ASCII case aliases of .git, .taskflow, and .taskflow-restore-* components on every host, including configuration, output capture, and artifact validation.
 - Explicit positive input globs may traverse otherwise ignored trees; prune only using conservative literal directory prefixes, never directory-name substrings. Reserved .git, .taskflow, and .taskflow-restore-* trees remain excluded.
 - Empty/disabled/negative-only input declarations read metadata without walking files. Bound automatic scans to the owning project and explicit scans to deduplicated possible literal roots, retaining conservative wildcard/escape coverage and the no-directory-link traversal rule.

@@ -14,6 +14,7 @@ Developers run explicit native commands locally or in managed development sessio
 - `taskflow.yml` version 1 requires an explicit project ID; unknown fields and duplicate keys are errors.
 - Preserve `command`, `dependsOn`, `input`, and `output`. Arrays execute argv directly; strings use `/bin/sh` on Unix or `cmd.exe` on Windows unless `shell` is explicit.
 - Environment names must be nonempty and contain neither `=` nor NUL; task environment values cannot contain NUL. Validate these declarations before execution without including their values in diagnostics.
+- Complete input/output glob strings must be NUL-free, including characters after wildcard components and negative input patterns. Validate before deriving traversal anchors or launching prerequisites.
 - Root `workspace.manifests` references native manifests, never a duplicated member registry. Omission discovers supported root manifests. No native workspace means a single project.
 - Projects without configuration remain queryable using path-based IDs but have no inferred commands. Canonical directories merge adapter discoveries; distinct directories cannot share an explicit ID.
 - Explicit positive input globs opt matching descendants of ignored generated/dependency directories back into input snapshots and watching, including wildcard-only directory components. `.git`, `.taskflow`, and temporary `.taskflow-restore-*` trees remain reserved exclusions.

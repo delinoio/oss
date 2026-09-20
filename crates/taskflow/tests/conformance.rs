@@ -4984,6 +4984,43 @@ fn check_rejects_windows_rooted_outputs_on_every_host() {
 }
 
 #[test]
+fn check_rejects_nul_in_complete_input_and_output_patterns() {
+    for field in ["input", "output"] {
+        for pattern in ["out/\0*.txt", "out/*\0", "out/**/\0value"] {
+            let mut patterns = vec![pattern.to_string()];
+            if field == "input" {
+                patterns.push(format!("!{pattern}"));
+            }
+            for pattern in patterns {
+                let mut task = json!({"command":command(&["write","unexpected-task","ran"]),"dependsOn":["install"]});
+                task[field] = json!([pattern]);
+                let root = fixture(json!({
+                    "build":task,
+                    "install":{"command":command(&["write","unexpected-install","ran"])}
+                }));
+                let error = config::load(&root.path().join("taskflow.yml")).unwrap_err();
+                assert!(format!("{error:#}")
+                    .contains(&format!("{field} patterns must not contain NUL")));
+                for args in [vec!["check"], vec!["run", "build"]] {
+                    let result = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+                        .current_dir(root.path())
+                        .args(args)
+                        .output()
+                        .unwrap();
+                    assert!(!result.status.success());
+                    assert!(
+                        String::from_utf8_lossy(&result.stderr).contains("app#build"),
+                        "{result:?}"
+                    );
+                    assert!(!root.path().join("unexpected-install").exists());
+                    assert!(!root.path().join("unexpected-task").exists());
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn check_rejects_nul_in_every_shell_argument() {
     for shell in [json!(["sh\0", "-c"]), json!(["sh", "-c\0"])] {
         let directory = fixture(json!({"task":{"command":"echo unexpected", "shell":shell}}));
