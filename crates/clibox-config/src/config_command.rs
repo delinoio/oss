@@ -182,9 +182,7 @@ impl Job {
 
     fn run(self, cancel: &Cancellation) -> Result<()> {
         tracing::debug!(operation = self.operation.name(), "operation_started");
-        if self.in_place {
-            config_publication::regular_input(&self.inputs[0])?;
-        }
+        let in_place = self.in_place;
         let mut remaining = LIMIT;
         let mut values = dotenv::Values::new();
         let mut result = Vec::new();
@@ -200,11 +198,12 @@ impl Job {
                     if path.as_os_str() == "-" {
                         config_runtime::read(std::io::stdin().lock(), remaining, &token)
                     } else {
-                        config_runtime::read(
-                            std::fs::File::open(path).map_err(|_| Failure::Read)?,
-                            remaining,
-                            &token,
-                        )
+                        let file = if in_place {
+                            config_publication::regular_input(&path)?
+                        } else {
+                            std::fs::File::open(path).map_err(|_| Failure::Read)?
+                        };
+                        config_runtime::read(file, remaining, &token)
                     }
                 })
                 .map_err(|e| e.input(index + 1))?;

@@ -417,6 +417,29 @@ fn private_file_output_force_in_place_and_input_overlap() {
 }
 
 #[test]
+fn in_place_rejects_hard_linked_input_before_decoding() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source");
+    let bytes = b"\xffprivate-input-marker";
+    fs::write(&source, bytes).unwrap();
+    fs::hard_link(&source, dir.path().join("linked")).unwrap();
+    let result = run(
+        dir.path(),
+        &["yaml", "normalize", "--input", "linked", "--in-place"],
+        b"",
+    );
+    assert_eq!(result.status.code(), Some(1));
+    assert!(result.stdout.is_empty());
+    let stderr = String::from_utf8(result.stderr).unwrap();
+    assert!(stderr.contains("UnsafeDestination"), "{stderr}");
+    assert!(!stderr.contains("Encoding"));
+    assert!(!stderr.contains("private-input-marker"));
+    assert_eq!(fs::read(&source).unwrap(), bytes);
+    assert_eq!(fs::read(dir.path().join("linked")).unwrap(), bytes);
+    no_temps(dir.path());
+}
+
+#[test]
 fn publication_failures_links_and_directory_destinations() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("original"), "original").unwrap();

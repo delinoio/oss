@@ -6,23 +6,7 @@ use std::{
 
 use crate::config_runtime::{self, Cancellation, Failure, Result};
 
-pub fn regular_input(path: &Path) -> Result<()> {
-    let metadata = fs::symlink_metadata(path).map_err(|_| Failure::Read)?;
-    if !metadata.is_file() || metadata.file_type().is_symlink() {
-        return Err(Failure::UnsafeDestination.into());
-    }
-    Ok(())
-}
-
-fn destination(path: &Path) -> Result<Option<(File, Metadata)>> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(m) => m,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(_) => return Err(Failure::Publish.into()),
-    };
-    if !metadata.is_file() || metadata.file_type().is_symlink() {
-        return Err(Failure::UnsafeDestination.into());
-    }
+fn read_options() -> OpenOptions {
     let mut options = OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -35,6 +19,28 @@ fn destination(path: &Path) -> Result<Option<(File, Metadata)>> {
         use std::os::windows::fs::OpenOptionsExt;
         options.custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT);
     }
+    options
+}
+
+pub fn regular_input(path: &Path) -> Result<File> {
+    // Validate the opened object and return that same handle to the reader.
+    // Checking metadata and then reopening the path would let a replacement
+    // symlink redirect in-place reads to a different file before publication.
+    let file = read_options().open(path).map_err(|_| Failure::Read)?;
+    regular_metadata(&file, Failure::Read)?;
+    Ok(file)
+}
+
+fn destination(path: &Path) -> Result<Option<(File, Metadata)>> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(Failure::Publish.into()),
+    };
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err(Failure::UnsafeDestination.into());
+    }
+    let options = read_options();
     let file = match options.open(path) {
         Ok(file) => file,
         #[cfg(unix)]
@@ -43,6 +49,7 @@ fn destination(path: &Path) -> Result<Option<(File, Metadata)>> {
             // write-only descriptor supports those operations too, so retain
             // write-only outputs without requiring read access. Keep NOFOLLOW
             // and NONBLOCK, and never truncate or write through this handle.
+            let mut options = options;
             options
                 .read(false)
                 .write(true)
@@ -51,7 +58,12 @@ fn destination(path: &Path) -> Result<Option<(File, Metadata)>> {
         }
         Err(_) => return Err(Failure::Permissions.into()),
     };
-    let metadata = file.metadata().map_err(|_| Failure::Permissions)?;
+    let metadata = regular_metadata(&file, Failure::Permissions)?;
+    Ok(Some((file, metadata)))
+}
+
+fn regular_metadata(file: &File, failure: Failure) -> Result<Metadata> {
+    let metadata = file.metadata().map_err(|_| failure)?;
     if !metadata.is_file() {
         return Err(Failure::UnsafeDestination.into());
     }
@@ -70,14 +82,14 @@ fn destination(path: &Path) -> Result<Option<(File, Metadata)>> {
         let mut info = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
         // SAFETY: the file handle is live and info points to writable storage.
         if unsafe { GetFileInformationByHandle(file.as_raw_handle(), info.as_mut_ptr()) } == 0 {
-            return Err(Failure::Permissions.into());
+            return Err(failure.into());
         }
         let info = unsafe { info.assume_init() };
         if info.nNumberOfLinks != 1 || info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
             return Err(Failure::UnsafeDestination.into());
         }
     }
-    Ok(Some((file, metadata)))
+    Ok(metadata)
 }
 
 #[cfg(unix)]
@@ -319,6 +331,38 @@ fn publish_prepared(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn in_place_reader_retains_the_validated_file_after_path_replacement() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("input");
+        fs::write(&path, "authorized: original\n").unwrap();
+        let file = regular_input(&path).unwrap();
+        fs::rename(&path, dir.path().join("moved")).unwrap();
+        fs::write(&path, "different: replacement\n").unwrap();
+
+        let bytes = config_runtime::read(file, 1024, &Cancellation::default()).unwrap();
+        assert_eq!(bytes, b"authorized: original\n");
+        assert_eq!(fs::read(&path).unwrap(), b"different: replacement\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn in_place_open_never_follows_a_replacement_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("input");
+        fs::write(&path, "authorized: original\n").unwrap();
+        assert!(fs::symlink_metadata(&path).unwrap().is_file());
+
+        // Replace the entry after a pathname-based check, reproducing the
+        // former validation/open gap without relying on thread scheduling.
+        fs::rename(&path, dir.path().join("moved")).unwrap();
+        let target = dir.path().join("unrelated");
+        fs::write(&target, "unrelated: private\n").unwrap();
+        std::os::unix::fs::symlink(&target, &path).unwrap();
+        assert_eq!(regular_input(&path).unwrap_err().kind, Failure::Read);
+        assert_eq!(fs::read(&target).unwrap(), b"unrelated: private\n");
+    }
 
     #[cfg(unix)]
     #[test]
