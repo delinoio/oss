@@ -8456,3 +8456,42 @@ fn workspace_manifest_paths_are_portable_and_relative() {
         config.validate().unwrap();
     }
 }
+
+#[test]
+fn input_patterns_reject_reserved_state_components() {
+    for pattern in [
+        ".git/config",
+        ".GIT/config",
+        "nested/.taskflow/state",
+        "../neighbor/.TaskFlow/value",
+        ".taskflow-restore-*/value",
+        ".TaSkFlOw-ReStOrE-temporary/value",
+        "**/.git/config",
+        r".taskflow\state",
+    ] {
+        for prefix in ["", "!"] {
+            let task: config::Task = serde_json::from_value(
+                json!({"command":["unused"],"input":[format!("{prefix}{pattern}")]}),
+            )
+            .unwrap();
+            assert!(
+                task.validate()
+                    .unwrap_err()
+                    .to_string()
+                    .contains("reserved state"),
+                "{prefix}{pattern}"
+            );
+        }
+    }
+    for pattern in [
+        ".github/workflows/*.yml",
+        "src/**",
+        "../neighbor/file",
+        "**/*",
+        "!node_modules/**",
+    ] {
+        let task: config::Task =
+            serde_json::from_value(json!({"command":["unused"],"input":[pattern]})).unwrap();
+        task.validate().unwrap();
+    }
+}

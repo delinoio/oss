@@ -631,6 +631,10 @@ impl Task {
                     project_relative(pattern),
                     "input patterns must be project-relative"
                 );
+                ensure!(
+                    !pattern.split(['/', '\\']).any(crate::files::reserved_name),
+                    "input patterns must not contain reserved state components"
+                );
                 globset::Glob::new(pattern).context("invalid input glob")?;
             }
         }
