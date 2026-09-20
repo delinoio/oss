@@ -620,6 +620,7 @@ async fn verify_in(
          preparation."
             .into(),
     );
+    let mut expected = std::collections::BTreeMap::new();
     for repetition in 1..=runs {
         if cancel.is_cancelled() {
             if report.executions.is_empty() {
@@ -671,6 +672,8 @@ async fn verify_in(
             report.verification = Some(stopped_verdict(&report.executions.last().unwrap().outcome));
             break;
         }
+        expected =
+            crate::privacy::command_identities(config, &workspace, &[&round.join("environment")])?;
         let execution = execute::observe(Request {
             root: &workspace,
             command,
@@ -697,7 +700,13 @@ async fn verify_in(
     }
     // Partial evidence can prove a policy failure even when collection could
     // not prove success. Preserve that failure ahead of an inconclusive result.
-    let checks = analysis::policy(&report, &config.policy, &config.commands, baseline)?;
+    let checks = analysis::policy(
+        &report,
+        &config.policy,
+        &config.commands,
+        &expected,
+        baseline,
+    )?;
     report.findings = checks.findings;
     report.verification = merge_verdict(report.verification, checks.verdict);
     if report.targets().count() == runs as usize

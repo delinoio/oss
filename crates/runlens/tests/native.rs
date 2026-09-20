@@ -808,9 +808,15 @@ fn new_access_policy_requires_comparable_complete_baseline() {
     };
     let commands = Default::default();
     assert_eq!(
-        analysis::policy(&current, &rules, &commands, Some(&baseline))
-            .unwrap()
-            .verdict,
+        analysis::policy(
+            &current,
+            &rules,
+            &commands,
+            &Default::default(),
+            Some(&baseline)
+        )
+        .unwrap()
+        .verdict,
         Some(Verdict::Failed)
     );
     for variant in 0..4 {
@@ -821,7 +827,8 @@ fn new_access_policy_requires_comparable_complete_baseline() {
             2 => old.executions[0].environment.executable_sha256 = Some("0".repeat(64)),
             _ => old.executions[0].outcome.collection_complete = false,
         }
-        let result = analysis::policy(&current, &rules, &commands, Some(&old)).unwrap();
+        let result =
+            analysis::policy(&current, &rules, &commands, &Default::default(), Some(&old)).unwrap();
         assert_eq!(result.verdict, Some(Verdict::Inconclusive));
         assert!(
             !result
@@ -831,7 +838,7 @@ fn new_access_policy_requires_comparable_complete_baseline() {
         );
         rules.deny_reads = vec!["input.txt".into()];
         assert_eq!(
-            analysis::policy(&current, &rules, &commands, Some(&old))
+            analysis::policy(&current, &rules, &commands, &Default::default(), Some(&old))
                 .unwrap()
                 .verdict,
             Some(Verdict::Failed)
@@ -961,7 +968,9 @@ fn offline_policy_and_cache_follow_windows_case_rules() {
     let commands = std::collections::BTreeMap::new();
     for os in ["windows", "linux"] {
         report.executions[0].environment.os = os.into();
-        let result = runlens::analysis::policy(&report, &rules, &commands, None).unwrap();
+        let result =
+            runlens::analysis::policy(&report, &rules, &commands, &Default::default(), None)
+                .unwrap();
         assert_eq!(
             result.verdict,
             Some(if os == "windows" {
@@ -3004,5 +3013,52 @@ fn shebang_execution_preserves_output_without_claiming_native_identity() {
         assert!(execution["environment"]["executable_sha256"].is_null());
         assert_eq!(execution["outcome"]["child_exit_code"], 0);
         assert_eq!(execution["outcome"]["collection_complete"], false);
+    }
+}
+
+#[test]
+fn policy_declarations_require_the_recorded_argv_and_working_directory() {
+    let root = repository("read");
+    assert!(
+        invoke(
+            root.path(),
+            &["run", "--command", "build", "--save", "identity.json"]
+        )
+        .status
+        .success()
+    );
+    let mut original = parse(root.path(), "identity.json");
+    original["executions"][0]["accesses"] = serde_json::json!({});
+    let config = root.path().join("runlens.toml");
+    let original_config = fs::read_to_string(&config).unwrap();
+    fs::write(
+        &config,
+        format!("{original_config}\n[policy]\nrequire_inputs = true\nrequire_outputs = true\n"),
+    )
+    .unwrap();
+    for (field, value, expected) in [
+        ("name", serde_json::json!("build"), 0),
+        ("argv", serde_json::json!([fixture(), "read-write"]), 4),
+        ("cwd", serde_json::json!("${workspace}/other"), 4),
+        ("argv", serde_json::json!([fixture(), "[redacted]"]), 4),
+    ] {
+        let mut report = original.clone();
+        report["executions"][0]["command"][field] = value;
+        fs::write(
+            root.path().join("identity.json"),
+            serde_json::to_vec(&report).unwrap(),
+        )
+        .unwrap();
+        let output = invoke(root.path(), &["policy", "check", "identity.json", "--json"]);
+        assert_eq!(
+            output.status.code(),
+            Some(expected),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            !root.path().join("out").exists(),
+            "offline policy must not execute configured argv"
+        );
     }
 }

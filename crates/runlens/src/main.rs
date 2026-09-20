@@ -357,18 +357,11 @@ async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
                 .commands
                 .get(&name)
                 .ok_or_else(|| Error::input("configured command was not found"))?;
+            let identities = runlens::privacy::command_identities(&config, &root, &[])?;
             let redactor = runlens::privacy::Redactor::new(&root, &[], &config.redaction)?;
-            let cwd = root.join(&command.cwd);
-            let cwd = cwd
-                .canonicalize()
-                .unwrap_or_else(|_| cwd.components().collect());
-            let expected = runlens::model::Identity {
-                name: Some(redactor.text(&name)),
-                argv: redactor.argv(&command.argv),
-                cwd: redactor.path(&cwd),
-            };
+            let expected = &identities[&redactor.text(&name)];
             print_analysis(
-                analysis::cache(&report::read(&path)?, command, &expected)?,
+                analysis::cache(&report::read(&path)?, command, expected)?,
                 output,
                 true,
             )
@@ -388,6 +381,7 @@ async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
                     &report::read(&path)?,
                     &config.policy,
                     &config.commands,
+                    &runlens::privacy::command_identities(&config, &root, &[])?,
                     baseline.as_ref(),
                 )?,
                 output,

@@ -261,3 +261,31 @@ pub(crate) fn strip_path_root<'a>(value: &'a str, root: &str) -> Option<&'a str>
 pub(crate) fn within_root(path: &Path, root: &Path) -> bool {
     strip_path_root(&normalized(path), &normalized(root)).is_some()
 }
+
+/// Normalize configured identities without resolving or executing an argv
+/// program.
+pub fn command_identities(
+    config: &crate::config::Config,
+    root: &Path,
+    temporary: &[&Path],
+) -> crate::error::Result<std::collections::BTreeMap<String, crate::model::Identity>> {
+    let redactor = Redactor::new(root, temporary, &config.redaction)?;
+    Ok(config
+        .commands
+        .iter()
+        .map(|(name, command)| {
+            let cwd = root.join(&command.cwd);
+            let cwd = cwd
+                .canonicalize()
+                .unwrap_or_else(|_| cwd.components().collect());
+            (
+                redactor.text(name),
+                crate::model::Identity {
+                    name: Some(redactor.text(name)),
+                    argv: redactor.argv(&command.argv),
+                    cwd: redactor.path(&cwd),
+                },
+            )
+        })
+        .collect())
+}

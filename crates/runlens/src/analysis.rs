@@ -147,18 +147,7 @@ pub fn cache(report: &Report, command: &Command, expected: &Identity) -> Result<
     target_quality(&mut result, report)?;
     for execution in report.targets() {
         quality(&mut result, execution)?;
-        let recorded = &execution.command;
-        let identity_known = !expected.argv.is_empty()
-            && expected.argv == recorded.argv
-            && expected.cwd == recorded.cwd
-            && (recorded.name.is_none() || recorded.name == expected.name)
-            && expected
-                .argv
-                .iter()
-                .chain([&expected.cwd])
-                .chain(expected.name.iter())
-                .all(|value| !value.contains("[redacted]"));
-        if !identity_known {
+        if !identity_matches(expected, &execution.command) {
             result.finding(
                 FindingCode::UnknownEvidence,
                 Classification::Unknown,
@@ -170,6 +159,18 @@ pub fn cache(report: &Report, command: &Command, expected: &Identity) -> Result<
     }
     result.finish()?;
     Ok(result)
+}
+fn identity_matches(expected: &Identity, recorded: &Identity) -> bool {
+    !expected.argv.is_empty()
+        && expected.argv == recorded.argv
+        && expected.cwd == recorded.cwd
+        && (recorded.name.is_none() || recorded.name == expected.name)
+        && expected
+            .argv
+            .iter()
+            .chain([&expected.cwd])
+            .chain(expected.name.iter())
+            .all(|value| !value.contains("[redacted]"))
 }
 fn target_quality(result: &mut Analysis, report: &Report) -> Result<()> {
     if report.targets().next().is_none() {
@@ -341,6 +342,7 @@ pub fn policy(
     report: &Report,
     rules: &Policy,
     commands: &std::collections::BTreeMap<String, Command>,
+    expected: &std::collections::BTreeMap<String, Identity>,
     baseline: Option<&Report>,
 ) -> Result<Analysis> {
     if rules.fail_new_accesses && baseline.is_none() {
@@ -376,13 +378,27 @@ pub fn policy(
                 .ok_or_else(|| {
                     Error::input("coverage policies require a matching configured command name")
                 })?;
-            coverage(
-                &mut result,
-                execution,
-                command,
-                rules.require_inputs,
-                rules.require_outputs,
-            )?;
+            let identity_known = execution
+                .command
+                .name
+                .as_ref()
+                .and_then(|name| expected.get(name))
+                .is_some_and(|identity| identity_matches(identity, &execution.command));
+            if identity_known {
+                coverage(
+                    &mut result,
+                    execution,
+                    command,
+                    rules.require_inputs,
+                    rules.require_outputs,
+                )?;
+            } else {
+                result.finding(
+                    FindingCode::UnknownEvidence,
+                    Classification::Unknown,
+                    vec![evidence(execution, None, EvidenceSource::Outcome)],
+                )?;
+            }
         }
         let previous = baseline.filter(|_| target).and_then(|report| {
             report.targets().find(|old| {

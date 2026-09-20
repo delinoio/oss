@@ -678,3 +678,5 @@ Windows interception treats process-creation attribute pointers and lengths as
 untrusted even in the child process. Bounded kernel-assisted copies avoid Rust
 references to unreadable memory; parse failure preserves the original NT call
 and records incomplete collection instead of panicking the child.
+
+Offline policy input/output coverage uses the same normalized argv, cwd, and recorded-name binding as cache audits. A changed or redacted identity is inconclusive; global boundaries still apply to observed accesses. Clean verification builds the expected identity from the active configuration in each fresh checkout.
