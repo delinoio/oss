@@ -278,6 +278,7 @@ pub async fn run_plan(
             if !causes.iter().any(Cause::independent)
                 && !prerequisites.values().any(|r| r.changed)
                 && !own_outputs_invalid
+                && previous.as_ref().is_some_and(Receipt::success)
             {
                 let mut receipt = Receipt::skipped(&id, Outcome::Suppressed, causes.clone());
                 if let Some(previous) = previous {
@@ -450,6 +451,15 @@ async fn run_task(
         );
     }
     let locks = acquire_locks(&graph.workspace.root, id, &task.resources, &cancel).await?;
+    let old = previous(&graph.workspace.root, id).filter(Receipt::success);
+    // Hold the old baseline only inside this attempt. A failed or interrupted
+    // replacement must not leave an earlier success eligible for suppression.
+    // The task lock serializes invalidation with execution and publication.
+    match std::fs::remove_file(receipt_path(&graph.workspace.root, id)) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error).context("cannot invalidate previous task receipt"),
+    }
     let started = Instant::now();
     let environment = Environment::build(
         &graph.workspace,
@@ -493,7 +503,6 @@ async fn run_task(
     } else {
         result_key.clone()
     };
-    let old = previous(&graph.workspace.root, id);
     let remote = if task.cache {
         graph
             .workspace
@@ -707,7 +716,16 @@ async fn run_task(
         // Shard selection partitions cache storage, not the semantic identity
         // of the tested input version passed to downstream tasks and CI jobs.
         receipt.output = result_key;
-        publish(graph, id, &mut receipt, &inputs, remote.as_ref(), &cancel).await?;
+        publish(
+            graph,
+            id,
+            &mut receipt,
+            &inputs,
+            old.as_ref(),
+            remote.as_ref(),
+            &cancel,
+        )
+        .await?;
         return Ok(receipt);
     }
     let mut process = OwnedProcess::spawn(
@@ -881,7 +899,16 @@ async fn run_task(
         } else {
             receipt.key.clone()
         };
-        publish(graph, id, &mut receipt, &inputs, remote.as_ref(), &cancel).await?;
+        publish(
+            graph,
+            id,
+            &mut receipt,
+            &inputs,
+            old.as_ref(),
+            remote.as_ref(),
+            &cancel,
+        )
+        .await?;
     }
     tracing::info!(task = id, outcome = ?receipt.outcome, changed = receipt.changed, duration_ms = receipt.duration_ms, "Task finished");
     Ok(receipt)
@@ -892,6 +919,7 @@ async fn publish(
     id: &str,
     receipt: &mut Receipt,
     inputs: &BTreeMap<String, String>,
+    baseline: Option<&Receipt>,
     remote: Option<&Remote>,
     cancel: &CancellationToken,
 ) -> Result<()> {
@@ -912,9 +940,9 @@ async fn publish(
     if !valid(receipt)? {
         return Ok(());
     }
-    let previous_output = previous(&graph.workspace.root, id)
-        .filter(Receipt::success)
-        .map(|receipt| receipt.output);
+    let previous_output = baseline
+        .filter(|receipt| receipt.success())
+        .map(|receipt| receipt.output.clone());
     if task.output.as_ref().is_some_and(|v| !v.is_empty()) {
         receipt.output = cache::output_state(project, task)?;
         // An unchanged report cannot override observed artifact changes. With
@@ -1280,6 +1308,7 @@ mod output_cleanup_tests {
             &mut receipt,
             &BTreeMap::new(),
             None,
+            None,
             &cancel,
         )
         .await
@@ -1362,6 +1391,7 @@ mod output_cleanup_tests {
                 "app#check",
                 &mut receipt,
                 &inputs,
+                None,
                 Some(&remote),
                 &cancel,
             )

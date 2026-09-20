@@ -955,6 +955,8 @@ async fn scenarios_03_04_05_18_unchanged_preserves_independent_causes() {
         "join":{"command":command(&["record","trace","join"]),"input":[],"dependsOn":["a","d"]}
     }));
     let g = graph(dir.path()).await;
+    // Suppression is valid only after these outputless checks have succeeded.
+    assert!(run(g.clone(), &["b", "c"]).await.success);
     let plan = Plan::create(&g, &[], &[PathBuf::from("a.src")], true).unwrap();
     let result = runner::run_plan(
         g.clone(),
@@ -4817,12 +4819,15 @@ async fn cancellation_during_synchronous_cache_restore_returns_cancelled() {
     );
     assert_eq!(result.results["app#build"].outcome, Outcome::Cancelled);
     assert_eq!(result.results["app#build"].exit_code, 130);
-    assert_eq!(
-        runner::previous(root.path(), "app#build")
-            .unwrap()
-            .execution,
-        seeded.results["app#build"].execution
-    );
+    // Cancellation invalidates the execution baseline, while the previously
+    // committed cache artifact remains available for a verified future restore.
+    assert!(runner::previous(root.path(), "app#build").is_none());
+    let key = &seeded.results["app#build"].key;
+    cache::load(root.path(), key)
+        .unwrap()
+        .unwrap()
+        .validate_integrity(key)
+        .unwrap();
 }
 
 #[tokio::test]
@@ -6427,5 +6432,73 @@ async fn dangling_unix_output_links_fail_before_capture() {
             link
         };
         assert_eq!(std::fs::read_to_string(restored).unwrap(), "retained");
+    }
+}
+
+#[tokio::test]
+async fn outputless_suppression_requires_the_latest_attempt_to_succeed() {
+    for output in [Value::Null, json!([])] {
+        let root = fixture(json!({
+            "produce":{"command":command(&["unchanged","events","produce"]),"input":["source"]},
+            "check":{"command":command(&["copy","pass","observed"]),"input":["pass"],"output":output,"dependsOn":["produce"]},
+            "consume":{"command":command(&["record","events","consume"]),"input":[],"dependsOn":["check"]}
+        }));
+        let g = graph(root.path()).await;
+        let affected = || Plan::create(&g, &[], &[PathBuf::from("source")], true).unwrap();
+        for _ in 0..2 {
+            let result = runner::run_plan(
+                g.clone(),
+                affected(),
+                RunOptions::default(),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+            assert!(!result.success);
+            assert!(!result.results["app#produce"].changed);
+            assert_eq!(result.results["app#check"].outcome, Outcome::Failed);
+            assert_eq!(result.results["app#consume"].outcome, Outcome::Blocked);
+            // Historical/imported failures must also be ineligible baselines.
+            runner::persist(root.path(), &result.results["app#check"]).unwrap();
+        }
+        std::fs::write(root.path().join("pass"), "valid").unwrap();
+        let first = runner::run_plan(
+            g.clone(),
+            affected(),
+            RunOptions::default(),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert!(first.success);
+        assert_eq!(first.results["app#check"].outcome, Outcome::Executed);
+        let unchanged = runner::run_plan(
+            g.clone(),
+            affected(),
+            RunOptions::default(),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert!(unchanged.success);
+        assert_eq!(unchanged.results["app#check"].outcome, Outcome::Suppressed);
+        assert_eq!(
+            unchanged.results["app#consume"].outcome,
+            Outcome::Suppressed
+        );
+        std::fs::remove_file(root.path().join("pass")).unwrap();
+        assert!(!run(g.clone(), &["check"]).await.success);
+        assert!(runner::previous(root.path(), "app#check").is_none());
+        let retry = runner::run_plan(
+            g.clone(),
+            affected(),
+            RunOptions::default(),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert!(!retry.success);
+        assert_eq!(retry.results["app#check"].outcome, Outcome::Failed);
+        assert_eq!(retry.results["app#consume"].outcome, Outcome::Blocked);
     }
 }
