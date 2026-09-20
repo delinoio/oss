@@ -133,3 +133,5 @@
 - Docker shard execution preserves validated task port mappings for each owned unit; only inventory and tool probes omit publishing. Await unit cleanup before the next unit reuses a port.
 
 - CI secret and remote-credential names cannot collide with generated control variables under the execution unit's target OS name semantics, independent of the exporter host. Validate before writing workflow or blueprint.
+
+- Accumulate invalidated session bootstrap task IDs across installation phases, including initial-disabled watch roots. Remove an ID only after a later refreshed receipt is retained, and activate remaining selected IDs after bootstrap.

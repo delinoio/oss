@@ -85,7 +85,14 @@ pub async fn start(
             while service_receiver.try_recv().is_ok() {}
             graph = Arc::new(Graph::build(Workspace::discover(root).await?.select_platform(options.os, options.arch))?);
             bootstrap_results.extend(result.results);
-            (bootstrap_results, invalid_bootstrap) = runner::revalidate_bootstrap(&graph, bootstrap_results, &bootstrap_options, &work_cancel).await?;
+            let (retained, invalidated) = runner::revalidate_bootstrap(&graph, bootstrap_results, &bootstrap_options, &work_cancel).await?;
+            // Removed receipts cannot appear in a later phase's validation
+            // input. Keep their activation until a refreshed receipt proves
+            // that a later phase actually repaired them.
+            invalid_bootstrap.extend(invalidated);
+            invalid_bootstrap.retain(|id| !retained.contains_key(id));
+            bootstrap_results = retained;
+            tracing::debug!(retained = bootstrap_results.len(), invalidated = invalid_bootstrap.len(), "Refreshed session bootstrap receipts");
             roots = roots_for_profile(&graph, profile)?;
             active_set = activation(&graph, &roots);
         }

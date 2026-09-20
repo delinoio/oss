@@ -8192,3 +8192,62 @@ async fn ci_reserved_environment_names_follow_the_runner_platform() {
         }
     }
 }
+
+#[tokio::test]
+async fn session_retains_invalidated_watch_roots_across_install_phases() {
+    for repaired_by_later_install in [false, true] {
+        let directory = fixture(json!({
+            "prepare":{"command":command(&["record","prepared","original"]),"input":[],"output":["prepared"],"watch":{"initial":false}},
+            "install1":{"command":command(&["rewrite-config-once","next.yml","installed1"]),"input":[],"output":["installed1"],"install":true,"dependsOn":["prepare"]},
+            "install2":{"command":command(&["write","installed2","done"]),"input":[],"output":["installed2"],"install":true},
+            "ready":{"command":command(&["record","ready","ready"]),"input":[]}
+        }));
+        profile(
+            directory.path(),
+            &["prepare", "install1", "install2", "ready"],
+        );
+        let mut next: Value =
+            serde_yaml::from_slice(&std::fs::read(directory.path().join("taskflow.yml")).unwrap())
+                .unwrap();
+        next["tasks"]["prepare"]["command"] = command(&["record", "prepared", "refreshed"]);
+        next["tasks"]["install1"]["dependsOn"] = json!([]);
+        if repaired_by_later_install {
+            next["tasks"]["install2"]["dependsOn"] = json!(["prepare"]);
+        }
+        files::atomic_write(
+            &directory.path().join("next.yml"),
+            serde_yaml::to_string(&next).unwrap().as_bytes(),
+        )
+        .unwrap();
+        let root = directory.path().to_owned();
+        let cancel = CancellationToken::new();
+        let token = cancel.clone();
+        let running = tokio::spawn(async move {
+            taskflow::session::start(&root, "default", RunOptions::default(), token).await
+        });
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+        let mut repaired = false;
+        while !running.is_finished() && tokio::time::Instant::now() < deadline {
+            repaired = runner::previous(directory.path(), "app#ready").is_some_and(|r| r.success())
+                && runner::previous(directory.path(), "app#prepare").is_some_and(|r| r.success())
+                && std::fs::read_to_string(directory.path().join("prepared"))
+                    .is_ok_and(|text| text == "original\nrefreshed\n");
+            if repaired {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        cancel.cancel();
+        let result = running.await.unwrap().unwrap();
+        assert!(
+            repaired,
+            "repaired by later install={repaired_by_later_install}: {result:?}"
+        );
+        assert!(result.success, "{result:?}");
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join("prepared")).unwrap(),
+            "original\nrefreshed\n"
+        );
+        assert!(directory.path().join("installed2").exists());
+    }
+}
