@@ -3168,3 +3168,74 @@ fn cache_rejects_declared_overlap_without_an_observed_intersection() {
         Some(Verdict::Passed)
     );
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_readlink_attempts_cannot_bypass_read_denials() {
+    let mut executables = vec![fixture().to_owned()];
+    match std::env::var("RUNLENS_STATIC_FIXTURE") {
+        Ok(path) => executables.push(path),
+        Err(_) => assert!(
+            std::env::var_os("CI").is_none(),
+            "CI must build the static fixture"
+        ),
+    }
+    for executable in executables {
+        for mode in [
+            "readlinkat",
+            "readlinkat-empty",
+            #[cfg(target_arch = "x86_64")]
+            "readlink",
+        ] {
+            for present in [true, false] {
+                if !present && mode == "readlinkat-empty" {
+                    continue;
+                }
+                let root = tempfile::tempdir().unwrap();
+                let external = tempfile::tempdir().unwrap();
+                let path = external.path().join("dependency-link");
+                if present {
+                    std::os::unix::fs::symlink("opaque-target-text", &path).unwrap();
+                }
+                fs::write(
+                    root.path().join("runlens.toml"),
+                    "schema_version = 1\n[policy]\ndeny_reads = ['**/dependency-link']\n",
+                )
+                .unwrap();
+                let result = invoke(
+                    root.path(),
+                    &[
+                        "run",
+                        "--save",
+                        "readlink.json",
+                        "--",
+                        &executable,
+                        mode,
+                        path.to_str().unwrap(),
+                    ],
+                );
+                assert!(
+                    result.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&result.stderr)
+                );
+                let report = parse(root.path(), "readlink.json");
+                let accesses = report["executions"][0]["accesses"].as_object().unwrap();
+                assert!(accesses.iter().any(
+                    |(key, access)| key.ends_with("/dependency-link") && access["read"] == true
+                ));
+                assert!(
+                    !accesses
+                        .keys()
+                        .any(|key| key.ends_with("/opaque-target-text"))
+                );
+                assert_eq!(
+                    invoke(root.path(), &["policy", "check", "readlink.json", "--json"])
+                        .status
+                        .code(),
+                    Some(5)
+                );
+            }
+        }
+    }
+}

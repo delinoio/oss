@@ -6,6 +6,20 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 int main(int argc, char **argv) {
+    if (argc == 3 && !strncmp(argv[1], "readlink", 8)) {
+        char buffer[4096];
+#ifdef SYS_readlink
+        if (!strcmp(argv[1], "readlink")) {
+            syscall(SYS_readlink, argv[2], buffer, sizeof(buffer));
+            return 0;
+        }
+#endif
+        int empty = !strcmp(argv[1], "readlinkat-empty");
+        int fd = empty ? open(argv[2], O_PATH | O_NOFOLLOW) : AT_FDCWD;
+        syscall(SYS_readlinkat, fd, empty ? "" : argv[2], buffer, sizeof(buffer));
+        if (fd >= 0) close(fd);
+        return 0;
+    }
     if (argc == 4 && !strncmp(argv[1], "mutate-", 7)) {
         int fd = open(argv[3], O_RDONLY | O_DIRECTORY);
         if (fd < 0) return 26;

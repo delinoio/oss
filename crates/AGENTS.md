@@ -197,6 +197,7 @@
 - Shebang scripts must not use their text digest as native executable identity; preserve the requested execution but mark unbound interpreter chains incomplete.
 - Windows snapshot stability requires present volume serial and file index identities, including the opened handle and final pathname; equal size and timestamps alone cannot prove stability.
 - Runlens executable digests must be bound to the native launched image, not a pathname recheck; keep inspected handles alive through completion and make missing/mismatched identity incomplete.
+- Linux readlink/readlinkat collection records a read of the link itself, including empty-path descriptors; link target text is not an extra access.
 - Runlens Linux dynamic and static targets must both install inherited kernel syscall collection; libc interposition alone cannot establish completeness.
 - Runlens must retain redacted clean/repeat HOME and cache accesses as out-of-scope evidence; omit only tracer-private storage from access records.
 - Runlens Windows NT attribute hooks must copy and bound untrusted caller memory before parsing; malformed attributes preserve the original syscall and mark collection incomplete.

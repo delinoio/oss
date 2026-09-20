@@ -173,3 +173,9 @@ public time/sys/time.h signature. Pinned libc 0.2.185 omits that binding, which
 otherwise breaks both Linux native builds. A native libc futimesat mutation
 fixture verifies write attempts. Remove the local declaration when the pinned
 libc dependency exports the same supported 64-bit GNU interface.
+
+## Linux readlink dependencies
+
+- Reason/scope: inherited seccomp filters omitted `readlink` (x64) and `readlinkat` (both architectures), hiding dependencies on link text. Record read attempts on the named link, including empty-path O_PATH descriptors; never reinterpret returned target text as an access. Resolution errors keep the child syscall and mark evidence incomplete.
+- Regression: `linux_readlink_attempts_cannot_bypass_read_denials` runs dynamic and static raw syscalls, missing paths, and empty-path descriptors and checks external read denial plus absence of invented target accesses.
+- Removal: drop this local handler only when the pinned upstream observes both syscall families with equivalent failure/descriptor behavior and these native regressions pass.

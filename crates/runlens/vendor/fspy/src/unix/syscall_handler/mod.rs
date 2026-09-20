@@ -5,6 +5,7 @@ mod mutate;
 mod rename;
 mod remove;
 mod stat;
+mod readlink;
 
 use std::{
     borrow::Cow,
@@ -126,6 +127,9 @@ impl_handler!(
     linkat,
     #[cfg(target_arch = "x86_64")] symlink,
     symlinkat,
+
+    #[cfg(target_arch = "x86_64")] readlink,
+    readlinkat,
 
     execve,
     execveat,

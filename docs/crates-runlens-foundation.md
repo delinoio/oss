@@ -686,3 +686,5 @@ Explain searches both access and change keys using Windows ordinal case-insensit
 Windows snapshot stability checks include volume serial number and file index for pathname and opened-handle metadata. Missing IDs cannot establish stability. Same-size, same-timestamp replacement therefore yields unknown evidence even if a detached handle remains readable. These IDs remain transient and are not persisted in reports.
 
 Cache and required declaration audits check static input/output glob language intersections, including directory-root expansion and report-OS casing, even when no observed path lies in the intersection. The DFA construction and product traversal are bounded (8 MiB construction limits, 65,536 product states, four million byte transitions); exhaustion yields unknown evidence rather than passing. Witnesses must be nonempty UTF-8 paths without NUL.
+
+Linux kernel collection includes `readlink` and `readlinkat` attempts for dynamic/static targets, recording the link path rather than the returned target text. Empty-path descriptors resolve to the held link. Unresolvable caller arguments preserve the syscall and make evidence incomplete.

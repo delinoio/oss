@@ -4,6 +4,44 @@ use std::{fs, process::Command, time::Duration};
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
+        #[cfg(target_os = "linux")]
+        "readlink" | "readlinkat" | "readlinkat-empty" => {
+            let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            let mut buffer = [0u8; 4096];
+            // SAFETY: each syscall receives a live C pathname and bounded output.
+            unsafe {
+                #[cfg(target_arch = "x86_64")]
+                if args[0] == "readlink" {
+                    libc::syscall(
+                        libc::SYS_readlink,
+                        path.as_ptr(),
+                        buffer.as_mut_ptr(),
+                        buffer.len(),
+                    );
+                    return;
+                }
+                let fd = if args[0] == "readlinkat-empty" {
+                    libc::open(path.as_ptr(), libc::O_PATH | libc::O_NOFOLLOW)
+                } else {
+                    libc::AT_FDCWD
+                };
+                let name = if args[0] == "readlinkat-empty" {
+                    c"".as_ptr()
+                } else {
+                    path.as_ptr()
+                };
+                libc::syscall(
+                    libc::SYS_readlinkat,
+                    fd,
+                    name,
+                    buffer.as_mut_ptr(),
+                    buffer.len(),
+                );
+                if fd >= 0 {
+                    libc::close(fd);
+                }
+            }
+        }
         #[cfg(unix)]
         "transient-symlink" => {
             std::os::unix::fs::symlink(&args[1], "transient").unwrap();
