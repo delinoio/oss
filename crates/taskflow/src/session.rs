@@ -123,12 +123,35 @@ pub async fn start(
                             graph = Arc::new(next);
                             roots = roots_for_profile(&graph, profile)?;
                             active_set = activation(&graph, &roots);
+                            let mut retained = std::mem::take(&mut pending);
                             pending = initial(&graph, &active_set);
+                            for (id, previous) in retained.iter_mut().filter(|(id, _)| active_set.contains(*id)) {
+                                let entry = pending.entry(id.clone()).or_insert_with(|| Pending { causes: BTreeSet::new(), due: previous.due });
+                                entry.causes.append(&mut previous.causes);
+                                entry.due = entry.due.min(previous.due);
+                            }
                             timers = self::timers(&graph, &active_set)?;
-                            observed = snapshots(&graph, &active_set)?;
                             baseline_at = Instant::now();
                             results.clear(); initial_done = false;
                         }
+                        // Discovery refreshes automatic metadata inputs too.
+                        // Compare against the last accepted snapshots before
+                        // replacing them; initial:false only disables activation,
+                        // never an actual manifest/lockfile change. Keep this
+                        // baseline intact throughout invalid configuration.
+                        let refreshed = snapshots(&graph, &active_set)?;
+                        for (id, snapshot) in &refreshed {
+                            let previous = observed.get(id);
+                            let paths: BTreeSet<_> = snapshot.keys().chain(previous.into_iter().flat_map(|state| state.keys())).collect();
+                            for path in paths {
+                                if previous.and_then(|state| state.get(path)) != snapshot.get(path) {
+                                    let watch = graph.tasks[id].task.watch.as_ref().unwrap();
+                                    tracing::debug!(task = %id, path, "Preserving input change across graph refresh");
+                                    enqueue(&graph, &options, &mut pending, id, Cause::Input { path: path.clone() }, Instant::now() + config::duration(&watch.debounce)?);
+                                }
+                            }
+                        }
+                        observed = refreshed;
                         invalid = false;
                     }
                     Err(error) => { tracing::error!(code = "session-configuration-invalid", error = %error, "New work suspended until configuration is corrected"); invalid = true; }

@@ -7307,3 +7307,57 @@ async fn affected_gitlinks_select_descendant_inputs_without_a_checkout() {
         ["app#build"]
     );
 }
+
+#[tokio::test]
+async fn metadata_refresh_preserves_initial_disabled_watch_causes() {
+    let directory = fixture(json!({
+        "check":{"command":command(&["record","events","check"]),"input":[],"watch":{"initial":false,"debounce":"20ms"}},
+        "inactive":{"command":command(&["record","events","inactive"]),"input":[],"watch":{"initial":false}},
+        "barrier":{"command":command(&["record","ready","ready"]),"input":[]}
+    }));
+    profile(directory.path(), &["check", "barrier"]);
+    let root = directory.path().to_path_buf();
+    let token = CancellationToken::new();
+    let stop = token.clone();
+    let mut session = tokio::spawn(async move {
+        taskflow::session::start(&root, "default", RunOptions::default(), stop).await
+    });
+    wait_lines(&directory.path().join("ready"), "ready", 1).await;
+    assert!(!directory.path().join("events").exists());
+    let config_path = directory.path().join("taskflow.yml");
+    let original = std::fs::read(&config_path).unwrap();
+    for (index, file) in ["pnpm-lock.yaml", "pnpm-lock.yaml", "taskflow.yml"]
+        .iter()
+        .enumerate()
+    {
+        let previous = runner::previous(directory.path(), "app#check").map(|r| r.execution);
+        if *file == "taskflow.yml" {
+            // While invalid, a further metadata input changes. Repairing the
+            // configuration must retain that cause with initial still disabled.
+            files::atomic_write(&config_path, b"version: 1\nproject: app\ntasks: [invalid")
+                .unwrap();
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            files::atomic_write(&directory.path().join("pnpm-lock.yaml"), b"third").unwrap();
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            files::atomic_write(&config_path, &original).unwrap();
+        } else {
+            files::atomic_write(&directory.path().join(file), index.to_string().as_bytes())
+                .unwrap();
+        }
+        tokio::time::timeout(Duration::from_secs(30), async {
+            loop {
+                assert!(!session.is_finished(), "session exited before metadata receipt");
+                if runner::previous(directory.path(), "app#check").is_some_and(|r| Some(&r.execution) != previous.as_ref() && r.success() && r.causes.iter().any(|cause| matches!(cause, Cause::Input { path } if path == "pnpm-lock.yaml"))) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }).await.unwrap();
+    }
+    assert!(std::fs::read_to_string(directory.path().join("events"))
+        .unwrap()
+        .lines()
+        .all(|line| line == "check"));
+    token.cancel();
+    (&mut session).await.unwrap().unwrap();
+}

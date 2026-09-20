@@ -101,3 +101,5 @@
 - Docker named-pipe endpoints must use the literal local dot server; the npipe scheme alone does not prove locality. Reject remote authorities and malformed socket addresses before creating execution state.
 
 - Container result helpers use scoped temporary directories owned through cleanup, including tool probes and shard units. Auxiliary containers must not create permanent run directories; outer task results and logs remain retained.
+
+- Graph refresh compares watched input snapshots before replacing the baseline and preserves pending independent causes. Automatic metadata changes activate initial-disabled watchers; invalid configuration retains the last accepted snapshots until recovery. Identical metadata rewrites do not enqueue work.

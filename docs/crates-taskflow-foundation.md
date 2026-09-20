@@ -118,3 +118,5 @@ After an installation bootstrap, both finite runs and development sessions reval
 Docker accepts absolute local Unix socket paths or local Windows named pipes with the literal dot server, such as `npipe:////./pipe/docker_engine`. A remote host, including a host named localhost, is rejected before task setup. This follows the [Windows named-pipe server contract](https://learn.microsoft.com/en-us/windows/win32/ipc/pipe-names) and [Docker Desktop endpoint](https://docs.docker.com/desktop/troubleshoot-and-support/faqs/general/).
 
 Docker result helpers are scoped to the owning container and removed after cleanup on success, failure, cancellation, or timeout. Tool probes and shard units retain no auxiliary run directories; only outer task receipts, reports, and logs persist.
+
+Graph refresh preserves pending input causes and compares the last accepted watched snapshots with the new generation before establishing its baseline. Automatic manifest/lockfile inputs therefore activate watchers with `initial: false`. Invalid configuration keeps the previous baseline until recovery, and identical metadata rewrites do not activate checks.
