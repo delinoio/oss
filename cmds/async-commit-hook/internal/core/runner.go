@@ -252,18 +252,13 @@ loop:
 		// Report syntax is not user text: a secret may itself be a quote or an
 		// XML token. Parse only in memory, then redact extracted text and the
 		// evidence copy before either reaches persistent storage.
-		failures, e := ParseReport(report.Kind, b, c.Name, command.Command, c.Log.ID)
+		failures, truncated, e := parseReportSummaries(report.Kind, b, c.Name, command.Command, c.Log.ID, secrets)
 		if e != nil {
 			c.Diagnostics = append(c.Diagnostics, Diagnostic{Code: "report-malformed", Message: "declared report invalid: " + report.Path})
 		}
-		truncated := false
 		for i := range failures {
 			failures[i].ID = Hash(Encode([]string{string(report.Kind), report.Path, failures[i].ID}))
-			for _, field := range []*string{&failures[i].Message, &failures[i].File, &failures[i].Test, &failures[i].Command} {
-				text, cut := redactedFailureText(*field, secrets)
-				*field = text
-				truncated = truncated || cut
-			}
+
 		}
 		if truncated {
 			c.Diagnostics = append(c.Diagnostics, Diagnostic{Code: "failure-summaries-truncated", Message: "Structured failure summaries were truncated; inspect the paginated report evidence for full details."})

@@ -127,3 +127,5 @@
 - Lifecycle discovery accepts only UUID-v7-named component records whose embedded ID matches the filename; preserve update recovery journals and other account control files.
 
 - Revalidate the current common-directory identity and exact registered repository/worktree IDs when preparing queued or rerun source, before reading/fetching objects or creating a workspace. A separately initialized replacement checkout never inherits an earlier attempt.
+
+- Bound JUnit failure summaries during XML parsing using the shared aggregate byte budget. Redact complete extracted fields before truncation, stop retaining failure/identity history once full, continue validating the entire report, and persist the truncation diagnostic plus complete paginated evidence.

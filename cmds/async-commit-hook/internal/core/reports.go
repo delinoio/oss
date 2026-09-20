@@ -136,8 +136,12 @@ func ParseReport(kind ReportKind, b []byte, check, command, logID string) ([]Fai
 	return nil, E("invalid-report-kind", "unsupported report kind", 2)
 }
 func parseJUnit(b []byte, check, command, logID string) ([]Failure, error) {
+	failures, _, err := parseJUnitSummaries(b, check, command, logID, nil)
+	return failures, err
+}
+func parseJUnitSummaries(b []byte, check, command, logID string, secrets []string) ([]Failure, bool, error) {
 	d := xml.NewDecoder(bytes.NewReader(b))
-	out := []Failure{}
+	out := junitFailures{secrets: secrets}
 	type suiteIdentity struct {
 		Kind, Name string
 		Occurrence int
@@ -159,14 +163,14 @@ func parseJUnit(b []byte, check, command, logID string) ([]Failure, error) {
 			break
 		}
 		if e != nil {
-			return nil, E("report-malformed", "JUnit XML cannot be parsed", 1)
+			return nil, false, E("report-malformed", "JUnit XML cannot be parsed", 1)
 		}
 		switch t := token.(type) {
 		case xml.Directive:
-			return nil, E("report-malformed", "XML directives are not supported", 1)
+			return nil, false, E("report-malformed", "XML directives are not supported", 1)
 		case xml.EndElement:
 			depth--
-			if (t.Name.Local == "testsuite" || t.Name.Local == "testsuites") && len(suites) > 0 {
+			if !out.full && (t.Name.Local == "testsuite" || t.Name.Local == "testsuites") && len(suites) > 0 {
 				suites = suites[:len(suites)-1]
 			}
 			if t.Name.Local == "testcase" {
@@ -175,12 +179,12 @@ func parseJUnit(b []byte, check, command, logID string) ([]Failure, error) {
 			}
 		case xml.CharData:
 			if depth == 0 && len(bytes.TrimSpace(t)) != 0 {
-				return nil, E("report-malformed", "text outside JUnit root", 1)
+				return nil, false, E("report-malformed", "text outside JUnit root", 1)
 			}
 		case xml.StartElement:
 			if depth == 0 {
 				if sawRoot || (t.Name.Local != "testsuite" && t.Name.Local != "testsuites") {
-					return nil, E("report-malformed", "expected one JUnit testsuite root", 1)
+					return nil, false, E("report-malformed", "expected one JUnit testsuite root", 1)
 				}
 			}
 			depth++
@@ -191,14 +195,16 @@ func parseJUnit(b []byte, check, command, logID string) ([]Failure, error) {
 			switch t.Name.Local {
 			case "testsuites", "testsuite":
 				sawRoot = true
-				key := string(Encode([]any{suites, t.Name.Local, attrs["name"]}))
-				occurrences[key]++
-				suites = append(suites, suiteIdentity{t.Name.Local, attrs["name"], occurrences[key]})
+				if !out.full {
+					key := string(Encode([]any{suites, t.Name.Local, attrs["name"]}))
+					occurrences[key]++
+					suites = append(suites, suiteIdentity{t.Name.Local, attrs["name"], occurrences[key]})
+				}
 				for _, k := range []string{"failures", "errors"} {
 					if attrs[k] != "" {
 						v, err := strconv.Atoi(attrs[k])
 						if err != nil || v < 0 {
-							return nil, E("report-malformed", "invalid JUnit failure count", 1)
+							return nil, false, E("report-malformed", "invalid JUnit failure count", 1)
 						}
 						if v > declaredFailures {
 							declaredFailures = v
@@ -206,6 +212,9 @@ func parseJUnit(b []byte, check, command, logID string) ([]Failure, error) {
 					}
 				}
 			case "testcase":
+				if out.full {
+					continue
+				}
 				test = attrs["name"]
 				class = attrs["classname"]
 				file = attrs["file"]
@@ -218,9 +227,17 @@ func parseJUnit(b []byte, check, command, logID string) ([]Failure, error) {
 				testOccurrence = occurrences[key]
 				failureOccurrences = map[string]int{}
 			case "failure", "error":
+				if out.full {
+					// Keep XML validation active, but retain no more failure bodies or IDs.
+					if err := d.Skip(); err != nil {
+						return nil, false, E("report-malformed", "invalid JUnit failure", 1)
+					}
+					depth--
+					continue
+				}
 				var body string
 				if e = d.DecodeElement(&body, &t); e != nil {
-					return nil, E("report-malformed", "invalid JUnit failure", 1)
+					return nil, false, E("report-malformed", "invalid JUnit failure", 1)
 				}
 				depth--
 				names := []string{}
@@ -233,17 +250,22 @@ func parseJUnit(b []byte, check, command, logID string) ([]Failure, error) {
 				failureOccurrences[t.Name.Local]++
 				id := Hash(Encode([]any{check, "junit", suites, class, test, testOccurrence, t.Name.Local, failureOccurrences[t.Name.Local]}))
 				message := strings.TrimSpace(attrs["message"] + "\n" + body)
-				out = append(out, Failure{ID: id, Check: check, Test: identity, Command: command, Message: message, File: file, Line: line, LogID: logID})
+				out.add(Failure{ID: id, Check: check, Test: identity, Command: command, Message: message, File: file, Line: line, LogID: logID})
+				if out.full {
+					// Identity history is no longer needed once the retained prefix is complete.
+					occurrences, failureOccurrences, suites = nil, nil, nil
+					test, class, file = "", "", ""
+				}
 			}
 		}
 	}
 	if !sawRoot {
-		return nil, E("report-malformed", "JUnit report has no testsuite root", 1)
+		return nil, false, E("report-malformed", "JUnit report has no testsuite root", 1)
 	}
-	if declaredFailures > 0 && len(out) == 0 {
-		out = append(out, Failure{ID: Hash([]byte(check + "/junit/summary")), Check: check, Command: command, Message: "JUnit summary reports failures without test details", LogID: logID})
+	if declaredFailures > 0 && len(out.failures) == 0 {
+		out.add(Failure{ID: Hash([]byte(check + "/junit/summary")), Check: check, Command: command, Message: "JUnit summary reports failures without test details", LogID: logID})
 	}
-	return out, nil
+	return out.failures, out.truncated, nil
 }
 func parseGoTest(b []byte, check, command, logID string) ([]Failure, error) {
 	out := []Failure{}
