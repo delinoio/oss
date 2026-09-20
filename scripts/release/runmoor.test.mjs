@@ -77,10 +77,19 @@ test("Signed verification invokes an injected verifier with exact artifact and i
 });
 
 
-test("Publication refuses conflicting tags, existing releases and uncertain API results", async () => {
+test("Publication resumes a matching draft and refuses public or uncertain releases", async () => {
   const plan = releasePlan({ version: sourceVersion, revision, ref: "refs/heads/main", mode: "publish" });
   await checkPublication(plan, async () => ({ status: 404, body: {} }));
   await checkPublication(plan, async (route) => ({ status: route.includes("/git/") ? 200 : 404, body: { object: { type: "commit", sha: revision } } }));
+  await checkPublication(plan, async (route) => route.includes("/git/")
+    ? { status: 200, body: { object: { type: "commit", sha: revision } } }
+    : { status: 200, body: { tag_name: plan.tag, draft: true, prerelease: false } });
+  for (const body of [
+    { tag_name: plan.tag, draft: true, prerelease: true },
+    { tag_name: "runmoor@v9.9.9", draft: true, prerelease: false },
+  ]) await assert.rejects(checkPublication(plan, async (route) => route.includes("/git/")
+    ? { status: 200, body: { object: { type: "commit", sha: revision } } }
+    : { status: 200, body }), /stable tag/u);
   for (const result of [
     { status: 403, body: {} },
     { status: 200, body: { object: { type: "commit", sha: "2".repeat(40) } } },

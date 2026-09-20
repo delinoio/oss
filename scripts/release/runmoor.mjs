@@ -44,7 +44,13 @@ export async function checkPublication(plan, request) {
     if (object?.type !== "commit" || object.sha !== plan.revision) throw new Error("Existing release tag belongs to a different source revision");
   }
   const release = await request(`${prefix}/releases/tags/${encodeURIComponent(plan.tag)}`);
-  if (release.status === 200) throw new Error("A public release already exists; immutable artifacts cannot be overwritten");
+  if (release.status === 200) {
+    if (release.body?.draft === true) {
+      if (release.body.tag_name !== plan.tag || release.body.prerelease !== false) throw new Error("Existing release draft is not bound to the requested stable tag");
+      return;
+    }
+    throw new Error("A public release already exists; immutable artifacts cannot be overwritten");
+  }
   if (release.status !== 404) throw new Error("Cannot establish whether a release already exists");
 }
 
