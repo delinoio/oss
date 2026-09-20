@@ -17,16 +17,22 @@ impl Cursor<'_> {
     }
 
     fn advance(&mut self) -> Result<()> {
-        if self.offset.is_multiple_of(4096) {
+        let ch = self.text[self.offset..]
+            .chars()
+            .next()
+            .ok_or(Failure::Internal)?;
+        let next = self.offset + ch.len_utf8();
+        // Character boundaries can skip a byte checkpoint; check crossings too.
+        if self.offset == 0 || self.offset / 4096 != next / 4096 {
             self.cancel.check()?;
         }
-        if self.peek() == Some(b'\n') {
+        if ch == '\n' {
             self.line += 1;
             self.column = 1;
         } else {
             self.column += 1;
         }
-        self.offset += 1;
+        self.offset = next;
         Ok(())
     }
 

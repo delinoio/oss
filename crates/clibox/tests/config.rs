@@ -212,6 +212,30 @@ fn dotenv_invalid_records_never_emit_even_when_overwritten() {
 }
 
 #[test]
+fn dotenv_diagnostic_columns_count_unicode_scalars() {
+    let dir = tempfile::tempdir().unwrap();
+    for (input, line, column) in [
+        ("A='é' trailing", 1, 7),
+        ("A='🙂漢e\u{301}' trailing", 1, 10),
+        ("#🙂 comment\r\nA='é\r\n漢🙂' trailing", 3, 5),
+        ("A='🙂", 1, 5),
+    ] {
+        for args in [
+            vec!["dotenv", "list", "--input", "-"],
+            vec!["dotenv", "merge", "-"],
+        ] {
+            let result = run(dir.path(), &args, input.as_bytes());
+            assert_eq!(result.status.code(), Some(1));
+            assert!(result.stdout.is_empty());
+            let stderr = String::from_utf8(result.stderr).unwrap();
+            assert!(stderr.contains("DotenvSyntax"));
+            assert!(stderr.contains(&format!("line={line}")), "{stderr}");
+            assert!(stderr.contains(&format!("column={column}")), "{stderr}");
+        }
+    }
+}
+
+#[test]
 fn yaml_merges_are_shallow_ordered_and_explicit_values_win() {
     yaml(
         "base: &base {z: 1, nested: {old: 1}, a: old}\nsecond: &second {z: 2, b: 3}\nresult: {<<: \
