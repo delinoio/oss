@@ -376,11 +376,18 @@ fn repository(mode: &str) -> tempfile::TempDir {
     .unwrap();
     fs::write(root.path().join(".gitignore"), "ignored\n*.json\n").unwrap();
     let tool = fixture().replace('\\', "/");
+    // Fresh-environment fixtures explicitly prepare stable output ancestry.
+    // The preparation itself asserts that every checkout starts without it.
+    let prepare = if mode == "env" {
+        format!("prepare = [[{tool:?}, \"prepare-output\"]]\n")
+    } else {
+        String::new()
+    };
     fs::write(
         root.path().join("runlens.toml"),
         format!(
             "schema_version = 1\n[commands.build]\nargv = [{tool:?}, {mode:?}]\ninputs = \
-             [\"input.txt\"]\noutputs = [\"out/**\"]\n"
+             [\"input.txt\"]\noutputs = [\"out/**\"]\n{prepare}"
         ),
     )
     .unwrap();
@@ -549,7 +556,19 @@ fn clean_and_repeat_use_fresh_environments_without_worktree_changes() {
     );
     let value = parse(root.path(), "repeat.json");
     assert_eq!(value["verification"], "passed");
-    assert_eq!(value["executions"].as_array().unwrap().len(), 3);
+    let executions = value["executions"].as_array().unwrap();
+    assert_eq!(executions.len(), 6);
+    assert_eq!(
+        executions
+            .iter()
+            .filter(|e| e["role"] == "preparation")
+            .count(),
+        3
+    );
+    assert_eq!(
+        executions.iter().filter(|e| e["role"] == "target").count(),
+        3
+    );
     assert!(!root.path().join("out").exists());
     assert_eq!(
         fs::read_to_string(root.path().join("input.txt")).unwrap(),
@@ -3039,7 +3058,12 @@ fn clean_retains_masked_home_and_cache_accesses_for_policy() {
         String::from_utf8_lossy(&output.stderr)
     );
     let value = parse(root.path(), "env.json");
-    let execution = &value["executions"][0];
+    let execution = value["executions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["role"] == "target")
+        .unwrap();
     for path in [
         "${temporary}/HOME/previous-run",
         "${temporary}/XDG_CACHE_HOME/entry",

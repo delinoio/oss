@@ -911,8 +911,12 @@ fn main() {
             std::io::stdin().read_to_string(&mut input).unwrap();
             print!("{input}");
         }
+        "prepare-output" => {
+            assert!(!std::path::Path::new("out").exists());
+            fs::create_dir("out").unwrap();
+        }
         "env" => {
-            fs::create_dir_all("out").unwrap();
+            assert!(std::path::Path::new("out").is_dir());
             let path =
                 std::path::Path::new(&std::env::var_os("HOME").unwrap()).join("previous-run");
             assert!(!path.exists());
