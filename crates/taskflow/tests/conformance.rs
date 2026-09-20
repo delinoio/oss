@@ -6128,3 +6128,24 @@ async fn ci_export_requires_rustup_compatible_numeric_versions() {
         }
     }
 }
+
+#[test]
+fn explicit_changed_files_cannot_discard_a_git_base() {
+    let directory = fixture(json!({
+        "prepare":{"command":command(&["write","unexpected","ran"]),"input":[]},
+        "deploy":{"command":command(&["version"]),"dependsOn":["prepare"],"input":["source"]}
+    }));
+    for verb in ["plan", "run"] {
+        for base in ["HEAD", "invalid-reference"] {
+            let output = std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+                .current_dir(directory.path())
+                .args([verb, "deploy", "--base", base, "--changed", "source"])
+                .output()
+                .unwrap();
+            assert!(!output.status.success());
+            assert!(String::from_utf8_lossy(&output.stderr)
+                .contains("--base cannot be combined with --changed"));
+            assert!(!directory.path().join("unexpected").exists());
+        }
+    }
+}

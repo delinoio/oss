@@ -222,6 +222,10 @@ impl Selection {
             self.head.is_none() || self.changed.is_empty(),
             "--head cannot be combined with --changed"
         );
+        ensure!(
+            self.base.is_none() || self.changed.is_empty(),
+            "--base cannot be combined with --changed"
+        );
         let affected = self.affected || self.base.is_some() || !self.changed.is_empty();
         ensure!(
             affected || !self.tasks.is_empty(),

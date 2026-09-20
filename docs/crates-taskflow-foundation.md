@@ -107,3 +107,5 @@ Configuration, result protocol, cache format, adapter coverage, lifecycle, and C
 - Public source installation (`cargo build --release --locked -p taskflow --bin tflow` in a checkout) and the standard Cargo binary output location are supported user workflows. The crate remains `publish = false`; no public binary release is implied.
 
 Service task timeouts cover process startup through readiness and continued service execution. Expiry is a service failure that tears down the session; explicit owner cancellation remains a normal shutdown.
+
+Explicit `--changed` file lists cannot be combined with `--base` or `--head`; `plan` and `run` reject these ambiguous selectors before prerequisite execution.

@@ -76,3 +76,4 @@
 - Existing repository workflows are not migrated and the crate remains unpublished.
 
 - CI Rust numeric versions must be valid unprefixed rustup toolchain names; reject v-prefixed versions before workflow files are written.
+- Reject simultaneous explicit changed files and Git base/head selectors before planning or prerequisite execution; neither selection may silently override the other.
