@@ -4395,3 +4395,51 @@ fn snapshot_spills_remain_private_during_target_temp_enumeration() {
         "all tracer storage must be cleaned after report serialization"
     );
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn io_uring_attempts_preserve_syscalls_without_certifying_coverage() {
+    let mut executables = vec![fixture().to_owned()];
+    match std::env::var("RUNLENS_STATIC_FIXTURE") {
+        Ok(path) => executables.push(path),
+        Err(_) => assert!(
+            std::env::var_os("CI").is_none(),
+            "static fixture required in CI"
+        ),
+    }
+    for executable in executables {
+        for mode in [
+            "uring-setup",
+            "uring-sqpoll",
+            "uring-enter",
+            "uring-register",
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let direct = Command::new(&executable)
+                .arg(mode)
+                .current_dir(root.path())
+                .output()
+                .unwrap();
+            assert!(direct.status.success());
+            let result = invoke(
+                root.path(),
+                &["run", "--save", "record.json", "--", &executable, mode],
+            );
+            assert_eq!(result.status.code(), Some(4), "{mode}: {result:?}");
+            assert_eq!(result.stdout, direct.stdout, "{mode}");
+            let report = parse(root.path(), "record.json");
+            assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 0);
+            assert_eq!(
+                report["executions"][0]["outcome"]["collection_complete"],
+                false
+            );
+            fs::write(
+                root.path().join("runlens.toml"),
+                "schema_version = 1\n[policy]\ndeny_reads = [\"**\"]\n",
+            )
+            .unwrap();
+            let policy = invoke(root.path(), &["policy", "check", "record.json", "--json"]);
+            assert!(!policy.status.success(), "{mode}: {policy:?}");
+        }
+    }
+}

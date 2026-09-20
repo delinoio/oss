@@ -1,12 +1,26 @@
 /* A static Linux child must be observed by seccomp, without LD_PRELOAD. */
 #define _GNU_SOURCE
 #include <stdio.h>
+#include <stdint.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/syscall.h>
 #include <sys/vfs.h>
 int main(int argc, char **argv) {
+    if (argc == 2 && !strncmp(argv[1], "uring-", 6)) {
+        /* Linux UAPI io_uring_params: 120 bytes, aligned to 8; flags at byte 8. */
+        uint64_t params[15] = {0};
+        if (!strcmp(argv[1], "uring-sqpoll")) params[1] = 2;
+        long result;
+        if (!strcmp(argv[1], "uring-enter")) result = syscall(SYS_io_uring_enter, -1, 0, 0, 0, 0, 0);
+        else if (!strcmp(argv[1], "uring-register")) result = syscall(SYS_io_uring_register, -1, 0, 0, 0);
+        else result = syscall(SYS_io_uring_setup, 2, params);
+        if (result < 0) printf("error:%d\n", errno);
+        else { close(result); puts("created"); }
+        return 0;
+    }
     if (argc == 4 && (!strcmp(argv[1], "chdir") || !strcmp(argv[1], "fchdir"))) {
         long result;
         if (!strcmp(argv[1], "chdir")) result = syscall(SYS_chdir, argv[2]);

@@ -234,6 +234,8 @@
 - Runlens observes Unix chdir/fchdir as directory metadata read attempts before cwd mutation; Linux kernel collection must also cover direct/static calls.
 - Runlens macOS loader observations retain library read paths and mark loose/custom images incomplete; only confirmed active shared-cache images may avoid pre-attachment loader-loss classification.
 
+- Runlens Linux io_uring setup, enter, and registration attempts preserve the syscall while marking collection incomplete; SQPOLL must not evade this rule by avoiding enter.
+
 ### clibox Rules
 
 - Preserve the six issue #916 OS utility commands and seven issue #917 text/time/Base64/hash commands and three issue #919 readiness waits, compatible root help/version, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`. Keep OS adapters private and mockable, diagnostics redacted (including parser/tool failures), and stdout dedicated to results.

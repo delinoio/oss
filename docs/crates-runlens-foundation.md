@@ -767,3 +767,5 @@ Cleanup closes each SQLite connection/file before releasing the directory owner,
 and failures retain the existing typed cleanup classification. Native enumeration
 fixtures force before-snapshot spills, read the temporary tree, verify no private
 index appears as an external dependency, and check cleanup after serialization.
+
+Linux io_uring setup, enter, and registration attempts mark collection incomplete before forwarding the unchanged syscall. Ring filesystem operations are not ordinary syscall notifications, and SQPOLL can submit without enter. Failed attempts conservatively retain the same limitation; neither policies nor cache audits may certify these runs. Native dynamic/static fixtures compare direct and observed setup/SQPOLL success or errno and independent invalid-descriptor enter/register calls.

@@ -44,3 +44,5 @@ Windows children created directly through native process APIs that bypass normal
 On Unix, additional inherited file descriptors such as shell descriptor 3 also make collection incomplete. Runlens preserves these caller-owned resources, but access through them cannot certify a policy pass.
 
 On Windows, the temporary collector path must be representable in the active system code page. Runlens tries an available Windows short-path alias for Unicode locations; if neither spelling is representable, it fails before starting the command. Select an accessible temporary directory with a representable path (for example, an ASCII-only `TEMP`/`TMP` path) and retry. UTF-8 system code pages support Unicode paths directly.
+
+Linux commands using io_uring continue to run, but their reports are incomplete and cannot pass verification. This includes setup, SQPOLL, submission, and registration attempts: asynchronous ring operations are outside the current collection coverage.

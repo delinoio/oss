@@ -6,6 +6,36 @@ mod windows_native;
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
+        #[cfg(target_os = "linux")]
+        "uring-setup" | "uring-sqpoll" | "uring-enter" | "uring-register" => {
+            // Linux UAPI io_uring_params is 120 bytes and 8-byte aligned. Zero
+            // initializes every reserved field; SQPOLL is bit 1 of flags (u32 #2).
+            let mut params = [0_u64; 15];
+            if args[0] == "uring-sqpoll" {
+                params[1] = 2;
+            }
+            // SAFETY: setup receives a live, correctly sized parameter buffer.
+            // The other calls intentionally use an invalid fd and null buffers.
+            let result = unsafe {
+                match args[0].as_str() {
+                    "uring-enter" => libc::syscall(libc::SYS_io_uring_enter, -1, 0, 0, 0, 0, 0),
+                    "uring-register" => libc::syscall(libc::SYS_io_uring_register, -1, 0, 0, 0),
+                    _ => libc::syscall(libc::SYS_io_uring_setup, 2, params.as_mut_ptr()),
+                }
+            };
+            if result < 0 {
+                println!(
+                    "error:{}",
+                    std::io::Error::last_os_error().raw_os_error().unwrap()
+                );
+            } else {
+                // SAFETY: successful setup returns an owned ring descriptor.
+                unsafe {
+                    libc::close(result as i32);
+                }
+                println!("created");
+            }
+        }
         "scan-temporary" => {
             fn scan(path: &std::path::Path, depth: usize) -> usize {
                 if depth > 4 {
