@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
-use crate::error::{Code, Error, Result};
+use crate::transform_error::{Code, Error, Result};
 
 const IO_HELP: &str = "Input defaults to stdin until EOF; --input - explicitly selects stdin.
 --text supplies UTF-8 bytes with no added newline. Explicit input ignores stdin.
@@ -16,7 +16,7 @@ may be partial. Exit codes: 0 success, 1 operation failure, 2 invalid arguments.
 #[command(
     name = "clibox",
     version,
-    about = "Portable offline developer utilities",
+    about = "Cross-platform developer utilities distributed through Cargo and npm",
     after_help = "Use clibox <command> <operation> --help for options and examples.
 Diagnostics use stderr, omit sensitive inputs, and honor RUST_LOG and NO_COLOR."
 )]
@@ -27,6 +27,14 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
+    #[command(flatten)]
+    System(crate::system::Action),
+    #[command(flatten)]
+    Transform(TransformCommand),
+}
+
+#[derive(Subcommand)]
+pub enum TransformCommand {
     /// Replace UTF-8 text.
     Text {
         #[command(subcommand)]
@@ -286,7 +294,7 @@ pub struct TimeAdd {
     pub seconds: Option<i64>,
 }
 
-impl Command {
+impl TransformCommand {
     pub fn output(&self) -> Result<(Option<PathBuf>, bool)> {
         let output = match self {
             Self::Text {

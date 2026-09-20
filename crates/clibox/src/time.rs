@@ -9,7 +9,7 @@ use chrono_tz::Tz;
 
 use crate::{
     cli::{TimeAdd, TimeArgs, TimeCommand, TimeFrom, TimeTo},
-    error::{Code, Error, Result},
+    transform_error::{Code, Error, Result},
 };
 
 struct Instant {
@@ -301,14 +301,14 @@ mod tests {
     use clap::Parser;
 
     use super::*;
-    use crate::cli::{Cli, Command};
+    use crate::cli::{Cli, Command, TransformCommand};
 
     #[test]
     fn omitted_value_uses_injected_current_instant() {
         let cli = Cli::parse_from(["clibox", "time", "format"]);
-        let Some(Command::Time {
+        let Some(Command::Transform(TransformCommand::Time {
             command: TimeCommand::Format(args),
-        }) = cli.command
+        })) = cli.command
         else {
             panic!()
         };

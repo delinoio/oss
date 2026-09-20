@@ -4,9 +4,9 @@ use regex::Regex;
 
 use crate::{
     cli::TextReplace,
-    error::{Code, Error, Result},
     io::{read, Cancellation, CHUNK},
-    runtime::write,
+    transform::write,
+    transform_error::{Code, Error, Result},
 };
 
 fn validate_replacement(regex: &Regex, replacement: &str) -> Result<()> {

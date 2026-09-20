@@ -1,7 +1,7 @@
 # Project: clibox
 
 ## Goal
-Provide a Rust CLI that JavaScript projects can pin through npm and their lockfiles. In addition to help/version, issue #917 defines portable offline text replacement, time formatting/arithmetic, Base64 transformation, and hash generation/verification.
+Provide a Rust CLI that JavaScript projects can pin through npm and their lockfiles. Issue #916 defines cross-platform environment execution, local port inspection/termination, resource opening, and text clipboard commands; issue #917 adds offline text replacement, time formatting/arithmetic, Base64 transformation, and hash generation/verification. Both command sets coexist with help/version.
 
 ## Project ID
 `clibox`
@@ -22,8 +22,11 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 - Consumers never compile Rust or run installation/download scripts. The npm launcher executes only its exact-version platform dependency.
 - Manual `Release Project` versioning, exact-commit CI, crates.io publication, and the `clibox@v<version>` tag precede the downstream npm workflow.
 - npm publication uses GitHub Actions OIDC and provenance from the complete verified CI artifact; setup and dry-run validation do not publish.
-- The seven issue #917 commands share redacted diagnostics, cancellable processing, and permission-preserving atomic file publication. Timezone data is bundled identically across platform artifacts of a version.
-- Issue #916 commands remain a separate scope. A docs website, Homebrew, and public GitHub Release binaries remain excluded.
+- The public OS commands are `run env`, `port which`, `port kill`, `open`, `clipboard copy`, and `clipboard paste`; no public Rust/JavaScript library API is provided.
+- OS effects use current-user/session permissions without elevation, persistence, automatic retries, or telemetry. Diagnostics omit clipboard text, environment values, complete argv, URLs, and paths.
+- The seven issue #917 commands share redacted diagnostics, cancellable processing, and permission-preserving atomic file publication. Timezone data is bundled identically across platform artifacts of a version. Handled transformation cancellation returns 1; OS utilities preserve their supported termination signals and delegated child status.
+- Automated parser, process, OS-adapter, and distribution tests are the completion gate. Real GUI, clipboard persistence, and application-wait verification remain follow-up work.
+- A docs website, Homebrew, and public GitHub Release binaries remain outside this project.
 
 ## Change Policy
 Update both domain contracts, this index, relevant AGENTS files, version synchronization, platform fixtures, and release workflows together when these boundaries change.

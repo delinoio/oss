@@ -1,12 +1,19 @@
 mod base64;
 mod cli;
+mod clipboard;
+mod environment;
 mod error;
 mod hash;
 mod io;
+mod open;
+mod port;
 mod publication;
 mod runtime;
+mod system;
 mod text;
 mod time;
+mod transform;
+mod transform_error;
 
 use std::{io::IsTerminal, process::ExitCode};
 
@@ -32,9 +39,15 @@ fn main() -> ExitCode {
         )
         .init();
     std::panic::set_hook(Box::new(|_| {
-        error::report(error::Error::runtime(error::Code::Runtime));
+        transform_error::report(transform_error::Error::runtime(
+            transform_error::Code::Runtime,
+        ));
     }));
-    let cli = match cli::Cli::try_parse() {
+    let raw: Vec<_> = std::env::args_os().collect();
+    let leading_separator = raw.get(1).is_some_and(|s| s == "run")
+        && raw.get(2).is_some_and(|s| s == "env")
+        && raw.get(3).is_some_and(|s| s == "--");
+    let cli = match cli::Cli::try_parse_from(raw) {
         Ok(cli) => cli,
         Err(error)
             if matches!(
@@ -49,7 +62,9 @@ fn main() -> ExitCode {
             };
         }
         Err(_) => {
-            error::report(error::Error::argument(error::Code::Arguments));
+            transform_error::report(transform_error::Error::argument(
+                transform_error::Code::Arguments,
+            ));
             return ExitCode::from(2);
         }
     };
@@ -60,10 +75,29 @@ fn main() -> ExitCode {
             ExitCode::from(1)
         };
     };
-    match runtime::execute(command) {
+    let command = match command {
+        cli::Command::System(command) => {
+            let result = runtime::install_signals()
+                .and_then(|()| system::execute(command, leading_separator));
+            let status = match result {
+                Ok(status) => status,
+                Err(error) => {
+                    error.report("clibox");
+                    if error.code == error::Code::InvalidInput {
+                        2
+                    } else {
+                        1
+                    }
+                }
+            };
+            runtime::finish(status);
+        }
+        cli::Command::Transform(command) => command,
+    };
+    match transform::execute(command) {
         Ok(status) => ExitCode::from(status),
         Err(error) => {
-            error::report(error);
+            transform_error::report(error);
             ExitCode::from(error.exit)
         }
     }

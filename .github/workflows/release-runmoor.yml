@@ -260,3 +260,16 @@ jobs:
           RELEASE_TAG: ${{ needs.plan.outputs.tag }}
           RUNMOOR_RELEASE_NOTES: scripts/release/runmoor-release-notes.md
         run: gh release edit "$RELEASE_TAG" --draft=false --prerelease=false --notes-file "$RUNMOOR_RELEASE_NOTES"
+
+  linux-packages:
+    name: Publish native Linux packages
+    needs: [plan, publish]
+    if: needs.plan.outputs.mode == 'publish'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-linux-packages.yml
+    with:
+      project: runmoor
+      version: ${{ needs.plan.outputs.version }}
+      revision: ${{ github.sha }}
+      mode: publish

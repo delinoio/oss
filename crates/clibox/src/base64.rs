@@ -11,9 +11,9 @@ use base64::{
 
 use crate::{
     cli::Base64Args,
-    error::{Code, Error, Result},
     io::{read, Cancellation, CHUNK},
-    runtime::write,
+    transform::write,
+    transform_error::{Code, Error, Result},
 };
 
 fn engine(args: &Base64Args) -> GeneralPurpose {

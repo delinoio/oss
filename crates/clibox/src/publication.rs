@@ -6,7 +6,7 @@ use std::{
 
 use tempfile::{Builder, TempPath};
 
-use crate::error::{Code, Error, Result};
+use crate::transform_error::{Code, Error, Result};
 
 pub struct Publication {
     temporary: Option<TempPath>,

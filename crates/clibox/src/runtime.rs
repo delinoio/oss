@@ -1,208 +1,214 @@
 use std::{
-    io::{self, Write},
+    io::Read,
+    process::{Child, Command, ExitStatus, Stdio},
     sync::{
-        atomic::{AtomicBool, Ordering},
-        mpsc::{self, RecvTimeoutError, SyncSender},
-        Arc,
+        atomic::{AtomicI32, Ordering},
+        mpsc,
     },
-    thread,
     time::Duration,
 };
 
-use crate::{
-    cli::{
-        Base64Args, Base64Command, Command, EncodeFormat, HashCommand, HashEncode, HashVerify,
-        TextCommand, TextReplace, VerifyFormat,
-    },
-    error::{Code, Error, Result},
-    io::{Cancellation, CHUNK},
-    publication::Publication,
-};
+use crate::error::{Code, Failure, Result};
 
-enum Event {
-    Processed(Result<u8>),
-    Written(Result<()>),
-}
+static SIGNAL: AtomicI32 = AtomicI32::new(0);
+pub const POLL: Duration = Duration::from_millis(20);
 
-enum Prepared {
-    Text(TextReplace, Option<regex::Regex>),
-    Time(String),
-    Base64Encode(Base64Args),
-    Base64Decode(Base64Args),
-    HashEncode(HashEncode),
-    HashVerify(HashVerify, Option<Vec<u8>>),
-}
-
-impl Prepared {
-    fn new(command: Command) -> Result<Self> {
-        match command {
-            Command::Text {
-                command: TextCommand::Replace(args),
-            } => {
-                let regex = crate::text::prepare(&args)?;
-                Ok(Self::Text(args, regex))
+pub fn install_signals() -> Result<()> {
+    #[cfg(unix)]
+    for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP, libc::SIGQUIT] {
+        // Only an atomic store runs in the signal handler. Blocking work stays in the
+        // command loop.
+        unsafe {
+            signal_hook::low_level::register(signal, move || {
+                SIGNAL.store(signal, Ordering::SeqCst);
+            })
+        }
+        .map_err(|e| Failure::io(&e))?;
+    }
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::System::Console::*;
+        unsafe extern "system" fn handler(event: u32) -> i32 {
+            match event {
+                CTRL_C_EVENT => SIGNAL.store(2, Ordering::SeqCst),
+                CTRL_BREAK_EVENT => SIGNAL.store(21, Ordering::SeqCst),
+                _ => return 0,
             }
-            Command::Time { command } => Ok(Self::Time(crate::time::prepare(&command)?)),
-            Command::Base64 {
-                command: Base64Command::Encode(args),
-            } => Ok(Self::Base64Encode(args)),
-            Command::Base64 {
-                command: Base64Command::Decode(args),
-            } => Ok(Self::Base64Decode(args)),
-            Command::Hash {
-                command: HashCommand::Encode(args),
-            } => {
-                if matches!(args.format, EncodeFormat::Checksum)
-                    && args
-                        .source
-                        .input
-                        .as_ref()
-                        .is_none_or(|path| path.as_os_str() == "-")
-                {
-                    return Err(Error::argument(Code::Arguments));
-                }
-                Ok(Self::HashEncode(args))
-            }
-            Command::Hash {
-                command: HashCommand::Verify(args),
-            } => {
-                let expected = args
-                    .expected
-                    .as_ref()
-                    .map(|value| {
-                        crate::hash::expected(
-                            value.as_bytes(),
-                            args.format.unwrap_or(VerifyFormat::Hex),
-                            args.algorithm,
-                        )
-                    })
-                    .transpose()?;
-                Ok(Self::HashVerify(args, expected))
-            }
+            1
+        }
+        if SetConsoleCtrlHandler(Some(handler), 1) == 0 {
+            return Err(Failure::io(&std::io::Error::last_os_error()));
         }
     }
+    Ok(())
 }
 
-struct ChannelWriter(SyncSender<Vec<u8>>);
-
-impl Write for ChannelWriter {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        let length = bytes.len().min(CHUNK);
-        if length == 0 {
-            return Ok(0);
-        }
-        self.0
-            .send(bytes[..length].to_vec())
-            .map_err(|_| io::Error::from(io::ErrorKind::BrokenPipe))?;
-        Ok(length)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
+pub fn cancelled() -> bool {
+    SIGNAL.load(Ordering::SeqCst) != 0
+}
+pub fn check_cancelled() -> Result<()> {
+    if cancelled() {
+        Err(Failure::new(
+            Code::Cancelled,
+            "Operation interrupted; already completed OS effects are not undone.",
+        ))
+    } else {
         Ok(())
     }
 }
 
-pub fn write(writer: &mut dyn Write, bytes: &[u8]) -> Result<()> {
-    writer
-        .write_all(bytes)
-        .map_err(|_| Error::runtime(Code::WriteFailed))
+pub fn finish(code: i32) -> ! {
+    let signal = SIGNAL.load(Ordering::SeqCst);
+    if signal != 0 {
+        finish_signal(signal);
+    }
+    std::process::exit(code)
 }
 
-pub fn execute(command: Command) -> Result<u8> {
-    let cancel = Cancellation(Arc::new(AtomicBool::new(false)));
-    let signal = cancel.clone();
-    ctrlc::set_handler(move || signal.0.store(true, Ordering::Release))
-        .map_err(|_| Error::runtime(Code::Runtime))?;
-    let (path, replace) = command.output()?;
-    let (ready_tx, ready_rx) = mpsc::channel();
-    thread::Builder::new()
-        .name("clibox-validate".into())
-        .spawn(move || {
-            let _ = ready_tx.send(Prepared::new(command));
-        })
-        .map_err(|_| Error::runtime(Code::Runtime))?;
-    // Semantic argument errors take precedence over filesystem failures. Regex
-    // compilation/time preparation remain interruptible, with no file effects.
-    let command = loop {
-        cancel.check()?;
-        match ready_rx.recv_timeout(Duration::from_millis(20)) {
-            Ok(result) => break result?,
-            Err(RecvTimeoutError::Timeout) => {}
-            Err(RecvTimeoutError::Disconnected) => return Err(Error::runtime(Code::Runtime)),
-        }
-    };
-    cancel.check()?;
-    let (publication, output) = Publication::prepare(path, replace)?;
-    let (events_tx, events_rx) = mpsc::channel();
-    let (chunks_tx, chunks_rx) = mpsc::sync_channel::<Vec<u8>>(2);
-    let output_events = events_tx.clone();
-    thread::Builder::new()
-        .name("clibox-output".into())
-        .spawn(move || {
-            let result = (|| {
-                let mut output: Box<dyn Write> = match output {
-                    Some(file) => Box::new(file),
-                    None => Box::new(io::stdout()),
-                };
-                for bytes in chunks_rx {
-                    write(&mut *output, &bytes)?;
-                }
-                output
-                    .flush()
-                    .map_err(|_| Error::runtime(Code::WriteFailed))
-            })();
-            let _ = output_events.send(Event::Written(result));
-        })
-        .map_err(|_| Error::runtime(Code::Runtime))?;
-    let worker_cancel = cancel.clone();
-    thread::Builder::new()
-        .name("clibox-transform".into())
-        .spawn(move || {
-            let mut writer = ChannelWriter(chunks_tx);
-            let result = process(command, &mut writer, &worker_cancel);
-            drop(writer);
-            let _ = events_tx.send(Event::Processed(result));
-        })
-        .map_err(|_| Error::runtime(Code::Runtime))?;
+pub fn finish_signal(signal: i32) -> ! {
+    #[cfg(unix)]
+    {
+        let _ = signal_hook::low_level::emulate_default_handler(signal);
+    }
+    std::process::exit(128 + signal)
+}
 
-    // The supervisor alone owns the temporary path and publication authority.
-    // It never joins a blocked stdin/stdout/regex worker on cancellation. Returning
-    // from main terminates those threads and closes their handles; Windows temp
-    // handles permit delete sharing, so cleanup also works while a write is
-    // pending. The bounded channel limits streaming memory without imposing an
-    // input limit.
-    let mut processed = None;
-    let mut written = false;
-    loop {
-        cancel.check()?;
-        match events_rx.recv_timeout(Duration::from_millis(20)) {
-            Ok(Event::Processed(result)) => processed = Some(result?),
-            Ok(Event::Written(result)) => {
-                result?;
-                written = true;
-            }
-            Err(RecvTimeoutError::Timeout) => continue,
-            Err(RecvTimeoutError::Disconnected) => return Err(Error::runtime(Code::Runtime)),
+pub fn exit_child(status: ExitStatus) -> ! {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            finish_signal(signal);
         }
-        if let (Some(status), true) = (processed, written) {
-            cancel.check()?;
-            publication.publish(|| cancel.check())?;
-            tracing::debug!(action = "complete", status, "operation completed");
+    }
+    // A child may handle cancellation and deliberately return its own exit code.
+    std::process::exit(status.code().unwrap_or(1))
+}
+
+pub fn delegated(mut command: Command) -> Result<ExitStatus> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(windows_sys::Win32::System::Threading::CREATE_NEW_PROCESS_GROUP);
+    }
+    let mut child = command.spawn().map_err(|_| {
+        Failure::new(
+            Code::SpawnFailed,
+            "Could not start the child command; check its executable, PATH, permissions and \
+             supported argument encoding.",
+        )
+    })?;
+    tracing::debug!(operation = "run-env", pid = child.id(), "Child started");
+    loop {
+        let signal = SIGNAL.swap(0, Ordering::SeqCst);
+        if signal != 0 {
+            #[cfg(unix)]
+            unsafe {
+                libc::kill(child.id() as i32, signal);
+            }
+            #[cfg(windows)]
+            unsafe {
+                windows_sys::Win32::System::Console::GenerateConsoleCtrlEvent(
+                    windows_sys::Win32::System::Console::CTRL_BREAK_EVENT,
+                    child.id(),
+                );
+            }
+        }
+        if let Some(status) = child.try_wait().map_err(|e| Failure::io(&e))? {
             return Ok(status);
+        }
+        std::thread::sleep(POLL);
+    }
+}
+
+/// Block on cancellable work without introducing a timeout or retaining content
+/// on disk.
+pub fn interruptible<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T> + Send + 'static,
+) -> Result<T> {
+    let (tx, rx) = mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let _ = tx.send(work());
+    });
+    loop {
+        check_cancelled()?;
+        match rx.recv_timeout(POLL) {
+            Ok(result) => return result,
+            Err(mpsc::RecvTimeoutError::Timeout) => (),
+            Err(_) => {
+                return Err(Failure::new(
+                    Code::IoFailed,
+                    "Operating system worker stopped unexpectedly.",
+                ))
+            }
         }
     }
 }
 
-fn process(command: Prepared, writer: &mut dyn Write, cancel: &Cancellation) -> Result<u8> {
-    match command {
-        Prepared::Text(args, regex) => crate::text::replace(args, regex, writer, cancel),
-        Prepared::Base64Encode(args) => crate::base64::encode(args, writer, cancel),
-        Prepared::Base64Decode(args) => crate::base64::decode(args, writer, cancel),
-        Prepared::Time(value) => {
-            write(writer, value.as_bytes())?;
-            Ok(0)
+pub fn read_bounded(mut reader: impl Read, limit: usize) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    reader
+        .by_ref()
+        .take((limit + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|e| Failure::io(&e))?;
+    if bytes.len() > limit {
+        return Err(Failure::new(
+            Code::TextTooLarge,
+            "Text exceeds the 16 MiB UTF-8 limit; no output was written.",
+        ));
+    }
+    Ok(bytes)
+}
+
+pub fn detached(command: &mut Command) {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // An opened application must not receive the waiting CLI's terminal
+        // cancellation.
+        unsafe {
+            command.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    Err(std::io::Error::last_os_error())
+                } else {
+                    Ok(())
+                }
+            });
         }
-        Prepared::HashEncode(args) => crate::hash::encode(args, writer, cancel),
-        Prepared::HashVerify(args, expected) => crate::hash::verify(args, expected, writer, cancel),
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(
+            windows_sys::Win32::System::Threading::CREATE_NEW_PROCESS_GROUP
+                | windows_sys::Win32::System::Threading::DETACHED_PROCESS,
+        );
+    }
+}
+
+pub fn wait_child(child: &mut Child, kill_on_cancel: bool) -> Result<ExitStatus> {
+    loop {
+        if cancelled() {
+            if kill_on_cancel {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            return check_cancelled().and_then(|()| unreachable!());
+        }
+        if let Some(status) = child.try_wait().map_err(|_| {
+            Failure::new(
+                Code::WaitUnavailable,
+                "Application tracking failed; the application may already have opened. Do not \
+                 retry automatically.",
+            )
+        })? {
+            return Ok(status);
+        }
+        std::thread::sleep(POLL);
     }
 }

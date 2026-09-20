@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     cli::Input,
-    error::{Code, Error, Result},
+    transform_error::{Code, Error, Result},
 };
 
 pub const CHUNK: usize = 64 * 1024;

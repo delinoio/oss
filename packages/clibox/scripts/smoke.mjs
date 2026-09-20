@@ -58,6 +58,15 @@ try {
     writeFileSync(file, bytes);
     const manifest = invoke(["hash", "encode", "--input", file, "--format", "checksum"]);
     equal(invoke(["hash", "verify", "--check", "-", "--quiet"], { input: manifest }), "", "Installed manifest verification failed");
+    const fixture = path.join(consumer, "utility-check.cjs");
+    writeFileSync(fixture, "if (process.env.CLIBOX_TEST_EXIT) process.exit(37); process.stdout.write(JSON.stringify({ value: process.env.CLIBOX_TEST_VALUE, args: process.argv.slice(2) }));");
+    const utility = JSON.parse(execFileSync(process.execPath, [launcher, "run", "env", "CLIBOX_TEST_VALUE=unicode 🦀", "--", process.execPath, fixture, "", "two words", "a&b|c"], { cwd: consumer, encoding: "utf8" }));
+    ensure(utility.value === "unicode 🦀" && JSON.stringify(utility.args) === JSON.stringify(["", "two words", "a&b|c"]), `${manager} utility argv/environment smoke failed`);
+    let delegatedStatus;
+    try {
+      execFileSync(process.execPath, [launcher, "run", "env", "CLIBOX_TEST_EXIT=1", "--", process.execPath, fixture], { cwd: consumer, stdio: "pipe" });
+    } catch (error) { delegatedStatus = error.status; }
+    ensure(delegatedStatus === 37, `${manager} utility exit propagation failed`);
     const installed = JSON.parse(readFileSync(path.join(consumer, "node_modules", native.name, "package.json"), "utf8"));
     ensure(installed.version === metadata().version, "Installed native version mismatch");
     event("consumer_smoke", { manager, target: target.suffix, version: installed.version });
