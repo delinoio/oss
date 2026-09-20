@@ -415,10 +415,28 @@ pub fn receipt_path(root: &Path, id: &str) -> PathBuf {
     root.join(".taskflow/results")
         .join(format!("{}.json", files::digest(id.as_bytes())))
 }
+const RECEIPT_LIMIT: u64 = 1024 * 1024;
+
 pub fn previous(root: &Path, id: &str) -> Option<Receipt> {
-    std::fs::read(receipt_path(root, id))
+    let bytes = match files::read_regular_limited(&receipt_path(root, id), RECEIPT_LIMIT) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            if !error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+            {
+                tracing::warn!(
+                    task = id,
+                    code = "invalid-previous-receipt",
+                    "Discarded unreadable prior receipt"
+                );
+            }
+            return None;
+        }
+    };
+    serde_json::from_slice::<Receipt>(&bytes)
         .ok()
-        .and_then(|b| serde_json::from_slice(&b).ok())
+        .filter(|receipt| receipt.version == 1 && receipt.task == id)
 }
 
 struct PreparedInputs {
@@ -1171,10 +1189,12 @@ tokio::task_local! {
 }
 
 pub fn persist(root: &Path, receipt: &Receipt) -> Result<()> {
-    files::atomic_write(
-        &receipt_path(root, &receipt.task),
-        &serde_json::to_vec(receipt)?,
-    )?;
+    let bytes = serde_json::to_vec(receipt)?;
+    ensure!(
+        bytes.len() as u64 <= RECEIPT_LIMIT,
+        "receipt exceeded 1 MiB"
+    );
+    files::atomic_write(&receipt_path(root, &receipt.task), &bytes)?;
     #[cfg(test)]
     let _ = CANCEL_AFTER_PERSIST.try_with(CancellationToken::cancel);
     Ok(())
@@ -1523,6 +1543,34 @@ mod output_cleanup_tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use super::*;
+
+    #[test]
+    fn previous_receipts_reject_unbounded_or_nonregular_state() {
+        let root = tempfile::tempdir().unwrap();
+        let id = "app#test";
+        let receipt = Receipt::skipped(id, Outcome::Executed, BTreeSet::new());
+        persist(root.path(), &receipt).unwrap();
+        assert!(previous(root.path(), id).is_some());
+        let path = receipt_path(root.path(), id);
+        File::create(&path)
+            .unwrap()
+            .set_len(RECEIPT_LIMIT + 1)
+            .unwrap();
+        assert!(previous(root.path(), id).is_none());
+        std::fs::remove_file(&path).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            let target = root.path().join("other.json");
+            std::fs::write(&target, serde_json::to_vec(&receipt).unwrap()).unwrap();
+            std::os::unix::fs::symlink(&target, &path).unwrap();
+            assert!(previous(root.path(), id).is_none());
+            std::fs::remove_file(&path).unwrap();
+            let native = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+            assert_eq!(unsafe { nix::libc::mkfifo(native.as_ptr(), 0o600) }, 0);
+            assert!(previous(root.path(), id).is_none());
+        }
+    }
 
     #[tokio::test]
     async fn combined_log_keeps_masking_across_pipe_eof() {

@@ -12,6 +12,46 @@ use crate::{
     discover::{Project, Workspace},
 };
 
+/// Read bounded internal metadata without following a link or blocking on a
+/// FIFO.
+pub(crate) fn read_regular_limited(path: &Path, limit: u64) -> Result<Vec<u8>> {
+    ensure!(
+        std::fs::symlink_metadata(path)?.is_file(),
+        "metadata must be a regular file"
+    );
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // The pathname may be replaced between inspection and open.
+        options.custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+    let file = options.open(path)?;
+    let metadata = file.metadata()?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        ensure!(
+            metadata.file_attributes()
+                & windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT
+                == 0,
+            "metadata must not be a reparse point"
+        );
+    }
+    ensure!(metadata.is_file(), "metadata must be a regular file");
+    ensure!(metadata.len() <= limit, "metadata exceeded byte limit");
+    let mut bytes = Vec::new();
+    file.take(limit + 1).read_to_end(&mut bytes)?;
+    ensure!(bytes.len() as u64 <= limit, "metadata exceeded byte limit");
+    Ok(bytes)
+}
+
 pub fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }

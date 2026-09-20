@@ -147,3 +147,5 @@
 - Concurrent conformance tasks use separate receipt/marker files when asserting per-task line counts; uncoordinated append writes are not an atomic event log.
 
 - Windows cleanup fixtures retain the descendant's kernel handle before termination and require it to be signaled when cleanup returns. Check port release separately with bounded AddrInUse retries only after that proof; never use SO_REUSEADDR or PID reopening as cleanup evidence. Let descendants bind their own ephemeral sockets before atomically publishing readiness.
+
+- Persisted receipts are regular no-follow files capped at 1 MiB on publication and read. Invalid prior receipts cannot block scheduling or establish a successful baseline.
