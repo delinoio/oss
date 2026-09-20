@@ -198,6 +198,7 @@
 - Shebang scripts must not use their text digest as native executable identity; preserve the requested execution but mark unbound interpreter chains incomplete.
 - Windows snapshot stability requires present volume serial and file index identities, including the opened handle and final pathname; equal size and timestamps alone cannot prove stability.
 - Runlens executable digests must be bound to the native launched image, not a pathname recheck; keep inspected handles alive through completion and make missing/mismatched identity incomplete.
+- Linux metadata handlers distinguish NULL capability probes from AT_EMPTY_PATH descriptor reads; diagnostics must never print raw syscall arguments or paths.
 - Linux readlink/readlinkat collection records a read of the link itself, including empty-path descriptors; link target text is not an extra access.
 - Runlens Linux dynamic and static targets must both install inherited kernel syscall collection; libc interposition alone cannot establish completeness.
 - Runlens must retain redacted clean/repeat HOME and cache accesses as out-of-scope evidence; omit only tracer-private storage from access records.

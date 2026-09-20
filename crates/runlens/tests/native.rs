@@ -3314,3 +3314,24 @@ fn stopped_clean_reports_retain_referenced_baseline_evidence() {
         );
     }
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_null_empty_path_metadata_retains_directory_read_evidence() {
+    let root = tempfile::tempdir().unwrap();
+    let result = run(root.path(), "stat.json", "stat-empty-path");
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let report = parse(root.path(), "stat.json");
+    assert_eq!(
+        report["executions"][0]["accesses"]["${workspace}"]["read"],
+        true
+    );
+    assert_eq!(
+        report["executions"][0]["outcome"]["collection_complete"],
+        true
+    );
+}

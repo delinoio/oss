@@ -185,3 +185,9 @@ libc dependency exports the same supported 64-bit GNU interface.
 - Reason/scope: canonicalizing fresh HOME/cache paths yields Windows verbatim prefixes that Git rejects when used for global configuration. Preserve canonical location while passing ordinary drive/UNC spelling to child environment variables; this changes no selected source or credential isolation.
 - Regression: `isolated_windows_environment_uses_git_compatible_paths` checks every selected path and asks native Git to read the owned empty global configuration; clean/repeat integration tests exercise HEAD and clone operations.
 - Removal: retain normalized public path spelling until every supported preparation tool accepts verbatim environment paths and native Windows tests prove parity.
+
+## Linux null metadata operands
+
+- Reason/scope: kernel collection treated Rust/libc's `statx` availability probe (NULL without AT_EMPTY_PATH) as an unreadable filename and marked normal executions incomplete. NULL with AT_EMPTY_PATH instead identifies the descriptor on Linux 6.11+. Handle both statx/fstatat forms, recording the latter's FD path; all other unreadable arguments remain incomplete. Audited debug events report syscall number/nullness/errno only, never paths or buffers.
+- Regression: `linux_null_empty_path_metadata_retains_directory_read_evidence`, fresh clean/repeat environments, nested execs, and real receipt tests run on native Linux. The fixture preserves the failing capability probe and both empty-string/NULL descriptor attempts.
+- Removal: use upstream only after these exact kernel operand semantics and redacted diagnostics are supported at the pinned revision.

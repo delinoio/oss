@@ -52,7 +52,9 @@ impl<H> Supervisor<H> {
     /// Returns an error if any of the spawned handler tasks failed with an I/O error.
     pub async fn stop(self) -> io::Result<(Vec<H>, bool)> {
         drop(self.cancel_tx);
-        self.handling_loop_task.await.map_err(|_| io::Error::other("supervisor failed"))?.map(|handlers| (handlers, self.failed.load(std::sync::atomic::Ordering::Relaxed)))
+        self.handling_loop_task.await.map_err(|_| io::Error::other("supervisor failed"))?.inspect_err(|error| {
+            tracing::debug!(target: "runlens::collector", stage="supervisor-stop", errno=error.raw_os_error(), "native collector ended with an error");
+        }).map(|handlers| (handlers, self.failed.load(std::sync::atomic::Ordering::Relaxed)))
     }
 }
 
@@ -116,7 +118,10 @@ pub fn supervise<H: SeccompNotifyHandler + Send + 'static>(directory: &std::path
                     let _span = span!(Level::TRACE, "notify loop tick");
                     // Errors on the supervisor side could be caused by a target process aborting.
                     // It shouldn't break the syscall handling loop as there might be target processes.
-                    if handler.handle_notify(notify).is_err() { failed.store(true, std::sync::atomic::Ordering::Relaxed); }
+                    if let Err(error) = handler.handle_notify(notify) {
+                        failed.store(true, std::sync::atomic::Ordering::Relaxed);
+                        tracing::debug!(target: "runlens::collector", stage="syscall-observation", syscall=notify.data.nr, null_path=notify.data.args[1] == 0, errno=error.raw_os_error(), "syscall evidence could not be resolved");
+                    }
                     let req_id = notify.id;
                     listener.send_continue(req_id, &mut resp_buf)?;
                 }

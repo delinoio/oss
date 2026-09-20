@@ -1,10 +1,29 @@
-use std::io;
+use std::{io, ffi::c_int};
 
-use fspy_seccomp_unotify::supervisor::handler::arg::{CStrPtr, Caller, Fd};
+use fspy_seccomp_unotify::supervisor::handler::arg::{CStrPtr, Caller, Fd, Ignored};
 
 use super::SyscallHandler;
 
 impl SyscallHandler {
+    fn stat_path(&mut self, caller: Caller, fd: Fd, path: CStrPtr, flags: c_int) -> io::Result<()> {
+        // Linux 6.11 permits NULL with AT_EMPTY_PATH, which Rust's metadata
+        // implementation uses for held descriptors. Do not read address zero.
+        if path.is_null() {
+            // Rust/libc also probe statx availability with NULL and no
+            // AT_EMPTY_PATH. That has no filesystem operand and must fail in
+            // the kernel; it is not lost evidence of a path access.
+            if flags & libc::AT_EMPTY_PATH == 0 { return Ok(()); }
+            let path = fd.get_path(caller)?;
+            self.record(fspy_shared::ipc::PathAccess {
+                mode: fspy_shared::ipc::AccessMode::READ,
+                path: path.as_os_str().into(),
+            });
+            Ok(())
+        } else {
+            self.handle_open(caller, fd, path, libc::O_RDONLY)
+        }
+    }
+
     #[cfg(target_arch = "x86_64")]
     pub(super) fn stat(&mut self, caller: Caller, (path,): (CStrPtr,)) -> io::Result<()> {
         self.handle_open(caller, Fd::cwd(), path, libc::O_RDONLY)
@@ -19,27 +38,27 @@ impl SyscallHandler {
     pub(super) fn fstatat(
         &mut self,
         caller: Caller,
-        (dir_fd, path_ptr): (Fd, CStrPtr),
+        (dir_fd, path_ptr, _, flags): (Fd, CStrPtr, Ignored, c_int),
     ) -> io::Result<()> {
-        self.handle_open(caller, dir_fd, path_ptr, libc::O_RDONLY)
+        self.stat_path(caller, dir_fd, path_ptr, flags)
     }
 
     #[cfg(target_arch = "x86_64")]
     pub(super) fn newfstatat(
         &mut self,
         caller: Caller,
-        (dir_fd, path_ptr): (Fd, CStrPtr),
+        (dir_fd, path_ptr, _, flags): (Fd, CStrPtr, Ignored, c_int),
     ) -> io::Result<()> {
-        self.handle_open(caller, dir_fd, path_ptr, libc::O_RDONLY)
+        self.stat_path(caller, dir_fd, path_ptr, flags)
     }
 
     /// statx(2) — modern replacement for stat/fstatat used by newer glibc.
     pub(super) fn statx(
         &mut self,
         caller: Caller,
-        (dir_fd, path_ptr): (Fd, CStrPtr),
+        (dir_fd, path_ptr, flags): (Fd, CStrPtr, c_int),
     ) -> io::Result<()> {
-        self.handle_open(caller, dir_fd, path_ptr, libc::O_RDONLY)
+        self.stat_path(caller, dir_fd, path_ptr, flags)
     }
 
     /// access(2) — check file accessibility (e.g. existsSync in Node.js).

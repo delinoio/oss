@@ -692,3 +692,5 @@ Linux kernel collection includes `readlink` and `readlinkat` attempts for dynami
 Clean reports import supplied historical baseline executions on every completed report path, including stopped targets and incomplete collection. Policy findings therefore retain valid evidence references when explicitly saved, while historical outcomes remain excluded from current exit and cleanup classifications.
 
 Fresh Windows HOME/cache environment paths use canonical locations with ordinary drive/UNC syntax, avoiding Git-incompatible verbatim prefixes. Git still reads only the private empty configuration. Native Windows regression checks both environment spelling and Git global-config reads.
+
+Linux metadata collection distinguishes operand-free NULL capability probes from `AT_EMPTY_PATH` descriptor reads for statx/fstatat. Kernel-rejected probes without a filesystem operand do not imply lost evidence; descriptor reads remain observable. Collector debug diagnostics expose only stable stages and numeric syscall/error classifications, never raw paths or argument buffers.

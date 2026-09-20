@@ -5,6 +5,44 @@ fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
         #[cfg(target_os = "linux")]
+        "stat-empty-path" => {
+            // A null AT_EMPTY_PATH lookup is valid on Linux 6.11+. The empty
+            // string form works on older minimum-OS kernels as well.
+            unsafe {
+                let mut stat = std::mem::MaybeUninit::<libc::statx>::zeroed();
+                assert_eq!(
+                    libc::syscall(
+                        libc::SYS_statx,
+                        -1,
+                        std::ptr::null::<libc::c_char>(),
+                        0,
+                        libc::STATX_BASIC_STATS,
+                        stat.as_mut_ptr()
+                    ),
+                    -1
+                );
+                for path in [std::ptr::null(), c"".as_ptr()] {
+                    libc::syscall(
+                        libc::SYS_statx,
+                        libc::AT_FDCWD,
+                        path,
+                        libc::AT_EMPTY_PATH,
+                        libc::STATX_BASIC_STATS,
+                        stat.as_mut_ptr(),
+                    );
+                    let mut stat = std::mem::MaybeUninit::<libc::stat>::zeroed();
+                    let number = libc::SYS_newfstatat;
+                    libc::syscall(
+                        number,
+                        libc::AT_FDCWD,
+                        path,
+                        stat.as_mut_ptr(),
+                        libc::AT_EMPTY_PATH,
+                    );
+                }
+            }
+        }
+        #[cfg(target_os = "linux")]
         "readlink" | "readlinkat" | "readlinkat-empty" => {
             let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
             let mut buffer = [0u8; 4096];
