@@ -102,6 +102,10 @@ jobs:
         if: runner.os == 'Windows'
         working-directory: crates/runlens
         run: cargo test --locked --package fspy_preload_windows native_creation_ownership_is_nested_and_thread_local
+      - name: Windows malformed file attributes regression
+        if: runner.os == 'Windows'
+        working-directory: crates/runlens
+        run: cargo test --locked --package fspy_preload_windows object_attributes_reject_malformed_memory_without_dereferencing
       - name: Windows malformed process attributes regression
         if: runner.os == 'Windows'
         working-directory: crates/runlens

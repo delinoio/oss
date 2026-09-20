@@ -1,5 +1,3 @@
-use std::slice;
-
 use fspy_shared::ipc::AccessMode;
 use smallvec::SmallVec;
 use widestring::{U16CStr, U16Str};
@@ -7,7 +5,7 @@ use winapi::{
     ctypes::c_long,
     shared::{
         minwindef::{BOOL, FALSE, MAX_PATH},
-        ntdef::{HANDLE, PWSTR, UNICODE_STRING},
+        ntdef::{HANDLE, PWSTR},
         winerror::{NO_ERROR, S_OK},
     },
     um::{
@@ -37,21 +35,6 @@ pub const fn ck_long(val: c_long) -> winsafe::SysResult<()> {
         // SAFETY: creating an ERROR from the raw c_long value for the Windows error code
         Err(unsafe { winsafe::co::ERROR::from_raw(val.cast_unsigned()) })
     }
-}
-
-pub unsafe fn get_u16_str(ustring: &UNICODE_STRING) -> &U16Str {
-    // https://learn.microsoft.com/en-us/windows/win32/api/subauth/ns-subauth-unicode_string
-    // UNICODE_STRING.Length is in bytes
-    let u16_count = ustring.Length / 2;
-    let chars: &[u16] = if u16_count == 0 {
-        // If length is zero, we can't use slice::from_raw_parts as it requires a non-null pointer but
-        // Buffer may be null in that case.
-        &[]
-    } else {
-        // SAFETY: UNICODE_STRING.Buffer points to a valid u16 array of Length/2 elements
-        unsafe { slice::from_raw_parts(ustring.Buffer, usize::from(u16_count)) }
-    };
-    U16CStr::from_slice_truncate(chars).map_or_else(|_| chars.into(), U16CStr::as_ustr)
 }
 
 pub unsafe fn get_path_name(handle: HANDLE) -> winsafe::SysResult<SmallVec<u16, MAX_PATH>> {
@@ -196,4 +179,17 @@ mod tests {
         let combined = combine_paths(path1, path2).unwrap();
         assert_eq!(combined.to_u16_str(), u16cstr!("C:\\foo\\bar\\baz"));
     }
+}
+
+pub(crate) fn copy_process_bytes(address: usize, size: usize) -> Result<Vec<u8>, ()> {
+    use winapi::um::{memoryapi::ReadProcessMemory, processthreadsapi::GetCurrentProcess};
+    let mut bytes = vec![0u8; size];
+    let mut copied = 0;
+    // SAFETY: the destination is initialized owned storage of exactly size
+    // bytes. The kernel validates the untrusted source address without Rust
+    // dereferencing it. The pseudo process handle requires no close.
+    let result = unsafe { ReadProcessMemory(GetCurrentProcess(), address as *const _,
+        bytes.as_mut_ptr().cast(), size, &mut copied) };
+    if result == 0 || copied != size { return Err(()); }
+    Ok(bytes)
 }

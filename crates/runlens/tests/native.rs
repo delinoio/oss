@@ -4736,3 +4736,33 @@ fn inotify_watch_paths_are_read_attempts_for_dynamic_and_static_callers() {
         }
     }
 }
+
+#[cfg(windows)]
+#[test]
+fn malformed_windows_file_attributes_preserve_syscall_results_and_child() {
+    let root = tempfile::tempdir().unwrap();
+    let plain = std::process::Command::new(fixture())
+        .arg("windows-malformed-file-attributes")
+        .output()
+        .unwrap();
+    assert!(plain.status.success(), "{plain:?}");
+    let traced = invoke(
+        root.path(),
+        &[
+            "run",
+            "--save",
+            "invalid.json",
+            "--",
+            fixture(),
+            "windows-malformed-file-attributes",
+        ],
+    );
+    assert_eq!(traced.status.code(), Some(4), "{traced:?}");
+    assert_eq!(traced.stdout, plain.stdout);
+    let report = parse(root.path(), "invalid.json");
+    assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 0);
+    assert_eq!(
+        report["executions"][0]["outcome"]["collection_complete"],
+        false
+    );
+}

@@ -777,3 +777,11 @@ Workspace access scope requires each ancestor below the workspace root to be a k
 The report parser rejects contradictory child outcomes containing both an exit code and a termination signal, regardless of collection completeness or errors. Any signal also prevents success and yields failed-execution evidence in direct in-memory policy/cache analysis. A signal-only termination remains a valid report outcome.
 
 Linux inotify watch registration records the named file or directory as a read attempt, including failed registration. Dynamic/static syscall fixtures verify external deny-read policies. Event contents and ordering are not retained.
+
+Windows file-object interception copies OBJECT_ATTRIBUTES, nested UNICODE_STRING,
+and bounded UTF-16 bytes with ReadProcessMemory before inspecting them. Invalid
+addresses, lengths, or embedded NULs mark collection incomplete and preserve the
+original NT call. The native malformed-file-attributes regression compares exact
+NT statuses with an untraced process and verifies child continuation; the preload
+unit test covers each pointer layer and malformed lengths. Remove this local
+patch only when upstream provides equivalent bounded, non-dereferencing handling.

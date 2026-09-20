@@ -94,3 +94,35 @@ pub fn spawn(output: &str) {
         assert_eq!(exit, 0, "native child failed");
     }
 }
+
+/// Invalid user pointers must reach NT unchanged, without crashing
+/// interception.
+pub fn malformed_file_attributes() {
+    use winapi::shared::ntdef::{OBJECT_ATTRIBUTES, POBJECT_ATTRIBUTES};
+    let mut name = UNICODE_STRING {
+        Length: 2,
+        MaximumLength: 2,
+        Buffer: 16usize as *mut u16,
+    };
+    // SAFETY: the kernel validates these deliberately invalid user pointers;
+    // output storage and the local attribute headers remain live during calls.
+    unsafe {
+        let mut attributes: OBJECT_ATTRIBUTES = mem::zeroed();
+        attributes.Length = mem::size_of::<OBJECT_ATTRIBUTES>() as u32;
+        let mut information = mem::zeroed();
+        for pointer in [ptr::null_mut(), 16usize as POBJECT_ATTRIBUTES] {
+            let status = ntapi::ntioapi::NtQueryAttributesFile(pointer, &mut information);
+            println!("{status}");
+            assert!(status < 0);
+        }
+        attributes.ObjectName = 16usize as *mut UNICODE_STRING;
+        let status = ntapi::ntioapi::NtQueryAttributesFile(&mut attributes, &mut information);
+        println!("{status}");
+        assert!(status < 0);
+        attributes.ObjectName = &mut name;
+        let status = ntapi::ntioapi::NtQueryAttributesFile(&mut attributes, &mut information);
+        println!("{status}");
+        assert!(status < 0);
+    }
+    println!("child-continued");
+}

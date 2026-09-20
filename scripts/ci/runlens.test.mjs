@@ -125,3 +125,9 @@ test("native archives and evidence use the checked-out source version", () => {
     assert.doesNotMatch(step.run, /0\.1\.0/u);
   }
 });
+
+test("Windows native validation checks malformed file attribute memory", () => {
+  const step = native.jobs.native.steps.find((step) => step.name === "Windows malformed file attributes regression");
+  assert.equal(step.if, "runner.os == 'Windows'");
+  assert.equal(step.run, "cargo test --locked --package fspy_preload_windows object_attributes_reject_malformed_memory_without_dereferencing");
+});

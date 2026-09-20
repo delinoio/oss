@@ -240,3 +240,11 @@ macOS registers a dyld image callback after client attachment. It records existi
 Linux seccomp registers io_uring_setup, io_uring_enter, and io_uring_register as unsupported collection without changing the syscall. Ring operations bypass ordinary file notifications, and SQPOLL need not enter again. Native dynamic/static fixtures preserve setup/SQPOLL success or errno and independent enter/register failures while forbidding verification success. Remove only when upstream observes all ring filesystem operations and their asynchronous lifetimes, including SQPOLL and registered rings.
 
 Linux seccomp observes inotify_add_watch as a read attempt on its path before forwarding, including failed registrations. Watches previously allowed external dependencies to bypass literal read policies. Dynamic/static native fixtures cover files, directories and missing paths without retaining event or file contents. Remove when upstream supplies equivalent watch-path observation.
+
+Windows file-object interception copies OBJECT_ATTRIBUTES, nested UNICODE_STRING,
+and bounded UTF-16 bytes with ReadProcessMemory before inspecting them. Invalid
+addresses, lengths, or embedded NULs mark collection incomplete and preserve the
+original NT call. The native malformed-file-attributes regression compares exact
+NT statuses with an untraced process and verifies child continuation; the preload
+unit test covers each pointer layer and malformed lengths. Remove this local
+patch only when upstream provides equivalent bounded, non-dereferencing handling.

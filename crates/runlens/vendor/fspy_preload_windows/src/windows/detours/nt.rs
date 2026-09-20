@@ -146,18 +146,7 @@ fn read_process_image_attribute(attribute_list: PPS_ATTRIBUTE_LIST) -> Result<Ve
     image.ok_or(())
 }
 
-fn copy_process_bytes(address: usize, size: usize) -> Result<Vec<u8>, ()> {
-    use winapi::um::{memoryapi::ReadProcessMemory, processthreadsapi::GetCurrentProcess};
-    let mut bytes = vec![0u8; size];
-    let mut copied = 0;
-    // SAFETY: the destination is initialized owned storage of exactly size
-    // bytes. The kernel validates the untrusted source address without Rust
-    // dereferencing it. The pseudo process handle requires no close.
-    let result = unsafe { ReadProcessMemory(GetCurrentProcess(), address as *const _,
-        bytes.as_mut_ptr().cast(), size, &mut copied) };
-    if result == 0 || copied != size { return Err(()); }
-    Ok(bytes)
-}
+use crate::windows::winapi_utils::copy_process_bytes;
 
 #[cfg(test)]
 mod process_attribute_tests {
