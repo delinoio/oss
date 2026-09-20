@@ -168,15 +168,29 @@ func (s *Service) Prune(dry bool, age int, maxBytes int64) (PruneResult, error) 
 			}
 		}
 		var size int64
-		_ = filepath.WalkDir(filepath.Join(s.Store.Root, "evidence", id), func(_ string, d os.DirEntry, e error) error {
-			if e == nil && !d.IsDir() {
-				info, e := d.Info()
-				if e == nil {
+		// Finalization can leave a complete source tree after a cleanup failure.
+		// Count both owned trees, including workspace-only tombstone retries.
+		for _, dir := range []string{"evidence", "workspaces"} {
+			e = filepath.WalkDir(filepath.Join(s.Store.Root, dir, id), func(_ string, d os.DirEntry, err error) error {
+				if os.IsNotExist(err) {
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				if !d.IsDir() {
+					info, err := d.Info()
+					if err != nil {
+						return err
+					}
 					size += info.Size()
 				}
+				return nil
+			})
+			if e != nil {
+				return out, Wrap("retention-scan-failed", e)
 			}
-			return nil
-		})
+		}
 		items = append(items, candidate{r, size})
 		total += size
 	}

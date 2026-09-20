@@ -479,3 +479,9 @@ A network-disabled Linux arm64 container passed 13 related core regressions, inc
 Generated repository-owned `dist` output was removed after validation. No release, signing credential, package repository, Homebrew tap or website was published or modified. The ach version remains `0.1.0`, and PR #901 remains non-draft. The two approved exclusions remain unchanged; pending Edge validation is still outstanding and is not an approved exclusion. The six handled threads are resolved only after the single final push succeeds, without subsequent CI polling.
 
 The single final remote inventory still contained exactly the same six handled findings and no failing checks across 42 checks. GitHub reported merge state `UNKNOWN`, so this evidence does not assert final mergeability. No further remote status polling is performed in this invocation.
+
+## Twenty-sixth PR #901 repair invocation
+
+The preceding twenty-fifth invocation made no changes: no actionable findings or failed checks were available and three checks were still running. This invocation starts from `71d32987` with no merge conflict, three new bot findings and a failed Windows Go job plus its aggregate CI Result. The working tree was clean. Each review repair and the independent CI root cause receives its own commit.
+
+- `PRRT_kwDORRAKg86kHuDn`: byte retention counts evidence and leftover owned workspaces, including workspace-only cleanup retries. Four terminal/expired and evidence-present/absent scenarios verify exact dry-run bytes, no preview mutation, quota selection, tombstones and repeat cleanup; a separate scenario protects pending workspaces and inherited evidence. The focused prune, retention-bound and inherited-provenance suite passed. Scans do not follow symlinks and surface I/O errors instead of silently reporting a partial byte total.

@@ -31,7 +31,7 @@
 - Preserve complete UTF-8 runes across page boundaries and defer incomplete live tails; never replace valid split characters merely because a page budget ends.
 - Normalize Git diff text for protobuf only after applying its raw-byte truncation limit.
 - Each declared report path has one check owner across the graph. Clear its previous file through the owned workspace root before starting that check; stale committed or prerequisite reports must never satisfy validation.
-- Pruning is idempotent for expired records; resume incomplete owned-file cleanup without growing tombstone diagnostics.
+- Pruning is idempotent for expired records; resume incomplete owned-file cleanup without growing tombstone diagnostics. Byte selection and dry-run estimates include both evidence and leftover owned workspaces, including workspace-only cleanup retries; never follow workspace symlinks or count protected active work as reclaimable.
 - Use synchronization barriers, not elapsed-time assertions, to prove asynchronous behavior in integration tests. Run `go test -race ./cmds/async-commit-hook/...` for lifecycle changes, and the root Go suite after generating administrator assets.
 - Inspect Codex MCP ownership through parsed TOML keys, including equivalent quoted/escaped/dotted forms; validate the merged document before any backup, ownership or skill publication while preserving unrelated text.
 - Agent integration tests use isolated settings and preserve unrelated entries and comments. Keep the object-form MCP output schema compatible with supported clients.

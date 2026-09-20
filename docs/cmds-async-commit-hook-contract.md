@@ -126,7 +126,7 @@ Go test failure IDs encode the check, separate package/test identity and occurre
 
 Go test JSON collection keeps at most 64 KiB of chronological output per active test in lazily allocated circular buffers. Appends copy only new bytes; terminal events release their buffers after failure summaries are materialized. Complete redacted report evidence is preserved.
 
-Retention ages are accepted only in the inclusive range 0..106751 days, with zero meaning indefinite retention. Personal configuration and CLI/shared-service pruning reject larger values before any duration conversion or mutation. Byte quotas remain nonnegative int64 values.
+Retention ages are accepted only in the inclusive range 0..106751 days, with zero meaning indefinite retention. Personal configuration and CLI/shared-service pruning reject larger values before any duration conversion or mutation. Byte quotas remain nonnegative int64 values. Retention selection and dry-run byte estimates include evidence and leftover owned workspaces. Expired records with workspace-only cleanup remaining stay eligible even below the byte quota; completed cleanup is idempotent. Walks do not follow symlinks, scan errors are surfaced, and active runs plus inherited evidence remain protected.
 
 The Connect run-list projection includes a total check count and execution metadata only; check arrays and diagnostics are returned by the detail endpoint. CLI/MCP run snapshots and gate decisions remain complete.
 
