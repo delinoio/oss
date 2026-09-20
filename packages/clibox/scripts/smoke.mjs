@@ -37,6 +37,17 @@ try {
     const launcher = path.join(consumer, "node_modules/@delino/clibox/bin/clibox.cjs");
     const help = execFileSync(process.execPath, [launcher, "--help"], { cwd: consumer, encoding: "utf8" });
     ensure(help.includes("Usage: clibox"), `${manager} help smoke failed`);
+    const cli = (args, input) => execFileSync(process.execPath, [launcher, ...args], { cwd: consumer, encoding: "utf8", input });
+    writeFileSync(path.join(consumer, ".env"), 'Z=base\nA="literal ${HOME}"\n');
+    writeFileSync(path.join(consumer, "local.env"), "Z=local\n");
+    ensure(cli(["dotenv", "list"]) === "A\nZ\n", `${manager} dotenv list smoke failed`);
+    ensure(cli(["dotenv", "merge", ".env", "local.env"]) === 'A="literal ${HOME}"\nZ=local\n', `${manager} dotenv merge smoke failed`);
+    const normalized = cli(["yaml", "normalize"], "base: &base {z: 2, a: 1}\ncopy: {<<: *base, z: 3}\n");
+    ensure(normalized === '"base":\n  "a": 1\n  "z": 2\n"copy":\n  "a": 1\n  "z": 3\n', `${manager} YAML reference smoke failed`);
+    ensure(cli(["yaml", "normalize"], normalized) === normalized, `${manager} YAML idempotence smoke failed`);
+    writeFileSync(path.join(consumer, "config.yaml"), "z: 2\na: 1\n");
+    ensure(cli(["yaml", "normalize", "--input", "config.yaml", "--in-place"]) === "", `${manager} file output leaked to stdout`);
+    ensure(readFileSync(path.join(consumer, "config.yaml"), "utf8") === '"a": 1\n"z": 2\n', `${manager} in-place smoke failed`);
     const invoke = (args, options = {}) => execFileSync(process.execPath, [launcher, ...args], { cwd: consumer, ...options });
     const equal = (actual, expected, operation) => ensure(Buffer.from(actual).equals(Buffer.from(expected)), operation);
     const consumerManifest = path.join(consumer, "package.json");
@@ -64,7 +75,7 @@ try {
     mkdirSync(path.join(consumer, "checksums"));
     equal(invoke(["hash", "encode", "--input", "binary input.dat", "--format", "checksum", "--output", "checksums/sums"]), "", "Installed manifest output failed");
     equal(invoke(["hash", "verify", "--check", "checksums/sums", "--quiet"]), "", "Installed manifest-relative path verification failed");
-    for (const group of ["run", "port", "clipboard", "wait", "text", "time", "base64", "hash"]) {
+    for (const group of ["run", "port", "clipboard", "wait", "text", "time", "base64", "hash", "dotenv", "yaml"]) {
       const missing = spawnSync(process.execPath, [launcher, group], { cwd: consumer, encoding: "utf8" });
       ensure(missing.status === 2 && missing.stdout === "" && missing.stderr.includes(`Usage: ${target.binary} ${group}`) && missing.stderr.includes("Commands:"), `${manager} ${group} missing-subcommand help smoke failed`);
     }

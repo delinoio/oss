@@ -29,6 +29,8 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Command {
     #[command(flatten)]
+    Configuration(clibox_config::Command),
+    #[command(flatten)]
     System(clibox_system::Command),
     #[command(flatten)]
     Transform(clibox_transform::Command),

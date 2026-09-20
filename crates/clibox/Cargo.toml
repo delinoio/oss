@@ -12,6 +12,7 @@ publish = false
 clap = { version = "4.5.32", features = ["derive"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+clibox-config = { path = "../clibox-config" }
 clibox-system = { path = "../clibox-system" }
 clibox-transform = { path = "../clibox-transform" }
 clibox-wait = { path = "../clibox-wait" }
@@ -29,4 +30,4 @@ rcgen = "0.14"
 libc = "0.2.182"
 
 [target.'cfg(windows)'.dev-dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_Threading"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_Threading", "Win32_Storage_FileSystem", "Win32_Security", "Win32_Security_Authorization"] }

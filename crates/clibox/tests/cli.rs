@@ -22,6 +22,8 @@ fn help_and_no_arguments_succeed_on_stdout() {
             "base64",
             "hash",
             "wait",
+            "dotenv",
+            "yaml",
         ] {
             assert!(
                 stdout
@@ -52,11 +54,13 @@ fn version_comes_from_the_cargo_package() {
 
 #[test]
 fn missing_subcommands_show_command_help_on_stderr() {
-    let groups: [(&str, &[&str]); 8] = [
+    let groups: [(&str, &[&str]); 10] = [
         ("run", &["env"]),
         ("port", &["which", "kill"]),
         ("clipboard", &["copy", "paste"]),
         ("wait", &["tcp", "http", "file"]),
+        ("dotenv", &["list", "merge"]),
+        ("yaml", &["normalize"]),
         ("text", &["replace"]),
         ("time", &["format", "add"]),
         ("base64", &["encode", "decode"]),
@@ -109,6 +113,8 @@ fn unknown_arguments_fail_on_stderr() {
         vec!["time", "PRIVATE-MARKER"],
         vec!["base64", "PRIVATE-MARKER"],
         vec!["hash", "PRIVATE-MARKER"],
+        vec!["dotenv", "PRIVATE-MARKER"],
+        vec!["yaml", "PRIVATE-MARKER"],
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
             .args(arguments)
@@ -124,7 +130,7 @@ fn unknown_arguments_fail_on_stderr() {
 }
 
 #[test]
-fn every_utility_has_help_and_examples() {
+fn every_command_has_help_and_examples() {
     for args in [
         vec!["wait", "tcp", "--help"],
         vec!["wait", "http", "--help"],
@@ -135,6 +141,9 @@ fn every_utility_has_help_and_examples() {
         vec!["open", "--help"],
         vec!["clipboard", "copy", "--help"],
         vec!["clipboard", "paste", "--help"],
+        vec!["dotenv", "list", "--help"],
+        vec!["dotenv", "merge", "--help"],
+        vec!["yaml", "normalize", "--help"],
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
             .args(args)
@@ -192,6 +201,8 @@ fn parser_failures_remain_redacted_and_visible_with_logging_disabled() {
         vec!["wait", "http", "https://SECRET-PARSER@localhost"],
         vec!["hash", "encode", "--algorithm", "SECRET-PARSER"],
         vec!["port", "which", "SECRET-PARSER"],
+        vec!["dotenv", "SECRET-PARSER"],
+        vec!["yaml", "SECRET-PARSER"],
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
             .args(args)
