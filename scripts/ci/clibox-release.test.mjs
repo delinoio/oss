@@ -46,6 +46,18 @@ test("OIDC is restricted to exact-tag enabled publication after the complete ver
   assert.equal(uploaded.with.name, downloaded.with.name);
 });
 
+test("publication installs an exact OIDC-capable npm before checking and using it", () => {
+  const steps = release.jobs.publish.steps;
+  const setup = steps.findIndex(({ uses }) => uses?.startsWith("actions/setup-node@"));
+  const install = steps.findIndex(({ name }) => name === "Install pinned npm for trusted publishing");
+  const check = steps.findIndex(({ name }) => name === "Check npm trusted publishing support");
+  const publish = steps.findIndex(({ run }) => run?.includes("publish.mjs --publish"));
+  assert.ok(setup >= 0 && setup < install && install < check && check < publish);
+  assert.equal(steps[install].run, "npm install --global npm@11.6.2 --ignore-scripts --no-audit --no-fund");
+  assert.match(steps[check].run, /npm\(\['--version'\]\)/u);
+  assert.match(steps[check].run, /npm 11\.5\.1\+ is required for OIDC/u);
+});
+
 test("clibox input changes select its aggregated consumer checks and force external Cargo inputs", () => {
   const id = "node-clibox-test";
   assert.equal(jobPaths[id].workspace, "@delino/clibox");

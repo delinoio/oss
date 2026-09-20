@@ -192,6 +192,8 @@ jobs:
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
+      - name: Install pinned npm for trusted publishing
+        run: npm install --global npm@11.6.2 --ignore-scripts --no-audit --no-fund
       - name: Check npm trusted publishing support
         run: |
           node --input-type=module <<'JS'
