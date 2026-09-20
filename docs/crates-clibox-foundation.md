@@ -62,6 +62,8 @@ The interval defaults to 250ms **after** an unsuccessful attempt completes. Poll
 
 Cancellation drops the active asynchronous operation and its connections, stops polling, and releases owned resources without terminating the service or mutating the file. Blocking read-only OS metadata/trust/configuration calls run off the runtime thread; runtime shutdown must not wait for an uninterruptible OS call after a handled deadline or cancellation. A successful result is a point-in-time observation and does not reserve the resource or guarantee continued availability.
 
+HTTP client/native trust initialization retains one in-flight blocking job across attempt timeouts. Later attempts await that same result instead of spawning overlapping native certificate loaders; the completed client is reused for the invocation. Overall timeout and cancellation still stop waiting promptly without waiting for that blocking job to return.
+
 ### TCP
 Accept DNS names, strict IPv4, and bracketed IPv6 with an explicit decimal port 1–65535 (`localhost:3000`, `127.0.0.1:3000`, `[::1]:3000`). Resolve using system DNS configuration and hosts data, with no persistent cache or fallback public resolver. All returned addresses receive a connection opportunity within a shared attempt deadline; one stalled address/family cannot consume another address's opportunity. Stop when one connection succeeds and close it without sending application data. This establishes connectivity only, not application-protocol readiness.
 

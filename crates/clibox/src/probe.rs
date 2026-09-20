@@ -4,16 +4,20 @@ use std::{
     io,
     net::{IpAddr, SocketAddr},
     path::PathBuf,
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
-use futures_util::{stream::FuturesUnordered, StreamExt};
+use futures_util::{
+    future::{BoxFuture, Shared},
+    stream::FuturesUnordered,
+    FutureExt, StreamExt,
+};
 use hickory_resolver::{config::LookupIpStrategy, TokioResolver};
 use reqwest::{
     dns::{Addrs, Name, Resolve, Resolving},
     Client, Url,
 };
-use tokio::{net::TcpStream, sync::OnceCell};
+use tokio::net::TcpStream;
 
 use crate::{
     cli::{Method, TcpTarget},
@@ -26,7 +30,7 @@ pub enum Target {
         url: Url,
         method: Method,
         status: Option<u16>,
-        client: OnceCell<Client>,
+        client: HttpClient,
     },
     File(PathBuf),
 }
@@ -49,25 +53,49 @@ impl Target {
                 client,
             } => {
                 let client = client
-                    .get_or_try_init(|| async {
-                        let tls = if url.scheme() == "https" {
-                            Some(
-                                tokio::task::spawn_blocking(|| {
-                                    native_tls(rustls_native_certs::load_native_certs())
-                                })
-                                .await
-                                .map_err(|_| Code::TrustStore)??,
-                            )
-                        } else {
-                            None
-                        };
-                        http_client(tls)
+                    .get_or_init({
+                        let https = url.scheme() == "https";
+                        move || {
+                            let tls = if https {
+                                Some(native_tls(rustls_native_certs::load_native_certs())?)
+                            } else {
+                                None
+                            };
+                            http_client(tls)
+                        }
                     })
                     .await?;
-                http(client, url, *method, *status).await
+                http(&client, url, *method, *status).await
             }
             Self::File(path) => file_metadata(tokio::fs::metadata(path).await),
         }
+    }
+}
+
+type InitializedClient = Shared<BoxFuture<'static, Result<Client, Code>>>;
+
+#[derive(Default)]
+pub struct HttpClient {
+    initialization: OnceLock<InitializedClient>,
+}
+
+impl HttpClient {
+    async fn get_or_init<F>(&self, initialize: F) -> Result<Client, Code>
+    where
+        F: FnOnce() -> Result<Client, Code> + Send + 'static,
+    {
+        self.initialization
+            .get_or_init(|| {
+                // A blocking OS trust load cannot be cancelled. Retain its shared
+                // result across dropped attempt futures so retries await the same
+                // job instead of accumulating overlapping native loaders.
+                tokio::task::spawn_blocking(initialize)
+                    .map(|result| result.unwrap_or(Err(Code::TrustStore)))
+                    .boxed()
+                    .shared()
+            })
+            .clone()
+            .await
     }
 }
 

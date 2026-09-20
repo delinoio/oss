@@ -9,6 +9,50 @@ use tokio::{
 use super::*;
 
 #[tokio::test]
+async fn slow_native_trust_initialization_survives_attempt_cancellation() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc,
+    };
+
+    let client = HttpClient::default();
+    let starts = Arc::new(AtomicUsize::new(0));
+    let observed_starts = starts.clone();
+    let (release, blocked) = mpsc::channel();
+    assert!(timeout(
+        Duration::from_millis(10),
+        client.get_or_init(move || {
+            observed_starts.fetch_add(1, Ordering::SeqCst);
+            blocked.recv().map_err(|_| Code::TrustStore)?;
+            http_client(None)
+        })
+    )
+    .await
+    .is_err());
+    for _ in 0..3 {
+        assert!(timeout(
+            Duration::from_millis(10),
+            client.get_or_init(|| { panic!("a retry must not start another native trust load") })
+        )
+        .await
+        .is_err());
+    }
+    release.send(()).unwrap();
+    timeout(
+        Duration::from_secs(2),
+        client.get_or_init(|| panic!("the original native trust load must remain available")),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    client
+        .get_or_init(|| panic!("the completed client must be cached"))
+        .await
+        .unwrap();
+    assert_eq!(starts.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
 async fn all_addresses_get_a_chance_and_successful_tcp_connection_is_closed() {
     let addresses = vec!["127.0.0.1:1".parse().unwrap(), "[::1]:2".parse().unwrap()];
     let result = timeout(

@@ -40,7 +40,7 @@ pub fn execute(command: Wait) -> u8 {
                 url: target,
                 method,
                 status,
-                client: tokio::sync::OnceCell::new(),
+                client: probe::HttpClient::default(),
             },
         ),
         Wait::File { target, options } => (Kind::File, options, None, probe::Target::File(target)),
