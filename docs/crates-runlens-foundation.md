@@ -178,7 +178,7 @@ Use private temporary files when collection exceeds a 256 MiB in-memory threshol
 
 These limits apply to Runlens collection, not to the disk or memory consumed by the observed build and its temporary checkout.
 
-On collection-limit exhaustion, retain an incomplete classification and never pass verification. Remove owned temporary material after completion, failure, and handled cancellation. Surface cleanup failures with recovery guidance; never clean unrelated user files.
+On collection-limit exhaustion, retain an incomplete classification and never pass verification. Cancellation during the after-snapshot or comparison retains both cancelled and incomplete classifications even when the child already exited successfully. Remove owned temporary material after completion, failure, and handled cancellation. Surface cleanup failures with recovery guidance; never clean unrelated user files.
 
 Use structured Rust `tracing` diagnostics with execution IDs, lifecycle stages, counts, elapsed time, and stable error classifications. Keep command output, raw secrets, and environment values out of Runlens logs.
 

@@ -251,6 +251,17 @@ pub async fn observe(request: Request<'_>) -> Result<Execution> {
         before.complete,
         after.complete,
     )?;
+    // Cancellation can arrive after the child has been reaped, while hashing
+    // the after-state or comparing it. Preserve that invocation status too.
+    if !timed_out && request.cancellation.is_cancelled() {
+        complete = false;
+        if !errors.contains(&ErrorCode::Cancelled) {
+            errors.push(ErrorCode::Cancelled);
+        }
+        if !errors.contains(&ErrorCode::Incomplete) {
+            errors.push(ErrorCode::Incomplete);
+        }
+    }
     let redacted_paths = redactor.path_redacted.load(Ordering::Relaxed);
     if redacted_paths {
         complete = false;

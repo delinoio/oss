@@ -1309,6 +1309,54 @@ fn unicode_argv_and_directory_conflicts_keep_concrete_evidence() {
 }
 #[cfg(unix)]
 #[test]
+fn cancellation_during_after_snapshot_retains_cancelled_status() {
+    use std::io::BufRead;
+    let root = tempfile::tempdir().unwrap();
+    let mut child = Command::new(binary())
+        .args([
+            "--log-level",
+            "info",
+            "run",
+            "--save",
+            "cancelled.json",
+            "--",
+            fixture(),
+            "large-output",
+        ])
+        .current_dir(root.path())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut reached = false;
+    for line in std::io::BufReader::new(child.stderr.take().unwrap()).lines() {
+        if !reached && line.unwrap().contains("after-snapshot") {
+            reached = true;
+            // SAFETY: signal only our still-running CLI process.
+            assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGTERM) }, 0);
+        }
+    }
+    assert!(reached, "after-snapshot stage was not reached");
+    assert_eq!(child.wait().unwrap().code(), Some(7));
+    let report = parse(root.path(), "cancelled.json");
+    let outcome = &report["executions"][0]["outcome"];
+    assert_eq!(outcome["child_exit_code"], 0);
+    assert_eq!(outcome["collection_complete"], false);
+    assert!(
+        outcome["errors"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("cancelled"))
+    );
+    assert!(
+        outcome["errors"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("incomplete"))
+    );
+}
+#[cfg(unix)]
+#[test]
 fn cancellation_is_reaped_and_saved_as_incomplete() {
     let root = tempfile::tempdir().unwrap();
     let mut child = Command::new(binary())

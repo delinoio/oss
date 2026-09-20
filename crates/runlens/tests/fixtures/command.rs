@@ -4,6 +4,14 @@ use std::{fs, process::Command, time::Duration};
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
+        "large-output" => {
+            // Sparse output keeps this fixture cheap while ensuring the
+            // after-snapshot has hashing work after its lifecycle log event.
+            fs::File::create("large-output")
+                .unwrap()
+                .set_len(1024 * 1024 * 1024)
+                .unwrap();
+        }
         "read-write" => {
             let _ = fs::read("input.txt");
             let _ = fs::read("missing.txt");
