@@ -96,5 +96,8 @@ test("native publication follows the independently guarded signed GNU release", 
   assert.equal(gnu.if, "endsWith(matrix.target, '-linux-gnu')");
   assert.match(gnu.run, /build-rust.sh clibox/u);
   assert.deepEqual(release.jobs["linux-packages"].needs, ["prepare", "publish-release"]);
-  for (const file of ["crates/clibox/src/main.rs", "packages/clibox/scripts/github-release.mjs"]) assert.equal(planJobs(Event.PullRequest, [file]).jobs["linux-packages"], true);
+  for (const file of ["crates/clibox/src/main.rs", "packages/clibox/scripts/github-release.mjs"]) {
+    assert.equal(planJobs(Event.PullRequest, [file]).jobs["linux-packages"], false);
+    assert.equal(planJobs(Event.Push, [file]).jobs["linux-packages"], true);
+  }
 });

@@ -8,6 +8,10 @@ The stable enrollment contract covers binpm, cargo-mono, nodeup, with-watch, der
 
 All seven originating GitHub workflows publish stable releases and feed the stable native repository. Project contracts determine channels; callers cannot choose a channel. Clibox reuses the exact verified GNU npm executable bytes in its two signed GitHub Release archives before entering this common workflow.
 
+## CI validation
+
+The `linux-packages` CI job runs compatibility builds, disposable signed repositories, and package lifecycle checks on native amd64/arm64 hosts for relevant main pushes and every manual dispatch. PRs skip both architectures, including when CI configuration changes force all eligible checks, to keep package builds and distribution installation matrices out of the PR feedback path. The shared planner marks this job as native packaging; `CI Result` retains its dependency and requires the planned skip on PRs and success when selected on main or manually. General Linux tests, OCI checks, and lightweight static package contracts remain eligible on PRs. Release workflows retain their full package build, installation, and publication validation.
+
 ## Build and input trust
 
 Rust GNU Linux binaries use the checksum-pinned AlmaLinux 9 image and the repository Rust toolchain. Bootstrap rustup 1.29.1 from the architecture-specific official archive URL in `pins.json`, verify its committed SHA-256 before execution, and disable self-updates. Never execute the mutable `sh.rustup.rs` bootstrap. Dynamic GLIBC requirements must not exceed 2.34; only explicitly mapped runtime libraries are allowed. x86-64 builds target the baseline ISA and ARM64 builds target generic ARMv8. Derun and Runmoor Linux builds disable CGO. Existing GitHub asset names and Sigstore identities remain authoritative.
@@ -40,7 +44,7 @@ Rocky Linux 10 uses the project's `rockylinux/rockylinux:10` image; the separate
 
 Test incorrect identities, checksums, signatures, architectures, dependencies and channels; interrupted uploads; concurrent publication requests; retry without replacement; stale indexes; and partial APT/DNF promotion. Tests use isolated files, keys and object stores. Run workflow syntax/contracts, release fixtures and changed documentation-app tests. Remove generated dist directories before completion.
 
-Changes to any of the five Rust CLI sources, workspace Cargo inputs, Cargo configuration or Rust toolchain select the native package CI job. Both architectures must rebuild against AlmaLinux 9 and pass ELF compatibility inspection before merging these changes.
+Relevant main changes to any of the five Rust CLI sources, workspace Cargo inputs, Cargo configuration or Rust toolchain select the native package CI job. Both architectures rebuild against AlmaLinux 9 and pass ELF compatibility inspection on main and manual runs; PRs retain the planned native-package skip described above. Release-time validation still requires both architectures before publication.
 
 No release dispatch or retry is authorized by this implementation update. The canceled binpm coordinator left its source version commit on main but created no release tag or public packages. Future explicitly requested releases use the existing coordinator and the same per-project public verification gate. Public documentation must mark unpublished CLI examples as unavailable until their own public installation checks pass.
 
