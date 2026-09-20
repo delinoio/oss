@@ -70,6 +70,7 @@ pub async fn start(
         let mut roots = roots(&graph, profile)?;
         let mut active_set = activation(&graph, &roots);
         let mut bootstrap_results = BTreeMap::new();
+        let mut bootstrap_evidence = BTreeMap::new();
         let mut invalid_bootstrap = BTreeSet::new();
         let mut bootstrap_generations = BTreeSet::new();
         while let Some(install) = runner::next_install(&graph, &graph.topological(&active_set)?, &bootstrap_results)? {
@@ -84,15 +85,19 @@ pub async fn start(
             services.shutdown().await?;
             while service_receiver.try_recv().is_ok() {}
             graph = Arc::new(Graph::build(Workspace::discover(root).await?.select_platform(options.os, options.arch))?);
-            bootstrap_results.extend(result.results);
-            let (retained, invalidated) = runner::revalidate_bootstrap(&graph, bootstrap_results, &bootstrap_options, &work_cancel).await?;
+            bootstrap_evidence.extend(result.results);
+            let (retained, invalidated) = runner::revalidate_bootstrap(&graph, bootstrap_evidence, &bootstrap_options, &work_cancel).await?;
             // Removed receipts cannot appear in a later phase's validation
             // input. Keep their activation until a refreshed receipt proves
             // that a later phase actually repaired them.
             invalid_bootstrap.extend(invalidated);
             invalid_bootstrap.retain(|id| !retained.contains_key(id));
-            bootstrap_results = retained;
-            tracing::debug!(retained = bootstrap_results.len(), invalidated = invalid_bootstrap.len(), "Refreshed session bootstrap receipts");
+            // Stopped services can validate an install's semantic inputs, but
+            // cannot satisfy readiness in another phase or the final session.
+            bootstrap_results = retained.iter().filter(|(id, _)| !graph.tasks[*id].task.service)
+                .map(|(id, receipt)| (id.clone(), receipt.clone())).collect();
+            bootstrap_evidence = retained;
+            tracing::debug!(retained = bootstrap_results.len(), evidence = bootstrap_evidence.len(), invalidated = invalid_bootstrap.len(), "Refreshed session bootstrap receipts");
             roots = roots_for_profile(&graph, profile)?;
             active_set = activation(&graph, &roots);
         }
@@ -104,6 +109,7 @@ pub async fn start(
         let mut timers = timers(&graph, &active_set)?;
         let mut observed = snapshots(&graph, &active_set)?;
         let mut baseline_at = Instant::now();
+        let mut bootstrap_reuse: BTreeSet<_> = bootstrap_results.keys().cloned().collect();
         let mut results: BTreeMap<String, Receipt> = bootstrap_results;
         let mut active_tasks = BTreeMap::new();
         let (completed, mut completions) = tokio::sync::mpsc::unbounded_channel();
@@ -143,7 +149,7 @@ pub async fn start(
                             }
                             timers = self::timers(&graph, &active_set)?;
                             baseline_at = Instant::now();
-                            results.clear(); initial_done = false;
+                            results.clear(); bootstrap_reuse.clear(); initial_done = false;
                         }
                         // Discovery refreshes automatic metadata inputs too.
                         // Compare against the last accepted snapshots before
@@ -190,6 +196,11 @@ pub async fn start(
                         let propagation = graph.closure(&seeds.keys().cloned().collect(), true, false);
                         for id in &propagation {
                             if !active_set.contains(id) || graph.tasks[id].task.service { continue; }
+                            // The first activation renews stopped service owners,
+                            // not their already-validated semantic inputs. Keep
+                            // bootstrap receipts reusable unless independently
+                            // seeded. Later waves use ordinary cause propagation.
+                            if bootstrap_reuse.contains(id) && !seeds.contains_key(id) { continue; }
                             let reserved = graph.closure(&BTreeSet::from([id.clone()]), false, false).iter().any(|p| active_tasks.contains_key(p));
                             if reserved {
                                 for prerequisite in graph.prerequisites(id).into_iter().filter(|p| propagation.contains(p)) {
@@ -201,6 +212,7 @@ pub async fn start(
                         let selected: BTreeSet<_> = plan.order.iter().cloned().collect();
                         let mut wave_options = options.clone();
                         wave_options.provided = provided_receipts(&graph, &selected, &seeds, &results, &services, &mut service_receiver, &active_set)?;
+                        bootstrap_reuse.clear();
                         let wave_id = next_wave;
                         next_wave += 1;
                         active_tasks.extend(selected.iter().cloned().map(|id| (id, wave_id)));

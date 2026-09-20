@@ -139,3 +139,5 @@
 - Linux image-seal conformance must run without root privileges. Exercise seals through the retained creation descriptor; do not require reopening a mode-0500 executable for writing.
 
 - Execution result reports are optional regular files capped at 1 KiB. Reject links, reparse points, and special files without blocking; bound both the opened file length and actual read before parsing and execution-ID validation.
+
+- Retain stopped bootstrap services only as revalidated semantic evidence for their installers across every phase. Exclude that evidence from executable provided receipts: every later phase or session requiring readiness must create a fresh owned service. Service identity changes invalidate dependent installation evidence.

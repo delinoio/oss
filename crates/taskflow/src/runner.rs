@@ -509,6 +509,8 @@ pub(crate) fn next_install(
 /// Installation can change declarations, inputs, native metadata, or outputs.
 /// A receipt may cross rediscovery only if its complete refreshed identity and
 /// output contract still hold, including every prerequisite it relied on.
+/// Retained service receipts are semantic evidence only: their owners have been
+/// stopped, so callers must exclude them from execution's provided receipts.
 pub(crate) async fn revalidate_bootstrap(
     graph: &Graph,
     receipts: BTreeMap<String, Receipt>,
@@ -528,7 +530,7 @@ pub(crate) async fn revalidate_bootstrap(
         let node = &graph.tasks[&id];
         let dependencies = graph.prerequisites(&id);
         if !receipt.success()
-            || node.task.service
+            || (node.task.service && receipt.outcome != Outcome::Ready)
             || dependencies.iter().any(|id| !retained.contains_key(id))
         {
             continue;
@@ -549,9 +551,13 @@ pub(crate) async fn revalidate_bootstrap(
             }
             Err(_) => continue,
         };
-        let outputs_match = node.task.output.as_ref().is_none_or(Vec::is_empty)
-            || cache::output_state(&graph.workspace.projects[&node.project], &node.task)
-                .is_ok_and(|output| output == receipt.output);
+        let outputs_match = if node.task.service {
+            receipt.output == identity.key
+        } else {
+            node.task.output.as_ref().is_none_or(Vec::is_empty)
+                || cache::output_state(&graph.workspace.projects[&node.project], &node.task)
+                    .is_ok_and(|output| output == receipt.output)
+        };
         if identity.key == receipt.key && outputs_match {
             retained.insert(id.clone(), receipt.clone());
             invalid.remove(&id);
@@ -1589,6 +1595,66 @@ mod output_cleanup_tests {
             .unwrap();
         assert!(valid.is_empty());
         assert_eq!(invalid.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn bootstrap_service_evidence_requires_current_semantic_identity() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("service-input"), "first").unwrap();
+        std::fs::write(
+            directory.path().join("taskflow.yml"),
+            r#"
+version: 1
+project: app
+tasks:
+  server:
+    command: [unused]
+    service: true
+    input: [service-input]
+    readiness: { type: tcp, address: '127.0.0.1:12345', timeout: '10s' }
+  install:
+    command: [unused]
+    install: true
+    input: []
+    dependsOn: [{ task: server, waitFor: ready }]
+"#,
+        )
+        .unwrap();
+        let graph = Graph::build(
+            crate::discover::Workspace::discover(directory.path())
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        let options = RunOptions::default();
+        let cancel = CancellationToken::new();
+        let mut receipts = BTreeMap::new();
+        for (id, outcome) in [
+            ("app#server", Outcome::Ready),
+            ("app#install", Outcome::Executed),
+        ] {
+            let identity = prepare_inputs(&graph, id, &receipts, &options, &cancel)
+                .await
+                .unwrap();
+            let mut receipt = Receipt::skipped(id, outcome, BTreeSet::from([Cause::Direct]));
+            receipt.output = identity.key.clone();
+            receipt.key = identity.key;
+            receipts.insert(id.into(), receipt);
+        }
+        let (retained, invalid) = revalidate_bootstrap(&graph, receipts.clone(), &options, &cancel)
+            .await
+            .unwrap();
+        assert_eq!(retained.len(), 2);
+        assert!(invalid.is_empty());
+        std::fs::write(directory.path().join("service-input"), "changed").unwrap();
+        let (retained, invalid) = revalidate_bootstrap(&graph, receipts, &options, &cancel)
+            .await
+            .unwrap();
+        assert!(retained.is_empty());
+        assert_eq!(
+            invalid,
+            BTreeSet::from(["app#server".into(), "app#install".into()])
+        );
     }
 
     #[tokio::test]

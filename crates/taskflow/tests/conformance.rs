@@ -8305,3 +8305,52 @@ async fn task_result_reports_are_bounded_regular_execution_files() {
         }
     }
 }
+
+#[tokio::test]
+async fn installation_service_evidence_never_reuses_a_stopped_owner() {
+    let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = socket.local_addr().unwrap().to_string();
+    drop(socket);
+    let directory = fixture(json!({
+        "server":{"command":command(&["server",&address,"server.pid"]),"service":true,"input":[],"readiness":{"type":"tcp","address":address,"timeout":"10s"}},
+        "install1":{"command":command(&["record-service-pid","server.pid","installed1"]),"install":true,"input":[],"output":["installed1"],"dependsOn":[{"task":"server","waitFor":"ready"}]},
+        "install2":{"command":command(&["record-service-pid","server.pid","installed2"]),"install":true,"input":[],"output":["installed2"],"dependsOn":["install1",{"task":"server","waitFor":"ready"}]},
+        "check":{"command":command(&["record-service-pid","server.pid","checked"]),"input":[],"dependsOn":["install2",{"task":"server","waitFor":"ready"}]}
+    }));
+    profile(directory.path(), &["check"]);
+    let root = directory.path().to_owned();
+    let cancel = CancellationToken::new();
+    let token = cancel.clone();
+    let running = tokio::spawn(async move {
+        taskflow::session::start(&root, "default", RunOptions::default(), token).await
+    });
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while !running.is_finished() && tokio::time::Instant::now() < deadline {
+        if runner::previous(directory.path(), "app#check").is_some_and(|r| r.success()) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let checked = runner::previous(directory.path(), "app#check").is_some_and(|r| r.success());
+    cancel.cancel();
+    let result = running.await.unwrap();
+    assert!(checked, "profile did not reach its consumer: {result:?}");
+    assert!(result.unwrap().success);
+    let pids: Vec<u32> = ["installed1", "installed2", "checked"]
+        .into_iter()
+        .map(|name| {
+            let text = std::fs::read_to_string(directory.path().join(name)).unwrap();
+            assert_eq!(text.lines().count(), 1, "{name} must execute once");
+            text.trim().parse().unwrap()
+        })
+        .collect();
+    assert_eq!(
+        pids.iter().collect::<BTreeSet<_>>().len(),
+        3,
+        "each phase needs a fresh ready owner"
+    );
+    for pid in pids {
+        assert!(!pid_alive(pid), "service survived shutdown");
+    }
+    let _rebound = std::net::TcpListener::bind(&address).unwrap();
+}

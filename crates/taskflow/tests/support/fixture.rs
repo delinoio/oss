@@ -242,6 +242,11 @@ fn main() {
             }
             std::thread::sleep(Duration::from_secs(30));
         }
+        "record-service-pid" => {
+            let pid = fs::read_to_string(&args[2]).unwrap();
+            let mut log = fs::OpenOptions::new().create(true).append(true).open(&args[3]).unwrap();
+            writeln!(log, "{pid}").unwrap();
+        }
         "server" => {
             let listener = std::net::TcpListener::bind(&args[2]).unwrap();
             write(&args[3], std::process::id().to_string().as_bytes());
