@@ -304,14 +304,22 @@ export function Workspace({
     lastOpenedRun.current = id;
     setRun(id);
   };
-  const currentRepo = repositories.find((r) =>
-    r.worktrees.some((w) => w.id === worktree),
-  );
-  const selectedTree = currentRepo?.worktrees.find((w) => w.id === worktree);
+  // This shares RunDetail's query/cache entry, so a deep link can bind the page
+  // identity without another fetch or a second polling/acknowledgement path.
+  const execution = useQuery(LocalQuery.getRun, { runId: run }, { enabled: Boolean(run) });
+  const openedRun = execution.data?.run?.id === run ? execution.data.run : undefined;
+  const currentRepo = run
+    ? repositories.find((r) => r.id === openedRun?.repositoryId && r.worktrees.some((w) => w.id === openedRun.worktreeId))
+    : repositories.find((r) => r.worktrees.some((w) => w.id === worktree));
+  const selectedTree = currentRepo?.worktrees.find((w) => w.id === (run ? openedRun?.worktreeId : worktree));
+  // Suppress stale navigation identity until this execution's workspace is
+  // loaded. Registry pagination stays explicit and evidence remains readable.
+  const displayedWorktree = selectedTree?.id || "";
+  const displayedBranch = displayedWorktree === worktree ? branch : selectedTree?.branchId || selectedTree?.branch || "";
   const branches = useInfiniteQuery(
     LocalQuery.listBranches,
-    { worktreeId: worktree, cursor: "", limit: 50 },
-    { enabled: Boolean(worktree), pageParamKey: "cursor", getNextPageParam: (page) => page.nextCursor || undefined },
+    { worktreeId: displayedWorktree, cursor: "", limit: 50 },
+    { enabled: Boolean(displayedWorktree), pageParamKey: "cursor", getNextPageParam: (page) => page.nextCursor || undefined },
   );
   const branchOptions = useMemo(() => {
     const merged = new Map<string, { value: string; name: string; id: string }>();
@@ -322,22 +330,29 @@ export function Workspace({
       }
     }
     // Preserve the checkout identity before its branch page has loaded.
-    if (branch && !merged.has(branch)) {
-      const current = (selectedTree?.branchId || selectedTree?.branch) === branch;
-      merged.set(branch, { value: branch, name: current ? selectedTree!.branch : branch, id: current ? selectedTree!.branchId : "" });
+    if (displayedBranch && !merged.has(displayedBranch)) {
+      const current = (selectedTree?.branchId || selectedTree?.branch) === displayedBranch;
+      merged.set(displayedBranch, { value: displayedBranch, name: current ? selectedTree!.branch : displayedBranch, id: current ? selectedTree!.branchId : "" });
     }
     return [...merged.values()];
-  }, [branches.data, branch, selectedTree]);
-  const selectedBranch = branchOptions.find((item) => item.value === branch);
+  }, [branches.data, displayedBranch, selectedTree]);
+  const selectedBranch = branchOptions.find((item) => item.value === displayedBranch);
   const branchId = selectedBranch?.id || "";
-  const branchName = branchId ? "" : selectedBranch?.name || branch;
+  const branchName = branchId ? "" : selectedBranch?.name || displayedBranch;
   useEffect(() => {
+    if (run) {
+      if (selectedTree && selectedTree.id !== worktree) {
+        setWorktree(selectedTree.id);
+        setBranch(selectedTree.branchId || selectedTree.branch);
+      }
+      return;
+    }
     if (!worktree && repositories[0]?.worktrees[0]) {
       const w = repositories[0].worktrees[0];
       setWorktree(w.id);
       setBranch(w.branchId || w.branch);
     }
-  }, [worktree, repositories]);
+  }, [run, selectedTree, worktree, repositories]);
   if (version.data && version.data.apiVersion !== 1)
     return (
       <main id="main">
@@ -370,8 +385,8 @@ export function Workspace({
             {repo.worktrees.map((w) => (
               <button
                 key={w.id}
-                className={worktree === w.id ? "worktree selected" : "worktree"}
-                aria-current={worktree === w.id ? "true" : undefined}
+                className={displayedWorktree === w.id ? "worktree selected" : "worktree"}
+                aria-current={displayedWorktree === w.id ? "true" : undefined}
                 onClick={() => {
                   setWorktree(w.id);
                   setBranch(w.branchId || w.branch);
@@ -415,17 +430,18 @@ export function Workspace({
             <p className="eyebrow">
               {tab === "inbox" ? "YOUR REVIEW QUEUE" : "WORKSPACE OVERVIEW"}
             </p>
-            <h1>{currentRepo?.name || "Your workspaces"}</h1>
+            <h1>{currentRepo?.name || (run ? "Execution workspace" : "Your workspaces")}</h1>
             <p className="muted">
-              {selectedTree?.path ||
-                "Register a repository with ach init to get started."}
+              {selectedTree?.path || (run
+                ? execution.isPending ? "Resolving execution workspace…" : "Workspace details are not loaded. Load more workspaces or select one to browse; retained execution evidence remains available."
+                : "Register a repository with ach init to get started.")}
             </p>
           </div>
-          {worktree && (
+          {displayedWorktree && (
             <label className="branch-select">
               Branch
               <select
-                value={branch}
+                value={displayedBranch}
                 onChange={(e) => {
                   setBranch(e.target.value);
                   setRun("");
