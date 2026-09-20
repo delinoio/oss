@@ -10,6 +10,7 @@ mod xattr;
 mod lifecycle;
 mod chdir;
 mod io_uring;
+mod inotify;
 
 use std::{
     borrow::Cow,
@@ -149,6 +150,8 @@ impl_handler!(
 
     #[cfg(target_arch = "x86_64")] readlink,
     readlinkat,
+
+    inotify_add_watch,
 
     io_uring_setup,
     io_uring_enter,

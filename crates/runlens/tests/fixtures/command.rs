@@ -36,6 +36,23 @@ fn main() {
                 println!("created");
             }
         }
+        #[cfg(target_os = "linux")]
+        "inotify-watch" => {
+            let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            // SAFETY: the path remains a terminated string and fd is owned here.
+            unsafe {
+                let fd = libc::inotify_init1(libc::IN_CLOEXEC | libc::IN_NONBLOCK);
+                assert!(fd >= 0);
+                let result = libc::syscall(
+                    libc::SYS_inotify_add_watch,
+                    fd,
+                    path.as_ptr(),
+                    libc::IN_ACCESS,
+                );
+                println!("{}", if result >= 0 { 0 } else { -1 });
+                libc::close(fd);
+            }
+        }
         "scan-temporary" => {
             fn scan(path: &std::path::Path, depth: usize) -> usize {
                 if depth > 4 {

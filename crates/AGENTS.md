@@ -240,6 +240,8 @@
 
 - Runlens Linux io_uring setup, enter, and registration attempts preserve the syscall while marking collection incomplete; SQPOLL must not evade this rule by avoiding enter.
 
+- Runlens Linux inotify_add_watch records watch paths as read attempts for successful and failed registrations, including static callers; never retain event payloads.
+
 ### clibox Rules
 
 - Preserve the six issue #916 OS utility commands and seven issue #917 text/time/Base64/hash commands and three issue #919 readiness waits, compatible root help/version, Rust 2021 edition, MIT license, and Cargo/npm exact version synchronization in `docs/crates-clibox-foundation.md`. Keep OS adapters private and mockable, diagnostics redacted (including parser/tool failures), and stdout dedicated to results.

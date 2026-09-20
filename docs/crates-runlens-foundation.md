@@ -775,3 +775,5 @@ New-access policies compare Windows baseline paths with native ordinal case-inse
 Workspace access scope requires each ancestor below the workspace root to be a known directory both before and after execution. A removed or newly created directory cannot prove that a transient link did not redirect the access outside the workspace. These accesses retain unknown scope even when snapshots prove output creation; verification stays inconclusive unless a definite violation already fails it. Missing leaf attempts under established directories remain in scope.
 
 The report parser rejects contradictory child outcomes containing both an exit code and a termination signal, regardless of collection completeness or errors. Any signal also prevents success and yields failed-execution evidence in direct in-memory policy/cache analysis. A signal-only termination remains a valid report outcome.
+
+Linux inotify watch registration records the named file or directory as a read attempt, including failed registration. Dynamic/static syscall fixtures verify external deny-read policies. Event contents and ordering are not retained.

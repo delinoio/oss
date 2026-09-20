@@ -4673,3 +4673,66 @@ fn contradictory_child_termination_is_rejected_and_never_passes_analysis() {
         }
     }
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn inotify_watch_paths_are_read_attempts_for_dynamic_and_static_callers() {
+    let mut executables = vec![fixture().to_owned()];
+    match std::env::var("RUNLENS_STATIC_FIXTURE") {
+        Ok(path) => executables.push(path),
+        Err(_) => assert!(
+            std::env::var_os("CI").is_none(),
+            "static fixture required in CI"
+        ),
+    }
+    for executable in executables {
+        for kind in ["file", "directory", "missing"] {
+            let root = tempfile::tempdir().unwrap();
+            let external = tempfile::tempdir().unwrap();
+            let path = external.path().join("watched");
+            if kind == "file" {
+                fs::write(&path, "WATCH-CONTENT-CANARY").unwrap();
+            }
+            if kind == "directory" {
+                fs::create_dir(&path).unwrap();
+            }
+            fs::write(
+                root.path().join("runlens.toml"),
+                "schema_version = 1\n[policy]\ndeny_reads = [\"**/watched\"]\n",
+            )
+            .unwrap();
+            let result = invoke(
+                root.path(),
+                &[
+                    "run",
+                    "--save",
+                    "watch.json",
+                    "--",
+                    &executable,
+                    "inotify-watch",
+                    path.to_str().unwrap(),
+                ],
+            );
+            assert!(result.status.success(), "{kind}: {result:?}");
+            assert_eq!(
+                String::from_utf8_lossy(&result.stdout).trim(),
+                if kind == "missing" { "-1" } else { "0" }
+            );
+            let report = parse(root.path(), "watch.json");
+            assert!(
+                report["executions"][0]["accesses"]
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .any(|(path, access)| path.ends_with("/watched") && access["read"] == true)
+            );
+            let checked = invoke(root.path(), &["policy", "check", "watch.json", "--json"]);
+            assert_eq!(checked.status.code(), Some(5), "{checked:?}");
+            assert!(
+                !fs::read_to_string(root.path().join("watch.json"))
+                    .unwrap()
+                    .contains("WATCH-CONTENT-CANARY")
+            );
+        }
+    }
+}

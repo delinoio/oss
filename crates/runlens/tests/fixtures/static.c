@@ -8,7 +8,16 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 #include <sys/vfs.h>
+#include <sys/inotify.h>
 int main(int argc, char **argv) {
+    if (argc == 3 && !strcmp(argv[1], "inotify-watch")) {
+        int fd = inotify_init1(IN_CLOEXEC | IN_NONBLOCK);
+        if (fd < 0) return 90;
+        long result = syscall(SYS_inotify_add_watch, fd, argv[2], IN_ACCESS);
+        printf("%d\n", result >= 0 ? 0 : -1);
+        close(fd);
+        return 0;
+    }
     if (argc == 2 && !strncmp(argv[1], "uring-", 6)) {
         /* Linux UAPI io_uring_params: 120 bytes, aligned to 8; flags at byte 8. */
         uint64_t params[15] = {0};
