@@ -247,3 +247,5 @@ The real Go flag suite also compares `-failfast` and `-failfast=false` across tw
 `shard_deadlines_leave_docker_cleanup_available` times out inventory and unit processes through an isolated Docker CLI fixture and verifies awaited removal still executes after the task deadline, with code 124 and a reaped CLI child.
 
 `changed_outputs_override_unchanged_reports` exercises cached and uncached producers invoking the real unchanged CLI. A newly created or modified output propagates to a consumer selected only by its prerequisite, while an identical successful output preserves suppression.
+
+`check_validates_remote_syntax_without_credentials` checks invalid endpoint, bucket, namespace, region, and credential-reference syntax in every access mode. Valid remote settings pass without credentials or network access, and diagnostics omit embedded endpoint secrets.

@@ -371,6 +371,52 @@ pub fn identifier(value: &str) -> bool {
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
 }
+impl RemoteConfig {
+    /// Validate syntax without reading credentials or contacting the endpoint.
+    pub fn validate(&self) -> Result<()> {
+        let url = reqwest::Url::parse(&self.endpoint).context("invalid remote endpoint")?;
+        ensure!(
+            url.username().is_empty()
+                && url.password().is_none()
+                && url.query().is_none()
+                && url.fragment().is_none()
+                && url.path() == "/",
+            "remote endpoint must be an origin without credentials"
+        );
+        ensure!(
+            url.scheme() == "https"
+                || (url.scheme() == "http"
+                    && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"))),
+            "remote endpoint requires HTTPS except loopback fixtures"
+        );
+        for part in self
+            .namespace
+            .split('/')
+            .chain(std::iter::once(self.bucket.as_str()))
+        {
+            ensure!(
+                !part.is_empty()
+                    && part != "."
+                    && part != ".."
+                    && part
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b)),
+                "invalid remote bucket or namespace"
+            );
+        }
+        ensure!(identifier(&self.region), "invalid remote region");
+        for name in [&self.access_key_env, &self.secret_key_env]
+            .into_iter()
+            .chain(self.session_token_env.as_ref())
+        {
+            ensure!(
+                !name.is_empty() && !name.contains(['=', '\0']),
+                "invalid remote credential environment name"
+            );
+        }
+        Ok(())
+    }
+}
 impl Config {
     pub fn validate(&self) -> Result<()> {
         ensure!(
@@ -379,6 +425,9 @@ impl Config {
             self.version
         );
         ensure!(identifier(&self.project), "invalid project ID");
+        if let Some(remote) = &self.remote {
+            remote.validate()?;
+        }
         for (name, task) in &self.tasks {
             ensure!(identifier(name), "invalid task ID {name}");
             task.validate()

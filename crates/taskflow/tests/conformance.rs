@@ -5166,3 +5166,73 @@ async fn changed_outputs_override_unchanged_reports() {
         }
     }
 }
+
+#[test]
+fn check_validates_remote_syntax_without_credentials() {
+    let root = fixture(json!({}));
+    let path = root.path().join("taskflow.yml");
+    let valid = json!({"endpoint":"https://cache.example.test","bucket":"fixture","namespace":"team/project","accessKeyEnv":"TFLOW_ABSENT_REMOTE_ACCESS","secretKeyEnv":"TFLOW_ABSENT_REMOTE_SECRET","sessionTokenEnv":"TFLOW_ABSENT_REMOTE_TOKEN"});
+    let check = |remote: Value| {
+        files::atomic_write(
+            &path,
+            serde_yaml::to_string(&json!({"version":1,"project":"app","remote":remote}))
+                .unwrap()
+                .as_bytes(),
+        )
+        .unwrap();
+        std::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+            .current_dir(root.path())
+            .arg("check")
+            .env_remove("TFLOW_ABSENT_REMOTE_ACCESS")
+            .env_remove("TFLOW_ABSENT_REMOTE_SECRET")
+            .env_remove("TFLOW_ABSENT_REMOTE_TOKEN")
+            .output()
+            .unwrap()
+    };
+    for endpoint in [
+        "https://cache.example.test",
+        "http://127.0.0.1:1",
+        "http://[::1]:1",
+        "http://localhost:1",
+    ] {
+        let mut remote = valid.clone();
+        remote["endpoint"] = json!(endpoint);
+        let output = check(remote);
+        assert!(output.status.success(), "{output:?}");
+    }
+    for (field, values) in [
+        (
+            "endpoint",
+            vec![
+                "invalid",
+                "http://cache.example.test",
+                "https://user:fixture-value@cache.example.test",
+                "https://cache.example.test/path",
+                "https://cache.example.test?secret=fixture-value",
+                "https://cache.example.test#fragment",
+            ],
+        ),
+        ("bucket", vec!["", "../bucket", "a/b"]),
+        ("namespace", vec!["", "a//b", "a/../b"]),
+        ("region", vec!["", "a/b", "a\nb"]),
+        ("accessKeyEnv", vec!["", "A=B", "A\0B"]),
+        ("secretKeyEnv", vec!["", "A=B", "A\0B"]),
+        ("sessionTokenEnv", vec!["", "A=B", "A\0B"]),
+    ] {
+        for value in values {
+            for mode in ["read-only", "read-write", "off"] {
+                let mut remote = valid.clone();
+                remote[field] = json!(value);
+                remote["mode"] = json!(mode);
+                let output = check(remote);
+                assert!(
+                    !output.status.success(),
+                    "accepted {field}={value:?} ({mode})"
+                );
+                let diagnostic = String::from_utf8_lossy(&output.stderr);
+                assert!(diagnostic.contains("remote"), "{diagnostic}");
+                assert!(!diagnostic.contains("fixture-value"), "{diagnostic}");
+            }
+        }
+    }
+}

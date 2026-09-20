@@ -29,38 +29,9 @@ impl Remote {
     }
 
     pub fn new(config: &RemoteConfig) -> Result<Option<Self>> {
+        config.validate()?;
         if config.mode == RemoteMode::Off || untrusted_ci() {
             return Ok(None);
-        }
-        let url = Url::parse(&config.endpoint).context("invalid remote endpoint")?;
-        ensure!(
-            url.username().is_empty()
-                && url.password().is_none()
-                && url.query().is_none()
-                && url.fragment().is_none()
-                && url.path() == "/",
-            "remote endpoint must be an origin without credentials"
-        );
-        ensure!(
-            url.scheme() == "https"
-                || (url.scheme() == "http"
-                    && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"))),
-            "remote endpoint requires HTTPS except loopback fixtures"
-        );
-        for part in config
-            .namespace
-            .split('/')
-            .chain(std::iter::once(config.bucket.as_str()))
-        {
-            ensure!(
-                !part.is_empty()
-                    && part != "."
-                    && part != ".."
-                    && part
-                        .bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b)),
-                "invalid remote bucket or namespace"
-            );
         }
         Ok(Some(Self {
             config: config.clone(),
