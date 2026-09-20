@@ -174,7 +174,7 @@ impl OwnedProcess {
             #[cfg(unix)]
             self.verify_cleanup(status)?;
             #[cfg(windows)]
-            self.kill_tree();
+            self.kill_tree().await?;
             Ok(ProcessExit {
                 code: status.code().unwrap_or(1),
                 reason,
@@ -214,8 +214,7 @@ impl OwnedProcess {
         #[cfg(windows)]
         {
             let _ = tokio::time::timeout(Duration::from_secs(2), self.child.wait()).await;
-            self.kill_tree();
-            let _ = self.child.wait().await;
+            self.kill_tree().await?;
         }
         tracing::debug!(
             pid = self.pid,
@@ -247,18 +246,56 @@ impl OwnedProcess {
     }
 
     #[cfg(windows)]
-    fn kill_tree(&mut self) {
+    async fn kill_tree(&mut self) -> Result<()> {
         if self.cleaned {
-            return;
+            return Ok(());
         }
-        self.cleaned = true;
-        #[cfg(windows)]
         if self.job != 0 {
-            unsafe {
-                windows_sys::Win32::System::JobObjects::TerminateJobObject(self.job as _, 130);
+            windows::terminate_job(self.job)?;
+            let deadline = tokio::time::Instant::now() + windows::CLEANUP_TIMEOUT;
+            while windows::active_processes(self.job)? != 0 {
+                if tokio::time::Instant::now() >= deadline {
+                    return Err(CleanupFailure.into());
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
             }
+        } else {
+            // Attachment failed while the initial thread was still suspended;
+            // only that unstarted direct process can exist outside a job.
+            self.child.start_kill().context(CleanupFailure)?;
         }
-        let _ = self.child.start_kill();
+        self.child.wait().await.context(CleanupFailure)?;
+        self.cleaned = true;
+        tracing::debug!(
+            pid = self.pid,
+            outcome = "job-empty",
+            "Owned process cleanup verified"
+        );
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    fn cleanup_on_drop(&mut self) -> Result<()> {
+        if self.cleaned {
+            return Ok(());
+        }
+        if self.job != 0 {
+            windows::terminate_job(self.job)?;
+        } else {
+            self.child.start_kill().context(CleanupFailure)?;
+        }
+        let deadline = std::time::Instant::now() + windows::CLEANUP_TIMEOUT;
+        loop {
+            let empty = self.job == 0 || windows::active_processes(self.job)? == 0;
+            if empty && self.child.try_wait().context(CleanupFailure)?.is_some() {
+                self.cleaned = true;
+                return Ok(());
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(CleanupFailure.into());
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 }
 impl Drop for OwnedProcess {
@@ -293,7 +330,11 @@ impl Drop for OwnedProcess {
             }
         }
         #[cfg(windows)]
-        self.kill_tree();
+        if let Err(error) = self.cleanup_on_drop() {
+            // Keep kill-on-close as a final fallback, but never claim that an
+            // earlier failed termination or accounting query proved completion.
+            tracing::error!(pid = self.pid, error = %error, "Windows process ownership cleanup could not be verified");
+        }
         #[cfg(windows)]
         if self.job != 0 {
             unsafe {
@@ -479,6 +520,9 @@ async fn capture_owned(
     } else {
         Ok(())
     };
+    // Release the owner's final kill-on-close fallback before waiting for pipe
+    // EOF when an explicit Windows job cleanup attempt failed.
+    drop(child);
     // Await every owner before propagating a failure, including cancellation.
     let output = out.await;
     let errors = err.await;
@@ -612,6 +656,42 @@ mod windows {
 
     use super::*;
 
+    pub const CLEANUP_TIMEOUT: Duration = Duration::from_secs(10);
+
+    fn api_failure(operation: &'static str) -> anyhow::Error {
+        let error = std::io::Error::last_os_error();
+        tracing::error!(
+            operation,
+            os_error = error.raw_os_error(),
+            "Windows job cleanup failed"
+        );
+        anyhow::Error::new(error).context(CleanupFailure)
+    }
+
+    pub fn terminate_job(job: usize) -> Result<()> {
+        if unsafe { TerminateJobObject(job as _, 130) } == 0 {
+            return Err(api_failure("terminate-job"));
+        }
+        Ok(())
+    }
+
+    pub fn active_processes(job: usize) -> Result<u32> {
+        let mut accounting: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION = unsafe { std::mem::zeroed() };
+        if unsafe {
+            QueryInformationJobObject(
+                job as _,
+                JobObjectBasicAccountingInformation,
+                &mut accounting as *mut _ as _,
+                std::mem::size_of_val(&accounting) as u32,
+                std::ptr::null_mut(),
+            )
+        } == 0
+        {
+            return Err(api_failure("query-job-accounting"));
+        }
+        Ok(accounting.ActiveProcesses)
+    }
+
     pub fn attach_and_resume(child: &Child, pid: u32) -> Result<usize> {
         unsafe {
             let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
@@ -656,6 +736,144 @@ mod windows {
                 anyhow::bail!("resume owned process failed");
             }
             Ok(job as usize)
+        }
+    }
+    #[cfg(test)]
+    mod tests {
+        use windows_sys::Win32::System::SystemServices::{JOB_OBJECT_QUERY, JOB_OBJECT_TERMINATE};
+
+        use super::*;
+
+        #[test]
+        // Deliberately outlive the direct parent: the regression must prove that
+        // the Job Object, rather than a parent wait, owns the descendant.
+        #[allow(clippy::zombie_processes)]
+        fn windows_job_fixture() {
+            let Ok(mode) = std::env::var("TFLOW_JOB_FIXTURE_MODE") else {
+                return;
+            };
+            if mode == "child" {
+                let _listener =
+                    std::net::TcpListener::bind(std::env::var("TFLOW_JOB_ADDRESS").unwrap())
+                        .unwrap();
+                std::fs::write(
+                    std::env::var("TFLOW_JOB_PID").unwrap(),
+                    std::process::id().to_string(),
+                )
+                .unwrap();
+                std::thread::sleep(Duration::from_secs(60));
+                return;
+            }
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "process::windows::tests::windows_job_fixture",
+                    "--nocapture",
+                ])
+                .env("TFLOW_JOB_FIXTURE_MODE", "child")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            let path = std::env::var("TFLOW_JOB_PID").unwrap();
+            while !Path::new(&path).exists() {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            if mode == "hold" {
+                std::thread::sleep(Duration::from_secs(60));
+            }
+        }
+
+        #[tokio::test]
+        async fn failed_job_cleanup_preserves_ownership_for_retry_and_drop() {
+            for reason in [
+                ExitReason::Completed,
+                ExitReason::Cancelled,
+                ExitReason::TimedOut,
+            ] {
+                for access in [JOB_OBJECT_QUERY, JOB_OBJECT_TERMINATE] {
+                    let directory = tempfile::tempdir().unwrap();
+                    let pid_file = directory.path().join("child.pid");
+                    let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+                    let address = socket.local_addr().unwrap();
+                    drop(socket);
+                    let mut environment: BTreeMap<String, String> = std::env::vars().collect();
+                    environment.insert(
+                        "TFLOW_JOB_FIXTURE_MODE".into(),
+                        if reason == ExitReason::Completed {
+                            "exit"
+                        } else {
+                            "hold"
+                        }
+                        .into(),
+                    );
+                    environment.insert("TFLOW_JOB_ADDRESS".into(), address.to_string());
+                    environment.insert("TFLOW_JOB_PID".into(), pid_file.to_str().unwrap().into());
+                    let command = Command::Argv(vec![
+                        std::env::current_exe().unwrap().to_str().unwrap().into(),
+                        "--exact".into(),
+                        "process::windows::tests::windows_job_fixture".into(),
+                        "--nocapture".into(),
+                    ]);
+                    let mut owner =
+                        OwnedProcess::spawn(directory.path(), &command, None, Some(&environment))
+                            .unwrap();
+                    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+                    while !pid_file.exists() && tokio::time::Instant::now() < deadline {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                    assert!(
+                        pid_file.exists(),
+                        "owned descendant did not bind its socket"
+                    );
+                    let full_job = owner.job;
+                    // Real access-denied faults exercise both API return values
+                    // without invalid handles or process-global test hooks.
+                    let mut restricted = std::ptr::null_mut();
+                    assert_ne!(
+                        unsafe {
+                            DuplicateHandle(
+                                GetCurrentProcess(),
+                                full_job as _,
+                                GetCurrentProcess(),
+                                &mut restricted,
+                                access,
+                                0,
+                                0,
+                            )
+                        },
+                        0
+                    );
+                    owner.job = restricted as usize;
+                    let cancel = CancellationToken::new();
+                    if reason == ExitReason::Cancelled {
+                        cancel.cancel();
+                    }
+                    let timeout = if reason == ExitReason::TimedOut {
+                        Duration::from_millis(1)
+                    } else {
+                        Duration::from_secs(20)
+                    };
+                    let result = owner.wait(&cancel, Some(timeout)).await;
+                    owner.job = full_job;
+                    unsafe {
+                        CloseHandle(restricted);
+                    }
+                    let error = result.unwrap_err();
+                    assert!(error.is::<CleanupFailure>(), "{reason:?}: {error:?}");
+                    assert!(!owner.cleaned, "failed API must retain cleanup ownership");
+                    if reason != ExitReason::Completed {
+                        owner.terminate().await.unwrap();
+                        assert!(owner.cleaned);
+                        assert_eq!(active_processes(full_job).unwrap(), 0);
+                    }
+                    // Normal-root-exit faults take the destructor retry path;
+                    // cancellation/deadline faults prove explicit retry first.
+                    drop(owner);
+                    let _rebound = std::net::TcpListener::bind(address).unwrap();
+                }
+            }
         }
     }
 }

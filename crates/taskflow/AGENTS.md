@@ -141,3 +141,5 @@
 - Execution result reports are optional regular files capped at 1 KiB. Reject links, reparse points, and special files without blocking; bound both the opened file length and actual read before parsing and execution-ID validation.
 
 - Retain stopped bootstrap services only as revalidated semantic evidence for their installers across every phase. Exclude that evidence from executable provided receipts: every later phase or session requiring readiness must create a fresh owned service. Service identity changes invalidate dependent installation evidence.
+
+- Windows cleanup checks TerminateJobObject and job accounting, awaits zero active processes and direct-child reaping, then marks ownership clean. API/query/deadline failures remain CleanupFailure, leave Drop retry enabled, and cannot authorize successful receipts or replacement. Preserve kill-on-close as a final fallback.

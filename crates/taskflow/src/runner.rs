@@ -931,12 +931,13 @@ async fn run_task(
             };
             if let Err(error) = result {
                 let reaped = process.terminate().await;
+                drop(process);
                 let drained =
                     finish_logs_and_container(stdout, stderr, cleanup_container(docker)).await;
                 let flushed = log.lock().unwrap().finish();
+                reaped?;
                 drained?;
                 flushed?;
-                reaped?;
                 return Err(error);
             }
         }
@@ -956,7 +957,7 @@ async fn run_task(
             let remaining =
                 timeout.map(|duration| duration.saturating_sub(process_started.elapsed()));
             let completed = finish_service(
-                &mut process,
+                process,
                 (stdout, stderr),
                 log,
                 &stop,
@@ -999,12 +1000,15 @@ async fn run_task(
     } else {
         Ok(())
     };
+    // A failed Windows job API still needs the owner's destructor retry and
+    // kill-on-close fallback before descendant-held output pipes can reach EOF.
+    drop(process);
     let drained = finish_logs_and_container(stdout, stderr, cleanup_container(docker)).await;
     let flushed = log.lock().unwrap().finish();
-    drained?;
-    flushed?;
     reaped?;
     let status = waited?;
+    drained?;
+    flushed?;
     let stable = (task.install && !task.cache)
         || files::input_state(&graph.workspace, project, task)? == inputs;
     let mut receipt = Receipt {
@@ -1334,7 +1338,7 @@ async fn wait_with_log_failure(
 }
 
 async fn finish_service(
-    process: &mut OwnedProcess,
+    mut process: OwnedProcess,
     logs: (
         tokio::task::JoinHandle<Result<()>>,
         tokio::task::JoinHandle<Result<()>>,
@@ -1345,12 +1349,13 @@ async fn finish_service(
     timeout: Option<Duration>,
     cleanup: impl std::future::Future<Output = Result<()>>,
 ) -> Result<ProcessExit> {
-    let waited = wait_with_log_failure(process, stop, log_failed, timeout).await;
+    let waited = wait_with_log_failure(&mut process, stop, log_failed, timeout).await;
     let reaped = if waited.is_err() {
         process.terminate().await
     } else {
         Ok(())
     };
+    drop(process);
     let output = finish_logs_and_container(logs.0, logs.1, cleanup).await;
     let flushed = log.lock().unwrap().finish();
     reaped?;
@@ -2089,7 +2094,7 @@ tasks:
                 let result = tokio::time::timeout(
                     Duration::from_secs(10),
                     finish_service(
-                        &mut process,
+                        process,
                         (stdout, stderr),
                         broken,
                         &CancellationToken::new(),
@@ -2099,13 +2104,9 @@ tasks:
                     ),
                 )
                 .await;
-                if result.is_err() {
-                    process.terminate().await.unwrap();
-                }
                 let error = result.unwrap().unwrap_err();
                 assert_eq!(error.is::<crate::docker::CleanupFailure>(), cleanup_fails);
                 assert!(cleaned.load(Ordering::SeqCst));
-                assert!(process.child.try_wait().unwrap().is_some());
                 let address = std::fs::read_to_string(directory.path().join("address")).unwrap();
                 assert!(
                     std::net::TcpListener::bind(address).is_ok(),
