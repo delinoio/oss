@@ -40,6 +40,8 @@
 
 ### nodeup-Specific Rules
 
+- Resolver test fixtures must retain an owning `TempDir` guard and clean only that directory; never derive cleanup scope by traversing parents of a data/cache/config path.
+
 - Preserve rustup-like shim behavior: symlink strategy plus executable-name dispatch.
 - Keep `nodeup shim setup` as the stable idempotent setup/repair command for managed `node`, `npm`, `npx`, `yarn`, and `pnpm` shims.
 - Keep `nodeup shim setup` PATH activation non-mutating by default while reporting shell- and OS-aware activation and verification guidance.
