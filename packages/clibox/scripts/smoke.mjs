@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -36,6 +36,10 @@ try {
     const launcher = path.join(consumer, "node_modules/@delino/clibox/bin/clibox.cjs");
     const help = execFileSync(process.execPath, [launcher, "--help"], { cwd: consumer, encoding: "utf8" });
     ensure(help.includes("Usage: clibox"), `${manager} help smoke failed`);
+    for (const group of ["run", "port", "clipboard", "wait"]) {
+      const missing = spawnSync(process.execPath, [launcher, group], { cwd: consumer, encoding: "utf8" });
+      ensure(missing.status === 2 && missing.stdout === "" && missing.stderr.includes(`Usage: ${target.binary} ${group}`) && missing.stderr.includes("Commands:"), `${manager} ${group} missing-subcommand help smoke failed`);
+    }
     const readyFile = path.join(consumer, "ready file");
     writeFileSync(readyFile, "");
     const ready = JSON.parse(execFileSync(process.execPath, [launcher, "wait", "file", readyFile, "--json", "--timeout", "5s"], { cwd: consumer, encoding: "utf8" }));

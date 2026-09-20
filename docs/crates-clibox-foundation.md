@@ -11,10 +11,11 @@ Developers invoking a pinned CLI in terminals, npm scripts, portable local workf
 
 ## Interfaces and Contracts
 - `clibox`, `clibox --help`, and `clibox -h` print help to stdout and exit successfully; `--version`/`-V` print `clibox <Cargo package version>`.
+- `clibox run`, `clibox port`, `clibox clipboard`, and `clibox wait` without a subcommand print the corresponding command's help on stderr, leave stdout empty, and exit 2. Explicit `--help`/`-h` for those commands prints help on stdout and exits 0. Preserve clap's generated `DisplayHelpOnMissingArgumentOrSubcommand` output without replacing it with a generic diagnostic.
 - `clibox wait tcp HOST:PORT [--timeout DURATION] [--interval DURATION] [--attempt-timeout DURATION] [--quiet | --json]`.
 - `clibox wait http URL [--method get|head] [--status CODE] [--timeout DURATION] [--interval DURATION] [--attempt-timeout DURATION] [--quiet | --json]`.
 - `clibox wait file PATH [--timeout DURATION] [--interval DURATION] [--quiet | --json]`.
-- Accept exactly one target. Missing, malformed, extra, unknown, or conflicting arguments exit 2 with static actionable English stderr diagnostics and no JSON. Never render clap's raw parser errors, which can contain sensitive argv. Help includes examples and command limitations. There is no public Rust library API.
+- Accept exactly one target. Missing targets and malformed, extra, unknown, or conflicting arguments exit 2 with static actionable English stderr diagnostics and no JSON. Only generated help/version output may bypass these diagnostics; never render clap's raw input-error diagnostics, which can contain sensitive argv. Help includes examples and command limitations. There is no public Rust library API.
 - Wait commands do not consume stdin, launch subsequent commands, reverse-wait, continuously monitor, or accept mixed/multiple targets.
 
 ### Utility commands
@@ -119,7 +120,7 @@ Wait signal handlers are installed only by the Tokio wait runtime. Utility comma
 - Scheduler tests use paused time: immediate first checks, unlimited waiting, after-completion delays, clipped budgets, no overlapping polls, retry recovery, and cancellation/resource drop during checks and delays.
 - Loopback TCP/HTTP and isolated TLS fixtures cover DNS/IPv4/IPv6, multiple addresses/refusal/cleanup, GET/HEAD, statuses/transitions, redirect policy, delayed headers, nonterminating bodies, trusted/untrusted certificates, hostname mismatch, partial trust loading, malformed root entries, and trust loading without usable roots.
 - File/process fixtures cover empty/delayed/relative/Unicode files, symlinks/dangling links/loops/special files, metadata without content access, typed permissions/error races, parser validation, output/exit behavior, handled Unix signals and isolated-console Windows Ctrl+C, proxy isolation, and secret markers under detailed or invalid log filters.
-- `node-clibox-test` runs Cargo unit/process tests on Linux, macOS, and Windows. Release builds run those tests for all eight targets before packaging and preserve Alpine consumer validation. Cross-platform evidence is produced by those jobs; local validation alone does not claim all platforms were executed.
+- `node-clibox-test` runs Cargo unit/process tests on Linux, macOS, and Windows. Help assertions account for clap's platform-specific executable name, including `clibox.exe` on Windows. Release builds run those tests for all eight targets before packaging and preserve Alpine consumer validation. Cross-platform evidence is produced by those jobs; local validation alone does not claim all platforms were executed.
 - ring requires a C compiler at build time: MSVC on Windows, Xcode clang on macOS, and native C compilers on GNU Linux. Both musl jobs install `musl-tools` and set the target-specific `CC` to `musl-gcc` for ring, while the final linker remains pinned `rust-lld` with self-contained Rust runtime objects. No runtime OpenSSL/shared crypto dependency is added. Linux HTTPS consumers need their OS CA certificates, including Alpine `ca-certificates`.
 - Preserve Cargo/npm exact version synchronization, all eight native targets, script-free installation, and launcher argv/signal forwarding. Remove generated repository-owned `dist` after validation. No actual package publication is part of implementation.
 
