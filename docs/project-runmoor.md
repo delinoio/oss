@@ -20,6 +20,7 @@ Runmoor manages disposable, single-job GitHub Actions runners on one developer o
 - [Runmoor documentation app](apps-runmoor-docs-foundation.md).
 
 ## Cross-Domain Invariants
+- Manual version selection and bot-owned release orchestration follow `docs/repository-workflow-contract.md`; the `Release Project` workflow supports patch, minor, and major increments while preserving this project’s existing distribution channels.
 
 - Runmoor public guides are owned by the standalone Rspress app and deployed as Cloudflare Pages static output. Stable routes are `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, and `/operations`. The old public-docs `/runmoor` routes are removed without redirects or compatibility pages.
 - Standalone documentation validation preserves the credential and private-path publication safeguards previously applied by public-docs, while retaining public configuration placeholders and user-facing storage guidance. See `docs/apps-runmoor-docs-foundation.md`.

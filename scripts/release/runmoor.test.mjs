@@ -3,8 +3,12 @@ import { mkdtempSync, readFileSync, writeFileSync, readdirSync, rmSync } from "n
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { readVersion, Project, Bump, bumpVersion } from "./project.mjs";
 import { archive, archiveNames, checkPublication, checksums, inspectArchive, releasePlan, verify } from "./runmoor.mjs";
 
+const sourceVersion = readVersion(Project.Runmoor);
+const nextVersion = bumpVersion(sourceVersion, Bump.Patch);
+const sourceTag = `runmoor@v${sourceVersion}`;
 const revision = "1".repeat(40);
 const entries = [
   { name: "runmoor", data: Buffer.from("test executable fixture"), mode: 0o755 },
@@ -12,16 +16,16 @@ const entries = [
   { name: "LICENSE", data: Buffer.from("license"), mode: 0o644 },
 ];
 test("Runmoor publication binds source version, revision, ref and preview status", () => {
-  const plan = releasePlan({ version: "0.1.0", revision, ref: "refs/heads/topic" });
+  const plan = releasePlan({ version: sourceVersion, revision, ref: "refs/heads/topic" });
   assert.equal(plan.mode, "dry-run"); assert.equal(plan.prerelease, true);
-  assert.equal(plan.tag, "runmoor@v0.1.0"); assert.equal(plan.signatures.length, 4);
+  assert.equal(plan.tag, sourceTag); assert.equal(plan.signatures.length, 4);
   for (const fields of [
-    { version: "v0.1.0" }, { version: "0.1.1" }, { revision: "HEAD" },
+    { version: `v${sourceVersion}` }, { version: nextVersion }, { revision: "HEAD" },
     { ref: "refs/tags/another@v0.1.0" }, { mode: "publish", ref: "refs/heads/topic" },
     { mode: "fake-sign" },
-  ]) assert.throws(() => releasePlan({ version: "0.1.0", revision, ref: "refs/heads/main", ...fields }));
-  for (const ref of ["refs/heads/main", "refs/tags/runmoor@v0.1.0"]) {
-    assert.equal(releasePlan({ version: "0.1.0", revision, ref, mode: "publish" }).mode, "publish");
+  ]) assert.throws(() => releasePlan({ version: sourceVersion, revision, ref: "refs/heads/main", ...fields }));
+  for (const ref of ["refs/heads/main", `refs/tags/${sourceTag}`]) {
+    assert.equal(releasePlan({ version: sourceVersion, revision, ref, mode: "publish" }).mode, "publish");
   }
 });
 test("Runmoor archives are deterministic with exact files, permissions and checksums", () => {
@@ -46,7 +50,7 @@ test("Runmoor archives are deterministic with exact files, permissions and check
 });
 test("Signed verification invokes an injected verifier with exact artifact and identity binding", () => {
   const directory = mkdtempSync(path.join(tmpdir(), "runmoor-signature-fixture-"));
-  const identity = "https://github.com/delinoio/oss/.github/workflows/release-runmoor.yml@refs/tags/runmoor@v0.1.0";
+  const identity = `https://github.com/delinoio/oss/.github/workflows/release-runmoor.yml@refs/tags/${sourceTag}`;
   try {
     for (const name of archiveNames) writeFileSync(path.join(directory, name), archive(entries));
     checksums(directory);
@@ -74,7 +78,7 @@ test("Signed verification invokes an injected verifier with exact artifact and i
 
 
 test("Publication refuses conflicting tags, existing releases and uncertain API results", async () => {
-  const plan = releasePlan({ version: "0.1.0", revision, ref: "refs/heads/main", mode: "publish" });
+  const plan = releasePlan({ version: sourceVersion, revision, ref: "refs/heads/main", mode: "publish" });
   await checkPublication(plan, async () => ({ status: 404, body: {} }));
   await checkPublication(plan, async (route) => ({ status: route.includes("/git/") ? 200 : 404, body: { object: { type: "commit", sha: revision } } }));
   for (const result of [

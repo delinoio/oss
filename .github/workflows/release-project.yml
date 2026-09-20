@@ -1,0 +1,230 @@
+name: Release Project
+run-name: Release ${{ inputs.project }} (${{ inputs.bump }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: Project to release
+        required: true
+        type: choice
+        options: [binpm, cargo-mono, nodeup, with-watch, derun, runmoor]
+      bump:
+        description: SemVer increment
+        required: true
+        type: choice
+        default: patch
+        options: [patch, minor, major]
+
+permissions:
+  contents: read
+
+# Serialize version commits and tap updates across all six projects.
+concurrency:
+  group: release-project
+  cancel-in-progress: false
+
+env:
+  RELEASE_PROJECT: ${{ inputs.project }}
+  RELEASE_BUMP: ${{ inputs.bump }}
+
+jobs:
+  prepare:
+    if: github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      project: ${{ steps.prepare.outputs.project }}
+      kind: ${{ steps.prepare.outputs.kind }}
+      previous_version: ${{ steps.prepare.outputs.previous_version }}
+      version: ${{ steps.prepare.outputs.version }}
+      tag: ${{ steps.prepare.outputs.tag }}
+      revision: ${{ steps.prepare.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - name: Validate configuration before committing
+        env:
+          CLIENT_ID: ${{ vars.DELINO_RELEASE_BOT_CLIENT_ID }}
+          PRIVATE_KEY: ${{ secrets.DELINO_RELEASE_BOT_PRIVATE_KEY }}
+          REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          node --input-type=module <<'JS'
+          import { Kind, versionChanges } from './scripts/release/project.mjs';
+          import { readFileSync } from 'node:fs';
+          const plan = versionChanges(process.env.RELEASE_PROJECT, process.env.RELEASE_BUMP, file => readFileSync(file, 'utf8'));
+          if (!process.env.CLIENT_ID || !process.env.PRIVATE_KEY) throw new Error('Release bot configuration is required');
+          if (plan.kind === Kind.Rust && !process.env.REGISTRY_TOKEN) throw new Error('CARGO_REGISTRY_TOKEN is required');
+          JS
+      - name: Create source repository token
+        id: bot
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.DELINO_RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.DELINO_RELEASE_BOT_PRIVATE_KEY }}
+          owner: delinoio
+          repositories: oss
+          permission-contents: write
+      - name: Resolve bot commit identity
+        id: identity
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+        run: node scripts/release/project.mjs bot-identity
+      - name: Commit or resume selected version
+        id: prepare
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+          RELEASE_BOT_NAME: ${{ steps.identity.outputs.name }}
+          RELEASE_BOT_EMAIL: ${{ steps.identity.outputs.email }}
+        run: node scripts/release/project.mjs prepare
+
+  ci:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 245
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      url: ${{ steps.wait.outputs.ci_url }}
+    env:
+      RELEASE_REVISION: ${{ needs.prepare.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - name: Wait for the exact commit CI Result
+        id: wait
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release/project.mjs wait-ci
+
+  registry:
+    needs: [prepare, ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      RELEASE_REVISION: ${{ needs.prepare.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - name: Validate immutable release source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release/project.mjs validate
+      - name: Install Rust toolchain
+        if: needs.prepare.outputs.kind == 'rust'
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-01-01
+      - name: Cache Rust dependencies
+        if: needs.prepare.outputs.kind == 'rust'
+        uses: Swatinem/rust-cache@v2
+      - name: Publish only the selected crate
+        if: needs.prepare.outputs.kind == 'rust'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo run --locked -p cargo-mono -- publish --package "$RELEASE_PROJECT"
+
+  tag:
+    needs: [prepare, registry]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RELEASE_REVISION: ${{ needs.prepare.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - name: Create fresh source repository token
+        id: bot
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.DELINO_RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.DELINO_RELEASE_BOT_PRIVATE_KEY }}
+          owner: delinoio
+          repositories: oss
+          permission-contents: write
+      - name: Push or verify the single release tag
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+        run: node scripts/release/project.mjs tag
+
+  release:
+    needs: [prepare, tag]
+    runs-on: ubuntu-latest
+    timeout-minutes: 245
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      run_url: ${{ steps.wait.outputs.release_run_url }}
+      release_url: ${{ steps.wait.outputs.release_url }}
+    env:
+      RELEASE_REVISION: ${{ needs.prepare.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - name: Wait for signed artifacts and distribution
+        id: wait
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release/project.mjs wait-release
+
+  summary:
+    if: always()
+    needs: [prepare, ci, registry, tag, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report release outcome
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const jobs = JSON.parse(process.env.RESULTS);
+          const source = jobs.prepare.outputs;
+          const lines = [
+            `## ${process.env.RELEASE_PROJECT} release`, '',
+            `Version: ${source.previous_version || 'unresolved'} → ${source.version || 'unresolved'}`,
+            `Commit: ${source.revision || 'unresolved; inspect prepare logs'}`, `Tag: ${source.tag || 'unresolved'}`, '',
+            '| Phase | Result |', '| --- | --- |',
+            ...Object.entries(jobs).map(([name, job]) => `| ${name} | ${job.result} |`), '',
+          ];
+          for (const url of [jobs.ci.outputs.url, jobs.release.outputs.run_url, jobs.release.outputs.release_url]) {
+            if (url) lines.push(`[${url.includes('/releases/') ? 'Release' : 'Workflow run'}](${url})`, '');
+          }
+          const failed = Object.entries(jobs).filter(([, job]) => job.result !== 'success').map(([name]) => name);
+          if (failed.length) lines.push(`Incomplete phases: ${failed.join(', ')}. Resolve the failed exact-commit workflow, then rerun this release run to reuse its version.`);
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
+          if (failed.length) process.exitCode = 1;
+          JS

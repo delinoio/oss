@@ -35,27 +35,19 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       dry_run: ${{ steps.meta.outputs.dry_run }}
     steps:
-      - name: Resolve release metadata
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - name: Validate source and release metadata
         id: meta
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            tag="binpm@v${{ github.event.inputs.version }}"
-            dry_run="${{ github.event.inputs.dry_run }}"
-          else
-            tag="${GITHUB_REF_NAME}"
-            dry_run="false"
-          fi
-
-          version="${tag#binpm@v}"
-
-          {
-            echo "tag=$tag"
-            echo "version=$version"
-            echo "dry_run=$dry_run"
-          } >> "$GITHUB_OUTPUT"
+        env:
+          RELEASE_PROJECT: binpm
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REQUESTED_DRY_RUN: ${{ inputs.dry_run }}
+        run: node scripts/release/project.mjs source
 
   build:
     name: Build (${{ matrix.asset_os }}-${{ matrix.asset_arch }})
@@ -232,10 +224,36 @@ jobs:
             --linux-arm64-sha256 "$linux_arm64_sha" \
             --dry-run >/dev/null
 
+      - name: Setup Node for release bot identity
+        if: env.DRY_RUN != 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      - name: Create Homebrew repository token
+        if: env.DRY_RUN != 'true'
+        id: tap-bot
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.DELINO_RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.DELINO_RELEASE_BOT_PRIVATE_KEY }}
+          owner: delinoio
+          repositories: homebrew-tap
+          permission-contents: write
+
+      - name: Resolve Homebrew bot identity
+        if: env.DRY_RUN != 'true'
+        id: tap-identity
+        env:
+          GH_TOKEN: ${{ steps.tap-bot.outputs.token }}
+        run: node scripts/release/project.mjs bot-identity
+
       - name: Submit Homebrew update
         if: env.DRY_RUN != 'true'
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ steps.tap-bot.outputs.token }}
+          RELEASE_BOT_NAME: ${{ steps.tap-identity.outputs.name }}
+          RELEASE_BOT_EMAIL: ${{ steps.tap-identity.outputs.email }}
         shell: bash
         run: |
           set -euo pipefail
