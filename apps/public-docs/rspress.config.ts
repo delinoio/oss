@@ -30,10 +30,7 @@ export default defineConfig({
     cleanUrls: true,
   },
   themeConfig: {
-    nav: [
-      ...homePages,
-      ...productPages,
-    ],
+    nav: [],
     sidebar: {
       "/": [
         { text: "Get Started", items: homePages.slice(0, 2) },
