@@ -343,6 +343,22 @@ async fn scenario_10_local_docker_execution_uses_explicit_platform_and_cleans_co
     let dir = fixture(
         json!({"container":{"command":["node","-e","require('fs').mkdirSync('out',{recursive:true});require('fs').writeFileSync('out/value',process.env.MESSAGE);require('fs').writeFileSync('out/environment',JSON.stringify([process.env.PATH,process.env.MULTILINE]));require('child_process').execFileSync(process.env.TFLOW_BIN,['result','unchanged'])"],"input":[],"output":["out/**"],"env":{"MESSAGE":"docker-ok","PATH":"/container/bin:/usr/local/bin:/usr/bin:/bin","MULTILINE":"first\nsecond ' \" ="},"platform":{"os":"linux","arch":config::host_arch(),"executor":"docker","image":image}}}),
     );
+    // Exercise Docker's real CSV parser with delimiter/quote-bearing roots.
+    // Windows filenames cannot contain a quote, but commas remain valid.
+    let special = tempfile::Builder::new()
+        .prefix(if cfg!(windows) {
+            "taskflow,workspace-"
+        } else {
+            "taskflow,\"workspace-"
+        })
+        .tempdir()
+        .unwrap();
+    std::fs::copy(
+        dir.path().join("taskflow.yml"),
+        special.path().join("taskflow.yml"),
+    )
+    .unwrap();
+    let dir = special;
     let g = graph(dir.path()).await;
     for expected_changed in [true, false] {
         let result = run(g.clone(), &["container"]).await;

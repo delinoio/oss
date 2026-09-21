@@ -173,3 +173,5 @@
 
 - Output snapshots never follow starting-root links or nested links. Exact roots and complete tree declarations preserve file/directory link records; target contents are not owned output bytes.
 - Remove Windows directory-link roots and restoration backups with directory-link removal semantics, without traversing the target.
+
+- Encode Docker bind-mount sources as quoted CSV fields with doubled literal quotes. Reject source spellings the Docker parser cannot preserve before creating helpers or launching a client.

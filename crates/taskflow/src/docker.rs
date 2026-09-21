@@ -177,6 +177,7 @@ pub async fn prepare(
     cancel: &CancellationToken,
 ) -> Result<(Command, Container)> {
     task.platform.validate_ports()?;
+    let mount = workspace_mount(root)?;
     let host = host_environment(environment)?;
     // Ask the same CLI with the same environment that will launch the task.
     // Its selected context can override DOCKER_HOST, and the synthetic default
@@ -253,7 +254,7 @@ pub async fn prepare(
             }
         ),
         "--mount".into(),
-        format!("type=bind,source={},target=/workspace", root.display()),
+        mount,
         "--workdir".into(),
         format!("/workspace/{}", crate::files::slash(relative)?),
     ];
@@ -323,6 +324,24 @@ pub async fn prepare(
     ))
 }
 
+fn workspace_mount(root: &Path) -> Result<String> {
+    let source = root
+        .to_str()
+        .context("Docker workspace path must be Unicode")?;
+    // Docker parses --mount with encoding/csv: quote the entire source field,
+    // doubling literal quotes. Shell quoting does not escape CSV separators.
+    // Its parser trims field values and normalizes CRLF, so reject those lossy
+    // spellings before any client or helper is started.
+    ensure!(
+        source.trim() == source && !source.contains("\r\n"),
+        "Docker workspace path cannot have boundary whitespace or CRLF"
+    );
+    Ok(format!(
+        "type=bind,\"source={}\",target=/workspace",
+        source.replace('"', "\"\"")
+    ))
+}
+
 // Docker's npipe scheme also supports remote Windows servers. Only the literal
 // dot server in the documented local UNC form proves a local transport.
 fn local_endpoint(endpoint: &str) -> bool {
@@ -351,7 +370,19 @@ fn local_endpoint(endpoint: &str) -> bool {
 
 #[cfg(test)]
 mod endpoint_tests {
-    use super::local_endpoint;
+    use super::{local_endpoint, workspace_mount};
+
+    #[test]
+    fn workspace_mount_encodes_csv_fields() {
+        assert_eq!(
+            workspace_mount(std::path::Path::new("/work/project,old\"copy")).unwrap(),
+            "type=bind,\"source=/work/project,old\"\"copy\",target=/workspace"
+        );
+        for path in ["/work/trailing ", "/work/carriage\r\nreturn"] {
+            assert!(workspace_mount(std::path::Path::new(path)).is_err());
+        }
+    }
+
     #[test]
     fn only_local_socket_addresses_are_accepted() {
         for endpoint in [
