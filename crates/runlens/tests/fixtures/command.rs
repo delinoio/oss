@@ -347,7 +347,7 @@ fn main() {
                 );
                 let path = match args[1].as_str() {
                     "null" => std::ptr::null(),
-                    "invalid" => 1_usize as *const libc::c_char,
+                    "invalid" => std::ptr::dangling::<libc::c_char>(),
                     "protected" => bytes.add(page).cast(),
                     "unterminated" => bytes.add(page - 2).cast(),
                     "too-long" => bytes.cast(),
