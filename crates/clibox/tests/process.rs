@@ -16,7 +16,7 @@ fn environment_delegates_transform_commands_with_platform_variable_conversion() 
             vec![
                 "text", "replace", "(hello)", "$1 🦀", "--regex", "--text", "hello",
             ],
-            // Windows run env applies cross-env's command-variable conversion,
+            // Windows env run applies cross-env's command-variable conversion,
             // including numeric references; direct text replace keeps captures.
             if cfg!(windows) { " 🦀" } else { "hello 🦀" },
         ),
@@ -29,7 +29,7 @@ fn environment_delegates_transform_commands_with_platform_variable_conversion() 
         ),
     ] {
         let output = Command::new(CLI)
-            .args(["run", "env", "--"])
+            .args(["env", "run", "--"])
             .arg(CLI)
             .args(arguments)
             .env_remove("1")
@@ -40,7 +40,7 @@ fn environment_delegates_transform_commands_with_platform_variable_conversion() 
         assert!(output.stderr.is_empty());
     }
     let output = Command::new(CLI)
-        .args(["run", "env", "--"])
+        .args(["env", "run", "--"])
         .arg(CLI)
         .args([
             "hash",
@@ -159,7 +159,7 @@ fn bounded_wait(child: &mut Child) -> std::process::ExitStatus {
 fn environment_inherits_streams_cwd_and_literal_arguments() {
     let directory = tempfile::tempdir().unwrap();
     let mut cmd = Command::new(CLI);
-    cmd.args(["run", "env", "CLIBOX_TEST_VALUE=한글 🦀", "--"])
+    cmd.args(["env", "run", "CLIBOX_TEST_VALUE=한글 🦀", "--"])
         .arg(std::env::current_exe().unwrap());
     helper(&mut cmd, "inspect");
     let literals = [
@@ -205,15 +205,15 @@ fn environment_inherits_streams_cwd_and_literal_arguments() {
 #[test]
 fn environment_propagates_status_and_redacts_failures() {
     let mut cmd = Command::new(CLI);
-    cmd.args(["run", "env", "--"])
+    cmd.args(["env", "run", "--"])
         .arg(std::env::current_exe().unwrap());
     helper(&mut cmd, "exit");
     assert_eq!(cmd.status().unwrap().code(), Some(37));
     for args in [
-        vec!["run", "env", "SECRET=PRIVATE_VALUE"],
+        vec!["env", "run", "SECRET=PRIVATE_VALUE"],
         vec![
-            "run",
             "env",
+            "run",
             "SECRET=PRIVATE_VALUE",
             "/not-existing/PRIVATE_PATH",
             "PRIVATE_ARG",
@@ -236,7 +236,7 @@ fn environment_propagates_status_and_redacts_failures() {
 fn environment_forwards_and_reproduces_termination_signal() {
     use std::os::unix::process::ExitStatusExt;
     let mut cmd = Command::new(CLI);
-    cmd.args(["run", "env", "--"])
+    cmd.args(["env", "run", "--"])
         .arg(std::env::current_exe().unwrap());
     helper(&mut cmd, "wait");
     cmd.stdout(Stdio::piped()).stderr(Stdio::null());
@@ -258,7 +258,7 @@ fn ports_find_test_owned_tcp_udp_ipv4_ipv6_and_kill_once() {
         .collect();
     let mut command = Command::new(CLI);
     command
-        .args(["port", "which", "--protocol", "all", "--json"])
+        .args(["port", "list", "--protocol", "all", "--json"])
         .args(&ports)
         .args(&ports);
     let output = command.output().unwrap();
@@ -285,21 +285,31 @@ fn ports_find_test_owned_tcp_udp_ipv4_ipv6_and_kill_once() {
             "missing {endpoint}: {report}"
         );
     }
-    let quiet = Command::new(CLI)
-        .args(["port", "which", "--protocol", "all", "--quiet"])
+    let pids = Command::new(CLI)
+        .args(["port", "list", "--protocol", "all", "--pids"])
         .args(&ports)
         .output()
         .unwrap();
     let expected_pid = owner.info["pid"].to_string();
     assert_eq!(
-        String::from_utf8_lossy(&quiet.stdout)
+        String::from_utf8_lossy(&pids.stdout)
             .lines()
             .filter(|s| *s == expected_pid)
             .count(),
         1
     );
+    let quiet = Command::new(CLI)
+        .args(["port", "list", "--protocol", "all", "--quiet"])
+        .args(&ports)
+        .output()
+        .unwrap();
+    assert!(quiet.stdout.is_empty());
+    assert_eq!(quiet.status.code(), output.status.code());
+    if !report["errors"].as_array().unwrap().is_empty() {
+        assert!(!quiet.stderr.is_empty());
+    }
     let default = Command::new(CLI)
-        .args(["port", "which", "--json"])
+        .args(["port", "list", "--json"])
         .args(&ports)
         .output()
         .unwrap();
@@ -371,7 +381,6 @@ fn clipboard_invalid_stdin_is_rejected_before_backend_access() {
 #[cfg(unix)]
 #[test]
 fn blocked_stdin_can_be_interrupted() {
-    use std::os::unix::process::ExitStatusExt;
     let mut child = Command::new(CLI)
         .args(["clipboard", "copy"])
         .stdin(Stdio::piped())
@@ -383,7 +392,7 @@ fn blocked_stdin_can_be_interrupted() {
     unsafe {
         libc::kill(child.id() as i32, libc::SIGINT);
     }
-    assert_eq!(bounded_wait(&mut child).signal(), Some(libc::SIGINT));
+    assert_eq!(bounded_wait(&mut child).code(), Some(130));
 }
 
 #[cfg(windows)]
@@ -413,7 +422,7 @@ fn windows_npm_style_cmd_dispatch_preserves_argument_boundaries() {
         r"\\server\share\tool.exe",
     ];
     let output = Command::new(CLI)
-        .args(["run", "env", "--"])
+        .args(["env", "run", "--"])
         .arg(&shim)
         .args(args)
         .output()
@@ -476,7 +485,7 @@ fn linux_tool_copy_preserves_background_owner_and_ignores_stdin_argument_overrid
 #[cfg(target_os = "linux")]
 #[test]
 fn linux_open_wait_cancellation_leaves_the_application_running() {
-    use std::os::unix::{fs::PermissionsExt, process::ExitStatusExt};
+    use std::os::unix::fs::PermissionsExt;
     let temp = tempfile::tempdir().unwrap();
     let app = temp.path().join("application");
     let record = temp.path().join("pid");
@@ -506,7 +515,7 @@ fn linux_open_wait_cancellation_leaves_the_application_running() {
     unsafe {
         libc::kill(child.id() as i32, libc::SIGINT);
     }
-    assert_eq!(bounded_wait(&mut child).signal(), Some(libc::SIGINT));
+    assert_eq!(bounded_wait(&mut child).code(), Some(130));
     assert_eq!(unsafe { libc::kill(pid, 0) }, 0);
     unsafe {
         libc::kill(pid, libc::SIGKILL);

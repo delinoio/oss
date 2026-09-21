@@ -1,4 +1,4 @@
-param([string]$Version = "0.1.0", [string]$InstallDir = "$env:LOCALAPPDATA\async-commit-hook\bin")
+param([string]$Version = "0.1.1", [string]$InstallDir = "$env:LOCALAPPDATA\async-commit-hook\bin")
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { throw 'Version must be MAJOR.MINOR.PATCH' }
 foreach ($tool in @('cosign', 'git')) { Get-Command $tool -ErrorAction Stop | Out-Null }

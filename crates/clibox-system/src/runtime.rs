@@ -59,6 +59,16 @@ pub fn check_cancelled() -> Result<()> {
 
 pub fn finish(code: i32) -> ! {
     let signal = SIGNAL.load(Ordering::SeqCst);
+    // Owned operations return numeric cancellation after their cleanup. Only
+    // delegated children reproduce Unix signal termination via exit_child.
+    #[cfg(unix)]
+    if signal == libc::SIGINT || signal == libc::SIGTERM {
+        std::process::exit(128 + signal);
+    }
+    #[cfg(windows)]
+    if signal != 0 {
+        std::process::exit(130);
+    }
     if signal != 0 {
         finish_signal(signal);
     }
@@ -98,7 +108,7 @@ pub fn delegated(mut command: Command) -> Result<ExitStatus> {
              supported argument encoding.",
         )
     })?;
-    tracing::debug!(operation = "run-env", pid = child.id(), "Child started");
+    tracing::debug!(operation = "env-run", pid = child.id(), "Child started");
     loop {
         let signal = SIGNAL.swap(0, Ordering::SeqCst);
         if signal != 0 {

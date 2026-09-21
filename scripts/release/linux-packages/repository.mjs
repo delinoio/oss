@@ -9,6 +9,14 @@ import { packageKeyring } from './keyring.mjs';
 function listFiles(root) {
   return readdirSync(root, { recursive: true }).filter((name) => statSync(path.join(root, name)).isFile()).sort();
 }
+
+export function isImmutableAptObject(name) {
+  if (name.startsWith('pool/')) return true;
+  const match = name.match(/(?:^|\/)by-hash\/(MD5Sum|SHA1|SHA256|SHA512)\/([^/]+)$/u);
+  if (!match) return false;
+  const lengths = { MD5Sum: 32, SHA1: 40, SHA256: 64, SHA512: 128 };
+  return new RegExp(`^[a-f0-9]{${lengths[match[1]]}}$`, 'u').test(match[2]);
+}
 export async function buildRepositories(records, loadPackage, directory, signing, generation, keyring) {
   requireValue(/^[a-f0-9]{64}$/u.test(generation), 'INVALID_GENERATION');
   const files = [];
@@ -52,9 +60,10 @@ export async function buildRepositories(records, loadPackage, directory, signing
     }
   }
   for (const name of listFiles(path.join(aptlyRoot, 'public'))) {
-    // Clients consume the atomic InRelease and immutable by-hash indexes. Do not expose
-    // independently mutable Release/signature pairs or ordinary index filenames.
-    if (name.startsWith('pool/') || name.includes('/by-hash/')) add(`apt/${name}`, readFileSync(path.join(aptlyRoot, 'public', name)));
+    // Aptly's by-hash trees contain named symlink aliases (such as Packages) next to
+    // content-addressed objects. The aliases change on every index generation, so only
+    // hash-named leaves may be cached and published as immutable objects.
+    if (isImmutableAptObject(name)) add(`apt/${name}`, readFileSync(path.join(aptlyRoot, 'public', name)));
   }
   for (const [key, bytes] of Object.entries(setupFiles())) add(key, bytes, true);
   add('keys/delino-packages.asc', signing.publicKey, true);

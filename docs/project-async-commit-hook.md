@@ -21,7 +21,6 @@ Run trusted repository checks asynchronously against committed source, with dura
 - [Protocol contract](protos-async-commit-hook-v1-contract.md)
 - [Client contract](packages-async-commit-hook-api-client-contract.md)
 - [Requirements snapshot](cmds-async-commit-hook-requirements.md)
-- [Implementation evidence](cmds-async-commit-hook-evidence.md)
 - [Release and recovery contract](cmds-async-commit-hook-release-contract.md)
 
 ## Cross-Domain Invariants
@@ -40,7 +39,7 @@ Release preparation is available through `Release Project` with project `async-c
 Primary public installation instructions follow the downloaded installers' synchronized versions, and upgrade instructions select the highest published stable release. Explicit version selection and rollback remain documented separately without pinning the primary commands to a historical release.
 
 ## Change Policy
-Update the owning domain contract, evidence matrix and relevant AGENTS.md alongside interface, ownership, security or lifecycle changes. Generate protocol sources; never edit generated output. Public documentation describes supported user workflows, not repository internals.
+Update the owning domain contract, the relevant requirements or release contract, and relevant AGENTS.md alongside interface, ownership, security or lifecycle changes. Generate protocol sources; never edit generated output. Public documentation describes supported user workflows, not repository internals.
 
 ## References
 - https://github.com/delinoio/oss/issues/897
@@ -55,4 +54,7 @@ Branch navigation uses bounded streaming pages with a worktree-scoped cursor sha
 
 Branch navigation preserves opaque worktree-scoped identities independently of normalized display labels across source browsing and retained execution history.
 
+Changes preserve safe server diagnostics when automatic diff-base resolution has no result: `diff-base-required` remains local-base guidance rather than being classified as a disconnected UI.
+
 The owner amendment on 2026-09-20 replaces remote-hosted UI/pairing with an embedded same-origin local UI served by the daemon or on-demand viewer, and moves public docs/installers to a dedicated Rspress app. Check execution, evidence and gate semantics remain unchanged. Public deployment remains a separate manual release operation. Documentation development/preview use fixed ports 46311/46281.
+

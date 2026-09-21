@@ -4,7 +4,7 @@ const { spawn } = require("node:child_process");
 const { readFileSync, statSync } = require("node:fs");
 const { createRequire } = require("node:module");
 const path = require("node:path");
-const { selectTarget } = require("./platforms.cjs");
+const { Platform, selectTarget } = require("./platforms.cjs");
 
 const Failure = Object.freeze({ Unsupported: "unsupported-platform", Missing: "missing-binary", Version: "version-mismatch", Spawn: "spawn-failed" });
 class LauncherError extends Error {
@@ -34,11 +34,18 @@ function resolveBinary(manifestPath = path.join(__dirname, "..", "package.json")
   return binary;
 }
 
-function launch(binary, args, { spawnChild = spawn, parent = process } = {}) {
+function launch(binary, args, { spawnChild = spawn, parent = process, platform = process.platform } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawnChild(binary, args, { stdio: "inherit", shell: false });
-    const signals = ["SIGINT", "SIGTERM", "SIGHUP"];
-    const handlers = signals.map((signal) => [signal, () => { if (child.exitCode === null && child.signalCode === null) child.kill(signal); }]);
+    const signals = ["SIGINT", "SIGTERM", "SIGHUP", ...(platform === Platform.Windows ? ["SIGBREAK"] : [])];
+    const handlers = signals.map((signal) => [signal, () => {
+      // Windows broadcasts console Ctrl+C/Break to both processes. Node's kill
+      // API forcibly terminates Windows children, so forwarding would race the
+      // native handler's cleanup and numeric exit status. Await that handler;
+      // Unix signals still require explicit forwarding.
+      if (platform === Platform.Windows && (signal === "SIGINT" || signal === "SIGBREAK")) return;
+      if (child.exitCode === null && child.signalCode === null) child.kill(signal);
+    }]);
     for (const [signal, handler] of handlers) parent.on(signal, handler);
     const cleanup = () => { for (const [signal, handler] of handlers) parent.removeListener(signal, handler); };
     child.once("error", () => {

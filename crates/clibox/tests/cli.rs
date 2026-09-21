@@ -12,8 +12,13 @@ fn help_and_no_arguments_succeed_on_stdout() {
         assert!(stdout.contains("Usage: clibox"));
         assert!(stdout.contains("--help"));
         assert!(stdout.contains("--version"));
+        assert!(stdout.contains(&format!("Version: {}", env!("CARGO_PKG_VERSION"))));
+        assert!(stdout.contains("Maintained by: Delino"));
+        assert!(stdout.contains("Repository: https://github.com/delinoio/oss"));
+        assert!(stdout.contains("License: MIT"));
+        assert!(stdout.contains("Support: https://github.com/delinoio/oss/issues"));
         for command in [
-            "run",
+            "env",
             "port",
             "open",
             "clipboard",
@@ -22,6 +27,8 @@ fn help_and_no_arguments_succeed_on_stdout() {
             "base64",
             "hash",
             "wait",
+            "dotenv",
+            "yaml",
         ] {
             assert!(
                 stdout
@@ -52,15 +59,17 @@ fn version_comes_from_the_cargo_package() {
 
 #[test]
 fn missing_subcommands_show_command_help_on_stderr() {
-    let groups: [(&str, &[&str]); 8] = [
-        ("run", &["env"]),
-        ("port", &["which", "kill"]),
+    let groups: [(&str, &[&str]); 10] = [
+        ("env", &["run"]),
+        ("port", &["list", "kill"]),
         ("clipboard", &["copy", "paste"]),
         ("wait", &["tcp", "http", "file"]),
+        ("dotenv", &["list", "merge"]),
+        ("yaml", &["normalize"]),
         ("text", &["replace"]),
         ("time", &["format", "add"]),
         ("base64", &["encode", "decode"]),
-        ("hash", &["encode", "verify"]),
+        ("hash", &["compute", "verify"]),
     ];
     for (group, subcommands) in groups {
         let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
@@ -77,6 +86,7 @@ fn missing_subcommands_show_command_help_on_stderr() {
             "{stderr}"
         );
         assert!(stderr.contains("Commands:"));
+        assert!(!stderr.contains("Maintained by: Delino"));
         for subcommand in subcommands {
             assert!(stderr.contains(&format!("  {subcommand} ")), "{stderr}");
         }
@@ -101,7 +111,7 @@ fn unknown_arguments_fail_on_stderr() {
     for arguments in [
         vec!["--PRIVATE-MARKER"],
         vec!["PRIVATE-MARKER"],
-        vec!["run", "PRIVATE-MARKER"],
+        vec!["env", "PRIVATE-MARKER"],
         vec!["port", "PRIVATE-MARKER"],
         vec!["clipboard", "PRIVATE-MARKER"],
         vec!["wait", "PRIVATE-MARKER"],
@@ -109,6 +119,8 @@ fn unknown_arguments_fail_on_stderr() {
         vec!["time", "PRIVATE-MARKER"],
         vec!["base64", "PRIVATE-MARKER"],
         vec!["hash", "PRIVATE-MARKER"],
+        vec!["dotenv", "PRIVATE-MARKER"],
+        vec!["yaml", "PRIVATE-MARKER"],
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
             .args(arguments)
@@ -124,41 +136,65 @@ fn unknown_arguments_fail_on_stderr() {
 }
 
 #[test]
-fn every_utility_has_help_and_examples() {
+fn every_command_has_help_and_examples() {
     for args in [
         vec!["wait", "tcp", "--help"],
         vec!["wait", "http", "--help"],
         vec!["wait", "file", "--help"],
-        vec!["run", "env", "--help"],
-        vec!["port", "which", "--help"],
+        vec!["env", "run", "--help"],
+        vec!["port", "list", "--help"],
         vec!["port", "kill", "--help"],
         vec!["open", "--help"],
         vec!["clipboard", "copy", "--help"],
         vec!["clipboard", "paste", "--help"],
+        vec!["dotenv", "list", "--help"],
+        vec!["dotenv", "merge", "--help"],
+        vec!["yaml", "normalize", "--help"],
+        vec!["text", "replace", "--help"],
+        vec!["time", "format", "--help"],
+        vec!["time", "add", "--help"],
+        vec!["base64", "encode", "--help"],
+        vec!["base64", "decode", "--help"],
+        vec!["hash", "compute", "--help"],
+        vec!["hash", "verify", "--help"],
     ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
-            .args(args)
-            .env("NO_COLOR", "1")
-            .output()
-            .unwrap();
-        assert!(output.status.success());
-        assert!(output.stderr.is_empty());
-        let stdout = String::from_utf8(output.stdout).unwrap();
-        assert!(stdout.contains("Example"));
-        assert!(!stdout.contains('\u{1b}'));
+        for flag in ["-h", "--help"] {
+            let mut args = args.clone();
+            *args.last_mut().unwrap() = flag;
+            let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
+                .args(&args)
+                .env("NO_COLOR", "1")
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            assert!(output.stderr.is_empty());
+            let stdout = String::from_utf8(output.stdout).unwrap();
+            assert!(stdout.contains("Example"));
+            assert!(!stdout.contains("Maintained by: Delino"));
+            assert!(stdout.contains("exit") || stdout.contains("Exit codes"));
+            if matches!(args[0], "text" | "base64" | "hash") {
+                assert!(stdout.contains("Input defaults to stdin"));
+                assert!(stdout.contains("--output -"));
+                assert!(stdout.contains("--force requires"));
+                if matches!(args[0], "base64" | "hash") {
+                    assert!(!stdout.contains("--in-place"));
+                }
+            }
+            assert!(!stdout.contains('\u{1b}'));
+        }
     }
 }
 
 #[test]
 fn invalid_shapes_fail_before_any_os_effect() {
     for args in [
-        vec!["run", "env"],
-        vec!["run", "env", "FOO=bar"],
-        vec!["port", "which"],
-        vec!["port", "which", "0"],
+        vec!["env", "run"],
+        vec!["env", "run", "FOO=bar"],
+        vec!["port", "list"],
+        vec!["port", "list", "0"],
         vec!["port", "kill", "65536"],
-        vec!["port", "which", "80", "--quiet", "--json"],
-        vec!["port", "which", "80", "--protocol", "sctp"],
+        vec!["port", "list", "80", "--quiet", "--json"],
+        vec!["port", "list", "80", "--protocol", "sctp"],
         vec!["open"],
         vec!["open", "https://example.com", "--wait"],
         vec!["open", "a", "b"],
@@ -190,8 +226,10 @@ fn help_never_forces_color_on_a_pipe() {
 fn parser_failures_remain_redacted_and_visible_with_logging_disabled() {
     for args in [
         vec!["wait", "http", "https://SECRET-PARSER@localhost"],
-        vec!["hash", "encode", "--algorithm", "SECRET-PARSER"],
-        vec!["port", "which", "SECRET-PARSER"],
+        vec!["hash", "compute", "--algorithm", "SECRET-PARSER"],
+        vec!["port", "list", "SECRET-PARSER"],
+        vec!["dotenv", "SECRET-PARSER"],
+        vec!["yaml", "SECRET-PARSER"],
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
             .args(args)

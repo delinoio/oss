@@ -5,6 +5,7 @@
 - All seven enrolled CLIs use stable; keep the reserved preview suite separate, preserve exact upstream versions, and never enable services or modify a user's configuration from package hooks.
 - Keep private keys, real credentials, generated package files, and generated repository trees out of Git. Repository-owned `dist` directories are generated and must be removed from the final worktree.
 - Verify source release identity and signatures before packaging, and preserve complete signed candidates across retries. Both RPM package signatures and repository metadata signatures are mandatory.
+- Publish only content-addressed leaves from aptly's `by-hash` trees. Its named symlink aliases change with each index and must never be treated as immutable objects.
 - Production signing and R2 writes belong only to the protected `linux-packages` environment. Tests and dry runs use disposable keys and temporary stores.
 - Cloudflare cache rules must be restricted to the package hostname, cache only immutable object paths, bypass mutable entrypoints and refuse negative caching for all error responses.
 

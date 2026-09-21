@@ -12,12 +12,15 @@ pub use system::Action as Command;
 
 /// Execute one OS command and preserve its native child/signal exit behavior.
 pub fn execute(command: Command, leading_separator: bool) -> ! {
-    let result =
-        runtime::install_signals().and_then(|()| system::execute(command, leading_separator));
+    let operation = command.operation();
+    let result = runtime::install_signals().and_then(|()| {
+        tracing::debug!(operation, "operation_started");
+        system::execute(command, leading_separator)
+    });
     let status = match result {
         Ok(status) => status,
         Err(error) => {
-            error.report("clibox");
+            error.report(operation);
             if error.code == error::Code::InvalidInput {
                 2
             } else {

@@ -16,6 +16,7 @@ pub enum Code {
     TimeRange,
     InvalidBase64,
     InvalidDigest,
+    VerificationFailed,
     MalformedRecord,
     EmptyManifest,
     ReadFailed,
@@ -76,6 +77,10 @@ impl Error {
             Code::InvalidDigest => {
                 "Provide a digest with the selected encoding and algorithm's exact length."
             }
+            Code::VerificationFailed => {
+                "Checksum verification failed; inspect the result report without --quiet for entry \
+                 statuses."
+            }
             Code::MalformedRecord => {
                 "Use GNU untagged checksum records for the selected algorithm."
             }
@@ -104,7 +109,17 @@ impl Error {
     }
 }
 
-pub fn report(error: Error) {
+pub fn report(error: Error, operation: &'static str) {
     // Never format external errors: even parser and OS errors can contain input.
-    tracing::error!(code = ?error.code, message = error.message(), "error: operation failed");
+    if tracing::enabled!(tracing::Level::ERROR) {
+        tracing::error!(operation, code = ?error.code, message = error.message(), "error: operation failed");
+    } else {
+        use std::io::Write;
+        let _ = writeln!(
+            std::io::stderr(),
+            "error: {} operation={operation} code={:?}",
+            error.message(),
+            error.code
+        );
+    }
 }

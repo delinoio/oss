@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { createServer } from "node:net";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import platforms from "../src/platforms.cjs";
@@ -37,6 +38,17 @@ try {
     const launcher = path.join(consumer, "node_modules/@delino/clibox/bin/clibox.cjs");
     const help = execFileSync(process.execPath, [launcher, "--help"], { cwd: consumer, encoding: "utf8" });
     ensure(help.includes("Usage: clibox"), `${manager} help smoke failed`);
+    const cli = (args, input) => execFileSync(process.execPath, [launcher, ...args], { cwd: consumer, encoding: "utf8", input });
+    writeFileSync(path.join(consumer, ".env"), 'Z=base\nA="literal ${HOME}"\n');
+    writeFileSync(path.join(consumer, "local.env"), "Z=local\n");
+    ensure(cli(["dotenv", "list"]) === "A\nZ\n", `${manager} dotenv list smoke failed`);
+    ensure(cli(["dotenv", "merge", ".env", "local.env"]) === 'A="literal ${HOME}"\nZ=local\n', `${manager} dotenv merge smoke failed`);
+    const normalized = cli(["yaml", "normalize"], "base: &base {z: 2, a: 1}\ncopy: {<<: *base, z: 3}\n");
+    ensure(normalized === '"base":\n  "a": 1\n  "z": 2\n"copy":\n  "a": 1\n  "z": 3\n', `${manager} YAML reference smoke failed`);
+    ensure(cli(["yaml", "normalize"], normalized) === normalized, `${manager} YAML idempotence smoke failed`);
+    writeFileSync(path.join(consumer, "config.yaml"), "z: 2\na: 1\n");
+    ensure(cli(["yaml", "normalize", "--input", "config.yaml", "--in-place"]) === "", `${manager} file output leaked to stdout`);
+    ensure(readFileSync(path.join(consumer, "config.yaml"), "utf8") === '"a": 1\n"z": 2\n', `${manager} in-place smoke failed`);
     const invoke = (args, options = {}) => execFileSync(process.execPath, [launcher, ...args], { cwd: consumer, ...options });
     const equal = (actual, expected, operation) => ensure(Buffer.from(actual).equals(Buffer.from(expected)), operation);
     const consumerManifest = path.join(consumer, "package.json");
@@ -55,16 +67,43 @@ try {
     equal(encoded, bytes.toString("base64"), "Installed Base64 encoding failed");
     equal(invoke(["base64", "decode"], { input: encoded }), bytes, "Installed binary Base64 decoding failed");
     const digest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
-    equal(invoke(["hash", "encode", "--text", "abc"]), digest + "\n", "Installed hash generation failed");
+    equal(invoke(["hash", "compute", "--text", "abc"]), digest + "\n", "Installed hash generation failed");
     equal(invoke(["hash", "verify", digest, "--text", "abc"]), "text: ok\n", "Installed hash verification failed");
     const file = path.join(consumer, "binary input.dat");
     writeFileSync(file, bytes);
-    const manifest = invoke(["hash", "encode", "--input", file, "--format", "checksum"]);
+    const manifest = invoke(["hash", "compute", "--input", file, "--format", "checksum"]);
     equal(invoke(["hash", "verify", "--check", "-", "--quiet"], { input: manifest }), "", "Installed manifest verification failed");
     mkdirSync(path.join(consumer, "checksums"));
-    equal(invoke(["hash", "encode", "--input", "binary input.dat", "--format", "checksum", "--output", "checksums/sums"]), "", "Installed manifest output failed");
+    equal(invoke(["hash", "compute", "--input", "binary input.dat", "--format", "checksum", "--output", "checksums/sums"]), "", "Installed manifest output failed");
     equal(invoke(["hash", "verify", "--check", "checksums/sums", "--quiet"]), "", "Installed manifest-relative path verification failed");
-    for (const group of ["run", "port", "clipboard", "wait", "text", "time", "base64", "hash"]) {
+    equal(invoke(["base64", "encode", "--text", "abc", "--output", "-"]), "YWJj", "Installed stdout selector failed");
+    equal(invoke(["dotenv", "list", "--output", "-"]), "A\nZ\n", "Installed configuration stdout selector failed");
+    equal(invoke(["base64", "encode", "--text", "abc", "--output", "./-"]), "", "Installed literal dash file leaked stdout");
+    equal(readFileSync(path.join(consumer, "-")), "YWJj", "Installed literal dash file failed");
+    for (const args of [
+      ["run", "env"], ["port", "which"], ["hash", "encode"],
+      ["base64", "encode", "--force"],
+      ["yaml", "normalize", "--output", "-", "--force"],
+      ["port", "list", "80", "--pids", "--quiet"],
+      ["port", "kill", "80", "--quiet", "--json"],
+    ]) {
+      const rejected = spawnSync(process.execPath, [launcher, ...args], { cwd: consumer, encoding: "utf8", input: "", env: { ...process.env, RUST_LOG: "off" } });
+      ensure(rejected.status === 2 && rejected.stdout === "" && rejected.stderr.includes("--help"), `${manager} consistency rejection failed`);
+    }
+    // Keep a test-owned listener bound throughout inspection; never kill or
+    // release/reacquire a port that another concurrent test could inherit.
+    const listener = createServer();
+    await new Promise((resolve, reject) => { listener.once("error", reject); listener.listen(0, "127.0.0.1", resolve); });
+    try {
+      const port = String(listener.address().port);
+      const pids = spawnSync(process.execPath, [launcher, "port", "list", port, "--pids"], { cwd: consumer, encoding: "utf8" });
+      ensure([0, 1].includes(pids.status) && pids.stdout.trim().split(/\r?\n/u).includes(String(process.pid)), `${manager} PID output failed`);
+      const quiet = spawnSync(process.execPath, [launcher, "port", "list", port, "--quiet"], { cwd: consumer, encoding: "utf8" });
+      ensure([0, 1].includes(quiet.status) && quiet.stdout === "", `${manager} quiet output failed`);
+    } finally {
+      await new Promise((resolve) => listener.close(resolve));
+    }
+    for (const group of ["env", "port", "clipboard", "wait", "text", "time", "base64", "hash", "dotenv", "yaml"]) {
       const missing = spawnSync(process.execPath, [launcher, group], { cwd: consumer, encoding: "utf8" });
       ensure(missing.status === 2 && missing.stdout === "" && missing.stderr.includes(`Usage: ${target.binary} ${group}`) && missing.stderr.includes("Commands:"), `${manager} ${group} missing-subcommand help smoke failed`);
     }
@@ -74,11 +113,11 @@ try {
     ensure(ready.kind === "file" && ready.status === "ready" && ready.attempts === 1 && ready.error === null, `${manager} readiness smoke failed`);
     const fixture = path.join(consumer, "utility-check.cjs");
     writeFileSync(fixture, "if (process.env.CLIBOX_TEST_EXIT) process.exit(37); process.stdout.write(JSON.stringify({ value: process.env.CLIBOX_TEST_VALUE, args: process.argv.slice(2) }));");
-    const utility = JSON.parse(execFileSync(process.execPath, [launcher, "run", "env", "CLIBOX_TEST_VALUE=unicode 🦀", "--", process.execPath, fixture, "", "two words", "a&b|c"], { cwd: consumer, encoding: "utf8" }));
+    const utility = JSON.parse(execFileSync(process.execPath, [launcher, "env", "run", "CLIBOX_TEST_VALUE=unicode 🦀", "--", process.execPath, fixture, "", "two words", "a&b|c"], { cwd: consumer, encoding: "utf8" }));
     ensure(utility.value === "unicode 🦀" && JSON.stringify(utility.args) === JSON.stringify(["", "two words", "a&b|c"]), `${manager} utility argv/environment smoke failed`);
     let delegatedStatus;
     try {
-      execFileSync(process.execPath, [launcher, "run", "env", "CLIBOX_TEST_EXIT=1", "--", process.execPath, fixture], { cwd: consumer, stdio: "pipe" });
+      execFileSync(process.execPath, [launcher, "env", "run", "CLIBOX_TEST_EXIT=1", "--", process.execPath, fixture], { cwd: consumer, stdio: "pipe" });
     } catch (error) { delegatedStatus = error.status; }
     ensure(delegatedStatus === 37, `${manager} utility exit propagation failed`);
     const installed = JSON.parse(readFileSync(path.join(consumer, "node_modules", native.name, "package.json"), "utf8"));
