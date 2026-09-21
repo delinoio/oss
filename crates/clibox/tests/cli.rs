@@ -169,6 +169,9 @@ fn every_command_has_help_and_examples() {
                 assert!(stdout.contains("Input defaults to stdin"));
                 assert!(stdout.contains("--output -"));
                 assert!(stdout.contains("--force requires"));
+                if matches!(args[0], "base64" | "hash") {
+                    assert!(!stdout.contains("--in-place"));
+                }
             }
             assert!(!stdout.contains('\u{1b}'));
         }

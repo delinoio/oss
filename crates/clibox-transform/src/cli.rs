@@ -7,7 +7,8 @@ use crate::transform_error::{Code, Error, Result as TransformResult};
 const IO_HELP: &str = "Input defaults to stdin until EOF; --input - explicitly selects stdin.
 --text supplies UTF-8 bytes with no added newline. Explicit input ignores stdin.
 Output defaults to stdout; --output - also selects stdout (use ./- for a dash file).
---force requires file output or --in-place. File output is prepared beside its destination and
+--force requires a file destination; omit it for stdout. File output is prepared beside its \
+                       destination and
 published only on completion; --force permits replacement while preserving access
 permissions. Linked replacement destinations are rejected. No backups or locking
 are provided; the last successful replacement wins. Interrupted streaming stdout
@@ -53,7 +54,7 @@ pub struct Output {
     /// Publish to a file, or - for stdout (the default).
     #[arg(long, value_name = "FILE")]
     pub output: Option<PathBuf>,
-    /// Allow replacing a file; requires file output or --in-place.
+    /// Allow replacing an existing file destination.
     #[arg(long)]
     pub force: bool,
 }
@@ -95,7 +96,8 @@ pub struct TextReplace {
     pub source: Input,
     #[command(flatten)]
     pub destination: Output,
-    /// Atomically replace the explicitly selected regular input file.
+    /// Atomically replace the explicit regular input file; --force is
+    /// redundant.
     #[arg(long, requires = "input", conflicts_with_all = ["output", "text"])]
     pub in_place: bool,
 }

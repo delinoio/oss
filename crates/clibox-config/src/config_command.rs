@@ -13,13 +13,13 @@ const IO_HELP: &str =
      output are independently limited to 64 MiB. Relative paths use the current directory. \
      --input - selects stdin; explicit files do not consume stdin. Results default to stdout. \
      --output - also selects stdout; use ./- for a literal dash filename. --force requires a file \
-     output or --in-place. Empty/comment-only input produces zero bytes; nonempty results end in \
-     LF. All input is validated before any result is emitted. A stdout write failure or \
-     interruption may leave partial output.\n\nFile output uses a private temporary file on the \
-     destination filesystem (inside a private directory on Unix) and is published only on \
-     success. New Unix files use mode 0600; Windows files inherit the parent ACL. Replacements \
-     preserve access permissions and reject symbolic links or multiple hard links. Existing \
-     output requires --force (except --in-place). No backups, locks, or concurrent-change \
+     destination; omit it for stdout. Empty/comment-only input produces zero bytes; nonempty \
+     results end in LF. All input is validated before any result is emitted. A stdout write \
+     failure or interruption may leave partial output.\n\nFile output uses a private temporary \
+     file on the destination filesystem (inside a private directory on Unix) and is published \
+     only on success. New Unix files use mode 0600; Windows files inherit the parent ACL. \
+     Replacements preserve access permissions and reject symbolic links or multiple hard links. \
+     Existing output requires replacement authorization. No backups, locks, or concurrent-change \
      detection; the last successful replacement wins. Windows sharing rules may reject \
      overlapping replacements; retry after competing handles close. Handled cancellation cleans \
      unpublished temporaries and never undoes completed writes. No persistent state, shell \
