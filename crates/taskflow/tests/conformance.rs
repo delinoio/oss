@@ -900,7 +900,11 @@ async fn scenarios_08_15_16_19_watch_and_timer_companions_preserve_server() {
         wait_lines(&dir.path().join("server.pid"), "", 1).await;
         let pid = std::fs::read_to_string(dir.path().join("server.pid")).unwrap();
         if watch_changes {
-            let initial = runner::previous(dir.path(), "app#check").unwrap();
+            // A queued startup input execution may temporarily invalidate the
+            // persisted receipt. A missing baseline still requires a completed
+            // successful Input receipt consuming the new content below.
+            let initial =
+                runner::previous(dir.path(), "app#check").map(|receipt| receipt.execution);
             files::atomic_write(&dir.path().join("source"), b"after").unwrap();
             tokio::time::timeout(Duration::from_secs(15), async {
                 loop {
@@ -909,7 +913,7 @@ async fn scenarios_08_15_16_19_watch_and_timer_companions_preserve_server() {
                         "session exited before consuming input"
                     );
                     if runner::previous(dir.path(), "app#check").is_some_and(|receipt| {
-                        receipt.execution != initial.execution
+                        Some(&receipt.execution) != initial.as_ref()
                             && receipt.success()
                             && receipt
                                 .causes
