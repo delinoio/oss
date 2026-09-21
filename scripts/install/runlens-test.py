@@ -5,12 +5,17 @@ import hashlib
 import os
 from pathlib import Path
 import platform
+import re
+import tomllib
 import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 
 def run(directory, fixture):
+    version = tomllib.loads((ROOT / "crates/runlens/Cargo.toml").read_text())["package"]["version"]
+    if not isinstance(version, str) or not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version):
+        raise ValueError("installer fixture requires a stable source version")
     with tempfile.TemporaryDirectory(prefix='runlens-installer-test-') as owned:
         owned = Path(owned)
         install = owned / 'installed'
@@ -28,11 +33,11 @@ def run(directory, fixture):
         env = dict(os.environ)
         if platform.system() == 'Windows':
             harness = owned / 'verify.ps1'
-            harness.write_text('''param([string]$Installer,[string]$Destination,[string]$Archives)
+            harness.write_text('''param([string]$Installer,[string]$Destination,[string]$Archives,[string]$Version)
 function global:cosign { $global:LASTEXITCODE = [int]$env:RUNLENS_VERIFY_RESULT }
-& $Installer -Version '0.1.0' -InstallDir $Destination -ArchiveDir $Archives
+& $Installer -Version $Version -InstallDir $Destination -ArchiveDir $Archives
 ''')
-            command = ['pwsh', '-NoProfile', '-File', str(harness), str(ROOT / 'scripts/install/runlens.ps1'), str(install), str(archives)]
+            command = ['pwsh', '-NoProfile', '-File', str(harness), str(ROOT / 'scripts/install/runlens.ps1'), str(install), str(archives), version]
             binary = install / 'runlens.exe'
         else:
             tools = owned / 'tools'
@@ -41,7 +46,7 @@ function global:cosign { $global:LASTEXITCODE = [int]$env:RUNLENS_VERIFY_RESULT 
             verifier.write_text('#!/bin/sh\nexit "${RUNLENS_VERIFY_RESULT:-1}"\n')
             verifier.chmod(0o700)
             env['PATH'] = str(tools) + os.pathsep + env['PATH']
-            command = ['sh', str(ROOT / 'scripts/install/runlens.sh'), '--version', '0.1.0', '--install-dir', str(install), '--archive-dir', str(archives)]
+            command = ['sh', str(ROOT / 'scripts/install/runlens.sh'), '--version', version, '--install-dir', str(install), '--archive-dir', str(archives)]
             binary = install / 'runlens'
         env['RUNLENS_VERIFY_RESULT'] = '1'
         assert subprocess.run(command, env=env).returncode != 0

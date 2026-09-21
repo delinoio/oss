@@ -19,6 +19,10 @@ spec = importlib.util.spec_from_file_location('release', Path(__file__).with_nam
 release = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release)
 
+installer_spec = importlib.util.spec_from_file_location('installer_fixture', Path(__file__).parents[1] / 'install/runlens-test.py')
+installer = importlib.util.module_from_spec(installer_spec)
+installer_spec.loader.exec_module(installer)
+
 class ReleaseTests(unittest.TestCase):
     def test_versions_are_closed(self):
         self.assertEqual(release.version(release.source_version()), release.source_version())
@@ -39,6 +43,31 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(release.version('0.2.1'), '0.2.1')
                 with self.assertRaises(ValueError):
                     release.version('0.1.0')
+
+    def test_native_installer_fixture_follows_package_version_on_both_platforms(self):
+        class ObservedInvocation(Exception):
+            pass
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'crates/runlens'
+            source.mkdir(parents=True)
+            archives = root / 'archives'
+            archives.mkdir()
+            (archives / 'runlens-test.tar.gz').write_bytes(b'fixture archive')
+            for version in ['0.1.0', '0.2.1']:
+                (source / 'Cargo.toml').write_text(f'[dependencies.fixture]\nversion = "9.0.0"\n[package]\nversion = "{version}"\n')
+                for system in ['Darwin', 'Windows']:
+                    def inspect(command, **kwargs):
+                        if system == 'Windows':
+                            self.assertEqual(command[-1], version)
+                            harness = Path(command[3]).read_text()
+                            self.assertIn('-Version $Version', harness)
+                            self.assertNotIn('0.1.0', harness)
+                        else:
+                            self.assertEqual(command[command.index('--version') + 1], version)
+                        raise ObservedInvocation()
+                    with self.subTest(version=version, system=system), patch.object(installer, 'ROOT', root), patch.object(installer.platform, 'system', return_value=system), patch.object(installer.subprocess, 'run', side_effect=inspect), self.assertRaises(ObservedInvocation):
+                        installer.run(archives, root / 'command')
 
     def test_installer_host_requires_expected_native_platform_and_minimum_os(self):
         for system, machine, key, os_version in [

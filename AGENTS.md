@@ -473,7 +473,7 @@ Release automation baseline:
 ### Runlens release ownership
 
 - Runlens native validation and release use `.github/workflows/runlens.yml` and `.github/workflows/release-runlens.yml`; `docs/repository-workflow-contract.md` defines their trust boundaries. Keep dry runs read-only and credential-free. Require exact-commit native evidence on all six minimum OS/architecture targets before signing, and authenticated installation on all six before public publication.
-- Runlens native validation derives archive and evidence versions from the checked-out Cargo package version; version bumps must not require editing workflow commands or source-version tests.
+- Runlens native validation derives archive, installer-fixture, and evidence versions from the checked-out Cargo package version; version bumps must not require editing workflow commands or source-version tests.
 - Runlens release identity is `runlens@vX.Y.Z`, initially `runlens@v0.1.0`. Its archives, installers, and prebuilt Homebrew formula share the closed inventory in `scripts/release/runlens.py`. Never substitute cross compilation or authentication doubles for native or signed-install proof.
 - Runlens POSIX installation must reject symlinks and non-regular destination objects while preserving their contents; successful replacement must install the executable at the exact requested file path. Address the installation directory with a fixed runlens source basename so a raced destination directory fails instead of accepting a nested executable.
 - Runlens native validation must watch its Homebrew formula template and shared tap renderer on both pull requests and main pushes.

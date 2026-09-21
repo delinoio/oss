@@ -147,3 +147,5 @@ All nine packages require a Trusted Publisher permitting publication from `delin
 Runlens native validation reads the checked-out Cargo package version with the release helper once and passes that validated stable version to both packaging and native evidence. The workflow and release fixtures do not pin artifact commands to the initial 0.1.0 version.
 
 Repository-wide Go quality/tests and ach-specific compilation must first generate the app-owned ach UI embed using `pnpm --filter async-commit-hook build:embedded`. The root Go checks also retain the existing administrator embed prerequisite. ach documentation-only Pages publication consumes the separate Rspress output; the executable release builder regenerates the local UI before cross-compilation.
+
+Runlens native installer fixtures read the checked-out Cargo package version for both POSIX and PowerShell invocations. Their offline regressions advance a temporary package version and assert that both installer commands follow it; fixture authentication remains a double, never release certification.
