@@ -5397,3 +5397,87 @@ fn fanotify_marks_retain_absolute_relative_and_descriptor_read_attempts() {
         }
     }
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_execvp_custom_search_tracks_children_and_protected_fallbacks() {
+    use std::os::unix::fs::PermissionsExt;
+    let external = tempfile::tempdir().unwrap();
+    fs::copy(fixture(), external.path().join("worker")).unwrap();
+    fs::write(
+        external.path().join("script"),
+        "printf 'fallback:%s' \"$1\"; exit 17\n",
+    )
+    .unwrap();
+    fs::set_permissions(
+        external.path().join("script"),
+        fs::Permissions::from_mode(0o700),
+    )
+    .unwrap();
+    for (program, search, args, complete) in [
+        (
+            "worker",
+            external.path().to_str().unwrap(),
+            vec!["argv0"],
+            true,
+        ),
+        ("cat", "/bin", vec![], false),
+        (
+            "script",
+            external.path().to_str().unwrap(),
+            vec!["fallback-argument"],
+            false,
+        ),
+        ("absent", external.path().to_str().unwrap(), vec![], false),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let argv: Vec<_> = ["macos-execvp-child", program, search]
+            .into_iter()
+            .chain(args)
+            .collect();
+        let direct = Command::new(fixture())
+            .args(&argv)
+            .env("PATH", "/nonexistent-ambient-path")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        let traced = cli_command()
+            .current_dir(root.path())
+            .env("PATH", "/nonexistent-ambient-path")
+            .args(["run", "--save", "exec.json", "--", fixture()])
+            .args(&argv)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(traced.stdout, direct.stdout, "{program}: {traced:?}");
+        let report = parse(root.path(), "exec.json");
+        let execution = &report["executions"][0];
+        assert_eq!(
+            execution["outcome"]["child_exit_code"],
+            direct.status.code().unwrap()
+        );
+        assert_eq!(
+            execution["outcome"]["collection_complete"], complete,
+            "{program}: {traced:?}"
+        );
+        assert!(
+            execution["accesses"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .any(|(path, access)| path.ends_with(&format!("/{program}"))
+                    && access["read"] == true)
+        );
+        if program == "worker" {
+            assert_eq!(traced.stdout, b"worker\n");
+        }
+        if !complete {
+            assert_eq!(
+                invoke(root.path(), &["policy", "check", "exec.json", "--json"])
+                    .status
+                    .code(),
+                Some(4)
+            );
+        }
+    }
+}

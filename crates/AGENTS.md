@@ -290,3 +290,5 @@
 - Runlens macOS extended-attribute reads must record path/descriptor input attempts while preserving all Darwin operands and results; attribute names and values never enter reports.
 
 - Linux fanotify_mark must retain watched path/descriptor read attempts for dynamic and static callers, preserve native results, and ignore pathname operands only for path-independent flush operations.
+
+- macOS execvP must use the caller-supplied search path and preserve argv/native fallback behavior while recording executable reads and classifying protected descendants as incomplete.

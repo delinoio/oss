@@ -291,3 +291,6 @@ mod linux_only {
         )
     }
 }
+
+#[cfg(target_os = "macos")]
+mod macos;

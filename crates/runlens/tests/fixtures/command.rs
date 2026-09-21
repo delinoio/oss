@@ -136,6 +136,34 @@ fn main() {
             };
             println!("{result}");
         }
+        #[cfg(target_os = "macos")]
+        "macos-execvp-child" => {
+            let status = Command::new(std::env::current_exe().unwrap())
+                .arg("macos-execvp-custom")
+                .args(&args[1..])
+                .status()
+                .unwrap();
+            std::process::exit(status.code().unwrap_or(99));
+        }
+        #[cfg(target_os = "macos")]
+        "macos-execvp-custom" => {
+            let prog = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            let search = std::ffi::CString::new(args[2].as_bytes()).unwrap();
+            let values: Vec<_> = std::iter::once(&args[1])
+                .chain(args[3..].iter())
+                .map(|arg| std::ffi::CString::new(arg.as_bytes()).unwrap())
+                .collect();
+            let mut argv: Vec<_> = values.iter().map(|arg| arg.as_ptr().cast_mut()).collect();
+            argv.push(std::ptr::null_mut());
+            // SAFETY: all strings and the NULL-terminated argv remain live.
+            unsafe {
+                libc::execvP(prog.as_ptr(), search.as_ptr(), argv.as_ptr());
+            }
+            println!(
+                "error={}",
+                std::io::Error::last_os_error().raw_os_error().unwrap()
+            );
+        }
         #[cfg(unix)]
         "path-exec" => {
             let path = std::ffi::CString::new(args[2].as_bytes()).unwrap();
