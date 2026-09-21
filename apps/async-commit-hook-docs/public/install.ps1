@@ -1,12 +1,18 @@
-param([string]$Version = "0.1.1", [string]$InstallDir = "$env:LOCALAPPDATA\async-commit-hook\bin")
+param([string]$Version = "", [string]$InstallDir = "$env:LOCALAPPDATA\async-commit-hook\bin")
 $ErrorActionPreference = 'Stop'
-if ($Version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { throw 'Version must be MAJOR.MINOR.PATCH' }
+if ([string]::IsNullOrEmpty($Version)) {
+  $base = 'https://github.com/delinoio/oss/releases/latest/download'
+  $displayVersion = 'latest published stable'
+} else {
+  if ($Version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { throw 'Version must be MAJOR.MINOR.PATCH' }
+  $base = "https://github.com/delinoio/oss/releases/download/async-commit-hook@v$Version"
+  $displayVersion = $Version
+}
 foreach ($tool in @('cosign', 'git')) { Get-Command $tool -ErrorAction Stop | Out-Null }
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
 if ($arch -eq 'x64') { $arch = 'amd64' }
 if ($arch -notin @('amd64', 'arm64')) { throw 'Unsupported Windows architecture' }
 $asset = "ach-windows-$arch.zip"
-$base = "https://github.com/delinoio/oss/releases/download/async-commit-hook@v$Version"
 $identity = 'https://github.com/delinoio/oss/.github/workflows/release-async-commit-hook.yml@refs/heads/main'
 $temporary = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
 New-Item -ItemType Directory $temporary | Out-Null
@@ -36,5 +42,5 @@ try {
     Copy-Item (Join-Path $temporary 'ach.exe') $staged
     [System.IO.File]::Move($staged, $destination)
   } finally { if (Test-Path $staged) { Remove-Item $staged } }
-  Write-Output "Installed ach $Version at $destination. Add $InstallDir to PATH and run ach init."
+  Write-Output "Installed ach $displayVersion at $destination. Add $InstallDir to PATH and run ach init."
 } finally { Remove-Item -Recurse -Force $temporary }

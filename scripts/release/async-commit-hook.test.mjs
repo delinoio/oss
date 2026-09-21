@@ -64,15 +64,14 @@ test('shell installer rejects invalid signature and checksum before publishing a
  } finally {rmSync(directory,{recursive:true,force:true});}
 });
 
-test('shell installer selects the requested version and rejects invalid arguments before downloads', () => {
+test('installer selects the latest published release by default and exact versions when requested', () => {
  const directory=mkdtempSync(join(tmpdir(),'ach-installer-version-'));
  try {
   const bin=join(directory,'tools'), requests=join(directory,'requests');mkdirSync(bin);
   writeFileSync(join(bin,'cosign'),'#!/bin/sh\nexit 0\n',{mode:0o755});
   writeFileSync(join(bin,'curl'),'#!/bin/sh\nprintf "%s\\n" "$@" > "$TEST_REQUESTS"\nexit 77\n',{mode:0o755});
-  const defaultVersion=JSON.parse(read('packaging/async-commit-hook/release-metadata.json')).version;
   for(const [args,environment,version] of [
-   [[],undefined,defaultVersion],
+   [[],undefined,'latest'],
    [[], '0.2.0','0.2.0'],
    [['--version','0.3.0'], '0.2.0','0.3.0'],
    [['--version','0.4.0'], 'invalid','0.4.0'],
@@ -90,7 +89,8 @@ test('shell installer selects the requested version and rejects invalid argument
     cwd:root,encoding:'utf8',env:{...process.env,PATH:bin+':'+process.env.PATH,ACH_VERSION:environment,TEST_REQUESTS:requests},
    });
    assert.equal(result.status,version?77:2,`${JSON.stringify(args)}: ${result.stderr}`);
-   if(version) assert.ok(readFileSync(requests,'utf8').includes(`/async-commit-hook@v${version}/ach-`));
+   if(version === 'latest') assert.ok(readFileSync(requests,'utf8').includes('/releases/latest/download/ach-'));
+   else if(version) assert.ok(readFileSync(requests,'utf8').includes(`/async-commit-hook@v${version}/ach-`));
    else assert.equal(existsSync(requests),false,'invalid arguments started a download');
   }
  } finally {rmSync(directory,{recursive:true,force:true});}

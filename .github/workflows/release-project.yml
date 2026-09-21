@@ -170,7 +170,7 @@ jobs:
           const failed = Object.entries(jobs).filter(([, job]) => job.result !== 'success').map(([name]) => name);
           if (failed.length) lines.push(`Incomplete phases: ${failed.join(', ')}. Fix the failed phase, then rerun this release run to reuse any recorded version.`);
           else if (process.env.RELEASE_PROJECT === 'async-commit-hook') lines.push(
-            'Version and tag preparation is complete. Signing, GitHub Release, Homebrew, and Pages require a separate manual run of [Release async-commit-hook](https://github.com/delinoio/oss/actions/workflows/release-async-commit-hook.yml).',
+            'Version and tag preparation is complete. Signing, GitHub Release, and Homebrew require a separate manual run of [Release async-commit-hook](https://github.com/delinoio/oss/actions/workflows/release-async-commit-hook.yml). Consolidated Public Docs deploys automatically through Cloudflare Pages from main.',
             `Select main and version ${source.version}; dry_run defaults to true. Publication requires the dispatch commit to match ${source.revision}. If main has advanced, the existing tag check rejects publication; never move the tag.`,
           );
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');

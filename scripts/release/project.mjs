@@ -24,8 +24,6 @@ const asyncCommitHookVersions = Object.freeze([
   { file: "apps/async-commit-hook-docs/package.json", name: "async-commit-hook-docs" },
   { file: "packages/async-commit-hook-api-client/package.json", name: "@delinoio/async-commit-hook-api-client" },
   { file: "packaging/async-commit-hook/release-metadata.json" },
-  { file: "apps/async-commit-hook-docs/public/install.sh", pattern: /^(version=\$\{ACH_VERSION:-)([^}\r\n]+)(\})$/gmu },
-  { file: "apps/async-commit-hook-docs/public/install.ps1", pattern: /^(param\(\[string\]\$Version = ")([^"\r\n]+)(", \[string\]\$InstallDir = "[^"\r\n]+"\))$/gmu },
 ]);
 const shaPattern = /^[a-f0-9]{40}$/u;
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
