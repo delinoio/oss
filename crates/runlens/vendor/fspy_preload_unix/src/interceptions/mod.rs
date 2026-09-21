@@ -20,3 +20,6 @@ mod raw_macos;
 
 #[cfg(target_os = "macos")]
 mod attrlist;
+
+#[cfg(target_os = "macos")]
+mod clonefile;

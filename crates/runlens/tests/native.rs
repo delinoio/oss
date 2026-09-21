@@ -6018,3 +6018,80 @@ fn macos_attrlist_reads_preserve_results_and_enforce_external_boundaries() {
         }
     }
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_clones_preserve_native_results_and_record_both_boundaries() {
+    for form in ["path", "relative", "fd"] {
+        for kind in ["new", "existing", "missing"] {
+            let root = tempfile::tempdir().unwrap();
+            let external = tempfile::tempdir().unwrap();
+            let source = external.path().join("clone-input");
+            let destination = external.path().join("clone-output");
+            if kind != "missing" {
+                fs::write(&source, "CLONE-BODY-CANARY").unwrap();
+            }
+            if kind == "existing" {
+                fs::write(&destination, "original").unwrap();
+            }
+            let args = [
+                "macos-clone",
+                source.to_str().unwrap(),
+                destination.to_str().unwrap(),
+                form,
+            ];
+            let plain = Command::new(fixture()).args(args).output().unwrap();
+            assert!(plain.status.success(), "{plain:?}");
+            let expected = fs::read(&destination).ok();
+            if kind != "existing" && destination.exists() {
+                fs::remove_file(&destination).unwrap();
+            }
+            let traced = invoke(
+                root.path(),
+                &[
+                    "run",
+                    "--save",
+                    "clone.json",
+                    "--",
+                    fixture(),
+                    args[0],
+                    args[1],
+                    args[2],
+                    args[3],
+                ],
+            );
+            assert!(traced.status.success(), "{traced:?}");
+            assert_eq!(traced.stdout, plain.stdout);
+            assert_eq!(fs::read(&destination).ok(), expected);
+            let report = parse(root.path(), "clone.json");
+            let accesses = report["executions"][0]["accesses"].as_object().unwrap();
+            assert!(
+                accesses
+                    .iter()
+                    .any(|(path, access)| path.ends_with("/clone-input") && access["read"] == true)
+            );
+            assert!(
+                accesses.iter().any(
+                    |(path, access)| path.ends_with("/clone-output") && access["write"] == true
+                )
+            );
+            assert!(
+                !fs::read_to_string(root.path().join("clone.json"))
+                    .unwrap()
+                    .contains("CLONE-BODY-CANARY")
+            );
+            for boundary in [
+                "deny_reads = ['**/clone-input']",
+                "deny_writes = ['**/clone-output']",
+            ] {
+                fs::write(
+                    root.path().join("runlens.toml"),
+                    format!("schema_version = 1\n[policy]\n{boundary}\n"),
+                )
+                .unwrap();
+                let policy = invoke(root.path(), &["policy", "check", "clone.json", "--json"]);
+                assert_eq!(policy.status.code(), Some(5), "{policy:?}");
+            }
+        }
+    }
+}

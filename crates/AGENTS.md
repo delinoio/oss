@@ -310,3 +310,5 @@
 - A failed repetition-directory cleanup after observation must retain every completed execution and imported baseline, classify the current target CleanupFailed/incomplete, stop future rounds, and still allow explicit report saving.
 
 - macOS getattrlist path/relative/descriptor reads must retain metadata input attempts without reading attribute buffers. Bulk attribute reads retain directory access and remain incomplete until individual child metadata identities are bound.
+
+- macOS clonefile/clonefileat/fclonefileat must record source reads and destination writes, including failed attempts, without changing operands, copied bytes or native results.

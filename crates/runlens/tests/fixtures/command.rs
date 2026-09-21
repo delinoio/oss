@@ -183,6 +183,57 @@ fn main() {
             println!("{result}");
         }
         #[cfg(target_os = "macos")]
+        "macos-clone" => {
+            let source = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            let destination = std::ffi::CString::new(args[2].as_bytes()).unwrap();
+            let parent = std::ffi::CString::new(
+                std::path::Path::new(&args[1])
+                    .parent()
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+            )
+            .unwrap();
+            // SAFETY: live strings and owned descriptors; preserve native cloning
+            // results, including unsupported filesystems and missing sources.
+            unsafe {
+                let mut dir = -1;
+                let mut fd = -1;
+                let result = match args[3].as_str() {
+                    "relative" => {
+                        dir = libc::open(parent.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY);
+                        libc::clonefileat(
+                            dir,
+                            c"clone-input".as_ptr(),
+                            dir,
+                            c"clone-output".as_ptr(),
+                            0,
+                        )
+                    }
+                    "fd" => {
+                        dir = libc::open(parent.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY);
+                        fd = libc::open(source.as_ptr(), libc::O_RDONLY);
+                        libc::fclonefileat(fd, dir, c"clone-output".as_ptr(), 0)
+                    }
+                    _ => libc::clonefile(source.as_ptr(), destination.as_ptr(), 0),
+                };
+                if result < 0 {
+                    println!(
+                        "error={}",
+                        std::io::Error::last_os_error().raw_os_error().unwrap()
+                    );
+                } else {
+                    println!("cloned");
+                }
+                if fd >= 0 {
+                    libc::close(fd);
+                }
+                if dir >= 0 {
+                    libc::close(dir);
+                }
+            }
+        }
+        #[cfg(target_os = "macos")]
         "macos-attrlist" => {
             let path = std::path::Path::new(&args[1]);
             let full = std::ffi::CString::new(args[1].as_bytes()).unwrap();
