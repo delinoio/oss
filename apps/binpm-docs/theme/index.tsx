@@ -4,6 +4,7 @@ import {
   Layout as BasicLayout,
   type LayoutProps,
 } from "@rspress/core/theme-original";
+import { DocumentationSiteId, DocsSiteSwitcher } from "../../../packages/docs-site-switcher/src/index";
 
 import "./accessibility.css";
 import "./repository-footer.css";
@@ -557,6 +558,12 @@ function Layout(props: LayoutProps) {
   return (
     <BasicLayout
       {...props}
+      beforeNavTitle={
+        <>
+          <DocsSiteSwitcher currentSite={DocumentationSiteId.Binpm} />
+          {props.beforeNavTitle}
+        </>
+      }
       top={
         <>
           <SkipToContent />

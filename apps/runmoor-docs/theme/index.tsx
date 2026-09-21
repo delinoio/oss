@@ -1,4 +1,9 @@
-import { DocFooter as BasicDocFooter } from "@rspress/core/theme-original";
+import {
+  DocFooter as BasicDocFooter,
+  Layout as BasicLayout,
+  type LayoutProps,
+} from "@rspress/core/theme-original";
+import { DocumentationSiteId, DocsSiteSwitcher } from "../../../packages/docs-site-switcher/src/index";
 
 import "./repository-footer.css";
 
@@ -15,5 +20,19 @@ function DocFooter() {
   );
 }
 
-export { DocFooter };
+function Layout(props: LayoutProps) {
+  return (
+    <BasicLayout
+      {...props}
+      beforeNavTitle={
+        <>
+          <DocsSiteSwitcher currentSite={DocumentationSiteId.Runmoor} />
+          {props.beforeNavTitle}
+        </>
+      }
+    />
+  );
+}
+
+export { DocFooter, Layout };
 export * from "@rspress/core/theme-original";

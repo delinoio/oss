@@ -6,11 +6,12 @@
   "scripts": {
     "prepare:app": "echo 'nodeup-docs: no prepare step'",
     "dev": "node ../../scripts/run-rspress-port.mjs nodeup-docs dev 46303 NODEUP_DOCS_DEV_PORT",
-    "build": "rspress build",
+    "build": "rspress build && node scripts/copy-installers.mjs",
     "preview": "node ../../scripts/run-rspress-port.mjs nodeup-docs preview 46251 NODEUP_DOCS_PREVIEW_PORT",
-    "test": "rspress build && node scripts/validate-clean-urls.mjs"
+    "test": "rspress build && node scripts/copy-installers.mjs && node scripts/validate-clean-urls.mjs"
   },
   "devDependencies": {
+    "@delinoio/docs-site-switcher": "workspace:*",
     "@rspress/core": "^2.0.14"
   }
 }

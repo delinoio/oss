@@ -6,12 +6,12 @@ Use Nodeup when you want a single CLI that can install Node.js runtimes, select 
 
 ## Start Here
 
-- [Install and verify Nodeup](/installation).
-- [Install a runtime and run a command](/getting-started).
-- [Read the complete command reference](/commands).
-- [Understand runtime resolution precedence](/runtime-resolution).
-- [Use managed shims and package-manager dispatch](/shims-and-package-managers).
-- [Integrate JSON output, colors, and logs](/output).
+- [Install and verify Nodeup](./installation).
+- [Install a runtime and run a command](./getting-started).
+- [Read the complete command reference](./commands).
+- [Understand runtime resolution precedence](./runtime-resolution).
+- [Use managed shims and package-manager dispatch](./shims-and-package-managers).
+- [Integrate JSON output, colors, and logs](./output).
 
 ## Supported Hosts
 

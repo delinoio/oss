@@ -3,6 +3,7 @@ import { defineConfig } from "@rspress/core";
 export default defineConfig({
   title: "Nodeup Docs",
   description: "Documentation for the Nodeup Node.js version manager.",
+  base: "/nodeup/",
   root: "docs",
   outDir: "doc_build",
   builderConfig: {

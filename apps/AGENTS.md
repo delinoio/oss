@@ -82,8 +82,8 @@
 ### binpm-docs Rules
 
 - `binpm-docs` must remain Rspress-based unless `docs/project-binpm.md` and `docs/apps-binpm-docs-foundation.md` document a replacement.
-- `binpm-docs` must use Cloudflare Pages as the default static deployment target unless the app contract documents a replacement.
-- `binpm-docs` has canonical production URL `https://binpm.delino.io`.
+- `binpm-docs` produces package-local Rspress output for the shared `public-docs` publisher; it has no standalone production deployment.
+- `binpm-docs` has canonical production URL `https://oss.delino.io/binpm`.
 - Rspress routes and navigation in `apps/binpm-docs/rspress.config.ts` must stay aligned with `docs/apps-binpm-docs-foundation.md`.
 - `binpm-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
 - `binpm-docs` top-level navigation must include all stable docs routes so the mobile site navigation exposes the same stable route set as the documentation sidebar.
@@ -92,9 +92,9 @@
 - Stable `binpm-docs` route IDs are `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/releases`, `/troubleshooting`, and `/reference`.
 - `binpm-docs` must keep Rspress clean URLs enabled and validate that stable route IDs have build output artifacts and generated internal links do not use `.html` suffixes.
 - `binpm-docs` content must remain documentation-only and must not imply new binpm runtime behavior before `docs/project-binpm.md` and `docs/crates-binpm-foundation.md` document it.
-- `binpm-docs` content must not infer behavior, status, or page contents from the live `https://binpm.delino.io` site; repository contracts are the source of truth.
+- `binpm-docs` content must not infer behavior, status, or page contents from the live canonical site; repository contracts are the source of truth.
 - `binpm-docs` must not document repository-internal implementation details from those source contracts unless the detail is itself a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
-- binpm direct-installer guidance must include copy-pasteable latest remote POSIX and PowerShell commands that use the short docs-site URLs `https://binpm.delino.io/install.sh` and `https://binpm.delino.io/install.ps1`, preserve current and tag- or commit-pinned first-party `delinoio/oss` raw GitHub examples, keep `scripts/install/binpm.sh` and `scripts/install/binpm.ps1` visible for maintainer workflows, describe checksum verification through `SHA256SUMS`, and distinguish binpm release artifact verification from package verification for tools installed by binpm.
+- binpm direct-installer guidance must include copy-pasteable latest remote POSIX and PowerShell commands that use the canonical subpath URLs `https://oss.delino.io/binpm/install.sh` and `https://oss.delino.io/binpm/install.ps1`, preserve current and tag- or commit-pinned first-party `delinoio/oss` raw GitHub examples, keep `scripts/install/binpm.sh` and `scripts/install/binpm.ps1` visible for maintainer workflows, describe checksum verification through `SHA256SUMS`, and distinguish binpm release artifact verification from package verification for tools installed by binpm.
 - binpm installation and release guidance must describe Homebrew as prebuilt-only, describe disabled `cargo-binstall` quick-install and compile fallbacks, and distinguish first-party binpm release platforms from broader third-party target parsing support.
 - When binpm source, target, local tooling, cache, verification, install, execution, release distribution, installer, diagnostic, or output behavior changes, update related `apps/binpm-docs` pages in the same change set.
 
@@ -102,21 +102,22 @@
 
 - `public-docs` must remain Rspress-based and use Cloudflare Pages static output unless its project contract documents a replacement.
 - `public-docs` production is `https://oss.delino.io`, served by the Cloudflare Pages `public-docs` project from `main`; build at the repository root with the repository's Node and pnpm versions and publish only `apps/public-docs/doc_build`.
+- `public-docs` is the sole production documentation publisher. It assembles validated `runmoor-docs`, `nodeup-docs`, `binpm-docs`, and `async-commit-hook-docs` output below `/runmoor`, `/nodeup`, `/binpm`, and `/async-commit-hook`; package-local `doc_build` directories are build inputs and are not independently published.
+- Every assembled documentation page must expose the shared site selector for Delino OSS, Runmoor, Nodeup, binpm, and async-commit-hook. The selector must use same-origin clean routes, expose `aria-expanded` and `aria-current`, support keyboard selection, Escape/outside-click close, and focus return.
 - Rspress routes, navigation, and sidebar in `apps/public-docs/rspress.config.ts` must stay aligned with `docs/apps-public-docs-foundation.md`.
 - `public-docs` must use clean URLs, write production output to `apps/public-docs/doc_build`, and validate stable route artifacts plus generated internal `.html` links through `pnpm --filter public-docs test`.
 - Current public-docs in-site top-level product page IDs are `devhud`, `cargo-mono`, `derun`, and `with-watch`.
 - The stable `/devhud` page documents public product availability and the coordinated all-channels GA rule without exposing release credentials, private workflow details, or deployment internals.
-- Nodeup, binpm, and Runmoor are exposed from `apps/public-docs` through external top-level navigation links to `https://nodeup.delino.io`, `https://binpm.delino.io`, and `https://runmoor.delino.io`. Runmoor discovery links on the home and project catalog must also use its standalone site; the former `/runmoor` and child routes are removed without compatibility pages or redirects.
-- The legacy `/nodeup` public-docs route must remain a lightweight handoff page to `https://nodeup.delino.io` for compatibility with previously shared URLs.
-- Do not add or restore in-site `nodeup`, `binpm`, or `runmoor` guide routes under `apps/public-docs`; the lightweight legacy `/nodeup` handoff is the sole in-site Nodeup route, and their public documentation is owned by `apps/nodeup-docs`, `apps/binpm-docs`, and `apps/runmoor-docs`.
+- Nodeup, binpm, Runmoor, and async-commit-hook are exposed from `apps/public-docs` through canonical same-origin subpaths `/nodeup`, `/binpm`, `/runmoor`, and `/async-commit-hook`. Their Markdown remains owned by the package-local apps; public-docs assembles their validated output and must not duplicate it.
+- Do not add legacy handoff pages, aliases, or redirects for the consolidated project subpaths. Operators decommission the former standalone Pages projects and DNS records only after the consolidated deployment, route, switcher, and installer checks pass.
 - `public-docs` must curate repository contracts into public guidance and must not document repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 - When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
 
 ### runmoor-docs Rules
 
 - Follow `docs/project-runmoor.md`, `docs/cmds-runmoor-foundation.md`, and `docs/apps-runmoor-docs-foundation.md` for public content, routes, validation, and deployment.
-- `apps/runmoor-docs` owns the Runmoor public guides at `https://runmoor.delino.io`, using Rspress, Cloudflare Pages, and ignored `doc_build` output. Keep every stable route in navigation and the sidebar, with visible GitHub repository links in the social navigation and footer.
-- Stable clean routes are `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, and `/operations`; validate output artifacts, article headings and links, main landmarks, and absence of legacy `/runmoor` links.
+- `apps/runmoor-docs` owns the Runmoor public guides assembled at `https://oss.delino.io/runmoor`, using Rspress and ignored `doc_build` output. Keep every stable route in navigation and the sidebar, with visible GitHub repository links in the social navigation and footer.
+- Stable clean routes are `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, and `/operations`; validate output artifacts, article headings and links, main landmarks, and absence of retired standalone-origin links or root-path escapes.
 - Preserve the credential and internal-path publication checks that covered Runmoor in public-docs. Reject prohibited content in rendered text, HTML comments, URL attributes, and CSS resource references, including encoded URL credentials and local/repository paths. Credential parameters must be checked in ordinary queries, direct fragments, and queries inside hash-routed fragments. Keep valid public routes, static assets, and documented credential placeholders usable; route exceptions must match a complete route ID, never a prefix of a private path. Validation diagnostics must not echo rejected content. Exercise these boundaries against temporary copies of generated HTML in `pnpm test`.
 - Development uses `127.0.0.1:46309` and preview uses `127.0.0.1:46271`, through the shared fixed-port wrapper without address overrides or automatic remapping.
 - Malformed documentation links must fail validation with only the output page and error classification; never propagate URL parser errors that include the original input.
@@ -125,19 +126,19 @@
 - Validate every stable route within both the rendered top navigation and sidebar on each document page. Validate GitHub social-navigation and document-footer links independently; article links cannot satisfy navigation requirements.
 - Scan every emitted stylesheet as well as HTML for prohibited credentials, private resource URLs, and non-clean internal destinations. Resolve relative CSS URLs against the stylesheet location and preserve valid generated fonts and static assets.
 - Preserve all supported CLI/configuration and image/service workflows, manual verification/update/rollback, external licenses, and the unverified live GitHub/Tart compatibility boundary. Document that image changes require a running manager, including initial preparation without pools or connections. Keep internal scheduling/storage implementation in `docs/`.
-- The old public-docs `/runmoor` routes must remain removed, without redirects or handoff pages. The CLI release README remains in place and links to the standalone site.
+- The Runmoor package-local guides are assembled below `/runmoor`; no duplicate root-app guides, redirects, or handoff pages are added. The CLI release README remains in place and links to the canonical consolidated subpath.
 
 ### nodeup-docs Rules
 
 - `nodeup-docs` must remain Rspress-based unless `docs/project-nodeup.md` and `docs/apps-nodeup-docs-foundation.md` document a replacement.
-- `nodeup-docs` must use Cloudflare Pages as the default static deployment target unless the app contract documents a replacement.
-- `nodeup-docs` canonical production URL is `https://nodeup.delino.io`.
+- `nodeup-docs` produces package-local Rspress output for the shared `public-docs` publisher; it has no standalone production deployment.
+- `nodeup-docs` canonical production URL is `https://oss.delino.io/nodeup`.
 - Rspress routes and navigation in `apps/nodeup-docs/rspress.config.ts` must stay aligned with `docs/apps-nodeup-docs-foundation.md`.
 - `nodeup-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
 - Stable `nodeup-docs` route IDs are `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, and `/reference`.
 - `nodeup-docs` generated theme controls must preserve keyboard and screen-reader accessibility: mobile documentation navigation closes on `Esc`, returns focus to its opener, keeps closed mobile-sidebar links out of the tab order without hiding the persistent desktop sidebar, uses a labeled mobile search button, avoids redundant ambiguous hamburger labels, keeps search overlays clear of the sticky header, removes decorative heading anchors from sequential keyboard navigation, and keeps Markdown tables horizontally readable on mobile viewports.
 - Nodeup installation guidance must include an install-method chooser near the top of the installation page and briefly explain when to use Homebrew, direct installers, `cargo-binstall`, and binpm.
-- Nodeup direct-installer guidance must include copy-pasteable remote POSIX and PowerShell commands that use the public Nodeup docs-site entrypoints `https://nodeup.delino.io/install.sh` and `https://nodeup.delino.io/install.ps1`, preserve current and pinned first-party `delinoio/oss` raw GitHub URL examples, keep `scripts/install/nodeup.sh` and `scripts/install/nodeup.ps1` visible for maintainer workflows, describe checksum verification through `SHA256SUMS`, and distinguish unsupported-host, missing release material, and checksum verification failures.
+- Nodeup direct-installer guidance must include copy-pasteable remote POSIX and PowerShell commands that use the canonical subpath entrypoints `https://oss.delino.io/nodeup/install.sh` and `https://oss.delino.io/nodeup/install.ps1`, preserve current and pinned first-party `delinoio/oss` raw GitHub URL examples, keep `scripts/install/nodeup.sh` and `scripts/install/nodeup.ps1` visible for maintainer workflows, describe checksum verification through `SHA256SUMS`, and distinguish unsupported-host, missing release material, and checksum verification failures.
 - `nodeup-docs` must not document repository-internal implementation details from source contracts unless the detail is itself a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 - Nodeup installation, release, and troubleshooting guidance must explain that `cargo-binstall` uses first-party release assets only and does not enable `quick-install` or `compile` fallback strategies.
 - Nodeup release and installation guidance must explain that `amd64` release asset names correspond to x64 hosts.
@@ -153,20 +154,21 @@
 - If `apps/binpm-docs` changes, run `pnpm --filter binpm-docs test` before finishing.
 - If `apps/nodeup-docs` changes, run `pnpm --filter nodeup-docs test` before finishing.
 - If `apps/public-docs` changes, run `pnpm --filter public-docs test` before finishing.
+- If `apps/async-commit-hook-docs` changes, run `pnpm --filter async-commit-hook-docs test` before finishing.
 - Update relevant docs in `docs/` for every behavior, structure, or interface change.
 
 ### async-commit-hook
-- `apps/async-commit-hook` owns the embedded local Rsbuild UI. `apps/async-commit-hook-docs` owns the Rspress documentation-only https://ach.delino.io site and installer entrypoints. Follow their app-domain contracts.
+- `apps/async-commit-hook` owns the embedded local Rsbuild UI. `apps/async-commit-hook-docs` owns the Rspress documentation content and installer assets assembled at `https://oss.delino.io/async-commit-hook`. Follow their app-domain contracts.
 - Fixed development port 46308; root entry `pnpm dev:async-commit-hook`. Use generated Connect Query and React Query. Logs/source remain inert, every RPC is same-origin without browser pairing, and results never go to static hosting.
 - The local UI app exclusively generates and validates command webassets/dist via `build:embedded`. Generate before Go compilation, tests or packaging.
-- Documentation development uses fixed 127.0.0.1:46310 and preview uses 127.0.0.1:46281 through the shared wrapper; root entry is `pnpm dev:async-commit-hook-docs`. Conflicts fail without remapping. Preserve all migrated guide sections, legacy /docs links and installer URLs.
+- Documentation development uses fixed 127.0.0.1:46310 and preview uses 127.0.0.1:46281 through the shared wrapper; root entry is `pnpm dev:async-commit-hook-docs`. Conflicts fail without remapping. Preserve all migrated guide sections, the `/docs` section-link migration, and installer bytes. The package output is assembled below `/async-commit-hook` by `public-docs`; the async release workflow validates docs but does not deploy a standalone site.
 
 ### Native CLI package documentation
 
 - Follow `docs/repository-linux-packages-contract.md`. The shared public `/linux-packages` route owns APT/DNF setup and key verification; standalone CLI installation pages retain product-specific guidance.
 - Public package documentation includes the exact public fingerprint, supported systems, stable/preview registration, installation/update/removal, and explicit Runmoor service ownership. Keep R2, signing secrets, CI and recovery internals in `docs/`.
 - Only the shared package registration page may show its exact contracted `/etc/apt`, `/etc/yum.repos.d` and `/usr/share/keyrings` installation paths; never broaden unrelated public filesystem-path exceptions.
-- The canonical public-docs production origin is `https://oss.delino.io`; shared Linux package guidance is `https://oss.delino.io/linux-packages`.
+- The canonical public-docs production origin is `https://oss.delino.io`; shared Linux package guidance is `https://oss.delino.io/linux-packages`. Consolidated project documentation uses the same origin with `/runmoor`, `/nodeup`, `/binpm`, and `/async-commit-hook` prefixes.
 - Public native-package registration examples must spell out the complete repository configuration with a quoted heredoc, preserving APT Signed-By and both DNF signature checks. Do not bootstrap trust by installing an unverified configuration file downloaded from package storage.
 
 - Native package documentation must distinguish implemented release integration from published availability. No native packages have been published yet; mark every CLI package-manager example as unavailable until its own public installation verification completes. Runmoor and clibox use stable.

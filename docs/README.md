@@ -30,14 +30,14 @@ Each project must have one project index document and one or more domain contrac
 
 ## Repository Workflow
 
-- `docs/repository-workflow-contract.md`: CI selection and validation, manual CLI project/version releases, `delino-release-bot` setup, exact-commit recovery, and Runmoor stable publication.
+- `docs/repository-workflow-contract.md`: CI selection and validation, manual CLI project/version releases, `delino-release-bot` setup, exact-commit recovery, Runmoor stable publication, and consolidated documentation publication.
 
 ## Project Catalog
 
 ### binpm
 - `docs/project-binpm.md`
 - `docs/crates-binpm-foundation.md`
-- `docs/apps-binpm-docs-foundation.md` (`apps/binpm-docs`, production URL `https://binpm.delino.io`, routes: `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/releases`, `/troubleshooting`, `/reference`)
+- `docs/apps-binpm-docs-foundation.md` (`apps/binpm-docs`, canonical URL `https://oss.delino.io/binpm`, routes assembled below `/binpm`: `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/releases`, `/troubleshooting`, `/reference`)
 
 ### cargo-mono
 - `docs/project-cargo-mono.md`
@@ -51,7 +51,7 @@ Each project must have one project index document and one or more domain contrac
 ### nodeup
 - `docs/project-nodeup.md`
 - `docs/crates-nodeup-foundation.md`
-- `docs/apps-nodeup-docs-foundation.md` (`apps/nodeup-docs` routes: `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, `/reference`)
+- `docs/apps-nodeup-docs-foundation.md` (`apps/nodeup-docs`, canonical URL `https://oss.delino.io/nodeup`, routes assembled below `/nodeup`: `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, `/reference`)
 
 ### with-watch
 - `docs/project-with-watch.md`
@@ -60,7 +60,7 @@ Each project must have one project index document and one or more domain contrac
 ### runmoor
 - `docs/project-runmoor.md`
 - `docs/cmds-runmoor-foundation.md`
-- `docs/apps-runmoor-docs-foundation.md` (`apps/runmoor-docs`, production URL `https://runmoor.delino.io`, routes: `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, `/operations`)
+- `docs/apps-runmoor-docs-foundation.md` (`apps/runmoor-docs`, canonical URL `https://oss.delino.io/runmoor`, routes assembled below `/runmoor`: `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, `/operations`)
 
 ### derun
 - `docs/project-derun.md`
@@ -72,7 +72,8 @@ Each project must have one project index document and one or more domain contrac
 
 ### public-docs
 - `docs/project-public-docs.md`
-- `docs/apps-public-docs-foundation.md` (includes the stable `/devhud` section and child routes)
+- `docs/apps-public-docs-foundation.md` (single `oss.delino.io` publisher, four project subpaths, site selector, and stable `/devhud` section)
+- `docs/packages-docs-site-switcher-contract.md` (shared accessible documentation site selector package and fixed site registry)
 
 ### serde-feather
 - `docs/project-serde-feather.md`
@@ -116,4 +117,4 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - [Complete requirements](cmds-async-commit-hook-requirements.md) and [implementation evidence](cmds-async-commit-hook-evidence.md)
 - [Release and recovery](cmds-async-commit-hook-release-contract.md)
 
-- `apps-async-commit-hook-docs-foundation.md`: standalone Rspress public documentation, installer routes, fixed ports and hosting contract.
+- `apps-async-commit-hook-docs-foundation.md`: Rspress public documentation assembled below `/async-commit-hook`, installer routes, fixed ports, `/docs` migration route, and validation contract.

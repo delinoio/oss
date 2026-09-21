@@ -97,7 +97,7 @@ export function App() {
           </a>
           <div className="header-right">
             <span className="local-tag">Local to your computer</span>
-            <a href="https://ach.delino.io" target="_blank" rel="noreferrer">Documentation ↗</a>
+            <a href="https://oss.delino.io/async-commit-hook" target="_blank" rel="noreferrer">Documentation ↗</a>
           </div>
         </header>
         <Workspace initialRun={connection.run} />

@@ -53,13 +53,24 @@ function hasCredentialFragment(url) {
     && hasCredentialParameters(new URLSearchParams(fragment.slice(queryStart + 1)));
 }
 
-export function createPublicContentValidator(routeIds) {
+export function createPublicContentValidator(routeIds, { basePath = "" } = {}) {
   const routes = [...routeIds];
+  const normalizedBasePath = basePath === "/" ? "" : basePath.replace(/\/$/u, "");
+  const publicRoute = (route) => `${normalizedBasePath}${route === "/" ? "/" : route}`;
   const routePattern = routes.filter((route) => route !== "/")
     .sort((left, right) => right.length - left.length)
-    .map((route) => route.slice(1).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
+    .map((route) => publicRoute(route).slice(1).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
     .join("|");
-  const htmlRoutes = new Set(routes.map((route) => route === "/" ? "/index.html" : `${route}.html`));
+  const htmlRoutes = new Set(routes.flatMap((route) => {
+    const cleanRoute = publicRoute(route);
+    const htmlRoute = route === "/"
+      ? `${normalizedBasePath}/index.html`
+      : `${normalizedBasePath}${route}.html`;
+    return [cleanRoute, htmlRoute];
+  }));
+  const publicAssetPattern = new RegExp(`^${normalizedBasePath || ""}/(?:assets|static)/`, "u");
+  const siteSelectorPathPattern = /^\/(?:runmoor|nodeup|binpm|async-commit-hook)\/?$/u;
+  const sharedPublicPathPattern = /^\/(?:getting-started|projects-overview|documentation-lifecycle|linux-packages|cargo-mono|derun|with-watch|devhud)(?:\/|$)/u;
   const forbiddenPaths = [
     new RegExp(`(?:^|[\\s("'\\x60>])/(?!(?:${routePattern})(?:\\.html)?(?:[?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
     /(?:^|[\s("'`>])(?:\.\.[\\/])+(?:[A-Za-z0-9._~-]+[\\/])+[^\s"'`<>]*/u,
@@ -91,7 +102,11 @@ export function createPublicContentValidator(routeIds) {
       if (url && (url.username || url.password || hasCredentialParameters(url.searchParams)
         || hasCredentialFragment(url))) return true;
       const sameOrigin = url?.origin === pageUrl.origin;
-      if (sameOrigin && /^\/(?:assets|static)\//u.test(url.pathname)) continue;
+      if (sameOrigin && (publicAssetPattern.test(url.pathname)
+        || /^\/(?:assets|static)\//u.test(url.pathname)
+        || url.pathname === "/"
+        || siteSelectorPathPattern.test(url.pathname)
+        || sharedPublicPathPattern.test(url.pathname))) continue;
       if (forbiddenPaths.some((pattern) => pattern.test(decoded))) return true;
       if (sameOrigin && !htmlRoutes.has(url.pathname)) {
         let decodedPath;

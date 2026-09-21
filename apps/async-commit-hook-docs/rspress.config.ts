@@ -4,6 +4,7 @@ import routes from "./routes.json";
 export default defineConfig({
   title: "ach Docs",
   description: "Local asynchronous checks against committed source, for developers and coding agents.",
+  base: "/async-commit-hook/",
   root: "docs",
   outDir: "doc_build",
   builderConfig: { server: { strictPort: process.env.DELINO_RSPRESS_STRICT_PORT === "1", publicDir: { name: "public" } } },

@@ -11,6 +11,7 @@
     "test": "rspress build && node scripts/copy-installers.mjs && node scripts/validate-clean-urls.mjs"
   },
   "devDependencies": {
+    "@delinoio/docs-site-switcher": "workspace:*",
     "@rspress/core": "^2.0.14"
   }
 }

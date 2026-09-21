@@ -215,18 +215,18 @@ enum ProjectId {
 ### binpm Docs App Contract
 
 - `apps/binpm-docs` is the Rspress static documentation app for `binpm` and uses the existing `apps/*` workspace.
-- The canonical production URL for `apps/binpm-docs` is `https://binpm.delino.io`.
+- The canonical production URL for `apps/binpm-docs` is `https://oss.delino.io/binpm`.
 - `apps/binpm-docs` must use Cloudflare Pages as the default static deployment target unless `docs/project-binpm.md` and `docs/apps-binpm-docs-foundation.md` document a replacement.
-- binpm documentation content must be sourced from repository contracts and must not infer product behavior or page content from the live `https://binpm.delino.io` site.
+- binpm documentation content must be sourced from repository contracts and must not infer product behavior or page content from the live canonical site.
 - `apps/binpm-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
-- binpm direct-installer documentation must include latest docs-site installer commands for `https://binpm.delino.io/install.sh` and `https://binpm.delino.io/install.ps1`, preserve current and pinned first-party raw GitHub installer commands, describe checksum verification through `SHA256SUMS`, and keep binpm release verification separate from package verification.
+- binpm direct-installer documentation must include latest docs-site installer commands for `https://oss.delino.io/binpm/install.sh` and `https://oss.delino.io/binpm/install.ps1`, preserve current and pinned first-party raw GitHub installer commands, describe checksum verification through `SHA256SUMS`, and keep binpm release verification separate from package verification.
 - binpm installation and release documentation must describe Homebrew as prebuilt-only, describe disabled `cargo-binstall` quick-install and compile fallbacks, and distinguish first-party binpm release platforms from broader third-party target parsing support.
 
 ### Nodeup Docs App Contract
 
 - `apps/nodeup-docs` is the Rspress static documentation app for `nodeup` and uses the existing `apps/*` workspace.
-- The canonical production URL for `apps/nodeup-docs` is `https://nodeup.delino.io`.
-- `apps/nodeup-docs` must publish public direct-installer entrypoints at `https://nodeup.delino.io/install.sh` and `https://nodeup.delino.io/install.ps1`.
+- The canonical production URL for `apps/nodeup-docs` is `https://oss.delino.io/nodeup`.
+- `apps/nodeup-docs` must publish public direct-installer entrypoints at `https://oss.delino.io/nodeup/install.sh` and `https://oss.delino.io/nodeup/install.ps1`.
 - `apps/nodeup-docs` must use Cloudflare Pages as the default static deployment target unless `docs/project-nodeup.md` and `docs/apps-nodeup-docs-foundation.md` document a replacement.
 - `apps/nodeup-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
 
@@ -440,7 +440,7 @@ Release automation baseline:
 - CLI/MCP/Connect share one core, exact-commit latest-compatible-attempt validation and explicit per-run acknowledgements. Never resurrect old successful evidence after pruning.
 - State, reports and logs remain local and account-owned; no telemetry. User commands require explicit repository trust. Cancellation must reconcile owned descendants before releasing exclusive scheduling groups.
 - Development uses frontend 46308 and local UI/API 46309 with conflict failure; docs development/preview use 46310/46281. Root DevHud development remains unchanged.
-- The daemon and on-demand viewer serve the same embedded UI without pairing. Every RPC requires exact same-origin POST and the API version header. https://ach.delino.io is documentation-only.
+- The daemon and on-demand viewer serve the same embedded UI without pairing. Every RPC requires exact same-origin POST and the API version header. `https://oss.delino.io/async-commit-hook` is documentation-only.
 - Run `pnpm --filter async-commit-hook build:embedded` before ach Go compilation or repository-wide Go checks, including commit hooks. The app owns the generated command webassets/dist; never commit or substitute placeholder assets. Root Go checks also require the existing DevHud administrator embed.
 
 ### Linux CLI Package Distribution
@@ -453,7 +453,7 @@ Release automation baseline:
 
 ### Runmoor Contract
 
-- Public Runmoor documentation is owned by `apps/runmoor-docs` at `https://runmoor.delino.io`; follow `docs/apps-runmoor-docs-foundation.md`. The former `public-docs` `/runmoor` and child routes are removed without handoff pages or redirects. Keep all public discovery links pointed at the standalone site.
+- Public Runmoor documentation is Markdown-owned by `apps/runmoor-docs` and published at `https://oss.delino.io/runmoor`; follow `docs/apps-runmoor-docs-foundation.md`. Keep all public discovery links pointed at the consolidated subpath.
 
 - Follow `docs/project-runmoor.md`, `docs/cmds-runmoor-foundation.md`, and `cmds/runmoor/AGENTS.md` for issue #893. Runmoor owns local ephemeral GitHub Actions runners through Docker and Tart, with host-only credentials, durable ownership, fair resource budgets, and single-job disposable environments.
 - Runmoor binaries use the stable release channel for darwin-arm64, linux-amd64, and linux-arm64 under `runmoor@v<MAJOR.MINOR.PATCH>`; publication dry runs are credential-free and non-publishing. No Homebrew distribution is added.

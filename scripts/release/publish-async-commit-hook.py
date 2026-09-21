@@ -70,7 +70,7 @@ def publish(directory, version, revision, run_id):
     owner = json.dumps({"workflow": "release-async-commit-hook.yml", "repository": REPOSITORY, "run_id": run_id, "revision": revision}, sort_keys=True, separators=(",", ":"))
     expected = {
         "tag_name": tag, "target_commitish": revision, "name": f"async-commit-hook {version}", "draft": True, "prerelease": False,
-        "body": "Signed ach archives for six targets. See compatibility.json for validation scope and https://ach.delino.io/docs/ for installation and recovery.\n\n<!-- ach-release-owner " + owner + " -->",
+        "body": "Signed ach archives for six targets. See compatibility.json for validation scope and https://oss.delino.io/async-commit-hook/docs/ for installation and recovery.\n\n<!-- ach-release-owner " + owner + " -->",
     }
     matches = [release for release in pages(ENDPOINT + "?per_page=100") if release.get("tag_name") == tag]
     if len(matches) > 1:

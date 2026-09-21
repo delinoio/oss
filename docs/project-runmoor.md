@@ -11,7 +11,7 @@ Runmoor manages disposable, single-job GitHub Actions runners on one developer o
 ## Domain Ownership Map
 
 - Commands: `cmds/runmoor`, using the repository Go module.
-- Public documentation: `apps/runmoor-docs` at `https://runmoor.delino.io`.
+- Public documentation: `apps/runmoor-docs`, assembled at `https://oss.delino.io/runmoor`.
 - Release integration: `.github/workflows/release-runmoor.yml` and Runmoor-specific assets under `scripts/release`.
 
 ## Domain Contract Documents
@@ -22,8 +22,9 @@ Runmoor manages disposable, single-job GitHub Actions runners on one developer o
 ## Cross-Domain Invariants
 - Manual version selection and bot-owned release orchestration follow `docs/repository-workflow-contract.md`; the `Release Project` workflow supports patch, minor, and major increments while preserving this project’s existing distribution channels.
 
-- Runmoor public guides are owned by the standalone Rspress app and deployed as Cloudflare Pages static output. Stable routes are `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, and `/operations`. The old public-docs `/runmoor` routes are removed without redirects or compatibility pages.
-- Standalone documentation validation preserves the credential and private-path publication safeguards previously applied by public-docs, while retaining public configuration placeholders and user-facing storage guidance. See `docs/apps-runmoor-docs-foundation.md`.
+- Runmoor public guides are owned by the Rspress app and assembled under `/runmoor` by `public-docs`. Stable package-local routes are `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, and `/operations`; the canonical public routes use the `/runmoor` prefix.
+- Documentation validation preserves the credential and private-path publication safeguards previously applied by public-docs, while retaining public configuration placeholders and user-facing storage guidance. See `docs/apps-runmoor-docs-foundation.md`.
+- The shared site selector is present on every Runmoor page. After the consolidated publication is verified, operators decommission the former standalone hosting and DNS configuration without adding redirects.
 - Package-local `pnpm dev` and root `pnpm dev:runmoor-docs` bind to `127.0.0.1:46309`; preview binds to `127.0.0.1:46271`. Both enforce the fixed address and fail on conflicts. The root entry point does not require the DevHud team environment.
 - Platforms: macOS 14+ Apple Silicon; Ubuntu 22.04+ amd64/arm64. Host and execution CPU architectures must match. Windows, Intel Macs, emulation, GHES, Kubernetes, cloud/remote Docker, and multi-computer management are excluded.
 - The manager runs on the host. No host job execution, reusable completed runners, public webhook server, dashboard, remote control API, telemetry, Prometheus, plugin API, or automatic update service exists.

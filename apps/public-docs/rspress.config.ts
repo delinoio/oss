@@ -18,6 +18,7 @@ const productPages = [
 export default defineConfig({
   title: "Delino Public Docs",
   description: "Public documentation for Delino OSS projects.",
+  base: "/",
   root: "docs",
   outDir: "doc_build",
   builderConfig: {
@@ -32,9 +33,6 @@ export default defineConfig({
     nav: [
       ...homePages,
       ...productPages,
-      { text: "Nodeup", link: "https://nodeup.delino.io" },
-      { text: "binpm", link: "https://binpm.delino.io" },
-      { text: "Runmoor", link: "https://runmoor.delino.io" },
     ],
     sidebar: {
       "/": [

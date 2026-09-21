@@ -13,6 +13,7 @@ const stableDocsRoutes = [
 export default defineConfig({
   title: "Runmoor Docs",
   description: "Documentation for Runmoor disposable GitHub Actions runners.",
+  base: "/runmoor/",
   root: "docs",
   outDir: "doc_build",
   builderConfig: {

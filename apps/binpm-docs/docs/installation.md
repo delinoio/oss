@@ -25,13 +25,13 @@ Homebrew is a prebuilt-only channel for binpm. The formula does not build binpm 
 
 Direct installers are for users who want a release artifact without Homebrew or `cargo-binstall`. They verify the selected artifact against its `SHA256SUMS` entry before installation. If you prefer a managed channel instead, use [Homebrew](https://brew.sh/) or [`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall).
 
-Use the short docs-site URLs for interactive installs where you want the current public first-party installer script. These entrypoints are served from `https://binpm.delino.io` and are backed by the same maintained installer scripts as the repository paths.
+Use the short docs-site URLs for interactive installs where you want the current public first-party installer script. These entrypoints are served from `https://oss.delino.io/binpm/` and are backed by the same maintained installer scripts as the repository paths.
 
 macOS and Linux:
 
 ```bash
 (
-  installer_url="https://binpm.delino.io/install.sh"
+  installer_url="https://oss.delino.io/binpm/install.sh"
   tmp_dir="$(mktemp -d)"
   trap 'rm -rf "$tmp_dir"' EXIT
   if ! curl -fsSL "$installer_url" -o "$tmp_dir/binpm.sh"; then
@@ -44,7 +44,7 @@ macOS and Linux:
 Windows PowerShell:
 
 ```powershell
-$InstallerUrl = "https://binpm.delino.io/install.ps1"
+$InstallerUrl = "https://oss.delino.io/binpm/install.ps1"
 $Installer = Join-Path ([System.IO.Path]::GetTempPath()) ("binpm-install-" + [System.Guid]::NewGuid().ToString("N") + ".ps1")
 try {
   Invoke-WebRequest -Uri $InstallerUrl -OutFile $Installer -UseBasicParsing

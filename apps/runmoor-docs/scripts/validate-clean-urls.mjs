@@ -20,9 +20,25 @@ const requiredLinks = new Map([
   ["/operations", ["/install"]],
 ]);
 const outputDir = path.resolve("doc_build");
-const validatorOrigin = "https://runmoor.delino.io";
+const validatorOrigin = "https://oss.delino.io";
+const siteBasePath = "/runmoor";
+const retiredOrigin = "https://runmoor.delino.io";
 const failures = [];
-const containsProhibitedPublicContent = createPublicContentValidator(requiredHeadings.keys());
+const containsProhibitedPublicContent = createPublicContentValidator(requiredHeadings.keys(), { basePath: siteBasePath });
+
+function publicRoute(route) {
+  return route === "/" ? `${siteBasePath}/` : `${siteBasePath}${route}`;
+}
+
+function pageUrlForFile(relativeFile) {
+  return new URL(`${siteBasePath}/${relativeFile}`, validatorOrigin);
+}
+
+function localRoute(pathname) {
+  if (pathname === siteBasePath || pathname === `${siteBasePath}/`) return "/";
+  if (pathname.startsWith(`${siteBasePath}/`)) return pathname.slice(siteBasePath.length);
+  return null;
+}
 
 async function collectPublicationFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -93,7 +109,7 @@ const contentsByFile = new Map(await Promise.all(publicationFiles.map(async (fil
 
 for (const [file, contents] of contentsByFile) {
   const relativeFile = path.relative(outputDir, file).split(path.sep).join("/");
-  const pageUrl = new URL(`/${relativeFile}`, validatorOrigin);
+  const pageUrl = pageUrlForFile(relativeFile);
   const stylesheet = file.endsWith(".css");
   if (containsProhibitedPublicContent(contents, pageUrl, { stylesheet })) {
     // Never echo the rejected content or URL into public CI logs.
@@ -101,10 +117,9 @@ for (const [file, contents] of contentsByFile) {
     continue;
   }
   for (const link of resolveLinks(resourceTargets(contents), pageUrl)) {
-    if (link.origin !== validatorOrigin) continue;
-    if (/^\/runmoor(?:\/|(?:\.html)?$)/u.test(link.pathname)) {
-      failures.push(`${relativeFile} links to legacy route ${link.pathname}`);
-    } else if (link.pathname.endsWith(".html")) {
+    if (link.origin === retiredOrigin) {
+      failures.push(`${relativeFile} links to the retired standalone host`);
+    } else if (link.origin === validatorOrigin && link.pathname.endsWith(".html")) {
       failures.push(`${relativeFile} links to non-clean route ${link.pathname}`);
     }
   }
@@ -115,13 +130,16 @@ for (const [file, contents] of contentsByFile) {
   if (containsAffirmativeReleaseClaim(renderedText)) {
     failures.push(`${relativeFile} contains an unsupported release claim`);
   }
-  if (/^runmoor(?:\/|\.html$)/u.test(relativeFile)) {
-    failures.push(`${relativeFile} retains a legacy route artifact`);
-  }
   for (const link of links(contents, pageUrl)) {
-    if (link.origin !== validatorOrigin) continue;
-    if (!requiredHeadings.has(link.pathname)) {
-      failures.push(`${relativeFile} links to unknown route ${link.pathname}`);
+    if (link.origin === retiredOrigin) {
+      failures.push(`${relativeFile} links to the retired standalone host`);
+    } else if (link.origin === validatorOrigin) {
+      const route = localRoute(link.pathname);
+      if (route !== null && !requiredHeadings.has(route)) {
+        failures.push(`${relativeFile} links to unknown route ${link.pathname}`);
+      } else if (route === null && link.pathname !== "/" && requiredHeadings.has(link.pathname)) {
+        failures.push(`${relativeFile} links to a root route ${link.pathname}`);
+      }
     }
   }
 }
@@ -139,30 +157,30 @@ for (const [route, headings] of requiredHeadings) {
   for (const heading of headings) {
     if (!actualHeadings.has(heading)) failures.push(`${route} is missing heading: ${heading}`);
   }
-  const articleLinks = new Set(links(article, new URL(route, validatorOrigin))
+  const routePageUrl = new URL(publicRoute(route), validatorOrigin);
+  const articleLinks = new Set(links(article, routePageUrl)
     .filter((link) => link.origin === validatorOrigin).map((link) => link.pathname));
   for (const link of requiredLinks.get(route) ?? []) {
-    if (!articleLinks.has(link)) failures.push(`${route} is missing article link ${link}`);
+    if (!articleLinks.has(publicRoute(link))) failures.push(`${route} is missing article link ${publicRoute(link)}`);
   }
-  const pageUrl = new URL(route, validatorOrigin);
   const header = classRegions(contents, "header", "rp-nav").join("");
   for (const [name, regions] of [
     ["top navigation", classRegions(header, "ul", "rp-nav-menu")],
     ["sidebar", classRegions(contents, "aside", "rp-doc-layout__sidebar")],
   ]) {
-    const regionLinks = new Set(links(regions.join(""), pageUrl)
-      .filter((link) => link.origin === validatorOrigin).map((link) => link.pathname));
+    const regionLinks = new Set(links(regions.join(""), routePageUrl)
+    .filter((link) => link.origin === validatorOrigin).map((link) => link.pathname));
     for (const destination of requiredHeadings.keys()) {
-      if (!regionLinks.has(destination)) failures.push(`${route} is missing ${name} link ${destination}`);
+      if (!regionLinks.has(publicRoute(destination))) failures.push(`${route} is missing ${name} link ${publicRoute(destination)}`);
     }
   }
   const socialRegions = classRegions(header, "div", "rp-social-links");
-  if (socialRegions.length === 0 || socialRegions.some((region) => !links(region, pageUrl)
+  if (socialRegions.length === 0 || socialRegions.some((region) => !links(region, routePageUrl)
     .some((link) => link.href === "https://github.com/delinoio/oss"))) {
     failures.push(`${route} is missing the social navigation repository link`);
   }
   const footer = contents.match(/<footer\b[^>]*class="delino-repository-footer"[^>]*>[\s\S]*?<\/footer>/iu)?.[0] ?? "";
-  if (!links(footer, new URL(route, validatorOrigin))
+  if (!links(footer, routePageUrl)
     .some((link) => link.href === "https://github.com/delinoio/oss")) {
     failures.push(`${route} is missing the document footer repository link`);
   }
@@ -174,4 +192,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log("Runmoor docs clean URL validation passed (7 routes).");
+console.log("Runmoor docs clean URL validation passed (7 /runmoor routes).");

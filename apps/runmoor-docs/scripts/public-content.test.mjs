@@ -17,6 +17,8 @@ mkdirSync(outputDirectory);
 cpSync(buildDirectory, outputDirectory, { recursive: true });
 const indexFile = path.join(outputDirectory, "index.html");
 const original = readFileSync(indexFile, "utf8");
+const siteBasePath = "/runmoor";
+const publicRoute = (route) => route === "/" ? `${siteBasePath}/` : `${siteBasePath}${route}`;
 
 function validateFixture(fixture) {
   return validatePage(original.replace("</body>", `${fixture}</body>`));
@@ -81,11 +83,11 @@ for (const route of ["/", "/install", "/configuration", "/commands", "/docker", 
     ["sidebar", "rp-sidebar-item"],
   ]) {
     test(`${region} must link ${route} independently of article links`, () => {
-      const modified = removeLinks(original, className, route);
+      const modified = removeLinks(original, className, publicRoute(route));
       assert.notEqual(modified, original);
       const result = validatePage(modified);
       assert.equal(result.status, 1);
-      assert.ok(result.stderr.includes(`is missing ${region} link ${route}`), result.stderr);
+      assert.ok(result.stderr.includes(`is missing ${region} link ${publicRoute(route)}`), result.stderr);
     });
   }
 }
@@ -183,17 +185,17 @@ const forbidden = [
 ];
 
 for (const [name, fixture] of [
-  ["non-anchor href", '<area href="/install.html">'],
-  ["src", '<iframe src="/install.html"></iframe>'],
-  ["srcset second candidate", '<img srcset="/assets/logo.svg 1x, /install.html 2x">'],
-  ["poster", '<video poster="/install.html"></video>'],
-  ["action", '<form action="/install.html"></form>'],
-  ["formaction", '<button formaction="/operations.html">Submit</button>'],
-  ["data", '<object data="/install.html"></object>'],
+  ["non-anchor href", `<area href="${publicRoute("/install")}.html">`],
+  ["src", `<iframe src="${publicRoute("/install")}.html"></iframe>`],
+  ["srcset second candidate", `<img srcset="/assets/logo.svg 1x, ${publicRoute("/install")}.html 2x">`],
+  ["poster", `<video poster="${publicRoute("/install")}.html"></video>`],
+  ["action", `<form action="${publicRoute("/install")}.html"></form>`],
+  ["formaction", `<button formaction="${publicRoute("/operations")}.html">Submit</button>`],
+  ["data", `<object data="${publicRoute("/install")}.html"></object>`],
   ["relative attribute", '<form action="install.html?lang=en#verification"></form>'],
-  ["encoded attribute", '<button formaction="/install&period;html">Submit</button>'],
-  ["absolute same-origin attribute", '<form action="https://runmoor.delino.io/install.html"></form>'],
-  ["inline CSS", '<style>.link { background: url("/install.html") }</style>'],
+  ["encoded attribute", `<button formaction="${publicRoute("/install")}&period;html">Submit</button>`],
+  ["absolute same-origin attribute", `<form action="https://oss.delino.io${publicRoute("/install")}.html"></form>`],
+  ["inline CSS", `<style>.link { background: url("${publicRoute("/install")}.html") }</style>`],
 ]) {
   test(`clean URLs reject HTML route in ${name}`, () => {
     const result = validateFixture(fixture);
@@ -212,8 +214,8 @@ for (const key of ["code", "oauth_code"]) {
 }
 for (const route of ["install", "configuration", "commands", "docker", "tart", "operations"]) {
   forbidden.push(
-    [`route-prefixed ${route} resource`, `<img src="/${route}/servers/runmoor/private.png">`],
-    [`route-prefixed ${route} text`, `<code>/${route}/servers/runmoor/private.conf</code>`],
+    [`route-prefixed ${route} resource`, `<img src="${publicRoute(`/${route}`)}/servers/runmoor/private.png">`],
+    [`route-prefixed ${route} text`, `<code>${publicRoute(`/${route}`)}/servers/runmoor/private.conf</code>`],
   );
 }
 for (const attribute of ["src", "poster", "action", "formaction", "data"]) {
@@ -237,11 +239,11 @@ for (const [name, fixture] of forbidden) {
 
 test("publication preserves public routes, assets, external references, and credential placeholders", () => {
   const result = validateFixture(`
-    <a href="/install#verification">Install</a>
-    <a href="/configuration?lang=en">Configuration</a>
+    <a href="${publicRoute("/install")}#verification">Install</a>
+    <a href="${publicRoute("/configuration")}?lang=en">Configuration</a>
     <a href="https://docs.example.com/guide.html">External reference</a>
     <form action="https://docs.example.com/install.html"></form>
-    <button formaction="/install?lang=en#verification">Install</button>
+    <button formaction="${publicRoute("/install")}?lang=en#verification">Install</button>
     <a href="https://docs.example.com/#/guide?section=installation">External routed reference</a>
     <img src="/assets/logo.svg">
     <img srcset="/assets/logo.svg 1x, /static/logo.svg 2x">

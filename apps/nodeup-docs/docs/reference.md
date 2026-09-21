@@ -1,6 +1,6 @@
 # Reference
 
-This page summarizes stable Nodeup contracts. For command syntax, see [Command Reference](/commands).
+This page summarizes stable Nodeup contracts. For command syntax, see [Command Reference](./commands).
 
 ## Stable User-Facing Behavior
 
@@ -33,12 +33,12 @@ x86 hosts are unsupported. Direct installers, runtime installation, and shim dis
 
 ## Route Map
 
-- [Installation](/installation): installation methods, verification, supported hosts, storage roots, mirrors.
-- [Getting Started](/getting-started): first runtime install, defaults, overrides, run, shims, JSON verification.
-- [Command Reference](/commands): command-by-command behavior and output shapes.
-- [Runtime Resolution](/runtime-resolution): selectors, precedence, overrides, defaults, release index cache.
-- [Shims and Package Managers](/shims-and-package-managers): managed aliases and `packageManager` behavior.
-- [Output](/output): human/JSON contracts, errors, color precedence, logs.
-- [Completions](/completions): shells, command scopes, raw script output.
-- [Releases](/releases): release artifacts, signing, direct-installer verification.
-- [Troubleshooting](/troubleshooting): common errors and recovery steps.
+- [Installation](./installation): installation methods, verification, supported hosts, storage roots, mirrors.
+- [Getting Started](./getting-started): first runtime install, defaults, overrides, run, shims, JSON verification.
+- [Command Reference](./commands): command-by-command behavior and output shapes.
+- [Runtime Resolution](./runtime-resolution): selectors, precedence, overrides, defaults, release index cache.
+- [Shims and Package Managers](./shims-and-package-managers): managed aliases and `packageManager` behavior.
+- [Output](./output): human/JSON contracts, errors, color precedence, logs.
+- [Completions](./completions): shells, command scopes, raw script output.
+- [Releases](./releases): release artifacts, signing, direct-installer verification.
+- [Troubleshooting](./troubleshooting): common errors and recovery steps.

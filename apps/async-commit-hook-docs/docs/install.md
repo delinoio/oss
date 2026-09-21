@@ -3,7 +3,7 @@
 The only executable is `ach`. Supported build targets are macOS 13+, Windows 10 22H2+, and Ubuntu 22.04 LTS+, each x64 and arm64. Install Git first. Direct installers additionally require [Sigstore cosign](https://docs.sigstore.dev/cosign/system_config/installation/) for release authenticity verification.
 
 ```
-curl -fsSLo install-ach.sh https://ach.delino.io/install.sh
+curl -fsSLo install-ach.sh https://oss.delino.io/async-commit-hook/install.sh
 sh install-ach.sh
 
 # macOS and Linux, using the Homebrew tap:
@@ -12,7 +12,7 @@ brew install delinoio/tap/async-commit-hook
 
 ```
 # PowerShell:
-Invoke-WebRequest https://ach.delino.io/install.ps1 -OutFile install-ach.ps1
+Invoke-WebRequest https://oss.delino.io/async-commit-hook/install.ps1 -OutFile install-ach.ps1
 ./install-ach.ps1
 ```
 

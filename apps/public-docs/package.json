@@ -6,13 +6,14 @@
   "scripts": {
     "prepare:app": "echo \"public-docs prepared\"",
     "dev": "node ../../scripts/run-rspress-port.mjs public-docs dev 46302 -",
-    "build": "rspress build",
+    "build": "rspress build && node scripts/build-integrated-docs.mjs",
     "build:frontend": "pnpm build",
     "preview": "rspress preview",
-    "test:routes": "pnpm build:frontend && node scripts/validate-clean-urls.mjs",
+    "test:routes": "pnpm build:frontend && node scripts/validate-clean-urls.mjs && node scripts/validate-integrated-docs.mjs",
     "test": "pnpm test:routes"
   },
   "devDependencies": {
+    "@delinoio/docs-site-switcher": "workspace:*",
     "@rspress/core": "^2.0.14",
     "entities": "6.0.1"
   }

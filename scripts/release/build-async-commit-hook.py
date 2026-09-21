@@ -74,7 +74,7 @@ def archive_bytes(binary, name, windows):
 
 def formula(version, hashes):
     base = f"https://github.com/delinoio/oss/releases/download/async-commit-hook@v{version}"
-    body = ['class AsyncCommitHook < Formula', '  desc "Asynchronous exact-commit checks for people and coding agents"', '  homepage "https://ach.delino.io"', f'  version "{version}"', '  license "Apache-2.0"']
+    body = ['class AsyncCommitHook < Formula', '  desc "Asynchronous exact-commit checks for people and coding agents"', '  homepage "https://oss.delino.io/async-commit-hook"', f'  version "{version}"', '  license "Apache-2.0"']
     for os_name, clause in [("darwin", "on_macos"), ("linux", "on_linux")]:
         body.append(f"  {clause} do")
         for arch, cpu in [("arm64", "arm"), ("amd64", "intel")]:

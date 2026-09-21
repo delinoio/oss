@@ -16,12 +16,12 @@ Provide the Rspress-based public documentation site for user-facing product and 
 - Rspress clean routes, navigation, sidebar, and docs structure must stay aligned with documented contracts.
 - User-facing content changes should be versioned alongside relevant contract updates.
 - Public project pages currently exposed as in-site top-level navigation sections include `devhud`, `cargo-mono`, `derun`, and `with-watch`. DevHud's stable child routes are `/devhud/install`, `/devhud/guide`, `/devhud/privacy`, `/devhud/security`, `/devhud/support`, `/devhud/admin`, and `/devhud/releases`.
-- Runmoor public guides are owned by `apps/runmoor-docs` at `https://runmoor.delino.io`. The former `/runmoor` route and its six children are removed without redirects or compatibility pages; navigation, home, and catalog links point to the standalone site.
+- Runmoor public guides are owned by `apps/runmoor-docs` and are assembled at `https://oss.delino.io/runmoor`. The package-local routes retain their ownership while the canonical public route is the same-origin `/runmoor` subpath.
 - `/devhud` is built privately with the release candidate and published only after the updater and other coordinated DevHud channels are public; the final release verification checks the public page before GA. Publication injects and validates the configured official App Store, Google Play, and Chrome Web Store listing links into every generated text asset, with the exact destinations verified in `/devhud/install`, without treating those public identifiers as credentials.
-- Nodeup, binpm, and Runmoor are major projects exposed from this Rspress surface through external top-level navigation links to `https://nodeup.delino.io`, `https://binpm.delino.io`, and `https://runmoor.delino.io`.
-- The legacy `/nodeup` route remains supported as a lightweight compatibility handoff page to `https://nodeup.delino.io`.
-- Nodeup, binpm, and Runmoor public guides must not be duplicated as in-site Rspress routes; their standalone documentation apps own those docs, except for the lightweight legacy `/nodeup` handoff.
-- `public-docs` uses Rspress clean URLs and publishes its `doc_build` static output to Cloudflare Pages.
+- Nodeup, binpm, Runmoor, and async-commit-hook are major projects exposed through same-origin navigation to `/nodeup`, `/binpm`, `/runmoor`, and `/async-commit-hook`. Their documentation apps retain Markdown ownership, while this project assembles their validated output.
+- The shared site selector appears on every assembled page and marks the active project with `aria-current`; it supports keyboard navigation, Escape close, outside-click close, and focus return.
+- No legacy handoff page or duplicate guide route is canonical. Retired standalone documentation hosting is decommissioned by operators after route and installer verification; no redirects or aliases are added.
+- `public-docs` uses Rspress clean URLs, assembles package output below the four project subpaths, and publishes the complete `doc_build` tree to the single `public-docs` Cloudflare Pages project.
 - Package-local `pnpm dev` and root `pnpm dev:public-docs` bind to loopback on fixed port `46302`, reject host overrides, preflight that exact port, and fail on conflicts without automatic remapping.
 
 ## Change Policy
@@ -40,4 +40,4 @@ The `/linux-packages` clean route owns shared key verification, APT/DNF registra
 
 The canonical public-docs production origin is `https://oss.delino.io`.
 
-The Cloudflare Pages `public-docs` project deploys `main` automatically with the build and custom-domain settings recorded in `apps-public-docs-foundation.md`.
+The Cloudflare Pages `public-docs` project deploys `main` automatically with the build and custom-domain settings recorded in `apps-public-docs-foundation.md`. The project is the only production documentation publisher for the consolidated root and subpaths.

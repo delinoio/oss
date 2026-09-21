@@ -10,6 +10,7 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import { expect, it, vi } from "vitest";
 import { App, Confirm, ErrorNotice, FailureList, Status } from "./App";
 import * as connection from "./connection";
+import { describeError } from "./connection";
 it("renders hostile report content as inert text", () => {
   const failure = create(FailureSchema, {
     id: "f",
