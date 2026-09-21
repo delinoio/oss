@@ -6,7 +6,8 @@ import {
 } from "@delinoio/async-commit-hook-api-client";
 import { expect, it, vi } from "vitest";
 import { Confirm, ErrorNotice, FailureList, Status } from "./App";
-import { readConnection, describeError } from "./connection";
+import * as connection from "./connection";
+const { readConnection, describeError } = connection;
 it("renders hostile report content as inert text", () => {
   const failure = create(FailureSchema, {
     id: "f",
