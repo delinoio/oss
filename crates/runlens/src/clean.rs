@@ -329,6 +329,14 @@ async fn run_git(
     managed_git(command, false, cancel).await.map(|_| ())
 }
 fn copy_entry(source: &Path, destination: &Path, cancel: &CancellationToken) -> Result<()> {
+    copy_source_entry(source, destination, cancel, false)
+}
+fn copy_source_entry(
+    source: &Path,
+    destination: &Path,
+    cancel: &CancellationToken,
+    frozen: bool,
+) -> Result<()> {
     if cancel.is_cancelled() {
         return Err(Error::new(
             ErrorCode::Cancelled,
@@ -364,7 +372,12 @@ fn copy_entry(source: &Path, destination: &Path, cancel: &CancellationToken) -> 
         fs::create_dir(destination).map_err(|_| Error::storage())?;
         for entry in fs::read_dir(source).map_err(|_| Error::storage())? {
             let entry = entry.map_err(|_| Error::storage())?;
-            copy_entry(&entry.path(), &destination.join(entry.file_name()), cancel)?;
+            copy_source_entry(
+                &entry.path(),
+                &destination.join(entry.file_name()),
+                cancel,
+                frozen,
+            )?;
         }
     } else if metadata.is_file() {
         use std::io::{Read, Write};
@@ -410,12 +423,19 @@ fn copy_entry(source: &Path, destination: &Path, cancel: &CancellationToken) -> 
                 "source changed during preparation",
             ));
         }
-        fs::set_permissions(destination, metadata.permissions()).map_err(|_| Error::storage())?;
     } else {
         return Err(Error::new(
             ErrorCode::Unsupported,
             "source contains an unsupported filesystem object",
         ));
+    }
+    let accessed = filetime::FileTime::from_last_access_time(&metadata);
+    let modified = filetime::FileTime::from_last_modification_time(&metadata);
+    // Set directory times only after descendants exist, and never follow links.
+    filetime::set_symlink_file_times(destination, accessed, modified)
+        .map_err(|_| Error::storage())?;
+    if !metadata.is_symlink() {
+        fs::set_permissions(destination, metadata.permissions()).map_err(|_| Error::storage())?;
     }
     let after = fs::symlink_metadata(source).map_err(|_| Error::storage())?;
     if !crate::snapshot::same(&metadata, &after) {
@@ -423,6 +443,13 @@ fn copy_entry(source: &Path, destination: &Path, cancel: &CancellationToken) -> 
             ErrorCode::Incomplete,
             "source changed during clean checkout preparation",
         ));
+    }
+    if frozen {
+        // Reading a frozen owned checkout can itself advance atime. Restore its
+        // selected timestamps so later rounds receive the same source metadata.
+        // This is never enabled for reads from the user's worktree.
+        filetime::set_symlink_file_times(source, accessed, modified)
+            .map_err(|_| Error::storage())?;
     }
     Ok(())
 }
@@ -717,7 +744,7 @@ async fn verify_in(
         let round = owned.join(format!("round-{repetition}"));
         fs::create_dir(&round).map_err(|_| Error::storage())?;
         let workspace = round.join("workspace");
-        copy_entry(&selected, &workspace, &cancel)?;
+        copy_source_entry(&selected, &workspace, &cancel, true)?;
         let workspace = workspace.canonicalize().map_err(|_| Error::storage())?;
         let environment = isolated_environment(&round.join("environment"), &command.env)?;
         let mut prepared = true;
@@ -863,6 +890,54 @@ fn merge_findings(report: &mut Report, analysis: &analysis::Analysis) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frozen_copies_preserve_file_directory_and_symlink_timestamps() {
+        use filetime::{FileTime, set_symlink_file_times};
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("file"), "source").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("file", source.join("link")).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file("file", source.join("link")).unwrap();
+        let accessed = FileTime::from_unix_time(1_600_000_000, 123_456_700);
+        let modified = FileTime::from_unix_time(1_650_000_000, 987_654_300);
+        for name in ["file", "link", ""] {
+            set_symlink_file_times(source.join(name), accessed, modified).unwrap();
+        }
+        let expected: Vec<_> = ["file", "link", ""]
+            .into_iter()
+            .map(|name| {
+                let metadata = fs::symlink_metadata(source.join(name)).unwrap();
+                (
+                    name,
+                    FileTime::from_last_access_time(&metadata),
+                    FileTime::from_last_modification_time(&metadata),
+                )
+            })
+            .collect();
+        for round in 0..3 {
+            let destination = root.path().join(format!("round-{round}"));
+            copy_source_entry(&source, &destination, &CancellationToken::new(), true).unwrap();
+            for (name, accessed, modified) in &expected {
+                for base in [&source, &destination] {
+                    let metadata = fs::symlink_metadata(base.join(name)).unwrap();
+                    assert_eq!(
+                        FileTime::from_last_access_time(&metadata),
+                        *accessed,
+                        "{name}"
+                    );
+                    assert_eq!(
+                        FileTime::from_last_modification_time(&metadata),
+                        *modified,
+                        "{name}"
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn source_copy_preserves_dangling_link_types_until_targets_exist() {

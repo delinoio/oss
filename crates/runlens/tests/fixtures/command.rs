@@ -233,6 +233,11 @@ fn main() {
                 assert_eq!(libc::posix_spawn_file_actions_destroy(&mut actions), 0);
             }
         }
+        "source-timestamps" => {
+            let source = fs::metadata("input.txt").unwrap().modified().unwrap();
+            let directory = fs::metadata("source-dir").unwrap().modified().unwrap();
+            fs::write("out/result", format!("{source:?}/{directory:?}")).unwrap();
+        }
         "spawn-stdin" => {
             print!("{}", std::io::read_to_string(std::io::stdin()).unwrap());
         }

@@ -5784,3 +5784,43 @@ fn macos_spawn_open_actions_preserve_native_io_and_fail_closed() {
         }
     }
 }
+
+#[test]
+fn repeat_uses_the_same_frozen_source_modification_times() {
+    let root = repository("source-timestamps");
+    let config = fs::read_to_string(root.path().join("runlens.toml"))
+        .unwrap()
+        .replace(
+            "inputs = [\"input.txt\"]",
+            "inputs = [\"input.txt\", \"source-dir\", \"source-dir/**\"]",
+        );
+    fs::write(
+        root.path().join("runlens.toml"),
+        format!(
+            "{config}prepare = [[{:?}, \"prepare-output\"]]\n",
+            fixture().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+    fs::create_dir(root.path().join("source-dir")).unwrap();
+    fs::write(root.path().join("source-dir/keep"), "source").unwrap();
+    git(root.path(), &["add", "."]);
+    git(root.path(), &["commit", "-qm", "source directory"]);
+    let output = invoke(
+        root.path(),
+        &["verify", "repeat", "build", "--save", "times.json"],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let report = parse(root.path(), "times.json");
+    assert_eq!(report["verification"], "passed");
+    assert_eq!(
+        report["executions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["role"] == "target")
+            .count(),
+        3
+    );
+    assert!(!root.path().join("out").exists());
+}

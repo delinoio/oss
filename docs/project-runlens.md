@@ -41,3 +41,5 @@ Update this index, domain contracts, applicable AGENTS rules, public guides, and
 - [Issue #907](https://github.com/delinoio/oss/issues/907)
 - [Repository defaults](repository-defaults.md)
 - [Workflow contract](repository-workflow-contract.md)
+
+Clean/repeat preserve frozen access/modification timestamps across copies so repetition setup does not manufacture timestamp-dependent output differences.

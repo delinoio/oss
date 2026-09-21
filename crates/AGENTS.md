@@ -302,3 +302,5 @@
 - Linux name_to_handle_at must retain absolute, relative and AT_EMPTY_PATH descriptor read attempts, including failed size probes, without recording opaque handles or mount IDs.
 
 - macOS posix_spawn addopen actions must mark collection incomplete before they can run in the pre-injection child; preserve native action/spawn results and ordinary pipe-only child tracing.
+
+- Clean/repeat copies preserve frozen source access/modification timestamps for files, directories and symlinks, restoring directory times after descendants. Copy-induced atime changes may be restored only in the owned frozen checkout, never in the original worktree.

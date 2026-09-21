@@ -43,3 +43,5 @@ Equal observed outputs describe those executions only; they do not prove univers
 Configure timeouts explicitly; there is no automatic retry. Cancellation and lingering children receive a five-second termination grace period before forced termination and reaping. Incomplete evidence remains classified as incomplete. Cleanup failures produce a tool failure with recovery guidance.
 
 Temporary checkout isolation is operational isolation, **not an OS security boundary**. Preparation and target commands retain their host permissions and network access. Use trusted finite commands; background services, PTYs, and interactive sessions are unsupported.
+
+Every repetition preserves file, directory and symlink access/modification timestamps from the frozen source. HEAD files use the timestamps of the initially selected checkout because Git does not store worktree timestamps. Creation/change times and inode identities are not reproduced.
