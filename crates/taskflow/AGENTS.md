@@ -143,7 +143,7 @@
 
 - Retain stopped bootstrap services only as revalidated semantic evidence for their installers across every phase. Exclude that evidence from executable provided receipts: every later phase or session requiring readiness must create a fresh owned service. Service identity changes invalidate dependent installation evidence.
 
-- Windows cleanup checks TerminateJobObject and job accounting, awaits zero active processes and direct-child reaping, then marks ownership clean. API/query/deadline failures remain CleanupFailure, leave Drop retry enabled, and cannot authorize successful receipts or replacement. Preserve kill-on-close as a final fallback.
+- Windows cleanup seals new child associations with the active-process limit, captures job-member kernel handles, checks TerminateJobObject and job accounting, and awaits both zero active processes and signaled retained handles plus direct-child reaping before marking ownership clean. Retain handles through explicit and Drop retries. API/query/deadline failures remain CleanupFailure, leave Drop retry enabled, and cannot authorize successful receipts or replacement. Preserve kill-on-close as a final fallback; never substitute a fixed delay or PID-only observation for exit.
 
 - Concurrent conformance tasks use separate receipt/marker files when asserting per-task line counts; uncoordinated append writes are not an atomic event log.
 

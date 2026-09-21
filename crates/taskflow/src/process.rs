@@ -46,6 +46,8 @@ pub struct OwnedProcess {
     lease: Option<std::os::unix::net::UnixStream>,
     #[cfg(windows)]
     job: usize,
+    #[cfg(windows)]
+    job_cleanup: windows::Cleanup,
 }
 
 impl OwnedProcess {
@@ -134,6 +136,8 @@ impl OwnedProcess {
             lease: Some(lease),
             #[cfg(windows)]
             job: 0,
+            #[cfg(windows)]
+            job_cleanup: windows::Cleanup::default(),
         };
         #[cfg(unix)]
         {
@@ -205,6 +209,10 @@ impl OwnedProcess {
             self.verify_cleanup(status)?;
         }
         #[cfg(windows)]
+        if self.job != 0 {
+            self.job_cleanup.prepare(self.job)?;
+        }
+        #[cfg(windows)]
         unsafe {
             windows_sys::Win32::System::Console::GenerateConsoleCtrlEvent(
                 windows_sys::Win32::System::Console::CTRL_BREAK_EVENT,
@@ -251,9 +259,10 @@ impl OwnedProcess {
             return Ok(());
         }
         if self.job != 0 {
+            self.job_cleanup.prepare(self.job)?;
             windows::terminate_job(self.job)?;
             let deadline = tokio::time::Instant::now() + windows::CLEANUP_TIMEOUT;
-            while windows::active_processes(self.job)? != 0 {
+            while windows::active_processes(self.job)? != 0 || !self.job_cleanup.exited()? {
                 if tokio::time::Instant::now() >= deadline {
                     return Err(CleanupFailure.into());
                 }
@@ -268,7 +277,7 @@ impl OwnedProcess {
         self.cleaned = true;
         tracing::debug!(
             pid = self.pid,
-            outcome = "job-empty",
+            outcome = "job-empty-processes-signaled",
             "Owned process cleanup verified"
         );
         Ok(())
@@ -280,13 +289,15 @@ impl OwnedProcess {
             return Ok(());
         }
         if self.job != 0 {
+            self.job_cleanup.prepare(self.job)?;
             windows::terminate_job(self.job)?;
         } else {
             self.child.start_kill().context(CleanupFailure)?;
         }
         let deadline = std::time::Instant::now() + windows::CLEANUP_TIMEOUT;
         loop {
-            let empty = self.job == 0 || windows::active_processes(self.job)? == 0;
+            let empty = self.job == 0
+                || (windows::active_processes(self.job)? == 0 && self.job_cleanup.exited()?);
             if empty && self.child.try_wait().context(CleanupFailure)?.is_some() {
                 self.cleaned = true;
                 return Ok(());
@@ -665,6 +676,8 @@ async fn read_bounded(mut reader: impl AsyncRead + Unpin) -> Result<Vec<u8>> {
 
 #[cfg(windows)]
 mod windows {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+
     use windows_sys::Win32::{
         Foundation::*,
         System::{Diagnostics::ToolHelp::*, JobObjects::*, Threading::*},
@@ -682,6 +695,153 @@ mod windows {
             "Windows job cleanup failed"
         );
         anyhow::Error::new(error).context(CleanupFailure)
+    }
+
+    #[derive(Default)]
+    pub struct Cleanup {
+        processes: BTreeMap<u32, OwnedHandle>,
+        prepared: bool,
+    }
+
+    impl Cleanup {
+        pub fn prepare(&mut self, job: usize) -> Result<()> {
+            if self.prepared {
+                return Ok(());
+            }
+            // ActiveProcesses can reach zero before process objects signal.
+            // Retain exact kernel handles before either graceful or forced
+            // termination, including across failed cleanup attempts and Drop.
+            // First forbid new children: with at least one live parent, a limit
+            // of one rejects every new association. Without this boundary a
+            // child born after enumeration could escape the handle wait.
+            // https://learn.microsoft.com/windows/win32/api/winnt/ns-winnt-jobobject_basic_limit_information
+            let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+            if unsafe {
+                QueryInformationJobObject(
+                    job as _,
+                    JobObjectExtendedLimitInformation,
+                    &mut limits as *mut _ as _,
+                    std::mem::size_of_val(&limits) as u32,
+                    std::ptr::null_mut(),
+                )
+            } == 0
+            {
+                return Err(api_failure("query-job-limits"));
+            }
+            limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
+            limits.BasicLimitInformation.ActiveProcessLimit = 1;
+            if unsafe {
+                SetInformationJobObject(
+                    job as _,
+                    JobObjectExtendedLimitInformation,
+                    &limits as *const _ as _,
+                    std::mem::size_of_val(&limits) as u32,
+                )
+            } == 0
+            {
+                return Err(api_failure("seal-job-process-membership"));
+            }
+            for pid in process_ids(job)? {
+                if self.processes.contains_key(&pid) {
+                    continue;
+                }
+                let process = unsafe {
+                    OpenProcess(
+                        PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
+                        0,
+                        pid,
+                    )
+                };
+                if process.is_null() {
+                    // A process that disappeared before OpenProcess no longer
+                    // owns resources. Access denial is not evidence of exit.
+                    if unsafe { GetLastError() } == ERROR_INVALID_PARAMETER {
+                        continue;
+                    }
+                    return Err(api_failure("open-job-process"));
+                }
+                let process = unsafe { OwnedHandle::from_raw_handle(process) };
+                let mut member = 0;
+                if unsafe { IsProcessInJob(process.as_raw_handle(), job as _, &mut member) } == 0 {
+                    return Err(api_failure("verify-job-process-membership"));
+                }
+                // PID reuse between enumeration and OpenProcess must not make
+                // cleanup wait for an unrelated process.
+                if member != 0 {
+                    self.processes.insert(pid, process);
+                }
+            }
+            self.prepared = true;
+            tracing::debug!(
+                processes = self.processes.len(),
+                "Retained Windows cleanup process handles"
+            );
+            Ok(())
+        }
+
+        pub fn exited(&self) -> Result<bool> {
+            for (pid, process) in &self.processes {
+                match unsafe { WaitForSingleObject(process.as_raw_handle(), 0) } {
+                    WAIT_OBJECT_0 => {}
+                    WAIT_TIMEOUT => {
+                        tracing::trace!(pid, "Awaiting Windows process termination signal");
+                        return Ok(false);
+                    }
+                    _ => return Err(api_failure("wait-job-process")),
+                }
+            }
+            Ok(true)
+        }
+    }
+
+    fn process_ids(job: usize) -> Result<Vec<u32>> {
+        // Use ULONG_PTR-aligned storage for the variable-length Win32 record;
+        // grow on partial results instead of trusting the initial process count.
+        let header = std::mem::offset_of!(JOBOBJECT_BASIC_PROCESS_ID_LIST, ProcessIdList)
+            / std::mem::size_of::<usize>();
+        let mut capacity = 64usize;
+        let deadline = std::time::Instant::now() + CLEANUP_TIMEOUT;
+        loop {
+            let mut storage = Vec::<usize>::new();
+            storage
+                .try_reserve_exact(header + capacity)
+                .context(CleanupFailure)?;
+            storage.resize(header + capacity, 0);
+            let bytes =
+                u32::try_from(std::mem::size_of_val(storage.as_slice())).context(CleanupFailure)?;
+            let record = storage
+                .as_mut_ptr()
+                .cast::<JOBOBJECT_BASIC_PROCESS_ID_LIST>();
+            let success = unsafe {
+                QueryInformationJobObject(
+                    job as _,
+                    JobObjectBasicProcessIdList,
+                    record.cast(),
+                    bytes,
+                    std::ptr::null_mut(),
+                )
+            };
+            if success == 0 && unsafe { GetLastError() } != ERROR_MORE_DATA {
+                return Err(api_failure("enumerate-job-processes"));
+            }
+            let (assigned, listed) = unsafe {
+                (
+                    (*record).NumberOfAssignedProcesses as usize,
+                    (*record).NumberOfProcessIdsInList as usize,
+                )
+            };
+            if success != 0 && listed == assigned && listed <= capacity {
+                return storage[header..header + listed]
+                    .iter()
+                    .map(|pid| u32::try_from(*pid).context(CleanupFailure))
+                    .collect();
+            }
+            ensure!(std::time::Instant::now() < deadline, CleanupFailure);
+            capacity = capacity
+                .checked_mul(2)
+                .context(CleanupFailure)?
+                .max(assigned);
+        }
     }
 
     pub fn terminate_job(job: usize) -> Result<()> {
@@ -770,6 +930,10 @@ mod windows {
             let Ok(mode) = std::env::var("TFLOW_JOB_FIXTURE_MODE") else {
                 return;
             };
+            if mode == "unexpected" {
+                std::fs::write("unexpected-child", b"ran").unwrap();
+                return;
+            }
             if mode == "child" {
                 let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
                 // Publish readiness only after binding, without releasing a
@@ -800,6 +964,25 @@ mod windows {
                 std::thread::sleep(Duration::from_millis(10));
             }
             if mode == "hold" {
+                while !Path::new("probe-sealed-job").exists() {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                let result = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args([
+                        "--exact",
+                        "process::windows::tests::windows_job_fixture",
+                        "--nocapture",
+                    ])
+                    .env("TFLOW_JOB_FIXTURE_MODE", "unexpected")
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+                assert!(
+                    result.is_err() || !result.unwrap().success(),
+                    "sealed job admitted a new child"
+                );
+                std::fs::write("sealed-job-rejected-child", b"rejected").unwrap();
                 std::thread::sleep(Duration::from_secs(60));
             }
         }
@@ -869,6 +1052,22 @@ mod windows {
                     );
                     assert_ne!(in_job, 0, "fixture descendant escaped the owned job");
                     assert_eq!(unsafe { WaitForSingleObject(handle, 0) }, WAIT_TIMEOUT);
+                    owner.job_cleanup.prepare(owner.job).unwrap();
+                    assert!(owner.job_cleanup.processes.contains_key(&pid));
+                    if reason != ExitReason::Completed {
+                        assert!(owner.job_cleanup.processes.len() >= 2);
+                        std::fs::write(directory.path().join("probe-sealed-job"), b"probe")
+                            .unwrap();
+                        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+                        while !directory.path().join("sealed-job-rejected-child").exists() {
+                            assert!(
+                                tokio::time::Instant::now() < deadline,
+                                "owned parent did not confirm the spawn barrier"
+                            );
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                        }
+                        assert!(!directory.path().join("unexpected-child").exists());
+                    }
                     let full_job = owner.job;
                     // Real access-denied faults exercise both API return values
                     // without invalid handles or process-global test hooks.
