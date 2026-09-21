@@ -3384,7 +3384,23 @@ fn explain_matches_windows_case_aliases_in_accesses_and_changes() {
 fn cache_rejects_declared_overlap_without_an_observed_intersection() {
     use runlens::{analysis, config::Command, entries::Entries, model::*};
     let root = repository("read");
-    assert!(run(root.path(), "overlap.json", "read").status.success());
+    // Keep stage classifications when a native runner fails before the offline
+    // assertion; dropping Output hides whether launch, collection or snapshots
+    // failed and must not be replaced by a retry or relaxed success assertion.
+    let observed = invoke(
+        root.path(),
+        &[
+            "--log-level",
+            "debug",
+            "run",
+            "--save",
+            "overlap.json",
+            "--",
+            fixture(),
+            "read",
+        ],
+    );
+    assert!(observed.status.success(), "{observed:?}");
     let mut report = runlens::report::read(&root.path().join("overlap.json")).unwrap();
     report.executions[0].accesses = Entries::default();
     report.executions[0].changes = Entries::default();
