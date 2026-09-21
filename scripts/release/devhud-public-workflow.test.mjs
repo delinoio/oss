@@ -282,7 +282,8 @@ test("documentation deployment is bound to the exact candidate before publicatio
   assert.match(job("docs_candidate"), /devhud-release-identity/u);
   assert.match(job("docs_candidate"), /needs\.identity\.outputs\.version/u);
   assert.match(job("docs_candidate"), /name: "devhud-public-docs-candidate-\$\{\{ github\.run_attempt \}\}"/u);
-  assert.match(job("docs_candidate"), /Keep only DevHud-owned release documentation/u);
+  assert.match(job("docs_candidate"), /Keep only DevHud-owned release documentation and shared runtime assets/u);
+  assert.match(job("docs_candidate"), /find apps\/public-docs\/doc_build\/static -type f -name 'search_index\.\*' -delete/u);
   assert.match(job("docs_candidate"), /RUNNER_TEMP\/devhud-public-docs-candidate/u);
   assert.doesNotMatch(job("docs_candidate"), /path: apps\/public-docs\/doc_build\s*\n/u);
   assert.match(job("public_docs"), /name: "devhud-public-docs-candidate-\$\{\{ github\.run_attempt \}\}"/u);

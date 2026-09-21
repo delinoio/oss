@@ -485,10 +485,13 @@ jobs:
         run: |
           # shellcheck disable=SC2016
           node -e 'const fs=require("node:fs");const path="apps/public-docs/doc_build/devhud.html";const html=fs.readFileSync(path,"utf8");const marker=`<meta name="devhud-release-identity" content="${process.env.DEVHUD_DOCS_RELEASE_IDENTITY}">`;if(!html.includes("</head>")||html.includes("devhud-release-identity"))process.exit(1);fs.writeFileSync(path,html.replace("</head>",`${marker}</head>`))'
-      - name: Keep only DevHud-owned release documentation
+      - name: Keep only DevHud-owned release documentation and shared runtime assets
         run: |
           set -euo pipefail
           candidate="$RUNNER_TEMP/devhud-public-docs-candidate"
+          # The root search index belongs to the complete current-main aggregate. Leaving it
+          # out of the retained release candidate prevents root-project content from rolling back.
+          find apps/public-docs/doc_build/static -type f -name 'search_index.*' -delete
           mkdir -p "$candidate/devhud" "$candidate/static"
           cp apps/public-docs/doc_build/devhud.html "$candidate/devhud.html"
           cp -R apps/public-docs/doc_build/devhud/. "$candidate/devhud/"
