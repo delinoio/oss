@@ -296,3 +296,5 @@
 - Unresolved Windows relative OBJECT_ATTRIBUTES root handles must mark collection incomplete before forwarding the original NT call; a failed normalized-name lookup cannot silently erase an access.
 
 - Policy declaration checks classify masked command names as unknown before configuration lookup and continue independent global boundaries; masked names must never become invalid-input or bind a placeholder key.
+
+- Clean/repeat inherit SystemRoot, WINDIR, COMSPEC and PATHEXT as OS execution context only on Windows; Unix commands and preparations require explicit selection of these names.

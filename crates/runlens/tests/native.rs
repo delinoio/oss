@@ -5570,3 +5570,64 @@ fn masked_command_names_are_inconclusive_before_coverage_lookup() {
         );
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn unix_clean_and_repeat_require_selection_of_windows_context() {
+    let names = ["SystemRoot", "WINDIR", "COMSPEC", "PATHEXT"];
+    for selected in [false, true] {
+        let root = repository("read");
+        let config_path = root.path().join("runlens.toml");
+        let mut config: runlens::config::Config =
+            toml::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
+        let command = config.commands.get_mut("build").unwrap();
+        let state = if selected { "selected" } else { "absent" };
+        command.argv = vec![
+            fixture().into(),
+            "windows-context".into(),
+            state.into(),
+            "target".into(),
+        ];
+        command.prepare = vec![vec![
+            fixture().into(),
+            "windows-context".into(),
+            state.into(),
+            "prepare".into(),
+        ]];
+        if selected {
+            command.env = names.iter().map(|name| (*name).into()).collect();
+        }
+        fs::write(&config_path, toml::to_string(&config).unwrap()).unwrap();
+        for kind in ["clean", "repeat"] {
+            let file = format!("{kind}.json");
+            let mut run = cli_command();
+            run.current_dir(root.path())
+                .args(["verify", kind, "build", "--save", &file]);
+            for name in names {
+                run.env(name, "OS-CONTEXT-CANARY");
+            }
+            let result = run.output().unwrap();
+            assert_eq!(
+                result.status.code(),
+                Some(if selected && kind == "repeat" { 4 } else { 0 }),
+                "{selected}/{kind}: {result:?}"
+            );
+            let report = parse(root.path(), &file);
+            for execution in report["executions"].as_array().unwrap() {
+                assert_eq!(execution["outcome"]["child_exit_code"], 0);
+                let recorded = execution["environment"]["environment_names"]
+                    .as_array()
+                    .unwrap();
+                for name in names {
+                    assert_eq!(recorded.iter().any(|value| value == name), selected);
+                }
+            }
+            assert!(
+                !fs::read_to_string(root.path().join(&file))
+                    .unwrap()
+                    .contains("OS-CONTEXT-CANARY")
+            );
+            assert!(!root.path().join("out").exists());
+        }
+    }
+}

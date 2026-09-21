@@ -1113,6 +1113,25 @@ fn main() {
             assert!(!std::path::Path::new("out").exists());
             fs::create_dir("out").unwrap();
         }
+        #[cfg(unix)]
+        "windows-context" => {
+            for name in ["SystemRoot", "WINDIR", "COMSPEC", "PATHEXT"] {
+                let value = std::env::var(name).ok();
+                assert_eq!(
+                    value.as_deref(),
+                    if args[1] == "selected" {
+                        Some("OS-CONTEXT-CANARY")
+                    } else {
+                        None
+                    }
+                );
+            }
+            if args[2] == "prepare" {
+                fs::create_dir("out").unwrap();
+            } else {
+                fs::write("out/result", "stable output").unwrap();
+            }
+        }
         "env" => {
             assert!(std::path::Path::new("out").is_dir());
             let path =

@@ -40,9 +40,15 @@ const ISOLATED_VARIABLES: &[&str] = &[
 pub fn execution_context() -> Vec<(OsString, OsString)> {
     [
         "PATH",
+        // Windows launch context is not ambient configuration on Unix. Unix
+        // commands must explicitly select these names when they need them.
+        #[cfg(windows)]
         "SystemRoot",
+        #[cfg(windows)]
         "WINDIR",
+        #[cfg(windows)]
         "COMSPEC",
+        #[cfg(windows)]
         "PATHEXT",
         "LANG",
         "LC_ALL",

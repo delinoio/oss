@@ -853,3 +853,5 @@ macOS execvP uses its explicit search path rather than ambient PATH. It shares e
 Failed Windows normalized-name lookup for a relative NT root handle records collection loss and forwards the unchanged operation. Native coverage exercises the failure branch with well-formed attributes and a non-directory handle; successful SMB operations with denied name lookup remain incomplete rather than disappearing.
 
 Masked recorded command names are inconclusive identities before declaration lookup, including explicit-pattern and selected-value masking. Coverage checks retain unknown evidence while independent read/write denials still apply. Clean verification saves its inconclusive result instead of failing to parse the configured name.
+
+SystemRoot, WINDIR, COMSPEC and PATHEXT are implicit OS launch context only on Windows. On macOS/Linux, clean and repeat omit them unless explicitly selected, including preparation stages. Selected names remain visible as environment metadata without values, and selected values cannot prove repeat compatibility.
