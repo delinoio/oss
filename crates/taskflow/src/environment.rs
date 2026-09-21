@@ -167,7 +167,7 @@ pub(crate) fn validate_remote_inputs(
     Ok(())
 }
 
-fn same_name(left: &str, right: &str) -> bool {
+pub(crate) fn same_name(left: &str, right: &str) -> bool {
     #[cfg(windows)]
     {
         use windows_sys::Win32::Globalization::{CompareStringOrdinal, CSTR_EQUAL};

@@ -638,18 +638,24 @@ async fn capture_task_output(
     let mut probe = task.clone();
     probe.command = command.clone();
     probe.platform.ports.clear();
-    let environment = crate::docker::host_environment(environment);
     let (command, mut container) = crate::docker::prepare(
         root,
         directory,
         &probe,
-        &environment,
+        environment,
         overrides,
         &uuid::Uuid::now_v7().to_string(),
         cancel,
     )
     .await?;
-    let result = capture_output(directory, &command, None, &environment, cancel).await;
+    let result = capture_output(
+        directory,
+        &command,
+        None,
+        container.host_environment(),
+        cancel,
+    )
+    .await;
     container.cleanup().await?;
     result
 }

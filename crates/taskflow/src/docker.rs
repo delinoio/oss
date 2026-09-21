@@ -27,18 +27,54 @@ impl std::fmt::Display for CleanupFailure {
     }
 }
 impl std::error::Error for CleanupFailure {}
-pub fn host_environment(environment: &BTreeMap<String, String>) -> BTreeMap<String, String> {
-    let mut values = environment.clone();
+pub fn host_environment(
+    environment: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>> {
+    let inherited = crate::environment::inherited()?;
+    let lookup = [
+        "PATH",
+        "HOME",
+        "USERPROFILE",
+        "SystemRoot",
+        "WINDIR",
+        "COMSPEC",
+        "PATHEXT",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+    ];
+    // Container PATH, loader hooks, proxies, and language startup variables must
+    // never configure the host client. Lookup/runtime values come only from the
+    // host; the three Docker transport selectors retain resolved precedence.
+    let mut values: BTreeMap<_, _> = inherited
+        .iter()
+        .filter(|(key, _)| {
+            lookup
+                .iter()
+                .any(|name| crate::environment::same_name(name, key))
+        })
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
     for key in ["DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"] {
-        if crate::environment::get(&values, key).is_none() {
-            if let Ok(value) = std::env::var(key) {
-                crate::environment::insert(&mut values, key.into(), value);
-            }
+        let source = if crate::environment::get(environment, key).is_some() {
+            environment
+        } else {
+            &inherited
+        };
+        if let Some((key, value)) = source
+            .iter()
+            .find(|(name, _)| crate::environment::same_name(key, name))
+        {
+            crate::environment::insert(&mut values, key.clone(), value.clone());
         }
     }
-    values
+    Ok(values)
 }
 impl Container {
+    pub(crate) fn host_environment(&self) -> &BTreeMap<String, String> {
+        &self.environment
+    }
+
     pub async fn cleanup(&mut self) -> Result<()> {
         // Task deadlines stop new work, never the cleanup that proves container
         // absence. Each cleanup subprocess retains its own metadata deadline.
@@ -141,6 +177,7 @@ pub async fn prepare(
     cancel: &CancellationToken,
 ) -> Result<(Command, Container)> {
     task.platform.validate_ports()?;
+    let host = host_environment(environment)?;
     // Ask the same CLI with the same environment that will launch the task.
     // Its selected context can override DOCKER_HOST, and the synthetic default
     // context incorporates DOCKER_HOST when no named context takes precedence.
@@ -153,7 +190,7 @@ pub async fn prepare(
             "--format".into(),
             "{{json .Endpoints.docker.Host}}".into(),
         ]),
-        environment,
+        &host,
         cancel,
     )
     .await?;
@@ -233,13 +270,13 @@ pub async fn prepare(
             key,
         )
     }) {
-        args.extend(["--env".into(), key.clone()]);
+        args.extend(["--env".into(), format!("{key}={}", environment[key])]);
     }
     args.extend([
         "--env".into(),
         format!("TFLOW_RESULT_FILE=/workspace/.taskflow/runs/{execution}/result.json"),
         "--env".into(),
-        "TFLOW_EXECUTION_ID".into(),
+        format!("TFLOW_EXECUTION_ID={execution}"),
         "--env".into(),
         format!("TFLOW_BIN={container_helper}"),
     ]);
@@ -280,7 +317,7 @@ pub async fn prepare(
             name,
             cleaned: false,
             directory: root.to_path_buf(),
-            environment: environment.clone(),
+            environment: host,
             helper: Some(helper_owner),
         },
     ))

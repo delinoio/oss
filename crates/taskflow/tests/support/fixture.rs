@@ -45,19 +45,29 @@ fn main() {
                 }
                 if std::env::var("DOCKER_CONTEXT").as_deref() == Ok("forwarding-fixture") {
                     let flags: Vec<_> = args.windows(2).filter(|pair| pair[0] == "--env").map(|pair| pair[1].as_str()).collect();
-                    assert!(flags.contains(&"TFLOW_CLI_VALUE"), "CLI override missing: {flags:?}");
-                    assert!(!flags.contains(&"TFLOW_INHERITED_VALUE"), "undeclared host variable forwarded");
-                    assert!(!flags.contains(&"TFLOW_SIBLING_SECRET"), "another task's secret forwarded");
-                    let aliases: Vec<_> = flags.iter().copied().filter(|name| name.eq_ignore_ascii_case("tflow_case")).collect();
-                    if cfg!(windows) {
-                        assert_eq!(aliases, ["tflow_case"], "forward only the effective host spelling");
-                    } else {
-                        assert_eq!(aliases, ["TFLOW_CASE", "Tflow_Case", "tflow_case"], "distinct Unix names remain distinct and appear once");
-                        assert_eq!(std::env::var("TFLOW_CASE").unwrap(), "inherited");
-                        assert_eq!(std::env::var("Tflow_Case").unwrap(), "declared");
+                    let values: std::collections::BTreeMap<_, _> = flags.iter().map(|flag| flag.split_once('=').unwrap()).collect();
+                    assert_eq!(values.len(), flags.len(), "duplicate forwarding");
+                    assert!(values.contains_key("TFLOW_CLI_VALUE"), "CLI override missing");
+                    assert!(!values.contains_key("TFLOW_INHERITED_VALUE"));
+                    assert!(!values.contains_key("TFLOW_SIBLING_SECRET"));
+                    assert_ne!(std::env::var("PATH").unwrap(), "/container/bin");
+                    for key in ["LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "TFLOW_CLI_VALUE", "TFLOW_MULTILINE"] {
+                        assert!(std::env::var_os(key).is_none(), "container value reached the host client: {key}");
                     }
-                    assert_eq!(std::env::var("tflow_case").unwrap(), "override");
-                    let value = std::env::var("TFLOW_CLI_VALUE").unwrap();
+                    assert_eq!(values["PATH"], "/container/bin");
+                    assert_eq!(values["LD_PRELOAD"], "/container/only.so");
+                    assert_eq!(values["DYLD_INSERT_LIBRARIES"], "/container/only.dylib");
+                    assert_eq!(values["TFLOW_MULTILINE"], "first\nsecond ' \" =");
+                    let aliases: Vec<_> = values.keys().copied().filter(|name| name.eq_ignore_ascii_case("tflow_case")).collect();
+                    if cfg!(windows) {
+                        assert_eq!(aliases, ["tflow_case"]);
+                    } else {
+                        assert_eq!(aliases, ["TFLOW_CASE", "Tflow_Case", "tflow_case"]);
+                        assert_eq!(values["TFLOW_CASE"], "inherited");
+                        assert_eq!(values["Tflow_Case"], "declared");
+                    }
+                    assert_eq!(values["tflow_case"], "override");
+                    let value = values["TFLOW_CLI_VALUE"];
                     let phase = args.last().unwrap();
                     let mut log = fs::OpenOptions::new().create(true).append(true).open(".taskflow/docker-phases").unwrap();
                     writeln!(log, "{phase}:{value}").unwrap();

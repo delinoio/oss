@@ -168,3 +168,5 @@
 - Record native adapter membership roots during discovery. Directory and ambiguous rename/remove events overlapping those roots or known metadata ancestors trigger graph rediscovery before input snapshots; known ordinary file events retain exact filtering, and pre-baseline input causes survive the reload.
 
 - Task, resource, and cache lock identities live in persistent OS-account coordination storage outside the workspace, keyed by canonical workspace path and lock name. Do not derive that storage from HOME/TMPDIR overrides or unlink lock files during task/cache cleanup. Refuse a workspace containing the registry; unmapped Unix container UIDs use a fixed private system-temporary namespace.
+
+- Docker clients receive only inherited host lookup/runtime settings and the effective DOCKER_HOST/DOCKER_CONTEXT/DOCKER_CONFIG selectors. Forward declared container values as explicit Docker environment assignments, never by applying them to the host client. Preserve exact values and effective key spellings across finite tasks, probes, shards, and cleanup; retain secret masking for every diagnostic/log path.

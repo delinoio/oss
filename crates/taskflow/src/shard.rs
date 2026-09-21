@@ -998,7 +998,6 @@ async fn run_unit(
                 unit.command = command;
                 // Execution units retain publish mappings. Only inventory and
                 // tool probes omit them; each sequential unit owns its ports.
-                env = crate::docker::host_environment(&env);
                 let prepared = crate::docker::prepare(
                     &graph.workspace.root,
                     directory,
@@ -1010,6 +1009,7 @@ async fn run_unit(
                 )
                 .await?;
                 command = prepared.0;
+                env = prepared.1.host_environment().clone();
                 container = Some(prepared.1);
             }
             if process::remaining_timeout(None).is_some_and(|remaining| remaining.is_zero()) {

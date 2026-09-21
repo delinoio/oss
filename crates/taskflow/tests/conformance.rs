@@ -341,7 +341,7 @@ renamed={package='native-b',path='../b'}
 async fn scenario_10_local_docker_execution_uses_explicit_platform_and_cleans_container() {
     let image = "node@sha256:6dac556d980b7f0e5498d08f08cee0ca67798b4ad6c23964a9214920e67758d0";
     let dir = fixture(
-        json!({"container":{"command":["node","-e","require('fs').mkdirSync('out',{recursive:true});require('fs').writeFileSync('out/value',process.env.MESSAGE);require('child_process').execFileSync(process.env.TFLOW_BIN,['result','unchanged'])"],"input":[],"output":["out/**"],"env":{"MESSAGE":"docker-ok"},"platform":{"os":"linux","arch":config::host_arch(),"executor":"docker","image":image}}}),
+        json!({"container":{"command":["node","-e","require('fs').mkdirSync('out',{recursive:true});require('fs').writeFileSync('out/value',process.env.MESSAGE);require('fs').writeFileSync('out/environment',JSON.stringify([process.env.PATH,process.env.MULTILINE]));require('child_process').execFileSync(process.env.TFLOW_BIN,['result','unchanged'])"],"input":[],"output":["out/**"],"env":{"MESSAGE":"docker-ok","PATH":"/container/bin:/usr/local/bin:/usr/bin:/bin","MULTILINE":"first\nsecond ' \" ="},"platform":{"os":"linux","arch":config::host_arch(),"executor":"docker","image":image}}}),
     );
     let g = graph(dir.path()).await;
     for expected_changed in [true, false] {
@@ -350,6 +350,16 @@ async fn scenario_10_local_docker_execution_uses_explicit_platform_and_cleans_co
         assert_eq!(
             std::fs::read_to_string(dir.path().join("out/value")).unwrap(),
             "docker-ok"
+        );
+        let environment: Value =
+            serde_json::from_slice(&std::fs::read(dir.path().join("out/environment")).unwrap())
+                .unwrap();
+        assert_eq!(
+            environment,
+            json!([
+                "/container/bin:/usr/local/bin:/usr/bin:/bin",
+                "first\nsecond ' \" ="
+            ])
         );
         assert_eq!(result.results["app#container"].changed, expected_changed);
         let name = format!("tflow-{}", result.results["app#container"].execution);
@@ -3904,6 +3914,9 @@ fn notification_paths_survive_concurrent_file_removal() {
 
 #[tokio::test]
 async fn docker_context_cannot_override_a_validated_local_host() {
+    if isolated_docker_host("docker_context_cannot_override_a_validated_local_host").await {
+        return;
+    }
     let directory = fixture(json!({}));
     let tools = tempfile::tempdir().unwrap();
     // Link the already-closed executable: parallel subprocess creation can
@@ -4699,6 +4712,9 @@ async fn session_revalidates_provided_prerequisite_outputs() {
 
 #[tokio::test]
 async fn docker_cleanup_reuses_the_validated_launch_environment() {
+    if isolated_docker_host("docker_cleanup_reuses_the_validated_launch_environment").await {
+        return;
+    }
     let directory = fixture(json!({}));
     let tools = tempfile::tempdir().unwrap();
     // Link the already-closed executable: parallel subprocess creation can
@@ -5249,17 +5265,18 @@ fn docker_host_environment_preserves_resolved_precedence() {
             false,
         )
         .unwrap();
-        let values = taskflow::docker::host_environment(&env.values);
+        let values = taskflow::docker::host_environment(&env.values).unwrap();
         assert_eq!(values["DOCKER_HOST"], "unix:///cli.sock");
         assert_eq!(values["DOCKER_CONTEXT"], "task-context");
         assert_eq!(values["DOCKER_CONFIG"], "inherited-config");
-        let missing = taskflow::docker::host_environment(&BTreeMap::new());
+        let missing = taskflow::docker::host_environment(&BTreeMap::new()).unwrap();
         assert_eq!(missing["DOCKER_HOST"], "unix:///inherited.sock");
         if cfg!(windows) {
             let values = taskflow::docker::host_environment(&BTreeMap::from([(
                 "docker_host".into(),
                 "unix:///lower.sock".into(),
-            )]));
+            )]))
+            .unwrap();
             assert_eq!(values["docker_host"], "unix:///lower.sock");
             assert!(!values.contains_key("DOCKER_HOST"));
         }
@@ -5403,8 +5420,8 @@ async fn one_task_rejects_output_aliases_before_capture() {
 async fn docker_forwards_cli_overrides_to_tasks_tools_and_shards() {
     let platform = json!({"executor":"docker","os":"linux","image":"fixture@sha256:0000000000000000000000000000000000000000000000000000000000000000"});
     let root = fixture(json!({
-        "finite":{"command":["fixture","finite"],"env":{"Tflow_Case":"declared"},"envInputs":["TFLOW_CASE","Tflow_Case"],"input":[],"output":["received"],"cache":true,"tools":{"fixture":["fixture","probe"]},"platform":platform},
-        "test":{"command":["fixture","shard"],"env":{"Tflow_Case":"declared"},"envInputs":["TFLOW_CASE","Tflow_Case"],"input":[],"tools":{"fixture":["fixture","probe"]},"shard":{"adapter":"generic","count":1,"list":["fixture","inventory"],"run":["fixture","shard"]},"platform":platform},
+        "finite":{"command":["fixture","finite"],"env":{"Tflow_Case":"declared","PATH":"/container/bin","LD_PRELOAD":"/container/only.so","DYLD_INSERT_LIBRARIES":"/container/only.dylib","TFLOW_MULTILINE":"first\nsecond ' \" ="},"envInputs":["TFLOW_CASE","Tflow_Case"],"input":[],"output":["received"],"cache":true,"tools":{"fixture":["fixture","probe"]},"platform":platform},
+        "test":{"command":["fixture","shard"],"env":{"Tflow_Case":"declared","PATH":"/container/bin","LD_PRELOAD":"/container/only.so","DYLD_INSERT_LIBRARIES":"/container/only.dylib","TFLOW_MULTILINE":"first\nsecond ' \" ="},"envInputs":["TFLOW_CASE","Tflow_Case"],"input":[],"tools":{"fixture":["fixture","probe"]},"shard":{"adapter":"generic","count":1,"list":["fixture","inventory"],"run":["fixture","shard"]},"platform":platform},
         "secret":{"command":command(&["version"]),"secrets":["TFLOW_SIBLING_SECRET"]}
     }));
     let tools = tempfile::tempdir().unwrap();
@@ -8742,4 +8759,34 @@ async fn shard_duration_history_rejects_unbounded_and_nonregular_state() {
         );
         assert!(std::fs::symlink_metadata(&path).unwrap().is_file());
     }
+}
+
+async fn isolated_docker_host(name: &str) -> bool {
+    if std::env::var("TFLOW_DOCKER_HOST_TEST").as_deref() == Ok(name) {
+        return false;
+    }
+    let tools = tempfile::tempdir().unwrap();
+    std::fs::hard_link(
+        helper(),
+        tools.path().join(if cfg!(windows) {
+            "docker.exe"
+        } else {
+            "docker"
+        }),
+    )
+    .unwrap();
+    let path = std::env::join_paths(
+        std::iter::once(tools.path().to_path_buf())
+            .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
+    let status = tokio::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", name, "--nocapture"])
+        .env("TFLOW_DOCKER_HOST_TEST", name)
+        .env("PATH", path)
+        .status()
+        .await
+        .unwrap();
+    assert!(status.success(), "{name}");
+    true
 }

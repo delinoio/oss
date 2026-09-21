@@ -854,7 +854,6 @@ async fn run_task(
     let mut docker = None;
     let mut command = task.command.clone();
     if task.platform.executor == Executor::Docker && task.shard.is_none() {
-        values = crate::docker::host_environment(&values);
         let prepared = crate::docker::prepare(
             &graph.workspace.root,
             &project.directory,
@@ -866,6 +865,7 @@ async fn run_task(
         )
         .await?;
         command = prepared.0;
+        values = prepared.1.host_environment().clone();
         docker = Some(prepared.1);
     }
     if cancel.is_cancelled() {
