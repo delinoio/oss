@@ -45,6 +45,9 @@ Archive generation emits structured target, artifact and SHA-256 evidence. Runti
 ## Build and Test
 Run `node --test scripts/release/async-commit-hook.test.mjs` for dependency-free artifact/installer fixtures and offline publication recovery fixtures. Publication fixtures intercept every GitHub command and tag lookup; they cover partial uploads, lost creation responses, changed signatures on retry, wrong ownership/commit, completed releases, lookup/tag failures and incomplete or mismatched remote assets without network mutations. After the frozen workspace install, run `node --test scripts/ci/async-commit-hook-release.test.mjs`, `pnpm ci:workflows` and `pnpm ci:contracts` for YAML workflow and publication-retry contracts. Also run Go updater/installer ownership fixtures and the six-target builder. Signature tests include real upstream Sigstore verification evidence with an untrusted workflow, forged bundles and tampered bytes. Shell installer tests use isolated download/signature fixtures to prove fail-closed publication ordering. Windows installation and replacement receive cross-build/source checks here, not a falsely claimed Windows execution result.
 
+## Validation Status
+Desktop Chrome pairing, controls, accessibility-tree and focus validation passed. Desktop Edge validation remains pending because Edge was unavailable in the validation environment; no owner-approved exclusion has been recorded. Release readiness must not treat the original Edge accessibility requirement as complete until that validation is executed or explicitly waived. The only approved implementation exclusions remain real six-target machine qualification and actual public release/site deployment.
+
 ## Change Triggers
 Update this contract, packaging AGENTS, version metadata, evidence and public upgrade/compatibility guidance when artifact names, trust identity, update ownership or deployment behavior changes.
 
