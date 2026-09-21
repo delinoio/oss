@@ -3,7 +3,7 @@ use std::{
     io::{self, Cursor, Read},
     path::Path,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicUsize, Ordering},
         Arc,
     },
 };
@@ -16,12 +16,43 @@ use crate::{
 pub const CHUNK: usize = 64 * 1024;
 
 #[derive(Clone)]
-pub struct Cancellation(pub Arc<AtomicBool>);
+pub struct Cancellation(Arc<AtomicUsize>);
 
 impl Cancellation {
+    pub fn install() -> Result<Self> {
+        let token = Self(Arc::new(AtomicUsize::new(0)));
+        #[cfg(unix)]
+        // Preserve the former ctrlc termination feature's SIGHUP cleanup/status.
+        // The common 130/143 contract changes only SIGINT and SIGTERM.
+        for (signal, exit) in [(libc::SIGINT, 130), (libc::SIGTERM, 143), (libc::SIGHUP, 1)] {
+            let state = token.0.clone();
+            // Record only the first cancellation reason. Cleanup and publication
+            // stay on the supervisor; handlers perform no I/O or allocation.
+            unsafe {
+                signal_hook::low_level::register(signal, move || {
+                    let _ = state.compare_exchange(0, exit, Ordering::SeqCst, Ordering::SeqCst);
+                })
+            }
+            .map_err(|_| Error::runtime(Code::Runtime))?;
+        }
+        #[cfg(windows)]
+        {
+            let state = token.0.clone();
+            ctrlc::set_handler(move || {
+                let _ = state.compare_exchange(0, 130, Ordering::SeqCst, Ordering::SeqCst);
+            })
+            .map_err(|_| Error::runtime(Code::Runtime))?;
+        }
+        Ok(token)
+    }
+
     pub fn check(&self) -> Result<()> {
-        if self.0.load(Ordering::Acquire) {
-            Err(Error::runtime(Code::Cancelled))
+        let exit = self.0.load(Ordering::Acquire);
+        if exit != 0 {
+            Err(Error {
+                code: Code::Cancelled,
+                exit: exit as u8,
+            })
         } else {
             Ok(())
         }

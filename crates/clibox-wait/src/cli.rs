@@ -8,9 +8,13 @@ pub enum Wait {
     /// Observe TCP connectivity, without sending application data.
     #[command(
         after_help = "Example: clibox wait tcp localhost:3000 --timeout 30s\nConnectivity does \
-                      not establish application readiness."
+                      not establish application readiness.\n\nWaits observe readiness without \
+                      reserving resources or guaranteeing continued readiness.\nNo stdin is read. \
+                      Exit codes: 0 success, 1 operation failure, 2 invalid arguments, 130 \
+                      Ctrl+C/Windows Ctrl+Break, 143 Unix SIGTERM."
     )]
     Tcp {
+        /// One hostname/IP and decimal port; bracket IPv6 addresses.
         #[arg(value_name = "HOST:PORT", value_parser = parse_tcp)]
         target: TcpTarget,
         #[command(flatten)]
@@ -24,11 +28,16 @@ pub enum Wait {
         after_help = "Example: clibox wait http https://example.com/health --method head --status \
                       204 --timeout 1m\nDefault: GET and any 2xx. HTTPS verifies OS trust and \
                       hostname.\nNo proxies, authentication, custom headers/CA, client \
-                      certificates, or TLS bypass."
+                      certificates, or TLS bypass.\n\nWaits observe readiness without reserving \
+                      resources or guaranteeing continued readiness.\nNo stdin is read. Exit \
+                      codes: 0 success, 1 operation failure, 2 invalid arguments, 130 \
+                      Ctrl+C/Windows Ctrl+Break, 143 Unix SIGTERM."
     )]
     Http {
+        /// One absolute HTTP(S) URL without user information.
         #[arg(value_name = "URL", value_parser = parse_url)]
         target: Url,
+        /// Select the HTTP method for each readiness check.
         #[arg(long, value_enum, default_value = "get")]
         method: Method,
         #[arg(long, value_parser = parse_status, help = "Exact final response code (200-599); default: any 2xx")]
@@ -43,9 +52,13 @@ pub enum Wait {
         after_help = "Example: clibox wait file \"build/ready file\" --timeout 2m \
                       --json\nRelative paths use the current directory. Missing paths/dangling \
                       links retry;\nother file types and filesystem errors fail. Existence does \
-                      not mean writing finished."
+                      not mean writing finished.\n\nWaits observe readiness without reserving \
+                      resources or guaranteeing continued readiness.\nNo stdin is read. Exit \
+                      codes: 0 success, 1 operation failure, 2 invalid arguments, 130 \
+                      Ctrl+C/Windows Ctrl+Break, 143 Unix SIGTERM."
     )]
     File {
+        /// One regular file to observe; symbolic links are followed.
         #[arg(value_name = "PATH", value_parser = clap::builder::OsStringValueParser::new().try_map(|value| parse_path(&value)))]
         target: PathBuf,
         #[command(flatten)]

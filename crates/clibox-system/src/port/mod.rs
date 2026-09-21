@@ -42,21 +42,25 @@ impl Protocol {
 pub enum Action {
     /// List TCP LISTEN or UDP owners, including IPv4 and IPv6.
     #[command(
-        after_help = "Examples:\n  clibox port which 3000 8080\n  clibox port which 5353 \
-                      --protocol udp --json\n  clibox port which 3000 --quiet"
+        after_help = "Examples:\n  clibox port list 3000 8080\n  clibox port list 5353 --protocol \
+                      udp --json\n  clibox port list 3000 --pids\n\nExit codes: 0 success, 1 \
+                      operation failure, 2 invalid arguments, 130 Ctrl+C/Windows Ctrl+Break, 143 \
+                      Unix SIGTERM."
     )]
-    Which {
+    List {
         #[command(flatten)]
         query: Query,
-        #[arg(long, conflicts_with = "json")]
-        quiet: bool,
+        /// Print sorted unique owner PIDs, one per line.
+        #[arg(long, conflicts_with_all = ["json", "quiet"])]
+        pids: bool,
     },
     /// Forcibly terminate verified owners without elevation or descendant
     /// killing.
     #[command(
         after_help = "Example:\n  clibox port kill 3000 8080 --json\n\nRechecks owner identity, \
                       then verifies termination for at most five seconds total. Ports are not \
-                      reserved."
+                      reserved.\n\nExit codes: 0 success, 1 operation failure, 2 invalid \
+                      arguments, 130 Ctrl+C/Windows Ctrl+Break, 143 Unix SIGTERM."
     )]
     Kill {
         #[command(flatten)]
@@ -66,12 +70,26 @@ pub enum Action {
 
 #[derive(Args)]
 pub struct Query {
-    #[arg(required = true, num_args = 1.., value_parser = parse_port)]
+    /// Decimal ports from 1 through 65535; duplicates are removed.
+    #[arg(required = true, num_args = 1.., value_name = "PORT", value_parser = parse_port)]
     ports: Vec<u16>,
+    /// Select TCP listeners, UDP bindings, or both.
     #[arg(long, value_enum, default_value = "tcp")]
     protocol: Protocol,
+    /// Emit one JSON report, including partial failures.
     #[arg(long)]
     json: bool,
+    /// Suppress stdout results; failure diagnostics remain on stderr.
+    #[arg(long, conflicts_with = "json")]
+    quiet: bool,
+}
+
+#[derive(Clone, Copy)]
+enum OutputMode {
+    Human,
+    Json,
+    Quiet,
+    Pids,
 }
 fn parse_port(raw: &str) -> std::result::Result<u16, &'static str> {
     if raw.is_empty() || !raw.bytes().all(|b| b.is_ascii_digit()) {
@@ -267,8 +285,8 @@ fn kill(report: &mut Report, backend: &mut impl Backend, clock: &mut impl Clock)
 }
 
 pub fn execute(action: Action) -> Result<i32> {
-    let (query, quiet, terminate) = match action {
-        Action::Which { query, quiet } => (query, quiet, false),
+    let (query, pids, terminate) = match action {
+        Action::List { query, pids } => (query, pids, false),
         Action::Kill { query } => (query, false, true),
     };
     let ports = query.ports.into_iter().collect();
@@ -285,31 +303,36 @@ pub fn execute(action: Action) -> Result<i32> {
     if terminate {
         kill(&mut report, &mut backend, &mut RealClock(Instant::now()));
     }
-    write_report(
-        &report,
-        query.json,
-        quiet,
-        terminate,
-        &mut io::stdout().lock(),
-    )?;
+    let mode = if query.json {
+        OutputMode::Json
+    } else if query.quiet {
+        OutputMode::Quiet
+    } else if pids {
+        OutputMode::Pids
+    } else {
+        OutputMode::Human
+    };
+    write_report(&report, mode, terminate, &mut io::stdout().lock())?;
     for error in &report.errors {
-        error.report(if terminate { "port-kill" } else { "port-which" });
+        error.report(if terminate { "port-kill" } else { "port-list" });
     }
     Ok(i32::from(!report.errors.is_empty()))
 }
 
 fn write_report(
     report: &Report,
-    json: bool,
-    quiet: bool,
+    mode: OutputMode,
     terminate: bool,
     out: &mut impl Write,
 ) -> Result<()> {
-    if json {
+    if matches!(mode, OutputMode::Quiet) {
+        return Ok(());
+    }
+    if matches!(mode, OutputMode::Json) {
         serde_json::to_writer(&mut *out, report)
             .map_err(|_| Failure::new(Code::IoFailed, "Could not write JSON output."))?;
         writeln!(out).map_err(|e| Failure::io(&e))?;
-    } else if quiet {
+    } else if matches!(mode, OutputMode::Pids) {
         for pid in report
             .results
             .iter()

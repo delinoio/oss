@@ -74,8 +74,8 @@ fn parser_rejects_conflicts_and_malformed_values() {
         vec!["time", "format", "--to", "unix-s", "--format", "%s"],
         vec!["time", "add"],
         vec!["time", "add", "--years", "1.5"],
-        vec!["hash", "encode", "--algorithm", "md5"],
-        vec!["hash", "encode", "--format", "checksum", "--text", "x"],
+        vec!["hash", "compute", "--algorithm", "md5"],
+        vec!["hash", "compute", "--format", "checksum", "--text", "x"],
         vec!["hash", "verify"],
         vec!["hash", "verify", "--check", "-", "--text", "x"],
         vec!["hash", "verify", "--check", "-", "--format", "hex"],
@@ -334,7 +334,7 @@ fn large_binary_streams_cross_chunk_boundaries() {
         let expected = STANDARD.encode(&input[..size]);
         success(&["base64", "decode"], expected.as_bytes(), &input[..size]);
     }
-    let output = run(&["hash", "encode"], &input);
+    let output = run(&["hash", "compute"], &input);
     use sha2::{Digest, Sha256};
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
@@ -638,9 +638,9 @@ fn known_hashes_and_direct_verification_do_not_echo_digests_or_text() {
         ("sha512", "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"),
         ("blake3", "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85"),
     ] {
-        success(&["hash", "encode", "--algorithm", algorithm, "--text", "abc"], b"ignored", format!("{expected}\n").as_bytes());
+        success(&["hash", "compute", "--algorithm", algorithm, "--text", "abc"], b"ignored", format!("{expected}\n").as_bytes());
         success(&["hash", "verify", &expected.to_uppercase(), "--algorithm", algorithm, "--text", "abc"], b"", b"text: ok\n");
-        let encoded = run(&["hash", "encode", "--algorithm", algorithm, "--format", "base64", "--text", "abc"], b"");
+        let encoded = run(&["hash", "compute", "--algorithm", algorithm, "--format", "base64", "--text", "abc"], b"");
         let encoded = String::from_utf8(encoded.stdout).unwrap();
         success(&["hash", "verify", encoded.trim(), "--algorithm", algorithm, "--format", "base64", "--quiet", "--text", "abc"], b"", b"");
         let output = run(&["hash", "verify", expected, "--algorithm", algorithm, "--text", "different", "--json"], b"");
@@ -648,7 +648,9 @@ fn known_hashes_and_direct_verification_do_not_echo_digests_or_text() {
         let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(json["results"][0]["status"], "mismatch");
         assert!(!String::from_utf8(output.stdout).unwrap().contains(expected));
-        assert!(output.stderr.is_empty());
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains("Checksum verification failed"));
+        assert!(!stderr.contains(expected));
     }
 }
 
@@ -699,7 +701,7 @@ fn checksum_records_round_trip_escaped_filenames() {
     fs::write(dir.path().join(filename), b"\0\xff\r\n").unwrap();
     let encoded = run_in(
         &[
-            "hash", "encode", "--input", filename, "--format", "checksum",
+            "hash", "compute", "--input", filename, "--format", "checksum",
         ],
         b"",
         Some(dir.path()),
@@ -731,7 +733,7 @@ fn generated_manifests_rebase_relative_inputs_to_their_own_directory() {
         let encoded = run_in(
             &[
                 "hash",
-                "encode",
+                "compute",
                 "--input",
                 "archive.zip",
                 "--format",
@@ -778,7 +780,7 @@ fn generated_manifest_paths_resolve_symlink_parents_before_rebasing() {
     let encoded = run_in(
         &[
             "hash",
-            "encode",
+            "compute",
             "--input",
             &input,
             "--format",
@@ -985,7 +987,7 @@ fn diagnostics_never_contain_sensitive_arguments_or_paths() {
     let secret = "CLIBOX_SECRET_MARKER";
     for args in [
         vec!["--CLIBOX_SECRET_MARKER"],
-        vec!["hash", "encode", "--algorithm", secret],
+        vec!["hash", "compute", "--algorithm", secret],
         vec!["hash", "verify", secret, "--text", secret],
         vec![
             "text",
@@ -1057,7 +1059,7 @@ fn cancellation_interrupts_open_stdin_and_removes_unpublished_output() {
         thread::sleep(Duration::from_millis(10));
     }
     let output = child.wait_with_output().unwrap();
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(130));
     assert!(output.stdout.is_empty());
     assert_eq!(fs::read(&path).unwrap(), b"original");
     assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
