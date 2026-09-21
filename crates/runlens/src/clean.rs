@@ -545,6 +545,59 @@ pub async fn verify(
     baseline: Option<&Report>,
     cancel: CancellationToken,
 ) -> Result<Report> {
+    verify_using_cleanup(
+        root,
+        name,
+        config,
+        runs,
+        include,
+        baseline,
+        cancel,
+        &mut |path| fs::remove_dir_all(path),
+    )
+    .await
+}
+#[cfg(feature = "test-support")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "extends the verification API with a test-only cleanup boundary"
+)]
+pub async fn verify_with_cleanup(
+    root: &Path,
+    name: &str,
+    config: &Config,
+    runs: u32,
+    include: bool,
+    baseline: Option<&Report>,
+    cancel: CancellationToken,
+    mut cleanup: impl FnMut(&Path) -> std::io::Result<()>,
+) -> Result<Report> {
+    verify_using_cleanup(
+        root,
+        name,
+        config,
+        runs,
+        include,
+        baseline,
+        cancel,
+        &mut cleanup,
+    )
+    .await
+}
+#[allow(
+    clippy::too_many_arguments,
+    reason = "shares verification options with the injectable cleanup boundary"
+)]
+async fn verify_using_cleanup(
+    root: &Path,
+    name: &str,
+    config: &Config,
+    runs: u32,
+    include: bool,
+    baseline: Option<&Report>,
+    cancel: CancellationToken,
+    cleanup_round: &mut dyn FnMut(&Path) -> std::io::Result<()>,
+) -> Result<Report> {
     if runs == 0 || runs > 32 {
         return Err(Error::input(
             "verification run count must be between 1 and 32",
@@ -583,6 +636,7 @@ pub async fn verify(
         &revision,
         owned.path(),
         cancel,
+        cleanup_round,
     )
     .await;
     let cleanup = owned.close();
@@ -620,6 +674,7 @@ async fn verify_in(
     revision: &str,
     owned: &Path,
     cancel: CancellationToken,
+    cleanup_round: &mut dyn FnMut(&Path) -> std::io::Result<()>,
 ) -> Result<Report> {
     tracing::info!(
         stage = "source-preparation",
@@ -800,8 +855,17 @@ async fn verify_in(
             report.verification = Some(stopped);
             break;
         }
-        fs::remove_dir_all(round)
-            .map_err(|_| Error::new(ErrorCode::CleanupFailed, "repetition cleanup failed"))?;
+        if let Err(error) = cleanup_round(&round) {
+            // Observation completed. Keep every preceding execution and the
+            // successful child result; stop new rounds and still attach baseline
+            // evidence below. The outer owned-directory cleanup remains active.
+            tracing::error!(stage="cleanup", repetition, io_kind=?error.kind(), code="cleanup-failed", "repetition cleanup failed; inspect the runlens-clean-prefixed OS temporary directory");
+            let last = report.executions.last_mut().expect("target was retained");
+            last.outcome.errors.push(ErrorCode::CleanupFailed);
+            last.outcome.collection_complete = false;
+            report.verification = Some(Verdict::Inconclusive);
+            break;
+        }
     }
     // Partial evidence can prove a policy failure even when collection could
     // not prove success. Preserve that failure ahead of an inconclusive result.

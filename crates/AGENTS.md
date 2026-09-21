@@ -306,3 +306,5 @@
 - Clean/repeat copies preserve frozen source access/modification timestamps for files, directories and symlinks, restoring directory times after descendants. Copy-induced atime changes may be restored only in the owned frozen checkout, never in the original worktree.
 
 - macOS syscall() calls must preserve the variadic ABI and mark collection incomplete before forwarding. Mark fork() incomplete before creating a child that can bypass symbol tracing with inline kernel operations; group emptiness must not certify that lifetime.
+
+- A failed repetition-directory cleanup after observation must retain every completed execution and imported baseline, classify the current target CleanupFailed/incomplete, stop future rounds, and still allow explicit report saving.

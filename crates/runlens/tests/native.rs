@@ -5865,3 +5865,77 @@ fn macos_raw_syscalls_preserve_variadic_operands_results_and_errno() {
         false
     );
 }
+
+#[tokio::test]
+async fn repetition_cleanup_failure_retains_completed_and_baseline_evidence() {
+    use runlens::{
+        clean, config,
+        error::ErrorCode,
+        model::{Role, Verdict},
+        report,
+    };
+    let root = repository("env");
+    let config = config::load(None, root.path()).unwrap();
+    let baseline_output = invoke(
+        root.path(),
+        &["verify", "clean", "build", "--save", "baseline.json"],
+    );
+    assert!(baseline_output.status.success(), "{baseline_output:?}");
+    let baseline = report::read(&root.path().join("baseline.json")).unwrap();
+    let mut rounds = 0;
+    let retained = clean::verify_with_cleanup(
+        root.path(),
+        "build",
+        &config,
+        3,
+        false,
+        Some(&baseline),
+        tokio_util::sync::CancellationToken::new(),
+        |round| {
+            rounds += 1;
+            if rounds == 2 {
+                Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+            } else {
+                fs::remove_dir_all(round)
+            }
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(rounds, 2);
+    assert_eq!(retained.verification, Some(Verdict::Inconclusive));
+    let targets: Vec<_> = retained.targets().collect();
+    assert_eq!(targets.len(), 2);
+    assert!(targets[0].outcome.success());
+    assert_eq!(targets[1].outcome.child_exit_code, Some(0));
+    assert!(!targets[1].outcome.collection_complete);
+    assert!(
+        targets[1]
+            .outcome
+            .errors
+            .contains(&ErrorCode::CleanupFailed)
+    );
+    assert_eq!(
+        retained
+            .executions
+            .iter()
+            .filter(|e| e.role == Role::Baseline)
+            .count(),
+        baseline.executions.len()
+    );
+    assert!(
+        retained
+            .executions
+            .iter()
+            .filter(|e| e.role == Role::Baseline)
+            .all(|e| !e.outcome.errors.contains(&ErrorCode::CleanupFailed))
+    );
+    report::save(&root.path().join("retained.json"), &retained, false).unwrap();
+    let loaded = report::read(&root.path().join("retained.json")).unwrap();
+    assert_eq!(loaded.executions.len(), retained.executions.len());
+    assert_eq!(
+        loaded.targets().last().unwrap().outcome.child_exit_code,
+        Some(0)
+    );
+    assert!(!root.path().join("out").exists());
+}
