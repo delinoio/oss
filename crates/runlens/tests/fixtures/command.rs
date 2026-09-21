@@ -183,6 +183,60 @@ fn main() {
             println!("{result}");
         }
         #[cfg(target_os = "macos")]
+        "macos-spawn-open" => {
+            let program =
+                std::ffi::CString::new(std::env::current_exe().unwrap().to_str().unwrap()).unwrap();
+            let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            let argv = [
+                program.as_ptr().cast_mut(),
+                c"spawn-stdin".as_ptr().cast_mut(),
+                std::ptr::null_mut(),
+            ];
+            unsafe extern "C" {
+                static environ: *const *mut libc::c_char;
+            }
+            // SAFETY: initialized native actions, live strings and environment;
+            // the successful finite child is reaped before destroying actions.
+            unsafe {
+                let mut actions = std::mem::zeroed();
+                assert_eq!(libc::posix_spawn_file_actions_init(&mut actions), 0);
+                assert_eq!(
+                    libc::posix_spawn_file_actions_addopen(
+                        &mut actions,
+                        0,
+                        path.as_ptr(),
+                        libc::O_RDONLY,
+                        0
+                    ),
+                    0
+                );
+                let mut pid = 0;
+                let spawn = if args[2] == "search" {
+                    libc::posix_spawnp
+                } else {
+                    libc::posix_spawn
+                };
+                let result = spawn(
+                    &mut pid,
+                    program.as_ptr(),
+                    &actions,
+                    std::ptr::null(),
+                    argv.as_ptr(),
+                    environ,
+                );
+                if result == 0 {
+                    let mut status = 0;
+                    assert_eq!(libc::waitpid(pid, &mut status, 0), pid);
+                    assert_eq!(status, 0);
+                }
+                println!("spawn={result}");
+                assert_eq!(libc::posix_spawn_file_actions_destroy(&mut actions), 0);
+            }
+        }
+        "spawn-stdin" => {
+            print!("{}", std::io::read_to_string(std::io::stdin()).unwrap());
+        }
+        #[cfg(target_os = "macos")]
         "macos-execvp-child" => {
             let status = Command::new(std::env::current_exe().unwrap())
                 .arg("macos-execvp-custom")

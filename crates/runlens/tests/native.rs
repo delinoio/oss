@@ -5738,3 +5738,49 @@ fn file_handle_lookups_retain_path_and_empty_descriptor_read_attempts() {
         }
     }
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_spawn_open_actions_preserve_native_io_and_fail_closed() {
+    for form in ["direct", "search"] {
+        for missing in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let external = tempfile::tempdir().unwrap();
+            let input = external.path().join("spawn-input");
+            if !missing {
+                fs::write(&input, "SPAWN-BODY-CANARY").unwrap();
+            }
+            let args = ["macos-spawn-open", input.to_str().unwrap(), form];
+            let plain = Command::new(fixture()).args(args).output().unwrap();
+            assert!(plain.status.success(), "{plain:?}");
+            let traced = invoke(
+                root.path(),
+                &[
+                    "run",
+                    "--save",
+                    "spawn.json",
+                    "--",
+                    fixture(),
+                    args[0],
+                    args[1],
+                    args[2],
+                ],
+            );
+            assert_eq!(traced.status.code(), Some(4), "{traced:?}");
+            assert_eq!(traced.stdout, plain.stdout);
+            let report = parse(root.path(), "spawn.json");
+            assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 0);
+            assert_eq!(
+                report["executions"][0]["outcome"]["collection_complete"],
+                false
+            );
+            assert!(
+                !fs::read_to_string(root.path().join("spawn.json"))
+                    .unwrap()
+                    .contains("SPAWN-BODY-CANARY")
+            );
+            let policy = invoke(root.path(), &["policy", "check", "spawn.json", "--json"]);
+            assert_eq!(policy.status.code(), Some(4), "{policy:?}");
+        }
+    }
+}

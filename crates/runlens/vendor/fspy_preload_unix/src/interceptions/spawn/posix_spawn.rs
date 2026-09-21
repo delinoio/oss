@@ -146,3 +146,17 @@ unsafe extern "C" fn posix_spawn(
         )
     }
 }
+
+// Darwin performs these opens before the child's injected library starts.
+// Mark loss at action construction (even if the action is later unused) rather
+// than assuming every opaque action list is unsafe: ordinary close/dup actions
+// are used for pipes by supported child launches. Do not dereference the opaque
+// list, retain its path, or change the native action/spawn result.
+#[cfg(target_os = "macos")]
+intercept!(posix_spawn_file_actions_addopen: unsafe extern "C" fn(*mut libc::posix_spawn_file_actions_t, c_int, *const c_char, c_int, libc::mode_t) -> c_int);
+#[cfg(target_os = "macos")]
+unsafe extern "C" fn posix_spawn_file_actions_addopen(actions: *mut libc::posix_spawn_file_actions_t, fd: c_int, path: *const c_char, flags: c_int, mode: libc::mode_t) -> c_int {
+    if let Some(client) = global_client() { client.report_failure(); }
+    // SAFETY: preserve the caller's live action list and every native operand.
+    unsafe { posix_spawn_file_actions_addopen::original()(actions, fd, path, flags, mode) }
+}

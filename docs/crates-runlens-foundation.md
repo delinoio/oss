@@ -864,3 +864,5 @@ The stopped-clean baseline regression enables these diagnostics to expose the
 intermittent Windows Git HEAD failure without retries or weakened assertions.
 
 Linux file-handle lookup is metadata input. name_to_handle_at records path and empty-path descriptor reads even when a filesystem rejects handles or requires a larger buffer; native results are preserved and handle bytes/mount IDs are omitted.
+
+macOS posix_spawn_file_actions_addopen marks collection incomplete at action construction, including unused or subsequently failing actions. Darwin opens those files before child injection; retaining the requested spawn and I/O is mandatory. No opaque action structure or stream body is read.

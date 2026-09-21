@@ -13,6 +13,8 @@ Use a native architecture executable that permits library injection. SIP-protect
 
 Loaded macOS libraries outside the active system shared cache produce incomplete collection. Their image paths are retained as read evidence, but earlier loader reads and library initializers cannot be fully observed. The requested program continues, including when a library changes its behavior; these receipts cannot certify a cache or policy pass.
 
+Creating a macOS spawn file-open action makes collection incomplete, even if the action is later unused or the spawn fails. These opens run before child tracing starts. The requested child and its streams remain unchanged; ordinary pipe redirection remains supported.
+
 ## Windows
 
 Use a native x64 or arm64 PE executable. Scripts require an explicit interpreter. DLL injection and private Job Object ownership must be available; the job is assigned before the target resumes. Protected processes and mixed-architecture children are unsupported. Symlink source copying requires the applicable Windows capability.

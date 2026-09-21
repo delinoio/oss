@@ -32,6 +32,8 @@ Root `pnpm dev:runlens-docs` starts the documentation app on its fixed loopback 
 
 Linux metadata inputs include file-handle lookup attempts, without retaining returned opaque handles or mount identifiers.
 
+macOS spawn file-open actions are conservatively incomplete because they execute before child injection.
+
 ## Change Policy
 Update this index, domain contracts, applicable AGENTS rules, public guides, and affected tests together when ownership or public behavior changes. Vendored patches require provenance, rationale, tests, and removal conditions. Generated dist directories are never tracked and must be removed before delivery.
 

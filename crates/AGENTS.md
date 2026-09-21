@@ -300,3 +300,5 @@
 - Clean/repeat inherit SystemRoot, WINDIR, COMSPEC and PATHEXT as OS execution context only on Windows; Unix commands and preparations require explicit selection of these names.
 
 - Linux name_to_handle_at must retain absolute, relative and AT_EMPTY_PATH descriptor read attempts, including failed size probes, without recording opaque handles or mount IDs.
+
+- macOS posix_spawn addopen actions must mark collection incomplete before they can run in the pre-injection child; preserve native action/spawn results and ordinary pipe-only child tracing.
