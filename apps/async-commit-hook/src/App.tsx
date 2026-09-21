@@ -129,9 +129,25 @@ export function Workspace({
   const [runCursor, setRunCursor] = useState("");
   useEffect(() => setRunCursor(""), [worktree, branch, tab]);
   const lastOpenedRun = useRef(initialRun);
+  const replaceRunFragment = (id: string) => {
+    const fragment = new URLSearchParams();
+    if (id) fragment.set("run", id);
+    history.replaceState(
+      null,
+      "",
+      window.location.pathname +
+        window.location.search +
+        (fragment.toString() ? `#${fragment}` : ""),
+    );
+  };
   const selectRun = (id: string) => {
     lastOpenedRun.current = id;
+    replaceRunFragment(id);
     setRun(id);
+  };
+  const clearRun = () => {
+    replaceRunFragment("");
+    setRun("");
   };
   // This shares RunDetail's query/cache entry, so a deep link can bind the page
   // identity without another fetch or a second polling/acknowledgement path.
@@ -218,7 +234,7 @@ export function Workspace({
                 onClick={() => {
                   setWorktree(w.id);
                   setBranch(w.branchId || w.branch);
-                  setRun("");
+                  clearRun();
                 }}
               >
                 <span aria-hidden="true">⌘</span>
@@ -272,7 +288,7 @@ export function Workspace({
                 value={displayedBranch}
                 onChange={(e) => {
                   setBranch(e.target.value);
-                  setRun("");
+                  clearRun();
                 }}
               >
                 <option value="">Detached HEAD / current commit</option>
@@ -299,7 +315,7 @@ export function Workspace({
               aria-current={tab === v ? "page" : undefined}
               onClick={() => {
                 setTab(v);
-                setRun("");
+                clearRun();
               }}
             >
               {v[0].toUpperCase() + v.slice(1)}
@@ -310,7 +326,7 @@ export function Workspace({
           <RunDetail
             key={run}
             id={run}
-            onBack={() => setRun("")}
+            onBack={clearRun}
             onSelect={selectRun}
           />
         ) : tab === "checks" || tab === "inbox" ? (
