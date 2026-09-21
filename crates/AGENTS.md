@@ -320,3 +320,5 @@
 - Linux mount/root/namespace changes and namespace-creating clone/clone3 calls must mark collection incomplete before forwarding, including denied attempts and new mount APIs. Parent snapshots cannot certify paths after remapping; ordinary thread clones remain supported.
 
 - Native tests that invoke tracing library APIs directly must isolate runner streams and ambient descriptors in a subprocess; do not weaken production inherited-handle completeness rules to reach an injected test boundary.
+
+- Windows source timestamp preservation must request FILE_WRITE_ATTRIBUTES without GENERIC_WRITE and retain no-follow/directory semantics; read-only Git objects must keep their content permissions through every frozen-source copy.

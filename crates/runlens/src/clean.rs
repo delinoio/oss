@@ -432,8 +432,7 @@ fn copy_source_entry(
     let accessed = filetime::FileTime::from_last_access_time(&metadata);
     let modified = filetime::FileTime::from_last_modification_time(&metadata);
     // Set directory times only after descendants exist, and never follow links.
-    filetime::set_symlink_file_times(destination, accessed, modified)
-        .map_err(|_| Error::storage())?;
+    set_source_times(destination, accessed, modified)?;
     if !metadata.is_symlink() {
         fs::set_permissions(destination, metadata.permissions()).map_err(|_| Error::storage())?;
     }
@@ -448,11 +447,49 @@ fn copy_source_entry(
         // Reading a frozen owned checkout can itself advance atime. Restore its
         // selected timestamps so later rounds receive the same source metadata.
         // This is never enabled for reads from the user's worktree.
-        filetime::set_symlink_file_times(source, accessed, modified)
-            .map_err(|_| Error::storage())?;
+        set_source_times(source, accessed, modified)?;
     }
     Ok(())
 }
+fn set_source_times(
+    path: &Path,
+    accessed: filetime::FileTime,
+    modified: filetime::FileTime,
+) -> Result<()> {
+    let update = || -> std::io::Result<()> {
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+
+            use windows_sys::Win32::Storage::FileSystem::{
+                FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_WRITE_ATTRIBUTES,
+            };
+            // Git objects can be read-only. filetime's path API asks for
+            // GENERIC_WRITE, which Windows rejects for those objects. Timestamp
+            // updates need FILE_WRITE_ATTRIBUTES only, without changing content
+            // permissions. Keep no-follow and directory support for every copy.
+            // Remove this adapter if filetime adopts the same minimum access.
+            let file = fs::OpenOptions::new()
+                .access_mode(FILE_WRITE_ATTRIBUTES)
+                .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+                .open(path)?;
+            filetime::set_file_handle_times(&file, Some(accessed), Some(modified))
+        }
+        #[cfg(not(windows))]
+        filetime::set_symlink_file_times(path, accessed, modified)
+    };
+    update().map_err(|error| {
+        tracing::warn!(
+            stage = "source-preparation",
+            operation = "preserve-timestamps",
+            kind = ?error.kind(),
+            os_error = error.raw_os_error(),
+            "source metadata update failed"
+        );
+        Error::storage()
+    })
+}
+
 async fn include_worktree(
     root: &Path,
     selected: &Path,
@@ -1001,6 +1038,36 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn frozen_copies_preserve_read_only_files_without_write_data_access() {
+        use filetime::FileTime;
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("read-only-git-object");
+        fs::write(&source, "immutable source bytes").unwrap();
+        let accessed = FileTime::from_unix_time(1_600_000_000, 123_456_700);
+        let modified = FileTime::from_unix_time(1_650_000_000, 987_654_300);
+        filetime::set_symlink_file_times(&source, accessed, modified).unwrap();
+        let original_permissions = fs::metadata(&source).unwrap().permissions();
+        let mut read_only = original_permissions.clone();
+        read_only.set_readonly(true);
+        fs::set_permissions(&source, read_only).unwrap();
+        // The selected source is already read-only, as Git's object database is
+        // on Windows. Every round must restore its atime without enabling writes.
+        for round in 0..3 {
+            let destination = root.path().join(format!("round-{round}"));
+            copy_source_entry(&source, &destination, &CancellationToken::new(), true).unwrap();
+            for path in [&source, &destination] {
+                let metadata = fs::metadata(path).unwrap();
+                assert!(metadata.permissions().readonly());
+                assert_eq!(FileTime::from_last_access_time(&metadata), accessed);
+                assert_eq!(FileTime::from_last_modification_time(&metadata), modified);
+            }
+            assert_eq!(fs::read(&destination).unwrap(), b"immutable source bytes");
+            fs::set_permissions(&destination, original_permissions.clone()).unwrap();
+        }
+        fs::set_permissions(&source, original_permissions).unwrap();
     }
 
     #[test]
