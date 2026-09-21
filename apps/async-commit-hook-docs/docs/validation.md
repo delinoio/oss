@@ -19,6 +19,10 @@ ach rerun --run <id> --failed
 ach ack --run <id>
 ```
 
+![The local ach execution detail showing a passed exact-commit gate and an expanded check log.](./images/ach-run-detail.png)
+
+_Example: the execution detail keeps the exact-commit gate visible while each check can be expanded to read its local log. Your commit hash and check output will differ._
+
 Failed reruns create a fresh workspace using the original commit/configuration, execute failed and blocked checks with their prerequisites, and identify inherited successful evidence. Original attempts remain intact. Comparison defaults to the previous compatible execution on an earlier commit of the same branch. Explicit `--previous ID` is also supported. Missing details remain unknown.
 
 Acknowledgement is shared by CLI, MCP and web, is explicit and idempotent, accepts completed results only, and never changes validation. Reading does not acknowledge. `ach inbox --repo .` includes pending work and completed results needing review.
