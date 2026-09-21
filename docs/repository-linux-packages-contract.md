@@ -22,7 +22,7 @@ Only releases whose source contains this package-distribution contract can enter
 
 `delino-oss-packages` is the public R2 bucket. `delino-oss-packages-state` is private and stores immutable candidate records, packages, and publication journals. Recreate aptly databases from the recorded package inventory rather than depending on runner caches.
 
-APT exposes `/apt`, suites `stable` and `preview`, component `main`, and both Debian architecture names. Publish package objects and by-hash indexes before replacing signed `InRelease`. Retain old by-hash objects. Supported clients use InRelease; detached mutable Release/signature pairs are not public entrypoints.
+APT exposes `/apt`, suites `stable` and `preview`, component `main`, and both Debian architecture names. Publish package objects and by-hash indexes before replacing signed `InRelease`. Retain old by-hash objects. The publisher must copy only content-addressed hash leaves from aptly's by-hash output, never its changing named symlink aliases. Supported clients use InRelease; detached mutable Release/signature pairs are not public entrypoints.
 
 DNF exposes per-channel and per-architecture mirrorlists pointing at immutable repository snapshots. Sign both RPM packages and `repomd.xml`; require `gpgcheck=1` and `repo_gpgcheck=1`. Promote a mirrorlist only after every snapshot object is uploaded and verified. Retain previous snapshots. Stable registration must not enable preview; preview registration is explicit and persists for subsequent package-manager updates.
 
