@@ -469,3 +469,5 @@ The malformed-dotenv fixture accepts absent workspace state after early setup fa
 The same fixture checks removal/replacement of existing root links. Windows directory-link cleanup uses directory removal, preserving the target as required by [the Windows directory removal contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-removedirectoryw).
 
 The real Node Docker scenario runs from a comma-bearing checkout (also containing a literal quote on Unix), exercising the [Docker CLI CSV mount parser](https://github.com/docker/cli/blob/master/opts/mount.go) through actual container execution and cleanup. The mount unit test also rejects source spellings that the parser would normalize.
+
+`host_platform_preflight_prevents_prerequisite_side_effects` selects mismatched OS and architecture tasks with ordinary and installation prerequisites. Library execution, real CLI run, and real CLI start fail before command or tool-probe markers appear. Unselected foreign tasks and provided completed receipts remain valid controls.

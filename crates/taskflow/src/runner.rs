@@ -206,6 +206,26 @@ pub fn validate_shard_selection(graph: &Graph, plan: &Plan, options: &RunOptions
     Ok(())
 }
 
+pub(crate) fn validate_host_platforms<'a>(
+    graph: &Graph,
+    tasks: impl IntoIterator<Item = &'a String>,
+    provided: &BTreeMap<String, Receipt>,
+) -> Result<()> {
+    for id in tasks {
+        if provided.contains_key(id) {
+            // Validated CI/session receipts need no local command execution.
+            continue;
+        }
+        let platform = &graph.tasks[id].task.platform;
+        ensure!(
+            platform.executor != Executor::Host
+                || platform.resolved() == (config::host_os(), config::host_arch()),
+            "{id}: task platform does not match host"
+        );
+    }
+    Ok(())
+}
+
 pub async fn run_plan(
     graph: Arc<Graph>,
     plan: Plan,
@@ -217,6 +237,7 @@ pub async fn run_plan(
         "execution plan is stale"
     );
     validate_shard_selection(&graph, &plan, &options)?;
+    validate_host_platforms(&graph, &plan.order, &options.provided)?;
     for id in &plan.order {
         ensure!(
             !graph.unresolved.contains(id),

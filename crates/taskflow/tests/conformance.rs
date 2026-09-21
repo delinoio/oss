@@ -8880,3 +8880,80 @@ async fn cache_preserves_output_root_links() {
         }
     }
 }
+
+#[tokio::test]
+async fn host_platform_preflight_prevents_prerequisite_side_effects() {
+    let foreign_os = if config::host_os() == config::Os::Linux {
+        config::Os::Windows
+    } else {
+        config::Os::Linux
+    };
+    let foreign_arch = if config::host_arch() == config::Arch::X64 {
+        config::Arch::Arm64
+    } else {
+        config::Arch::X64
+    };
+    for platform in [json!({"os":foreign_os}), json!({"arch":foreign_arch})] {
+        for prerequisite in ["prepare", "install"] {
+            let root = fixture(json!({
+                prerequisite:{"command":command(&["write","prerequisite-started","unexpected"]),"input":[],"effect":"external",
+                    "tools":{"probe":command(&["write","probe-started","unexpected"])}},
+                "target":{"command":command(&["write","target-started","unexpected"]),"input":[],"dependsOn":[prerequisite],"platform":platform}
+            }));
+            profile(root.path(), &["target"]);
+            let g = graph(root.path()).await;
+            let plan = Plan::create(&g, &["target".into()], &[], false).unwrap();
+            let error = runner::run_plan(
+                g.clone(),
+                plan,
+                RunOptions::default(),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap_err();
+            assert!(error
+                .to_string()
+                .contains("app#target: task platform does not match host"));
+            for args in [vec!["--json", "run", "target"], vec!["--json", "start"]] {
+                let output = tokio::time::timeout(
+                    Duration::from_secs(15),
+                    tokio::process::Command::new(env!("CARGO_BIN_EXE_tflow"))
+                        .current_dir(root.path())
+                        .args(args)
+                        .kill_on_drop(true)
+                        .output(),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+                assert!(!output.status.success());
+                assert!(String::from_utf8_lossy(&output.stderr)
+                    .contains("task platform does not match host"));
+            }
+            for marker in ["prerequisite-started", "probe-started", "target-started"] {
+                assert!(!root.path().join(marker).exists(), "{marker}");
+            }
+            // Foreign tasks outside this invocation remain valid graph entries.
+            let result = run(g.clone(), &[prerequisite]).await;
+            assert!(result.success, "{result:?}");
+            let id = format!("app#{prerequisite}");
+            let mut supplied_graph = (*g).clone();
+            supplied_graph.tasks.get_mut(&id).unwrap().task.platform.os = Some(foreign_os);
+            let plan = Plan::create(&supplied_graph, &[id], &[], false).unwrap();
+            // A provided receipt transfers completed work; no foreign command
+            // is pending in this execution unit.
+            let result = runner::run_plan(
+                Arc::new(supplied_graph),
+                plan,
+                RunOptions {
+                    provided: result.results,
+                    ..RunOptions::default()
+                },
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+            assert!(result.success);
+        }
+    }
+}

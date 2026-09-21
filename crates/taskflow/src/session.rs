@@ -69,6 +69,7 @@ pub async fn start(
         let mut graph = Arc::new(Graph::build(Workspace::discover(root).await?.select_platform(options.os, options.arch))?);
         let mut roots = roots(&graph, profile)?;
         let mut active_set = activation(&graph, &roots);
+        runner::validate_host_platforms(&graph, &active_set, &BTreeMap::new())?;
         let mut bootstrap_results = BTreeMap::new();
         let mut bootstrap_evidence = BTreeMap::new();
         let mut invalid_bootstrap = BTreeSet::new();
@@ -85,6 +86,9 @@ pub async fn start(
             services.shutdown().await?;
             while service_receiver.try_recv().is_ok() {}
             graph = Arc::new(Graph::build(Workspace::discover(root).await?.select_platform(options.os, options.arch))?);
+            roots = roots_for_profile(&graph, profile)?;
+            active_set = activation(&graph, &roots);
+            runner::validate_host_platforms(&graph, &active_set, &BTreeMap::new())?;
             bootstrap_evidence.extend(result.results);
             let (retained, invalidated) = runner::revalidate_bootstrap(&graph, bootstrap_evidence, &bootstrap_options, &work_cancel).await?;
             // Removed receipts cannot appear in a later phase's validation
@@ -98,8 +102,6 @@ pub async fn start(
                 .map(|(id, receipt)| (id.clone(), receipt.clone())).collect();
             bootstrap_evidence = retained;
             tracing::debug!(retained = bootstrap_results.len(), evidence = bootstrap_evidence.len(), invalidated = invalid_bootstrap.len(), "Refreshed session bootstrap receipts");
-            roots = roots_for_profile(&graph, profile)?;
-            active_set = activation(&graph, &roots);
         }
         let mut pending = initial(&graph, &active_set);
         pending.retain(|id, _| !bootstrap_results.contains_key(id));

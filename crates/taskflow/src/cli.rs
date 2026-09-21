@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -457,6 +457,7 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
             let mut options = execution.options(cli.os, cli.arch)?;
             let mut plan = selection.plan(&graph).await?;
             runner::validate_shard_selection(&graph, &plan, &options)?;
+            runner::validate_host_platforms(&graph, &plan.order, &options.provided)?;
             let mut bootstrap_generations = BTreeSet::new();
             while let Some(install) = runner::next_install(&graph, &plan.order, &options.provided)?
             {
@@ -489,13 +490,14 @@ pub async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
                         .await?
                         .select_platform(cli.os, cli.arch),
                 )?);
+                plan = selection.plan(&graph).await?;
+                runner::validate_host_platforms(&graph, &plan.order, &BTreeMap::new())?;
                 let mut receipts = std::mem::take(&mut options.provided);
                 receipts.extend(result.results);
                 let (provided, invalid) =
                     runner::revalidate_bootstrap(&graph, receipts, &bootstrap_options, &cancel)
                         .await?;
                 options.provided = provided;
-                plan = selection.plan(&graph).await?;
                 runner::validate_shard_selection(&graph, &plan, &options)?;
                 for id in invalid {
                     if let Some(causes) = plan.causes.get_mut(&id) {

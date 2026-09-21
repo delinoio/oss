@@ -130,3 +130,5 @@ Service deadlines preserve timeout code 124 through readiness failure, activatio
 Output capture and uncached identity traversal disable root-link following as well as nested-link following. An exact or complete-tree output rooted at a supported link records its target and kind, without capturing target contents; restoration preserves that link shape. The same containment checks still apply.
 
 Docker bind sources preserve commas and literal quotes using CSV field encoding. Source paths with boundary whitespace or CRLF are rejected before client/helper setup because the Docker mount parser cannot preserve them.
+
+Host execution validates the selected pending tasks against the actual OS and architecture before any task command starts. The CLI checks the full plan before installation phases, sessions check all activated companions and prerequisites, and rediscovery repeats the check. Foreign tasks outside the selected plan and tasks transferred as validated completed receipts remain usable in graph/CI workflows.

@@ -175,3 +175,5 @@
 - Remove Windows directory-link roots and restoration backups with directory-link removal semantics, without traversing the target.
 
 - Encode Docker bind-mount sources as quoted CSV fields with doubled literal quotes. Reject source spellings the Docker parser cannot preserve before creating helpers or launching a client.
+
+- Preflight every pending host task against the native OS/architecture before scheduling any prerequisite, probe, or installer. Apply the same boundary to the full CLI plan and session activation set before bootstrap and after rediscovery; validated provided receipts require no local execution.
