@@ -15,13 +15,13 @@
 - Internal maintainers publishing and reviewing docs updates
 
 ## Interfaces and Contracts
-- Rspress route, navigation, and sidebar contracts in `apps/public-docs/rspress.config.ts` must remain stable.
+- Rspress route, navigation, and sidebar contracts in `apps/public-docs/rspress.config.ts` must remain aligned with this contract. The root site's top-level navbar is intentionally empty; route access remains available through the sidebar and documented links.
 - Documentation sources live in `apps/public-docs/docs`; the production output directory is `apps/public-docs/doc_build` and is not source-controlled.
 - The publication root owns Cloudflare Pages control files. Its `_headers` contains the path-scoped security headers for `/async-commit-hook/*`; package-local `_headers` files remain package inputs but do not replace the root rule.
 - Rspress clean URLs are enabled. Stable route IDs owned directly by this app are `/`, `/getting-started`, `/projects-overview`, `/documentation-lifecycle`, `/linux-packages`, `/devhud`, `/devhud/install`, `/devhud/guide`, `/devhud/privacy`, `/devhud/security`, `/devhud/support`, `/devhud/admin`, `/devhud/releases`, `/cargo-mono`, `/derun`, and `/with-watch`; generated internal links must not use `.html` suffixes.
 - Public-facing routes and content groupings must map to canonical docs contracts.
 - Content must curate internal contracts from `docs/` into user-facing guidance and must not document repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
-- Top-level in-site product page IDs currently include `devhud`, `cargo-mono`, `derun`, and `with-watch`.
+- Root in-site product page IDs currently include `devhud`, `cargo-mono`, `derun`, and `with-watch`; they are not rendered as top-level navbar items.
 - The canonical public origin is `https://oss.delino.io`. The public documentation build owns the root site and assembles the four project documentation apps under `/runmoor`, `/nodeup`, `/binpm`, and `/async-commit-hook`. Each project keeps its Markdown ownership and package-local validation; the assembled output is the only production publication surface.
 - The site selector is present on every assembled documentation page. It offers Delino OSS (`/`), Runmoor (`/runmoor`), Nodeup (`/nodeup`), binpm (`/binpm`), and async-commit-hook (`/async-commit-hook`) as same-origin destinations. The selector exposes the current site, `aria-expanded`, keyboard navigation, Escape close, outside-click close, focus return, and `aria-current` for the selected destination. On the documented fixed loopback development ports, activation targets the selected package's own local root so each independently running docs app remains reachable.
 - Package-local route IDs remain relative to each documentation app. When assembled, every route and asset is prefixed by its project subpath, and generated links must stay within that subpath or target an explicitly documented same-origin public route.
@@ -30,7 +30,7 @@
 - A coordinated DevHud release may publish its release-bound `/devhud` page, route assets, and shared runtime assets, but its retained candidate must not contain the four package-local documentation subpaths or the root `search_index.*` data. The `public_docs` release job rebuilds the complete aggregate from current `main` and overlays only those DevHud-owned candidate files before deploying, so a delayed or recovered DevHud release cannot roll back root-project search data or Runmoor, Nodeup, binpm, or async-commit-hook documentation.
 - Major project navigation uses the canonical same-origin subpaths `/runmoor`, `/nodeup`, `/binpm`, and `/async-commit-hook`; it must not point to retired standalone documentation hosts.
 - Nodeup, binpm, Runmoor, and async-commit-hook public documentation remains owned by `apps/nodeup-docs`, `apps/binpm-docs`, `apps/runmoor-docs`, and `apps/async-commit-hook-docs`; public-docs only assembles their validated output.
-- The `With Watch` tab must route to the stable page ID `with-watch` and keep the `Command Rerun Watcher` grouping unless contracts are updated together.
+- The `With Watch` page must route to the stable page ID `with-watch` and keep the `Command Rerun Watcher` grouping unless contracts are updated together.
 - Rust CLI/crate product pages may omit repo-local installer script flows from public guidance even when those installers remain supported by release/runtime contracts elsewhere in the repository.
 - Breaking navigation changes require explicit migration notes.
 
