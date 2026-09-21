@@ -51,7 +51,6 @@ Update this contract, packaging AGENTS, version metadata, evidence and public up
 ## References
 - [Project](project-async-commit-hook.md)
 - [Command contract](cmds-async-commit-hook-contract.md)
-- [Implementation evidence](cmds-async-commit-hook-evidence.md)
 
 Windows helpers retain a separate UUID-scoped cleanup record before creating the replacement sibling. Successful installation can remove its update journal without losing the helper path, authenticated digest or process birth identity. Subsequent service opens retry cleanup under the account lifecycle lock, wait for the helper to exit, reject changed/nonregular files, and remove the cleanup record only after deleting the helper. Cleanup failure remains recorded and emits a stable warning without blocking ordinary queries.
 

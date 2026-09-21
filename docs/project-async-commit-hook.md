@@ -21,7 +21,6 @@ Run trusted repository checks asynchronously against committed source, with dura
 - [Protocol contract](protos-async-commit-hook-v1-contract.md)
 - [Client contract](packages-async-commit-hook-api-client-contract.md)
 - [Requirements snapshot](cmds-async-commit-hook-requirements.md)
-- [Implementation evidence](cmds-async-commit-hook-evidence.md)
 - [Release and recovery contract](cmds-async-commit-hook-release-contract.md)
 
 ## Cross-Domain Invariants
