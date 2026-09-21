@@ -48,6 +48,22 @@ Run `node --test scripts/release/async-commit-hook.test.mjs` for dependency-free
 ## Validation Status
 Desktop Chrome pairing, controls, accessibility-tree and focus validation passed. Desktop Edge validation remains pending because Edge was unavailable in the validation environment; no owner-approved exclusion has been recorded. Release readiness must not treat the original Edge accessibility requirement as complete until that validation is executed or explicitly waived. The only approved implementation exclusions remain real six-target machine qualification and actual public release/site deployment.
 
+## Process-Ownership Validation
+The Unix ownership backend is validated by the committed lifecycle tests `TestScopeStartBarrierAndOutput`, `TestScopeReapsDaemonizedDescendants`, `TestReplaceReapsDaemonizedDescendantsBeforeNextStarts`, `TestScopeCancellationDoesNotTouchAnotherCheck`, `TestScopeJournalNeverStoresResolvedEnvironment`, `TestScopeMissingJournalCannotConfirmCompletion`, `TestLegacyScopeCannotClaimUnknownDescendantsExited` and `TestSupervisorLeaseBlocksConfigurationWithoutWorker`. macOS-specific supervisor recovery is covered by `TestScopeRecoveryAfterSupervisorDeath`; Linux-specific lost-subreaper recovery is covered by `TestScopeLostSubreaperFailsClosedUntilBootChanges`.
+
+Reproduce the cross-platform lifecycle coverage with:
+
+```sh
+go test -run 'TestScope(StartBarrierAndOutput|ReapsDaemonizedDescendants|CancellationDoesNotTouchAnotherCheck|JournalNeverStoresResolvedEnvironment|MissingJournalCannotConfirmCompletion)|TestLegacyScopeCannotClaimUnknownDescendantsExited|TestReplaceReapsDaemonizedDescendantsBeforeNextStarts|TestSupervisorLeaseBlocksConfigurationWithoutWorker' ./cmds/async-commit-hook/internal/core
+go test -race -run 'TestScope(StartBarrierAndOutput|ReapsDaemonizedDescendants|CancellationDoesNotTouchAnotherCheck|JournalNeverStoresResolvedEnvironment|MissingJournalCannotConfirmCompletion)|TestLegacyScopeCannotClaimUnknownDescendantsExited|TestReplaceReapsDaemonizedDescendantsBeforeNextStarts|TestSupervisorLeaseBlocksConfigurationWithoutWorker' ./cmds/async-commit-hook/internal/core
+go test -run TestScopeRecoveryAfterSupervisorDeath ./cmds/async-commit-hook/internal/core # macOS only
+go test -run TestScopeLostSubreaperFailsClosedUntilBootChanges ./cmds/async-commit-hook/internal/core # Linux only
+go test -p 1 ./...
+go vet ./cmds/async-commit-hook/...
+```
+
+The recorded local contexts are macOS 26.6.2 arm64 for supervisor-death recovery and a network-disabled Linux arm64 `node:24-bookworm` container for focused lifecycle coverage. These results do not qualify macOS 13 or the other five supported targets as native machine validation.
+
 ## Change Triggers
 Update this contract, packaging AGENTS, version metadata, evidence and public upgrade/compatibility guidance when artifact names, trust identity, update ownership or deployment behavior changes.
 
