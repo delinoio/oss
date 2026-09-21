@@ -322,3 +322,5 @@
 - Native tests that invoke tracing library APIs directly must isolate runner streams and ambient descriptors in a subprocess; do not weaken production inherited-handle completeness rules to reach an injected test boundary.
 
 - Windows source timestamp preservation must request FILE_WRITE_ATTRIBUTES without GENERIC_WRITE and retain no-follow/directory semantics; read-only Git objects must keep their content permissions through every frozen-source copy.
+
+- Unix fstat must record descriptor metadata reads independently of open modes, including write-only descriptors and failed output-buffer calls. Anonymous kernel pipe/socket identities do not become filesystem paths; named filesystem objects remain observable.

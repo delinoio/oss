@@ -109,3 +109,19 @@ impl SyscallHandler {
         self.handle_open(caller, fd, path, libc::O_RDONLY)
     }
 }
+
+impl SyscallHandler {
+    pub(super) fn fstat(&mut self, caller: Caller, (fd,): (Fd,)) -> io::Result<()> {
+        use std::os::unix::ffi::OsStrExt;
+        let path = fd.get_path(caller)?;
+        let bytes = path.as_bytes();
+        // Anonymous pipes/sockets have kernel-generated procfs identities, not
+        // filesystem paths. Keep named FIFOs and every absolute path observable.
+        if [b"pipe:[".as_slice(), b"socket:[".as_slice()].iter().any(|prefix| {
+            bytes.strip_prefix(*prefix).and_then(|tail| tail.strip_suffix(b"]"))
+                .is_some_and(|inode| !inode.is_empty() && inode.iter().all(u8::is_ascii_digit))
+        }) { return Ok(()); }
+        self.record(PathAccess { mode: AccessMode::READ, path: path.as_os_str().into() });
+        Ok(())
+    }
+}

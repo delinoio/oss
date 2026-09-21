@@ -6341,3 +6341,80 @@ fn linux_private_mount_remapping_retains_incomplete_evidence() {
             .contains("REMAPPED-BODY-CANARY")
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn descriptor_stat_reads_preserve_native_results_and_policy_evidence() {
+    let mut executables = vec![fixture().to_owned()];
+    if cfg!(target_os = "linux") {
+        match std::env::var("RUNLENS_STATIC_FIXTURE") {
+            Ok(path) => executables.push(path),
+            Err(_) => assert!(
+                std::env::var_os("CI").is_none(),
+                "static fixture required in CI"
+            ),
+        }
+    }
+    for executable in executables {
+        for mode in ["file", "bad-buffer", "invalid", "pipe"] {
+            let root = tempfile::tempdir().unwrap();
+            let external = tempfile::tempdir().unwrap();
+            let path = external.path().join("descriptor-metadata-input");
+            fs::write(&path, "FSTAT-BODY-CANARY").unwrap();
+            let path = fs::canonicalize(path).unwrap();
+            fs::write(
+                root.path().join("runlens.toml"),
+                "schema_version = 1\n[policy]\ndeny_reads = [\"**/descriptor-metadata-input\"]\n",
+            )
+            .unwrap();
+            let arguments = ["fd-stat", path.to_str().unwrap(), mode];
+            let plain = Command::new(&executable).args(arguments).output().unwrap();
+            let traced = invoke(
+                root.path(),
+                &[
+                    "run",
+                    "--save",
+                    "fd-stat.json",
+                    "--",
+                    &executable,
+                    arguments[0],
+                    arguments[1],
+                    arguments[2],
+                ],
+            );
+            assert!(plain.status.success(), "{plain:?}");
+            assert_eq!(
+                traced.stdout, plain.stdout,
+                "{executable}/{mode}: {traced:?}"
+            );
+            let report = parse(root.path(), "fd-stat.json");
+            assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 0);
+            if mode == "file" || mode == "bad-buffer" {
+                assert!(traced.status.success(), "{executable}/{mode}: {traced:?}");
+                let entry = report["executions"][0]["accesses"]
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .find(|(path, _)| path.ends_with("/descriptor-metadata-input"))
+                    .unwrap()
+                    .1;
+                assert_eq!(entry["read"], true);
+                assert_eq!(entry["write"], true, "{executable}/{mode}: {report}");
+                assert_eq!(
+                    invoke(root.path(), &["policy", "check", "fd-stat.json", "--json"])
+                        .status
+                        .code(),
+                    Some(5)
+                );
+            }
+            if mode == "pipe" {
+                assert!(traced.status.success(), "{executable}/{mode}: {traced:?}");
+            }
+            assert!(
+                !fs::read_to_string(root.path().join("fd-stat.json"))
+                    .unwrap()
+                    .contains("FSTAT-BODY-CANARY")
+            );
+        }
+    }
+}

@@ -1,4 +1,3 @@
-#[cfg(target_os = "linux")]
 use fspy_nostd::BorrowedFd;
 use fspy_shared::ipc::AccessMode;
 use libc::{c_char, c_int, stat as stat_struct};
@@ -79,4 +78,16 @@ unsafe extern "C" fn statx(
     }
     // SAFETY: calling the original libc statx() with the same arguments forwarded from the interposed function
     unsafe { original(dirfd, pathname, flags, mask, statxbuf) }
+}
+
+#[cfg(target_os = "macos")]
+intercept!(fstat(64): unsafe extern "C" fn(c_int, *mut stat_struct) -> c_int);
+#[cfg(target_os = "macos")]
+unsafe extern "C" fn fstat(fd: c_int, buf: *mut stat_struct) -> c_int {
+    // A write-only open does not account for this independent metadata read.
+    // Never inspect the caller's output buffer; preserve even EFAULT/EBADF.
+    unsafe {
+        if fd >= 0 { handle_open(BorrowedFd::borrow_raw(fd), AccessMode::READ); }
+        fstat::original()(fd, buf)
+    }
 }

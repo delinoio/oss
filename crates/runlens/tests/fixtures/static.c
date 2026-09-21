@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 #include <sys/vfs.h>
+#include <sys/stat.h>
 #include <sys/inotify.h>
 #include <sys/fanotify.h>
 #include <sched.h>
@@ -20,6 +21,20 @@
 #define SYS_mount_setattr 442
 #endif
 int main(int argc, char **argv) {
+    if (argc == 4 && !strcmp(argv[1], "fd-stat")) {
+        int pipes[2] = {-1, -1}, fd;
+        if (!strcmp(argv[3], "invalid")) fd = -1;
+        else if (!strcmp(argv[3], "pipe")) { if (pipe(pipes)) return 90; fd = pipes[0]; }
+        else fd = open(argv[2], O_WRONLY);
+        struct stat stats;
+        long result = syscall(SYS_fstat, fd, !strcmp(argv[3], "bad-buffer") ? NULL : &stats);
+        if (result == 0) printf("size=%lld kind=%u\n", (long long)stats.st_size, stats.st_mode & S_IFMT);
+        else printf("error=%d\n", errno);
+        if (fd >= 0) close(fd);
+        if (pipes[1] >= 0) close(pipes[1]);
+        return 0;
+    }
+
     if (argc == 2 && !strncmp(argv[1], "namespace-", 10)) {
         long result;
         uint64_t clone_args[11] = {0}; clone_args[0] = CLONE_NEWNS; clone_args[4] = SIGCHLD;

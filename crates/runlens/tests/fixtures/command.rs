@@ -6,6 +6,47 @@ mod windows_native;
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
+        #[cfg(unix)]
+        "fd-stat" => {
+            let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            let mut pipe = [-1; 2];
+            // SAFETY: live buffers, intentionally invalid fd/output in error
+            // cases, and descriptors owned and closed by this finite fixture.
+            unsafe {
+                let fd = match args[2].as_str() {
+                    "invalid" => -1,
+                    "pipe" => {
+                        assert_eq!(libc::pipe(pipe.as_mut_ptr()), 0);
+                        pipe[0]
+                    }
+                    _ => libc::open(path.as_ptr(), libc::O_WRONLY),
+                };
+                let mut stats = std::mem::MaybeUninit::<libc::stat>::zeroed();
+                let output = if args[2] == "bad-buffer" {
+                    std::ptr::null_mut()
+                } else {
+                    stats.as_mut_ptr()
+                };
+                let result = libc::fstat(fd, output);
+                let errno = std::io::Error::last_os_error().raw_os_error().unwrap();
+                if result == 0 {
+                    let stats = stats.assume_init();
+                    println!(
+                        "size={} kind={}",
+                        stats.st_size,
+                        stats.st_mode & libc::S_IFMT
+                    );
+                } else {
+                    println!("error={errno}");
+                }
+                if fd >= 0 {
+                    libc::close(fd);
+                }
+                if pipe[1] >= 0 {
+                    libc::close(pipe[1]);
+                }
+            }
+        }
         #[cfg(target_os = "linux")]
         mode if mode.starts_with("namespace-") => {
             if mode == "namespace-remap" {
