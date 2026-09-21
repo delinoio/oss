@@ -1073,9 +1073,9 @@ fn read_duration_history(path: &Path) -> BTreeMap<String, u64> {
     {
         Ok(history) => history,
         Err(error) => {
-            if !error
+            if error
                 .downcast_ref::<std::io::Error>()
-                .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+                .is_none_or(|error| error.kind() != std::io::ErrorKind::NotFound)
             {
                 tracing::warn!(
                     code = "invalid-test-duration-history",
