@@ -55,4 +55,6 @@ Branch navigation uses bounded streaming pages with a worktree-scoped cursor sha
 
 Branch navigation preserves opaque worktree-scoped identities independently of normalized display labels across source browsing and retained execution history.
 
+Changes preserve safe server diagnostics when automatic diff-base resolution has no result: `diff-base-required` remains local-base guidance rather than being classified as a disconnected UI.
+
 The owner amendment on 2026-09-20 replaces remote-hosted UI/pairing with an embedded same-origin local UI served by the daemon or on-demand viewer, and moves public docs/installers to a dedicated Rspress app. Check execution, evidence and gate semantics remain unchanged. Public deployment remains a separate manual release operation. Documentation development/preview use fixed ports 46310/46281.

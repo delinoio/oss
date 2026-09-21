@@ -4,6 +4,7 @@ import {
   ExecutionState,
   FailureSchema,
 } from "@delinoio/async-commit-hook-api-client";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { expect, it, vi } from "vitest";
 import { Confirm, ErrorNotice, FailureList, Status } from "./App";
 import { readConnection, describeError } from "./connection";
@@ -35,6 +36,24 @@ it("discards retired connection fields and preserves the run deep link", () => {
   expect(connection).toEqual({ run: "receipt" });
   expect(location.hash).toBe("#run=receipt");
   expect(describeError(new Error("fetch failed"))).toMatch(/Run ach ui/);
+});
+it("keeps structured diff-base diagnostics out of connection recovery", () => {
+  const error = new ConnectError(
+    "diff-base-required: select a local diff base; no remote fetch is performed",
+    Code.InvalidArgument,
+  );
+  expect(describeError(error)).toBe(error.rawMessage);
+  expect(describeError(error)).not.toMatch(/Cannot reach ach/);
+});
+it("recovers from a wrapped browser transport failure", () => {
+  const error = new ConnectError(
+    "fetch failed",
+    Code.Unknown,
+    undefined,
+    undefined,
+    new TypeError("Failed to fetch"),
+  );
+  expect(describeError(error)).toMatch(/Run ach ui/);
 });
 it("supports dialog cancellation and restores focus", () => {
   HTMLDialogElement.prototype.showModal = vi.fn();
