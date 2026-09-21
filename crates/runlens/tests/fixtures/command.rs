@@ -62,7 +62,7 @@ fn main() {
                     libc::SYS_fanotify_mark,
                     fd,
                     libc::FAN_MARK_ADD,
-                    u64::from(libc::FAN_ACCESS),
+                    libc::FAN_ACCESS,
                     dir,
                     name,
                 );
