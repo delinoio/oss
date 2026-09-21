@@ -681,6 +681,8 @@ fn main() {
             }
         }
         #[cfg(windows)]
+        "windows-unresolved-relative-root" => windows_native::unresolved_relative_root(),
+        #[cfg(windows)]
         "windows-malformed-file-attributes" => windows_native::malformed_file_attributes(),
         #[cfg(windows)]
         "windows-native-delete" => windows_native::delete_file(&args[1]),

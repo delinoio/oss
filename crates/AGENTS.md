@@ -292,3 +292,5 @@
 - Linux fanotify_mark must retain watched path/descriptor read attempts for dynamic and static callers, preserve native results, and ignore pathname operands only for path-independent flush operations.
 
 - macOS execvP must use the caller-supplied search path and preserve argv/native fallback behavior while recording executable reads and classifying protected descendants as incomplete.
+
+- Unresolved Windows relative OBJECT_ATTRIBUTES root handles must mark collection incomplete before forwarding the original NT call; a failed normalized-name lookup cannot silently erase an access.

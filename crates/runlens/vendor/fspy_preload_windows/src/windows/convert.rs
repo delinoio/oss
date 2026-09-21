@@ -67,6 +67,9 @@ impl ToAbsolutePath for POBJECT_ATTRIBUTES {
         } else {
             // SAFETY: the kernel validates the copied handle value.
             let Ok(mut root_dir) = (unsafe { get_path_name(root) }) else {
+                // A valid NT operation can outlive failed normalized-name lookup
+                // (for example, denied SMB traversal). Never silently drop it.
+                crate::windows::client::report_global_failure();
                 return f(None);
             };
             // If filename is empty, just use root_dir directly

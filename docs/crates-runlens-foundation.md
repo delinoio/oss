@@ -849,3 +849,5 @@ macOS getxattr/listxattr and descriptor variants record input attempts, includin
 Linux fanotify_mark records read attempts for absolute, directory-relative and NULL-path descriptor targets, including failed registrations. Flush operations ignore their unused path operand. The collector never stores fanotify event payloads or claims their contents were observed.
 
 macOS execvP uses its explicit search path rather than ambient PATH. It shares executable observations, protected-child handling and native text-file shell fallback with other exec families. Native tests preserve custom argv zero, missing-image errors and protected/script outcomes.
+
+Failed Windows normalized-name lookup for a relative NT root handle records collection loss and forwards the unchanged operation. Native coverage exercises the failure branch with well-formed attributes and a non-directory handle; successful SMB operations with denied name lookup remain incomplete rather than disappearing.

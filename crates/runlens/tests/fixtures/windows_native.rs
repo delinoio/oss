@@ -141,3 +141,25 @@ pub fn delete_file(path: &str) {
         println!("{status}");
     }
 }
+
+/// Exercise root-name lookup failure with valid copied NT attributes and an
+/// owned-process pseudo-handle, without depending on a remote SMB server.
+pub fn unresolved_relative_root() {
+    use winapi::shared::ntdef::OBJECT_ATTRIBUTES;
+    let mut text = wide("relative-child");
+    let mut name = unicode(&mut text);
+    // SAFETY: live well-formed attributes, a valid process pseudo-handle, and
+    // initialized output storage. The kernel rejects this non-directory root.
+    unsafe {
+        let mut attributes: OBJECT_ATTRIBUTES = mem::zeroed();
+        attributes.Length = mem::size_of::<OBJECT_ATTRIBUTES>() as u32;
+        attributes.RootDirectory =
+            windows_sys::Win32::System::Threading::GetCurrentProcess().cast();
+        attributes.ObjectName = &mut name;
+        let mut information = mem::zeroed();
+        let status = ntapi::ntioapi::NtQueryAttributesFile(&mut attributes, &mut information);
+        assert!(status < 0);
+        println!("status={status}");
+    }
+    println!("child-continued");
+}

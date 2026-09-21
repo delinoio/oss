@@ -5481,3 +5481,36 @@ fn macos_execvp_custom_search_tracks_children_and_protected_fallbacks() {
         }
     }
 }
+
+#[cfg(windows)]
+#[test]
+fn unresolved_windows_relative_roots_preserve_child_and_fail_closed() {
+    let root = tempfile::tempdir().unwrap();
+    let direct = Command::new(fixture())
+        .arg("windows-unresolved-relative-root")
+        .output()
+        .unwrap();
+    assert!(direct.status.success());
+    let traced = invoke(
+        root.path(),
+        &[
+            "run",
+            "--save",
+            "relative.json",
+            "--",
+            fixture(),
+            "windows-unresolved-relative-root",
+        ],
+    );
+    assert_eq!(traced.status.code(), Some(4), "{traced:?}");
+    assert_eq!(traced.stdout, direct.stdout);
+    let execution = &parse(root.path(), "relative.json")["executions"][0];
+    assert_eq!(execution["outcome"]["child_exit_code"], 0);
+    assert_eq!(execution["outcome"]["collection_complete"], false);
+    assert_eq!(
+        invoke(root.path(), &["policy", "check", "relative.json", "--json"])
+            .status
+            .code(),
+        Some(4)
+    );
+}
