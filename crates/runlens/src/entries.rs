@@ -30,6 +30,10 @@ static MEMORY_LIMIT: AtomicUsize = AtomicUsize::new(DEFAULT_MEMORY_BYTES);
 pub fn set_memory_limit(bytes: usize) {
     MEMORY_LIMIT.store(bytes, Ordering::Relaxed);
 }
+pub(crate) fn memory_used() -> usize {
+    MEMORY_USED.load(Ordering::Relaxed)
+}
+
 fn reserve(previous: usize, next: usize) -> bool {
     MEMORY_USED
         .try_update(Ordering::Relaxed, Ordering::Relaxed, |used| {

@@ -6484,3 +6484,94 @@ fn linux_opaque_handle_opens_cannot_certify_complete_accesses() {
         }
     }
 }
+
+#[test]
+fn configured_memory_budget_applies_before_supplied_report_reads() {
+    let root = repository("read");
+    for n in 0..96 {
+        fs::write(
+            root.path().join(format!("evidence-{n:03}")),
+            "MEMORY-BODY-CANARY",
+        )
+        .unwrap();
+    }
+    git(root.path(), &["add", "."]);
+    git(root.path(), &["commit", "-qm", "metadata evidence"]);
+    let baseline = invoke(
+        root.path(),
+        &["verify", "clean", "build", "--save", "baseline.json"],
+    );
+    assert!(baseline.status.success(), "{baseline:?}");
+    let path = root.path().join("runlens.toml");
+    let mut config: runlens::config::Config =
+        toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    config.limits.memory_bytes = 8192;
+    fs::write(path, toml::to_string(&config).unwrap()).unwrap();
+    for (arguments, reads) in [
+        (
+            vec![
+                "cache",
+                "check",
+                "baseline.json",
+                "--command",
+                "build",
+                "--json",
+            ],
+            1,
+        ),
+        (
+            vec![
+                "policy",
+                "check",
+                "baseline.json",
+                "--baseline",
+                "baseline.json",
+                "--json",
+            ],
+            2,
+        ),
+        (
+            vec![
+                "verify",
+                "clean",
+                "build",
+                "--baseline",
+                "baseline.json",
+                "--save",
+                "clean.json",
+            ],
+            1,
+        ),
+    ] {
+        let output = cli_command()
+            .current_dir(root.path())
+            .args(["--log-level", "debug", "--color", "never"])
+            .args(&arguments)
+            .output()
+            .unwrap();
+        assert!(
+            matches!(output.status.code(), Some(0 | 4 | 5)),
+            "{arguments:?}: {output:?}"
+        );
+        let diagnostic = String::from_utf8(output.stderr).unwrap();
+        let events: Vec<_> = diagnostic
+            .lines()
+            .filter(|line| line.contains("loaded report metadata"))
+            .collect();
+        assert_eq!(events.len(), reads, "{arguments:?}: {diagnostic}");
+        for event in events {
+            let number = |key: &str| {
+                event
+                    .split_whitespace()
+                    .find_map(|word| word.strip_prefix(key))
+                    .unwrap()
+                    .parse::<usize>()
+                    .unwrap()
+            };
+            assert!(number("spilled_maps=") > 0, "{event}");
+            assert!(number("retained_memory_bytes=") <= 8192, "{event}");
+        }
+        assert!(!diagnostic.contains("MEMORY-BODY-CANARY"));
+    }
+    assert!(!root.path().join("out").exists());
+}

@@ -31,6 +31,28 @@ pub fn read(path: &Path) -> Result<Report> {
     let report: Report = crate::model::with_envelope_budget(|| serde_json::from_reader(reader))
         .map_err(|_| Error::input("invalid or incompatible report; expected schema v1"))?;
     validate(&report)?;
+    let spilled_maps = usize::from(report.findings.spilled())
+        + report
+            .executions
+            .iter()
+            .map(|execution| {
+                [
+                    execution.accesses.spilled(),
+                    execution.before.spilled(),
+                    execution.after.spilled(),
+                    execution.changes.spilled(),
+                ]
+                .into_iter()
+                .filter(|spilled| *spilled)
+                .count()
+            })
+            .sum::<usize>();
+    tracing::debug!(
+        stage = "report-read",
+        spilled_maps,
+        retained_memory_bytes = crate::entries::memory_used(),
+        "loaded report metadata"
+    );
     Ok(report)
 }
 fn guard_json(reader: &mut impl Read) -> Result<()> {

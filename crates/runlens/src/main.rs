@@ -272,7 +272,7 @@ async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
             if let Some(path) = &args.save {
                 report::destination_available(path)?;
             }
-            let config = config::load(cli.config.as_deref(), &root)?;
+            let config = load_config(cli.config.as_deref(), &root)?;
             let mut command = match &args.command {
                 Some(name) => config
                     .commands
@@ -352,7 +352,7 @@ async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
                     output,
                 },
         } => {
-            let config = config::load(cli.config.as_deref(), &root)?;
+            let config = load_config(cli.config.as_deref(), &root)?;
             let command = config
                 .commands
                 .get(&name)
@@ -374,7 +374,7 @@ async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
                     output,
                 },
         } => {
-            let config = config::load(cli.config.as_deref(), &root)?;
+            let config = load_config(cli.config.as_deref(), &root)?;
             let baseline = baseline.map(|path| report::read(&path)).transpose()?;
             print_analysis(
                 analysis::policy(
@@ -443,7 +443,7 @@ async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
             if let Some(path) = &save {
                 report::destination_available(path)?;
             }
-            let config = config::load(cli.config.as_deref(), &root)?;
+            let config = load_config(cli.config.as_deref(), &root)?;
             let baseline = baseline.map(|path| report::read(&path)).transpose()?;
             let report = clean::verify(
                 &root,
@@ -459,6 +459,15 @@ async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
         }
     }
 }
+fn load_config(path: Option<&std::path::Path>, root: &std::path::Path) -> Result<config::Config> {
+    let config = config::load(path, root)?;
+    // Establish the shared limit before any supplied evidence is deserialized.
+    // Lowering it only when a child starts leaves retained baseline maps above
+    // the requested threshold and misses entirely offline configured commands.
+    runlens::entries::set_memory_limit(config.limits.memory_bytes);
+    Ok(config)
+}
+
 fn read_reports(paths: &[PathBuf]) -> Result<Vec<Report>> {
     if paths.len() > 64 {
         return Err(Error::input("at most 64 reports may be queried at once"));

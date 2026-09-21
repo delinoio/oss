@@ -894,3 +894,5 @@ Windows timestamp preservation opens files with FILE_WRITE_ATTRIBUTES, no-follow
 Unix descriptor fstat reads are metadata inputs even after a write-only open. Linux kernel collection covers static callers, and macOS interposes the native descriptor API without reading caller output. Anonymous pipe/socket procfs identities are excluded only when they match the exact kernel form; ordinary file paths and named FIFOs remain inputs.
 
 Linux open_by_handle_at preserves native execution but reports incomplete collection. Opaque handles do not prove path identity at the pre-syscall boundary; prior handle lookup reads cannot account for later handle-based writes. Dynamic and static tests retain successful or denied native results and prevent policy certification.
+
+Configured cache, policy, run and verification commands establish the shared metadata memory budget before deserializing supplied evidence. Parsed baseline/current maps therefore spill under the requested bound before observation starts. Debug report-read events contain only spill-map counts and aggregate retained metadata bytes, without paths or contents.
