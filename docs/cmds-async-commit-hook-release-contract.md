@@ -48,6 +48,27 @@ Run `node --test scripts/release/async-commit-hook.test.mjs` for dependency-free
 ## Validation Status
 Desktop Chrome credential-free local-UI smoke, controls, accessibility-tree and focus validation passed. Desktop Edge validation remains pending because Edge was unavailable in the validation environment; no owner-approved exclusion has been recorded. Release readiness must not treat the original Edge accessibility requirement as complete until that validation is executed or explicitly waived. The only approved implementation exclusions remain real six-target machine qualification and actual public release/site deployment.
 
+## Agent-Client Validation
+The required actual-client CLI/MCP/skill validation was recorded as passed with isolated temporary configuration and state. The observed client statuses were:
+
+| Client | Recorded validation status |
+| --- | --- |
+| Codex CLI 0.145.0 | Owned isolated skill and MCP entry discovered successfully |
+| Claude Code 2.1.126 | Isolated installation and MCP connection succeeded |
+| OpenCode 1.1.53 | Isolated installation and MCP connection succeeded |
+
+Reproduce the integration setup from a temporary `HOME`, client configuration directories and registered test repository, never a personal configuration or credential store:
+
+```sh
+ach agent install --client codex
+ach agent install --client claude-code
+ach agent install --client opencode
+ach agent-guide
+ach mcp
+```
+
+Use each actual client executable to discover its owned skill and MCP entry, then exercise the CLI/MCP workflow through a temporary repository: start a check, let `wait` expire without cancelling execution, wait for terminal completion, and inspect logs, failures, comparison and acknowledgement behavior. The official Go MCP client also exercises rerun and cancellation. Remove each integration with the matching client/scope command after validation. No remote results, telemetry or diagnostic uploads are part of this check.
+
 ## Process-Ownership Validation
 The Unix ownership backend is validated by the committed lifecycle tests `TestScopeStartBarrierAndOutput`, `TestScopeReapsDaemonizedDescendants`, `TestReplaceReapsDaemonizedDescendantsBeforeNextStarts`, `TestScopeCancellationDoesNotTouchAnotherCheck`, `TestScopeJournalNeverStoresResolvedEnvironment`, `TestScopeMissingJournalCannotConfirmCompletion`, `TestLegacyScopeCannotClaimUnknownDescendantsExited` and `TestSupervisorLeaseBlocksConfigurationWithoutWorker`. macOS-specific supervisor recovery is covered by `TestScopeRecoveryAfterSupervisorDeath`; Linux-specific lost-subreaper recovery is covered by `TestScopeLostSubreaperFailsClosedUntilBootChanges`.
 
