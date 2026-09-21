@@ -320,6 +320,61 @@ fn main() {
             }
         }
         #[cfg(target_os = "macos")]
+        "macos-getxattr" | "macos-fgetxattr" | "macos-listxattr" | "macos-flistxattr" => {
+            let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            let mut bytes = [0u8; 4096];
+            let query = args[2] == "size";
+            let (buffer, size) = if query {
+                (std::ptr::null_mut(), 0)
+            } else {
+                (bytes.as_mut_ptr(), bytes.len())
+            };
+            // SAFETY: live C strings, bounded output, and fixture-owned fd.
+            let (result, error) = unsafe {
+                let fd = if args[0].starts_with("macos-f") {
+                    let fd = libc::open(path.as_ptr(), libc::O_RDONLY);
+                    assert!(fd >= 0);
+                    fd
+                } else {
+                    -1
+                };
+                let result = match args[0].as_str() {
+                    "macos-getxattr" => libc::getxattr(
+                        path.as_ptr(),
+                        c"user.ATTR-NAME-CANARY".as_ptr(),
+                        buffer.cast(),
+                        size,
+                        0,
+                        libc::XATTR_NOFOLLOW,
+                    ),
+                    "macos-fgetxattr" => libc::fgetxattr(
+                        fd,
+                        c"user.ATTR-NAME-CANARY".as_ptr(),
+                        buffer.cast(),
+                        size,
+                        0,
+                        0,
+                    ),
+                    "macos-listxattr" => {
+                        libc::listxattr(path.as_ptr(), buffer.cast(), size, libc::XATTR_NOFOLLOW)
+                    }
+                    _ => libc::flistxattr(fd, buffer.cast(), size, 0),
+                };
+                let error = std::io::Error::last_os_error().raw_os_error().unwrap();
+                if fd >= 0 {
+                    libc::close(fd);
+                }
+                (result, error)
+            };
+            if result < 0 {
+                println!("error={error}");
+            } else if query {
+                println!("size={result}");
+            } else {
+                println!("bytes={result}:{:?}", &bytes[..result as usize]);
+            }
+        }
+        #[cfg(target_os = "macos")]
         "libc-readlink" | "libc-readlinkat" => {
             let path = std::path::Path::new(&args[1]);
             let full = std::ffi::CString::new(args[1].as_bytes()).unwrap();

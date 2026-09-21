@@ -843,3 +843,5 @@ Conflict analysis retains / as the terminal directory-read ancestor of absolute
 POSIX paths, with concrete reader/writer evidence. Ordinary root file reads do
 not cover descendants, and relative or workspace-placeholder paths never acquire
 a synthetic POSIX root.
+
+macOS getxattr/listxattr and descriptor variants record input attempts, including size queries, missing attributes and missing paths. Only the file path enters evidence; native results and buffers remain unchanged, and attribute names/values remain excluded.

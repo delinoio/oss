@@ -286,3 +286,5 @@
 - Runlens Unix launch identity uses the resolved executable but passes the exact requested argv[0] to the child, including PATH names and relative aliases.
 
 - Runlens conflict analysis must include the POSIX root directory as the final ancestor of absolute paths, without assigning that root to relative paths.
+
+- Runlens macOS extended-attribute reads must record path/descriptor input attempts while preserving all Darwin operands and results; attribute names and values never enter reports.

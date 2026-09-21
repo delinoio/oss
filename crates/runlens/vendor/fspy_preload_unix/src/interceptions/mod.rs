@@ -11,3 +11,6 @@ mod chdir;
 
 #[cfg(target_os = "macos")]
 mod readlink;
+
+#[cfg(target_os = "macos")]
+mod xattr;

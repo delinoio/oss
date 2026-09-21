@@ -5242,3 +5242,86 @@ fn posix_root_directory_reads_are_conflict_ancestors() {
         }
     }
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_xattr_reads_preserve_native_results_and_deny_external_inputs() {
+    for mode in [
+        "macos-getxattr",
+        "macos-fgetxattr",
+        "macos-listxattr",
+        "macos-flistxattr",
+    ] {
+        for kind in ["attribute", "no-attribute", "missing"] {
+            if kind == "missing" && mode.starts_with("macos-f") {
+                continue;
+            }
+            for query in ["size", "data"] {
+                let root = tempfile::tempdir().unwrap();
+                let external = tempfile::tempdir().unwrap();
+                let path = external.path().join("attribute-input");
+                if kind != "missing" {
+                    fs::write(&path, "BODY-CANARY").unwrap();
+                }
+                if kind == "attribute" {
+                    let name = std::ffi::CString::new(path.to_str().unwrap()).unwrap();
+                    let value = b"ATTR-VALUE-CANARY";
+                    // SAFETY: valid strings and live attribute bytes for this call.
+                    assert_eq!(
+                        unsafe {
+                            libc::setxattr(
+                                name.as_ptr(),
+                                c"user.ATTR-NAME-CANARY".as_ptr(),
+                                value.as_ptr().cast(),
+                                value.len(),
+                                0,
+                                0,
+                            )
+                        },
+                        0
+                    );
+                }
+                let plain = Command::new(fixture())
+                    .args([mode, path.to_str().unwrap(), query])
+                    .output()
+                    .unwrap();
+                assert!(plain.status.success());
+                fs::write(
+                    root.path().join("runlens.toml"),
+                    "schema_version = 1\n[policy]\ndeny_reads = ['**/attribute-input']\n",
+                )
+                .unwrap();
+                let traced = invoke(
+                    root.path(),
+                    &[
+                        "run",
+                        "--save",
+                        "attr.json",
+                        "--",
+                        fixture(),
+                        mode,
+                        path.to_str().unwrap(),
+                        query,
+                    ],
+                );
+                assert!(traced.status.success(), "{mode}/{kind}/{query}: {traced:?}");
+                assert_eq!(traced.stdout, plain.stdout);
+                let report = parse(root.path(), "attr.json");
+                assert!(
+                    report["executions"][0]["accesses"]
+                        .as_object()
+                        .unwrap()
+                        .iter()
+                        .any(|(path, access)| path.ends_with("/attribute-input")
+                            && access["read"] == true)
+                );
+                let raw = fs::read_to_string(root.path().join("attr.json")).unwrap();
+                for canary in ["ATTR-NAME-CANARY", "ATTR-VALUE-CANARY", "BODY-CANARY"] {
+                    assert!(!raw.contains(canary));
+                }
+                let checked = invoke(root.path(), &["policy", "check", "attr.json", "--json"]);
+                assert_eq!(checked.status.code(), Some(5), "{checked:?}");
+            }
+        }
+    }
+}

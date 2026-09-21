@@ -267,3 +267,5 @@ records returned link text as another input. Native fixtures compare byte counts
 text and errors with untraced execution and enforce external read policies.
 Remove when upstream supplies equivalent macOS link-read coverage. Linux keeps
 its existing seccomp hooks to avoid recursive descriptor-path resolution.
+
+macOS extended-attribute value/list read hooks use the Darwin ssize_t ABI and preserve position/options and caller buffers. Native macos_xattr_reads_preserve_native_results_and_deny_external_inputs compares direct/traced success, errors and size probes and checks external read denial plus metadata canaries. Remove these hooks when upstream provides equivalent macOS coverage without retaining attribute names or values.
