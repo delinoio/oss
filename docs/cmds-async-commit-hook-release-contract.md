@@ -74,7 +74,16 @@ The Unix ownership backend is validated by the committed lifecycle tests `TestSc
 
 Reproduce the cross-platform lifecycle coverage with:
 
-```sh
+```bash
+set -Eeuo pipefail
+cleanup() {
+  local status=$?
+  rm -r -- apps/async-commit-hook/dist cmds/async-commit-hook/internal/webassets/dist servers/devhud-api/internal/adminassets/dist packages/async-commit-hook-api-client/dist packages/devhud-api-client/dist 2>/dev/null || true
+  trap - EXIT
+  exit "$status"
+}
+trap cleanup EXIT
+
 pnpm --filter async-commit-hook build:embedded
 pnpm --filter devhud-admin build:embedded
 go test -run 'TestScope(StartBarrierAndOutput|ReapsDaemonizedDescendants|CancellationDoesNotTouchAnotherCheck|JournalNeverStoresResolvedEnvironment|MissingJournalCannotConfirmCompletion)|TestLegacyScopeCannotClaimUnknownDescendantsExited|TestReplaceReapsDaemonizedDescendantsBeforeNextStarts|TestSupervisorLeaseBlocksConfigurationWithoutWorker' ./cmds/async-commit-hook/internal/core
@@ -83,7 +92,6 @@ go test -run TestScopeRecoveryAfterSupervisorDeath ./cmds/async-commit-hook/inte
 go test -run TestScopeLostSubreaperFailsClosedUntilBootChanges ./cmds/async-commit-hook/internal/core # Linux only
 go test -p 1 ./...
 go vet ./cmds/async-commit-hook/...
-rm -r -- apps/async-commit-hook/dist cmds/async-commit-hook/internal/webassets/dist servers/devhud-api/internal/adminassets/dist packages/async-commit-hook-api-client/dist packages/devhud-api-client/dist
 ```
 
 The recorded local contexts are macOS 26.6.2 arm64 for supervisor-death recovery and a network-disabled Linux arm64 `node:24-bookworm` container for focused lifecycle coverage. These results do not qualify macOS 13 or the other five supported targets as native machine validation.
