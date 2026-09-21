@@ -1,13 +1,15 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { create } from "@bufbuild/protobuf";
+import { createRouterTransport } from "@connectrpc/connect";
 import {
   ExecutionState,
   FailureSchema,
+  LocalService,
 } from "@delinoio/async-commit-hook-api-client";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { expect, it, vi } from "vitest";
-import { Confirm, ErrorNotice, FailureList, Status } from "./App";
-import { readConnection, describeError } from "./connection";
+import { App, Confirm, ErrorNotice, FailureList, Status } from "./App";
+import * as connection from "./connection";
 it("renders hostile report content as inert text", () => {
   const failure = create(FailureSchema, {
     id: "f",
@@ -32,10 +34,48 @@ it("communicates every important outcome without relying on color", () => {
 });
 it("discards retired connection fields and preserves the run deep link", () => {
   history.replaceState(null, "", "/#port=46309&pair=private&run=receipt");
-  const connection = readConnection();
-  expect(connection).toEqual({ run: "receipt" });
+  const parsed = connection.readConnection();
+  expect(parsed).toEqual({ run: "receipt" });
   expect(location.hash).toBe("#run=receipt");
-  expect(describeError(new Error("fetch failed"))).toMatch(/Run ach ui/);
+  expect(connection.describeError(new Error("fetch failed"))).toMatch(/Run ach ui/);
+});
+it("focuses the main content without replacing a run deep link", () => {
+  history.replaceState(null, "", "/#run=receipt");
+  const transport = vi.spyOn(connection, "transportFor").mockImplementation(() =>
+    createRouterTransport((router) => router.service(LocalService, {
+      getVersion: () => ({ apiVersion: 1 }),
+      listRepositories: () => ({ repositories: [] }),
+      getRun: () => ({}),
+    })),
+  );
+  const { unmount } = render(<App />);
+  try {
+    fireEvent.click(screen.getByRole("link", { name: "Skip to content" }));
+    expect(location.hash).toBe("#run=receipt");
+    expect(document.activeElement).toBe(screen.getByRole("main"));
+  } finally {
+    unmount();
+    transport.mockRestore();
+  }
+});
+it("focuses the incompatible-version recovery content from the skip link", async () => {
+  history.replaceState(null, "", "/#run=receipt");
+  const transport = vi.spyOn(connection, "transportFor").mockImplementation(() =>
+    createRouterTransport((router) => router.service(LocalService, {
+      getVersion: () => ({ apiVersion: 2 }),
+      listRepositories: () => ({ repositories: [] }),
+    })),
+  );
+  const { unmount } = render(<App />);
+  try {
+    await screen.findByText("Incompatible local API version. Install a matching ach version.");
+    fireEvent.click(screen.getByRole("link", { name: "Skip to content" }));
+    expect(location.hash).toBe("#run=receipt");
+    expect(document.activeElement).toBe(screen.getByRole("main"));
+  } finally {
+    unmount();
+    transport.mockRestore();
+  }
 });
 it("keeps structured diff-base diagnostics out of connection recovery", () => {
   const error = new ConnectError(
