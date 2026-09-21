@@ -377,9 +377,11 @@ pub fn duration(value: &str) -> Result<std::time::Duration> {
     Ok(std::time::Duration::from_millis(ms))
 }
 
+pub const CONFIG_LIMIT: u64 = 16 * 1024 * 1024;
+
 pub fn load(path: &Path) -> Result<Config> {
-    let bytes =
-        std::fs::read(path).with_context(|| format!("read configuration {}", path.display()))?;
+    let bytes = crate::files::read_regular_limited(path, CONFIG_LIMIT)
+        .with_context(|| format!("read configuration {}", path.display()))?;
     // Value's YAML mapping visitor rejects duplicate map keys, including maps
     // such as tasks/env that a normal BTreeMap visitor would overwrite silently.
     let _: serde_yaml::Value = serde_yaml::from_slice(&bytes)

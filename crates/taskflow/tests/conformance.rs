@@ -8874,6 +8874,36 @@ async fn isolated_docker_host(name: &str) -> bool {
 }
 
 #[tokio::test]
+async fn explicit_inputs_survive_an_automatic_scan_default() {
+    let root = fixture(json!({"check":{
+        "command":command(&["version"]),
+        "input":["node_modules/generated.json", {"auto":true}],
+        "output":[]
+    }}));
+    std::fs::create_dir_all(root.path().join("node_modules")).unwrap();
+    std::fs::write(root.path().join("node_modules/generated.json"), "explicit").unwrap();
+    let graph = graph(root.path()).await;
+    let project = &graph.workspace.projects["app"];
+    let task = &graph.tasks["app#check"].task;
+    let input = project.directory.join("node_modules/generated.json");
+    assert!(files::input_matches(project, task, &input).unwrap());
+}
+
+#[cfg(unix)]
+#[test]
+fn configuration_reads_reject_special_and_oversized_files() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("taskflow.yml");
+    let native = std::ffi::CString::new(path.to_str().unwrap()).unwrap();
+    assert_eq!(unsafe { nix::libc::mkfifo(native.as_ptr(), 0o600) }, 0);
+    assert!(config::load(&path).is_err());
+    std::fs::remove_file(&path).unwrap();
+    let file = std::fs::File::create(&path).unwrap();
+    file.set_len(config::CONFIG_LIMIT + 1).unwrap();
+    assert!(config::load(&path).is_err());
+}
+
+#[tokio::test]
 async fn cache_preserves_output_root_links() {
     for directory_link in [false, true] {
         for declaration in ["out", "out/**"] {
