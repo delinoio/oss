@@ -27,8 +27,8 @@ type Mode = c_int;
 
 intercept!(open(64): unsafe extern "C" fn(*const c_char, c_int, args: ...) -> c_int);
 unsafe extern "C" fn open(path: *const c_char, flags: c_int, mut args: ...) -> c_int {
-    // SAFETY: path is a valid C string pointer provided by the caller of the interposed function
-    unsafe { handle_open(fspy_nostd::CStr::from_ptr(path.cast()), OpenFlags(flags)) };
+    // SAFETY: observe a bounded copy of the caller pathname; forward its original address
+    unsafe { handle_open(crate::client::convert::PathAt::borrow_raw(libc::AT_FDCWD, path), OpenFlags(flags)) };
     if has_mode_arg(flags) {
         // SAFETY: when O_CREAT or O_TMPFILE is set, a mode_t argument is required by the open() contract
         let mode: Mode = unsafe { args.next_arg() };
@@ -66,8 +66,8 @@ unsafe extern "C" fn openat(
 intercept!(open_nocancel: unsafe extern "C" fn(*const c_char, c_int, ...) -> c_int);
 #[cfg(target_os = "macos")]
 unsafe extern "C" fn open_nocancel(path: *const c_char, flags: c_int, mut args: ...) -> c_int {
-    // SAFETY: path is a valid C string pointer provided by the caller of open$NOCANCEL
-    unsafe { handle_open(fspy_nostd::CStr::from_ptr(path.cast()), OpenFlags(flags)) };
+    // SAFETY: observe a bounded copy without dereferencing the caller pathname
+    unsafe { handle_open(crate::client::convert::PathAt::borrow_raw(libc::AT_FDCWD, path), OpenFlags(flags)) };
     if has_mode_arg(flags) {
         // SAFETY: O_CREAT requires a mode argument, matching the open$NOCANCEL contract
         let mode: Mode = unsafe { args.next_arg() };
@@ -103,8 +103,8 @@ unsafe extern "C" fn openat_nocancel(
 
 intercept!(fopen(64): unsafe extern "C" fn(path: *const c_char, mode: *const c_char) -> *mut FILE);
 unsafe extern "C" fn fopen(path: *const c_char, mode: *const c_char) -> *mut libc::FILE {
-    // SAFETY: path and mode are valid C string pointers provided by the caller of the interposed function
-    unsafe { handle_open(fspy_nostd::CStr::from_ptr(path.cast()), ModeStr(mode)) };
+    // SAFETY: pathname and stream mode are copied through bounded OS reads
+    unsafe { handle_open(crate::client::convert::PathAt::borrow_raw(libc::AT_FDCWD, path), ModeStr(mode)) };
     // SAFETY: calling the original libc fopen() with the same arguments forwarded from the interposed function
     unsafe { fopen::original()(path, mode) }
 }
@@ -115,8 +115,8 @@ unsafe extern "C" fn freopen(
     mode: *const c_char,
     stream: *mut FILE,
 ) -> *mut FILE {
-    // SAFETY: path and mode are valid C string pointers provided by the caller of the interposed function
-    unsafe { handle_open(fspy_nostd::CStr::from_ptr(path.cast()), ModeStr(mode)) };
+    // SAFETY: pathname and stream mode are copied through bounded OS reads
+    unsafe { handle_open(crate::client::convert::PathAt::borrow_raw(libc::AT_FDCWD, path), ModeStr(mode)) };
     // SAFETY: calling the original libc freopen() with the same arguments forwarded from the interposed function
     unsafe { freopen::original()(path, mode, stream) }
 }

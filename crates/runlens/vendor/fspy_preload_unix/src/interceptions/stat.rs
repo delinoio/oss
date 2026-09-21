@@ -10,9 +10,9 @@ use crate::{
 
 intercept!(stat(64): unsafe extern "C" fn(path: *const c_char, buf: *mut stat_struct) -> c_int);
 unsafe extern "C" fn stat(path: *const c_char, buf: *mut stat_struct) -> c_int {
-    // SAFETY: path is a valid C string pointer provided by the caller of the interposed function
+    // SAFETY: observe a bounded copy of the caller pathname; forward its original address
     unsafe {
-        handle_open(fspy_nostd::CStr::from_ptr(path.cast()), AccessMode::READ);
+        handle_open(crate::client::convert::PathAt::borrow_raw(libc::AT_FDCWD, path), AccessMode::READ);
     }
     // SAFETY: calling the original libc stat() with the same arguments forwarded from the interposed function
     unsafe { stat::original()(path, buf) }
@@ -21,9 +21,9 @@ unsafe extern "C" fn stat(path: *const c_char, buf: *mut stat_struct) -> c_int {
 intercept!(lstat(64): unsafe extern "C" fn(path: *const c_char, buf: *mut stat_struct) -> c_int);
 unsafe extern "C" fn lstat(path: *const c_char, buf: *mut stat_struct) -> c_int {
     // TODO: add accessmode ReadNoFollow
-    // SAFETY: path is a valid C string pointer provided by the caller of the interposed function
+    // SAFETY: observe a bounded copy of the caller pathname; forward its original address
     unsafe {
-        handle_open(fspy_nostd::CStr::from_ptr(path.cast()), AccessMode::READ);
+        handle_open(crate::client::convert::PathAt::borrow_raw(libc::AT_FDCWD, path), AccessMode::READ);
     }
     // SAFETY: calling the original libc lstat() with the same arguments forwarded from the interposed function
     unsafe { lstat::original()(path, buf) }

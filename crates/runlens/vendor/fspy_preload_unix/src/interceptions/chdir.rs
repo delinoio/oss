@@ -8,7 +8,7 @@ unsafe extern "C" fn chdir(path: *const libc::c_char) -> libc::c_int {
     // SAFETY: resolve the caller's C pathname against the old cwd, then forward
     // the same operand. The operation probes directory metadata, not membership.
     unsafe {
-        handle_open(fspy_nostd::CStr::from_ptr(path.cast()), AccessMode::READ);
+        handle_open(crate::client::convert::PathAt::borrow_raw(libc::AT_FDCWD, path), AccessMode::READ);
         chdir::original()(path)
     }
 }

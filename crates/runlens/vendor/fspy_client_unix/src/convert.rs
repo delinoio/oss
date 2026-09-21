@@ -1,5 +1,3 @@
-use std::ffi::CStr;
-
 use allocator_api2::{alloc::Allocator, vec::Vec};
 use fspy_nostd::{BorrowedFd, CWD};
 use fspy_shared::ipc::AccessMode;
@@ -67,7 +65,7 @@ fn get_fd_path<A: Allocator>(allocator: A, fd: BorrowedFd<'_>) -> nix::Result<Op
 
 pub trait ToAbsolutePath {
     /// Resolves this argument to an absolute path allocated in `allocator`,
-    /// or borrowed from the argument itself when it is already absolute.
+    /// after copying intercepted pathname memory into bounded owned storage.
     ///
     /// The result is a C string so that callers forwarding it to an exec —
     /// which needs a terminator — cannot be handed unterminated bytes;
@@ -106,25 +104,56 @@ impl ToAbsolutePath for BorrowedFd<'_> {
     }
 }
 
-pub struct PathAt<'fd, 'path>(pub BorrowedFd<'fd>, pub fspy_nostd::CStr<'path, fspy_nostd::Thin>);
-
-impl PathAt<'_, '_> {
-    /// Borrows raw directory-descriptor and pathname arguments.
-    ///
-    /// # Safety
-    ///
-    /// `fd` must remain valid while the returned value is used, and `path`
-    /// must point to a valid NUL-terminated string.
+/// Untrusted pathname operands. Construction never dereferences caller memory.
+pub struct PathAt(pub c_int, pub *const c_char);
+impl PathAt {
+    /// Keep the native operands until bounded OS-assisted copying. No pointer
+    /// validity or descriptor ownership is inferred from an intercepted call.
     #[must_use]
-    pub const unsafe fn borrow_raw(fd: c_int, path: *const c_char) -> Self {
-        // SAFETY: both invariants are upheld by the caller.
-        Self(unsafe { BorrowedFd::borrow_raw(fd) }, unsafe {
-            fspy_nostd::CStr::from_ptr(path.cast())
-        })
-    }
+    pub const unsafe fn borrow_raw(fd: c_int, path: *const c_char) -> Self { Self(fd, path) }
 }
 
-impl ToAbsolutePath for PathAt<'_, '_> {
+// A caller can pass invalid memory that the kernel would reject with EFAULT.
+// Copy in sub-page chunks to owned storage, stopping at NUL without touching the
+// next page. Supported OS page sizes are multiples of 256 bytes. Never scan the
+// original pointer, and never let a changing mapping become a Rust reference.
+fn copy_cstr(path: *const c_char, output: &mut [u8]) -> nix::Result<usize> {
+    let mut used = 0;
+    while used < output.len() {
+        let address = (path as usize).checked_add(used).ok_or(nix::errno::Errno::EFAULT)?;
+        let count = (256 - address % 256).min(output.len() - used);
+        let destination = &mut output[used..used + count];
+        #[cfg(target_os = "linux")]
+        let read = {
+            let local = libc::iovec { iov_base: destination.as_mut_ptr().cast(), iov_len: count };
+            let remote = libc::iovec { iov_base: address as *mut libc::c_void, iov_len: count };
+            // SAFETY: the kernel validates the remote address and copies only
+            // into our live destination; raw syscall avoids preload recursion.
+            let result = unsafe { libc::syscall(libc::SYS_process_vm_readv, libc::getpid(), &local, 1_usize, &remote, 1_usize, 0_usize) };
+            if result <= 0 { return Err(nix::errno::Errno::EFAULT); }
+            result as usize
+        };
+        #[cfg(target_os = "macos")]
+        let read = {
+            unsafe extern "C" {
+                static mach_task_self_: libc::mach_port_t;
+                fn mach_vm_read_overwrite(task: libc::mach_port_t, address: u64, size: u64, data: u64, outsize: *mut u64) -> libc::kern_return_t;
+            }
+            let mut copied = 0;
+            // SAFETY: Mach validates the source address; the destination and
+            // exact output-size field are valid process-owned storage.
+            let result = unsafe { mach_vm_read_overwrite(mach_task_self_, address as u64, count as u64, destination.as_mut_ptr() as u64, &mut copied) };
+            if result != 0 || copied == 0 { return Err(nix::errno::Errno::EFAULT); }
+            copied as usize
+        };
+        if read > count { return Err(nix::errno::Errno::EFAULT); }
+        if let Some(nul) = destination[..read].iter().position(|byte| *byte == 0) { return Ok(used + nul + 1); }
+        used += read;
+    }
+    Err(nix::errno::Errno::ENAMETOOLONG)
+}
+
+impl ToAbsolutePath for PathAt {
     fn to_absolute_path<'a, A: Allocator>(
         self,
         allocator: &'a A,
@@ -132,14 +161,23 @@ impl ToAbsolutePath for PathAt<'_, '_> {
     where
         Self: 'a,
     {
-        let counted = self.1.count();
+        let mut buffer = [0_u8; libc::PATH_MAX as usize];
+        let length = copy_cstr(self.1, &mut buffer)?;
+        let mut copied = Vec::new_in(allocator);
+        copied.extend_from_slice(&buffer[..length]);
+        // SAFETY: only the bounded owned copy is viewed as a C string.
+        let counted = unsafe { fspy_nostd::CStr::from_units_with_nul_unchecked(copied.leak()) };
         let pathname = counted.as_units();
 
         if pathname.starts_with(b"/") {
-            // Already absolute, and already NUL-terminated by the caller.
+            // The owned copy is already absolute and NUL-terminated.
             Ok(Some(counted))
         } else {
-            let Some(mut base) = get_fd_path(allocator, self.0)? else {
+            if self.0 < 0 && self.0 != CWD.as_raw_fd() { return Err(nix::errno::Errno::EBADF); }
+            // SAFETY: a nonnegative raw value or CWD is inspected without taking
+            // ownership. The kernel validates whether that descriptor is open.
+            let fd = unsafe { BorrowedFd::borrow_raw(self.0) };
+            let Some(mut base) = get_fd_path(allocator, fd)? else {
                 return Ok(None);
             };
             if !pathname.is_empty() {
@@ -166,7 +204,7 @@ impl ToAbsolutePath for fspy_nostd::CStr<'_, fspy_nostd::Thin> {
     where
         Self: 'a,
     {
-        PathAt(CWD, self).to_absolute_path(allocator)
+        PathAt(CWD.as_raw_fd(), self.as_ptr().cast()).to_absolute_path(allocator)
     }
 }
 
@@ -175,30 +213,29 @@ pub trait ToAccessMode {
     ///
     /// # Safety
     ///
-    /// Implementations backed by raw process pointers require those pointers
-    /// to remain valid for the conversion.
-    unsafe fn to_access_mode(self) -> AccessMode;
+    /// The conversion may inspect a caller address through a bounded OS copy;
+    /// unreadable strings return an error without creating a Rust reference.
+    unsafe fn to_access_mode(self) -> nix::Result<AccessMode>;
 }
 
 impl ToAccessMode for AccessMode {
-    unsafe fn to_access_mode(self) -> AccessMode {
-        self
+    unsafe fn to_access_mode(self) -> nix::Result<AccessMode> {
+        Ok(self)
     }
 }
 
 pub struct OpenFlags(pub c_int);
 impl ToAccessMode for OpenFlags {
-    unsafe fn to_access_mode(self) -> AccessMode {
-        fspy_shared_unix::access::open_flags(self.0)
+    unsafe fn to_access_mode(self) -> nix::Result<AccessMode> {
+        Ok(fspy_shared_unix::access::open_flags(self.0))
     }
 }
 
 pub struct ModeStr(pub *const c_char);
 impl ToAccessMode for ModeStr {
-    unsafe fn to_access_mode(self) -> AccessMode {
-        // SAFETY: self.0 is a non-null pointer to a valid null-terminated C
-        // string, as guaranteed by the libc calling convention.
-        let mode_str = unsafe { CStr::from_ptr(self.0) }.to_bytes();
-        fspy_shared_unix::access::stream_mode(mode_str)
+    unsafe fn to_access_mode(self) -> nix::Result<AccessMode> {
+        let mut buffer = [0_u8; 64];
+        let length = copy_cstr(self.0, &mut buffer)?;
+        Ok(fspy_shared_unix::access::stream_mode(&buffer[..length - 1]))
     }
 }

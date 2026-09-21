@@ -158,7 +158,7 @@ impl<'a> Client<'a> {
     ) -> anyhow::Result<()> {
         // SAFETY: mode contains a valid pointer (if ModeStr) or a plain value,
         // as provided by the caller.
-        let mode = unsafe { mode.to_access_mode() };
+        let mode = unsafe { mode.to_access_mode() }?;
         let Some(abs_path) = path.to_absolute_path(&allocator)? else {
             return Ok(());
         };

@@ -6095,3 +6095,58 @@ fn macos_clones_preserve_native_results_and_record_both_boundaries() {
         }
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn unreadable_unix_pathnames_preserve_native_errors_without_faulting() {
+    for api in ["open", "openat", "stat", "access"] {
+        for pointer in [
+            "null",
+            "invalid",
+            "protected",
+            "unterminated",
+            "too-long",
+            "boundary",
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            fs::write(root.path().join("input.txt"), "POINTER-BODY-CANARY").unwrap();
+            let args = ["pointer-path", pointer, api];
+            let plain = Command::new(fixture())
+                .args(args)
+                .current_dir(root.path())
+                .output()
+                .unwrap();
+            assert!(plain.status.success(), "{pointer}/{api}: {plain:?}");
+            let traced = invoke(
+                root.path(),
+                &[
+                    "run",
+                    "--save",
+                    "pointer.json",
+                    "--",
+                    fixture(),
+                    args[0],
+                    args[1],
+                    args[2],
+                ],
+            );
+            assert_eq!(
+                traced.status.code(),
+                Some(if pointer == "boundary" { 0 } else { 4 }),
+                "{pointer}/{api}: {traced:?}"
+            );
+            assert_eq!(traced.stdout, plain.stdout, "{pointer}/{api}");
+            let report = parse(root.path(), "pointer.json");
+            assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 0);
+            assert_eq!(
+                report["executions"][0]["outcome"]["collection_complete"],
+                pointer == "boundary"
+            );
+            assert!(
+                !fs::read_to_string(root.path().join("pointer.json"))
+                    .unwrap()
+                    .contains("POINTER-BODY-CANARY")
+            );
+        }
+    }
+}

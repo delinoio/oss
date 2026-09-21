@@ -312,3 +312,5 @@
 - macOS getattrlist path/relative/descriptor reads must retain metadata input attempts without reading attribute buffers. Bulk attribute reads retain directory access and remain incomplete until individual child metadata identities are bound.
 
 - macOS clonefile/clonefileat/fclonefileat must record source reads and destination writes, including failed attempts, without changing operands, copied bytes or native results.
+
+- Unix pathname hooks must not form C strings from untrusted caller addresses. Copy bounded sub-page chunks with OS memory APIs before resolution; unreadable/unterminated operands mark incomplete while the original libc call receives unchanged pointers. Preserve caller errno during observation.

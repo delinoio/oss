@@ -51,3 +51,5 @@ Cleanup failures after repeated observations retain report evidence and actual c
 macOS attribute-list reads contribute metadata dependencies; bulk child-attribute enumeration remains incomplete.
 
 macOS clone operations retain independent source-read and destination-write evidence.
+
+Unix file-access hooks preserve native failure behavior for unreadable pathname operands while marking lost evidence incomplete.

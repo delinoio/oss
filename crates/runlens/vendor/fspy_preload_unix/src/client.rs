@@ -17,6 +17,13 @@ pub fn global_client() -> Option<&'static Client<'static>> {
 // bindable libc calls on Linux: a call that binds to an interposer here
 // recurses until the traced process overflows its stack.
 pub unsafe fn handle_open(path: impl ToAbsolutePath, mode: impl ToAccessMode) {
+    #[cfg(target_os = "macos")]
+    let errno = unsafe { libc::__error() };
+    #[cfg(target_os = "linux")]
+    let errno = unsafe { libc::__errno_location() };
+    // SAFETY: errno is thread-local storage. Observation must not change the
+    // caller's errno before a successful native operation leaves it untouched.
+    let saved_errno = unsafe { *errno };
     if let Some(client) = global_client() {
         let allocator = fspy_nostd_alloc::pooled_bump();
         // SAFETY: path and mode contain valid pointers/values forwarded
@@ -25,6 +32,7 @@ pub unsafe fn handle_open(path: impl ToAbsolutePath, mode: impl ToAccessMode) {
             client.report_failure();
         }
     }
+    unsafe { *errno = saved_errno; }
 }
 
 #[cfg(not(test))]

@@ -182,6 +182,65 @@ fn main() {
             };
             println!("{result}");
         }
+        #[cfg(unix)]
+        "pointer-path" => {
+            // SAFETY: two owned pages bound the fixture; PROT_NONE stays mapped
+            // so allocator activity cannot turn an invalid operand into a file.
+            // Invalid addresses are passed only to libc's kernel-forwarding APIs.
+            unsafe {
+                let page = libc::sysconf(libc::_SC_PAGESIZE) as usize;
+                let memory = libc::mmap(
+                    std::ptr::null_mut(),
+                    page * 2,
+                    libc::PROT_READ | libc::PROT_WRITE,
+                    libc::MAP_PRIVATE | libc::MAP_ANON,
+                    -1,
+                    0,
+                );
+                assert_ne!(memory, libc::MAP_FAILED);
+                let bytes = memory.cast::<u8>();
+                std::ptr::write_bytes(bytes, b'x', page);
+                assert_eq!(
+                    libc::mprotect(bytes.add(page).cast(), page, libc::PROT_NONE),
+                    0
+                );
+                let path = match args[1].as_str() {
+                    "null" => std::ptr::null(),
+                    "invalid" => 1_usize as *const libc::c_char,
+                    "protected" => bytes.add(page).cast(),
+                    "unterminated" => bytes.add(page - 2).cast(),
+                    "too-long" => bytes.cast(),
+                    "boundary" => {
+                        let value = b"input.txt\0";
+                        let target = bytes.add(page - value.len());
+                        std::ptr::copy_nonoverlapping(value.as_ptr(), target, value.len());
+                        target.cast()
+                    }
+                    _ => unreachable!(),
+                };
+                let result = match args[2].as_str() {
+                    "openat" => libc::openat(libc::AT_FDCWD, path, libc::O_RDONLY),
+                    "stat" => {
+                        let mut value = std::mem::zeroed();
+                        libc::stat(path, &mut value)
+                    }
+                    "access" => libc::access(path, libc::R_OK),
+                    _ => libc::open(path, libc::O_RDONLY),
+                };
+                if result < 0 {
+                    println!(
+                        "error={}",
+                        std::io::Error::last_os_error().raw_os_error().unwrap()
+                    );
+                } else {
+                    if args[2] == "open" || args[2] == "openat" {
+                        libc::close(result);
+                    }
+                    println!("success");
+                }
+                assert_eq!(libc::munmap(memory, page * 2), 0);
+            }
+        }
         #[cfg(target_os = "macos")]
         "macos-clone" => {
             let source = std::ffi::CString::new(args[1].as_bytes()).unwrap();
