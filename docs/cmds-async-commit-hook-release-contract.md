@@ -45,13 +45,63 @@ Archive generation emits structured target, artifact and SHA-256 evidence. Runti
 ## Build and Test
 Run `node --test scripts/release/async-commit-hook.test.mjs` for dependency-free artifact/installer fixtures and offline publication recovery fixtures. Publication fixtures intercept every GitHub command and tag lookup; they cover partial uploads, lost creation responses, changed signatures on retry, wrong ownership/commit, completed releases, lookup/tag failures and incomplete or mismatched remote assets without network mutations. After the frozen workspace install, run `node --test scripts/ci/async-commit-hook-release.test.mjs`, `pnpm ci:workflows` and `pnpm ci:contracts` for YAML workflow and publication-retry contracts. Also run Go updater/installer ownership fixtures and the six-target builder. Signature tests include real upstream Sigstore verification evidence with an untrusted workflow, forged bundles and tampered bytes. Shell installer tests use isolated download/signature fixtures to prove fail-closed publication ordering. Windows installation and replacement receive cross-build/source checks here, not a falsely claimed Windows execution result.
 
+## Validation Status
+Desktop Chrome credential-free local-UI smoke, controls, accessibility-tree and focus validation passed. Desktop Edge validation remains pending because Edge was unavailable in the validation environment; no owner-approved exclusion has been recorded. Release readiness must not treat the original Edge accessibility requirement as complete until that validation is executed or explicitly waived. The only approved implementation exclusions remain real six-target machine qualification and actual public release/site deployment.
+
+## Agent-Client Validation
+The recorded actual-client result is limited to skill/MCP installation and connection checks performed with isolated temporary configuration and state; it does not establish completion of the full agent-client workflow. The observed client statuses were:
+
+| Client | Recorded validation status |
+| --- | --- |
+| Codex CLI 0.145.0 | Owned isolated skill and MCP entry discovered successfully |
+| Claude Code 2.1.126 | Isolated installation and MCP connection succeeded |
+| OpenCode 1.1.53 | Isolated installation and MCP connection succeeded |
+
+Reproduce the integration setup from a temporary `HOME`, client configuration directories and registered test repository, never a personal configuration or credential store:
+
+```sh
+ach agent install --client codex
+ach agent install --client claude-code
+ach agent install --client opencode
+ach agent-guide
+ach mcp
+```
+
+Use each actual client executable to discover its owned skill and MCP entry. The full CLI/MCP workflow—starting a check, allowing `wait` to expire without cancelling execution, waiting for terminal completion, inspecting logs, failures, comparison and acknowledgement behavior, and exercising rerun and cancellation—was covered through the official Go MCP client and automated protocol tests without invoking agent-model sessions. Therefore actual Codex, Claude Code and OpenCode workflow validation remains pending. Remove each integration with the matching client/scope command after validation. No remote results, telemetry or diagnostic uploads are part of this check.
+
+## Process-Ownership Validation
+The Unix ownership backend is validated by the committed lifecycle tests `TestScopeStartBarrierAndOutput`, `TestScopeReapsDaemonizedDescendants`, `TestReplaceReapsDaemonizedDescendantsBeforeNextStarts`, `TestScopeCancellationDoesNotTouchAnotherCheck`, `TestScopeJournalNeverStoresResolvedEnvironment`, `TestScopeMissingJournalCannotConfirmCompletion`, `TestLegacyScopeCannotClaimUnknownDescendantsExited` and `TestSupervisorLeaseBlocksConfigurationWithoutWorker`. macOS-specific supervisor recovery is covered by `TestScopeRecoveryAfterSupervisorDeath`; Linux-specific lost-subreaper recovery is covered by `TestScopeLostSubreaperFailsClosedUntilBootChanges`.
+
+Reproduce the cross-platform lifecycle coverage with:
+
+```bash
+set -Eeuo pipefail
+cleanup() {
+  local status=$?
+  rm -r -- apps/async-commit-hook/dist cmds/async-commit-hook/internal/webassets/dist servers/devhud-api/internal/adminassets/dist packages/async-commit-hook-api-client/dist packages/devhud-api-client/dist 2>/dev/null || true
+  trap - EXIT
+  exit "$status"
+}
+trap cleanup EXIT
+
+pnpm --filter async-commit-hook build:embedded
+pnpm --filter devhud-admin build:embedded
+go test -run 'TestScope(StartBarrierAndOutput|ReapsDaemonizedDescendants|CancellationDoesNotTouchAnotherCheck|JournalNeverStoresResolvedEnvironment|MissingJournalCannotConfirmCompletion)|TestLegacyScopeCannotClaimUnknownDescendantsExited|TestReplaceReapsDaemonizedDescendantsBeforeNextStarts|TestSupervisorLeaseBlocksConfigurationWithoutWorker' ./cmds/async-commit-hook/internal/core
+go test -race -run 'TestScope(StartBarrierAndOutput|ReapsDaemonizedDescendants|CancellationDoesNotTouchAnotherCheck|JournalNeverStoresResolvedEnvironment|MissingJournalCannotConfirmCompletion)|TestLegacyScopeCannotClaimUnknownDescendantsExited|TestReplaceReapsDaemonizedDescendantsBeforeNextStarts|TestSupervisorLeaseBlocksConfigurationWithoutWorker' ./cmds/async-commit-hook/internal/core
+go test -run TestScopeRecoveryAfterSupervisorDeath ./cmds/async-commit-hook/internal/core # macOS only
+go test -run TestScopeLostSubreaperFailsClosedUntilBootChanges ./cmds/async-commit-hook/internal/core # Linux only
+go test -p 1 ./...
+go vet ./cmds/async-commit-hook/...
+```
+
+The recorded local contexts are macOS 26.6.2 arm64 for supervisor-death recovery and a network-disabled Linux arm64 `node:24-bookworm` container for focused lifecycle coverage. These results do not qualify macOS 13 or the other five supported targets as native machine validation.
+
 ## Change Triggers
-Update this contract, packaging AGENTS, version metadata, evidence and public upgrade/compatibility guidance when artifact names, trust identity, update ownership or deployment behavior changes.
+Update this contract, packaging AGENTS, version metadata and public upgrade/compatibility guidance when artifact names, trust identity, update ownership or deployment behavior changes. Keep the process-ownership validation commands, Edge status and owner-approved exclusions in this contract synchronized with those changes.
 
 ## References
 - [Project](project-async-commit-hook.md)
 - [Command contract](cmds-async-commit-hook-contract.md)
-- [Implementation evidence](cmds-async-commit-hook-evidence.md)
 
 Windows helpers retain a separate UUID-scoped cleanup record before creating the replacement sibling. Successful installation can remove its update journal without losing the helper path, authenticated digest or process birth identity. Subsequent service opens retry cleanup under the account lifecycle lock, wait for the helper to exit, reject changed/nonregular files, and remove the cleanup record only after deleting the helper. Cleanup failure remains recorded and emits a stable warning without blocking ordinary queries.
 

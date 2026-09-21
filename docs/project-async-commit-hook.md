@@ -21,7 +21,6 @@ Run trusted repository checks asynchronously against committed source, with dura
 - [Protocol contract](protos-async-commit-hook-v1-contract.md)
 - [Client contract](packages-async-commit-hook-api-client-contract.md)
 - [Requirements snapshot](cmds-async-commit-hook-requirements.md)
-- [Implementation evidence](cmds-async-commit-hook-evidence.md)
 - [Release and recovery contract](cmds-async-commit-hook-release-contract.md)
 
 ## Cross-Domain Invariants
@@ -40,7 +39,7 @@ Release preparation is available through `Release Project` with project `async-c
 Primary public installation instructions follow the downloaded installers' latest-published-stable defaults, and upgrade instructions select the highest published stable release. Explicit version selection and rollback remain documented separately without pinning the primary commands to a historical release.
 
 ## Change Policy
-Update the owning domain contract, evidence matrix and relevant AGENTS.md alongside interface, ownership, security or lifecycle changes. Generate protocol sources; never edit generated output. Public documentation describes supported user workflows, not repository internals.
+Update the owning domain contract, the relevant requirements or release contract, and relevant AGENTS.md alongside interface, ownership, security or lifecycle changes. Generate protocol sources; never edit generated output. Public documentation describes supported user workflows, not repository internals.
 
 ## References
 - https://github.com/delinoio/oss/issues/897
