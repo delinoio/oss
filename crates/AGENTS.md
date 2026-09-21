@@ -294,3 +294,5 @@
 - macOS execvP must use the caller-supplied search path and preserve argv/native fallback behavior while recording executable reads and classifying protected descendants as incomplete.
 
 - Unresolved Windows relative OBJECT_ATTRIBUTES root handles must mark collection incomplete before forwarding the original NT call; a failed normalized-name lookup cannot silently erase an access.
+
+- Policy declaration checks classify masked command names as unknown before configuration lookup and continue independent global boundaries; masked names must never become invalid-input or bind a placeholder key.

@@ -436,21 +436,23 @@ pub fn policy(
             quality(&mut result, execution)?;
         }
         if target && (rules.require_inputs || rules.require_outputs) {
-            let command = execution
-                .command
-                .name
-                .as_ref()
-                .and_then(|name| commands.get(name))
-                .ok_or_else(|| {
+            let name = execution.command.name.as_ref();
+            // Persisted names may be masked while configuration keys retain the
+            // original identity. Never look up or bind a masking placeholder.
+            let command = if name.is_some_and(|name| name.contains("[redacted]")) {
+                None
+            } else {
+                Some(name.and_then(|name| commands.get(name)).ok_or_else(|| {
                     Error::input("coverage policies require a matching configured command name")
-                })?;
+                })?)
+            };
             let identity_known = execution
                 .command
                 .name
                 .as_ref()
                 .and_then(|name| expected.get(name))
                 .is_some_and(|identity| identity_matches(identity, &execution.command));
-            if identity_known {
+            if let Some(command) = command.filter(|_| identity_known) {
                 coverage(
                     &mut result,
                     execution,

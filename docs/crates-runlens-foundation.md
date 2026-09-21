@@ -851,3 +851,5 @@ Linux fanotify_mark records read attempts for absolute, directory-relative and N
 macOS execvP uses its explicit search path rather than ambient PATH. It shares executable observations, protected-child handling and native text-file shell fallback with other exec families. Native tests preserve custom argv zero, missing-image errors and protected/script outcomes.
 
 Failed Windows normalized-name lookup for a relative NT root handle records collection loss and forwards the unchanged operation. Native coverage exercises the failure branch with well-formed attributes and a non-directory handle; successful SMB operations with denied name lookup remain incomplete rather than disappearing.
+
+Masked recorded command names are inconclusive identities before declaration lookup, including explicit-pattern and selected-value masking. Coverage checks retain unknown evidence while independent read/write denials still apply. Clean verification saves its inconclusive result instead of failing to parse the configured name.

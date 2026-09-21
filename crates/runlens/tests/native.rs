@@ -5514,3 +5514,59 @@ fn unresolved_windows_relative_roots_preserve_child_and_fail_closed() {
         Some(4)
     );
 }
+
+#[test]
+fn masked_command_names_are_inconclusive_before_coverage_lookup() {
+    for use_environment in [false, true] {
+        let root = repository("read");
+        let name = "build-private-identity";
+        let config_path = root.path().join("runlens.toml");
+        let mut config: runlens::config::Config =
+            toml::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
+        let command = config.commands.remove("build").unwrap();
+        config.commands.insert(name.into(), command);
+        config.policy.require_inputs = true;
+        config.policy.require_outputs = true;
+        if use_environment {
+            config.redaction.environment_names = vec!["RUNLENS_NAME_VALUE".into()];
+        } else {
+            config.redaction.patterns = vec!["private-identity".into()];
+        }
+        fs::write(&config_path, toml::to_string(&config).unwrap()).unwrap();
+        let invoke_named = |args: &[&str]| {
+            cli_command()
+                .current_dir(root.path())
+                .env("RUNLENS_NAME_VALUE", "private-identity")
+                .args(args)
+                .output()
+                .unwrap()
+        };
+        let captured = invoke_named(&["run", "--command", name, "--save", "masked.json"]);
+        assert!(captured.status.success(), "{captured:?}");
+        let report = parse(root.path(), "masked.json");
+        assert_eq!(
+            report["executions"][0]["command"]["name"],
+            "build-[redacted]"
+        );
+        let checked = invoke_named(&["policy", "check", "masked.json", "--json"]);
+        assert_eq!(checked.status.code(), Some(4), "{checked:?}");
+        let analysis: Value = serde_json::from_slice(&checked.stdout).unwrap();
+        assert_eq!(analysis["verdict"], "inconclusive");
+        let clean = invoke_named(&["verify", "clean", name, "--save", "clean.json"]);
+        assert_eq!(clean.status.code(), Some(4), "{clean:?}");
+        assert_eq!(
+            parse(root.path(), "clean.json")["verification"],
+            "inconclusive"
+        );
+        assert!(!root.path().join("out").exists());
+        // A masked coverage identity must not suppress independent deny rules.
+        config.policy.deny_reads = vec!["**/input.txt".into()];
+        fs::write(&config_path, toml::to_string(&config).unwrap()).unwrap();
+        assert_eq!(
+            invoke_named(&["policy", "check", "masked.json", "--json"])
+                .status
+                .code(),
+            Some(5)
+        );
+    }
+}
