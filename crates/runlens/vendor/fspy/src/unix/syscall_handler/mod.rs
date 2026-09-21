@@ -11,6 +11,7 @@ mod lifecycle;
 mod chdir;
 mod io_uring;
 mod inotify;
+mod fanotify;
 
 use std::{
     borrow::Cow,
@@ -152,6 +153,7 @@ impl_handler!(
     readlinkat,
 
     inotify_add_watch,
+    fanotify_mark,
 
     io_uring_setup,
     io_uring_enter,

@@ -37,6 +37,50 @@ fn main() {
             }
         }
         #[cfg(target_os = "linux")]
+        "fanotify-watch" => {
+            let path = std::path::Path::new(&args[1]);
+            let full = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            let parent = std::ffi::CString::new(path.parent().unwrap().to_str().unwrap()).unwrap();
+            let leaf = std::ffi::CString::new(path.file_name().unwrap().to_str().unwrap()).unwrap();
+            // SAFETY: live path operands and owned descriptors; mark is attempted
+            // even when the host rejects group creation, preserving that error.
+            unsafe {
+                let fd = libc::syscall(
+                    libc::SYS_fanotify_init,
+                    libc::FAN_CLOEXEC | libc::FAN_NONBLOCK | libc::FAN_REPORT_FID,
+                    libc::O_RDONLY,
+                ) as i32;
+                let (dir, name) = match args[2].as_str() {
+                    "relative" => (
+                        libc::open(parent.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY),
+                        leaf.as_ptr(),
+                    ),
+                    "descriptor" => (libc::open(full.as_ptr(), libc::O_RDONLY), std::ptr::null()),
+                    _ => (libc::AT_FDCWD, full.as_ptr()),
+                };
+                let result = libc::syscall(
+                    libc::SYS_fanotify_mark,
+                    fd,
+                    libc::FAN_MARK_ADD,
+                    u64::from(libc::FAN_ACCESS),
+                    dir,
+                    name,
+                );
+                let error = std::io::Error::last_os_error().raw_os_error().unwrap();
+                if result < 0 {
+                    println!("error={error}");
+                } else {
+                    println!("registered");
+                }
+                if fd >= 0 {
+                    libc::close(fd);
+                }
+                if dir >= 0 {
+                    libc::close(dir);
+                }
+            }
+        }
+        #[cfg(target_os = "linux")]
         "inotify-watch" => {
             let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
             // SAFETY: the path remains a terminated string and fd is owned here.

@@ -845,3 +845,5 @@ not cover descendants, and relative or workspace-placeholder paths never acquire
 a synthetic POSIX root.
 
 macOS getxattr/listxattr and descriptor variants record input attempts, including size queries, missing attributes and missing paths. Only the file path enters evidence; native results and buffers remain unchanged, and attribute names/values remain excluded.
+
+Linux fanotify_mark records read attempts for absolute, directory-relative and NULL-path descriptor targets, including failed registrations. Flush operations ignore their unused path operand. The collector never stores fanotify event payloads or claims their contents were observed.

@@ -10,6 +10,7 @@
 #include <sys/syscall.h>
 #include <sys/vfs.h>
 #include <sys/inotify.h>
+#include <sys/fanotify.h>
 int main(int argc, char **argv) {
     if (argc == 3 && !strcmp(argv[1], "preload-child")) {
         const char *preload = getenv("LD_PRELOAD");
@@ -17,6 +18,28 @@ int main(int argc, char **argv) {
         fflush(stdout);
         execl(argv[2], argv[2], (char *)NULL);
         return 90;
+    }
+    if (argc == 4 && !strcmp(argv[1], "fanotify-watch")) {
+        int fd = syscall(SYS_fanotify_init, FAN_CLOEXEC | FAN_NONBLOCK | FAN_REPORT_FID, O_RDONLY);
+        int dir = AT_FDCWD;
+        char *parent = strdup(argv[2]);
+        const char *name = argv[2];
+        if (!strcmp(argv[3], "relative")) {
+            char *leaf = strrchr(parent, '/');
+            if (!leaf) return 90;
+            *leaf = 0;
+            name = leaf + 1;
+            dir = open(parent, O_RDONLY | O_DIRECTORY);
+        } else if (!strcmp(argv[3], "descriptor")) {
+            dir = open(argv[2], O_RDONLY);
+            name = NULL;
+        }
+        long result = syscall(SYS_fanotify_mark, fd, FAN_MARK_ADD, (uint64_t)FAN_ACCESS, dir, name);
+        if (result < 0) printf("error=%d\n", errno); else puts("registered");
+        if (fd >= 0) close(fd);
+        if (dir >= 0) close(dir);
+        free(parent);
+        return 0;
     }
     if (argc == 3 && !strcmp(argv[1], "inotify-watch")) {
         int fd = inotify_init1(IN_CLOEXEC | IN_NONBLOCK);

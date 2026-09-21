@@ -5325,3 +5325,75 @@ fn macos_xattr_reads_preserve_native_results_and_deny_external_inputs() {
         }
     }
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn fanotify_marks_retain_absolute_relative_and_descriptor_read_attempts() {
+    let mut executables = vec![fixture().to_owned()];
+    match std::env::var("RUNLENS_STATIC_FIXTURE") {
+        Ok(path) => executables.push(path),
+        Err(_) => assert!(
+            std::env::var_os("CI").is_none(),
+            "static fixture required in CI"
+        ),
+    }
+    for executable in executables {
+        for form in ["absolute", "relative", "descriptor"] {
+            for kind in ["file", "directory", "missing"] {
+                if form == "descriptor" && kind == "missing" {
+                    continue;
+                }
+                let root = tempfile::tempdir().unwrap();
+                let external = tempfile::tempdir().unwrap();
+                let path = external.path().join("fanotify-input");
+                if kind == "file" {
+                    fs::write(&path, "FANOTIFY-BODY-CANARY").unwrap();
+                }
+                if kind == "directory" {
+                    fs::create_dir(&path).unwrap();
+                }
+                fs::write(
+                    root.path().join("runlens.toml"),
+                    "schema_version = 1\n[policy]\ndeny_reads = ['**/fanotify-input']\n",
+                )
+                .unwrap();
+                let plain = Command::new(&executable)
+                    .args(["fanotify-watch", path.to_str().unwrap(), form])
+                    .output()
+                    .unwrap();
+                assert!(plain.status.success());
+                let traced = invoke(
+                    root.path(),
+                    &[
+                        "run",
+                        "--save",
+                        "fanotify.json",
+                        "--",
+                        &executable,
+                        "fanotify-watch",
+                        path.to_str().unwrap(),
+                        form,
+                    ],
+                );
+                assert!(traced.status.success(), "{form}/{kind}: {traced:?}");
+                assert_eq!(traced.stdout, plain.stdout);
+                let report = parse(root.path(), "fanotify.json");
+                assert!(
+                    report["executions"][0]["accesses"]
+                        .as_object()
+                        .unwrap()
+                        .iter()
+                        .any(|(path, access)| path.ends_with("/fanotify-input")
+                            && access["read"] == true)
+                );
+                assert!(
+                    !fs::read_to_string(root.path().join("fanotify.json"))
+                        .unwrap()
+                        .contains("FANOTIFY-BODY-CANARY")
+                );
+                let checked = invoke(root.path(), &["policy", "check", "fanotify.json", "--json"]);
+                assert_eq!(checked.status.code(), Some(5), "{checked:?}");
+            }
+        }
+    }
+}
