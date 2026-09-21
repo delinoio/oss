@@ -30,7 +30,7 @@ Developers invoking a pinned CLI in terminals, npm scripts, portable local workf
 - Owned operations return numeric 130 for Ctrl+C/Windows Ctrl+Break and 143 for Unix SIGTERM after cleanup. `env run` preserves the delegated child's exit status and Unix signal identity. Interrupted publication does not overwrite the original, and completed effects are not undone.
 - This breaking change targets the next minor release through the existing manual Release Project workflow; implementation changes do not bump or publish versions.
 
-- `clibox`, `clibox --help`, and `clibox -h` print help to stdout and exit successfully; `--version`/`-V` print `clibox <Cargo package version>`.
+- `clibox`, `clibox --help`, and `clibox -h` print help to stdout and exit successfully. Root help includes its Cargo-derived version, Delino maintainer, repository, MIT license, and the repository's GitHub Issues support URL; subcommand help does not repeat this footer. `--version`/`-V` remain exactly `clibox <Cargo package version>`.
 - `clibox env`, `clibox port`, `clibox clipboard`, `clibox wait`, `clibox text`, `clibox time`, `clibox base64`, `clibox hash`, `clibox dotenv`, and `clibox yaml` without a subcommand print the corresponding command's help on stderr, leave stdout empty, and exit 2. Explicit `--help`/`-h` for those commands prints help on stdout and exits 0. Preserve clap's generated `DisplayHelpOnMissingArgumentOrSubcommand` output without replacing it with a generic diagnostic.
 - `clibox wait tcp HOST:PORT [--timeout DURATION] [--interval DURATION] [--attempt-timeout DURATION] [--quiet | --json]`.
 - `clibox wait http URL [--method get|head] [--status CODE] [--timeout DURATION] [--interval DURATION] [--attempt-timeout DURATION] [--quiet | --json]`.
