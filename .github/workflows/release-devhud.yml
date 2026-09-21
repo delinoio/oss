@@ -485,10 +485,18 @@ jobs:
         run: |
           # shellcheck disable=SC2016
           node -e 'const fs=require("node:fs");const path="apps/public-docs/doc_build/devhud.html";const html=fs.readFileSync(path,"utf8");const marker=`<meta name="devhud-release-identity" content="${process.env.DEVHUD_DOCS_RELEASE_IDENTITY}">`;if(!html.includes("</head>")||html.includes("devhud-release-identity"))process.exit(1);fs.writeFileSync(path,html.replace("</head>",`${marker}</head>`))'
+      - name: Keep only DevHud-owned release documentation
+        run: |
+          set -euo pipefail
+          candidate="$RUNNER_TEMP/devhud-public-docs-candidate"
+          mkdir -p "$candidate/devhud" "$candidate/static"
+          cp apps/public-docs/doc_build/devhud.html "$candidate/devhud.html"
+          cp -R apps/public-docs/doc_build/devhud/. "$candidate/devhud/"
+          cp -R apps/public-docs/doc_build/static/. "$candidate/static/"
       - uses: actions/upload-artifact@v7
         with:
           name: "devhud-public-docs-candidate-${{ github.run_attempt }}"
-          path: apps/public-docs/doc_build
+          path: ${{ runner.temp }}/devhud-public-docs-candidate
           if-no-files-found: error
 
   registry:
@@ -911,7 +919,24 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: "devhud-public-docs-candidate-${{ github.run_attempt }}"
-          path: apps/public-docs/doc_build
+          path: ${{ runner.temp }}/devhud-public-docs-candidate
+      - name: Build the current consolidated documentation base
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          git checkout --detach origin/main
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm --filter public-docs build
+      - name: Overlay the release-bound DevHud pages
+        run: |
+          set -euo pipefail
+          candidate="$RUNNER_TEMP/devhud-public-docs-candidate"
+          test -f "$candidate/devhud.html"
+          test -d "$candidate/devhud"
+          test -d "$candidate/static"
+          cp "$candidate/devhud.html" apps/public-docs/doc_build/devhud.html
+          cp -R "$candidate/devhud/." apps/public-docs/doc_build/devhud/
+          cp -R "$candidate/static/." apps/public-docs/doc_build/static/
       - name: Inject and verify official DevHud store links
         run: |
           set -euo pipefail
