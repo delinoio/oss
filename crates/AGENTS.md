@@ -154,6 +154,9 @@
 
 ### Runlens Rules
 
+- Runlens Windows handle metadata queries record read attempts independently of open access flags, preserve native buffers/status, and mark unresolvable file handles incomplete. Collector-owned path queries must not recurse or become target evidence; anonymous pipe/device metadata stays outside filesystem evidence.
+
+
 - Report outcomes must not contain both a child exit code and termination signal. Any recorded signal prevents execution success and a verification pass, including in-memory analysis before serialization.
 
 - Executable resolution reads exactly PATH on Unix and uses case-insensitive environment-key lookup only on Windows.

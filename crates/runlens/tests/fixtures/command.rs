@@ -1293,6 +1293,8 @@ fn main() {
             }
         }
         #[cfg(windows)]
+        "windows-handle-metadata" => windows_native::handle_metadata(&args[1], &args[2]),
+        #[cfg(windows)]
         "windows-unresolved-relative-root" => windows_native::unresolved_relative_root(),
         #[cfg(windows)]
         "windows-malformed-file-attributes" => windows_native::malformed_file_attributes(),

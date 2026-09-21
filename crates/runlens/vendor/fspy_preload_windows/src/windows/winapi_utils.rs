@@ -37,7 +37,21 @@ pub const fn ck_long(val: c_long) -> winsafe::SysResult<()> {
     }
 }
 
+thread_local! {
+    // GetFinalPathNameByHandleW itself queries NT file information. Suppress
+    // only those collector-owned queries, including resolution in other hooks.
+    static RESOLVING_PATH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub fn resolving_path() -> bool { RESOLVING_PATH.get() }
+
+struct PathResolutionGuard(bool);
+impl Drop for PathResolutionGuard {
+    fn drop(&mut self) { RESOLVING_PATH.set(self.0); }
+}
+
 pub unsafe fn get_path_name(handle: HANDLE) -> winsafe::SysResult<SmallVec<u16, MAX_PATH>> {
+    let _guard = PathResolutionGuard(RESOLVING_PATH.replace(true));
     let mut path = SmallVec::<u16, MAX_PATH>::new();
     // SAFETY: FFI call to GetFinalPathNameByHandleW to query the file path from a handle
     let len = unsafe {

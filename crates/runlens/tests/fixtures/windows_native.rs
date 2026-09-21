@@ -163,3 +163,85 @@ pub fn unresolved_relative_root() {
     }
     println!("child-continued");
 }
+
+/// Query external descriptor metadata without any file-content read permission.
+pub fn handle_metadata(path: &str, mode: &str) {
+    use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
+
+    use ntapi::ntioapi::{
+        FILE_BASIC_INFORMATION, FILE_STANDARD_INFORMATION, FileBasicInformation,
+        FileStandardInformation, NtQueryInformationFile,
+    };
+    use winapi::um::winnt::{FILE_READ_ATTRIBUTES, FILE_WRITE_DATA, SYNCHRONIZE};
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .access_mode(FILE_WRITE_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE)
+        .open(path)
+        .unwrap();
+    // SAFETY: the kernel validates the deliberately invalid operands; valid
+    // structures remain owned and initialized for the duration of each call.
+    unsafe {
+        let mut io = mem::zeroed();
+        let mut standard: FILE_STANDARD_INFORMATION = mem::zeroed();
+        let mut basic: FILE_BASIC_INFORMATION = mem::zeroed();
+        let mut handle = file.as_raw_handle().cast();
+        let mut read_pipe = ptr::null_mut();
+        let mut write_pipe = ptr::null_mut();
+        if mode == "pipe" {
+            assert_ne!(
+                winapi::um::namedpipeapi::CreatePipe(
+                    &mut read_pipe,
+                    &mut write_pipe,
+                    ptr::null_mut(),
+                    0
+                ),
+                0
+            );
+            handle = write_pipe;
+        } else if mode == "invalid-handle" {
+            handle = ptr::null_mut();
+        }
+        let (information, length, class) = if mode == "basic" {
+            (
+                (&mut basic as *mut FILE_BASIC_INFORMATION).cast(),
+                mem::size_of_val(&basic) as u32,
+                FileBasicInformation,
+            )
+        } else {
+            (
+                (&mut standard as *mut FILE_STANDARD_INFORMATION).cast(),
+                mem::size_of_val(&standard) as u32,
+                FileStandardInformation,
+            )
+        };
+        let status = NtQueryInformationFile(
+            handle,
+            &mut io,
+            if mode == "bad-buffer" {
+                16usize as *mut _
+            } else {
+                information
+            },
+            length,
+            class,
+        );
+        println!("status={status}");
+        if matches!(mode, "standard" | "basic") {
+            assert!(status >= 0);
+        }
+        if matches!(mode, "bad-buffer" | "invalid-handle") {
+            assert!(status < 0);
+        }
+        if status >= 0 && mode == "standard" {
+            println!("size={}", standard.EndOfFile.QuadPart());
+        }
+        if status >= 0 && mode == "basic" {
+            println!("attributes={}", basic.FileAttributes);
+        }
+        if !read_pipe.is_null() {
+            CloseHandle(read_pipe.cast());
+            CloseHandle(write_pipe.cast());
+        }
+    }
+    println!("child-continued");
+}

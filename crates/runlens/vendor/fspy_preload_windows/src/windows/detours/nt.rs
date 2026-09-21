@@ -556,6 +556,49 @@ static DETOUR_NT_QUERY_DIRECTORY_FILE_EX: Detour<NtQueryDirectoryFileExFn> =
         })
     };
 
+// Metadata can affect a target even when the handle was opened write-only.
+// Observe the attempt without touching the caller's output pointers or class.
+static DETOUR_NT_QUERY_INFORMATION_FILE: Detour<
+    unsafe extern "system" fn(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, FILE_INFORMATION_CLASS) -> NTSTATUS,
+> = unsafe {
+    // SAFETY: the replacement has the exact NtQueryInformationFile ABI.
+    Detour::new(c"NtQueryInformationFile", ntapi::ntioapi::NtQueryInformationFile, {
+        unsafe extern "system" fn query_information(
+            handle: HANDLE,
+            status: PIO_STATUS_BLOCK,
+            information: PVOID,
+            length: ULONG,
+            class: FILE_INFORMATION_CLASS,
+        ) -> NTSTATUS {
+            if !crate::windows::winapi_utils::resolving_path() {
+                // SAFETY: handle inspection is kernel-validated. Retain Win32
+                // last-error state as well as the original NT result.
+                let saved_error = unsafe { windows_sys::Win32::Foundation::GetLastError() };
+                let kind = unsafe { winapi::um::fileapi::GetFileType(handle) };
+                if kind != winapi::um::winbase::FILE_TYPE_PIPE
+                    && kind != winapi::um::winbase::FILE_TYPE_CHAR {
+                    let observed = unsafe { handle.to_absolute_path(|path| {
+                        if let Some(path) = path {
+                            global_client().send(PathAccess {
+                                mode: AccessMode::READ,
+                                path: IpcPath::from_wide(path.as_slice()),
+                            });
+                            Ok(true)
+                        } else { Ok(false) }
+                    }) };
+                    if observed != Ok(true) {
+                        crate::windows::client::report_global_failure();
+                    }
+                }
+                unsafe { windows_sys::Win32::Foundation::SetLastError(saved_error) };
+            }
+            // SAFETY: preserve even invalid handles, pointers and lengths for NT.
+            unsafe { (DETOUR_NT_QUERY_INFORMATION_FILE.real())(handle, status, information, length, class) }
+        }
+        query_information
+    })
+};
+
 static DETOUR_NT_SET_INFORMATION_FILE: Detour<
     unsafe extern "system" fn(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, FILE_INFORMATION_CLASS) -> NTSTATUS,
 > = unsafe {
@@ -608,6 +651,7 @@ static DETOUR_NT_DELETE_FILE: Detour<unsafe extern "system" fn(POBJECT_ATTRIBUTE
 };
 
 pub const DETOURS: &[DetourAny] = &[
+    DETOUR_NT_QUERY_INFORMATION_FILE.as_any(),
     DETOUR_NT_DELETE_FILE.as_any(),
     DETOUR_NT_SET_INFORMATION_FILE.as_any(),
     DETOUR_NT_CREATE_USER_PROCESS.as_any(),
