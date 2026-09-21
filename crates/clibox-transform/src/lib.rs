@@ -14,10 +14,11 @@ pub use cli::TransformCommand as Command;
 
 /// Execute one transformation and report only sanitized failures.
 pub fn execute(command: Command) -> u8 {
+    let operation = command.operation();
     match transform::execute(command) {
         Ok(status) => status,
         Err(error) => {
-            transform_error::report(error);
+            transform_error::report(error, operation);
             error.exit
         }
     }
@@ -25,7 +26,8 @@ pub fn execute(command: Command) -> u8 {
 
 /// Report a process panic without exposing its payload or location.
 pub fn report_runtime_failure() {
-    transform_error::report(transform_error::Error::runtime(
-        transform_error::Code::Runtime,
-    ));
+    transform_error::report(
+        transform_error::Error::runtime(transform_error::Code::Runtime),
+        "runtime",
+    );
 }

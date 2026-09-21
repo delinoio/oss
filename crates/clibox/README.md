@@ -14,24 +14,44 @@ pnpm exec clibox --version
 
 The npm launcher requires Node.js 22 or newer. Prebuilt binaries cover macOS and Windows x64/arm64, and Linux x64/arm64 with glibc or musl. npm installation does not require Rust or installation scripts.
 
+## Migrating from 0.1.x
+
+The next minor release changes these command interfaces. Old command names are rejected with exit code 2 and migration guidance; they are not aliases.
+
+| Previous use | New use |
+| --- | --- |
+| `clibox run env KEY=VALUE command` | `clibox env run KEY=VALUE command` |
+| `clibox port which 3000` | `clibox port list 3000` |
+| `clibox hash encode --text hello` | `clibox hash compute --text hello` |
+| `clibox port which 3000 --quiet` (PIDs) | `clibox port list 3000 --pids` |
+| `--output -` (a file named `-`) | `--output ./-` |
+
+`--quiet` suppresses stdout results on port listing/termination, waits, and hash verification. It never suppresses failure diagnostics or changes the exit status. It conflicts with `--json`; `port list --pids` conflicts with both.
+
+Omitted output and `--output -` both select stdout. `--force` requires an actual file output or `--in-place`; redundant `--in-place --force` is accepted. Remove standalone `--force` and do not combine it with stdout output. Checksum filename rebasing applies only when a manifest is written to an actual file.
+
+Owned operations now return numeric **130** for Ctrl+C/Windows Ctrl+Break and **143** for Unix SIGTERM after cleanup, including text/Base64/hash/time operations that previously returned 1. `env run` continues to preserve its child's exit status and Unix termination signal. Completed effects are not undone.
+
+Use `-h` for core rules and examples, or `--help` for those rules plus detailed constraints. Failures remain visible on stderr even with `RUST_LOG=off`.
+
 ## OS commands
 
 ```text
-clibox run env [KEY=VALUE ...] [--] COMMAND [ARG ...]
-clibox port which PORT... [--protocol tcp|udp|all] [--json | --quiet]
-clibox port kill PORT... [--protocol tcp|udp|all] [--json]
+clibox env run [KEY=VALUE ...] [--] COMMAND [ARG ...]
+clibox port list PORT... [--protocol tcp|udp|all] [--json | --quiet | --pids]
+clibox port kill PORT... [--protocol tcp|udp|all] [--json | --quiet]
 clibox open TARGET [--app APP] [--wait]
 clibox clipboard copy [TEXT]
 clibox clipboard paste
 ```
 
-Use `--help` after any command for English help and examples. Running `clibox` without arguments or using explicit `--help` prints help to stdout and returns exit code **0**. Running `clibox run`, `clibox port`, `clibox clipboard`, `clibox wait`, `clibox text`, `clibox time`, `clibox base64`, `clibox hash`, `clibox dotenv`, or `clibox yaml` without a subcommand prints that command's help to stderr and returns exit code **2**. Other invalid or missing arguments return exit code **2** with an error diagnostic; runtime failures return **1**. `run env` forwards the child program's exit status and supported termination signals.
+Use `--help` after any command for English help and examples. Running `clibox` without arguments or using explicit `--help` prints help to stdout and returns exit code **0**. Running `clibox env`, `clibox port`, `clibox clipboard`, `clibox wait`, `clibox text`, `clibox time`, `clibox base64`, `clibox hash`, `clibox dotenv`, or `clibox yaml` without a subcommand prints that command's help to stderr and returns exit code **2**. Other invalid or missing arguments return exit code **2** with an error diagnostic; runtime failures return **1**. `env run` forwards the child program's exit status and supported termination signals.
 
 ### Run with environment variables
 
 ```sh
-clibox run env NODE_ENV=production node build.js
-clibox run env FIRST=one SECOND=two -- node script.js
+clibox env run NODE_ENV=production node build.js
+clibox env run FIRST=one SECOND=two -- node script.js
 ```
 
 Use this command in npm scripts to set a child environment across operating systems. It inherits the working directory, standard input/output/error, and parent environment. Assignments never change the calling shell. Duplicate assignments use the last value; empty values and empty child arguments are preserved. A child command is required.
@@ -40,20 +60,20 @@ Assignment escaping, variable references, PATH/NODE_PATH lists and platform-spec
 
 Environment execution has no shell-expression mode, dotenv loading or stored command preset. The child is awaited, and signal termination (including SIGINT) is not reported as success. Windows console interruption uses supported process-group CTRL_BREAK delivery.
 
-On Windows, `run env` also treats `$1` as an environment-variable reference and removes it when unset. Invoke `clibox text replace` directly when passing regex capture references; wrapping it in `run env` applies that extra conversion even after shell quoting.
+On Windows, `env run` also treats `$1` as an environment-variable reference and removes it when unset. Invoke `clibox text replace` directly when passing regex capture references; wrapping it in `env run` applies that extra conversion even after shell quoting.
 
 ### Inspect and terminate port owners
 
 ```sh
-clibox port which 3000 8080
-clibox port which 5353 --protocol udp --json
-clibox port which 3000 --quiet
+clibox port list 3000 8080
+clibox port list 5353 --protocol udp --json
+clibox port list 3000 --pids
 clibox port kill 3000 8080 --json
 ```
 
 Supply decimal ports from 1 through 65535, separated by spaces. Duplicate ports are removed. The default inspects TCP LISTEN sockets; `udp` selects UDP bindings and `all` combines both. IPv4 and IPv6 local endpoints are included. Port ranges, service names and established TCP connections are not selected.
 
-The default table includes PID, process name, protocol, address and port, without process command lines. `which --quiet` prints unique PIDs, one per line, and cannot be combined with `--json`.
+The default table includes PID, process name, protocol, address and port, without process command lines. `list --pids` prints sorted unique PIDs, one per line, and cannot be combined with `--json` or `--quiet`. Both `list --quiet` and `kill --quiet` suppress stdout results while retaining failure diagnostics and exit status. Quiet and JSON modes conflict.
 
 JSON uses this envelope (unknown PID/name values are `null`):
 
@@ -115,7 +135,7 @@ clibox base64 encode|decode
   [--input FILE | --text TEXT] [--url-safe] [--no-padding]
   [--output FILE] [--force]
 
-clibox hash encode [--algorithm sha256|sha512|blake3]
+clibox hash compute [--algorithm sha256|sha512|blake3]
   [--input FILE | --text TEXT] [--format hex|base64|checksum]
   [--output FILE] [--force]
 
@@ -133,9 +153,9 @@ Use `clibox <command> <operation> --help` for command-specific help. `clibox`, `
 
 File and string selectors are mutually exclusive. With neither, clibox reads stdin until EOF; `--input -` explicitly selects stdin. Explicit file/string input does not consume stdin. `--text` supplies its exact UTF-8 bytes without an implicit newline. Base64 and hashes accept arbitrary binary file/stdin input. Text replacement requires valid UTF-8.
 
-Results default to stdout. Text and Base64 add no newline; time values, generated hashes, and verification reports end with LF. `--output FILE` writes the result only to that file. An output filename `-` is a literal file, not stdout.
+Results default to stdout. Text and Base64 add no newline; time values, generated hashes, and verification reports end with LF. `--output FILE` writes the result only to that file. `--output -` explicitly selects stdout; use `--output ./-` for a literal dash filename. `--force` requires an actual file output or `--in-place`; standalone force and force with stdout are argument errors.
 
-Exit status is `0` for success, `1` for runtime failure, checksum mismatch, or handled interruption, and `2` for missing, malformed, or conflicting arguments. Diagnostics use stderr. `RUST_LOG` enables more detailed structured diagnostics; the default is warnings/errors. Color requires a TTY and is disabled by `NO_COLOR`. Diagnostics omit input content, digests, patterns, replacements, raw arguments, and paths. Verification filenames are intentional command results.
+Exit status is `0` for success, `1` for runtime failure or checksum mismatch, `2` for missing, malformed, or conflicting arguments, `130` for Ctrl+C/Windows Ctrl+Break, and `143` for Unix SIGTERM. Diagnostics use stderr. `RUST_LOG` enables more detailed structured diagnostics; the default is warnings/errors. Color requires a TTY and is disabled by `NO_COLOR`. Diagnostics omit input content, digests, patterns, replacements, raw arguments, and paths. Verification filenames are intentional command results.
 
 Operations are offline and use current OS permissions. No settings, cache, history, telemetry, automatic retries, or fixed execution timeout is added. No fixed input/output size limit is imposed: text replacement holds the entire input/result in memory, while Base64 and hashing stream bytes. Resource exhaustion can fail an operation. **Streaming stdout may already contain partial output when reading, decoding, writing, or interruption fails.** Use `--output` when an incomplete result must not replace a file.
 
@@ -167,7 +187,7 @@ For an npm script, double quotes inside JSON need escaping. The escaped dollar b
 {
   "scripts": {
     "rewrite": "clibox text replace \"(hello)\" \"\\$1 world\" --regex --input \"path with spaces.txt\" --in-place",
-    "checksum": "clibox hash encode --input \"path with spaces.zip\""
+    "checksum": "clibox hash compute --input \"path with spaces.zip\""
   }
 }
 ```
@@ -215,10 +235,10 @@ When checksum generation uses `--output`, relative input paths are resolved and 
 
 Direct verification accepts case-insensitive hex or explicit standard padded Base64 and checks digest length against the selected algorithm. `--check` conflicts with the direct digest, input, and format options. `--check -` reads a manifest from stdin. Relative filenames resolve against the manifest's directory, or cwd for a stdin manifest; absolute paths retain their usual meaning. A record's filename `-` means a literal file. Both GNU text/binary markers hash raw bytes. LF/CRLF manifest separators are accepted; malformed records, including blank/comment lines, are errors. An empty manifest fails.
 
-Entries are processed in order and continue after mismatches and file-read failures. Missing files are errors. Statuses are `ok`, `mismatch`, and `error`; neither human nor JSON reports include supplied text or expected/actual digests. `--quiet` suppresses results and conflicts with `--json` and `--output`. Any mismatch or error returns 1, while a completed report is still published to `--output`.
+Entries are processed in order and continue after mismatches and file-read failures. Missing files are errors. Statuses are `ok`, `mismatch`, and `error`; neither human nor JSON reports include supplied text or expected/actual digests. `--quiet` suppresses results and conflicts with `--json` and `--output`. Any mismatch or error returns 1 and emits a static redacted stderr summary, including with `--quiet` or `RUST_LOG=off`, while a completed report is still published to file `--output`.
 
 ```sh
-clibox hash encode --input 'archive.zip' --format checksum --output SHA256SUMS
+clibox hash compute --input 'archive.zip' --format checksum --output SHA256SUMS
 clibox hash verify --check SHA256SUMS
 clibox hash verify --check SHA256SUMS --json --output verification.json
 ```
@@ -311,7 +331,7 @@ In PowerShell, set `$env:RUST_LOG = "clibox=debug"` before invoking the command.
 
 ## Utility diagnostics and operation limits
 
-All operations use the current OS user's permissions and desktop session. No authentication service, saved configuration, cache, operation history or telemetry is added. Environment, port, open, clipboard, and transformation commands have no automatic retry or fixed execution timeout apart from the shared five-second port-termination verification. Readiness waits use their polling/deadline options above. OS-command interruption preserves supported termination signals; handled transformation interruption returns exit code 1, while waits and configuration commands report 130 for Ctrl+C and 143 for Unix SIGTERM. Interruption does not undo completed copies, terminations, application launches or file replacements.
+All operations use the current OS user's permissions and desktop session. No authentication service, saved configuration, cache, operation history or telemetry is added. Environment, port, open, clipboard, and transformation commands have no automatic retry or fixed execution timeout apart from the shared five-second port-termination verification. Readiness waits use their polling/deadline options above. Owned operations return numeric 130 for Ctrl+C/Windows Ctrl+Break and 143 for Unix SIGTERM after cleanup. `env run` preserves the delegated child's exit status and Unix signal identity. Interruption does not undo completed copies, terminations, application launches or file replacements.
 
 Configuration input/output and nesting limits are documented below.
 
@@ -398,7 +418,7 @@ becomes:
 
 All inputs require valid UTF-8, permit one initial UTF-8 BOM, and reject NUL bytes. Aggregate raw input across files and serialized output each have an independent **64 MiB** limit. YAML collections are limited to **128 nesting levels**, counting a root mapping/sequence as level one, including expanded references. These limits cannot be adjusted. Invalid input or exceeded limits produces no stdout result and does not replace the destination.
 
-Relative paths resolve against the invocation's current directory. Explicit file input does not consume stdin. Results default to stdout; `--output FILE` writes only to that filesystem path, with no duplicate stdout result. `--output -` names a file literally called `-`; use shell redirection for stdout. Empty/comment-only input succeeds with zero output bytes. Generated boundaries use LF and nonempty output ends with LF; quoted dotenv internal line endings remain unchanged.
+Relative paths resolve against the invocation's current directory. Explicit file input does not consume stdin. Results default to stdout; `--output FILE` writes only to that filesystem path, with no duplicate stdout result. `--output -` also selects stdout; use `--output ./-` for a file literally called `-`. `--force` requires real file output or `--in-place`; redundant `--in-place --force` is accepted. Empty/comment-only input succeeds with zero output bytes. Generated boundaries use LF and nonempty output ends with LF; quoted dotenv internal line endings remain unchanged.
 
 An existing output requires `--force`. `--in-place` requires an explicitly selected regular YAML input file, conflicts with `--output`, and authorizes replacing the input without `--force`. `--force` requires a file-output operation. Ordinary reads may follow symlinks, but in-place inputs and replacement destinations cannot be symlinks; multiply-linked replacement destinations are also rejected. Input files otherwise remain untouched.
 

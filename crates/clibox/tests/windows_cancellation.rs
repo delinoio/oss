@@ -76,7 +76,7 @@ fn windows_console_helper() {
     let output = child.wait_with_output().unwrap();
     assert_eq!(
         output.status.code(),
-        Some(1),
+        Some(130),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );

@@ -120,20 +120,26 @@ fn output_contracts_and_decimal_validation() {
     }
     assert_eq!(parse_port("00080"), Ok(80));
     let report = Report {
-        results: vec![row(10, 80), row(10, 81)],
+        results: vec![row(10, 80), row(2, 82), row(10, 81)],
         errors: vec![Failure::new(Code::PermissionDenied, "Incomplete.").port(80)],
     };
     let mut out = vec![];
-    write_report(&report, false, true, false, &mut out).unwrap();
-    assert_eq!(out, b"10\n");
+    write_report(&report, OutputMode::Pids, false, &mut out).unwrap();
+    assert_eq!(out, b"2\n10\n");
     out.clear();
-    write_report(&report, true, false, false, &mut out).unwrap();
+    for terminate in [false, true] {
+        write_report(&report, OutputMode::Quiet, terminate, &mut out).unwrap();
+        assert!(out.is_empty());
+        assert!(!report.errors.is_empty());
+    }
+    out.clear();
+    write_report(&report, OutputMode::Json, false, &mut out).unwrap();
     let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
     assert!(json["results"][0].get("identity").is_none());
     assert!(json["results"][0].get("status").is_none());
     assert_eq!(json["errors"][0]["code"], "permission-denied");
     out.clear();
-    write_report(&report, false, false, false, &mut out).unwrap();
+    write_report(&report, OutputMode::Human, false, &mut out).unwrap();
     assert!(String::from_utf8(out)
         .unwrap()
         .starts_with("PID\tNAME\tPROTOCOL\tADDRESS\tPORT\n"));

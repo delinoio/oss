@@ -12,22 +12,24 @@ const IO_HELP: &str =
     "Inputs must be UTF-8 (initial BOM accepted), without NUL. Aggregate raw input and serialized \
      output are independently limited to 64 MiB. Relative paths use the current directory. \
      --input - selects stdin; explicit files do not consume stdin. Results default to stdout. \
-     --output is always a filesystem path, including '-'. Empty/comment-only input produces zero \
-     bytes; nonempty results end in LF. All input is validated before any result is emitted. A \
-     stdout write failure or interruption may leave partial output.\n\nFile output uses a private \
-     temporary file on the destination filesystem (inside a private directory on Unix) and is \
-     published only on success. New Unix files use mode 0600; Windows files inherit the parent \
-     ACL. Replacements preserve access permissions and reject symbolic links or multiple hard \
-     links. Existing output requires --force (except --in-place). No backups, locks, or \
-     concurrent-change detection; the last successful replacement wins. Windows sharing rules may \
-     reject overlapping replacements; retry after competing handles close. Handled cancellation \
-     cleans unpublished temporaries and never undoes completed writes. No persistent state, shell \
+     --output - also selects stdout; use ./- for a literal dash filename. --force requires a file \
+     output or --in-place. Empty/comment-only input produces zero bytes; nonempty results end in \
+     LF. All input is validated before any result is emitted. A stdout write failure or \
+     interruption may leave partial output.\n\nFile output uses a private temporary file on the \
+     destination filesystem (inside a private directory on Unix) and is published only on \
+     success. New Unix files use mode 0600; Windows files inherit the parent ACL. Replacements \
+     preserve access permissions and reject symbolic links or multiple hard links. Existing \
+     output requires --force (except --in-place). No backups, locks, or concurrent-change \
+     detection; the last successful replacement wins. Windows sharing rules may reject \
+     overlapping replacements; retry after competing handles close. Handled cancellation cleans \
+     unpublished temporaries and never undoes completed writes. No persistent state, shell \
      execution, expansion, or network access.\n\nExit codes: 0 success, 1 \
-     content/filesystem/limit/runtime failure, 2 invalid arguments, 130 Ctrl+C, 143 Unix SIGTERM. \
-     Diagnostics are redacted structured stderr events: operation, input/document ordinal and \
-     line/column, never content, keys, values, paths or argv. Warnings/errors are enabled by \
-     default; RUST_LOG=clibox=debug adds operation detail. Use the reported position to inspect \
-     input locally. Diagnostic color requires a terminal and honors NO_COLOR.";
+     content/filesystem/limit/runtime failure, 2 invalid arguments, 130 Ctrl+C/Windows \
+     Ctrl+Break, 143 Unix SIGTERM. Diagnostics are redacted structured stderr events: operation, \
+     input/document ordinal and line/column, never content, keys, values, paths or argv. \
+     Warnings/errors are enabled by default; RUST_LOG=clibox=debug adds operation detail. Use the \
+     reported position to inspect input locally. Diagnostic color requires a terminal and honors \
+     NO_COLOR.";
 const DOTENV_HELP: &str =
     "Node.js dotenv baseline: ASCII keys [A-Za-z_][A-Za-z0-9_]*, optional export, whitespace, \
      comments, empty values and multiline single/double quotes. Every record is validated; \
@@ -63,11 +65,12 @@ pub enum Configuration {
 }
 #[derive(Args)]
 pub struct FileOutput {
-    /// Write only to this filesystem destination (existing files require
-    /// --force).
+    /// Publish to a file, or - for stdout (the default); replacement requires
+    /// --force.
     #[arg(long, value_name = "FILE")]
     output: Option<PathBuf>,
-    /// Authorize replacing an existing file output.
+    /// Authorize replacing an existing file; requires file output or
+    /// --in-place.
     #[arg(long)]
     force: bool,
 }
@@ -75,7 +78,7 @@ pub struct FileOutput {
 pub enum Dotenv {
     /// List unique keys, never values; defaults to .env in the current
     /// directory only.
-    #[command(after_long_help = format!("{DOTENV_HELP}\n\n{IO_HELP}\n\nExamples:\n  clibox dotenv list\n  clibox dotenv list --input -\n  clibox dotenv list --input local.env --output keys.txt"))]
+    #[command(after_help = "List keys from .env by default; --input - reads stdin. Output defaults to stdout.\nExample: clibox dotenv list --input local.env --output keys.txt\nExit codes: 0 success, 1 operation failure, 2 invalid input, 130 Ctrl+C/Windows Ctrl+Break, 143 Unix SIGTERM.", after_long_help = format!("{DOTENV_HELP}\n\n{IO_HELP}\n\nExamples:\n  clibox dotenv list\n  clibox dotenv list --input -\n  clibox dotenv list --input local.env --output keys.txt"))]
     List {
         /// Input file, or - for stdin; no parent-directory or related-file
         /// discovery.
@@ -86,7 +89,7 @@ pub enum Dotenv {
     },
     /// Merge one or more inputs; later files win, including explicit empty
     /// values.
-    #[command(after_long_help = format!("{DOTENV_HELP}\n\nEmit sorted KEY=<winning value token> records, removing export, assignment whitespace, comments outside values and blank lines. Validate even overwritten records. Read all inputs before publishing. Input files are unchanged unless an authorized destination explicitly names one.\n\n{IO_HELP}\n\nExamples:\n  clibox dotenv merge base.env local.env\n  clibox dotenv merge base.env - --output merged.env\n  clibox dotenv merge local.env --output local.env --force"))]
+    #[command(after_help = "Read ordered FILE inputs (- for stdin once); later values win. Output defaults to stdout.\nExample: clibox dotenv merge .env local.env --output merged.env\nExit codes: 0 success, 1 operation failure, 2 invalid input, 130 Ctrl+C/Windows Ctrl+Break, 143 Unix SIGTERM.", after_long_help = format!("{DOTENV_HELP}\n\nEmit sorted KEY=<winning value token> records, removing export, assignment whitespace, comments outside values and blank lines. Validate even overwritten records. Read all inputs before publishing. Input files are unchanged unless an authorized destination explicitly names one.\n\n{IO_HELP}\n\nExamples:\n  clibox dotenv merge base.env local.env\n  clibox dotenv merge base.env - --output merged.env\n  clibox dotenv merge local.env --output local.env --force"))]
     Merge {
         /// Ordered input files; - may appear once for stdin at that position.
         #[arg(required = true, num_args = 1.., value_name = "FILE")]
@@ -98,7 +101,7 @@ pub enum Dotenv {
 #[derive(Subcommand)]
 pub enum Yaml {
     /// Resolve YAML references and sort mappings; defaults to stdin.
-    #[command(after_long_help = format!("{YAML_HELP}\n\n{IO_HELP}\n\nExamples:\n  clibox yaml normalize < config.yaml\n  clibox yaml normalize --input config.yaml --output normalized.yaml\n  clibox yaml normalize --input config.yaml --in-place"))]
+    #[command(after_help = "Input defaults to stdin; --input selects a file. Output defaults to stdout.\nExample: clibox yaml normalize --input config.yaml --in-place\nExit codes: 0 success, 1 operation failure, 2 invalid input, 130 Ctrl+C/Windows Ctrl+Break, 143 Unix SIGTERM.", after_long_help = format!("{YAML_HELP}\n\n{IO_HELP}\n\nExamples:\n  clibox yaml normalize < config.yaml\n  clibox yaml normalize --input config.yaml --output normalized.yaml\n  clibox yaml normalize --input config.yaml --in-place"))]
     Normalize {
         /// Input file, or - for stdin; omitted input also reads stdin.
         #[arg(long, value_name = "FILE")]
@@ -161,15 +164,16 @@ impl Job {
                 )
             }
         };
+        let file_output = output.output.filter(|path| path.as_os_str() != "-");
         if inputs.iter().filter(|p| p.as_os_str() == "-").count() > 1
-            || (output.force && output.output.is_none() && !in_place)
+            || (output.force && file_output.is_none() && !in_place)
         {
             return Err(Failure::Arguments.into());
         }
         let destination = if in_place {
             Some(inputs[0].clone())
         } else {
-            output.output
+            file_output
         };
         Ok(Self {
             operation,

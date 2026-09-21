@@ -462,7 +462,7 @@ fn private_file_output_force_in_place_and_input_overlap() {
     assert_eq!(fs::read(&output).unwrap(), b"\"a\": 1\n\"z\": 2\n");
     let result = run(
         dir.path(),
-        &["dotenv", "list", "--input", "-", "--output", "-"],
+        &["dotenv", "list", "--input", "-", "--output", "./-"],
         b"A=value",
     );
     assert!(
