@@ -30,6 +30,8 @@ Offline conflict analysis rejects more than 65,536 cross-report target-execution
 
 Root `pnpm dev:runlens-docs` starts the documentation app on its fixed loopback port; see the app contract for build and preview commands.
 
+Linux metadata inputs include file-handle lookup attempts, without retaining returned opaque handles or mount identifiers.
+
 ## Change Policy
 Update this index, domain contracts, applicable AGENTS rules, public guides, and affected tests together when ownership or public behavior changes. Vendored patches require provenance, rationale, tests, and removal conditions. Generated dist directories are never tracked and must be removed before delivery.
 

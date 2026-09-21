@@ -98,3 +98,14 @@ impl SyscallHandler {
         Ok(())
     }
 }
+
+impl SyscallHandler {
+    pub(super) fn name_to_handle_at(
+        &mut self, caller: Caller, (fd, path): (Fd, CStrPtr),
+    ) -> io::Result<()> {
+        // Handle/mount identity is an input even on size probes and failed
+        // lookups. The shared resolver handles relative and empty fd paths;
+        // returned handle bytes and mount IDs never enter evidence.
+        self.handle_open(caller, fd, path, libc::O_RDONLY)
+    }
+}

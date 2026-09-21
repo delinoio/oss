@@ -5666,3 +5666,75 @@ fn missing_head_diagnostics_classify_git_failure_without_raw_metadata() {
     assert!(!diagnostics.contains("HEAD^{commit}"));
     assert!(result.stdout.is_empty());
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn file_handle_lookups_retain_path_and_empty_descriptor_read_attempts() {
+    let mut executables = vec![fixture().to_owned()];
+    match std::env::var("RUNLENS_STATIC_FIXTURE") {
+        Ok(path) => executables.push(path),
+        Err(_) => assert!(
+            std::env::var_os("CI").is_none(),
+            "static fixture required in CI"
+        ),
+    }
+    for executable in executables {
+        for form in ["absolute", "relative", "descriptor"] {
+            for kind in ["file", "directory", "missing"] {
+                if form == "descriptor" && kind == "missing" {
+                    continue;
+                }
+                let root = tempfile::tempdir().unwrap();
+                let external = tempfile::tempdir().unwrap();
+                let path = external.path().join("handle-input");
+                if kind == "file" {
+                    fs::write(&path, "HANDLE-BODY-CANARY").unwrap();
+                }
+                if kind == "directory" {
+                    fs::create_dir(&path).unwrap();
+                }
+                fs::write(
+                    root.path().join("runlens.toml"),
+                    "schema_version = 1\n[policy]\ndeny_reads = ['**/handle-input']\n",
+                )
+                .unwrap();
+                let plain = Command::new(&executable)
+                    .args(["file-handle", path.to_str().unwrap(), form])
+                    .output()
+                    .unwrap();
+                assert!(plain.status.success());
+                let traced = invoke(
+                    root.path(),
+                    &[
+                        "run",
+                        "--save",
+                        "handle.json",
+                        "--",
+                        &executable,
+                        "file-handle",
+                        path.to_str().unwrap(),
+                        form,
+                    ],
+                );
+                assert!(traced.status.success(), "{form}/{kind}: {traced:?}");
+                assert_eq!(traced.stdout, plain.stdout);
+                let report = parse(root.path(), "handle.json");
+                assert!(
+                    report["executions"][0]["accesses"]
+                        .as_object()
+                        .unwrap()
+                        .iter()
+                        .any(|(path, access)| path.ends_with("/handle-input")
+                            && access["read"] == true)
+                );
+                assert!(
+                    !fs::read_to_string(root.path().join("handle.json"))
+                        .unwrap()
+                        .contains("HANDLE-BODY-CANARY")
+                );
+                let checked = invoke(root.path(), &["policy", "check", "handle.json", "--json"]);
+                assert_eq!(checked.status.code(), Some(5), "{checked:?}");
+            }
+        }
+    }
+}

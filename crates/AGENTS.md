@@ -298,3 +298,5 @@
 - Policy declaration checks classify masked command names as unknown before configuration lookup and continue independent global boundaries; masked names must never become invalid-input or bind a placeholder key.
 
 - Clean/repeat inherit SystemRoot, WINDIR, COMSPEC and PATHEXT as OS execution context only on Windows; Unix commands and preparations require explicit selection of these names.
+
+- Linux name_to_handle_at must retain absolute, relative and AT_EMPTY_PATH descriptor read attempts, including failed size probes, without recording opaque handles or mount IDs.

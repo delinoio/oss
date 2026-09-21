@@ -19,6 +19,24 @@ int main(int argc, char **argv) {
         execl(argv[2], argv[2], (char *)NULL);
         return 90;
     }
+    if (argc == 4 && !strcmp(argv[1], "file-handle")) {
+        struct file_handle handle = {0};
+        int mount = 0, dir = AT_FDCWD, flags = 0;
+        char *parent = strdup(argv[2]);
+        const char *name = argv[2];
+        if (!strcmp(argv[3], "relative")) {
+            char *leaf = strrchr(parent, '/');
+            if (!leaf) return 90;
+            *leaf = 0; name = leaf + 1;
+            dir = open(parent, O_RDONLY | O_DIRECTORY);
+        } else if (!strcmp(argv[3], "descriptor")) {
+            dir = open(argv[2], O_PATH); name = ""; flags = AT_EMPTY_PATH;
+        }
+        long result = syscall(SYS_name_to_handle_at, dir, name, &handle, &mount, flags);
+        if (result < 0) printf("error=%d\n", errno); else puts("resolved");
+        if (dir >= 0) close(dir);
+        free(parent); return 0;
+    }
     if (argc == 4 && !strcmp(argv[1], "fanotify-watch")) {
         int fd = syscall(SYS_fanotify_init, FAN_CLOEXEC | FAN_NONBLOCK | FAN_REPORT_FID, O_RDONLY);
         int dir = AT_FDCWD;

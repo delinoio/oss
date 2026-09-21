@@ -105,6 +105,7 @@ impl_handler!(
     #[cfg(target_arch = "x86_64")] newfstatat,
     #[cfg(target_arch = "aarch64")] fstatat,
     statx,
+    name_to_handle_at,
     statfs,
     fstatfs,
     chdir,

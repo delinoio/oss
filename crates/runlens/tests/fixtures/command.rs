@@ -37,6 +37,52 @@ fn main() {
             }
         }
         #[cfg(target_os = "linux")]
+        "file-handle" => {
+            let path = std::path::Path::new(&args[1]);
+            let full = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            let parent = std::ffi::CString::new(path.parent().unwrap().to_str().unwrap()).unwrap();
+            let leaf = std::ffi::CString::new(path.file_name().unwrap().to_str().unwrap()).unwrap();
+            // Zero-length handle storage exercises the native sizing result
+            // without retaining an opaque handle or requiring export support.
+            let mut handle = [0_u32; 2];
+            let mut mount = 0_i32;
+            // SAFETY: all operands remain live; the two-u32 header advertises no payload.
+            unsafe {
+                let (fd, name, flags) = match args[2].as_str() {
+                    "relative" => (
+                        libc::open(parent.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY),
+                        leaf.as_ptr(),
+                        0,
+                    ),
+                    "descriptor" => (
+                        libc::open(full.as_ptr(), libc::O_PATH),
+                        c"".as_ptr(),
+                        libc::AT_EMPTY_PATH,
+                    ),
+                    _ => (libc::AT_FDCWD, full.as_ptr(), 0),
+                };
+                let result = libc::syscall(
+                    libc::SYS_name_to_handle_at,
+                    fd,
+                    name,
+                    handle.as_mut_ptr(),
+                    &mut mount,
+                    flags,
+                );
+                if result < 0 {
+                    println!(
+                        "error={}",
+                        std::io::Error::last_os_error().raw_os_error().unwrap()
+                    );
+                } else {
+                    println!("resolved");
+                }
+                if fd >= 0 {
+                    libc::close(fd);
+                }
+            }
+        }
+        #[cfg(target_os = "linux")]
         "fanotify-watch" => {
             let path = std::path::Path::new(&args[1]);
             let full = std::ffi::CString::new(args[1].as_bytes()).unwrap();

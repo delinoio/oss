@@ -23,6 +23,8 @@ File creation and deletion count as write attempts even when no content is writt
 
 Linux artifacts target glibc hosts. Alpine/musl hosts are excluded. A statically linked child executable on a supported glibc host is not automatically excluded: the backend uses seccomp user notifications and same-user process inspection for supported native static binaries. The kernel and calling environment must permit these operations. No privileged tracing deployment is included.
 
+Linux file-handle lookups count as read attempts, including failed lookups and sizing probes. Returned handles and mount identifiers are not stored.
+
 ## Observation limits
 
 Runlens supports finite noninteractive commands and supported child processes. Detached/background services, PTYs, interactive prompts, and persistent supervision are excluded. Directory membership, symlinks, missing paths, permission failures, and unstable files remain distinct observations.

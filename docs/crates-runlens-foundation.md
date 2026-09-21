@@ -862,3 +862,5 @@ revision-shape validation. Only static operation/error classifications and IO
 error kinds are logged; Git stderr, paths, argv and metadata bytes remain private.
 The stopped-clean baseline regression enables these diagnostics to expose the
 intermittent Windows Git HEAD failure without retries or weakened assertions.
+
+Linux file-handle lookup is metadata input. name_to_handle_at records path and empty-path descriptor reads even when a filesystem rejects handles or requires a larger buffer; native results are preserved and handle bytes/mount IDs are omitted.
