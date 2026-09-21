@@ -49,7 +49,7 @@ Run `node --test scripts/release/async-commit-hook.test.mjs` for dependency-free
 Desktop Chrome credential-free local-UI smoke, controls, accessibility-tree and focus validation passed. Desktop Edge validation remains pending because Edge was unavailable in the validation environment; no owner-approved exclusion has been recorded. Release readiness must not treat the original Edge accessibility requirement as complete until that validation is executed or explicitly waived. The only approved implementation exclusions remain real six-target machine qualification and actual public release/site deployment.
 
 ## Agent-Client Validation
-The required actual-client CLI/MCP/skill validation was recorded as passed with isolated temporary configuration and state. The observed client statuses were:
+The recorded actual-client result is limited to skill/MCP installation and connection checks performed with isolated temporary configuration and state; it does not establish completion of the full agent-client workflow. The observed client statuses were:
 
 | Client | Recorded validation status |
 | --- | --- |
@@ -67,7 +67,7 @@ ach agent-guide
 ach mcp
 ```
 
-Use each actual client executable to discover its owned skill and MCP entry, then exercise the CLI/MCP workflow through a temporary repository: start a check, let `wait` expire without cancelling execution, wait for terminal completion, and inspect logs, failures, comparison and acknowledgement behavior. The official Go MCP client also exercises rerun and cancellation. Remove each integration with the matching client/scope command after validation. No remote results, telemetry or diagnostic uploads are part of this check.
+Use each actual client executable to discover its owned skill and MCP entry. The full CLI/MCP workflow—starting a check, allowing `wait` to expire without cancelling execution, waiting for terminal completion, inspecting logs, failures, comparison and acknowledgement behavior, and exercising rerun and cancellation—was covered through the official Go MCP client and automated protocol tests without invoking agent-model sessions. Therefore actual Codex, Claude Code and OpenCode workflow validation remains pending. Remove each integration with the matching client/scope command after validation. No remote results, telemetry or diagnostic uploads are part of this check.
 
 ## Process-Ownership Validation
 The Unix ownership backend is validated by the committed lifecycle tests `TestScopeStartBarrierAndOutput`, `TestScopeReapsDaemonizedDescendants`, `TestReplaceReapsDaemonizedDescendantsBeforeNextStarts`, `TestScopeCancellationDoesNotTouchAnotherCheck`, `TestScopeJournalNeverStoresResolvedEnvironment`, `TestScopeMissingJournalCannotConfirmCompletion`, `TestLegacyScopeCannotClaimUnknownDescendantsExited` and `TestSupervisorLeaseBlocksConfigurationWithoutWorker`. macOS-specific supervisor recovery is covered by `TestScopeRecoveryAfterSupervisorDeath`; Linux-specific lost-subreaper recovery is covered by `TestScopeLostSubreaperFailsClosedUntilBootChanges`.
