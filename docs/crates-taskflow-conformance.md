@@ -460,3 +460,5 @@ The library test `directory_metadata_events_refresh_native_membership` moves, re
 `docker_forwards_cli_overrides_to_tasks_tools_and_shards` now gives every phase a container-only PATH, loader variables, and newline/quote/equal-sign values. The native Docker CLI fixture verifies those values reach container assignments exactly but are absent from its host environment. Context and destructor-cleanup fixtures run in isolated host processes, preserving exact Docker selector precedence without using container PATH for host lookup.
 
 The real Node Docker scenario also verifies the container PATH and multiline values byte-for-byte, alongside unchanged reporting, sequential shard port ownership, and container absence after completion.
+
+The malformed-dotenv fixture accepts absent workspace state after early setup failure now that coordination locks are external. It still checks every diagnostic and receipt and inspects every persisted file when state exists; filesystem errors other than absence remain failures.

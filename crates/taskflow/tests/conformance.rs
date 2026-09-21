@@ -7268,7 +7268,13 @@ async fn malformed_dotenv_diagnostics_never_expose_values() {
             .unwrap()
             .contains("invalid dotenv syntax"));
         assert!(!serde_json::to_string(&result).unwrap().contains(canary));
-        for entry in walkdir::WalkDir::new(directory.path().join(".taskflow")) {
+        // Invalid environment setup can fail before creating workspace state;
+        // coordination locks no longer materialize the removable state tree.
+        let state = directory.path().join(".taskflow");
+        if !state.try_exists().unwrap() {
+            continue;
+        }
+        for entry in walkdir::WalkDir::new(state) {
             let entry = entry.unwrap();
             if entry.file_type().is_file() {
                 assert!(
