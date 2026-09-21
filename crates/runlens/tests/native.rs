@@ -4489,12 +4489,25 @@ fn directory_changes_are_read_attempts_before_cwd_changes() {
                             original.to_str().unwrap(),
                         ],
                     );
-                    assert!(result.status.success(), "{mode}: {result:?}");
+                    // The fd read is still known after rename. A relative
+                    // rename containing `..` cannot additionally certify the
+                    // pathname ancestry of the complete invocation.
+                    let unknown_rename = mode == "fchdir" && relative;
+                    assert_eq!(
+                        result.status.code(),
+                        Some(if unknown_rename { 4 } else { 0 }),
+                        "{mode}: {result:?}"
+                    );
                     assert_eq!(
                         String::from_utf8_lossy(&result.stdout).trim(),
                         if present { "0" } else { "-1" }
                     );
                     let report = parse(&root, "record.json");
+                    assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 0);
+                    assert_eq!(
+                        report["executions"][0]["outcome"]["collection_complete"],
+                        !unknown_rename
+                    );
                     let access = report["executions"][0]["accesses"]
                         .as_object()
                         .unwrap()
