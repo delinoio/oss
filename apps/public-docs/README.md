@@ -24,6 +24,7 @@ creates the root Rspress site and then assembles the validated outputs from
 routes do not use `.html` suffixes.
 
 `pnpm --filter public-docs test` builds the site and runs
+the shared `@delinoio/docs-site-switcher` test, then runs
 `scripts/validate-clean-urls.mjs` and `scripts/validate-integrated-docs.mjs`.
 The validators check root and project-subpath artifacts, clean routes, required
 headings and links, accessibility landmarks, site-selector markup, installer

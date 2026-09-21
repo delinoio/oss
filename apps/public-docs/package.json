@@ -9,7 +9,7 @@
     "build": "rspress build && node scripts/build-integrated-docs.mjs",
     "build:frontend": "pnpm build",
     "preview": "rspress preview",
-    "test:routes": "pnpm build:frontend && node scripts/validate-clean-urls.mjs && node scripts/validate-integrated-docs.mjs",
+    "test:routes": "pnpm --filter @delinoio/docs-site-switcher test && pnpm build:frontend && node scripts/validate-clean-urls.mjs && node scripts/validate-integrated-docs.mjs",
     "test": "pnpm test:routes"
   },
   "devDependencies": {

@@ -127,6 +127,7 @@ test("workspace, shared, runtime, and external contract inputs select their owne
     ["apps/mpapp/App.tsx", ["node-mpapp-test", "node-mpapp-lint"]],
     ["scripts/install/binpm.sh", ["node-binpm-docs-test"]],
     ["scripts/install/nodeup.ps1", ["node-nodeup-docs-test"]],
+    ["packages/docs-site-switcher/src/index.tsx", ["node-public-docs-test"]],
     ["scripts/dev-environment/orchestrator.mjs", ["repository-environment"]],
     ["packages/devhud-api-client/src/client.ts", ["devhud-frontend", "devhud-protocol", "devhud-admin", "devhud-api", "rust-test"]],
     ["apps/devhud/src-tauri/src/updater.rs", ["rust-fmt", "rust-clippy", "rust-test", "devhud-rust-conformance", "devhud-frontend"]],

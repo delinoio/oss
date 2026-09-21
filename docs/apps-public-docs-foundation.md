@@ -48,7 +48,7 @@
 
 ## Build and Test
 - Development: package-local `pnpm dev` or repository-root `pnpm dev:public-docs`.
-- Local validation: `pnpm --filter public-docs test`, which builds the root site and aggregated subpaths and runs `scripts/validate-clean-urls.mjs` to verify every root and subpath route artifact, required headings/links/accessibility landmarks, site-selector state, public-content limits, generated internal `.html` links across navigation-bearing HTML attributes, and forbidden paths or URL credentials in HTML attributes, HTML resources, and CSS `url()` values. Package-local validators remain required for each assembled project.
+- Local validation: `pnpm --filter public-docs test`, which runs the shared `@delinoio/docs-site-switcher` interaction suite, builds the root site and aggregated subpaths, and runs `scripts/validate-clean-urls.mjs` to verify every root and subpath route artifact, required headings/links/accessibility landmarks, site-selector state, public-content limits, generated internal `.html` links across navigation-bearing HTML attributes, and forbidden paths or URL credentials in HTML attributes, HTML resources, and CSS `url()` values. Package-local validators remain required for each assembled project.
 - CI alignment: `node-public-docs-test`
 - Production build: `pnpm --filter public-docs build`; Cloudflare Pages must publish `apps/public-docs/doc_build`.
 
