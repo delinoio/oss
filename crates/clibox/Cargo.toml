@@ -3,6 +3,7 @@ name = "clibox"
 version = "0.1.5"
 edition = "2021"
 license = "MIT"
+authors = ["Delino"]
 description = "A native CLI distributed through native packages and npm"
 readme = "README.md"
 repository = "https://github.com/delinoio/oss"
