@@ -162,3 +162,5 @@
 - Reject explicit reserved components in positive and negative input declarations before execution, including ASCII case aliases and restore prefixes. Broad globs retain the runtime reserved-tree exclusions.
 
 - Generated CI bootstrap builds explicitly set the Cargo target directory to the same source-checkout target tree used by subsequent CLI invocations, overriding consumer build.target-dir and CARGO_TARGET_DIR.
+
+- Shard duration history is an optional assignment hint read only from no-follow regular files capped at 64 MiB on metadata inspection and actual reads. Diagnose and discard corrupt, oversized, linked, or special-file history before assignment; never let it block cancellation or deadlines.

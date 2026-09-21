@@ -8649,3 +8649,98 @@ async fn ci_bootstrap_pins_the_cli_build_directory() {
     assert!(!root.path().join("consumer-target").exists());
     assert!(!root.path().join("environment-target").exists());
 }
+
+#[tokio::test]
+async fn shard_duration_history_rejects_unbounded_and_nonregular_state() {
+    use taskflow::process::{ExitReason, OwnedProcess};
+    use tokio::io::AsyncReadExt;
+    for kind in ["valid", "invalid", "oversized", "link", "fifo"] {
+        if matches!(kind, "link" | "fifo") && !cfg!(unix) {
+            continue;
+        }
+        let directory = fixture(json!({"test":{
+            "command":command(&["version"]),"input":[],"output":[],"timeout":"5s",
+            "shard":{"adapter":"generic","count":2,"list":command(&["inventory"]),"run":command(&["shard"])}
+        }}));
+        let path = directory
+            .path()
+            .join(".taskflow/test-durations")
+            .join(format!("{}.json", files::digest(b"app#test")));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        match kind {
+            "valid" => std::fs::write(&path, br#"{"aa":500,"bb":1,"cc":2}"#).unwrap(),
+            "invalid" => std::fs::write(&path, b"invalid").unwrap(),
+            "oversized" => std::fs::File::create(&path)
+                .unwrap()
+                .set_len(1024 * 1024 * 1024)
+                .unwrap(),
+            #[cfg(unix)]
+            "link" => {
+                let target = directory.path().join("external-history");
+                std::fs::write(&target, br#"{"aa":500}"#).unwrap();
+                std::os::unix::fs::symlink(target, &path).unwrap();
+            }
+            #[cfg(unix)]
+            "fifo" => {
+                let path = std::ffi::CString::new(path.to_str().unwrap()).unwrap();
+                assert_eq!(unsafe { nix::libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+            }
+            _ => unreachable!(),
+        }
+        // An independent process owner bounds this regression even if the CLI
+        // synchronously blocks on a FIFO before any shard starts.
+        let command = config::Command::Argv(vec![
+            env!("CARGO_BIN_EXE_tflow").into(),
+            "--json".into(),
+            "run".into(),
+            "test".into(),
+        ]);
+        let mut owner = OwnedProcess::spawn(directory.path(), &command, None, None).unwrap();
+        let mut stdout = owner.child.stdout.take().unwrap();
+        let mut stderr = owner.child.stderr.take().unwrap();
+        let output = tokio::spawn(async move {
+            let mut bytes = vec![];
+            stdout.read_to_end(&mut bytes).await.unwrap();
+            bytes
+        });
+        let diagnostic = tokio::spawn(async move {
+            let mut bytes = vec![];
+            stderr.read_to_end(&mut bytes).await.unwrap();
+            bytes
+        });
+        let exit = owner
+            .wait(&CancellationToken::new(), Some(Duration::from_secs(15)))
+            .await
+            .unwrap();
+        drop(owner);
+        let output = output.await.unwrap();
+        let diagnostic = diagnostic.await.unwrap();
+        assert_eq!(exit.reason, ExitReason::Completed, "{kind}");
+        assert_eq!(
+            exit.code,
+            0,
+            "{kind}: {}",
+            String::from_utf8_lossy(&diagnostic)
+        );
+        let result: runner::RunResult = serde_json::from_slice(&output).unwrap();
+        let receipt = &result.results["app#test"];
+        let (inventory, reports) = shard::read_reports(
+            &directory
+                .path()
+                .join(".taskflow/runs")
+                .join(&receipt.execution),
+        )
+        .unwrap();
+        assert!(shard::aggregate(&inventory, 2, &reports).unwrap());
+        assert_eq!(
+            inventory
+                .tests
+                .iter()
+                .find(|test| test.id == "aa")
+                .unwrap()
+                .duration_ms,
+            if kind == "valid" { 500 } else { 0 }
+        );
+        assert!(std::fs::symlink_metadata(&path).unwrap().is_file());
+    }
+}

@@ -765,10 +765,7 @@ pub async fn execute(
     // Distributed shards start from identical declared inventory bytes. Local
     // history is used only when this invocation owns the complete suite.
     if options.shard.is_none() {
-        let history: BTreeMap<String, u64> = std::fs::read(&history_path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default();
+        let history = read_duration_history(&history_path);
         for test in &mut inventory.tests {
             if let Some(duration) = history.get(&test.id) {
                 test.duration_ms = *duration;
@@ -1065,6 +1062,28 @@ fn unit_status(exit: ProcessExit) -> UnitStatus {
         ExitReason::TimedOut => UnitStatus::Failed,
         ExitReason::Completed if exit.code == 0 => UnitStatus::Passed,
         ExitReason::Completed => UnitStatus::Failed,
+    }
+}
+
+fn read_duration_history(path: &Path) -> BTreeMap<String, u64> {
+    // History is only an assignment hint. Ignore corrupt state without opening
+    // special files or letting an unbounded read escape the task deadline.
+    match files::read_regular_limited(path, process::METADATA_LIMIT)
+        .and_then(|bytes| Ok(serde_json::from_slice(&bytes)?))
+    {
+        Ok(history) => history,
+        Err(error) => {
+            if !error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+            {
+                tracing::warn!(
+                    code = "invalid-test-duration-history",
+                    "Discarded invalid test duration history"
+                );
+            }
+            BTreeMap::new()
+        }
     }
 }
 
