@@ -164,3 +164,5 @@
 - Generated CI bootstrap builds explicitly set the Cargo target directory to the same source-checkout target tree used by subsequent CLI invocations, overriding consumer build.target-dir and CARGO_TARGET_DIR.
 
 - Shard duration history is an optional assignment hint read only from no-follow regular files capped at 64 MiB on metadata inspection and actual reads. Diagnose and discard corrupt, oversized, linked, or special-file history before assignment; never let it block cancellation or deadlines.
+
+- Record native adapter membership roots during discovery. Directory and ambiguous rename/remove events overlapping those roots or known metadata ancestors trigger graph rediscovery before input snapshots; known ordinary file events retain exact filtering, and pre-baseline input causes survive the reload.

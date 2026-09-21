@@ -54,6 +54,8 @@ pub struct Workspace {
     pub edges: BTreeSet<ProjectEdge>,
     pub coverage: Vec<Coverage>,
     pub metadata_files: BTreeSet<PathBuf>,
+    #[serde(default)]
+    pub membership_roots: BTreeSet<PathBuf>,
     pub generation: String,
     #[serde(default, skip_serializing_if = "PlatformDefaults::is_empty")]
     pub platform_defaults: PlatformDefaults,
@@ -219,6 +221,7 @@ impl Workspace {
             edges: BTreeSet::new(),
             coverage: vec![],
             metadata_files: BTreeSet::new(),
+            membership_roots: BTreeSet::new(),
             generation: String::new(),
             platform_defaults: PlatformDefaults::default(),
         };
@@ -244,6 +247,7 @@ impl Workspace {
                 "workspace manifest does not exist: {manifest}"
             );
             let directory = path.parent().unwrap();
+            ws.membership_roots.insert(directory.to_path_buf());
             match path.file_name().and_then(|s| s.to_str()).unwrap_or("") {
                 "pnpm-workspace.yaml" | "package.json" => ws.pnpm(directory).await?,
                 "Cargo.toml" => ws.cargo(&path).await?,
@@ -286,6 +290,7 @@ impl Workspace {
             &ws.edges,
             &ws.coverage,
             &ws.config,
+            &ws.membership_roots,
             metadata_state,
         ))?;
         ws.generation = crate::files::digest(&graph_bytes);

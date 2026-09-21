@@ -254,8 +254,22 @@ pub async fn start(
                                     let path = files::canonical_path(&path)?;
                                     if !path.starts_with(root) { continue; }
                                     if path.components().any(|c| c.as_os_str() == ".taskflow") || path.components().any(|c| c.as_os_str().to_string_lossy().starts_with(".taskflow-restore-")) { continue; }
-                                    if graph.workspace.metadata_files.contains(&path) || path.file_name().is_some_and(|v| matches!(v.to_str(), Some("taskflow.yml" | "package.json" | "Cargo.toml" | "go.mod" | "go.work" | "pnpm-workspace.yaml"))) {
+                                    if reload || metadata_event_may_change_graph(&graph.workspace, &path, event.kind) {
+                                        tracing::debug!(path = %path.display(), kind = ?event.kind, "Rediscovering graph after metadata or membership mutation");
                                         reload = true;
+                                        // Rediscovery must precede input snapshots of possibly
+                                        // moved/deleted projects. Retain pre-baseline directory
+                                        // causes even if discovery already consumed their bytes.
+                                        if received_at <= baseline_at {
+                                            for id in &active_set {
+                                                let node = &graph.tasks[id];
+                                                if let Some(watch) = &node.task.watch {
+                                                    if queued_input_event_may_match(&graph.workspace.projects[&node.project], &node.task, &path, event.kind)? {
+                                                        enqueue(&graph, &options, &mut pending, id, Cause::Input { path: files::relative_to(root, &path)? }, Instant::now() + config::duration(&watch.debounce)?);
+                                                    }
+                                                }
+                                            }
+                                        }
                                         continue;
                                     }
                                     for id in &active_set {
@@ -581,6 +595,53 @@ fn enqueue(
     pending.due = due;
 }
 
+fn metadata_event_may_change_graph(
+    workspace: &Workspace,
+    path: &Path,
+    kind: notify::EventKind,
+) -> bool {
+    if kind.is_access() {
+        return false;
+    }
+    if workspace.metadata_files.contains(path)
+        || path.file_name().is_some_and(|name| {
+            matches!(
+                name.to_str(),
+                Some(
+                    "taskflow.yml"
+                        | "package.json"
+                        | "Cargo.toml"
+                        | "go.mod"
+                        | "go.work"
+                        | "pnpm-workspace.yaml"
+                )
+            )
+        })
+    {
+        return true;
+    }
+    // Directory-only events may describe metadata that no longer exists or a
+    // newly introduced native member absent from the old metadata path set.
+    // Retain exact filtering for known files; ambiguous rename/remove events
+    // must remain conservative because deleted directories cannot be inspected.
+    if matches!(
+        kind,
+        notify::EventKind::Create(notify::event::CreateKind::File)
+            | notify::EventKind::Remove(notify::event::RemoveKind::File)
+            | notify::EventKind::Modify(notify::event::ModifyKind::Data(_))
+    ) {
+        return false;
+    }
+    workspace
+        .metadata_files
+        .iter()
+        .any(|metadata| metadata.starts_with(path))
+        || workspace
+            .membership_roots
+            .iter()
+            .any(|root| path.starts_with(root) || root.starts_with(path))
+}
+
 fn queued_input_event_may_match(
     project: &crate::discover::Project,
     task: &config::Task,
@@ -609,6 +670,106 @@ fn queued_input_event_may_match(
 #[cfg(test)]
 mod overlap_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn directory_metadata_events_refresh_native_membership() {
+        use notify::{
+            event::{CreateKind, ModifyKind, RemoveKind, RenameMode},
+            EventKind,
+        };
+        fn member(root: &Path, name: &str) {
+            files::atomic_write(
+                &root.join("Cargo.toml"),
+                format!("[package]\nname='{name}'\nversion='0.1.0'\nedition='2021'\n").as_bytes(),
+            )
+            .unwrap();
+            files::atomic_write(&root.join("src/lib.rs"), b"pub fn example() {}\n").unwrap();
+            files::atomic_write(
+                &root.join("taskflow.yml"),
+                format!("version: 1\nproject: {name}\ntasks: {{}}\n").as_bytes(),
+            )
+            .unwrap();
+        }
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path().canonicalize().unwrap();
+        files::atomic_write(
+            &root.join("taskflow.yml"),
+            b"version: 1\nproject: app\nworkspace:\n  manifests: [native/Cargo.toml]\ntasks: {}\n",
+        )
+        .unwrap();
+        files::atomic_write(
+            &root.join("native/Cargo.toml"),
+            b"[workspace]\nmembers=['packages/*']\nresolver='2'\n",
+        )
+        .unwrap();
+        member(&root.join("native/packages/one"), "one");
+        member(&root.join("native/packages/keeper"), "keeper");
+        let mut workspace = Workspace::discover(&root).await.unwrap();
+        assert_eq!(
+            workspace.membership_roots,
+            BTreeSet::from([root.join("native")])
+        );
+        let old = root.join("native/packages/one");
+        let moved = root.join("native/packages/moved");
+        std::fs::rename(&old, &moved).unwrap();
+        for path in [&old, &moved, &root.join("native/packages")] {
+            assert!(metadata_event_may_change_graph(
+                &workspace,
+                path,
+                EventKind::Modify(ModifyKind::Name(RenameMode::Both))
+            ));
+        }
+        workspace = Workspace::discover(&root).await.unwrap();
+        assert_eq!(workspace.projects["one"].directory, moved);
+        std::fs::remove_dir_all(&moved).unwrap();
+        assert!(metadata_event_may_change_graph(
+            &workspace,
+            &moved,
+            EventKind::Remove(RemoveKind::Folder)
+        ));
+        workspace = Workspace::discover(&root).await.unwrap();
+        assert!(!workspace.projects.contains_key("one"));
+        let incoming = tempfile::tempdir().unwrap();
+        member(&incoming.path().join("added"), "added");
+        let added = root.join("native/packages/added");
+        std::fs::rename(incoming.path().join("added"), &added).unwrap();
+        assert!(!workspace
+            .metadata_files
+            .iter()
+            .any(|path| path.starts_with(&added)));
+        assert!(metadata_event_may_change_graph(
+            &workspace,
+            &added,
+            EventKind::Create(CreateKind::Folder)
+        ));
+        workspace = Workspace::discover(&root).await.unwrap();
+        assert_eq!(workspace.projects["added"].directory, added);
+        for (path, kind) in [
+            (root.join("docs"), EventKind::Create(CreateKind::Folder)),
+            (
+                root.join("native/packages/added/src/lib.rs"),
+                EventKind::Modify(ModifyKind::Data(notify::event::DataChange::Content)),
+            ),
+            (
+                root.join("native/unrelated.txt"),
+                EventKind::Remove(RemoveKind::File),
+            ),
+            (
+                root.join("native"),
+                EventKind::Access(notify::event::AccessKind::Any),
+            ),
+        ] {
+            assert!(
+                !metadata_event_may_change_graph(&workspace, &path, kind),
+                "{path:?}: {kind:?}"
+            );
+        }
+        assert!(metadata_event_may_change_graph(
+            &workspace,
+            &root,
+            EventKind::Any
+        ));
+    }
 
     #[tokio::test]
     async fn queued_directory_mutations_keep_causes_already_in_the_baseline() {
