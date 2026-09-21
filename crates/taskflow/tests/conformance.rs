@@ -8796,3 +8796,71 @@ async fn isolated_docker_host(name: &str) -> bool {
     assert!(status.success(), "{name}");
     true
 }
+
+#[tokio::test]
+async fn cache_preserves_output_root_links() {
+    for directory_link in [false, true] {
+        for declaration in ["out", "out/**"] {
+            let directory = fixture(json!({"build":{
+                "command":command(&["version"]),"input":[],"output":[declaration]
+            }}));
+            let target_file = |name: &str| {
+                if directory_link {
+                    std::fs::create_dir_all(directory.path().join(name)).unwrap();
+                    directory.path().join(name).join("value")
+                } else {
+                    directory.path().join(name)
+                }
+            };
+            let first = target_file("first");
+            let second = target_file("second");
+            std::fs::write(&first, "initial").unwrap();
+            std::fs::write(&second, "second target").unwrap();
+            let output = directory.path().join("out");
+            let link = |name: &str| {
+                #[cfg(unix)]
+                std::os::unix::fs::symlink(name, &output).unwrap();
+                #[cfg(windows)]
+                if directory_link {
+                    std::os::windows::fs::symlink_dir(name, &output).unwrap();
+                } else {
+                    std::os::windows::fs::symlink_file(name, &output).unwrap();
+                }
+            };
+            link("first");
+            let g = graph(directory.path()).await;
+            let project = &g.workspace.projects["app"];
+            let task = &g.tasks["app#build"].task;
+            let artifact =
+                cache::Artifact::capture("key".into(), "app#build".into(), project, task).unwrap();
+            assert_eq!(artifact.files.len(), 1);
+            assert_eq!(artifact.files[0].path, "out");
+            assert!(matches!(&artifact.files[0].content, cache::Content::Link {
+                target, directory
+            } if target == "first" && *directory == directory_link));
+            std::fs::write(&first, "changed target").unwrap();
+            assert_eq!(
+                cache::output_state(project, task).unwrap(),
+                artifact.output_digest
+            );
+            cache::remove_path(&output).unwrap();
+            link("second");
+            assert_ne!(
+                cache::output_state(project, task).unwrap(),
+                artifact.output_digest
+            );
+            artifact.restore("key", "app#build", project, task).unwrap();
+            assert!(std::fs::symlink_metadata(&output)
+                .unwrap()
+                .file_type()
+                .is_symlink());
+            assert_eq!(std::fs::read_link(&output).unwrap(), Path::new("first"));
+            assert_eq!(
+                cache::output_state(project, task).unwrap(),
+                artifact.output_digest
+            );
+            assert_eq!(std::fs::read_to_string(first).unwrap(), "changed target");
+            assert_eq!(std::fs::read_to_string(second).unwrap(), "second target");
+        }
+    }
+}

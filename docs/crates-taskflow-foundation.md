@@ -126,3 +126,5 @@ Docker result helpers are scoped to the owning container and removed after clean
 Graph refresh preserves pending input causes and compares the last accepted watched snapshots with the new generation before establishing its baseline. Automatic manifest/lockfile inputs therefore activate watchers with `initial: false`. Invalid configuration keeps the previous baseline until recovery, and identical metadata rewrites do not activate checks.
 
 Service deadlines preserve timeout code 124 through readiness failure, activation receipts, service-exit events, and the CLI error boundary. A readiness-only deadline remains an ordinary readiness failure (code 1). Probe cancellation is awaited before returning the selected cause, and unverified cleanup overrides timeout or cancellation.
+
+Output capture and uncached identity traversal disable root-link following as well as nested-link following. An exact or complete-tree output rooted at a supported link records its target and kind, without capturing target contents; restoration preserves that link shape. The same containment checks still apply.

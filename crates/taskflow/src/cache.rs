@@ -189,7 +189,12 @@ fn snapshot_with_limit(
             "required output is missing: {}",
             anchor.display()
         );
-        for entry in walkdir::WalkDir::new(&path).follow_links(false) {
+        // WalkDir follows the starting link separately from nested links.
+        // Preserve exact output-root links as records, never traverse targets.
+        for entry in walkdir::WalkDir::new(&path)
+            .follow_links(false)
+            .follow_root_links(false)
+        {
             let entry = entry?;
             let path = entry.path();
             let relative = files::slash(path.strip_prefix(&project.directory)?)?;
@@ -772,6 +777,16 @@ fn validate_link_target(
 }
 
 pub fn remove_path(path: &Path) -> Result<()> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileTypeExt;
+        if std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink_dir()) {
+            // Windows directory links need directory removal, without traversing
+            // their targets, including restoration backups of linked roots.
+            std::fs::remove_dir(path)?;
+            return Ok(());
+        }
+    }
     if path.is_symlink() || path.is_file() {
         std::fs::remove_file(path)?;
     } else if path.is_dir() {
