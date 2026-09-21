@@ -157,3 +157,12 @@ test("documentation apps retain distinct fixed development ports after integrati
   assert.match(runlens.scripts.dev, /runlens-docs dev 46310 -$/u);
   assert.match(ach.scripts.dev, /async-commit-hook-docs dev 46311 -$/u);
 });
+
+test("Runlens documentation resolves to a retained peer snapshot in the frozen lockfile", () => {
+  const lockfile = load(read("pnpm-lock.yaml"));
+  const dependencies = lockfile.importers["apps/runlens-docs"].devDependencies;
+  for (const [name, dependency] of Object.entries(dependencies)) {
+    const identity = `${name}@${dependency.version}`;
+    assert.ok(Object.hasOwn(lockfile.snapshots, identity), `missing dependency snapshot: ${identity}`);
+  }
+});
