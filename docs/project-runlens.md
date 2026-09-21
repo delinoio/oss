@@ -55,3 +55,5 @@ macOS clone operations retain independent source-read and destination-write evid
 Unix file-access hooks preserve native failure behavior for unreadable pathname operands while marking lost evidence incomplete.
 
 Git administrative snapshot exclusions follow host component case semantics, including Windows .GIT aliases.
+
+Linux filesystem namespace or root changes cannot certify parent-snapshot path identity and remain incomplete.

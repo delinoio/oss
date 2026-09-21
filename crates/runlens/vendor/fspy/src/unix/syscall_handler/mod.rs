@@ -12,6 +12,7 @@ mod chdir;
 mod io_uring;
 mod inotify;
 mod fanotify;
+mod namespace;
 
 use std::{
     borrow::Cow,
@@ -159,6 +160,9 @@ impl_handler!(
     io_uring_setup,
     io_uring_enter,
     io_uring_register,
+
+    mount, umount2, move_mount, mount_setattr, unshare, setns, chroot, pivot_root,
+    fsopen, fsconfig, fsmount, open_tree, fspick, clone, clone3,
 
     setsid,
     setpgid,

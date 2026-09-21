@@ -7,6 +7,147 @@ fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
         #[cfg(target_os = "linux")]
+        mode if mode.starts_with("namespace-") => {
+            if mode == "namespace-remap" {
+                let source = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+                let destination = std::ffi::CString::new(
+                    std::env::current_dir()
+                        .unwrap()
+                        .join("view")
+                        .to_str()
+                        .unwrap(),
+                )
+                .unwrap();
+                // SAFETY: mount changes occur only after a fresh private namespace
+                // is created. The source and mountpoint belong to the fixture.
+                unsafe {
+                    if libc::unshare(libc::CLONE_NEWNS) != 0 {
+                        println!(
+                            "unavailable={}",
+                            std::io::Error::last_os_error().raw_os_error().unwrap()
+                        );
+                        return;
+                    }
+                    if libc::mount(
+                        std::ptr::null(),
+                        c"/".as_ptr(),
+                        std::ptr::null(),
+                        libc::MS_REC | libc::MS_PRIVATE,
+                        std::ptr::null(),
+                    ) != 0
+                    {
+                        println!(
+                            "unavailable={}",
+                            std::io::Error::last_os_error().raw_os_error().unwrap()
+                        );
+                        return;
+                    }
+                    if libc::mount(
+                        source.as_ptr(),
+                        destination.as_ptr(),
+                        std::ptr::null(),
+                        libc::MS_BIND,
+                        std::ptr::null(),
+                    ) != 0
+                    {
+                        println!(
+                            "unavailable={}",
+                            std::io::Error::last_os_error().raw_os_error().unwrap()
+                        );
+                        return;
+                    }
+                }
+                fs::write("out/result", fs::read("view/input").unwrap()).unwrap();
+                println!("remapped");
+                return;
+            }
+            let mut clone_args = [0_u64; 11];
+            clone_args[0] = libc::CLONE_NEWNS as u64;
+            clone_args[4] = libc::SIGCHLD as u64;
+            // SAFETY: valid scalar operands/live buffers, deliberately missing
+            // objects for mutation calls. Namespace clones are finite and reaped.
+            let result = unsafe {
+                match mode {
+                    "namespace-unshare" => libc::syscall(libc::SYS_unshare, libc::CLONE_NEWNS),
+                    "namespace-setns" => libc::syscall(libc::SYS_setns, -1, libc::CLONE_NEWNS),
+                    "namespace-mount" => libc::syscall(
+                        libc::SYS_mount,
+                        c"".as_ptr(),
+                        c"".as_ptr(),
+                        std::ptr::null::<u8>(),
+                        libc::MS_BIND,
+                        std::ptr::null::<u8>(),
+                    ),
+                    "namespace-umount" => libc::syscall(libc::SYS_umount2, c"".as_ptr(), 0),
+                    "namespace-move" => {
+                        libc::syscall(libc::SYS_move_mount, -1, c"".as_ptr(), -1, c"".as_ptr(), 0)
+                    }
+                    "namespace-mount-setattr" => libc::syscall(
+                        libc::SYS_mount_setattr,
+                        -1,
+                        c"".as_ptr(),
+                        0,
+                        std::ptr::null::<u8>(),
+                        0,
+                    ),
+                    "namespace-chroot" => libc::syscall(libc::SYS_chroot, c"".as_ptr()),
+                    "namespace-pivot" => {
+                        libc::syscall(libc::SYS_pivot_root, c"".as_ptr(), c"".as_ptr())
+                    }
+                    "namespace-fsopen" => {
+                        libc::syscall(libc::SYS_fsopen, c"runlens-missing-filesystem".as_ptr(), 0)
+                    }
+                    "namespace-fsconfig" => libc::syscall(
+                        libc::SYS_fsconfig,
+                        -1,
+                        0,
+                        std::ptr::null::<u8>(),
+                        std::ptr::null::<u8>(),
+                        0,
+                    ),
+                    "namespace-fsmount" => libc::syscall(libc::SYS_fsmount, -1, 0, 0),
+                    "namespace-open-tree" => {
+                        libc::syscall(libc::SYS_open_tree, -1, c"".as_ptr(), 0)
+                    }
+                    "namespace-fspick" => libc::syscall(libc::SYS_fspick, -1, c"".as_ptr(), 0),
+                    "namespace-clone" => libc::syscall(
+                        libc::SYS_clone,
+                        libc::CLONE_NEWNS | libc::SIGCHLD,
+                        0,
+                        0,
+                        0,
+                        0,
+                    ),
+                    "namespace-clone3" => libc::syscall(
+                        libc::SYS_clone3,
+                        clone_args.as_ptr(),
+                        std::mem::size_of_val(&clone_args),
+                    ),
+                    _ => unreachable!(),
+                }
+            };
+            if result < 0 {
+                println!(
+                    "error={}",
+                    std::io::Error::last_os_error().raw_os_error().unwrap()
+                );
+            } else {
+                if mode == "namespace-clone" || mode == "namespace-clone3" {
+                    // SAFETY: successful raw fork-like clones create a finite
+                    // child; only that owned PID is waited in the parent.
+                    unsafe {
+                        if result == 0 {
+                            libc::_exit(0);
+                        }
+                        let mut status = 0;
+                        assert_eq!(libc::waitpid(result as i32, &mut status, 0), result as i32);
+                        assert_eq!(status, 0);
+                    }
+                }
+                println!("success");
+            }
+        }
+        #[cfg(target_os = "linux")]
         "uring-setup" | "uring-sqpoll" | "uring-enter" | "uring-register" => {
             // Linux UAPI io_uring_params is 120 bytes and 8-byte aligned. Zero
             // initializes every reserved field; SQPOLL is bit 1 of flags (u32 #2).

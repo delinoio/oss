@@ -56,3 +56,5 @@ An access below a directory that was created or removed during the command has u
 On macOS, direct `syscall()` use and `fork()` produce incomplete collection. A forked child can detach through inline kernel operations that bypass ordinary function hooks, so even a fork that stays in the group is conservatively classified. These checks are not kernel enforcement; arbitrary inline kernel operations remain outside library-interposition coverage.
 
 On macOS, attribute-list metadata queries count as read attempts. Bulk attribute enumeration keeps the directory input but produces incomplete collection because it can return metadata about individual children whose identities are not yet bound. Attribute payloads are not stored.
+
+On Linux, changing mount namespaces, filesystem roots, or mount mappings produces incomplete collection, including denied attempts. New mount APIs and children created in new namespaces have the same limitation. Commands keep their native results; a workspace-looking path in a remapped namespace cannot establish policy or cache safety from the parent snapshots.

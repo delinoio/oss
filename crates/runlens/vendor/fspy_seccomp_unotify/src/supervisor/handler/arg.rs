@@ -179,6 +179,11 @@ impl Fd {
     }
 }
 
+// Native 64-bit flags and sizes must retain every bit before classification.
+impl FromSyscallArg for u64 {
+    fn from_syscall_arg(arg: u64) -> io::Result<Self> { Ok(arg) }
+}
+
 impl FromSyscallArg for c_int {
     #[expect(clippy::cast_possible_truncation, reason = "syscall arg represents a c_int value")]
     fn from_syscall_arg(arg: u64) -> io::Result<Self> {

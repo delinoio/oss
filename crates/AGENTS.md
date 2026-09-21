@@ -316,3 +316,5 @@
 - Unix pathname hooks must not form C strings from untrusted caller addresses. Copy bounded sub-page chunks with OS memory APIs before resolution; unreadable/unterminated operands mark incomplete while the original libc call receives unchanged pointers. Preserve caller errno during observation.
 
 - Reserved .git snapshot pruning uses Windows ordinal case-insensitive component equality on Windows and exact component equality on Unix, before traversal and budget charging; similarly prefixed ordinary files remain observable.
+
+- Linux mount/root/namespace changes and namespace-creating clone/clone3 calls must mark collection incomplete before forwarding, including denied attempts and new mount APIs. Parent snapshots cannot certify paths after remapping; ordinary thread clones remain supported.

@@ -11,7 +11,46 @@
 #include <sys/vfs.h>
 #include <sys/inotify.h>
 #include <sys/fanotify.h>
+#include <sched.h>
+#include <sys/mount.h>
+#include <sys/wait.h>
+/* Ubuntu 22.04 musl headers predate mount_setattr; Linux UAPI assigns 442
+ * on both supported x86_64/aarch64 ABIs. Remove when minimum headers expose it. */
+#ifndef SYS_mount_setattr
+#define SYS_mount_setattr 442
+#endif
 int main(int argc, char **argv) {
+    if (argc == 2 && !strncmp(argv[1], "namespace-", 10)) {
+        long result;
+        uint64_t clone_args[11] = {0}; clone_args[0] = CLONE_NEWNS; clone_args[4] = SIGCHLD;
+        const char *mode = argv[1];
+        if (!strcmp(mode, "namespace-unshare")) result = syscall(SYS_unshare, CLONE_NEWNS);
+        else if (!strcmp(mode, "namespace-setns")) result = syscall(SYS_setns, -1, CLONE_NEWNS);
+        else if (!strcmp(mode, "namespace-mount")) result = syscall(SYS_mount, "", "", NULL, MS_BIND, NULL);
+        else if (!strcmp(mode, "namespace-umount")) result = syscall(SYS_umount2, "", 0);
+        else if (!strcmp(mode, "namespace-move")) result = syscall(SYS_move_mount, -1, "", -1, "", 0);
+        else if (!strcmp(mode, "namespace-mount-setattr")) result = syscall(SYS_mount_setattr, -1, "", 0, NULL, 0);
+        else if (!strcmp(mode, "namespace-chroot")) result = syscall(SYS_chroot, "");
+        else if (!strcmp(mode, "namespace-pivot")) result = syscall(SYS_pivot_root, "", "");
+        else if (!strcmp(mode, "namespace-fsopen")) result = syscall(SYS_fsopen, "runlens-missing-filesystem", 0);
+        else if (!strcmp(mode, "namespace-fsconfig")) result = syscall(SYS_fsconfig, -1, 0, NULL, NULL, 0);
+        else if (!strcmp(mode, "namespace-fsmount")) result = syscall(SYS_fsmount, -1, 0, 0);
+        else if (!strcmp(mode, "namespace-open-tree")) result = syscall(SYS_open_tree, -1, "", 0);
+        else if (!strcmp(mode, "namespace-fspick")) result = syscall(SYS_fspick, -1, "", 0);
+        else if (!strcmp(mode, "namespace-clone")) result = syscall(SYS_clone, CLONE_NEWNS | SIGCHLD, 0, 0, 0, 0);
+        else if (!strcmp(mode, "namespace-clone3")) result = syscall(SYS_clone3, clone_args, sizeof(clone_args));
+        else return 90;
+        if (result < 0) printf("error=%d\n", errno);
+        else {
+            if (!strcmp(mode, "namespace-clone") || !strcmp(mode, "namespace-clone3")) {
+                if (!result) _exit(0);
+                int status = 0;
+                if (waitpid(result, &status, 0) != result || status) return 91;
+            }
+            puts("success");
+        }
+        return 0;
+    }
     if (argc == 3 && !strcmp(argv[1], "preload-child")) {
         const char *preload = getenv("LD_PRELOAD");
         printf("%s\n", preload ? preload : "absent");

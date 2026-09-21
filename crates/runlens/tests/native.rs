@@ -6184,3 +6184,112 @@ fn windows_git_case_aliases_are_pruned_before_snapshot_budgets() {
         assert!(entries.contains_key("${workspace}/input.txt"));
     }
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_namespace_and_root_changes_cannot_certify_path_identity() {
+    let mut executables = vec![fixture().to_owned()];
+    match std::env::var("RUNLENS_STATIC_FIXTURE") {
+        Ok(path) => executables.push(path),
+        Err(_) => assert!(
+            std::env::var_os("CI").is_none(),
+            "static fixture required in CI"
+        ),
+    }
+    for executable in executables {
+        for mode in [
+            "unshare",
+            "setns",
+            "mount",
+            "umount",
+            "move",
+            "mount-setattr",
+            "chroot",
+            "pivot",
+            "fsopen",
+            "fsconfig",
+            "fsmount",
+            "open-tree",
+            "fspick",
+            "clone",
+            "clone3",
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let mode = format!("namespace-{mode}");
+            let plain = Command::new(&executable).arg(&mode).output().unwrap();
+            assert!(plain.status.success(), "{mode}: {plain:?}");
+            let traced = invoke(
+                root.path(),
+                &["run", "--save", "namespace.json", "--", &executable, &mode],
+            );
+            assert_eq!(traced.status.code(), Some(4), "{mode}: {traced:?}");
+            assert_eq!(traced.stdout, plain.stdout, "{mode}");
+            let report = parse(root.path(), "namespace.json");
+            assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 0);
+            assert_eq!(
+                report["executions"][0]["outcome"]["collection_complete"],
+                false
+            );
+            let policy = invoke(
+                root.path(),
+                &["policy", "check", "namespace.json", "--json"],
+            );
+            assert_eq!(policy.status.code(), Some(4), "{mode}: {policy:?}");
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_private_mount_remapping_retains_incomplete_evidence() {
+    let root = tempfile::tempdir().unwrap();
+    let external = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("view")).unwrap();
+    fs::create_dir(root.path().join("out")).unwrap();
+    fs::write(root.path().join("view/input"), "original").unwrap();
+    fs::write(external.path().join("input"), "REMAPPED-BODY-CANARY").unwrap();
+    let args = ["namespace-remap", external.path().to_str().unwrap()];
+    let plain = Command::new(fixture())
+        .args(args)
+        .current_dir(root.path())
+        .output()
+        .unwrap();
+    assert!(plain.status.success(), "{plain:?}");
+    let expected = fs::read(root.path().join("out/result")).ok();
+    if expected.is_some() {
+        fs::remove_file(root.path().join("out/result")).unwrap();
+    }
+    if std::env::var_os("RUNLENS_REQUIRE_NAMESPACE_REMAP").is_some() {
+        assert_eq!(plain.stdout, b"remapped\n");
+    }
+    let traced = invoke(
+        root.path(),
+        &[
+            "run",
+            "--save",
+            "remap.json",
+            "--",
+            fixture(),
+            args[0],
+            args[1],
+        ],
+    );
+    assert_eq!(traced.status.code(), Some(4), "{traced:?}");
+    assert_eq!(traced.stdout, plain.stdout);
+    assert_eq!(fs::read(root.path().join("out/result")).ok(), expected);
+    assert_eq!(
+        fs::read(root.path().join("view/input")).unwrap(),
+        b"original"
+    );
+    let report = parse(root.path(), "remap.json");
+    assert_eq!(
+        report["executions"][0]["outcome"]["collection_complete"],
+        false
+    );
+    assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 0);
+    assert!(
+        !fs::read_to_string(root.path().join("remap.json"))
+            .unwrap()
+            .contains("REMAPPED-BODY-CANARY")
+    );
+}
