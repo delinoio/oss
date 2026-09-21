@@ -1,8 +1,35 @@
 param([string]$Version = "", [string]$InstallDir = "$env:LOCALAPPDATA\async-commit-hook\bin")
 $ErrorActionPreference = 'Stop'
+
+function Get-LatestPublishedVersion {
+  $headers = @{
+    Accept = 'application/vnd.github+json'
+    'X-GitHub-Api-Version' = '2022-11-28'
+  }
+  $releases = @()
+  for ($page = 1; ; $page++) {
+    $batch = @(Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/delinoio/oss/releases?per_page=100&page=$page")
+    if ($batch.Count -eq 0) { break }
+    $releases += $batch
+  }
+  $pattern = '^async-commit-hook@v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+  $candidates = @(
+    foreach ($release in $releases) {
+      if ($release.draft -or $release.prerelease) { continue }
+      if ($release.tag_name -notmatch $pattern) { continue }
+      $version = "$($matches[1]).$($matches[2]).$($matches[3])"
+      [pscustomobject]@{ Version = $version; Parsed = [version]::Parse($version) }
+    }
+  )
+  $selected = $candidates | Sort-Object Parsed -Descending | Select-Object -First 1
+  if ($null -eq $selected) { throw 'Could not determine the latest published async-commit-hook release.' }
+  $selected.Version
+}
+
 if ([string]::IsNullOrEmpty($Version)) {
-  $base = 'https://github.com/delinoio/oss/releases/latest/download'
-  $displayVersion = 'latest published stable'
+  $Version = Get-LatestPublishedVersion
+  $base = "https://github.com/delinoio/oss/releases/download/async-commit-hook@v$Version"
+  $displayVersion = $Version
 } else {
   if ($Version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { throw 'Version must be MAJOR.MINOR.PATCH' }
   $base = "https://github.com/delinoio/oss/releases/download/async-commit-hook@v$Version"

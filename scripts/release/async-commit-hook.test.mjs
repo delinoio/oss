@@ -18,6 +18,9 @@ test('installers verify signatures and checksum before extraction and preserve e
   assert.match(text,/verify-blob/);assert.match(text,/SHA256SUMS.sigstore.json/);
   assert.match(text,/release-async-commit-hook.yml@refs\/heads\/main/);
   assert.match(text,/token.actions.githubusercontent.com/);
+  assert.match(text,/api\.github\.com\/repos\/delinoio\/oss\/releases/);
+  assert.match(text,/prerelease/);
+  assert.doesNotMatch(text,/releases\/latest\/download/);
   assert.match(text,/self-update/);assert.match(text,/Checksum mismatch/);
  }
  const shell=spawnSync('sh',['-n','apps/async-commit-hook-docs/public/install.sh'],{cwd:root,encoding:'utf8'});
@@ -47,31 +50,33 @@ test('shell installer rejects invalid signature and checksum before publishing a
  try {
   const bin=join(directory,'tools'), assets=join(directory,'assets');mkdirSync(bin);mkdirSync(assets);
   writeFileSync(join(bin,'cosign'),'#!/bin/sh\nexit "$TEST_SIGNATURE_EXIT"\n',{mode:0o755});
-  writeFileSync(join(bin,'curl'),'#!/bin/sh\nwhile [ "$#" -gt 0 ]; do case "$1" in https://*) name=${1##*/};; -o) shift; output=$1;; esac; shift; done\ncp "$TEST_ASSETS/$name" "$output"\n',{mode:0o755});
+  writeFileSync(join(bin,'curl'),'#!/bin/sh\nurl=\nwhile [ "$#" -gt 0 ]; do case "$1" in https://*) url=$1;; -o) shift; output=$1;; esac; shift; done\ncase "$url" in *api.github.com/repos/delinoio/oss/releases*page=1) cat "$TEST_RELEASES";; *api.github.com/repos/delinoio/oss/releases*) printf "[]";; *) name=${url##*/}; cp "$TEST_ASSETS/$name" "$output";; esac\n',{mode:0o755});
   const platform=process.platform==='darwin'?'darwin':'linux', arch=process.arch==='arm64'?'arm64':'amd64';
   const asset=`ach-${platform}-${arch}.tar.gz`;
   const archive=spawnSync('python3',['-c',`import io,tarfile,sys; a=tarfile.open(sys.argv[1],'w:gz'); i=tarfile.TarInfo('ach'); i.size=7; i.mode=0o755; a.addfile(i,io.BytesIO(b'fixture')); a.close()`,join(assets,asset)]);
   assert.equal(archive.status,0);
+  writeFileSync(join(assets,'releases.json'),'[{"tag_name":"async-commit-hook@v0.1.0","draft":false,"prerelease":false}]');
   for (const name of [asset+'.sigstore.json','SHA256SUMS.sigstore.json']) writeFileSync(join(assets,name),'fixture');
   const digest=createHash('sha256').update(readFileSync(join(assets,asset))).digest('hex');
   for(const [signatureExit,checksum,success] of [['1',digest,false],['0','0'.repeat(64),false],['0',digest,true]]) {
    writeFileSync(join(assets,'SHA256SUMS'),`${checksum}  ${asset}\n`);
    const destination=join(directory,`install-${signatureExit}-${checksum.slice(0,8)}`);
-   const result=spawnSync('sh',['apps/async-commit-hook-docs/public/install.sh'],{cwd:root,env:{...process.env,PATH:bin+':'+process.env.PATH,ACH_INSTALL_DIR:destination,TEST_ASSETS:assets,TEST_SIGNATURE_EXIT:signatureExit},encoding:'utf8'});
+   const result=spawnSync('sh',['apps/async-commit-hook-docs/public/install.sh'],{cwd:root,env:{...process.env,PATH:bin+':'+process.env.PATH,ACH_INSTALL_DIR:destination,TEST_ASSETS:assets,TEST_RELEASES:join(assets,'releases.json'),TEST_SIGNATURE_EXIT:signatureExit},encoding:'utf8'});
    assert.equal(result.status===0,success,result.stderr);
    if(success) assert.equal(readFileSync(join(destination,'ach'),'utf8'),'fixture');
   }
  } finally {rmSync(directory,{recursive:true,force:true});}
 });
 
-test('installer selects the latest published release by default and exact versions when requested', () => {
+test('installer selects the highest published project release by default and exact versions when requested', () => {
  const directory=mkdtempSync(join(tmpdir(),'ach-installer-version-'));
  try {
-  const bin=join(directory,'tools'), requests=join(directory,'requests');mkdirSync(bin);
+  const bin=join(directory,'tools'), requests=join(directory,'requests'), releases=join(directory,'releases.json');mkdirSync(bin);
   writeFileSync(join(bin,'cosign'),'#!/bin/sh\nexit 0\n',{mode:0o755});
-  writeFileSync(join(bin,'curl'),'#!/bin/sh\nprintf "%s\\n" "$@" > "$TEST_REQUESTS"\nexit 77\n',{mode:0o755});
+  writeFileSync(join(bin,'curl'),'#!/bin/sh\nurl=\nwhile [ "$#" -gt 0 ]; do case "$1" in https://*) url=$1;; -o) shift; output=$1;; esac; printf "%s\\n" "$1" >> "$TEST_REQUESTS"; shift; done\ncase "$url" in *api.github.com/repos/delinoio/oss/releases*page=1) cat "$TEST_RELEASES"; exit 0;; *api.github.com/repos/delinoio/oss/releases*) printf "[]"; exit 0;; *) exit 77;; esac\n',{mode:0o755});
+  writeFileSync(releases,'[{"tag_name":"async-commit-hook@v0.2.0","draft":false,"prerelease":false},{"tag_name":"async-commit-hook@v0.3.0","draft":false,"prerelease":false},{"tag_name":"async-commit-hook@v9.0.0-rc.1","draft":false,"prerelease":true},{"tag_name":"devhud@v9.0.0","draft":false,"prerelease":false},{"tag_name":"async-commit-hook@v8.0.0","draft":true,"prerelease":false}]');
   for(const [args,environment,version] of [
-   [[],undefined,'latest'],
+   [[],undefined,'0.3.0'],
    [[], '0.2.0','0.2.0'],
    [['--version','0.3.0'], '0.2.0','0.3.0'],
    [['--version','0.4.0'], 'invalid','0.4.0'],
@@ -86,10 +91,14 @@ test('installer selects the latest published release by default and exact versio
   ]) {
    rmSync(requests,{force:true});
    const result=spawnSync('sh',['apps/async-commit-hook-docs/public/install.sh',...args],{
-    cwd:root,encoding:'utf8',env:{...process.env,PATH:bin+':'+process.env.PATH,ACH_VERSION:environment,TEST_REQUESTS:requests},
+    cwd:root,encoding:'utf8',env:{...process.env,PATH:bin+':'+process.env.PATH,ACH_VERSION:environment,TEST_REQUESTS:requests,TEST_RELEASES:releases},
    });
    assert.equal(result.status,version?77:2,`${JSON.stringify(args)}: ${result.stderr}`);
-   if(version === 'latest') assert.ok(readFileSync(requests,'utf8').includes('/releases/latest/download/ach-'));
+   if(version === '0.3.0') {
+    const requested=readFileSync(requests,'utf8');
+    assert.match(requested,/async-commit-hook@v0\.3\.0\/ach-/);
+    assert.doesNotMatch(requested,/releases\/latest\/download/);
+   }
    else if(version) assert.ok(readFileSync(requests,'utf8').includes(`/async-commit-hook@v${version}/ach-`));
    else assert.equal(existsSync(requests),false,'invalid arguments started a download');
   }

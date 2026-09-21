@@ -11,7 +11,7 @@ Direct-install users, Homebrew users and authorized release maintainers. The own
 
 ## Interfaces and Contracts
 `packaging/async-commit-hook/release-metadata.json`, the Go version constant and all three package versions must match. Release identity is `async-commit-hook@v<MAJOR.MINOR.PATCH>`. Archives are named `ach-<goos>-<goarch>.tar.gz` or `ach-windows-<goarch>.zip`.
-The installers select the highest published stable release by default. The shell installer accepts `--version MAJOR.MINOR.PATCH`, overriding `ACH_VERSION`; PowerShell accepts the same exact version through `-Version`. Explicit versions require canonical three-part numeric values without leading zeroes. Unknown arguments and malformed versions fail before any download or installation work.
+The installers query GitHub releases and select the highest non-draft, non-prerelease `async-commit-hook@v<version>` release by default, never the repository-wide latest release. The shell installer accepts `--version MAJOR.MINOR.PATCH`, overriding `ACH_VERSION`; PowerShell accepts the same exact version through `-Version`. Explicit versions require canonical three-part numeric values without leading zeroes. Unknown arguments and malformed versions fail before any download or installation work.
 
 The public guide's primary install commands use those latest-published-stable defaults, and its primary self-update command selects the highest published stable version. Explicit-version and rollback examples use a replaceable `MAJOR.MINOR.PATCH` placeholder. The guide remains safe when a future release has been prepared but not published; production-output tests prevent reintroducing stale prepared-version defaults.
 

@@ -15,16 +15,61 @@ while [ "$#" -gt 0 ]; do
     *) echo "Unknown argument: $1. Usage: sh install.sh [--version MAJOR.MINOR.PATCH]" >&2; exit 2;;
   esac
 done
+
+for tool in curl tar cosign git awk sort tail tr; do command -v "$tool" >/dev/null || { echo "Required tool missing: $tool" >&2; exit 2; }; done
+
+latest_published_version() {
+  page=1
+  versions=
+  while :; do
+    releases=$(curl --fail --location --proto '=https' --proto-redir '=https' --silent --show-error \
+      --header 'Accept: application/vnd.github+json' \
+      --header 'X-GitHub-Api-Version: 2022-11-28' \
+      "https://api.github.com/repos/delinoio/oss/releases?per_page=100&page=$page") || return 1
+    compact=$(printf '%s' "$releases" | tr -d '[:space:]')
+    case "$compact" in
+      \[*\]) ;;
+      *) return 1 ;;
+    esac
+    [ "$compact" = '[]' ] && break
+    page_versions=$(printf '%s' "$releases" | tr ',' '\n' | awk '
+      function field(line, name) {
+        sub("^.*\\\"" name "\\\"[[:space:]]*:[[:space:]]*", "", line)
+        sub("[,}].*$", "", line)
+        gsub(/^"|"$/, "", line)
+        return line
+      }
+      /\"tag_name\"[[:space:]]*:/ { tag = field($0, "tag_name"); next }
+      /\"draft\"[[:space:]]*:/ { draft = field($0, "draft"); next }
+      /\"prerelease\"[[:space:]]*:/ {
+        prerelease = field($0, "prerelease")
+        if (draft == "false" && prerelease == "false" && tag ~ /^async-commit-hook@v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/) {
+          sub(/^async-commit-hook@v/, "", tag)
+          print tag
+        }
+        tag = ""
+        draft = ""
+        prerelease = ""
+      }
+    ')
+    [ -n "$page_versions" ] && versions="${versions}${page_versions}
+"
+    page=$((page + 1))
+  done
+  [ -n "$versions" ] || return 1
+  printf '%s' "$versions" | LC_ALL=C sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1
+}
+
 if [ "$explicit_version" -eq 1 ]; then
   case "$version" in *[!0-9.]*|'') echo 'Version must be MAJOR.MINOR.PATCH' >&2; exit 2;; esac
   printf '%s\n' "$version" | awk '/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/ {ok=1} END {exit !ok}' || { echo 'Version must be MAJOR.MINOR.PATCH' >&2; exit 2; }
   base="https://github.com/delinoio/oss/releases/download/async-commit-hook@v$version"
   display_version=$version
 else
-  base='https://github.com/delinoio/oss/releases/latest/download'
-  display_version='latest published stable'
+  version=$(latest_published_version) || { echo 'Could not determine the latest published async-commit-hook release.' >&2; exit 1; }
+  base="https://github.com/delinoio/oss/releases/download/async-commit-hook@v$version"
+  display_version=$version
 fi
-for tool in curl tar cosign git; do command -v "$tool" >/dev/null || { echo "Required tool missing: $tool" >&2; exit 2; }; done
 case "$(uname -s)" in Darwin) platform=darwin;; Linux) platform=linux;; *) echo 'Use install.ps1 on Windows.' >&2; exit 2;; esac
 case "$(uname -m)" in x86_64|amd64) arch=amd64;; arm64|aarch64) arch=arm64;; *) echo 'Unsupported architecture' >&2; exit 2;; esac
 asset="ach-$platform-$arch.tar.gz"
