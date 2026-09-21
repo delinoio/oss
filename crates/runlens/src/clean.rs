@@ -270,8 +270,12 @@ pub fn workspace_root(cwd: &Path) -> PathBuf {
 pub async fn revision(root: &Path, cancel: &CancellationToken) -> Option<String> {
     // Git platform shims may need a home even for rev-parse. Supply a fresh
     // location rather than exposing ambient user configuration or credentials.
-    let owned = crate::temporary::Directory::new("runlens-revision-").ok()?;
-    let environment = isolated_environment(owned.path(), &[]).ok()?;
+    let owned = crate::temporary::Directory::new("runlens-revision-").inspect_err(|error| {
+        tracing::debug!(stage="source-revision", operation="temporary-directory", io_kind=?error.kind(), "source revision unavailable");
+    }).ok()?;
+    let environment = isolated_environment(owned.path(), &[]).inspect_err(|error| {
+        tracing::debug!(stage="source-revision", operation="environment", code=?error.code, reason=error.message, "source revision unavailable");
+    }).ok()?;
     let bytes = git_output(
         root,
         &[
@@ -286,14 +290,31 @@ pub async fn revision(root: &Path, cancel: &CancellationToken) -> Option<String>
     let bytes = match bytes {
         Ok(bytes) => bytes,
         Err(error) => {
-            tracing::debug!(stage="source-revision", code=?error.code, "source revision unavailable");
+            // Error messages are repository-owned static classifications, never
+            // Git stderr. Keep lifecycle, launch and read failures distinguishable.
+            tracing::debug!(stage="source-revision", operation="git", code=?error.code, reason=error.message, "source revision unavailable");
             return None;
         }
     };
-    let value = String::from_utf8(bytes).ok()?.trim().to_owned();
+    let value = String::from_utf8(bytes)
+        .inspect_err(|_| {
+            tracing::debug!(
+                stage = "source-revision",
+                operation = "decode",
+                "source revision was not UTF-8"
+            );
+        })
+        .ok()?
+        .trim()
+        .to_owned();
     if (value.len() == 40 || value.len() == 64) && value.bytes().all(|b| b.is_ascii_hexdigit()) {
         Some(value)
     } else {
+        tracing::debug!(
+            stage = "source-revision",
+            operation = "validate",
+            "source revision has invalid shape"
+        );
         None
     }
 }

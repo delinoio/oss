@@ -3516,6 +3516,8 @@ fn stopped_clean_reports_retain_referenced_baseline_evidence() {
         let output = invoke(
             root.path(),
             &[
+                "--log-level",
+                "debug",
                 "verify",
                 "clean",
                 "build",
@@ -5630,4 +5632,37 @@ fn unix_clean_and_repeat_require_selection_of_windows_context() {
             assert!(!root.path().join("out").exists());
         }
     }
+}
+
+#[test]
+fn missing_head_diagnostics_classify_git_failure_without_raw_metadata() {
+    let root = tempfile::tempdir().unwrap();
+    git(root.path(), &["init", "-q"]);
+    let mut config = runlens::config::Config::default();
+    config.commands.insert(
+        "build".into(),
+        runlens::config::Command::direct(vec![fixture().into(), "read".into()]),
+    );
+    fs::write(
+        root.path().join("runlens.toml"),
+        toml::to_string(&config).unwrap(),
+    )
+    .unwrap();
+    let result = invoke(
+        root.path(),
+        &["--log-level", "debug", "verify", "clean", "build"],
+    );
+    assert_eq!(result.status.code(), Some(2));
+    let diagnostics = String::from_utf8(result.stderr).unwrap();
+    assert!(diagnostics.contains("source-revision"), "{diagnostics}");
+    assert!(diagnostics.contains("operation=\"git\""), "{diagnostics}");
+    assert!(diagnostics.contains("code=InvalidInput"), "{diagnostics}");
+    assert!(
+        diagnostics.contains("Git source selection failed"),
+        "{diagnostics}"
+    );
+    assert!(!diagnostics.contains(root.path().to_str().unwrap()));
+    assert!(!diagnostics.contains("fatal:"));
+    assert!(!diagnostics.contains("HEAD^{commit}"));
+    assert!(result.stdout.is_empty());
 }

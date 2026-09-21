@@ -855,3 +855,10 @@ Failed Windows normalized-name lookup for a relative NT root handle records coll
 Masked recorded command names are inconclusive identities before declaration lookup, including explicit-pattern and selected-value masking. Coverage checks retain unknown evidence while independent read/write denials still apply. Clean verification saves its inconclusive result instead of failing to parse the configured name.
 
 SystemRoot, WINDIR, COMSPEC and PATHEXT are implicit OS launch context only on Windows. On macOS/Linux, clean and repeat omit them unless explicitly selected, including preparation stages. Selected names remain visible as environment metadata without values, and selected values cannot prove repeat compatibility.
+
+Debug source-revision diagnostics distinguish temporary-directory creation,
+isolated environment preparation, managed Git failures, UTF-8 decoding and
+revision-shape validation. Only static operation/error classifications and IO
+error kinds are logged; Git stderr, paths, argv and metadata bytes remain private.
+The stopped-clean baseline regression enables these diagnostics to expose the
+intermittent Windows Git HEAD failure without retries or weakened assertions.
