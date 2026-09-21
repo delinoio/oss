@@ -229,15 +229,22 @@ pub fn input_matches(project: &Project, task: &crate::config::Task, path: &Path)
         return Ok(false);
     }
     let relative = relative_to(&project.directory, path)?;
-    let mut matched = task.input.is_none() && path.starts_with(&project.directory);
+    let automatic = task.input.as_ref().is_none_or(|inputs| {
+        inputs
+            .iter()
+            .any(|input| matches!(input, Input::Auto(auto) if auto.auto))
+    });
+    let mut matched = automatic
+        && path.starts_with(&project.directory)
+        && !path
+            .strip_prefix(&project.directory)?
+            .components()
+            .any(|c| ignored_directory(Path::new(c.as_os_str())));
     for input in task.input.iter().flatten() {
         match input {
-            Input::Auto(auto) if auto.auto && path.starts_with(&project.directory) => {
-                matched = !path
-                    .strip_prefix(&project.directory)?
-                    .components()
-                    .any(|c| ignored_directory(Path::new(c.as_os_str())));
-            }
+            // Automatic scanning establishes the default once. It must not
+            // erase an explicit match that appeared earlier in the declaration.
+            Input::Auto(_) => {}
             Input::Pattern(pattern) => {
                 let (negative, pattern) = pattern
                     .strip_prefix('!')
@@ -249,7 +256,6 @@ pub fn input_matches(project: &Project, task: &crate::config::Task, path: &Path)
                     matched = !negative;
                 }
             }
-            _ => {}
         }
     }
     Ok(matched && !output_matches(project, task, path)?)
