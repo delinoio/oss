@@ -16,10 +16,17 @@ fn color_choice() -> clap::ColorChoice {
     color = color_choice(),
     version,
     about = "Cross-platform developer utilities distributed through native packages and npm",
-    after_help = "Use clibox <command> <operation> --help for options and examples.
-Diagnostics use stderr, omit sensitive inputs, and honor RUST_LOG and NO_COLOR.
-Waits observe readiness without reserving a resource or guaranteeing continued readiness.
-Wait exit codes: 0 ready, 1 failure/timeout, 2 invalid input, 130 Ctrl+C, 143 Unix SIGTERM."
+    after_help = concat!(
+        "Use clibox <command> <operation> --help for options and examples.\n",
+        "Diagnostics use stderr, omit sensitive inputs, and honor RUST_LOG and NO_COLOR.\n",
+        "Waits observe readiness without reserving a resource or guaranteeing continued readiness.\n",
+        "Wait exit codes: 0 ready, 1 failure/timeout, 2 invalid input, 130 Ctrl+C, 143 Unix SIGTERM.\n\n",
+        "Version: ", env!("CARGO_PKG_VERSION"), "\n",
+        "Maintained by: ", env!("CARGO_PKG_AUTHORS"), "\n",
+        "Repository: ", env!("CARGO_PKG_REPOSITORY"), "\n",
+        "License: ", env!("CARGO_PKG_LICENSE"), "\n",
+        "Support: ", env!("CARGO_PKG_REPOSITORY"), "/issues"
+    )
 )]
 pub struct Cli {
     #[command(subcommand)]

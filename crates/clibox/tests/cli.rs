@@ -12,6 +12,11 @@ fn help_and_no_arguments_succeed_on_stdout() {
         assert!(stdout.contains("Usage: clibox"));
         assert!(stdout.contains("--help"));
         assert!(stdout.contains("--version"));
+        assert!(stdout.contains(&format!("Version: {}", env!("CARGO_PKG_VERSION"))));
+        assert!(stdout.contains("Maintained by: Delino"));
+        assert!(stdout.contains("Repository: https://github.com/delinoio/oss"));
+        assert!(stdout.contains("License: MIT"));
+        assert!(stdout.contains("Support: https://github.com/delinoio/oss/issues"));
         for command in [
             "run",
             "port",
@@ -81,6 +86,7 @@ fn missing_subcommands_show_command_help_on_stderr() {
             "{stderr}"
         );
         assert!(stderr.contains("Commands:"));
+        assert!(!stderr.contains("Maintained by: Delino"));
         for subcommand in subcommands {
             assert!(stderr.contains(&format!("  {subcommand} ")), "{stderr}");
         }
@@ -154,6 +160,7 @@ fn every_command_has_help_and_examples() {
         assert!(output.stderr.is_empty());
         let stdout = String::from_utf8(output.stdout).unwrap();
         assert!(stdout.contains("Example"));
+        assert!(!stdout.contains("Maintained by: Delino"));
         assert!(!stdout.contains('\u{1b}'));
     }
 }

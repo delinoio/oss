@@ -25,7 +25,7 @@ clibox clipboard copy [TEXT]
 clibox clipboard paste
 ```
 
-Use `--help` after any command for English help and examples. Running `clibox` without arguments or using explicit `--help` prints help to stdout and returns exit code **0**. Running `clibox run`, `clibox port`, `clibox clipboard`, `clibox wait`, `clibox text`, `clibox time`, `clibox base64`, `clibox hash`, `clibox dotenv`, or `clibox yaml` without a subcommand prints that command's help to stderr and returns exit code **2**. Other invalid or missing arguments return exit code **2** with an error diagnostic; runtime failures return **1**. `run env` forwards the child program's exit status and supported termination signals.
+Use `--help` after any command for English help and examples. Root help (`clibox`, `--help`, or `-h`) also identifies the built version, Delino maintainer, repository, MIT license, and GitHub Issues support path; subcommand help stays focused on that command. Running `clibox` without arguments or using explicit `--help` prints help to stdout and returns exit code **0**. Running `clibox run`, `clibox port`, `clibox clipboard`, `clibox wait`, `clibox text`, `clibox time`, `clibox base64`, `clibox hash`, `clibox dotenv`, or `clibox yaml` without a subcommand prints that command's help to stderr and returns exit code **2**. Other invalid or missing arguments return exit code **2** with an error diagnostic; runtime failures return **1**. `run env` forwards the child program's exit status and supported termination signals.
 
 ### Run with environment variables
 
