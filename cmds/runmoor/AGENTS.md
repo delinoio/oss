@@ -1,7 +1,7 @@
 # Runmoor command rules
 
 - Follow `docs/project-runmoor.md` and `docs/cmds-runmoor-foundation.md`; issue #893 is the product contract.
-- Keep CLI, TOML v1, SQLite v1, and versioned JSON contracts synchronized with the English README and standalone `apps/runmoor-docs` documentation at `https://runmoor.delino.io`.
+- Keep CLI, TOML v1, SQLite v1, and versioned JSON contracts synchronized with the English README and integrated `apps/public-docs/docs/runmoor` documentation at `https://oss.delino.io/runmoor`.
 - Use the official pinned `actions/scaleset` client. Persist message effects before acknowledgement; derive demand from statistics, never event counts.
 - Preserve installation ownership, per-runner resource reservations, original configuration generations, and cleanup progress across crashes. Never adopt resources based only on their names. Serialize each pool's scale-set initialization/publication with retirement; draining pools may resolve pending creation by lookup but cannot begin a new creation or retire while that outcome is unresolved.
 - After durable pool retirement, discard its cached GitHub client and mutex and cancel its session loop. Stale work must not recreate these caches or publish a session for a retired/pruned generation; failed retirement commits retain retry state. Eligibility checks must reject a missing pool, including retirement/pruning between a final session message commit and job acquisition.

@@ -16,7 +16,7 @@
 - Run `git commit` only after `git add`; once files are staged, commit without unnecessary delay so staged changes are preserved in history.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
 - Root `pnpm install` must install Lefthook in linked worktrees when the effective `core.hooksPath` resolves to Git's shared common-directory hooks path, preserve Lefthook's protective failure for unrelated custom hook paths, and skip hook installation without blocking app preparation when Git metadata is unavailable.
-- Root `pnpm dev` is the DevHud team workflow. Root documentation development uses `pnpm dev:public-docs`, `pnpm dev:nodeup-docs`, `pnpm dev:binpm-docs`, `pnpm dev:runmoor-docs`, or `pnpm dev:async-commit-hook-docs`; every root and package-local development command must use the app-owned fixed ports documented in `apps/AGENTS.md` and fail on conflicts instead of automatically remapping a server.
+- Root `pnpm dev` is the DevHud team workflow. Root documentation development uses `pnpm dev:public-docs` or `pnpm dev:async-commit-hook-docs`; Runmoor is part of Public Docs, while Nodeup and binpm documentation are maintained outside this repository. Every root and package-local development command must use the app-owned fixed ports documented in `apps/AGENTS.md` and fail on conflicts instead of automatically remapping a server.
 - `docs/repository-environment-contract.md` is the source of truth for environment ownership. Root development orchestration may pass only the bounded `DEVHUD_LOCAL_MODE` selector, optional non-secret `CARGO_HOME` and `RUSTUP_HOME` tool locations, and platform-conditional Linux X11/XWayland `DISPLAY`, `XAUTHORITY`, and per-user `XDG_RUNTIME_DIR` session/runtime context through Turbo's exact task environment allowlist; team values are injected and validated only by their owning service wrapper, whose loopback HTTP validation must reject numeric IPv4 spellings not accepted by Go and whose public asset-base validation must inspect the raw path before WHATWG normalization. Exact API/administrator issuer parity must be proved before migration and pinned through migration plus the API, administrator, and frontend Turbo launches without writing a raw value; the frontend wrapper may receive only that validated public issuer and may use only its origin in the fixed development CSP. OSS mode must never invoke Infisical. Team startup is non-interactive and exclusive while that private comparison pin exists, checkout identity material is published atomically, and every preflight, startup, or cleanup child run under installed root signal handlers must be lifecycle-tracked. Windows process-tree termination utilities receive only minimal system lookup context, never validated service configuration. Docker children may additionally inherit only `DOCKER_HOST` and `DOCKER_CONTEXT`, but OSS startup must reject effective remote daemon endpoints before Compose startup. OSS startup is exclusive per checkout through cleanup, and an idempotent one-shot database step must repair missing Logto database creation in preserved PostgreSQL volumes before Logto seeding. Environment tests must inject temporary generated state and an external temporary Infisical config directory, and must never replace checkout identity or project-binding material.
 - Keep `.infisical.json`, `.dev-environment/`, real `.env` files, user credentials, and production/release/signing credentials uncommitted. Service-local `.env.example` files contain names, validation guidance, placeholders, and safe loopback defaults only; do not add a root environment example or expose internal secret paths in public product docs.
 - After addressing pull request review comments and pushing updates, mark the corresponding review threads as resolved.
@@ -56,7 +56,6 @@
 - `docs/<domain>-<project-or-component>-<contract>.md`: Canonical domain contract docs (`apps`, `cmds`, `servers`, `crates`, `protos`, `packages`).
 - `docs/repository-<topic>-contract.md`: Canonical repository-level contract docs for cross-project workflow and policy contracts.
 - `docs/project-binpm.md`: binpm binary package manager project index.
-- `docs/apps-binpm-docs-foundation.md`: binpm Rspress documentation app, route, validation, canonical production URL, and Cloudflare Pages deployment contract.
 - `docs/project-cargo-mono.md`: Cargo subcommand project index.
 - `docs/project-clibox.md`: clibox Rust CLI and npm distribution project index.
 - `docs/project-nodeup.md`: Node.js version manager project index.
@@ -74,8 +73,7 @@
 - `docs/crates-rustia-llm-foundation.md`: Rustia aisdk tool adapter contract.
 - `docs/crates-rustia-macros-foundation.md`: Rustia macros derive contract.
 - `docs/cmds-ttl-language-contract.md`: TTL language syntax/type/invalidation/code-generation contract.
-- `docs/apps-nodeup-docs-foundation.md`: Nodeup Rspress documentation app, route, validation, and Cloudflare Pages deployment contract.
-- `docs/apps-runmoor-docs-foundation.md`: Runmoor Rspress documentation app, route migration, fixed-port validation, and Cloudflare Pages deployment contract.
+- `docs/apps-runmoor-docs-foundation.md`: integrated Runmoor Rspress documentation section, route migration, validation, and Cloudflare Pages deployment contract.
 
 ### Project Identifier Contract
 
@@ -102,12 +100,12 @@ enum ProjectId {
 
 ### Project Domain Ownership
 
-- `nodeup` -> `crates/nodeup`, `apps/nodeup-docs`
-- `binpm` -> `crates/binpm`, `apps/binpm-docs`
+- `nodeup` -> `crates/nodeup` (documentation is maintained outside this repository)
+- `binpm` -> `crates/binpm` (documentation is maintained outside this repository)
 - `with-watch` -> `crates/with-watch`
 - `cargo-mono` -> `crates/cargo-mono`
 - `clibox` -> `crates/clibox`, `crates/clibox-config`, `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`, `packages/clibox`
-- `runmoor` -> `cmds/runmoor`, `apps/runmoor-docs`
+- `runmoor` -> `cmds/runmoor`, `apps/public-docs/docs/runmoor`
 - `derun` -> `cmds/derun`
 - `ttl` -> `cmds/ttlc`
 - `mpapp` -> `apps/mpapp`
@@ -213,22 +211,6 @@ enum ProjectId {
 - Global install, add, doctor, and plain env PATH setup messaging must remain guided and non-mutating. `binpm env setup --shell <shell> [--dry-run]` is the explicit opt-in profile modification command and may append only the global bin PATH line after previewing the exact file and line; it must tell PowerShell 7 users to pass `--shell pwsh`, refuse ambiguous shell/profile targets, and not imply project-local `.binpm/bin` entries are suitable for profile persistence.
 
 ### binpm Docs App Contract
-
-- `apps/binpm-docs` is the Rspress static documentation app for `binpm` and uses the existing `apps/*` workspace.
-- The canonical production URL for `apps/binpm-docs` is `https://binpm.delino.io`.
-- `apps/binpm-docs` must use Cloudflare Pages as the default static deployment target unless `docs/project-binpm.md` and `docs/apps-binpm-docs-foundation.md` document a replacement.
-- binpm documentation content must be sourced from repository contracts and must not infer product behavior or page content from the live `https://binpm.delino.io` site.
-- `apps/binpm-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
-- binpm direct-installer documentation must include latest docs-site installer commands for `https://binpm.delino.io/install.sh` and `https://binpm.delino.io/install.ps1`, preserve current and pinned first-party raw GitHub installer commands, describe checksum verification through `SHA256SUMS`, and keep binpm release verification separate from package verification.
-- binpm installation and release documentation must describe Homebrew as prebuilt-only, describe disabled `cargo-binstall` quick-install and compile fallbacks, and distinguish first-party binpm release platforms from broader third-party target parsing support.
-
-### Nodeup Docs App Contract
-
-- `apps/nodeup-docs` is the Rspress static documentation app for `nodeup` and uses the existing `apps/*` workspace.
-- The canonical production URL for `apps/nodeup-docs` is `https://nodeup.delino.io`.
-- `apps/nodeup-docs` must publish public direct-installer entrypoints at `https://nodeup.delino.io/install.sh` and `https://nodeup.delino.io/install.ps1`.
-- `apps/nodeup-docs` must use Cloudflare Pages as the default static deployment target unless `docs/project-nodeup.md` and `docs/apps-nodeup-docs-foundation.md` document a replacement.
-- `apps/nodeup-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
 
 ### nodeup Shim and Self Cleanup Contract
 
@@ -357,9 +339,7 @@ Coverage expectations:
 - `rust-test`: runs `cargo test --workspace --all-targets`.
 - `node-mpapp-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter mpapp test`.
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter mpapp lint`.
-- `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter binpm-docs test`.
-- `node-runmoor-docs-test`: validates the standalone Runmoor routes with one frozen install using `--ignore-scripts`, the shared change plan, and its exact Turbo comparison; it participates in `ci-result` and saves caches only after successful main validation.
-- `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter nodeup-docs test`.
+- `node-public-docs-test`: validates the Public Docs and integrated Runmoor routes with one frozen install using `--ignore-scripts`, the shared change plan, and its exact Turbo comparison; it participates in `ci-result` and saves caches only after successful main validation.
 - `node-clibox-test`: runs `cargo test --locked -p clibox -p clibox-config -p clibox-system -p clibox-transform -p clibox-wait` for native utility/configuration/process/adapter behavior, native CLI consumer installation and launcher/distribution tests on Linux, macOS, and Windows, selected by shared CI planning and required by `CI Result`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`.
 - `ci-contracts`: validates workflow syntax and the repository CI contract with the checked-in Go `actionlint` tool and Node fixtures.
@@ -453,7 +433,7 @@ Release automation baseline:
 
 ### Runmoor Contract
 
-- Public Runmoor documentation is owned by `apps/runmoor-docs` at `https://runmoor.delino.io`; follow `docs/apps-runmoor-docs-foundation.md`. The former `public-docs` `/runmoor` and child routes are removed without handoff pages or redirects. Keep all public discovery links pointed at the standalone site.
+- Public Runmoor documentation is owned by `apps/public-docs/docs/runmoor` at `https://oss.delino.io/runmoor`; follow `docs/apps-runmoor-docs-foundation.md`. The retired `runmoor.delino.io` host is configured as a suffix-preserving permanent redirect outside the repository. Keep all integrated discovery links pointed at `/runmoor`.
 
 - Follow `docs/project-runmoor.md`, `docs/cmds-runmoor-foundation.md`, and `cmds/runmoor/AGENTS.md` for issue #893. Runmoor owns local ephemeral GitHub Actions runners through Docker and Tart, with host-only credentials, durable ownership, fair resource budgets, and single-job disposable environments.
 - Runmoor binaries use the stable release channel for darwin-arm64, linux-amd64, and linux-arm64 under `runmoor@v<MAJOR.MINOR.PATCH>`; publication dry runs are credential-free and non-publishing. No Homebrew distribution is added.

@@ -37,7 +37,6 @@ Each project must have one project index document and one or more domain contrac
 ### binpm
 - `docs/project-binpm.md`
 - `docs/crates-binpm-foundation.md`
-- `docs/apps-binpm-docs-foundation.md` (`apps/binpm-docs`, production URL `https://binpm.delino.io`, routes: `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/releases`, `/troubleshooting`, `/reference`)
 
 ### cargo-mono
 - `docs/project-cargo-mono.md`
@@ -51,7 +50,6 @@ Each project must have one project index document and one or more domain contrac
 ### nodeup
 - `docs/project-nodeup.md`
 - `docs/crates-nodeup-foundation.md`
-- `docs/apps-nodeup-docs-foundation.md` (`apps/nodeup-docs` routes: `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, `/reference`)
 
 ### with-watch
 - `docs/project-with-watch.md`
@@ -60,7 +58,7 @@ Each project must have one project index document and one or more domain contrac
 ### runmoor
 - `docs/project-runmoor.md`
 - `docs/cmds-runmoor-foundation.md`
-- `docs/apps-runmoor-docs-foundation.md` (`apps/runmoor-docs`, production URL `https://runmoor.delino.io`, routes: `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, `/operations`)
+- `docs/apps-runmoor-docs-foundation.md` (`apps/public-docs/docs/runmoor`, production URL `https://oss.delino.io/runmoor`, routes: `/runmoor`, `/runmoor/install`, `/runmoor/configuration`, `/runmoor/commands`, `/runmoor/docker`, `/runmoor/tart`, `/runmoor/operations`)
 
 ### derun
 - `docs/project-derun.md`
@@ -72,7 +70,7 @@ Each project must have one project index document and one or more domain contrac
 
 ### public-docs
 - `docs/project-public-docs.md`
-- `docs/apps-public-docs-foundation.md` (includes the stable `/devhud` section and child routes)
+- `docs/apps-public-docs-foundation.md` (includes the stable `/devhud` and `/runmoor` sections and child routes)
 
 ### serde-feather
 - `docs/project-serde-feather.md`

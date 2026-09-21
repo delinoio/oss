@@ -63,7 +63,7 @@ The seven CLI release workflows call `release-linux-packages.yml` after GitHub R
 
 ## Runmoor validation and release
 
-`CI.yml` validates `apps/runmoor-docs` in `node-runmoor-docs-test`, using the shared change plan, one frozen install with `--ignore-scripts`, and the same exact Turbo comparison as other documentation jobs. The job is required by `ci-result` and only builds and validates documentation; it never deploys. Public Runmoor routes are owned by the standalone app, while `public-docs` validates their removal and links to `https://runmoor.delino.io`.
+`CI.yml` validates the integrated Runmoor routes through `node-public-docs-test`, using the shared change plan, one frozen install with `--ignore-scripts`, and the same exact Turbo comparison as other documentation jobs. The job is required by `ci-result` and only builds and validates documentation; it never deploys. Public Runmoor routes are owned by `apps/public-docs/docs/runmoor`; the retired `runmoor.delino.io` host is an external redirect configuration.
 
 `.github/workflows/runmoor.yml` is a separate read-only `contents: read` validation workflow, gated to Runmoor source, release scripts/workflows, shared Go module changes, and its shared Go setup action. It runs race tests and explicitly enabled local Docker integration without GitHub credentials or job assignment. Its per-ref concurrency group cancels superseded runs; caches follow the successful-main-only save policy. Real Tart integration remains operator opt-in. Existing CI aggregation, application development commands and fixed ports are unchanged.
 

@@ -1,6 +1,8 @@
 import { access, readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { decodeHTML } from "entities";
+import { createPublicContentValidator } from "./runmoor-public-content.mjs";
+import { containsAffirmativeReleaseClaim as containsRunmoorAffirmativeReleaseClaim } from "./runmoor-release-claims.mjs";
 
 const stableRouteIds = [
   "/",
@@ -20,6 +22,13 @@ const stableRouteIds = [
   "/derun",
   "/with-watch",
   "/nodeup",
+  "/runmoor",
+  "/runmoor/install",
+  "/runmoor/configuration",
+  "/runmoor/commands",
+  "/runmoor/docker",
+  "/runmoor/tart",
+  "/runmoor/operations",
 ];
 
 const outputDir = path.resolve("doc_build");
@@ -28,20 +37,36 @@ const stableRoutePathPattern = stableRouteIds
   .sort((left, right) => right.length - left.length)
   .map((routeId) => routeId.slice(1).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
   .join("|");
+function routeOutputPath(routeId) {
+  if (routeId === "/") return "index.html";
+  if (routeId === "/runmoor") return "runmoor/index.html";
+  return `${routeId.slice(1)}.html`;
+}
+
 const routeOutputFiles = stableRouteIds.map((routeId) => ({
   routeId,
-  outputFile:
-    routeId === "/"
-      ? path.join(outputDir, "index.html")
-      : path.join(outputDir, `${routeId.slice(1)}.html`),
+  outputFile: path.join(outputDir, routeOutputPath(routeId)),
 }));
 const htmlRoutePaths = new Set(
-  stableRouteIds.map((routeId) => (routeId === "/" ? "/index.html" : `${routeId}.html`)),
+  stableRouteIds.map((routeId) => `/${routeOutputPath(routeId)}`),
 );
 const urlAttributePattern = /\b(?:href|src|srcset|poster|action|formaction|data)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu;
 const cssUrlPattern = /\burl\s*\(\s*(?:"([^"]*)"|'([^']*)'|([^\s)]+))\s*\)/giu;
 const cssImportPattern = /@import\s+(?:"([^"]*)"|'([^']*)')/giu;
 const validatorOrigin = "https://public-docs.invalid";
+const runmoorRouteIds = [
+  "/runmoor",
+  "/runmoor/install",
+  "/runmoor/configuration",
+  "/runmoor/commands",
+  "/runmoor/docker",
+  "/runmoor/tart",
+  "/runmoor/operations",
+];
+// Integrated Runmoor pages share the Public Docs shell, so the validator must
+// allow every public route linked by that shell while still applying the
+// Runmoor-specific content checks to the seven migrated pages.
+const containsRunmoorPublicContent = createPublicContentValidator(stableRouteIds);
 
 async function pathExists(filePath) {
   try {
@@ -52,7 +77,7 @@ async function pathExists(filePath) {
   }
 }
 
-async function collectHtmlFiles(directory) {
+async function collectPublicationFiles(directory) {
   const entries = await readdir(directory);
   const htmlFiles = [];
 
@@ -61,8 +86,8 @@ async function collectHtmlFiles(directory) {
     const entryStat = await stat(entryPath);
 
     if (entryStat.isDirectory()) {
-      htmlFiles.push(...(await collectHtmlFiles(entryPath)));
-    } else if (entryPath.endsWith(".html")) {
+      htmlFiles.push(...(await collectPublicationFiles(entryPath)));
+    } else if (entryPath.endsWith(".html") || entryPath.endsWith(".css")) {
       htmlFiles.push(entryPath);
     }
   }
@@ -70,15 +95,13 @@ async function collectHtmlFiles(directory) {
   return htmlFiles;
 }
 
-const htmlFiles = await collectHtmlFiles(outputDir);
+const htmlFiles = await collectPublicationFiles(outputDir);
 const failures = [];
 
-// These routes were intentionally removed, without redirects or handoff pages.
-// Reject stale output as well as navigation that would recreate the old surface.
-for (const oldOutput of ["runmoor.html", "runmoor"]) {
-  if (await pathExists(path.join(outputDir, oldOutput))) {
-    failures.push(`${oldOutput} retains a removed Runmoor route`);
-  }
+// Runmoor now belongs to this site. A flat route artifact would indicate stale
+// output from the former standalone build and could shadow the nested route.
+if (await pathExists(path.join(outputDir, "runmoor.html"))) {
+  failures.push("runmoor.html retains stale standalone output");
 }
 
 function attributeValue(match) {
@@ -94,13 +117,24 @@ const requiredHeadings = new Map([
   ["/devhud/support", ["DevHud Support", "Troubleshooting", "Uninstall", "Help and reports"]],
   ["/devhud/admin", ["DevHud Administration"]],
   ["/devhud/releases", ["DevHud Releases"]],
+  ["/runmoor", ["Runmoor", "Guides"]],
+  ["/runmoor/install", ["Install and Verify Runmoor"]],
+  ["/runmoor/configuration", ["Runmoor Configuration"]],
+  ["/runmoor/commands", ["Runmoor Commands and Routing", "Complete CLI reference"]],
+  ["/runmoor/docker", ["Runmoor Docker Execution"]],
+  ["/runmoor/tart", ["Runmoor Tart Images"]],
+  ["/runmoor/operations", ["Runmoor Operations", "Troubleshooting and privacy"]],
 ]);
 const requiredLinks = new Map([
-  ["/", ["https://runmoor.delino.io"]],
-  ["/projects-overview", ["https://runmoor.delino.io"]],
+  ["/", ["/runmoor"]],
+  ["/projects-overview", ["/runmoor"]],
   ["/devhud", ["/devhud/install", "/devhud/privacy", "/devhud/security", "/devhud/support"]],
   ["/devhud/install", ["/devhud/releases", "/devhud/security", "/devhud/support"]],
   ["/devhud/guide", ["/devhud/privacy", "/devhud/security", "/devhud/support"]],
+  ["/runmoor", ["/runmoor/install", "/runmoor/configuration", "/runmoor/commands", "/runmoor/docker", "/runmoor/tart", "/runmoor/operations"]],
+  ["/runmoor/configuration", ["/runmoor/docker", "/runmoor/tart"]],
+  ["/runmoor/commands", ["/runmoor/tart", "/runmoor/operations"]],
+  ["/runmoor/operations", ["/runmoor/install"]],
 ]);
 
 function articleContent(contents) {
@@ -136,8 +170,7 @@ function findHtmlRouteLinks(contents, htmlFile) {
   const pageUrl = new URL(pagePath, validatorOrigin);
   const invalidRoutes = [];
 
-  for (const match of contents.matchAll(urlAttributePattern)) {
-    const href = attributeValue(match);
+  for (const href of resourceTargets(contents)) {
     const decodedHref = decodeHTML(href);
     if (!/\.html(?:[?#]|$)/iu.test(decodedHref)) continue;
     let resolvedUrl;
@@ -152,6 +185,19 @@ function findHtmlRouteLinks(contents, htmlFile) {
   }
 
   return invalidRoutes;
+}
+
+function containsMalformedLink(contents, htmlFile) {
+  const pagePath = `/${path.relative(outputDir, htmlFile).split(path.sep).join("/")}`;
+  const pageUrl = new URL(pagePath, validatorOrigin);
+  return resourceTargets(contents).some((target) => {
+    try {
+      new URL(decodeHTML(target), pageUrl);
+      return false;
+    } catch {
+      return true;
+    }
+  });
 }
 
 function containsCredentialBearingLink(contents, htmlFile) {
@@ -433,22 +479,14 @@ for (const { routeId, outputFile } of routeOutputFiles) {
 
 for (const htmlFile of htmlFiles) {
   const contents = await readFile(htmlFile, "utf8");
-  const renderedText = visibleText(contents);
+  const relativeFile = path.relative(outputDir, htmlFile).split(path.sep).join("/");
+  const isStylesheet = relativeFile.endsWith(".css");
+  const isRunmoorPage = !isStylesheet && (relativeFile === "runmoor/index.html" || relativeFile.startsWith("runmoor/"));
+  const renderedText = isStylesheet ? "" : visibleText(contents);
   const commentText = htmlComments(contents);
-  const pageUrl = new URL(`/${path.relative(outputDir, htmlFile).split(path.sep).join("/")}`, validatorOrigin);
-  for (const match of contents.matchAll(urlAttributePattern)) {
-    let target;
-    try {
-      target = new URL(decodeHTML(attributeValue(match)), pageUrl);
-    } catch {
-      continue;
-    }
-    if (target.origin === validatorOrigin && /^\/runmoor(?:\/|(?:\.html)?$)/u.test(target.pathname)) {
-      failures.push(`${path.relative(outputDir, htmlFile)} links to removed Runmoor route ${target.pathname}`);
-    }
-  }
-  if (!contents.includes('href="https://runmoor.delino.io"')) {
-    failures.push(`${path.relative(outputDir, htmlFile)} is missing the Runmoor navigation link`);
+  const pageUrl = new URL(`/${relativeFile}`, validatorOrigin);
+  if (containsMalformedLink(contents, htmlFile)) {
+    failures.push(`${relativeFile} contains a malformed link`);
   }
 
   for (const htmlRoute of findHtmlRouteLinks(contents, htmlFile)) {
@@ -457,26 +495,46 @@ for (const htmlFile of htmlFiles) {
 
   for (const pattern of forbiddenContent) {
     if (pattern.test(contents) || pattern.test(renderedText)) {
-      failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
+      failures.push(`${relativeFile} contains prohibited public content`);
     }
   }
   if (containsCredentialBearingLink(contents, htmlFile)) {
-    failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
+    failures.push(`${relativeFile} contains prohibited public content`);
   }
   if (containsForbiddenResourcePath(contents, htmlFile)) {
-    failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
+    failures.push(`${relativeFile} contains prohibited public content`);
   }
   if (containsCredentialBearingResource(contents, htmlFile)) {
-    failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
+    failures.push(`${relativeFile} contains prohibited public content`);
   }
   for (const pattern of forbiddenPathContent) {
     const hrefTargets = hrefPathTargets(contents, htmlFile);
     if (pattern.test(commentText) || pattern.test(publicPathText(renderedText, htmlFile)) || hrefTargets.some((target) => pattern.test(target))) {
-      failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
+      failures.push(`${relativeFile} contains prohibited public content`);
     }
   }
   if (containsAffirmativeReleaseClaim(renderedText)) {
-    failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
+    failures.push(`${relativeFile} contains prohibited public content`);
+  }
+  if (isRunmoorPage && containsRunmoorAffirmativeReleaseClaim(renderedText)) {
+    failures.push(`${relativeFile} contains an unsupported release claim`);
+  }
+  if ((isRunmoorPage || isStylesheet) && containsRunmoorPublicContent(contents, pageUrl, { stylesheet: isStylesheet })) {
+    failures.push(`${relativeFile} contains prohibited public content`);
+  }
+  if (isRunmoorPage) {
+    const sidebar = contents.match(/<aside\b[^>]*class="[^"]*rp-doc-layout__sidebar[^"]*"[\s\S]*?<\/aside>/iu)?.[0] ?? "";
+    for (const route of runmoorRouteIds) {
+      if (!sidebar.includes(`href="${route}"`) && !sidebar.includes(`href='${route}'`)) {
+        failures.push(`${relativeFile} is missing sidebar link ${route}`);
+      }
+    }
+    if (!/<a\b(?=[^>]*class="[^"]*rp-social-links__item)[^>]*href="https:\/\/github\.com\/delinoio\/oss"/iu.test(contents)) {
+      failures.push(`${relativeFile} is missing the social navigation repository link`);
+    }
+    if (!/<footer class="delino-repository-footer">[\s\S]*?href="https:\/\/github\.com\/delinoio\/oss"/iu.test(contents)) {
+      failures.push(`${relativeFile} is missing the document footer repository link`);
+    }
   }
 }
 

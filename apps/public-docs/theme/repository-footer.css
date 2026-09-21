@@ -1,0 +1,11 @@
+.delino-repository-footer {
+  border-top: 1px solid var(--rp-c-divider-light);
+  margin-top: 24px;
+  padding: 16px 0 4px;
+  text-align: center;
+}
+
+.delino-repository-footer a {
+  color: var(--rp-c-brand);
+  font-size: 14px;
+}

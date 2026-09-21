@@ -9,10 +9,11 @@
     "build": "rspress build",
     "build:frontend": "pnpm build",
     "preview": "rspress preview",
-    "test:routes": "pnpm build:frontend && node scripts/validate-clean-urls.mjs",
+    "test:routes": "pnpm build:frontend && node scripts/validate-clean-urls.mjs && node --test scripts/runmoor-public-content.test.mjs",
     "test": "pnpm test:routes"
   },
   "devDependencies": {
+    "@delinoio/docs-site-switcher": "workspace:*",
     "@rspress/core": "^2.0.14",
     "entities": "6.0.1"
   }

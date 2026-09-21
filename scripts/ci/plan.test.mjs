@@ -66,11 +66,11 @@ test("Runmoor source and release scripts do not rebuild DevHud desktop/mobile", 
   }
 });
 
-test("Runmoor docs select their checks and shared inputs force the workspace", () => {
-  const id = "node-runmoor-docs-test";
+test("Runmoor docs select the shared public-docs checks and shared inputs force the workspace", () => {
+  const id = "node-public-docs-test";
   for (const event of [Event.PullRequest, Event.Push]) {
-    const paths = ["apps/runmoor-docs/docs/install.md"];
-    assert.deepEqual(selected(event, paths), ["repository-environment", id]);
+    const paths = ["apps/public-docs/docs/runmoor/install.md"];
+    assert.deepEqual(selected(event, paths), ["repository-environment", id, "devhud-release-contracts"]);
     assert.equal(planJobs(event, paths).forced[id], false);
     for (const path of [".nvmrc", "pnpm-lock.yaml", "scripts/run-rspress-port.mjs"]) {
       const plan = planJobs(event, [path]);
@@ -78,7 +78,7 @@ test("Runmoor docs select their checks and shared inputs force the workspace", (
       assert.equal(plan.forced[id], true, path);
     }
     for (const path of ["docs/apps-runmoor-docs-foundation.md", "docs/project-runmoor.md"]) {
-      assert.deepEqual(selected(event, [path]), ["repository-environment"]);
+      assert.deepEqual(selected(event, [path]), ["repository-environment", id]);
     }
     const needs = results(event, paths);
     assert.equal(validateResults(needs), true);
@@ -125,8 +125,6 @@ test("async-commit-hook failures, missing results and unauthorized skips fail th
 test("workspace, shared, runtime, and external contract inputs select their owners", () => {
   for (const [path, ids] of [
     ["apps/mpapp/App.tsx", ["node-mpapp-test", "node-mpapp-lint"]],
-    ["scripts/install/binpm.sh", ["node-binpm-docs-test"]],
-    ["scripts/install/nodeup.ps1", ["node-nodeup-docs-test"]],
     ["scripts/dev-environment/orchestrator.mjs", ["repository-environment"]],
     ["packages/devhud-api-client/src/client.ts", ["devhud-frontend", "devhud-protocol", "devhud-admin", "devhud-api", "rust-test"]],
     ["apps/devhud/src-tauri/src/updater.rs", ["rust-fmt", "rust-clippy", "rust-test", "devhud-rust-conformance", "devhud-frontend"]],
@@ -148,7 +146,6 @@ test("workspace, shared, runtime, and external contract inputs select their owne
   for (const path of [".nvmrc", "Cargo.lock", "protos/devhud/v1/account.proto"]) {
     assert.equal(planJobs(Event.PullRequest, [path]).forced["devhud-frontend"], true, path);
   }
-  assert.equal(planJobs(Event.PullRequest, ["scripts/install/binpm.sh"]).forced["node-binpm-docs-test"], true);
   assert.throws(() => planJobs("unknown", []), /Unsupported CI event/u);
 });
 

@@ -1,0 +1,101 @@
+.delino-docs-product-switcher {
+  position: relative;
+  flex: 0 0 auto;
+  margin-right: 16px;
+  z-index: 20;
+}
+
+.delino-docs-product-switcher__trigger {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--rp-c-text-1, #252525);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-weight: 600;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+
+.delino-docs-product-switcher__trigger:hover,
+.delino-docs-product-switcher__trigger[aria-expanded="true"] {
+  background: var(--rp-c-bg-mute, #f4f4f4);
+  border-color: var(--rp-c-divider, #e5e5e5);
+}
+
+.delino-docs-product-switcher__trigger:focus-visible,
+.delino-docs-product-switcher__link:focus-visible {
+  outline: 2px solid var(--rp-c-brand, #0a9f47);
+  outline-offset: 2px;
+}
+
+.delino-docs-product-switcher__chevron {
+  font-size: 18px;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+
+.delino-docs-product-switcher__panel {
+  background: var(--rp-c-bg, #fff);
+  border: 1px solid var(--rp-c-divider, #dcdcdc);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 14%);
+  left: 0;
+  min-width: 220px;
+  padding: 8px;
+  position: absolute;
+  top: calc(100% + 8px);
+}
+
+.delino-docs-product-switcher__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.delino-docs-product-switcher__link {
+  align-items: center;
+  border-radius: 6px;
+  color: var(--rp-c-text-1, #252525);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-height: 40px;
+  padding: 8px 12px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.delino-docs-product-switcher__link:hover,
+.delino-docs-product-switcher__link[aria-current="page"] {
+  background: var(--rp-c-bg-mute, #f4f4f4);
+}
+
+.delino-docs-product-switcher__check {
+  color: var(--rp-c-brand, #0a9f47);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+@media (max-width: 768px) {
+  .delino-docs-product-switcher {
+    margin: 8px 16px;
+  }
+
+  .delino-docs-product-switcher__trigger {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .delino-docs-product-switcher__panel {
+    left: 0;
+    right: 0;
+    top: calc(100% + 4px);
+  }
+}

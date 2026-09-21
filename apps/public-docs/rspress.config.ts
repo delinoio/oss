@@ -15,6 +15,16 @@ const productPages = [
   { text: "With Watch", link: "/with-watch" },
 ];
 
+const runmoorPages = [
+  { text: "Overview", link: "/runmoor", activeMatch: "^/runmoor$" },
+  { text: "Install and Verify", link: "/runmoor/install" },
+  { text: "Configuration", link: "/runmoor/configuration" },
+  { text: "Commands and Routing", link: "/runmoor/commands" },
+  { text: "Docker", link: "/runmoor/docker" },
+  { text: "Tart Images", link: "/runmoor/tart" },
+  { text: "Operations and Recovery", link: "/runmoor/operations" },
+];
+
 export default defineConfig({
   title: "Delino Public Docs",
   description: "Public documentation for Delino OSS projects.",
@@ -29,13 +39,10 @@ export default defineConfig({
     cleanUrls: true,
   },
   themeConfig: {
-    nav: [
-      ...homePages,
-      ...productPages,
-      { text: "Nodeup", link: "https://nodeup.delino.io" },
-      { text: "binpm", link: "https://binpm.delino.io" },
-      { text: "Runmoor", link: "https://runmoor.delino.io" },
-    ],
+    // Product switching lives in the accessible header control. Keep the
+    // Rspress top navigation empty so the sidebar remains the only article
+    // navigation surface on desktop and mobile.
+    nav: [],
     sidebar: {
       "/": [
         { text: "Get Started", items: homePages.slice(0, 2) },
@@ -65,6 +72,9 @@ export default defineConfig({
           text: "Command Rerun Watcher",
           items: [productPages[3]],
         },
+      ],
+      "/runmoor": [
+        { text: "Runmoor", items: runmoorPages },
       ],
     },
     socialLinks: [

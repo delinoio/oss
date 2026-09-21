@@ -8,6 +8,7 @@
 - `packages/clibox`: private source workspace generating the public `@delino/clibox` launcher and eight native npm packages.
 
 - `packages/devhud-api-client`: implemented generated TypeScript DevHud API client, Connect Query bindings, and safe handwritten wire helpers.
+- `packages/docs-site-switcher`: private source-only shared Rspress theme component and product registry for switching among the public documentation sites. Keep its URLs aligned with the public documentation contracts; it has no generated `dist` output or publication workflow.
 
 ### DevHud Rules
 

@@ -8,11 +8,9 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 
 ## Domain Ownership Map
 - `crates/nodeup`
-- `apps/nodeup-docs`
 
 ## Domain Contract Documents
 - `docs/crates-nodeup-foundation.md`
-- `docs/apps-nodeup-docs-foundation.md`
 
 ## Cross-Domain Invariants
 - Manual version selection and bot-owned release orchestration follow `docs/repository-workflow-contract.md`; the `Release Project` workflow supports patch, minor, and major increments while preserving this project’s existing distribution channels.
@@ -61,16 +59,10 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable third-party quick-install and compile fallback strategies; install and troubleshooting docs must explain that unsupported hosts or missing first-party assets do not fall back to source compilation.
 - Homebrew installation must use prebuilt `nodeup` release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
 - `nodeup` runtime installation and shim dispatch must support `macOS`, `Linux`, and `Windows` x64/arm64 hosts while leaving x86 hosts out of scope; forced macOS platform aliases may use `macos-x64`, `macos-arm64`, `macos/x64`, `macos/arm64`, `darwin-x64`, or `darwin-arm64`; unsupported hosts must fail with `unsupported-platform`, deterministic platform diagnostics, the supported OS/architecture pairs, and the next action to use an x64/arm64 host or supported CI image.
-- `apps/nodeup-docs` must use the repository-default Rspress/Rsbuild-family static documentation toolchain and Cloudflare Pages deployment contract unless this project index and `docs/apps-nodeup-docs-foundation.md` document a replacement.
-- Package-local `pnpm dev` and root `pnpm dev:nodeup-docs` for `apps/nodeup-docs` bind to loopback on fixed port `46303` by default, reject host overrides, preflight the exact selected port, and fail on conflicts without automatic remapping. The existing explicit `NODEUP_DOCS_DEV_PORT` override remains supported.
-- The canonical `nodeup-docs` production URL is `https://nodeup.delino.io`.
-- Nodeup documentation routes exposed by `apps/nodeup-docs` are `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, and `/reference`.
-- `apps/nodeup-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in the top-level social links and in the document-page footer.
-- Nodeup documentation routes exposed by `apps/nodeup-docs` must stay aligned with runtime, release, installer, shim, completion, package-manager, human/JSON output, and color-control contracts.
+- Public Nodeup documentation is published at `https://nodeup.delino.io` and maintained outside this repository. The repository continues to own the CLI contracts and installer source consumed by that external documentation surface.
 
 ## Change Policy
-- Update this index, `docs/crates-nodeup-foundation.md`, and `docs/apps-nodeup-docs-foundation.md` in the same change for behavior or storage contract updates that affect Nodeup documentation.
-- Update this index and `docs/apps-nodeup-docs-foundation.md` in the same change for `apps/nodeup-docs` path, route, theme repository-link surface, toolchain, validation, or deployment contract updates.
+- Update this index and `docs/crates-nodeup-foundation.md` in the same change for behavior or storage contract updates that affect Nodeup documentation.
 - Keep `scripts/install/nodeup.sh`, `scripts/install/nodeup.ps1`, and `crates/nodeup/Cargo.toml` synchronized with release asset names and signing contracts.
 - Keep release, install, and documentation-app contracts synchronized with root, `crates/AGENTS.md`, and `apps/AGENTS.md` rules.
 
