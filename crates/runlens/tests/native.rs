@@ -134,14 +134,19 @@ fn windows_readonly_creation_dispositions_record_external_write_attempts() {
 #[test]
 fn cache_declarations_require_the_selected_command_identity() {
     let root = repository("read");
-    assert!(
-        invoke(
-            root.path(),
-            &["run", "--command", "build", "--save", "original.json"]
-        )
-        .status
-        .success()
+    let observed = invoke(
+        root.path(),
+        &[
+            "--log-level",
+            "debug",
+            "run",
+            "--command",
+            "build",
+            "--save",
+            "original.json",
+        ],
     );
+    assert!(observed.status.success(), "{observed:?}");
     let mut original = parse(root.path(), "original.json");
     // Isolate identity from dependency coverage. This remains a valid report;
     // an unrelated invocation must not borrow these empty observations.
