@@ -18,7 +18,7 @@ For most macOS and Linux users, start with Homebrew. For Windows users, start wi
 
 ## binpm
 
-Install binpm by following the [binpm installation docs](https://binpm.delino.io/installation).
+Install binpm by following the [binpm installation docs](https://oss.delino.io/binpm/installation).
 
 For Nodeup itself, the normal path is a global CLI install:
 
@@ -71,13 +71,13 @@ Direct installers are for users who want a release artifact without Homebrew or 
 macOS and Linux short URL:
 
 ```bash
-curl -fsSL https://nodeup.delino.io/install.sh | bash -s -- --version latest --method direct
+curl -fsSL https://oss.delino.io/nodeup/install.sh | bash -s -- --version latest --method direct
 ```
 
 Windows PowerShell short URL:
 
 ```powershell
-$InstallerUrl = "https://nodeup.delino.io/install.ps1"
+$InstallerUrl = "https://oss.delino.io/nodeup/install.ps1"
 $Installer = Join-Path ([System.IO.Path]::GetTempPath()) ("nodeup-install-" + [System.Guid]::NewGuid().ToString("N") + ".ps1")
 try {
   Invoke-WebRequest -Uri $InstallerUrl -OutFile $Installer -UseBasicParsing

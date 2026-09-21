@@ -9,6 +9,8 @@
 
 - `packages/devhud-api-client`: implemented generated TypeScript DevHud API client, Connect Query bindings, and safe handwritten wire helpers.
 
+- `packages/docs-site-switcher`: shared accessible documentation site selector used by the consolidated Public Docs root and all four package-local documentation apps. Follow `docs/packages-docs-site-switcher-contract.md`; keep its fixed site registry, enum IDs, keyboard behavior, focus management, and active-route semantics synchronized across consumers.
+
 ### DevHud Rules
 
 - Keep generated bootstrap types aligned with the `desktop`/`ios`/`android`/`admin` Logto client keys, native callback, and exact admin redirect defined by the protocol and server contracts.

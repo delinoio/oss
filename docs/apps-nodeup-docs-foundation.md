@@ -8,7 +8,7 @@
 - Runtime: Rspress static documentation app
 - Primary language: Markdown and TypeScript configuration with web build tooling
 - Build toolchain: Rspress, aligned with the repository default preference for Rsbuild/Rspress-style static documentation surfaces.
-- Deployment target: Cloudflare Pages by default.
+- Deployment target: package-local static output assembled into the `public-docs` Cloudflare Pages publication.
 
 ## Users and Operators
 - External users reading Nodeup installation, runtime, and CLI behavior documentation
@@ -17,9 +17,10 @@
 ## Interfaces and Contracts
 - The package name is `nodeup-docs`.
 - The app is registered through the existing `apps/*` pnpm workspace glob.
-- The canonical production URL is `https://nodeup.delino.io`.
+- The canonical production URL is `https://oss.delino.io/nodeup`.
 - Stable documentation route IDs are `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, and `/reference`.
 - Stable public direct-installer file entrypoints are `/install.sh` and `/install.ps1`.
+- The assembled public direct-installer entrypoints are `/nodeup/install.sh` and `/nodeup/install.ps1`; their bytes remain sourced from the canonical maintained installer scripts.
 - The development server binds to loopback on fixed port `46303` and rejects host overrides.
 - Local production preview uses fixed port `46251`.
 - Fixed-port dev and preview commands must preflight port availability, fail without automatic remapping, and print actionable recovery steps when a listener already owns the requested port. Temporary explicit local overrides are supported through `NODEUP_DOCS_DEV_PORT` and `NODEUP_DOCS_PREVIEW_PORT`; those overrides do not change the canonical defaults or CI validation behavior.
@@ -39,9 +40,9 @@
 - Published content must not expose internal architecture, operational, CI, or repository-layout details that are not part of a stable public contract.
 - Installation guidance must preserve the Nodeup direct-installer verification contract for `SHA256SUMS`.
 - Installation guidance must include a chooser that states when to use Homebrew, direct installers, `cargo-binstall`, and binpm.
-- Direct-installer guidance must provide remote copy-paste POSIX and PowerShell commands using `https://nodeup.delino.io/install.sh` and `https://nodeup.delino.io/install.ps1`, preserve current raw GitHub examples using stable first-party `delinoio/oss` raw GitHub URLs, include tag/commit-pinned raw GitHub command patterns for reproducible automation, keep canonical in-repo script paths visible for maintainer workflows, describe checksum verification through `SHA256SUMS`, and distinguish unsupported-host, missing-release-material, and checksum-verification failures.
+- Direct-installer guidance must provide remote copy-paste POSIX and PowerShell commands using `https://oss.delino.io/nodeup/install.sh` and `https://oss.delino.io/nodeup/install.ps1`, preserve current raw GitHub examples using stable first-party `delinoio/oss` raw GitHub URLs, include tag/commit-pinned raw GitHub command patterns for reproducible automation, keep canonical in-repo script paths visible for maintainer workflows, describe checksum verification through `SHA256SUMS`, and distinguish unsupported-host, missing-release-material, and checksum-verification failures.
 - Installation, release, and troubleshooting guidance must explain that Nodeup `cargo-binstall` support uses first-party release assets only and does not enable `quick-install` or `compile` fallback strategies.
-- Cloudflare Pages deployment credentials must remain managed by CI or hosting configuration, not checked into the repository.
+- The shared `public-docs` publisher owns Cloudflare Pages credentials and the assembled production tree; this package must not require a standalone hosting credential or deployment.
 
 ## Logging
 - Build and deployment logs should include the workspace name, changed documentation paths, build status, and deployment status.
@@ -57,11 +58,11 @@
 ## Dependencies and Integrations
 - Integrates with the repository pnpm workspace through `apps/*`.
 - Integrates with Rspress and its Rsbuild-based static-site pipeline.
-- Integrates with Cloudflare Pages for static deployment by default.
+- Integrates with the shared `public-docs` aggregation build and its Cloudflare Pages publication.
 - Depends on `docs/project-nodeup.md` and `docs/crates-nodeup-foundation.md` for canonical Nodeup product and runtime contracts.
 
 ## Change Triggers
-- Update `docs/project-nodeup.md`, this file, and `apps/AGENTS.md` when the app path, route IDs, theme repository-link surface, validation commands, toolchain, output directory, or deployment target changes.
+- Update `docs/project-nodeup.md`, this file, and `apps/AGENTS.md` when the app path, route IDs, theme repository-link surface, validation commands, toolchain, output directory, or aggregation target changes.
 - Update `docs/crates-nodeup-foundation.md` and the relevant app pages when Nodeup runtime, release, installer, shim, completion, package-manager, or color-control behavior changes.
 - Update `docs/README.md` when adding, renaming, or removing this domain contract.
 

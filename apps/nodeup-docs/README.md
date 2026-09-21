@@ -2,7 +2,7 @@
 
 Rspress-based documentation app for the `nodeup` project.
 
-Production URL: https://nodeup.delino.io
+Production URL: https://oss.delino.io/nodeup/
 
 ## Commands
 
@@ -26,6 +26,8 @@ NODEUP_DOCS_PREVIEW_PORT=46253 pnpm --filter nodeup-docs preview
 ```
 
 These are explicit temporary overrides; the commands never search for a free port. The documented defaults remain `46303` for development and `46251` for preview.
+
+The shared `public-docs` project assembles this package's output below `/nodeup/` and owns production hosting and publication. This package has no standalone Pages deployment.
 
 ## Files
 

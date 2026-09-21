@@ -15,6 +15,7 @@ const documentedRouteIds = [
 
 const outputDir = path.resolve("doc_build");
 const repoRoot = path.resolve("../..");
+const siteBasePath = "/binpm";
 const publicInstallerEntrypoints = [
   {
     routeId: "/install.sh",
@@ -56,7 +57,7 @@ const routeOutputFiles = documentedRouteIds.map((routeId) => ({
 const cleanHrefPatterns = documentedRouteIds.map((routeId) => ({
   routeId,
   pattern: new RegExp(
-    `href=(["'])(?:https?:\\/\\/[^/"']+)?${routeId === "/" ? "/" : routeId}(?:[?#][^"']*)?\\1`,
+    `href=(["'])(?:https?:\\/\\/[^/"']+)?${siteBasePath}${routeId === "/" ? "/" : routeId}(?:[?#][^"']*)?\\1`,
   ),
 }));
 

@@ -2,7 +2,7 @@
 
 ## 1. Install Nodeup
 
-Choose one installation method from [Installation](/installation), then verify the binary:
+Choose one installation method from [Installation](./installation), then verify the binary:
 
 ```bash
 nodeup --version
@@ -66,7 +66,7 @@ nodeup override set lts --path ~/src/my-app
 nodeup override unset --path ~/src/my-app
 ```
 
-Runtime resolution for normal dispatch is explicit selector, then nearest directory override, then global default. See [Runtime Resolution](/runtime-resolution).
+Runtime resolution for normal dispatch is explicit selector, then nearest directory override, then global default. See [Runtime Resolution](./runtime-resolution).
 
 ## Exact-Version Pins
 

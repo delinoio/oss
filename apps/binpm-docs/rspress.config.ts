@@ -43,6 +43,7 @@ const stableDocsRoutes = [
 export default defineConfig({
   title: "binpm Docs",
   description: "Documentation for the binpm binary package manager.",
+  base: "/binpm/",
   root: "docs",
   outDir: "doc_build",
   builderConfig: {

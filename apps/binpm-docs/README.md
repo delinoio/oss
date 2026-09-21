@@ -2,7 +2,7 @@
 
 Rspress-based documentation app for the `binpm` project.
 
-Canonical production URL: `https://binpm.delino.io`.
+Canonical production URL: `https://oss.delino.io/binpm/`.
 
 ## Commands
 
@@ -18,9 +18,11 @@ pnpm --filter binpm-docs preview
 `pnpm --filter binpm-docs dev` runs Rspress on fixed port `46304` and exits on conflicts instead of automatically selecting another port.
 `pnpm --filter binpm-docs preview` serves the production build on fixed port `46261`.
 
-Production deployment is static Cloudflare Pages output from `doc_build`. Rspress clean URLs are enabled, so stable public route IDs such as `/installation` must be generated and internal links must not point at `.html` suffixes.
+Production deployment is static Cloudflare Pages output from `doc_build`, published below the `/binpm/` subpath of the shared documentation site. Rspress clean URLs are enabled, so stable public route IDs such as `/binpm/installation` must be generated and internal links must not point at `.html` suffixes.
 
-`pnpm --filter binpm-docs test` builds the site and runs `scripts/validate-clean-urls.mjs`. The validator checks the stable route IDs `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/releases`, `/troubleshooting`, and `/reference`; each route must have a build output artifact and generated internal HTML links must use clean public route IDs.
+The shared `public-docs` project owns production hosting and publication; this package has no standalone Pages deployment.
+
+`pnpm --filter binpm-docs test` builds the site and runs `scripts/validate-clean-urls.mjs`. The validator checks the stable route IDs `/binpm/`, `/binpm/installation`, `/binpm/getting-started`, `/binpm/commands`, `/binpm/local-tooling`, `/binpm/cache-and-verification`, `/binpm/releases`, `/binpm/troubleshooting`, and `/binpm/reference`; each route must have a build output artifact and generated internal HTML links must use clean public route IDs.
 
 The production URL is deployment metadata; docs content must come from repository contracts, not from assumptions about the current live site contents.
 

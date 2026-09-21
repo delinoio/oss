@@ -65,6 +65,7 @@
 - `docs/project-ttl.md`: TTL compiler project index.
 - `docs/project-mpapp.md`: Expo mobile app project index.
 - `docs/project-public-docs.md`: Public docs app project index.
+- `docs/packages-docs-site-switcher-contract.md`: Shared accessible documentation site selector package contract.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-rustia.md`: Rustia multi-crate project index.
 - `docs/project-devhud.md`: DevHud cross-platform desktop/mobile utility project index and current issue #815 contract.
@@ -113,7 +114,7 @@ enum ProjectId {
 - `mpapp` -> `apps/mpapp`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `rustia` -> `crates/rustia`, `crates/rustia-llm`, `crates/rustia-macros`
-- `public-docs` -> `apps/public-docs`
+- `public-docs` -> `apps/public-docs`, `packages/docs-site-switcher`
 - `devhud` -> `apps/devhud` (shared shell, identity/settings/diagnostics, direct-client GitHub.com provider/setup and RealQA issue submission, desktop RealQA capture/editor/encrypted drafts/direct official and BYO R2 uploads, populated Deck surface, desktop/mobile hosts, production WidgetKit/AppWidgetProvider Deck widgets, and desktop Native Messaging listener implemented; other populated product surfaces planned), `apps/devhud-chrome-extension` (implemented), `apps/devhud-admin` (implemented), `servers/devhud-api` (Bootstrap/Settings/Upload/Account/Admin/Diagnostics and embedded administrator assets implemented), `protos/devhud/v1` (implemented), `packages/devhud-api-client` (implemented), `crates/devhud-native-messaging-host` (implemented)
 
 ### DevHud Contract
@@ -147,6 +148,7 @@ enum ProjectId {
 - `apps/devhud-admin` is the sole Rsbuild producer of the ignored embedded administrator `dist`. Run `pnpm --filter devhud-admin build:embedded` before any API or sweeper Go compilation; the command builds the generated client, produces the `/admin/`-rooted hashed bundle without source maps, and validates its exact production structure. Docker must generate that bundle inside its build boundary and compile both binaries from the same generated tree.
 - Android App Bundle validation must use the checksum-pinned artifact inspector declared in `apps/devhud/mobile-platforms.json` and verify the final merged base manifest's exact Deck widget receiver before widget evidence is recorded.
 - DevHud private packaging has no automatic trigger: it is manually dispatchable and reusable only by an explicit caller, and is signed-only except for the secret-free `plan-only` dry run. Its stable release identity is exactly `devhud@v<MAJOR.MINOR.PATCH>`, with `packaging/devhud/release-metadata.json` synchronized to every source version. Preserve updater Ed25519 signatures, platform/store signatures, and Sigstore bundles as separate trust domains; unsigned or incomplete output is never public-ready. The workflow may retain a short-lived private artifact only and must never push a tag/image, create a release, submit a store build, or deploy.
+- The coordinated DevHud release may retain only DevHud-owned public documentation in its release-bound candidate. Its candidate excludes root `search_index.*` data; Cloudflare Pages publication must rebuild the complete public-docs aggregate from current `main` and overlay only `/devhud` and its required shared runtime assets, so delayed or historical recovery cannot overwrite current root search data or newer package-local documentation subpaths.
 
 ### Repository Default Technology Choices
 
@@ -215,18 +217,18 @@ enum ProjectId {
 ### binpm Docs App Contract
 
 - `apps/binpm-docs` is the Rspress static documentation app for `binpm` and uses the existing `apps/*` workspace.
-- The canonical production URL for `apps/binpm-docs` is `https://binpm.delino.io`.
+- The canonical production URL for `apps/binpm-docs` is `https://oss.delino.io/binpm`.
 - `apps/binpm-docs` must use Cloudflare Pages as the default static deployment target unless `docs/project-binpm.md` and `docs/apps-binpm-docs-foundation.md` document a replacement.
-- binpm documentation content must be sourced from repository contracts and must not infer product behavior or page content from the live `https://binpm.delino.io` site.
+- binpm documentation content must be sourced from repository contracts and must not infer product behavior or page content from the live canonical site.
 - `apps/binpm-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
-- binpm direct-installer documentation must include latest docs-site installer commands for `https://binpm.delino.io/install.sh` and `https://binpm.delino.io/install.ps1`, preserve current and pinned first-party raw GitHub installer commands, describe checksum verification through `SHA256SUMS`, and keep binpm release verification separate from package verification.
+- binpm direct-installer documentation must include latest docs-site installer commands for `https://oss.delino.io/binpm/install.sh` and `https://oss.delino.io/binpm/install.ps1`, preserve current and pinned first-party raw GitHub installer commands, describe checksum verification through `SHA256SUMS`, and keep binpm release verification separate from package verification.
 - binpm installation and release documentation must describe Homebrew as prebuilt-only, describe disabled `cargo-binstall` quick-install and compile fallbacks, and distinguish first-party binpm release platforms from broader third-party target parsing support.
 
 ### Nodeup Docs App Contract
 
 - `apps/nodeup-docs` is the Rspress static documentation app for `nodeup` and uses the existing `apps/*` workspace.
-- The canonical production URL for `apps/nodeup-docs` is `https://nodeup.delino.io`.
-- `apps/nodeup-docs` must publish public direct-installer entrypoints at `https://nodeup.delino.io/install.sh` and `https://nodeup.delino.io/install.ps1`.
+- The canonical production URL for `apps/nodeup-docs` is `https://oss.delino.io/nodeup`.
+- `apps/nodeup-docs` must publish public direct-installer entrypoints at `https://oss.delino.io/nodeup/install.sh` and `https://oss.delino.io/nodeup/install.ps1`.
 - `apps/nodeup-docs` must use Cloudflare Pages as the default static deployment target unless `docs/project-nodeup.md` and `docs/apps-nodeup-docs-foundation.md` document a replacement.
 - `apps/nodeup-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
 
@@ -382,6 +384,7 @@ Change-scoped execution rules:
 - PRs run affected validation, including OCI checks, but never allocate the two Linux CLI package, ten desktop, three iOS, or four Android package entries. Relevant main pushes run the complete existing native matrices. Manual dispatch runs every check and platform. There is no nightly CI schedule.
 - PR comparisons use the base/head merge-base; main comparisons use the exact `before..sha` trees, including all commits in the push. Missing or invalid comparisons fail. Deleted and renamed files select both affected owners.
 - Node workspace jobs use `scripts/ci/run-affected.mjs` to invoke the installed Turbo Node entry point directly with `turbo run <task> --affected --filter <workspace>` arguments, without a shell or package-manager shim, and with the planner's exact `TURBO_SCM_BASE` and `TURBO_SCM_HEAD`. External inputs and forced runs omit `--affected`; an otherwise empty affected set is a successful no-op.
+- Because `public-docs` assembles the four package-local documentation outputs, changes under `apps/async-commit-hook-docs`, `apps/binpm-docs`, `apps/nodeup-docs`, or `apps/runmoor-docs` select and force `node-public-docs-test` in addition to the owning package test.
 - Central path rules cover Go, Rust, every Node workspace, repository environment tooling, DevHud domains, packaging, public docs, and package/release/review workflows. Runmoor-only release scripts do not select DevHud native packaging; shared DevHud packaging inputs still do.
 - The PR frontend job runs the complete DevHud test command, including native-script fixtures, clean desktop/mobile frontend output validation, static mobile/widget contracts, and immutable CEF pins. Its aggregate `test` task is non-cacheable because it validates consecutive clean builds and external contract inputs.
 - Protocol generation and package-local frontend outputs are deterministic and cacheable; the ignored administrator and ach UI embeds, native package, mobile, smoke, signing, release, and deployment tasks remain non-cacheable.
@@ -436,11 +439,11 @@ Release automation baseline:
 - Project ID `async-commit-hook` owns `cmds/async-commit-hook`, `apps/async-commit-hook`, `apps/async-commit-hook-docs`, `protos/async_commit_hook/v1` and `packages/async-commit-hook-api-client`; only executable `ach` is distributed.
 - Follow `docs/project-async-commit-hook.md` and its domain contracts. Issue #897 applies with the owner's recorded exclusions of actual six-target machine validation and actual public publication.
 - `release-async-commit-hook.yml` is manual-only from `main`, defaults to unsigned nonpublishing dry-run artifacts, and follows `docs/cmds-async-commit-hook-release-contract.md`. Ordinary CI must never sign or publish ach artifacts, mutate the Homebrew tap or deploy Pages.
-- `Release Project` prepares async-commit-hook versions and tags only. Keep the Go version, local UI/docs/client package versions, release metadata and both installer defaults synchronized in one version-only commit; reject drift and missing or ambiguous declarations before writes. Keep Cargo publication credentials out of this path. Actual publication retains the separate manual main workflow and its exact signing identity and tag/dispatch-commit validation.
+- `Release Project` prepares async-commit-hook versions and tags only. Keep the Go version, local UI/docs/client package versions and release metadata synchronized in one version-only commit; installer defaults must resolve the latest published stable release so an automatic Public Docs deployment cannot target an unpublished prepared version. Reject drift and missing or ambiguous declarations before writes. Keep Cargo publication credentials out of this path. Actual publication retains the separate manual main workflow and its exact signing identity and tag/dispatch-commit validation.
 - CLI/MCP/Connect share one core, exact-commit latest-compatible-attempt validation and explicit per-run acknowledgements. Never resurrect old successful evidence after pruning.
 - State, reports and logs remain local and account-owned; no telemetry. User commands require explicit repository trust. Cancellation must reconcile owned descendants before releasing exclusive scheduling groups.
 - Development uses frontend 46308 and local UI/API 46309 with conflict failure; docs development/preview use 46310/46281. Root DevHud development remains unchanged.
-- The daemon and on-demand viewer serve the same embedded UI without pairing. Every RPC requires exact same-origin POST and the API version header. https://ach.delino.io is documentation-only.
+- The daemon and on-demand viewer serve the same embedded UI without pairing. Every RPC requires exact same-origin POST and the API version header. `https://oss.delino.io/async-commit-hook` is documentation-only.
 - Run `pnpm --filter async-commit-hook build:embedded` before ach Go compilation or repository-wide Go checks, including commit hooks. The app owns the generated command webassets/dist; never commit or substitute placeholder assets. Root Go checks also require the existing DevHud administrator embed.
 
 ### Linux CLI Package Distribution
@@ -453,7 +456,7 @@ Release automation baseline:
 
 ### Runmoor Contract
 
-- Public Runmoor documentation is owned by `apps/runmoor-docs` at `https://runmoor.delino.io`; follow `docs/apps-runmoor-docs-foundation.md`. The former `public-docs` `/runmoor` and child routes are removed without handoff pages or redirects. Keep all public discovery links pointed at the standalone site.
+- Public Runmoor documentation is Markdown-owned by `apps/runmoor-docs` and published at `https://oss.delino.io/runmoor`; follow `docs/apps-runmoor-docs-foundation.md`. Keep all public discovery links pointed at the consolidated subpath.
 
 - Follow `docs/project-runmoor.md`, `docs/cmds-runmoor-foundation.md`, and `cmds/runmoor/AGENTS.md` for issue #893. Runmoor owns local ephemeral GitHub Actions runners through Docker and Tart, with host-only credentials, durable ownership, fair resource budgets, and single-job disposable environments.
 - Runmoor binaries use the stable release channel for darwin-arm64, linux-amd64, and linux-arm64 under `runmoor@v<MAJOR.MINOR.PATCH>`; publication dry runs are credential-free and non-publishing. No Homebrew distribution is added.

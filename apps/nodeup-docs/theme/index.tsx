@@ -2,6 +2,8 @@ import { NoSSR, useI18n } from "@rspress/core/runtime";
 import {
   DocFooter as BasicDocFooter,
   IconSearch,
+  Layout as BasicLayout,
+  type LayoutProps,
   SearchPanel,
   SvgWrapper,
 } from "@rspress/core/theme-original";
@@ -10,6 +12,7 @@ import { useEffect, useState } from "react";
 
 import "./accessibility.css";
 import "./repository-footer.css";
+import { DocumentationSiteId, DocsSiteSwitcher } from "../../../packages/docs-site-switcher/src/index";
 
 function isHTMLElement(value: Element | null): value is HTMLElement {
   return value instanceof HTMLElement;
@@ -367,5 +370,19 @@ function DocFooter() {
   );
 }
 
-export { DocFooter, Search };
+function Layout(props: LayoutProps) {
+  return (
+    <BasicLayout
+      {...props}
+      beforeNavTitle={
+        <>
+          <DocsSiteSwitcher currentSite={DocumentationSiteId.Nodeup} />
+          {props.beforeNavTitle}
+        </>
+      }
+    />
+  );
+}
+
+export { DocFooter, Layout, Search };
 export * from "@rspress/core/theme-original";

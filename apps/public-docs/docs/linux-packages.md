@@ -115,7 +115,7 @@ sudo dnf makecache
 
 After their first native releases, use the stable registration above and install `runmoor` or `clibox` with APT or DNF. Check `runmoor version` or `clibox --version`. Native clibox installation does not require Node.js; desktop helpers remain optional user-installed tools.
 
-Installation does not register or start a Runmoor service, configure runners, or install Docker or Tart. Follow the [Runmoor guide](https://runmoor.delino.io) for explicit setup and service commands. Package installation checks do not certify live GitHub or Tart integration.
+Installation does not register or start a Runmoor service, configure runners, or install Docker or Tart. Follow the [Runmoor guide](https://oss.delino.io/runmoor/) for explicit setup and service commands. Package installation checks do not certify live GitHub or Tart integration.
 
 ## Update and remove
 

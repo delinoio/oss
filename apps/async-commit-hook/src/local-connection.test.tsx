@@ -21,7 +21,7 @@ it("opens the workspace without pairing or reading legacy authorization", async 
     expect(await screen.findByRole("complementary", { name: "Repositories" })).toBeTruthy();
     expect(screen.queryByText("Pair this browser")).toBeNull();
     expect(screen.queryByRole("button", { name: "Disconnect" })).toBeNull();
-    expect(screen.getByRole("link", { name: /Documentation/ }).getAttribute("href")).toBe("https://ach.delino.io");
+    expect(screen.getByRole("link", { name: /Documentation/ }).getAttribute("href")).toBe("https://oss.delino.io/async-commit-hook");
     expect(pair).not.toHaveBeenCalled();
     expect(readStorage).not.toHaveBeenCalled();
     expect(location.hash).toBe("");

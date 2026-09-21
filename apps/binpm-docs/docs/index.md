@@ -6,12 +6,12 @@ Use binpm when a tool already publishes native executables and you want project-
 
 ## Start Here
 
-- [Install binpm](/installation).
-- [Declare and run a local tool](/getting-started).
-- [Read the command overview](/commands).
-- [Understand local manifests and lockfiles](/local-tooling).
-- [Review cache and verification behavior](/cache-and-verification).
-- [Review binpm release artifacts](/releases).
+- [Install binpm](./installation).
+- [Declare and run a local tool](./getting-started).
+- [Read the command overview](./commands).
+- [Understand local manifests and lockfiles](./local-tooling).
+- [Review cache and verification behavior](./cache-and-verification).
+- [Review binpm release artifacts](./releases).
 
 ## Source Specs
 

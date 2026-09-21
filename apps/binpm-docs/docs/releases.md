@@ -48,4 +48,4 @@ Homebrew is prebuilt-only for binpm; the formula does not compile from source wh
 
 ## Package Verification Boundary
 
-binpm release artifact verification applies to the `binpm` binary itself. It does not imply that binpm package installs have signature verification beyond the package verification contract documented in [Cache and Verification](/cache-and-verification).
+binpm release artifact verification applies to the `binpm` binary itself. It does not imply that binpm package installs have signature verification beyond the package verification contract documented in [Cache and Verification](./cache-and-verification).

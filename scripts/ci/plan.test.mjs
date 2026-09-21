@@ -70,7 +70,7 @@ test("Runmoor docs select their checks and shared inputs force the workspace", (
   const id = "node-runmoor-docs-test";
   for (const event of [Event.PullRequest, Event.Push]) {
     const paths = ["apps/runmoor-docs/docs/install.md"];
-    assert.deepEqual(selected(event, paths), ["repository-environment", id]);
+    assert.deepEqual(selected(event, paths), ["repository-environment", id, "node-public-docs-test"]);
     assert.equal(planJobs(event, paths).forced[id], false);
     for (const path of [".nvmrc", "pnpm-lock.yaml", "scripts/run-rspress-port.mjs"]) {
       const plan = planJobs(event, [path]);
@@ -127,6 +127,11 @@ test("workspace, shared, runtime, and external contract inputs select their owne
     ["apps/mpapp/App.tsx", ["node-mpapp-test", "node-mpapp-lint"]],
     ["scripts/install/binpm.sh", ["node-binpm-docs-test"]],
     ["scripts/install/nodeup.ps1", ["node-nodeup-docs-test"]],
+    ["packages/docs-site-switcher/src/index.tsx", ["node-public-docs-test"]],
+    ["apps/async-commit-hook-docs/theme/index.tsx", ["async-commit-hook", "node-public-docs-test"]],
+    ["apps/binpm-docs/theme/index.tsx", ["node-binpm-docs-test", "node-public-docs-test"]],
+    ["apps/nodeup-docs/theme/index.tsx", ["node-nodeup-docs-test", "node-public-docs-test"]],
+    ["apps/runmoor-docs/theme/index.tsx", ["node-runmoor-docs-test", "node-public-docs-test"]],
     ["scripts/dev-environment/orchestrator.mjs", ["repository-environment"]],
     ["packages/devhud-api-client/src/client.ts", ["devhud-frontend", "devhud-protocol", "devhud-admin", "devhud-api", "rust-test"]],
     ["apps/devhud/src-tauri/src/updater.rs", ["rust-fmt", "rust-clippy", "rust-test", "devhud-rust-conformance", "devhud-frontend"]],
@@ -142,6 +147,14 @@ test("workspace, shared, runtime, and external contract inputs select their owne
     ["Cargo.lock", ["rust-fmt", "rust-clippy", "rust-test"]],
   ]) {
     for (const id of ids) assert.ok(selected(Event.PullRequest, [path]).includes(id), `${path}: ${id}`);
+  }
+  for (const path of [
+    "apps/async-commit-hook-docs/theme/index.tsx",
+    "apps/binpm-docs/theme/index.tsx",
+    "apps/nodeup-docs/theme/index.tsx",
+    "apps/runmoor-docs/theme/index.tsx",
+  ]) {
+    assert.equal(planJobs(Event.PullRequest, [path]).forced["node-public-docs-test"], true, path);
   }
   assert.equal(planJobs(Event.PullRequest, ["apps/devhud/src/App.tsx"]).forced["devhud-frontend"], false);
   assert.equal(planJobs(Event.PullRequest, ["packages/devhud-api-client/src/client.ts"]).forced["devhud-frontend"], false);

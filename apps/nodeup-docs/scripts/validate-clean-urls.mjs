@@ -16,7 +16,12 @@ const documentedRouteIds = [
 ];
 
 const outputDir = path.resolve("doc_build");
+const repoRoot = path.resolve("../..");
 const requiredPublicFiles = ["install.sh", "install.ps1"];
+const installerSources = {
+  "install.sh": path.join(repoRoot, "scripts/install/nodeup.sh"),
+  "install.ps1": path.join(repoRoot, "scripts/install/nodeup.ps1"),
+};
 const htmlHrefPatterns = documentedRouteIds.map((routeId) => {
   if (routeId === "/") {
     return {
@@ -65,6 +70,8 @@ for (const publicFile of requiredPublicFiles) {
     const publicFileStat = await stat(publicFilePath);
     if (!publicFileStat.isFile()) {
       failures.push(`missing public installer file: ${publicFile}`);
+    } else if ((await readFile(publicFilePath)).compare(await readFile(installerSources[publicFile])) !== 0) {
+      failures.push(`installer bytes differ from ${path.relative(repoRoot, installerSources[publicFile])}: ${publicFile}`);
     }
   } catch {
     failures.push(`missing public installer file: ${publicFile}`);

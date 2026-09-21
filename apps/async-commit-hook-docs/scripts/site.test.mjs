@@ -7,6 +7,8 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 const routes = JSON.parse(await readFile(new URL("routes.json", root), "utf8"));
 const read = (path) => readFile(new URL(path, root), "utf8");
+const siteBasePath = "/async-commit-hook";
+const publicRoute = (route) => route === "/" ? `${siteBasePath}/` : `${siteBasePath}${route}`;
 
 test("all guides have clean routes, navigation, search and public content", async () => {
   for (const route of routes) {
@@ -15,7 +17,7 @@ test("all guides have clean routes, navigation, search and public content", asyn
     assert.match(html, /<h1\b/);
     assert.match(html, /Search/i);
     assert.match(html, /https:\/\/github.com\/delinoio\/oss/);
-    for (const target of routes) assert.ok(html.includes(`href="${target.link}"`), `${route.link}: missing ${target.link}`);
+    for (const target of routes) assert.ok(html.includes(`href="${publicRoute(target.link)}"`), `${route.link}: missing ${publicRoute(target.link)}`);
     const text = decodeHTML(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "").replace(/<[^>]*>/g, " "));
     assert.doesNotMatch(text, /(?:\/Users\/|\/home\/[a-z]|\.infisical|DEVHUD_|ghp_[a-z0-9]{20}|github_pat_[a-z0-9_]{20}|BEGIN PRIVATE KEY)/i);
     assert.doesNotMatch(text, /(?:apps|cmds|servers|protos)\/(?:async-commit-hook|devhud)/);
@@ -68,9 +70,10 @@ test("legacy guide links map only to known documentation routes", async () => {
   for (const hash of ["", "#install", "#existing-hooks", "#pair=old&port=46309", "#https://evil.example"]) {
     let destination;
     runInNewContext(script, { window: { location: { hash, replace: (value) => { destination = value; } } } });
-    assert.equal(destination, routes.some((route) => route.link === "/" + hash.slice(1)) ? "/" + hash.slice(1) : "/");
+    const route = routes.some((candidate) => candidate.link === "/" + hash.slice(1)) ? "/" + hash.slice(1) : "/";
+    assert.equal(destination, publicRoute(route));
   }
-  assert.equal(await read("doc_build/_redirects"), "/docs /docs/ 301\n");
+  assert.equal(await read("doc_build/_redirects"), "/async-commit-hook/docs /async-commit-hook/docs/ 301\n");
 });
 
 test("installer endpoints retain canonical bytes and the site has no local API client", async () => {

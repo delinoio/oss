@@ -10,7 +10,8 @@ const workflow = load(readFileSync(new URL('.github/workflows/release-async-comm
 test('manual release fails closed with an unsigned nonpublishing dry run', () => {
   assert.deepEqual(Object.keys(workflow.on), ['workflow_dispatch']);
   assert.equal(workflow.on.workflow_dispatch.inputs.dry_run.default, true);
-  for (const job of ['publish','homebrew','deploy']) assert.equal(workflow.jobs[job].if, '${{ !inputs.dry_run }}');
+  for (const job of ['publish','homebrew']) assert.equal(workflow.jobs[job].if, '${{ !inputs.dry_run }}');
+  assert.equal(workflow.jobs.deploy, undefined);
   assert.equal(workflow.jobs.publish.environment, 'async-commit-hook-release');
   assert.match(JSON.stringify(workflow.jobs.validate), /refs\/heads\/main/);
   assert.doesNotMatch(JSON.stringify(workflow.jobs.validate), /gh release create|git push|pages deploy|sign-blob/);
@@ -21,10 +22,9 @@ test('manual release fails closed with an unsigned nonpublishing dry run', () =>
 });
 test('downstream publication retries preserve the successful immutable GitHub release', () => {
  assert.equal(workflow.jobs.homebrew.needs,'publish');
- assert.equal(workflow.jobs.deploy.needs,'homebrew');
  assert.deepEqual(workflow.jobs.homebrew.permissions,{contents:'read'});
  assert.doesNotMatch(JSON.stringify(workflow.jobs.publish),/HOMEBREW|git push origin HEAD:main|pages deploy/);
- assert.doesNotMatch(JSON.stringify([workflow.jobs.homebrew,workflow.jobs.deploy]),/gh release create|sign-blob|id-token/);
+ assert.doesNotMatch(JSON.stringify(workflow.jobs.homebrew),/gh release create|sign-blob|id-token/);
  const directory=mkdtempSync(join(tmpdir(),'ach-homebrew-'));
  try {
   const bin=join(directory,'tools'), remote=join(directory,'tap.git'), seed=join(directory,'seed'), release=join(directory,'release');
@@ -63,12 +63,11 @@ test('release tag identity is checked before signing and again before creation',
 });
 
 
-test('release embeds the UI before Go validation and deploys only Rspress documentation', () => {
+test('release embeds the UI before Go validation and leaves docs publication to public-docs', () => {
  const validate = workflow.jobs.validate.steps.map((step) => step.run ?? '').join('\n');
  assert.ok(validate.indexOf('pnpm --filter async-commit-hook build:embedded') < validate.indexOf('go test ./...'));
  assert.match(validate, /pnpm --filter async-commit-hook-docs test/);
- const artifact = workflow.jobs.validate.steps.find((step) => step.with?.name === 'ach-site');
- assert.equal(artifact.with.path, 'apps/async-commit-hook-docs/doc_build');
+ assert.doesNotMatch(JSON.stringify(workflow.jobs.validate), /ach-site|ACH_PAGES_PROJECT|pages deploy/);
  const builder = readFileSync(new URL('scripts/release/build-async-commit-hook.py', root), 'utf8');
  assert.ok(builder.indexOf('"build:embedded"') < builder.indexOf('for target in m["targets"]'));
 });
