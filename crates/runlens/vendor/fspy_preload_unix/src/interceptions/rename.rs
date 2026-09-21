@@ -8,8 +8,8 @@ use crate::{client::{convert::PathAt, handle_open}, libc::{c_char, c_int, c_uint
 unsafe fn record(old_fd: c_int, old: *const c_char, new_fd: c_int, new: *const c_char) {
     // SAFETY: pointers and descriptors are forwarded from the native caller.
     unsafe {
-        handle_open(PathAt::borrow_raw(old_fd, old), AccessMode::WRITE);
-        handle_open(PathAt::borrow_raw(new_fd, new), AccessMode::WRITE);
+        handle_open(PathAt::borrow_raw(old_fd, old), AccessMode::WRITE.union(AccessMode::PATH_MUTATION));
+        handle_open(PathAt::borrow_raw(new_fd, new), AccessMode::WRITE.union(AccessMode::PATH_MUTATION));
     }
 }
 

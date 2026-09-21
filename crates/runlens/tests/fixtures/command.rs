@@ -1142,17 +1142,28 @@ fn main() {
         }
         #[cfg(unix)]
         "transient-symlink" => {
-            if args.get(2).is_some_and(|state| state == "before") {
-                fs::rename("transient", "original-directory").unwrap();
+            let transient = if args.get(2).is_some_and(|state| state == "restore") {
+                "./transient"
+            } else {
+                "transient"
+            };
+            if args
+                .get(2)
+                .is_some_and(|state| matches!(state.as_str(), "before" | "restore"))
+            {
+                fs::rename(transient, "original-directory").unwrap();
             }
-            std::os::unix::fs::symlink(&args[1], "transient").unwrap();
+            std::os::unix::fs::symlink(&args[1], transient).unwrap();
             assert_eq!(
                 fs::read_to_string("transient/input.txt").unwrap(),
                 "external"
             );
-            fs::remove_file("transient").unwrap();
+            fs::remove_file(transient).unwrap();
             if args.get(2).is_some_and(|state| state == "after") {
-                fs::create_dir("transient").unwrap();
+                fs::create_dir(transient).unwrap();
+            }
+            if args.get(2).is_some_and(|state| state == "restore") {
+                fs::rename("original-directory", transient).unwrap();
             }
         }
         #[cfg(target_os = "linux")]

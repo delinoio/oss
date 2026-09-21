@@ -9,7 +9,7 @@ macro_rules! removal {
         unsafe extern "C" fn $name(path: *const c_char) -> c_int {
             // SAFETY: forward the caller's NUL-terminated path unchanged.
             unsafe {
-                handle_open(PathAt::borrow_raw(libc::AT_FDCWD, path), AccessMode::WRITE);
+                handle_open(PathAt::borrow_raw(libc::AT_FDCWD, path), AccessMode::WRITE.union(AccessMode::PATH_MUTATION));
                 $name::original()(path)
             }
         }
@@ -24,7 +24,7 @@ unsafe extern "C" fn unlinkat(fd: c_int, path: *const c_char, flags: c_int) -> c
     // SAFETY: the directory descriptor and NUL-terminated path are borrowed
     // from the caller, and all original arguments (including AT_REMOVEDIR) pass through.
     unsafe {
-        handle_open(PathAt::borrow_raw(fd, path), AccessMode::WRITE);
+        handle_open(PathAt::borrow_raw(fd, path), AccessMode::WRITE.union(AccessMode::PATH_MUTATION));
         unlinkat::original()(fd, path, flags)
     }
 }

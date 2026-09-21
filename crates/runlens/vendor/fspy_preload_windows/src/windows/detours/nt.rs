@@ -619,7 +619,7 @@ static DETOUR_NT_SET_INFORMATION_FILE: Detour<
                 let observed = unsafe { handle.to_absolute_path(|path| {
                     if let Some(path) = path {
                         global_client().send(PathAccess {
-                            mode: AccessMode::WRITE,
+                            mode: AccessMode::WRITE.union(AccessMode::PATH_MUTATION),
                             path: IpcPath::from_wide(path.as_slice()),
                         });
                         Ok(true)
@@ -642,7 +642,7 @@ static DETOUR_NT_DELETE_FILE: Detour<unsafe extern "system" fn(POBJECT_ATTRIBUTE
     Detour::new(c"NtDeleteFile", ntapi::ntioapi::NtDeleteFile, {
         unsafe extern "system" fn delete_file(attributes: POBJECT_ATTRIBUTES) -> NTSTATUS {
             // SAFETY: handle_open copies untrusted attributes before parsing.
-            unsafe { handle_open(AccessMode::WRITE, attributes) };
+            unsafe { handle_open(AccessMode::WRITE.union(AccessMode::PATH_MUTATION), attributes) };
             // SAFETY: forward the original operands and preserve the NT result.
             unsafe { (DETOUR_NT_DELETE_FILE.real())(attributes) }
         }

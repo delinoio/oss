@@ -154,6 +154,8 @@
 
 ### Runlens Rules
 
+- Runlens must invalidate otherwise in-scope descendants of ancestors with observed replacement/removal attempts: restored directory snapshots cannot prove that a temporary symlink was never followed. Bound ancestor/Windows alias lookups and fail closed on exhaustion; retain redacted evidence and leave the child result unchanged.
+
 - Runlens Windows handle metadata queries record read attempts independently of open access flags, preserve native buffers/status, and mark unresolvable file handles incomplete. Collector-owned path queries must not recurse or become target evidence; anonymous pipe/device metadata stays outside filesystem evidence.
 
 

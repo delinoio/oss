@@ -194,6 +194,7 @@ async fn observe_inner(request: Request<'_>, hook: impl FnOnce()) -> Result<Exec
         ()=timeout=>{timed_out=true;cancel.cancel();wait.await}
     };
     let mut accesses: Entries<Access> = Entries::new(request.config.limits.memory_bytes / 8);
+    let mut path_mutations = Entries::new(request.config.limits.memory_bytes / 8);
     let mut errors = Vec::new();
     let mut complete = stdio_complete;
     tracing::debug!(execution_id=%id, stage="inherited-stdio", collection_complete=stdio_complete, "standard stream coverage");
@@ -248,6 +249,19 @@ async fn observe_inner(request: Request<'_>, hook: impl FnOnce()) -> Result<Exec
                             continue;
                         }
                         let key = redactor.path(path);
+                        if observation.mode.contains(fspy::AccessMode::PATH_MUTATION) {
+                            // Dot/separator aliases name the same directory entry.
+                            // Parent traversal may cross links and cannot be
+                            // safely collapsed using only the final tree.
+                            if path
+                                .components()
+                                .any(|part| matches!(part, std::path::Component::ParentDir))
+                            {
+                                complete = false;
+                            }
+                            let canonical_spelling: PathBuf = path.components().collect();
+                            path_mutations.insert(redactor.path(&canonical_spelling), true)?;
+                        }
                         let mut value = accesses.get(&key)?.unwrap_or(Access {
                             read: false,
                             write: false,
@@ -293,6 +307,12 @@ async fn observe_inner(request: Request<'_>, hook: impl FnOnce()) -> Result<Exec
             complete = false;
             errors.push(ErrorCode::CleanupFailed);
         }
+    }
+    let uncertain_ancestors = invalidate_mutated_ancestors(&mut accesses, &path_mutations)?;
+    if uncertain_ancestors != 0 {
+        complete = false;
+        tracing::debug!(execution_id=%id, stage="ancestor-identity", affected_paths=uncertain_ancestors,
+            "access identity is uncertain beneath a replaced ancestor");
     }
     if executable_identity
         .as_ref()
@@ -435,6 +455,64 @@ pub(crate) fn metadata(
     )
 }
 
+// The aggregate event stream has no ordered directory identities. Even matching
+// before/after directories cannot disprove a temporary rename/link/restore.
+// Replacement/removal attempts on an ancestor invalidate descendant evidence.
+// Ordinary mkdir or metadata writes cannot replace an established directory.
+// Keep this index redacted and within the shared retained-memory/spill budget.
+fn invalidate_mutated_ancestors(
+    accesses: &mut Entries<Access>,
+    writes: &Entries<bool>,
+) -> Result<usize> {
+    if writes.is_empty() {
+        return Ok(0);
+    }
+    let mut budget = 4_000_000usize;
+    let mut affected = 0;
+    for record in accesses.iter() {
+        let (path, mut access) = record?;
+        if !access.in_scope {
+            continue;
+        }
+        let mut ancestor = path.as_str();
+        while let Some((parent, _)) = ancestor.rsplit_once('/') {
+            ancestor = parent;
+            if ancestor_written(ancestor, writes, &mut budget)? {
+                access.in_scope = false;
+                access.unsupported = true;
+                accesses.insert(path, access)?;
+                affected += 1;
+                break;
+            }
+        }
+    }
+    Ok(affected)
+}
+
+fn ancestor_written(path: &str, writes: &Entries<bool>, budget: &mut usize) -> Result<bool> {
+    // Exhaustion cannot establish stable ancestry. Windows aliases require its
+    // native ordinal comparison; avoid Unicode lowercasing or quadratic scans.
+    if *budget == 0 {
+        return Ok(true);
+    }
+    *budget -= 1;
+    if writes.get(path)?.is_some() {
+        return Ok(true);
+    }
+    #[cfg(windows)]
+    for record in writes.iter() {
+        if *budget == 0 {
+            return Ok(true);
+        }
+        *budget -= 1;
+        let (written, _) = record?;
+        if crate::privacy::windows_query_eq(path, &written).0 {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn observed_in_scope(
     path: &Path,
     root: &Path,
@@ -482,4 +560,63 @@ fn observed_in_scope(
         }
     }
     true
+}
+
+#[cfg(test)]
+mod ancestry_tests {
+    use super::*;
+
+    #[test]
+    fn ancestor_writes_invalidate_descendants_without_changing_leaf_or_sibling_scope() {
+        let mut accesses = Entries::new(0);
+        for (path, write) in [
+            ("${workspace}/dir", true),
+            ("${workspace}/dir/input", false),
+            ("${workspace}/output", true),
+            ("${workspace}/other/input", false),
+        ] {
+            accesses
+                .insert(
+                    path.into(),
+                    Access {
+                        read: !write,
+                        write,
+                        read_directory: false,
+                        unsupported: false,
+                        in_scope: true,
+                    },
+                )
+                .unwrap();
+        }
+        let mut replacements = Entries::new(0);
+        replacements
+            .insert("${workspace}/dir".into(), true)
+            .unwrap();
+        assert_eq!(
+            invalidate_mutated_ancestors(&mut accesses, &replacements).unwrap(),
+            1
+        );
+        for path in [
+            "${workspace}/dir",
+            "${workspace}/output",
+            "${workspace}/other/input",
+        ] {
+            assert!(accesses.get(path).unwrap().unwrap().in_scope);
+        }
+        let unknown = accesses.get("${workspace}/dir/input").unwrap().unwrap();
+        assert!(!unknown.in_scope && unknown.unsupported);
+        let writes = Entries::new(0);
+        assert!(ancestor_written("${workspace}/unknown", &writes, &mut 0).unwrap());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn ancestor_writes_match_native_windows_case_aliases() {
+        let mut writes = Entries::new(0);
+        writes
+            .insert("${workspace}/DIRECTORY".into(), true)
+            .unwrap();
+        assert!(ancestor_written("${workspace}/directory", &writes, &mut 100).unwrap());
+        assert!(!ancestor_written("${workspace}/directory-other", &writes, &mut 100).unwrap());
+    }
 }

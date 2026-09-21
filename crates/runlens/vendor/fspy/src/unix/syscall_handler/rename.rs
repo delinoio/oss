@@ -15,8 +15,8 @@ impl SyscallHandler {
     pub(super) fn renameat(&mut self, caller: Caller, (old_fd, old, new_fd, new): (Fd, CStrPtr, Fd, CStrPtr)) -> io::Result<()> {
         // Try both endpoints even if one path cannot be resolved; propagate
         // either loss so partial evidence cannot become a complete receipt.
-        let source = self.handle_open(caller, old_fd, old, libc::O_WRONLY);
-        let destination = self.handle_open(caller, new_fd, new, libc::O_WRONLY);
+        let source = self.handle_path_mutation(caller, old_fd, old);
+        let destination = self.handle_path_mutation(caller, new_fd, new);
         source.and(destination)
     }
 

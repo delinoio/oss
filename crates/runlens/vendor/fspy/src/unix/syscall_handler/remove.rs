@@ -5,7 +5,7 @@ use super::SyscallHandler;
 impl SyscallHandler {
     #[cfg(target_arch = "x86_64")]
     pub(super) fn unlink(&mut self, caller: Caller, (path,): (CStrPtr,)) -> io::Result<()> {
-        self.handle_open(caller, Fd::cwd(), path, libc::O_WRONLY)
+        self.handle_path_mutation(caller, Fd::cwd(), path)
     }
 
     #[cfg(target_arch = "x86_64")]
@@ -17,6 +17,6 @@ impl SyscallHandler {
         // Both file and AT_REMOVEDIR calls mutate the named directory entry.
         // Argument resolution errors propagate as incomplete collection while
         // the supervisor continues the original syscall. See PATCHES.md.
-        self.handle_open(caller, fd, path, libc::O_WRONLY)
+        self.handle_path_mutation(caller, fd, path)
     }
 }

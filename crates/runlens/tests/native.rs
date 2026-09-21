@@ -3130,6 +3130,72 @@ fn vanished_symlink_ancestor_cannot_establish_workspace_scope() {
 }
 
 #[test]
+#[cfg(unix)]
+fn restored_symlink_ancestors_cannot_certify_workspace_only_reads() {
+    let mut targets = vec![(fixture().to_owned(), "transient-symlink")];
+    #[cfg(target_os = "linux")]
+    if let Ok(path) = std::env::var("RUNLENS_STATIC_FIXTURE") {
+        targets.push((path, "restored-symlink"));
+    }
+    for (target, mode) in targets.drain(..) {
+        let root = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        fs::write(external.path().join("input.txt"), "external").unwrap();
+        fs::create_dir(root.path().join("transient")).unwrap();
+        fs::write(root.path().join("transient/input.txt"), "local unchanged").unwrap();
+        fs::write(
+            root.path().join("runlens.toml"),
+            "schema_version = 1\n[policy]\nallow_reads = [\"${workspace}/**\", \
+             \"**/runlens-test-command\", \"**/runlens-static-child\"]\n",
+        )
+        .unwrap();
+        let output = invoke(
+            root.path(),
+            &[
+                "run",
+                "--log-level",
+                "debug",
+                "--save",
+                "alias.json",
+                "--",
+                &target,
+                mode,
+                external.path().to_str().unwrap(),
+                "restore",
+            ],
+        );
+        assert_eq!(output.status.code(), Some(4), "{output:?}");
+        assert_eq!(
+            fs::read_to_string(root.path().join("transient/input.txt")).unwrap(),
+            "local unchanged"
+        );
+        assert!(!root.path().join("original-directory").exists());
+        let report = parse(root.path(), "alias.json");
+        let execution = &report["executions"][0];
+        assert_eq!(execution["outcome"]["child_exit_code"], 0);
+        assert_eq!(execution["outcome"]["collection_complete"], false);
+        assert_eq!(
+            execution["before"]["${workspace}/transient"],
+            execution["after"]["${workspace}/transient"]
+        );
+        let access = &execution["accesses"]["${workspace}/transient/input.txt"];
+        assert_eq!(access["read"], true);
+        assert_eq!(access["in_scope"], false);
+        assert_eq!(access["unsupported"], true);
+        let checked = invoke(root.path(), &["policy", "check", "alias.json", "--json"]);
+        assert!(!checked.status.success(), "{checked:?}");
+        let analysis: Value = serde_json::from_slice(&checked.stdout).unwrap();
+        assert!(
+            analysis["findings"]
+                .as_object()
+                .unwrap()
+                .values()
+                .any(|finding| finding["code"] == "unknown-evidence")
+        );
+    }
+}
+
+#[test]
 fn stable_directory_ancestors_preserve_missing_leaf_and_output_scope() {
     for mode in ["read", "policy-write"] {
         for existing in [false, true] {

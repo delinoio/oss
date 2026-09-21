@@ -58,6 +58,13 @@ impl SyscallHandler {
         Ok(())
     }
 
+    fn handle_path_mutation(&mut self, caller: Caller, dir_fd: Fd, path_ptr: CStrPtr) -> io::Result<()> {
+        let path = self.resolve_path(caller, dir_fd, path_ptr)?;
+        self.record(PathAccess { mode: AccessMode::WRITE.union(AccessMode::PATH_MUTATION),
+            path: path.as_os_str().into() });
+        Ok(())
+    }
+
     fn resolve_path(&mut self, caller: Caller, dir_fd: Fd, path_ptr: CStrPtr) -> io::Result<PathBuf> {
         let Some(path_len) = path_ptr.read(caller, &mut self.path_read_buf)? else {
             return Err(io::Error::other("unreadable syscall path"));

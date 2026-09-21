@@ -21,6 +21,18 @@
 #define SYS_mount_setattr 442
 #endif
 int main(int argc, char **argv) {
+    if (argc == 4 && !strcmp(argv[1], "restored-symlink")) {
+        if (syscall(SYS_renameat, AT_FDCWD, "./transient", AT_FDCWD, "original-directory")) return 11;
+        if (syscall(SYS_symlinkat, argv[2], AT_FDCWD, "./transient")) return 12;
+        int fd = syscall(SYS_openat, AT_FDCWD, "transient/input.txt", O_RDONLY, 0);
+        char buffer[8] = {0};
+        if (fd < 0 || syscall(SYS_read, fd, buffer, 8) != 8 || memcmp(buffer, "external", 8)) return 13;
+        syscall(SYS_close, fd);
+        if (syscall(SYS_unlinkat, AT_FDCWD, "./transient", 0)) return 14;
+        if (syscall(SYS_renameat, AT_FDCWD, "original-directory", AT_FDCWD, "./transient")) return 15;
+        return 0;
+    }
+
     if (argc == 4 && !strcmp(argv[1], "handle-open")) {
         struct { unsigned int bytes; int kind; unsigned char data[128]; } handle = {128, 0, {0}};
         int mount_id = 0, mount = -1;

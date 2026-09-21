@@ -21,6 +21,8 @@ bitflags! {
         const ATTACHED = 1 << 4;
         // Private native image identity; never a filesystem access.
         const IMAGE = 1 << 5;
+        // Private path replacement/removal attempt, used to invalidate ancestry.
+        const PATH_MUTATION = 1 << 6;
     }
 }
 
