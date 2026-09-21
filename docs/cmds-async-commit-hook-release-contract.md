@@ -54,6 +54,8 @@ The Unix ownership backend is validated by the committed lifecycle tests `TestSc
 Reproduce the cross-platform lifecycle coverage with:
 
 ```sh
+pnpm --filter async-commit-hook build:embedded
+pnpm --filter devhud-admin build:embedded
 go test -run 'TestScope(StartBarrierAndOutput|ReapsDaemonizedDescendants|CancellationDoesNotTouchAnotherCheck|JournalNeverStoresResolvedEnvironment|MissingJournalCannotConfirmCompletion)|TestLegacyScopeCannotClaimUnknownDescendantsExited|TestReplaceReapsDaemonizedDescendantsBeforeNextStarts|TestSupervisorLeaseBlocksConfigurationWithoutWorker' ./cmds/async-commit-hook/internal/core
 go test -race -run 'TestScope(StartBarrierAndOutput|ReapsDaemonizedDescendants|CancellationDoesNotTouchAnotherCheck|JournalNeverStoresResolvedEnvironment|MissingJournalCannotConfirmCompletion)|TestLegacyScopeCannotClaimUnknownDescendantsExited|TestReplaceReapsDaemonizedDescendantsBeforeNextStarts|TestSupervisorLeaseBlocksConfigurationWithoutWorker' ./cmds/async-commit-hook/internal/core
 go test -run TestScopeRecoveryAfterSupervisorDeath ./cmds/async-commit-hook/internal/core # macOS only
