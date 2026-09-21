@@ -57,6 +57,25 @@ it("focuses the main content without replacing a run deep link", () => {
     transport.mockRestore();
   }
 });
+it("focuses the incompatible-version recovery content from the skip link", async () => {
+  history.replaceState(null, "", "/#run=receipt");
+  const transport = vi.spyOn(connection, "transportFor").mockImplementation(() =>
+    createRouterTransport((router) => router.service(LocalService, {
+      getVersion: () => ({ apiVersion: 2 }),
+      listRepositories: () => ({ repositories: [] }),
+    })),
+  );
+  const { unmount } = render(<App />);
+  try {
+    await screen.findByText("Incompatible local API version. Install a matching ach version.");
+    fireEvent.click(screen.getByRole("link", { name: "Skip to content" }));
+    expect(location.hash).toBe("#run=receipt");
+    expect(document.activeElement).toBe(screen.getByRole("main"));
+  } finally {
+    unmount();
+    transport.mockRestore();
+  }
+});
 it("supports dialog cancellation and restores focus", () => {
   HTMLDialogElement.prototype.showModal = vi.fn();
   HTMLDialogElement.prototype.close = vi.fn();

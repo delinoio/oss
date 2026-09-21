@@ -207,7 +207,7 @@ export function Workspace({
   }, [run, selectedTree, worktree, repositories]);
   if (version.data && version.data.apiVersion !== 1)
     return (
-      <main id="main">
+      <main id="main" tabIndex={-1}>
         <div className="notice error" role="alert">
           Incompatible local API version. Install a matching ach version.
         </div>
