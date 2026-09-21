@@ -33,3 +33,16 @@ impl SyscallHandler {
         self.handle_open(caller, dir_fd, path, c_int::try_from(flags).unwrap_or(libc::O_RDWR))
     }
 }
+
+impl SyscallHandler {
+    pub(super) fn open_by_handle_at(
+        &mut self,
+        _: Caller,
+        _: (fspy_seccomp_unotify::supervisor::handler::arg::Ignored,),
+    ) -> io::Result<()> {
+        // Opaque handles do not establish a pathname at the pre-syscall boundary.
+        // Preserve the operation, but never certify absent reads/writes from it.
+        // Remove only when the resulting object and requested modes are bound.
+        Err(io::Error::other("unsupported opaque filesystem handle open"))
+    }
+}

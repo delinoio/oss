@@ -89,6 +89,7 @@ impl_handler!(
     #[cfg(target_arch = "x86_64")] open,
     openat,
     openat2,
+    open_by_handle_at,
 
     #[cfg(target_arch = "x86_64")] rename,
     renameat,

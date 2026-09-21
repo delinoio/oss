@@ -21,6 +21,22 @@
 #define SYS_mount_setattr 442
 #endif
 int main(int argc, char **argv) {
+    if (argc == 4 && !strcmp(argv[1], "handle-open")) {
+        struct { unsigned int bytes; int kind; unsigned char data[128]; } handle = {128, 0, {0}};
+        int mount_id = 0, mount = -1;
+        if (strcmp(argv[3], "invalid") && syscall(SYS_name_to_handle_at, AT_FDCWD, argv[2], &handle, &mount_id, 0) == 0)
+            mount = open(argv[2], O_PATH);
+        else handle.bytes = 0;
+        int fd = syscall(SYS_open_by_handle_at, mount, &handle, !strcmp(argv[3], "write") ? O_WRONLY : O_RDONLY);
+        if (fd < 0) printf("error=%d\n", errno);
+        else {
+            if (!strcmp(argv[3], "write") && write(fd, "HANDLE-WRITE-CANARY", 18) != 18) return 90;
+            puts("opened"); close(fd);
+        }
+        if (mount >= 0) close(mount);
+        return 0;
+    }
+
     if (argc == 4 && !strcmp(argv[1], "fd-stat")) {
         int pipes[2] = {-1, -1}, fd;
         if (!strcmp(argv[3], "invalid")) fd = -1;

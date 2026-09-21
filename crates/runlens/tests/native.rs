@@ -6418,3 +6418,69 @@ fn descriptor_stat_reads_preserve_native_results_and_policy_evidence() {
         }
     }
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_opaque_handle_opens_cannot_certify_complete_accesses() {
+    let mut executables = vec![fixture().to_owned()];
+    match std::env::var("RUNLENS_STATIC_FIXTURE") {
+        Ok(path) => executables.push(path),
+        Err(_) => assert!(
+            std::env::var_os("CI").is_none(),
+            "static fixture required in CI"
+        ),
+    }
+    for executable in executables {
+        for mode in ["read", "write", "invalid"] {
+            let root = tempfile::tempdir().unwrap();
+            let external = tempfile::tempdir().unwrap();
+            let path = external.path().join("opaque-handle-target");
+            fs::write(&path, "HANDLE-ORIGINAL-CANARY").unwrap();
+            fs::write(
+                root.path().join("runlens.toml"),
+                "schema_version = 1\n[policy]\ndeny_writes = [\"**/opaque-handle-target\"]\n",
+            )
+            .unwrap();
+            let arguments = ["handle-open", path.to_str().unwrap(), mode];
+            let plain = Command::new(&executable).args(arguments).output().unwrap();
+            let bytes = fs::read(&path).unwrap();
+            fs::write(&path, "HANDLE-ORIGINAL-CANARY").unwrap();
+            let traced = invoke(
+                root.path(),
+                &[
+                    "run",
+                    "--save",
+                    "handle.json",
+                    "--",
+                    &executable,
+                    arguments[0],
+                    arguments[1],
+                    arguments[2],
+                ],
+            );
+            assert!(plain.status.success(), "{plain:?}");
+            assert_eq!(
+                traced.stdout, plain.stdout,
+                "{executable}/{mode}: {traced:?}"
+            );
+            assert_eq!(fs::read(&path).unwrap(), bytes);
+            assert_eq!(traced.status.code(), Some(4), "{traced:?}");
+            let report = parse(root.path(), "handle.json");
+            assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 0);
+            assert_eq!(
+                report["executions"][0]["outcome"]["collection_complete"],
+                false
+            );
+            assert_eq!(
+                invoke(root.path(), &["policy", "check", "handle.json", "--json"])
+                    .status
+                    .code(),
+                Some(4)
+            );
+            let saved = fs::read_to_string(root.path().join("handle.json")).unwrap();
+            assert!(
+                !saved.contains("HANDLE-ORIGINAL-CANARY") && !saved.contains("HANDLE-WRITE-CANARY")
+            );
+        }
+    }
+}

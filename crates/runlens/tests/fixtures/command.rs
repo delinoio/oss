@@ -6,6 +6,66 @@ mod windows_native;
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
+        #[cfg(target_os = "linux")]
+        "handle-open" => {
+            #[repr(C)]
+            struct Handle {
+                bytes: u32,
+                kind: i32,
+                data: [u8; 128],
+            }
+            let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            let mut handle = Handle {
+                bytes: 128,
+                kind: 0,
+                data: [0; 128],
+            };
+            let mut mount_id = 0;
+            // SAFETY: live bounded handle/output storage; all opened descriptors
+            // and any changed file belong to this finite fixture invocation.
+            unsafe {
+                let mut mount = -1;
+                if args[2] != "invalid"
+                    && libc::syscall(
+                        libc::SYS_name_to_handle_at,
+                        libc::AT_FDCWD,
+                        path.as_ptr(),
+                        &mut handle,
+                        &mut mount_id,
+                        0,
+                    ) == 0
+                {
+                    mount = libc::open(path.as_ptr(), libc::O_PATH);
+                } else {
+                    handle.bytes = 0;
+                }
+                let flags = if args[2] == "write" {
+                    libc::O_WRONLY
+                } else {
+                    libc::O_RDONLY
+                };
+                let fd = libc::syscall(libc::SYS_open_by_handle_at, mount, &handle, flags) as i32;
+                if fd < 0 {
+                    println!(
+                        "error={}",
+                        std::io::Error::last_os_error().raw_os_error().unwrap()
+                    );
+                } else {
+                    if args[2] == "write" {
+                        let body = b"HANDLE-WRITE-CANARY";
+                        assert_eq!(
+                            libc::write(fd, body.as_ptr().cast(), body.len()),
+                            body.len() as isize
+                        );
+                    }
+                    println!("opened");
+                    libc::close(fd);
+                }
+                if mount >= 0 {
+                    libc::close(mount);
+                }
+            }
+        }
         #[cfg(unix)]
         "fd-stat" => {
             let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
