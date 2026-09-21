@@ -8914,6 +8914,21 @@ async fn cache_preserves_output_root_links() {
             assert!(matches!(&artifact.files[0].content, cache::Content::Link {
                 target, directory
             } if target == "first" && *directory == directory_link));
+            if directory_link {
+                let mut legacy = artifact.clone();
+                legacy.files = vec![cache::FileRecord {
+                    path: "out".into(),
+                    content: cache::Content::Directory,
+                }];
+                legacy.output_digest = files::digest(
+                    &serde_json::to_vec(&json!([
+                        "output-state-v2", [["out", {"type":"directory"}]]
+                    ]))
+                    .unwrap(),
+                );
+                assert!(legacy.restore("key", "app#build", project, task).is_err());
+                assert_eq!(std::fs::read_link(&output).unwrap(), Path::new("first"));
+            }
             std::fs::write(&first, "changed target").unwrap();
             assert_eq!(
                 cache::output_state(project, task).unwrap(),

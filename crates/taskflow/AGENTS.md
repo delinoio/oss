@@ -179,3 +179,5 @@
 - Preflight every pending host task against the native OS/architecture before scheduling any prerequisite, probe, or installer. Apply the same boundary to the full CLI plan and session activation set before bootstrap and after rediscovery; validated provided receipts require no local execution.
 
 - Read-only watcher conformance measures a gated execution only after a successful input-triggered warmup and a fresh independent subscriber receipt. Count executions relative to that settled baseline; delayed startup directory causes are legitimate work outside the measurement window.
+
+- Output identity version 3 rejects older root-link snapshots that lost link shape; never restore those flattened artifacts or reuse their output baselines.

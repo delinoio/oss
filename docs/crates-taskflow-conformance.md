@@ -52,7 +52,7 @@ Maintainers run the default suite without Docker, pnpm, or Go. Native and contai
 
 `input_snapshots_only_walk_possible_project_and_pattern_roots` places an invalid Unix identity in an unrelated subtree to detect unintended traversal without timing thresholds. Empty, disabled, and negative-only inputs retain only metadata; automatic and explicit inputs scan their possible roots, including sibling references and missing prefixes, without traversing directory links. Explicitly selecting the invalid subtree still fails.
 
-`uncached_output_digests_are_not_limited_by_artifact_size` executes a task with an output larger than 512 MiB, confirms successful local identity tracking, and retains the artifact capture bound. Local and captured identities share the `output-state-v2` digest domain; previous payload-based digests become safe cache misses.
+`uncached_output_digests_are_not_limited_by_artifact_size` executes a task with an output larger than 512 MiB, confirms successful local identity tracking, and retains the artifact capture bound. Local and captured identities share the `output-state-v3` digest domain; previous payload-based digests become safe cache misses.
 
 `one_task_rejects_output_aliases_before_capture` rejects case/Unicode aliases within one task, including existing roots and nested aliases, while retaining lexical root deduplication.
 
@@ -473,3 +473,5 @@ The real Node Docker scenario runs from a comma-bearing checkout (also containin
 `host_platform_preflight_prevents_prerequisite_side_effects` selects mismatched OS and architecture tasks with ordinary and installation prerequisites. Library execution, real CLI run, and real CLI start fail before command or tool-probe markers appear. Unselected foreign tasks and provided completed receipts remain valid controls.
 
 Actions run `35553900079` showed an initial directory cause starting the read-only watcher fixture before source creation; that run was correctly invalidated and followed by the real source change. The fixture now finishes input-triggered warmup receipts, holds a new execution behind a gate, and requires a fresh independent observer receipt before issuing reads. It asserts no extra starts, no premature completion, stable observer/executor receipts, and actual process/socket cleanup relative to that settled baseline.
+
+Output identity version 3 invalidates historical flattened root-link snapshots before restoration or successful-baseline reuse. The root-link fixture rejects a correctly hashed version-2 directory artifact while preserving the existing link.

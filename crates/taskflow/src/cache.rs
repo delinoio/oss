@@ -331,8 +331,9 @@ fn link_is_directory(path: &Path) -> Result<bool> {
 }
 pub fn output_digest(entries: &[FileRecord]) -> Result<String> {
     // Output identity is independent of the transfer encoding and its size
-    // limit. Version the digest domain so older payload-based identities miss
-    // safely; integrity validation separately verifies every encoded file.
+    // limit. Version 3 also rejects older snapshots that dereferenced output
+    // root links; those flattened records cannot recover the original shape.
+    // Integrity validation separately verifies every encoded file.
     #[derive(Serialize)]
     #[serde(tag = "type", rename_all = "kebab-case")]
     enum Identity<'a> {
@@ -360,7 +361,7 @@ pub fn output_digest(entries: &[FileRecord]) -> Result<String> {
         })
         .collect();
     Ok(files::digest(&serde_json::to_vec(&(
-        "output-state-v2",
+        "output-state-v3",
         identities,
     ))?))
 }
