@@ -23,3 +23,6 @@ mod attrlist;
 
 #[cfg(target_os = "macos")]
 mod clonefile;
+
+#[cfg(target_os = "macos")]
+mod statfs;

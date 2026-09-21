@@ -293,3 +293,5 @@ Linux namespace handlers reject complete path identity for classic/new mount API
 Descriptor fstat: retain metadata reads separately from write-only opens in Linux seccomp and macOS preload. Native dynamic/static fixtures compare successful metadata, EBADF, EFAULT and anonymous-pipe behavior and enforce external read denial without persisting body bytes. Remove when upstream provides equivalent coverage and descriptor classification.
 
 Opaque Linux handle opens: register open_by_handle_at and report collection loss before forwarding, including invalid/denied requests. Dynamic/static read/write/error fixtures preserve results and file bytes while policy stays inconclusive. Remove when upstream binds returned objects and modes to sound path evidence.
+
+Darwin filesystem statistics: interpose statfs/fstatfs with libc-selected inode ABI and statvfs/fstatvfs with their native structures. Observe only paths/descriptors and preserve results; valid/missing and write-only-descriptor fixtures enforce metadata input policy. Remove when upstream covers these functions with equivalent native ABI and privacy tests.

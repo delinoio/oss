@@ -896,3 +896,5 @@ Unix descriptor fstat reads are metadata inputs even after a write-only open. Li
 Linux open_by_handle_at preserves native execution but reports incomplete collection. Opaque handles do not prove path identity at the pre-syscall boundary; prior handle lookup reads cannot account for later handle-based writes. Dynamic and static tests retain successful or denied native results and prevent policy certification.
 
 Configured cache, policy, run and verification commands establish the shared metadata memory budget before deserializing supplied evidence. Parsed baseline/current maps therefore spill under the requested bound before observation starts. Debug report-read events contain only spill-map counts and aggregate retained metadata bytes, without paths or contents.
+
+macOS filesystem-statistics queries (statfs, fstatfs, statvfs and fstatvfs) retain metadata read attempts separately from content access. Path and descriptor fixtures compare native block-size/error output, enforce external deny-read rules and keep file/statistics payloads out of evidence.

@@ -6,6 +6,44 @@ mod windows_native;
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
+        #[cfg(target_os = "macos")]
+        "macos-filesystem-statistics" => {
+            let path = std::ffi::CString::new(args[2].as_bytes()).unwrap();
+            // SAFETY: exact native structures and live pathname; missing paths
+            // yield a negative descriptor that the native query must preserve.
+            unsafe {
+                let mut stats = std::mem::MaybeUninit::<libc::statfs>::zeroed();
+                let mut vfs = std::mem::MaybeUninit::<libc::statvfs>::zeroed();
+                let fd = if args[1].starts_with('f') {
+                    libc::open(path.as_ptr(), libc::O_WRONLY)
+                } else {
+                    -1
+                };
+                let result = match args[1].as_str() {
+                    "statfs" => libc::statfs(path.as_ptr(), stats.as_mut_ptr()),
+                    "fstatfs" => libc::fstatfs(fd, stats.as_mut_ptr()),
+                    "statvfs" => libc::statvfs(path.as_ptr(), vfs.as_mut_ptr()),
+                    "fstatvfs" => libc::fstatvfs(fd, vfs.as_mut_ptr()),
+                    _ => unreachable!(),
+                };
+                if result == 0 {
+                    let block_size = if args[1].ends_with("vfs") {
+                        vfs.assume_init().f_bsize as u64
+                    } else {
+                        stats.assume_init().f_bsize as u64
+                    };
+                    println!("block_size={block_size}");
+                } else {
+                    println!(
+                        "error={}",
+                        std::io::Error::last_os_error().raw_os_error().unwrap()
+                    );
+                }
+                if fd >= 0 {
+                    libc::close(fd);
+                }
+            }
+        }
         #[cfg(target_os = "linux")]
         "handle-open" => {
             #[repr(C)]

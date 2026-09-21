@@ -6575,3 +6575,69 @@ fn configured_memory_budget_applies_before_supplied_report_reads() {
     }
     assert!(!root.path().join("out").exists());
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_filesystem_statistics_preserve_results_and_external_reads() {
+    for form in ["statfs", "fstatfs", "statvfs", "fstatvfs"] {
+        for present in [true, false] {
+            let root = tempfile::tempdir().unwrap();
+            let external = tempfile::tempdir().unwrap();
+            let path = external.path().join("filesystem-statistics-input");
+            if present {
+                fs::write(&path, "FILESYSTEM-STATISTICS-BODY-CANARY").unwrap();
+            }
+            fs::write(
+                root.path().join("runlens.toml"),
+                "schema_version = 1\n[policy]\ndeny_reads = [\"**/filesystem-statistics-input\"]\n",
+            )
+            .unwrap();
+            let args = ["macos-filesystem-statistics", form, path.to_str().unwrap()];
+            let plain = Command::new(fixture()).args(args).output().unwrap();
+            let traced = invoke(
+                root.path(),
+                &[
+                    "run",
+                    "--save",
+                    "statistics.json",
+                    "--",
+                    fixture(),
+                    args[0],
+                    args[1],
+                    args[2],
+                ],
+            );
+            assert!(plain.status.success(), "{plain:?}");
+            assert!(traced.status.success(), "{form}/{present}: {traced:?}");
+            assert_eq!(traced.stdout, plain.stdout);
+            let report = parse(root.path(), "statistics.json");
+            assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 0);
+            if present || !form.starts_with('f') {
+                assert!(
+                    report["executions"][0]["accesses"]
+                        .as_object()
+                        .unwrap()
+                        .iter()
+                        .any(
+                            |(path, access)| path.ends_with("/filesystem-statistics-input")
+                                && access["read"] == true
+                        )
+                );
+                assert_eq!(
+                    invoke(
+                        root.path(),
+                        &["policy", "check", "statistics.json", "--json"]
+                    )
+                    .status
+                    .code(),
+                    Some(5)
+                );
+            }
+            assert!(
+                !fs::read_to_string(root.path().join("statistics.json"))
+                    .unwrap()
+                    .contains("FILESYSTEM-STATISTICS-BODY-CANARY")
+            );
+        }
+    }
+}
