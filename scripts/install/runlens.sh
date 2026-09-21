@@ -27,7 +27,7 @@ base=https://github.com/delinoio/oss/releases/download/$tag
 identity=https://github.com/delinoio/oss/.github/workflows/release-runlens.yml@refs/tags/$tag
 work=$(mktemp -d "${TMPDIR:-/tmp}/runlens-install.XXXXXXXX") || fail 'cannot create private temporary directory'
 staged=
-cleanup() { result=$?; trap - 0; [ -z "$staged" ] || rm -f -- "$staged" || result=1; rm -rf -- "$work" || result=1; exit "$result"; }
+cleanup() { result=$?; trap - 0; [ -z "$staged" ] || { rm -f -- "$staged/runlens" && rmdir -- "$staged"; } || result=1; rm -rf -- "$work" || result=1; exit "$result"; }
 trap cleanup 0
 trap 'exit 1' 1 2 15
 fetch() {
@@ -47,13 +47,17 @@ if command -v sha256sum >/dev/null 2>&1; then actual=$(sha256sum "$work/$asset" 
 mkdir -p -- "$install_dir" || fail 'cannot create installation directory'
 [ ! -L "$install_dir/runlens" ] || fail 'refusing to replace a symlink'
 [ ! -e "$install_dir/runlens" ] || [ -f "$install_dir/runlens" ] || fail 'installation target is not a regular file'
-staged=$(mktemp "$install_dir/.runlens.XXXXXXXX") || fail 'cannot stage installation'
-tar -xOzf "$work/$asset" runlens > "$staged" || fail 'cannot read executable'
-chmod 755 "$staged"
-[ "$("$staged" --version)" = "runlens $version" ] || fail 'executable version mismatch'
+staged=$(mktemp -d "$install_dir/.runlens.XXXXXXXX") || fail 'cannot stage installation'
+tar -xOzf "$work/$asset" runlens > "$staged/runlens" || fail 'cannot read executable'
+chmod 755 "$staged/runlens"
+[ "$("$staged/runlens" --version)" = "runlens $version" ] || fail 'executable version mismatch'
 # Rename on the destination volume preserves the previous executable until verification succeeds.
 [ ! -L "$install_dir/runlens" ] || fail 'refusing to replace a symlink'
 [ ! -e "$install_dir/runlens" ] || [ -f "$install_dir/runlens" ] || fail 'installation target is not a regular file'
-mv -f -- "$staged" "$install_dir/runlens" || fail 'atomic installation failed'
+# Address the installation directory explicitly with a fixed source basename.
+# mv computes exactly DIR/runlens, so a raced runlens directory is an error,
+# never a second destination directory receiving the staged executable.
+mv -f -- "$staged/runlens" "$install_dir/" || fail 'atomic installation failed'
+rmdir -- "$staged" || fail 'installation staging cleanup failed'
 staged=
 printf '%s\n' "Installed Runlens $version. Run runlens doctor to check host tracing support." >&2

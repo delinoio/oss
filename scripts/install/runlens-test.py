@@ -62,6 +62,24 @@ function global:cosign { $global:LASTEXITCODE = [int]$env:RUNLENS_VERIFY_RESULT 
             assert binary.is_fifo(), 'special-file target must remain untouched'
             binary.unlink()
             assert not list(install.glob('.runlens*')), 'rejected targets must not leave staging files'
+            # Inject the directory after the script's last type check, exactly
+            # when mv begins. The real utility must reject the computed path.
+            mover = tools / 'mv'
+            import shutil
+            real_mv = shutil.which('mv')
+            import shlex
+            mover.write_text('#!/bin/sh\nmkdir -- "$RUNLENS_RACED_TARGET"\nprintf preserved > "$RUNLENS_RACED_TARGET/preserved"\nexec ' + shlex.quote(real_mv) + ' "$@"\n')
+            mover.chmod(0o700)
+            env['RUNLENS_RACED_TARGET'] = str(binary)
+            raced = subprocess.run(command, env=env, capture_output=True, text=True)
+            assert raced.returncode != 0, raced.stderr
+            assert 'Installed Runlens' not in raced.stderr
+            assert [p.name for p in binary.iterdir()] == ['preserved']
+            assert (binary / 'preserved').read_text() == 'preserved'
+            assert not list(install.glob('.runlens*')), 'raced installation must clean staging'
+            mover.unlink()
+            (binary / 'preserved').unlink()
+            binary.rmdir()
         subprocess.run(command, env=env, check=True)
         before = binary.read_bytes()
         subprocess.run([binary, '--version'], check=True)
