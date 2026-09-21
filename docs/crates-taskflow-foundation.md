@@ -134,3 +134,5 @@ Docker bind sources preserve commas and literal quotes using CSV field encoding.
 Host execution validates the selected pending tasks against the actual OS and architecture before any task command starts. The CLI checks the full plan before installation phases, sessions check all activated companions and prerequisites, and rediscovery repeats the check. Foreign tasks outside the selected plan and tasks transferred as validated completed receipts remain usable in graph/CI workflows.
 
 Output identity version 3 invalidates historical flattened root-link snapshots before restoration or successful-baseline reuse. The root-link fixture rejects a correctly hashed version-2 directory artifact while preserving the existing link.
+
+Configuration loading uses bounded no-follow regular-file reads. Input declarations keep explicit pattern matches when automatic scanning is also enabled. Go shard inventory compiles each package without running it and accepts only symbols present in the resulting test binary, avoiding `TestMain` output as a test.

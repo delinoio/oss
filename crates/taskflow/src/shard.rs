@@ -338,6 +338,7 @@ pub async fn inventory(
             )
             .await?;
             let (flags, _) = go_flags(&base[2..])?;
+            let mut candidates = BTreeSet::new();
             for line in bytes.split(|b| *b == b'\n').filter(|l| !l.is_empty()) {
                 let event: Value = serde_json::from_slice(line)?;
                 let (Some(package), Some(output)) =
@@ -353,15 +354,48 @@ pub async fn inventory(
                 {
                     continue;
                 }
-                let mut run = vec!["go".into(), "test".into()];
-                run.extend(flags.clone());
-                run.extend([
-                    package.into(),
-                    "-run".into(),
-                    format!("^{name}$"),
-                    "-count=1".into(),
-                ]);
-                commands.insert(format!("{package}::{name}"), Command::Argv(run));
+                candidates.insert((package.to_owned(), name.to_owned()));
+            }
+            let mut symbols = BTreeMap::new();
+            for package in candidates
+                .iter()
+                .map(|(package, _)| package)
+                .collect::<BTreeSet<_>>()
+            {
+                symbols.insert(
+                    package.clone(),
+                    go_package_symbols(
+                        &graph.workspace.root,
+                        directory,
+                        task,
+                        &flags,
+                        package,
+                        env,
+                        overrides,
+                        cancel,
+                    )
+                    .await?,
+                );
+            }
+            for (package, name) in candidates {
+                // `go test -list` reports package Output lines, including
+                // arbitrary TestMain text. Compile the package without running
+                // it and accept only a matching test symbol from the resulting
+                // binary; arbitrary output cannot become a shard unit.
+                if symbols
+                    .get(&package)
+                    .is_some_and(|package_symbols| go_symbols_confirm_test(package_symbols, &name))
+                {
+                    let mut run = vec!["go".into(), "test".into()];
+                    run.extend(flags.clone());
+                    run.extend([
+                        package.clone(),
+                        "-run".into(),
+                        format!("^{name}$"),
+                        "-count=1".into(),
+                    ]);
+                    commands.insert(format!("{package}::{name}"), Command::Argv(run));
+                }
             }
         }
         ShardAdapter::Libtest => {
@@ -674,6 +708,82 @@ pub async fn inventory(
     };
     assign(&inventory, shard.count)?;
     Ok((inventory, commands))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn go_package_symbols(
+    root: &Path,
+    directory: &Path,
+    task: &crate::config::Task,
+    flags: &[String],
+    package: &str,
+    env: &BTreeMap<String, String>,
+    overrides: &BTreeMap<String, String>,
+    cancel: &CancellationToken,
+) -> Result<BTreeSet<String>> {
+    let relative = format!(".taskflow/go-shard-probe-{}", uuid::Uuid::now_v7().simple());
+    let probe_dir = directory.join(&relative);
+    std::fs::create_dir_all(&probe_dir)?;
+    let binary = format!("{relative}/testbin");
+    let result = async {
+        let mut compile = vec!["go".into(), "test".into()];
+        compile.extend(flags.iter().cloned());
+        compile.extend([package.to_owned(), "-c".into(), "-o".into(), binary.clone()]);
+        let (_, status) = process::capture_task_process(
+            root,
+            directory,
+            task,
+            &Command::Argv(compile),
+            env,
+            overrides,
+            cancel,
+        )
+        .await?;
+        ensure!(
+            status.code == 0 && !status.cancelled(),
+            "Go test package {package} could not be compiled for inventory"
+        );
+        let (nm, status) = process::capture_task_process(
+            root,
+            directory,
+            task,
+            &Command::Argv(vec!["go".into(), "tool".into(), "nm".into(), binary]),
+            env,
+            overrides,
+            cancel,
+        )
+        .await?;
+        ensure!(
+            status.code == 0 && !status.cancelled(),
+            "Go test package {package} symbol inventory failed"
+        );
+        Ok(nm)
+    }
+    .await;
+    let cleanup = std::fs::remove_dir_all(&probe_dir);
+    let bytes = match result {
+        Ok(bytes) => {
+            cleanup.context("clean up Go shard inventory probe")?;
+            bytes
+        }
+        Err(error) => {
+            if let Err(cleanup) = cleanup {
+                return Err(error.context(format!("clean up Go shard inventory probe: {cleanup}")));
+            }
+            return Err(error);
+        }
+    };
+    Ok(bytes
+        .split(|byte| *byte == b'\n')
+        .filter_map(|line| std::str::from_utf8(line).ok())
+        .filter_map(|line| line.split_whitespace().nth(2))
+        .map(str::to_owned)
+        .collect())
+}
+
+fn go_symbols_confirm_test(symbols: &BTreeSet<String>, name: &str) -> bool {
+    let suffix = format!(".{name}");
+    symbols.iter().any(|symbol| symbol.ends_with(&suffix))
 }
 
 fn go_flags(arguments: &[String]) -> Result<(Vec<String>, bool)> {
@@ -1124,4 +1234,22 @@ fn read_metadata(path: &Path, kind: &str) -> Result<Vec<u8>> {
         "{kind} exceeded 64 MiB"
     );
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod inventory_tests {
+    use std::collections::BTreeSet;
+
+    use super::go_symbols_confirm_test;
+
+    #[test]
+    fn go_inventory_requires_compiled_test_symbol() {
+        let symbols = BTreeSet::from([
+            "example.test/local.TestMain".to_owned(),
+            "example.test/local.TestReal".to_owned(),
+        ]);
+        assert!(!go_symbols_confirm_test(&symbols, "TestPhantom"));
+        assert!(go_symbols_confirm_test(&symbols, "TestReal"));
+        assert!(!go_symbols_confirm_test(&symbols, "TestOther"));
+    }
 }

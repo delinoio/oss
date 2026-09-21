@@ -566,6 +566,53 @@ async fn capture_owned(
     ))
 }
 
+pub(crate) async fn capture_task_process(
+    root: &Path,
+    directory: &Path,
+    task: &crate::config::Task,
+    command: &Command,
+    environment: &BTreeMap<String, String>,
+    overrides: &BTreeMap<String, String>,
+    cancel: &CancellationToken,
+) -> Result<(Vec<u8>, ProcessExit)> {
+    if task.platform.executor == crate::config::Executor::Host {
+        let (output, status) = capture_owned(
+            directory,
+            command,
+            task.shell.as_deref(),
+            environment,
+            cancel,
+        )
+        .await?;
+        return Ok((output.stdout, status));
+    }
+    let mut probe = task.clone();
+    probe.command = command.clone();
+    probe.platform.ports.clear();
+    let (command, mut container) = crate::docker::prepare(
+        root,
+        directory,
+        &probe,
+        environment,
+        overrides,
+        &uuid::Uuid::now_v7().to_string(),
+        cancel,
+    )
+    .await?;
+    let result = capture_owned(
+        directory,
+        &command,
+        None,
+        container.host_environment(),
+        cancel,
+    )
+    .await;
+    let cleanup = container.cleanup().await;
+    let (output, status) = result?;
+    cleanup?;
+    Ok((output.stdout, status))
+}
+
 pub async fn capture_task(
     root: &Path,
     directory: &Path,
