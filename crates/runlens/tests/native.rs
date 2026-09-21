@@ -249,7 +249,11 @@ async fn clean_preflights_combined_execution_capacity_before_source_preparation(
     }
 }
 fn cli_command() -> Command {
-    let command = Command::new(binary());
+    isolated_command(binary())
+}
+
+fn isolated_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    let command = Command::new(program);
     #[cfg(unix)]
     let command = {
         let mut command = command;
@@ -310,6 +314,7 @@ fn native_harness_excludes_ambient_runner_descriptors() {
     for case in [
         "real_tracing_receipt_privacy_and_offline_queries",
         "tracing_preserves_unset_and_selected_fspy_values_in_children",
+        "repetition_cleanup_failure_retains_completed_and_baseline_evidence",
     ] {
         let mut command = Command::new(std::env::current_exe().unwrap());
         command.args(["--exact", case, "--nocapture"]);
@@ -5882,8 +5887,51 @@ fn macos_raw_syscalls_preserve_variadic_operands_results_and_errno() {
     );
 }
 
+#[test]
+fn cleanup_harness_isolates_redirected_runner_streams() {
+    let input = tempfile::tempfile().unwrap();
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let status = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "repetition_cleanup_failure_retains_completed_and_baseline_evidence",
+            "--nocapture",
+        ])
+        .env_remove("RUNLENS_TEST_CLEANUP_CHILD")
+        .stdin(input)
+        .stdout(output.reopen().unwrap())
+        .stderr(output.reopen().unwrap())
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "{}",
+        fs::read_to_string(output.path()).unwrap()
+    );
+}
+
 #[tokio::test]
 async fn repetition_cleanup_failure_retains_completed_and_baseline_evidence() {
+    // This library-level injection inherits its process streams. Run it in an
+    // isolated harness so CI log files and Cargo jobserver FDs cannot correctly
+    // trigger incomplete collection before the intended cleanup boundary.
+    // Keep the isolation while the test runner controls ambient handles.
+    if std::env::var_os("RUNLENS_TEST_CLEANUP_CHILD").as_deref()
+        != Some(std::ffi::OsStr::new("isolated"))
+    {
+        let output = isolated_command(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "repetition_cleanup_failure_retains_completed_and_baseline_evidence",
+                "--nocapture",
+            ])
+            .env("RUNLENS_TEST_CLEANUP_CHILD", "isolated")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        return;
+    }
     use runlens::{
         clean, config,
         error::ErrorCode,
@@ -5918,7 +5966,7 @@ async fn repetition_cleanup_failure_retains_completed_and_baseline_evidence() {
     )
     .await
     .unwrap();
-    assert_eq!(rounds, 2);
+    assert_eq!(rounds, 2, "retained evidence: {retained:?}");
     assert_eq!(retained.verification, Some(Verdict::Inconclusive));
     let targets: Vec<_> = retained.targets().collect();
     assert_eq!(targets.len(), 2);
