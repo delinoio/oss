@@ -2036,54 +2036,114 @@ async fn session_normalizes_watch_paths_for_existing_and_deleted_inputs() {
 
 #[tokio::test]
 async fn reading_session_files_does_not_cancel_or_requeue_work() {
+    async fn input_receipt(root: &Path, task: &str, previous: Option<&str>) -> runner::Receipt {
+        tokio::time::timeout(Duration::from_secs(15), async {
+            loop {
+                if let Some(receipt) = runner::previous(root, task) {
+                    if receipt.success()
+                        && Some(receipt.execution.as_str()) != previous
+                        && receipt.causes.iter().any(|cause| {
+                            matches!(cause,
+                            Cause::Input { path } if path == "source")
+                        })
+                    {
+                        return receipt;
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the source notification must produce a successful receipt")
+    }
+    fn counts(events: &Path) -> (usize, usize) {
+        let records = std::fs::read_to_string(events).unwrap();
+        (
+            records
+                .lines()
+                .filter(|line| line.starts_with("start"))
+                .count(),
+            records
+                .lines()
+                .filter(|line| line.starts_with("end"))
+                .count(),
+        )
+    }
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap().to_string();
     drop(listener);
     let directory = fixture(json!({
         "check": {
-            "command": command(&["paced", "events", &address, "500"]),
+            "command": command(&["gated-paced", "events", &address, ".taskflow/read-release"]),
             "input": ["source"], "watch": {"initial": false, "debounce": "20ms"}
         },
+        "observe": {"command":command(&["copy","source","observed"]),"input":["source"],
+            "output":["observed"],"watch":{"initial":false,"debounce":"20ms"}},
         "barrier": {"command": command(&["record", "ready", "ready"]), "input": []}
     }));
-    profile(directory.path(), &["check", "barrier"]);
+    let release = directory.path().join(".taskflow/read-release");
+    files::atomic_write(&release, b"warmup").unwrap();
+    profile(directory.path(), &["check", "observe", "barrier"]);
     let root = directory.path().to_path_buf();
     let token = CancellationToken::new();
     let stop = token.clone();
     let session = tokio::spawn(async move {
-        taskflow::session::start(&root, "default", RunOptions::default(), stop).await
+        taskflow::session::start(
+            &root,
+            "default",
+            RunOptions {
+                jobs: 2,
+                ..RunOptions::default()
+            },
+            stop,
+        )
+        .await
     });
-    // FSEvents can deliver pre-subscription file creation after discovery.
-    // Start the input mutation only after the watch baseline is installed, so
-    // this fixture isolates reads from genuine queued creation notifications.
+    // Startup directory causes may legitimately run before source creation.
+    // Finish the source-triggered warmup, including an independent subscriber,
+    // before measuring reads against a new, gated execution.
     wait_lines(&directory.path().join("ready"), "ready", 1).await;
-    std::fs::write(directory.path().join("source"), "unchanged").unwrap();
+    std::fs::write(directory.path().join("source"), "warmup").unwrap();
+    let observed = input_receipt(directory.path(), "app#observe", None).await;
+    let warmup = input_receipt(directory.path(), "app#check", None).await;
     let events = directory.path().join("events");
-    wait_lines(&events, "start", 1).await;
+    let before = counts(&events);
+    assert_eq!(before.0, before.1);
+    std::fs::remove_file(&release).unwrap();
+    std::fs::write(directory.path().join("source"), "measured").unwrap();
+    let observed = input_receipt(directory.path(), "app#observe", Some(&observed.execution)).await;
+    assert_eq!(
+        std::fs::read_to_string(directory.path().join("observed")).unwrap(),
+        "measured"
+    );
+    wait_lines(&events, "start", before.0 + 1).await;
     for _ in 0..20 {
         for name in ["taskflow.yml", "source"] {
             std::fs::read(directory.path().join(name)).unwrap();
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    wait_lines(&events, "end", 1).await;
-    tokio::time::timeout(Duration::from_secs(10), async {
-        while !runner::previous(directory.path(), "app#check").is_some_and(|r| r.success()) {
-            tokio::time::sleep(Duration::from_millis(15)).await;
-        }
-    })
-    .await
-    .expect("read-only events must allow the task to complete");
+    assert_eq!(counts(&events), (before.0 + 1, before.1));
+    files::atomic_write(&release, b"finish").unwrap();
+    let completed = input_receipt(directory.path(), "app#check", Some(&warmup.execution)).await;
+    assert_eq!(
+        runner::previous(directory.path(), "app#observe")
+            .unwrap()
+            .execution,
+        observed.execution
+    );
     token.cancel();
     assert!(session.await.unwrap().unwrap().success);
-    let records = std::fs::read_to_string(events).unwrap();
+    assert_eq!(counts(&events), (before.0 + 1, before.1 + 1));
     assert_eq!(
-        records
-            .lines()
-            .filter(|line| line.starts_with("start"))
-            .count(),
-        1,
-        "{records}"
+        runner::previous(directory.path(), "app#check")
+            .unwrap()
+            .execution,
+        completed.execution
+    );
+    assert!(
+        std::net::TcpListener::bind(&address).is_ok(),
+        "session leaked a process"
     );
 }
 
