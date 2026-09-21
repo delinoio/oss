@@ -308,3 +308,5 @@
 - macOS syscall() calls must preserve the variadic ABI and mark collection incomplete before forwarding. Mark fork() incomplete before creating a child that can bypass symbol tracing with inline kernel operations; group emptiness must not certify that lifetime.
 
 - A failed repetition-directory cleanup after observation must retain every completed execution and imported baseline, classify the current target CleanupFailed/incomplete, stop future rounds, and still allow explicit report saving.
+
+- macOS getattrlist path/relative/descriptor reads must retain metadata input attempts without reading attribute buffers. Bulk attribute reads retain directory access and remain incomplete until individual child metadata identities are bound.

@@ -5955,3 +5955,66 @@ async fn repetition_cleanup_failure_retains_completed_and_baseline_evidence() {
     );
     assert!(!root.path().join("out").exists());
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_attrlist_reads_preserve_results_and_enforce_external_boundaries() {
+    for form in ["path", "relative", "fd", "bulk"] {
+        for kind in ["file", "directory", "missing"] {
+            let root = tempfile::tempdir().unwrap();
+            let external = tempfile::tempdir().unwrap();
+            let input = external.path().join("attribute-input");
+            if kind == "file" {
+                fs::write(&input, "ATTRLIST-BODY-CANARY").unwrap();
+            }
+            if kind == "directory" {
+                fs::create_dir(&input).unwrap();
+                fs::write(input.join("member"), "ATTRLIST-BODY-CANARY").unwrap();
+            }
+            fs::write(
+                root.path().join("runlens.toml"),
+                "schema_version = 1\n[policy]\ndeny_reads = ['**/attribute-input']\n",
+            )
+            .unwrap();
+            let args = ["macos-attrlist", input.to_str().unwrap(), form];
+            let plain = Command::new(fixture()).args(args).output().unwrap();
+            assert!(plain.status.success(), "{plain:?}");
+            let traced = invoke(
+                root.path(),
+                &[
+                    "run",
+                    "--save",
+                    "attrs.json",
+                    "--",
+                    fixture(),
+                    args[0],
+                    args[1],
+                    args[2],
+                ],
+            );
+            assert_eq!(
+                traced.status.code(),
+                Some(if form == "bulk" { 4 } else { 0 }),
+                "{traced:?}"
+            );
+            assert_eq!(traced.stdout, plain.stdout);
+            let report = parse(root.path(), "attrs.json");
+            assert!(
+                report["executions"][0]["accesses"]
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .any(|(path, access)| path.ends_with("/attribute-input")
+                        && (access["read"] == true || access["read_directory"] == true)),
+                "{report}"
+            );
+            assert!(
+                !fs::read_to_string(root.path().join("attrs.json"))
+                    .unwrap()
+                    .contains("ATTRLIST-BODY-CANARY")
+            );
+            let policy = invoke(root.path(), &["policy", "check", "attrs.json", "--json"]);
+            assert_eq!(policy.status.code(), Some(5), "{policy:?}");
+        }
+    }
+}

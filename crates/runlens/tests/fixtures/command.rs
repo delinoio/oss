@@ -183,6 +183,60 @@ fn main() {
             println!("{result}");
         }
         #[cfg(target_os = "macos")]
+        "macos-attrlist" => {
+            let path = std::path::Path::new(&args[1]);
+            let full = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            let parent = std::ffi::CString::new(path.parent().unwrap().to_str().unwrap()).unwrap();
+            let leaf = std::ffi::CString::new(path.file_name().unwrap().to_str().unwrap()).unwrap();
+            // SAFETY: initialized request and aligned output storage, live paths
+            // and owned descriptor. Attribute values are only fixture output.
+            unsafe {
+                let mut attrs: libc::attrlist = std::mem::zeroed();
+                attrs.bitmapcount = libc::ATTR_BIT_MAP_COUNT;
+                attrs.commonattr = libc::ATTR_CMN_OBJTYPE;
+                if args[2] == "bulk" {
+                    attrs.commonattr |= libc::ATTR_CMN_RETURNED_ATTRS | libc::ATTR_CMN_NAME;
+                }
+                let mut bytes = [0_u64; 512];
+                let request = (&mut attrs as *mut libc::attrlist).cast();
+                let output = bytes.as_mut_ptr().cast();
+                let (result, fd) = match args[2].as_str() {
+                    "fd" => {
+                        let fd = libc::open(full.as_ptr(), libc::O_RDONLY);
+                        (libc::fgetattrlist(fd, request, output, 4096, 0), fd)
+                    }
+                    "relative" => {
+                        let fd = libc::open(parent.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY);
+                        (
+                            libc::getattrlistat(fd, leaf.as_ptr(), request, output, 4096, 0),
+                            fd,
+                        )
+                    }
+                    "bulk" => {
+                        let fd = libc::open(full.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY);
+                        (libc::getattrlistbulk(fd, request, output, 4096, 0), fd)
+                    }
+                    _ => (
+                        libc::getattrlist(full.as_ptr(), request, output, 4096, 0),
+                        -1,
+                    ),
+                };
+                if result < 0 {
+                    println!(
+                        "error={}",
+                        std::io::Error::last_os_error().raw_os_error().unwrap()
+                    );
+                } else if args[2] == "bulk" {
+                    println!("entries={result}");
+                } else {
+                    println!("metadata={:x}", bytes[0]);
+                }
+                if fd >= 0 {
+                    libc::close(fd);
+                }
+            }
+        }
+        #[cfg(target_os = "macos")]
         "macos-raw-abi" => {
             let mut mib = [libc::CTL_KERN, libc::KERN_OSTYPE];
             let mut bytes = [0_u8; 64];

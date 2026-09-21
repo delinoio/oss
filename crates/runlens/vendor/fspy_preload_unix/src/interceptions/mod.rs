@@ -17,3 +17,6 @@ mod xattr;
 
 #[cfg(target_os = "macos")]
 mod raw_macos;
+
+#[cfg(target_os = "macos")]
+mod attrlist;

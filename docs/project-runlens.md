@@ -47,3 +47,5 @@ Clean/repeat preserve frozen access/modification timestamps across copies so rep
 macOS raw syscall and fork entry points are conservatively incomplete; inline kernel operations remain outside symbol-interposition coverage.
 
 Cleanup failures after repeated observations retain report evidence and actual child results for explicit saving.
+
+macOS attribute-list reads contribute metadata dependencies; bulk child-attribute enumeration remains incomplete.

@@ -54,3 +54,5 @@ Linux commands using io_uring continue to run, but their reports are incomplete 
 An access below a directory that was created or removed during the command has uncertain workspace scope. Before/after observations cannot rule out a temporary symlink to an external location. Such evidence cannot pass policy or cache verification, even when the output change is known. Create required output directories in an explicit preparation step when you need established directory ancestry for the target run.
 
 On macOS, direct `syscall()` use and `fork()` produce incomplete collection. A forked child can detach through inline kernel operations that bypass ordinary function hooks, so even a fork that stays in the group is conservatively classified. These checks are not kernel enforcement; arbitrary inline kernel operations remain outside library-interposition coverage.
+
+On macOS, attribute-list metadata queries count as read attempts. Bulk attribute enumeration keeps the directory input but produces incomplete collection because it can return metadata about individual children whose identities are not yet bound. Attribute payloads are not stored.
