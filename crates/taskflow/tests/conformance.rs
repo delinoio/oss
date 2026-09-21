@@ -3731,19 +3731,18 @@ async fn setup_cancellation_preserves_receipts_and_service_events() {
             let directory = fixture(json!({"task":task}));
             let g = graph(directory.path()).await;
             let plan = Plan::create(&g, &["task".into()], &[], false).unwrap();
-            let lock_path = directory
-                .path()
-                .join(".taskflow/locks")
-                .join(files::digest(b"resource:held"));
-            files::atomic_write(&lock_path, b"").unwrap();
-            let lock = std::fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(lock_path)
-                .unwrap();
-            if !probe {
-                lock.lock().unwrap();
-            }
+            let _locks = if probe {
+                vec![]
+            } else {
+                runner::acquire_locks(
+                    directory.path(),
+                    "blocking-owner",
+                    &["held".into()],
+                    &CancellationToken::new(),
+                )
+                .await
+                .unwrap()
+            };
             let (events, mut receiver) = tokio::sync::mpsc::unbounded_channel();
             let services = Arc::new(runner::Services {
                 controls: std::sync::Mutex::new(BTreeMap::new()),

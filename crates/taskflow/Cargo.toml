@@ -39,10 +39,10 @@ uuid = { version = "1.23.0", features = ["v7", "serde"] }
 walkdir = "2.5.0"
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31.2", features = ["signal", "process"] }
+nix = { version = "0.31.2", features = ["signal", "process", "user"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Win32_System_IO", "Win32_System_WindowsProgramming", "Win32_Foundation", "Win32_Globalization", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_JobObjects", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Console"] }
+windows-sys = { version = "0.61.2", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Win32_System_IO", "Win32_UI_Shell", "Win32_System_Com", "Win32_System_WindowsProgramming", "Win32_Foundation", "Win32_Globalization", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_JobObjects", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Console"] }
 
 [dev-dependencies]
 assert_cmd = "2"

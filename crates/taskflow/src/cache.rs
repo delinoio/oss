@@ -20,16 +20,9 @@ enum CacheLock {
 }
 
 fn lock(root: &Path, mode: CacheLock) -> Result<std::fs::File> {
-    let directory = root.join(".taskflow/locks");
-    std::fs::create_dir_all(&directory)?;
-    // The lock must survive deletion of the cache directory. Keep critical
+    // The registry is outside all removable workspace state. Keep critical
     // sections limited to local cache I/O, never task execution or networking.
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .read(true)
-        .write(true)
-        .open(directory.join("cache"))?;
+    let file = crate::coordination::open(root, "cache")?;
     match mode {
         CacheLock::Shared => file.lock_shared()?,
         CacheLock::Exclusive => file.lock()?,

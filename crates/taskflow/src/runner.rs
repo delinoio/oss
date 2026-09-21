@@ -1288,18 +1288,9 @@ pub async fn acquire_locks(
     let names: BTreeSet<_> = std::iter::once(format!("task:{id}"))
         .chain(resources.iter().map(|s| format!("resource:{s}")))
         .collect();
-    std::fs::create_dir_all(root.join(".taskflow/locks"))?;
     let mut held = vec![];
     for name in names {
-        let path = root
-            .join(".taskflow/locks")
-            .join(files::digest(name.as_bytes()));
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(path)?;
+        let file = crate::coordination::open(root, &name)?;
         loop {
             crate::process::check_cancelled(cancel)?;
             match file.try_lock() {

@@ -166,3 +166,5 @@
 - Shard duration history is an optional assignment hint read only from no-follow regular files capped at 64 MiB on metadata inspection and actual reads. Diagnose and discard corrupt, oversized, linked, or special-file history before assignment; never let it block cancellation or deadlines.
 
 - Record native adapter membership roots during discovery. Directory and ambiguous rename/remove events overlapping those roots or known metadata ancestors trigger graph rediscovery before input snapshots; known ordinary file events retain exact filtering, and pre-baseline input causes survive the reload.
+
+- Task, resource, and cache lock identities live in persistent OS-account coordination storage outside the workspace, keyed by canonical workspace path and lock name. Do not derive that storage from HOME/TMPDIR overrides or unlink lock files during task/cache cleanup. Refuse a workspace containing the registry; unmapped Unix container UIDs use a fixed private system-temporary namespace.

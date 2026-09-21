@@ -2,6 +2,7 @@ pub mod cache;
 pub mod ci;
 pub mod cli;
 pub mod config;
+mod coordination;
 pub mod discover;
 pub mod docker;
 pub mod environment;
