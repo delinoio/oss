@@ -65,6 +65,7 @@
 - `docs/project-ttl.md`: TTL compiler project index.
 - `docs/project-mpapp.md`: Expo mobile app project index.
 - `docs/project-public-docs.md`: Public docs app project index.
+- `docs/packages-docs-site-switcher-contract.md`: Shared accessible documentation site selector package contract.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-rustia.md`: Rustia multi-crate project index.
 - `docs/project-devhud.md`: DevHud cross-platform desktop/mobile utility project index and current issue #815 contract.
@@ -113,7 +114,7 @@ enum ProjectId {
 - `mpapp` -> `apps/mpapp`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `rustia` -> `crates/rustia`, `crates/rustia-llm`, `crates/rustia-macros`
-- `public-docs` -> `apps/public-docs`
+- `public-docs` -> `apps/public-docs`, `packages/docs-site-switcher`
 - `devhud` -> `apps/devhud` (shared shell, identity/settings/diagnostics, direct-client GitHub.com provider/setup and RealQA issue submission, desktop RealQA capture/editor/encrypted drafts/direct official and BYO R2 uploads, populated Deck surface, desktop/mobile hosts, production WidgetKit/AppWidgetProvider Deck widgets, and desktop Native Messaging listener implemented; other populated product surfaces planned), `apps/devhud-chrome-extension` (implemented), `apps/devhud-admin` (implemented), `servers/devhud-api` (Bootstrap/Settings/Upload/Account/Admin/Diagnostics and embedded administrator assets implemented), `protos/devhud/v1` (implemented), `packages/devhud-api-client` (implemented), `crates/devhud-native-messaging-host` (implemented)
 
 ### DevHud Contract
