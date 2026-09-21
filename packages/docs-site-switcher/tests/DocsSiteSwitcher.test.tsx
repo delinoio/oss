@@ -7,6 +7,7 @@ import {
   DOCUMENTATION_SITES,
   DocumentationSiteId,
   DocsSiteSwitcher,
+  getDocumentationSiteHref,
   getDocumentationSiteForPathname,
 } from "../src/index";
 
@@ -99,5 +100,29 @@ describe("DocsSiteSwitcher", () => {
     expect(getDocumentationSiteForPathname("/unrelated-route")).toBe(
       DocumentationSiteId.PublicDocs,
     );
+  });
+
+  it("maps fixed loopback development ports to package-local roots", () => {
+    expect(
+      getDocumentationSiteHref(DOCUMENTATION_SITES[0], {
+        hostname: "localhost",
+        port: "46303",
+        protocol: "http:",
+      }),
+    ).toBe("http://localhost:46302/");
+    expect(
+      getDocumentationSiteHref(DOCUMENTATION_SITES[1], {
+        hostname: "127.0.0.1",
+        port: "46303",
+        protocol: "http:",
+      }),
+    ).toBe("http://127.0.0.1:46309/");
+    expect(
+      getDocumentationSiteHref(DOCUMENTATION_SITES[2], {
+        hostname: "oss.delino.io",
+        port: "",
+        protocol: "https:",
+      }),
+    ).toBe("/nodeup/");
   });
 });
