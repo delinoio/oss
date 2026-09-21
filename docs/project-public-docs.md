@@ -8,9 +8,11 @@ Provide the Rspress-based public documentation site for user-facing product and 
 
 ## Domain Ownership Map
 - `apps/public-docs`
+- `packages/docs-site-switcher`
 
 ## Domain Contract Documents
 - `docs/apps-public-docs-foundation.md`
+- `docs/packages-docs-site-switcher-contract.md`
 
 ## Cross-Domain Invariants
 - Rspress clean routes, navigation, sidebar, and docs structure must stay aligned with documented contracts.
