@@ -94,6 +94,10 @@ export function DocsSiteSwitcher({ currentSite, className }: DocsSiteSwitcherPro
   const menuId = `delino-docs-site-menu-${useId().replace(/:/g, "")}`;
   const currentSiteDefinition =
     DOCUMENTATION_SITES.find((site) => site.id === currentSite) ?? PUBLIC_DOCS_SITE;
+  const currentSiteIndex = Math.max(
+    0,
+    DOCUMENTATION_SITES.findIndex((site) => site.id === currentSiteDefinition.id),
+  );
 
   const closeMenu = useCallback((restoreFocus: boolean) => {
     setIsOpen(false);
@@ -211,7 +215,7 @@ export function DocsSiteSwitcher({ currentSite, className }: DocsSiteSwitcherPro
         aria-expanded={isOpen}
         aria-haspopup="menu"
         className="delino-docs-site-switcher__trigger"
-        onClick={() => (isOpen ? closeMenu(true) : openMenu())}
+        onClick={() => (isOpen ? closeMenu(true) : openMenu(currentSiteIndex))}
         onKeyDown={handleTriggerKeyDown}
         ref={triggerRef}
         type="button"

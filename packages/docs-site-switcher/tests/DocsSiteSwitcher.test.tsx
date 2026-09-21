@@ -68,6 +68,16 @@ describe("DocsSiteSwitcher", () => {
     expect(document.activeElement).toBe(trigger);
   });
 
+  it("moves focus into the current item when opened by trigger activation", () => {
+    renderSwitcher();
+
+    const trigger = screen.getByRole("button", { name: "Runmoor" });
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    fireEvent.click(trigger);
+
+    expect(document.activeElement).toBe(screen.getAllByRole("menuitem")[1]);
+  });
+
   it("closes when the user clicks outside the menu", () => {
     renderSwitcher();
 
