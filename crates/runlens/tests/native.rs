@@ -3817,7 +3817,18 @@ fn detached_descendants_cannot_certify_a_complete_lifecycle() {
         ),
     }
     for executable in executables.drain(..) {
-        for mode in ["detach-setsid", "detach-setpgid", "detach-spawn"] {
+        let modes = [
+            "detach-setsid",
+            "detach-setpgid",
+            "detach-spawn",
+            #[cfg(target_os = "macos")]
+            "detach-raw-setsid",
+            #[cfg(target_os = "macos")]
+            "detach-raw-setpgid",
+            #[cfg(target_os = "macos")]
+            "macos-fork-raw",
+        ];
+        for mode in modes {
             if mode == "detach-spawn" && executable != fixture() {
                 continue;
             }
@@ -5823,4 +5834,34 @@ fn repeat_uses_the_same_frozen_source_modification_times() {
         3
     );
     assert!(!root.path().join("out").exists());
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_raw_syscalls_preserve_variadic_operands_results_and_errno() {
+    let root = tempfile::tempdir().unwrap();
+    let plain = Command::new(fixture())
+        .arg("macos-raw-abi")
+        .output()
+        .unwrap();
+    assert!(plain.status.success(), "{plain:?}");
+    let traced = invoke(
+        root.path(),
+        &[
+            "run",
+            "--save",
+            "raw.json",
+            "--",
+            fixture(),
+            "macos-raw-abi",
+        ],
+    );
+    assert_eq!(traced.status.code(), Some(4), "{traced:?}");
+    assert_eq!(traced.stdout, plain.stdout);
+    let report = parse(root.path(), "raw.json");
+    assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 0);
+    assert_eq!(
+        report["executions"][0]["outcome"]["collection_complete"],
+        false
+    );
 }

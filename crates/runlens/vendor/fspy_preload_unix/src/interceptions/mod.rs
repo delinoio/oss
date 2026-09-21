@@ -14,3 +14,6 @@ mod readlink;
 
 #[cfg(target_os = "macos")]
 mod xattr;
+
+#[cfg(target_os = "macos")]
+mod raw_macos;

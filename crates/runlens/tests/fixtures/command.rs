@@ -183,6 +183,69 @@ fn main() {
             println!("{result}");
         }
         #[cfg(target_os = "macos")]
+        "macos-raw-abi" => {
+            let mut mib = [libc::CTL_KERN, libc::KERN_OSTYPE];
+            let mut bytes = [0_u8; 64];
+            let mut length = bytes.len();
+            // SAFETY: valid sysctl buffers and six operands exercise register
+            // and stack forwarding; getpid/close cover zero/one and errno.
+            unsafe {
+                assert_eq!(libc::syscall(20), libc::getpid());
+                assert_eq!(libc::syscall(6, -1), -1);
+                assert_eq!(*libc::__error(), libc::EBADF);
+                let result = libc::syscall(
+                    202,
+                    mib.as_mut_ptr(),
+                    2_u32,
+                    bytes.as_mut_ptr(),
+                    &mut length,
+                    std::ptr::null::<u8>(),
+                    0_usize,
+                );
+                assert_eq!(result, 0);
+                println!("{}", String::from_utf8_lossy(&bytes[..length]));
+            }
+        }
+        #[cfg(target_os = "macos")]
+        "macos-fork-raw" => {
+            let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            // SAFETY: the fork child uses only scalar syscalls/live buffers and
+            // finite delay; no Rust allocation or lock is used after fork.
+            unsafe {
+                let fd = libc::open(path.as_ptr(), libc::O_WRONLY | libc::O_CREAT, 0o600);
+                assert!(fd >= 0);
+                let mut ready = [0_i32; 2];
+                assert_eq!(libc::pipe(ready.as_mut_ptr()), 0);
+                let pid = libc::fork();
+                assert!(pid >= 0);
+                if pid == 0 {
+                    // Inline kernel entry deliberately bypasses every symbol
+                    // interposer. The parent fork boundary must already mark loss.
+                    #[cfg(target_arch = "aarch64")]
+                    core::arch::asm!("svc #0x80", in("x16") 147_u64, lateout("x0") _, lateout("x1") _);
+                    #[cfg(target_arch = "x86_64")]
+                    core::arch::asm!("syscall", inlateout("rax") 0x0200_0093_u64 => _, lateout("rcx") _, lateout("r11") _);
+                    if libc::getpgrp() != libc::getpid() {
+                        libc::_exit(98);
+                    }
+                    libc::close(ready[0]);
+                    libc::write(ready[1], b"x".as_ptr().cast(), 1);
+                    libc::close(ready[1]);
+                    libc::close(0);
+                    libc::close(1);
+                    libc::close(2);
+                    libc::usleep(200_000);
+                    libc::write(fd, b"done".as_ptr().cast(), 4);
+                    libc::_exit(0);
+                }
+                libc::close(ready[1]);
+                let mut byte = 0_u8;
+                assert_eq!(libc::read(ready[0], (&mut byte as *mut u8).cast(), 1), 1);
+                libc::close(ready[0]);
+                libc::close(fd);
+            }
+        }
+        #[cfg(target_os = "macos")]
         "macos-spawn-open" => {
             let program =
                 std::ffi::CString::new(std::env::current_exe().unwrap().to_str().unwrap()).unwrap();
@@ -1025,7 +1088,8 @@ fn main() {
             std::process::exit(status.code().unwrap_or(1));
         }
         #[cfg(unix)]
-        "detach-setsid" | "detach-setpgid" | "detach-spawn" => {
+        "detach-setsid" | "detach-setpgid" | "detach-spawn" | "detach-raw-setsid"
+        | "detach-raw-setpgid" => {
             use std::{io::Read, os::unix::process::CommandExt, process::Stdio};
             let mut command = Command::new(std::env::current_exe().unwrap());
             command
@@ -1052,6 +1116,10 @@ fn main() {
             // bounded child outlives its parent and writes through a held file.
             unsafe {
                 match args[1].as_str() {
+                    #[cfg(target_os = "macos")]
+                    "detach-raw-setsid" => assert!(libc::syscall(147) > 0),
+                    #[cfg(target_os = "macos")]
+                    "detach-raw-setpgid" => assert_eq!(libc::syscall(82, 0, 0), 0),
                     "detach-setsid" => assert!(libc::setsid() > 0),
                     "detach-setpgid" => assert_eq!(libc::setpgid(0, 0), 0),
                     _ => assert_eq!(libc::getpgrp(), libc::getpid()),

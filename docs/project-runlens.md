@@ -43,3 +43,5 @@ Update this index, domain contracts, applicable AGENTS rules, public guides, and
 - [Workflow contract](repository-workflow-contract.md)
 
 Clean/repeat preserve frozen access/modification timestamps across copies so repetition setup does not manufacture timestamp-dependent output differences.
+
+macOS raw syscall and fork entry points are conservatively incomplete; inline kernel operations remain outside symbol-interposition coverage.

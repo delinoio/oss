@@ -52,3 +52,5 @@ On Windows, the temporary collector path must be representable in the active sys
 Linux commands using io_uring continue to run, but their reports are incomplete and cannot pass verification. This includes setup, SQPOLL, submission, and registration attempts: asynchronous ring operations are outside the current collection coverage.
 
 An access below a directory that was created or removed during the command has uncertain workspace scope. Before/after observations cannot rule out a temporary symlink to an external location. Such evidence cannot pass policy or cache verification, even when the output change is known. Create required output directories in an explicit preparation step when you need established directory ancestry for the target run.
+
+On macOS, direct `syscall()` use and `fork()` produce incomplete collection. A forked child can detach through inline kernel operations that bypass ordinary function hooks, so even a fork that stays in the group is conservatively classified. These checks are not kernel enforcement; arbitrary inline kernel operations remain outside library-interposition coverage.
