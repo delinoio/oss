@@ -28,7 +28,7 @@ fn main() {
                 };
                 if result == 0 {
                     let block_size = if args[1].ends_with("vfs") {
-                        vfs.assume_init().f_bsize as u64
+                        vfs.assume_init().f_bsize
                     } else {
                         stats.assume_init().f_bsize as u64
                     };
