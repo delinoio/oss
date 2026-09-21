@@ -330,3 +330,5 @@
 - Configured CLI commands apply the process-wide metadata memory limit immediately after config validation and before reading any supplied report or baseline; offline cache/policy checks share the same bound as execution.
 
 - macOS statfs/statvfs and descriptor variants must retain filesystem metadata read attempts, including write-only descriptors and failed path lookups, while preserving native output and errors without retaining statistics payloads.
+
+- Windows process-tree liveness must inspect job members through synchronized process handles, not the accounting ActiveProcesses count, which can include terminated objects with retained references. Recheck membership after an apparently empty scan and fail closed on query/identity uncertainty.

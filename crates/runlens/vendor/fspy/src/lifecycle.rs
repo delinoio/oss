@@ -78,12 +78,89 @@ impl Job {
         // SAFETY: the child remains suspended while ownership is assigned.
         if unsafe { windows_sys::Win32::System::JobObjects::AssignProcessToJobObject(self.0,process) } == 0 { Err(std::io::Error::last_os_error()) } else { Ok(()) }
     }
+    fn members(&self) -> std::io::Result<Vec<usize>> {
+        use windows_sys::Win32::{Foundation::ERROR_MORE_DATA, System::JobObjects::*};
+        // Both supported Windows ABIs are 64-bit. usize storage supplies the
+        // ULONG_PTR alignment after the two DWORD header fields.
+        let mut capacity = 32usize;
+        loop {
+            let mut storage = vec![0usize; capacity + 1];
+            let info = storage.as_mut_ptr().cast::<JOBOBJECT_BASIC_PROCESS_ID_LIST>();
+            // SAFETY: aligned initialized storage holds the header and capacity
+            // process IDs. The exact allocated byte count bounds the OS write.
+            let ok = unsafe { QueryInformationJobObject(self.0, JobObjectBasicProcessIdList,
+                info.cast(), (storage.len() * std::mem::size_of::<usize>()) as u32, std::ptr::null_mut()) };
+            let error = if ok == 0 { Some(std::io::Error::last_os_error()) } else { None };
+            if let Some(error) = error.as_ref() {
+                if error.raw_os_error() != Some(ERROR_MORE_DATA as i32) {
+                    return Err(std::io::Error::from_raw_os_error(error.raw_os_error().unwrap_or(1)));
+                }
+            }
+            // SAFETY: the kernel initializes the header, even for MORE_DATA.
+            let (assigned, returned) = unsafe { ((*info).NumberOfAssignedProcesses as usize, (*info).NumberOfProcessIdsInList as usize) };
+            if error.is_some() || returned < assigned {
+                capacity = assigned.max(capacity * 2);
+                if capacity > 65_536 { return Err(std::io::Error::other("job membership exceeds observation bound")); }
+                continue;
+            }
+            if returned > capacity { return Err(std::io::Error::other("invalid job membership count")); }
+            let mut ids = storage[1..1 + returned].to_vec();
+            ids.sort_unstable();
+            ids.dedup();
+            return Ok(ids);
+        }
+    }
+    fn inspect_member(&self, pid: usize) -> std::io::Result<Option<(std::os::windows::io::OwnedHandle, bool)>> {
+        use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+        use windows_sys::Win32::{Foundation::*, System::{Threading::*, JobObjects::IsProcessInJob}};
+        let pid = u32::try_from(pid).map_err(|_| std::io::Error::other("invalid job process identifier"))?;
+        // SAFETY: only query/synchronize rights are requested. The handle pins
+        // the inspected process while membership and termination are checked.
+        let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE, 0, pid) };
+        if handle.is_null() {
+            let error = std::io::Error::last_os_error();
+            if error.raw_os_error() == Some(ERROR_INVALID_PARAMETER as i32) { return Ok(None); }
+            return Err(error);
+        }
+        // SAFETY: OpenProcess returned a new unique valid handle.
+        let handle = unsafe { OwnedHandle::from_raw_handle(handle) };
+        let mut member = 0;
+        // A PID can be recycled after the snapshot. Never mistake an unrelated
+        // new process for a member of this private job.
+        if unsafe { IsProcessInJob(handle.as_raw_handle(), self.0, &mut member) } == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        if member == 0 { return Ok(Some((handle, false))); }
+        match unsafe { WaitForSingleObject(handle.as_raw_handle(), 0) } {
+            WAIT_OBJECT_0 => Ok(Some((handle, false))),
+            WAIT_TIMEOUT => Ok(Some((handle, true))),
+            _ => Err(std::io::Error::last_os_error()),
+        }
+    }
     fn active(&self) -> std::io::Result<u32> {
-        use windows_sys::Win32::System::JobObjects::*;
-        let mut info: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION=unsafe { std::mem::zeroed() };
-        // SAFETY: the output buffer has the documented type and exact size.
-        if unsafe { QueryInformationJobObject(self.0,JobObjectBasicAccountingInformation,(&mut info as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),std::mem::size_of_val(&info) as u32,std::ptr::null_mut()) } == 0 { return Err(std::io::Error::last_os_error()); }
-        Ok(info.ActiveProcesses)
+        // Accounting ActiveProcesses includes terminated objects while references
+        // remain. It is not a liveness test (Microsoft's accounting contract).
+        // Verify member handles instead; a second snapshot closes the race where
+        // a listed parent creates a child just before that parent terminates.
+        let mut members = self.members()?;
+        for _ in 0..64 {
+            let mut running = 0;
+            let mut pinned = Vec::new();
+            for &pid in &members {
+                if let Some((handle, alive)) = self.inspect_member(pid)? {
+                    running += u32::from(alive);
+                    pinned.push((pid, handle));
+                }
+            }
+            if running != 0 { return Ok(running); }
+            // Keep every inspected object pinned until the confirming snapshot.
+            // Otherwise a dead member PID could be reused by an unseen child.
+            // A vanished PID without a handle must be re-inspected if it returns.
+            let current = self.members()?;
+            if current.iter().all(|pid| pinned.binary_search_by_key(pid, |(id, _)| *id).is_ok()) { return Ok(0); }
+            members = current;
+        }
+        Err(std::io::Error::other("unstable job membership"))
     }
     fn terminate(&self) -> std::io::Result<()> {
         // SAFETY: termination is restricted to the private job owned by this run.

@@ -6653,3 +6653,46 @@ fn macos_filesystem_statistics_preserve_results_and_external_reads() {
         }
     }
 }
+
+#[cfg(windows)]
+#[tokio::test]
+async fn terminated_windows_job_members_with_retained_handles_are_not_lingering() {
+    use std::os::windows::io::{FromRawHandle, OwnedHandle};
+
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
+    };
+    for _ in 0..16 {
+        let mut command = tokio::process::Command::new(fixture());
+        command
+            .arg("fail")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let child = fspy::lifecycle::OwnedChild::spawn(command).unwrap();
+        // Hold the process object across reaping, as CI/runtime handle owners can.
+        // Job accounting may retain it after its execution has actually ended.
+        let handle = unsafe {
+            OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
+                0,
+                child.child.id().unwrap(),
+            )
+        };
+        assert!(!handle.is_null(), "{}", std::io::Error::last_os_error());
+        let retained = unsafe { OwnedHandle::from_raw_handle(handle) };
+        let (status, incomplete) = tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            child.wait(tokio_util::sync::CancellationToken::new()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(status.code(), Some(23));
+        assert!(
+            !incomplete,
+            "a terminated process is not a lingering descendant"
+        );
+        drop(retained);
+    }
+}

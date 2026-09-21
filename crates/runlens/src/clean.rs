@@ -210,8 +210,11 @@ async fn managed_git(
             operation.await
         }
     };
-    let (status, incomplete) =
-        status.map_err(|_| Error::new(ErrorCode::CleanupFailed, "Git process cleanup failed"))?;
+    let (status, incomplete) = status.map_err(|error| {
+        tracing::warn!(stage = "git-lifecycle", kind = ?error.kind(),
+            os_error = error.raw_os_error(), "owned Git process cleanup failed");
+        Error::new(ErrorCode::CleanupFailed, "Git process cleanup failed")
+    })?;
     if cancel.is_cancelled() {
         return Err(Error::new(
             ErrorCode::Cancelled,
@@ -223,6 +226,8 @@ async fn managed_git(
     }
     let output = output?;
     if incomplete {
+        tracing::warn!(stage = "git-lifecycle", child_exit = ?status.code(),
+            "owned Git process required descendant cleanup");
         return Err(Error::new(
             ErrorCode::CleanupFailed,
             "Git left an incomplete process lifetime",
