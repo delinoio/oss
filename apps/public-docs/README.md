@@ -35,6 +35,7 @@ generated text asset before publication.
 ## Files
 
 - `rspress.config.ts`: Rspress site configuration, navigation, and sidebar.
+- `docs/public/_headers`: Root Cloudflare Pages headers for the assembled async-commit-hook subpath.
 - `scripts/build-integrated-docs.mjs`: Builds and assembles the four project documentation apps.
 - `scripts/validate-clean-urls.mjs`: Root production clean-route validator.
 - `scripts/validate-integrated-docs.mjs`: Aggregated subpath, selector, installer, and compatibility validator.

@@ -17,6 +17,7 @@
 ## Interfaces and Contracts
 - Rspress route, navigation, and sidebar contracts in `apps/public-docs/rspress.config.ts` must remain stable.
 - Documentation sources live in `apps/public-docs/docs`; the production output directory is `apps/public-docs/doc_build` and is not source-controlled.
+- The publication root owns Cloudflare Pages control files. Its `_headers` contains the path-scoped security headers for `/async-commit-hook/*`; package-local `_headers` files remain package inputs but do not replace the root rule.
 - Rspress clean URLs are enabled. Stable route IDs owned directly by this app are `/`, `/getting-started`, `/projects-overview`, `/documentation-lifecycle`, `/linux-packages`, `/devhud`, `/devhud/install`, `/devhud/guide`, `/devhud/privacy`, `/devhud/security`, `/devhud/support`, `/devhud/admin`, `/devhud/releases`, `/cargo-mono`, `/derun`, and `/with-watch`; generated internal links must not use `.html` suffixes.
 - Public-facing routes and content groupings must map to canonical docs contracts.
 - Content must curate internal contracts from `docs/` into user-facing guidance and must not document repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.

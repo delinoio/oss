@@ -105,6 +105,14 @@ for (const file of [
 }
 const redirects = await readFile(path.join(outputDirectory, "_redirects"), "utf8").catch(() => "");
 if (redirects !== "/async-commit-hook/docs /async-commit-hook/docs/ 301\n") failures.push("aggregate async /docs redirect is missing or incorrect");
+const headers = await readFile(path.join(outputDirectory, "_headers"), "utf8").catch(() => "");
+const expectedAsyncHeaders = `/async-commit-hook/*
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+`;
+if (headers !== expectedAsyncHeaders) failures.push("aggregate async security headers are missing or incorrect");
 
 if (failures.length > 0) {
   console.error("Integrated public docs validation failed:");
