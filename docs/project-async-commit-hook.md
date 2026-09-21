@@ -39,7 +39,7 @@ Release preparation is available through `Release Project` with project `async-c
 Primary public installation instructions follow the downloaded installers' synchronized versions, and upgrade instructions select the highest published stable release. Explicit version selection and rollback remain documented separately without pinning the primary commands to a historical release.
 
 ## Change Policy
-Update the owning domain contract, evidence matrix and relevant AGENTS.md alongside interface, ownership, security or lifecycle changes. Generate protocol sources; never edit generated output. Public documentation describes supported user workflows, not repository internals.
+Update the owning domain contract, the relevant requirements or release contract, and relevant AGENTS.md alongside interface, ownership, security or lifecycle changes. Generate protocol sources; never edit generated output. Public documentation describes supported user workflows, not repository internals.
 
 ## References
 - https://github.com/delinoio/oss/issues/897
