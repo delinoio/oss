@@ -287,7 +287,9 @@ test("documentation deployment is bound to the exact candidate before publicatio
   assert.doesNotMatch(job("docs_candidate"), /path: apps\/public-docs\/doc_build\s*\n/u);
   assert.match(job("public_docs"), /name: "devhud-public-docs-candidate-\$\{\{ github\.run_attempt \}\}"/u);
   assert.match(job("public_docs"), /Build the current consolidated documentation base/u);
+  assert.match(job("public_docs"), /Check out the current consolidated documentation source/u);
   assert.match(job("public_docs"), /git checkout --detach origin\/main/u);
+  assert.match(job("public_docs"), /node-version-file: \.nvmrc, cache: pnpm/u);
   assert.match(job("public_docs"), /pnpm --filter public-docs build/u);
   assert.match(job("public_docs"), /Overlay the release-bound DevHud pages/u);
   for (const name of ["public_docs", "verify_all"]) {

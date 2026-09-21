@@ -913,18 +913,21 @@ jobs:
           set -euo pipefail
           actual=$(node scripts/release/devhud-public-release.mjs configuration-fingerprint)
           test "$actual" = "$EXPECTED_CONFIGURATION_FINGERPRINT"
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v6
-        with: { node-version-file: .nvmrc }
       - uses: actions/download-artifact@v8
         with:
           name: "devhud-public-docs-candidate-${{ github.run_attempt }}"
           path: ${{ runner.temp }}/devhud-public-docs-candidate
-      - name: Build the current consolidated documentation base
+      - name: Check out the current consolidated documentation source
         run: |
           set -euo pipefail
           git fetch --no-tags origin main
           git checkout --detach origin/main
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - name: Build the current consolidated documentation base
+        run: |
+          set -euo pipefail
           pnpm install --frozen-lockfile --ignore-scripts
           pnpm --filter public-docs build
       - name: Overlay the release-bound DevHud pages
