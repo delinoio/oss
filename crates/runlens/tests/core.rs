@@ -604,3 +604,31 @@ fn isolated_windows_environment_uses_git_compatible_paths() {
     );
     assert!(result.stdout.is_empty());
 }
+
+#[test]
+fn git_administration_exclusion_follows_host_component_case_rules() {
+    let root = tempfile::tempdir().unwrap();
+    let matcher = config::patterns(&[]).unwrap();
+    for name in [".git", ".git/objects/pack", "nested/.git/index"] {
+        assert!(snapshot::excluded(
+            &root.path().join(name),
+            root.path(),
+            &matcher,
+            &[]
+        ));
+    }
+    for name in [".GIT", ".GiT/objects/pack", "nested/.gIt/index"] {
+        assert_eq!(
+            snapshot::excluded(&root.path().join(name), root.path(), &matcher, &[]),
+            cfg!(windows)
+        );
+    }
+    for name in [".github", ".git-file", "git", "nested/not.git/index"] {
+        assert!(!snapshot::excluded(
+            &root.path().join(name),
+            root.path(),
+            &matcher,
+            &[]
+        ));
+    }
+}

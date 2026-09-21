@@ -53,3 +53,5 @@ macOS attribute-list reads contribute metadata dependencies; bulk child-attribut
 macOS clone operations retain independent source-read and destination-write evidence.
 
 Unix file-access hooks preserve native failure behavior for unreadable pathname operands while marking lost evidence incomplete.
+
+Git administrative snapshot exclusions follow host component case semantics, including Windows .GIT aliases.

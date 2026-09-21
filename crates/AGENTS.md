@@ -314,3 +314,5 @@
 - macOS clonefile/clonefileat/fclonefileat must record source reads and destination writes, including failed attempts, without changing operands, copied bytes or native results.
 
 - Unix pathname hooks must not form C strings from untrusted caller addresses. Copy bounded sub-page chunks with OS memory APIs before resolution; unreadable/unterminated operands mark incomplete while the original libc call receives unchanged pointers. Preserve caller errno during observation.
+
+- Reserved .git snapshot pruning uses Windows ordinal case-insensitive component equality on Windows and exact component equality on Unix, before traversal and budget charging; similarly prefixed ordinary files remain observable.

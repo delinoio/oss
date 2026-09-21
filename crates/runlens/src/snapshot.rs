@@ -33,7 +33,12 @@ pub fn excluded(
             .map(|s| s.trim_start_matches('/'))
             .unwrap_or(&path_text),
     );
-    relative.components().any(|part| part.as_os_str() == ".git")
+    relative.components().any(|part| {
+        #[cfg(windows)]
+        { part.as_os_str().to_str().is_some_and(|name| crate::privacy::windows_query_eq(name, ".git").0) }
+        #[cfg(not(windows))]
+        { part.as_os_str() == ".git" }
+    })
         || temporary.iter().any(|p| crate::privacy::within_root(path, p))
         // WalkDir prunes an excluded directory's entire subtree. Apply the
         // same boundary to accesses and membership, even after paths disappear.

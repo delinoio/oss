@@ -6150,3 +6150,37 @@ fn unreadable_unix_pathnames_preserve_native_errors_without_faulting() {
         }
     }
 }
+
+#[cfg(windows)]
+#[test]
+fn windows_git_case_aliases_are_pruned_before_snapshot_budgets() {
+    let root = repository("read");
+    fs::rename(root.path().join(".git"), root.path().join("git-move")).unwrap();
+    fs::rename(root.path().join("git-move"), root.path().join(".GIT")).unwrap();
+    for index in 0..512 {
+        fs::write(
+            root.path().join(format!(".GIT/ignored-{index}")),
+            "administrative",
+        )
+        .unwrap();
+    }
+    git(root.path(), &["rev-parse", "--verify", "HEAD"]);
+    let config = fs::read_to_string(root.path().join("runlens.toml")).unwrap();
+    fs::write(
+        root.path().join("runlens.toml"),
+        format!("{config}\n[limits]\nmax_paths = 256\n"),
+    )
+    .unwrap();
+    let output = run(root.path(), "case.json", "read");
+    assert!(output.status.success(), "{output:?}");
+    let report = parse(root.path(), "case.json");
+    for field in ["before", "after"] {
+        let entries = report["executions"][0][field].as_object().unwrap();
+        assert!(
+            !entries
+                .keys()
+                .any(|path| path.to_ascii_lowercase().contains("/.git"))
+        );
+        assert!(entries.contains_key("${workspace}/input.txt"));
+    }
+}
