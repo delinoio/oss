@@ -65,7 +65,7 @@ go vet ./cmds/async-commit-hook/...
 The recorded local contexts are macOS 26.6.2 arm64 for supervisor-death recovery and a network-disabled Linux arm64 `node:24-bookworm` container for focused lifecycle coverage. These results do not qualify macOS 13 or the other five supported targets as native machine validation.
 
 ## Change Triggers
-Update this contract, packaging AGENTS, version metadata, evidence and public upgrade/compatibility guidance when artifact names, trust identity, update ownership or deployment behavior changes.
+Update this contract, packaging AGENTS, version metadata and public upgrade/compatibility guidance when artifact names, trust identity, update ownership or deployment behavior changes. Keep the process-ownership validation commands, Edge status and owner-approved exclusions in this contract synchronized with those changes.
 
 ## References
 - [Project](project-async-commit-hook.md)
