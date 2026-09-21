@@ -178,6 +178,12 @@ pub fn handle_metadata(path: &str, mode: &str) {
         .access_mode(FILE_WRITE_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE)
         .open(path)
         .unwrap();
+    if mode == "open-only" {
+        // A control with no descriptor query proves that metadata read
+        // evidence is not supplied by opening this write-only handle.
+        println!("opened-without-query");
+        return;
+    }
     // SAFETY: the kernel validates the deliberately invalid operands; valid
     // structures remain owned and initialized for the duration of each call.
     unsafe {

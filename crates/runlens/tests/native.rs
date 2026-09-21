@@ -39,12 +39,22 @@ fn fixture() -> &'static str {
 #[cfg(windows)]
 #[test]
 fn windows_handle_metadata_reads_preserve_results_and_policy_evidence() {
-    for mode in ["standard", "basic", "bad-buffer", "invalid-handle", "pipe"] {
+    for mode in [
+        "open-only",
+        "standard",
+        "basic",
+        "bad-buffer",
+        "invalid-handle",
+        "pipe",
+    ] {
         let root = tempfile::tempdir().unwrap();
         let external = tempfile::tempdir().unwrap();
         let path = external.path().join("metadata-input");
         let canary = "WINDOWS_METADATA_BODY_CANARY";
         fs::write(&path, canary).unwrap();
+        // Align the requested path with handle-name spelling before tracing;
+        // Windows temporary roots can contain short-name or case aliases.
+        let path = path.canonicalize().unwrap();
         fs::write(
             root.path().join("runlens.toml"),
             "schema_version = 1\n[policy]\ndeny_reads = [\"**/metadata-input\"]\n",
@@ -72,33 +82,44 @@ fn windows_handle_metadata_reads_preserve_results_and_policy_evidence() {
         assert_eq!(
             result.status.code(),
             Some(if mode == "invalid-handle" { 4 } else { 0 }),
-            "{result:?}"
+            "{mode}: {result:?}"
         );
         assert_eq!(result.stdout, direct.stdout, "{mode}");
         let report = parse(root.path(), "metadata.json");
         let execution = &report["executions"][0];
         assert_eq!(execution["outcome"]["child_exit_code"], 0);
-        let access = execution["accesses"]
+        // Open observations preserve the requested NT name; descriptor
+        // queries use GetFinalPathNameByHandleW. Reports intentionally retain
+        // both spellings. The fixture creates exactly one metadata-input file,
+        // so require both observations across all of its retained path keys.
+        let accesses = execution["accesses"]
             .as_object()
             .unwrap()
             .iter()
-            .find(|(path, _)| path.ends_with("/metadata-input"))
-            .unwrap()
-            .1;
-        let reads_file = !matches!(mode, "invalid-handle" | "pipe");
-        assert_eq!(access["read"], reads_file, "{mode}");
-        assert_eq!(access["write"], true);
+            .filter(|(path, _)| path.ends_with("/metadata-input"))
+            .collect::<Vec<_>>();
+        assert!(!accesses.is_empty(), "{mode}: {execution}");
+        let reads_file = matches!(mode, "standard" | "basic" | "bad-buffer");
+        assert_eq!(
+            accesses.iter().any(|(_, access)| access["read"] == true),
+            reads_file,
+            "{mode}: {accesses:?}"
+        );
+        assert!(
+            accesses.iter().any(|(_, access)| access["write"] == true),
+            "{mode}: {accesses:?}"
+        );
         let policy = invoke(root.path(), &["policy", "check", "metadata.json", "--json"]);
         assert_eq!(
             policy.status.code(),
             Some(if reads_file {
                 5
-            } else if mode == "pipe" {
-                0
-            } else {
+            } else if mode == "invalid-handle" {
                 4
+            } else {
+                0
             }),
-            "{policy:?}"
+            "{mode}: {policy:?}"
         );
         assert!(
             !fs::read_to_string(root.path().join("metadata.json"))
