@@ -62,6 +62,7 @@ go test -run TestScopeRecoveryAfterSupervisorDeath ./cmds/async-commit-hook/inte
 go test -run TestScopeLostSubreaperFailsClosedUntilBootChanges ./cmds/async-commit-hook/internal/core # Linux only
 go test -p 1 ./...
 go vet ./cmds/async-commit-hook/...
+rm -r -- apps/async-commit-hook/dist cmds/async-commit-hook/internal/webassets/dist servers/devhud-api/internal/adminassets/dist
 ```
 
 The recorded local contexts are macOS 26.6.2 arm64 for supervisor-death recovery and a network-disabled Linux arm64 `node:24-bookworm` container for focused lifecycle coverage. These results do not qualify macOS 13 or the other five supported targets as native machine validation.
