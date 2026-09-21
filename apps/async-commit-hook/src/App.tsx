@@ -80,7 +80,14 @@ export function App() {
   return (
     <QueryClientProvider client={client}>
       <TransportProvider transport={transport}>
-        <a className="skip-link" href="#main">
+        <a
+          className="skip-link"
+          href="#main"
+          onClick={(event) => {
+            event.preventDefault();
+            document.getElementById("main")?.focus();
+          }}
+        >
           Skip to content
         </a>
         <header className="topbar">
@@ -268,7 +275,7 @@ export function Workspace({
           <code>ach inbox --repo .</code>
         </div>
       </aside>
-      <main id="main" className="content">
+      <main id="main" className="content" tabIndex={-1}>
         <div className="page-title">
           <div>
             <p className="eyebrow">
