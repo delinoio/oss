@@ -106,7 +106,7 @@ pub fn find_interpreter(name: &OsStr, search_path: Option<&OsStr>) -> Result<Pat
 }
 
 pub fn find_on_path(name: &OsStr, search_path: Option<&OsStr>, cwd: &Path) -> Option<PathBuf> {
-    for directory in std::env::split_paths(search_path.unwrap_or_default()) {
+    for directory in std::env::split_paths(search_path?) {
         let candidate = cwd.join(directory).join(name);
         if !candidate.is_file() {
             continue;

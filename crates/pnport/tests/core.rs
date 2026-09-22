@@ -270,6 +270,15 @@ fn pnp_unaware_native_process_reads_virtual_dependencies() {
         String::from_utf8_lossy(&result.stderr)
     );
     assert_eq!(result.stdout, b"protocol-output\nprotocol-output\n");
+    let no_path = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .env_remove("PATH")
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--", "fixture"])
+        .output()
+        .unwrap();
+    assert_eq!(no_path.status.code(), Some(127));
     assert_eq!(fs::read(root.path().join("output.txt")).unwrap(), b"native");
     assert!(!root.path().join("node_modules").exists());
     // PATH lookup must skip a regular, non-executable file with the same name.
