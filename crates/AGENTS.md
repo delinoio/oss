@@ -367,3 +367,5 @@
 - Cache and require-input policies may exempt an output read only after proving its before-state absent, using bounded Windows ordinal alias lookup and unknown evidence for exhausted or uncertain identity searches.
 
 - Linux pathname Unix socket binds record write attempts, including relative and failed binds. Abstract/autobind addresses are not filesystem paths; unreadable addresses mark collection incomplete without changing native results.
+
+- macOS setattrlist/setattrlistat/fsetattrlist retain metadata write attempts without reading attribute buffers; preserve the native LP64 u32 options ABI and invalidate descendant identity for opaque attribute mutations.

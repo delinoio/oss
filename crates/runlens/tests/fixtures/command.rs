@@ -655,6 +655,52 @@ fn main() {
             }
         }
         #[cfg(target_os = "macos")]
+        "macos-setattrlist" => {
+            let path = std::path::Path::new(&args[1]);
+            let full = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            let parent = std::ffi::CString::new(path.parent().unwrap().to_str().unwrap()).unwrap();
+            let leaf = std::ffi::CString::new(path.file_name().unwrap().to_str().unwrap()).unwrap();
+            // SAFETY: owned attribute storage and descriptors; the invalid
+            // buffer case is intentionally forwarded for kernel validation.
+            unsafe {
+                let mut attrs: libc::attrlist = std::mem::zeroed();
+                attrs.bitmapcount = libc::ATTR_BIT_MAP_COUNT;
+                attrs.commonattr = libc::ATTR_CMN_ACCESSMASK;
+                let mut mode = 0o640u32;
+                let request = (&mut attrs as *mut libc::attrlist).cast();
+                let buffer = if args[3] == "bad-buffer" {
+                    16usize as *mut _
+                } else {
+                    (&mut mode as *mut u32).cast()
+                };
+                let (result, fd) = match args[2].as_str() {
+                    "relative" => {
+                        let fd = libc::open(parent.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY);
+                        (
+                            libc::setattrlistat(fd, leaf.as_ptr(), request, buffer, 4, 0),
+                            fd,
+                        )
+                    }
+                    "fd" => {
+                        let fd = libc::open(full.as_ptr(), libc::O_RDONLY);
+                        (libc::fsetattrlist(fd, request, buffer, 4, 0), fd)
+                    }
+                    _ => (libc::setattrlist(full.as_ptr(), request, buffer, 4, 0), -1),
+                };
+                println!(
+                    "result={result};errno={}",
+                    if result == 0 {
+                        0
+                    } else {
+                        std::io::Error::last_os_error().raw_os_error().unwrap()
+                    }
+                );
+                if fd >= 0 {
+                    libc::close(fd);
+                }
+            }
+        }
+        #[cfg(target_os = "macos")]
         "macos-attrlist" => {
             let path = std::path::Path::new(&args[1]);
             let full = std::ffi::CString::new(args[1].as_bytes()).unwrap();

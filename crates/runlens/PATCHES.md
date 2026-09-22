@@ -311,3 +311,5 @@ Linux deleted descriptor names: reject the procfs ` (deleted)` suffix as ESTALE 
 Linux creat: register x86_64 syscall 85 through the existing open classifier with O_CREAT | O_WRONLY | O_TRUNC. linux_creat_records_external_creation_truncation_and_failure covers dynamic and static callers, using openat on arm64 where creat has no syscall number. Remove when upstream covers creat with equivalent attempted-write semantics.
 
 Linux socket nodes: register bind and decode bounded AF_UNIX pathname addresses before forwarding; ignore non-filesystem families/abstract/autobind names and fail closed on unreadable operands. linux_socket_binds_retain_path_writes_and_preserve_native_results covers dynamic/static absolute, relative, failed and abstract calls. Remove when upstream has equivalent socket-node mutation coverage.
+
+Darwin attribute mutation: interpose setattrlist/setattrlistat/fsetattrlist as writes with PATH_MUTATION because attribute buffers remain opaque. macos_attribute_mutations_preserve_native_results_and_write_boundaries tests native success/errors, permissions and privacy. Remove when upstream provides equivalent mutation and identity coverage.

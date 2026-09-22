@@ -35,3 +35,27 @@ unsafe extern "C" fn getattrlistbulk(fd: c_int, attrs: *mut c_void, buffer: *mut
         getattrlistbulk::original()(fd, attrs, buffer, size, options)
     }
 }
+
+// Attribute buffers stay opaque. Some attribute requests can change pathname
+// identity, so conservatively invalidate descendants of mutated directories.
+intercept!(setattrlist: unsafe extern "C" fn(*const c_char, *mut c_void, *mut c_void, size_t, u32) -> c_int);
+unsafe extern "C" fn setattrlist(path: *const c_char, attrs: *mut c_void, buffer: *mut c_void, size: size_t, options: u32) -> c_int {
+    unsafe {
+        handle_open(PathAt::borrow_raw(AT_FDCWD, path), AccessMode::WRITE | AccessMode::PATH_MUTATION);
+        setattrlist::original()(path, attrs, buffer, size, options)
+    }
+}
+intercept!(setattrlistat: unsafe extern "C" fn(c_int, *const c_char, *mut c_void, *mut c_void, size_t, u32) -> c_int);
+unsafe extern "C" fn setattrlistat(fd: c_int, path: *const c_char, attrs: *mut c_void, buffer: *mut c_void, size: size_t, options: u32) -> c_int {
+    unsafe {
+        handle_open(PathAt::borrow_raw(fd, path), AccessMode::WRITE | AccessMode::PATH_MUTATION);
+        setattrlistat::original()(fd, path, attrs, buffer, size, options)
+    }
+}
+intercept!(fsetattrlist: unsafe extern "C" fn(c_int, *mut c_void, *mut c_void, size_t, u32) -> c_int);
+unsafe extern "C" fn fsetattrlist(fd: c_int, attrs: *mut c_void, buffer: *mut c_void, size: size_t, options: u32) -> c_int {
+    unsafe {
+        if fd >= 0 { handle_open(BorrowedFd::borrow_raw(fd), AccessMode::WRITE | AccessMode::PATH_MUTATION); }
+        fsetattrlist::original()(fd, attrs, buffer, size, options)
+    }
+}

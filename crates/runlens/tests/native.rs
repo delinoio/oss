@@ -7383,3 +7383,86 @@ fn linux_socket_binds_retain_path_writes_and_preserve_native_results() {
         }
     }
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_attribute_mutations_preserve_native_results_and_write_boundaries() {
+    use std::os::unix::fs::PermissionsExt;
+    for form in ["path", "relative", "fd"] {
+        for kind in ["file", "directory", "missing", "bad-buffer"] {
+            let root = tempfile::tempdir().unwrap();
+            let external = tempfile::tempdir().unwrap();
+            let path = external.path().join("attribute-output");
+            if kind == "directory" {
+                fs::create_dir(&path).unwrap();
+            } else if kind != "missing" {
+                fs::write(&path, "SETATTR-BODY-CANARY").unwrap();
+            }
+            let reset = || {
+                if kind != "missing" {
+                    fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+                }
+            };
+            reset();
+            let args = ["macos-setattrlist", path.to_str().unwrap(), form, kind];
+            let direct = isolated_command(fixture()).args(args).output().unwrap();
+            assert!(direct.status.success(), "{direct:?}");
+            reset();
+            fs::write(
+                root.path().join("runlens.toml"),
+                "schema_version=1\n[policy]\ndeny_writes=['**/attribute-output']\n",
+            )
+            .unwrap();
+            let traced = invoke(
+                root.path(),
+                &[
+                    "run",
+                    "--save",
+                    "attributes.json",
+                    "--",
+                    fixture(),
+                    args[0],
+                    args[1],
+                    args[2],
+                    args[3],
+                ],
+            );
+            assert_eq!(traced.status.code(), Some(0), "{form}/{kind}: {traced:?}");
+            assert_eq!(traced.stdout, direct.stdout, "{form}/{kind}");
+            if kind == "file" || kind == "directory" {
+                assert_eq!(
+                    fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                    0o640
+                );
+            }
+            if kind == "file" || kind == "bad-buffer" {
+                assert_eq!(fs::read_to_string(&path).unwrap(), "SETATTR-BODY-CANARY");
+            }
+            if form != "fd" || kind != "missing" {
+                let report = parse(root.path(), "attributes.json");
+                assert!(
+                    report["executions"][0]["accesses"]
+                        .as_object()
+                        .unwrap()
+                        .iter()
+                        .any(|(path, access)| path.ends_with("/attribute-output")
+                            && access["write"] == true)
+                );
+                assert_eq!(
+                    invoke(
+                        root.path(),
+                        &["policy", "check", "attributes.json", "--json"]
+                    )
+                    .status
+                    .code(),
+                    Some(5)
+                );
+            }
+            assert!(
+                !fs::read_to_string(root.path().join("attributes.json"))
+                    .unwrap()
+                    .contains("SETATTR-BODY-CANARY")
+            );
+        }
+    }
+}
