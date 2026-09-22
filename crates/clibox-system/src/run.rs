@@ -1654,8 +1654,10 @@ fn ensure_private_dir(path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if metadata.permissions().mode() & 0o077 != 0 {
-            return runtime_failure("Execution state directory permissions are unsafe.");
+        if metadata.permissions().mode() & 0o077 != 0 || !owned_by_effective_user(&metadata) {
+            return runtime_failure(
+                "Execution state directory permissions or ownership are unsafe.",
+            );
         }
     }
     Ok(())
@@ -1689,8 +1691,13 @@ fn open_lock(path: &Path) -> Result<File> {
         return runtime_failure("Execution state lock is not a regular file.");
     }
     #[cfg(unix)]
-    if metadata.permissions().mode() & 0o077 != 0 || metadata.nlink() != 1 {
-        return runtime_failure("Execution state lock permissions or links are unsafe.");
+    if metadata.permissions().mode() & 0o077 != 0
+        || metadata.nlink() != 1
+        || !owned_by_effective_user(&metadata)
+    {
+        return runtime_failure(
+            "Execution state lock permissions, links, or ownership are unsafe.",
+        );
     }
     #[cfg(windows)]
     {
@@ -1910,11 +1917,23 @@ fn ensure_safe_state_metadata(metadata: &fs::Metadata) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
-        if metadata.permissions().mode() & 0o077 != 0 || metadata.nlink() != 1 {
-            return runtime_failure("Execution rate-limit state permissions or links are unsafe.");
+        if metadata.permissions().mode() & 0o077 != 0
+            || metadata.nlink() != 1
+            || !owned_by_effective_user(metadata)
+        {
+            return runtime_failure(
+                "Execution rate-limit state permissions, links, or ownership are unsafe.",
+            );
         }
     }
     Ok(())
+}
+
+#[cfg(unix)]
+fn owned_by_effective_user(metadata: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+
+    metadata.uid() == unsafe { libc::geteuid() }
 }
 
 #[cfg(windows)]
