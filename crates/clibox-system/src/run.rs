@@ -919,15 +919,13 @@ fn run_once(
             // group or Job Object. A background descendant can otherwise
             // retain an inherited pipe or outlive the wrapper after its parent
             // exits, so confirm bounded cleanup before returning this status.
-            if child.tree_running()? {
-                if !cleanup_or_log(&mut child, kill_after) {
-                    // Never join inherited pipes after unconfirmed cleanup: a
-                    // surviving descendant could hold one forever. Cleanup has
-                    // already sent graceful and forced signals within its
-                    // bounded deadlines, so preserve the direct child's status
-                    // rather than turn a completed workload into a hang.
-                    return Ok(Outcome::Child(status));
-                }
+            if child.tree_running()? && !cleanup_or_log(&mut child, kill_after) {
+                // Never join inherited pipes after unconfirmed cleanup: a
+                // surviving descendant could hold one forever. Cleanup has
+                // already sent graceful and forced signals within its bounded
+                // deadlines, so preserve the direct child's status rather
+                // than turn a completed workload into a hang.
+                return Ok(Outcome::Child(status));
             }
             child.join_output();
             return Ok(Outcome::Child(status));
@@ -1398,16 +1396,16 @@ fn state_root() -> Result<PathBuf> {
     }
     #[cfg(target_os = "macos")]
     {
-        return home_dir().map(|home| {
+        home_dir().map(|home| {
             home.join("Library")
                 .join("Application Support")
                 .join("clibox")
                 .join("run")
-        });
+        })
     }
     #[cfg(windows)]
     {
-        return windows_local_app_data().map(|path| path.join("clibox").join("run"));
+        windows_local_app_data().map(|path| path.join("clibox").join("run"))
     }
 }
 
