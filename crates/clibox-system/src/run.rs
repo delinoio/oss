@@ -1975,12 +1975,45 @@ fn hash_key(kind: &str, scope: Scope, machine: &[u8], identity: &[u8], name: &st
 
 #[cfg(target_os = "linux")]
 fn machine_identity() -> Result<Vec<u8>> {
-    let value = fs::read_to_string("/etc/machine-id").map_err(|error| Failure::io(&error))?;
+    for path in ["/etc/machine-id", "/var/lib/dbus/machine-id"] {
+        if let Some(identity) = read_linux_identity(Path::new(path), valid_machine_id)? {
+            return Ok(identity);
+        }
+    }
+    // Minimal containers, including Alpine images without D-Bus, can omit both
+    // persistent machine-ID files. Linux's boot ID is stable for every process
+    // in that kernel instance, keeping local admission state coordinated until
+    // the container or host restarts without publishing an identity file.
+    read_linux_identity(Path::new("/proc/sys/kernel/random/boot_id"), valid_uuid)?
+        .ok_or_else(|| Failure::new(Code::IoFailed, "The local machine identity is unavailable."))
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn read_linux_identity(path: &Path, valid: fn(&str) -> bool) -> Result<Option<Vec<u8>>> {
+    let value = match fs::read_to_string(path) {
+        Ok(value) => value,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(Failure::io(&error)),
+    };
     let value = value.trim_end();
-    if value.len() != 32 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+    if !valid(value) {
         return runtime_failure("The local machine identity is invalid.");
     }
-    Ok(value.as_bytes().to_vec())
+    Ok(Some(value.as_bytes().to_vec()))
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn valid_machine_id(value: &str) -> bool {
+    value.len() == 32 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn valid_uuid(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        })
 }
 
 #[cfg(target_os = "macos")]
@@ -2968,6 +3001,24 @@ mod rate_limit_tests {
 
         release.join().unwrap();
         assert_eq!(error.code, Code::TerminationTimeout);
+    }
+
+    #[test]
+    fn linux_machine_identity_accepts_dbus_and_boot_fallbacks() {
+        let directory = tempfile::tempdir().unwrap();
+        let dbus = directory.path().join("dbus-machine-id");
+        let boot = directory.path().join("boot-id");
+        fs::write(&dbus, b"0123456789abcdef0123456789abcdef\n").unwrap();
+        fs::write(&boot, b"01234567-89ab-cdef-0123-456789abcdef\n").unwrap();
+
+        assert_eq!(
+            read_linux_identity(&dbus, valid_machine_id).unwrap(),
+            Some(b"0123456789abcdef0123456789abcdef".to_vec())
+        );
+        assert_eq!(
+            read_linux_identity(&boot, valid_uuid).unwrap(),
+            Some(b"01234567-89ab-cdef-0123-456789abcdef".to_vec())
+        );
     }
 }
 
