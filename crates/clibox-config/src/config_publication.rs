@@ -297,6 +297,11 @@ fn publish_prepared(
         if let Some((source, _)) = &existing {
             publication.preserve_dacl(source)?;
         }
+        // FileRenameInfo cannot replace a destination with an open data handle,
+        // including our own inspection handle even though it shares deletion.
+        // Keep that handle only until its DACL has been copied to staging.
+        // https://learn.microsoft.com/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information
+        drop(existing);
         cancel.check()?;
         publication.commit(path, replace)?;
         // The held handle now owns the destination. Never clean up by its old name.
