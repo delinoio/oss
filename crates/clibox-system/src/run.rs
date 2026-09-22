@@ -1218,8 +1218,15 @@ impl OwnedChild {
             stage = "graceful",
             "run_cleanup"
         );
-        self.signal(false)?;
-        let graceful_deadline = Instant::now().checked_add(kill_after).ok_or_else(|| {
+        let graceful_delivered = self.signal(false)?;
+        // A Windows Job can be force-terminated when its isolated process
+        // group has no attached console to receive CTRL_BREAK. In that case
+        // the fallback has already skipped graceful shutdown, so spend only
+        // the bounded confirmation interval waiting for the Job to drain.
+        let graceful_wait = graceful_delivered
+            .then_some(kill_after)
+            .unwrap_or(CLEANUP_CONFIRMATION);
+        let graceful_deadline = Instant::now().checked_add(graceful_wait).ok_or_else(|| {
             Failure::new(Code::IoFailed, "Cleanup deadline cannot be represented.")
         })?;
         while Instant::now() < graceful_deadline {
@@ -1240,7 +1247,9 @@ impl OwnedChild {
             stage = "forced",
             "run_cleanup"
         );
-        self.signal(true)?;
+        if graceful_delivered {
+            self.signal(true)?;
+        }
         let confirmation = Instant::now()
             .checked_add(CLEANUP_CONFIRMATION)
             .ok_or_else(|| {
@@ -1265,15 +1274,16 @@ impl OwnedChild {
     }
 
     #[cfg(unix)]
-    fn signal(&self, force: bool) -> Result<()> {
+    fn signal(&self, force: bool) -> Result<bool> {
         match self.unix_ownership {
             UnixOwnership::ProcessGroup => signal_process_group(self.pid, force),
             UnixOwnership::DirectChild => signal_process(self.pid, force),
-        }
+        }?;
+        Ok(true)
     }
 
     #[cfg(windows)]
-    fn signal(&self, force: bool) -> Result<()> {
+    fn signal(&self, force: bool) -> Result<bool> {
         self.job.signal(self.pid, force)
     }
 
@@ -1697,7 +1707,7 @@ impl Job {
         Ok(Self { handle })
     }
 
-    fn signal(&self, pid: u32, force: bool) -> Result<()> {
+    fn signal(&self, pid: u32, force: bool) -> Result<bool> {
         use windows_sys::Win32::{
             Foundation::FALSE,
             System::{
@@ -1705,15 +1715,22 @@ impl Job {
                 JobObjects::TerminateJobObject,
             },
         };
-        let result = if force {
-            unsafe { TerminateJobObject(self.handle, 1) }
-        } else {
-            unsafe { GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid) }
-        };
-        if result == FALSE {
+        if force {
+            if unsafe { TerminateJobObject(self.handle, 1) } == FALSE {
+                return Err(Failure::io(&io::Error::last_os_error()));
+            }
+            return Ok(true);
+        }
+        if unsafe { GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid) } != FALSE {
+            return Ok(true);
+        }
+        // A detached or headless process group cannot receive a console
+        // control event. The Job still owns every descendant, so terminate it
+        // now and let cleanup perform its normal bounded confirmation.
+        if unsafe { TerminateJobObject(self.handle, 1) } == FALSE {
             return Err(Failure::io(&io::Error::last_os_error()));
         }
-        Ok(())
+        Ok(false)
     }
 
     fn is_running(&self) -> Result<bool> {
