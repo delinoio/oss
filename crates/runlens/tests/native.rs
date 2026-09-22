@@ -7038,3 +7038,53 @@ fn compare_and_policy_bound_combined_report_bytes_before_parsing() {
         assert!(result.stdout.is_empty());
     }
 }
+
+#[test]
+fn clean_baselines_require_matching_recorded_command_names() {
+    let root = repository("read");
+    assert!(
+        invoke(
+            root.path(),
+            &["verify", "clean", "build", "--save", "original.json"]
+        )
+        .status
+        .success()
+    );
+    let original = parse(root.path(), "original.json");
+    for (index, name, code, verdict) in [
+        (0, Some("build"), 0, "passed"),
+        (1, Some("other"), 4, "inconclusive"),
+        (2, None, 4, "inconclusive"),
+        (3, Some("[redacted]"), 4, "inconclusive"),
+    ] {
+        let mut baseline = original.clone();
+        baseline["executions"][0]["command"]["name"] = serde_json::to_value(name).unwrap();
+        let old: runlens::model::Report = serde_json::from_value(baseline.clone()).unwrap();
+        let current: runlens::model::Report = serde_json::from_value(original.clone()).unwrap();
+        assert_eq!(
+            runlens::analysis::compatible(&old.executions[0], &current.executions[0]),
+            name.is_none() || name == Some("build")
+        );
+        let baseline_name = format!("baseline-{index}.json");
+        let result_name = format!("result-{index}.json");
+        fs::write(
+            root.path().join(&baseline_name),
+            serde_json::to_vec(&baseline).unwrap(),
+        )
+        .unwrap();
+        let result = invoke(
+            root.path(),
+            &[
+                "verify",
+                "clean",
+                "build",
+                "--baseline",
+                &baseline_name,
+                "--save",
+                &result_name,
+            ],
+        );
+        assert_eq!(result.status.code(), Some(code), "{name:?}: {result:?}");
+        assert_eq!(parse(root.path(), &result_name)["verification"], verdict);
+    }
+}

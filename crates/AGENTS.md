@@ -357,3 +357,5 @@
 - Linux procfs descriptor/cwd names ending in ` (deleted)` are ambiguous and must mark collection incomplete; never strip the suffix to invent a policy identity.
 
 - Every offline multi-report command, including compare and policy baselines, preflights the shared 1 GiB aggregate file-size bound before parsing any report.
+
+- Comparison compatibility rejects differing recorded command names and redacted names. An unnamed direct execution may still match an explicitly supplied named baseline when all other identity fields agree.

@@ -620,6 +620,11 @@ pub fn compatible(left: &Execution, right: &Execution) -> bool {
             .iter()
             .chain(right.command.argv.iter())
             .any(|arg| arg.contains("[redacted]"))
+        && left.command.name.iter().chain(right.command.name.iter()).all(|name| !name.contains("[redacted]"))
+        && match (&left.command.name, &right.command.name) {
+            (Some(left), Some(right)) => left == right,
+            _ => true, // An unnamed direct run may serve as an explicitly supplied baseline.
+        }
         && left.command.argv == right.command.argv
         && left.command.cwd == right.command.cwd
         && left.environment.environment_names == right.environment.environment_names

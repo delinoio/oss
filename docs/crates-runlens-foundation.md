@@ -914,3 +914,5 @@ macOS flag mutation coverage includes lchflags on symlinks and missing paths, wi
 Linux deleted descriptor resolution fails closed, including actual filenames ending in the ambiguous procfs suffix. Dynamic and static fstat regressions preserve native results while exact read policies cannot pass.
 
 The 1 GiB aggregate input bound applies to compare, policy with a baseline, explain, and conflicts. Sparse oversized-pair regressions ensure compare and policy reject before JSON parsing.
+
+Clean baseline comparison checks recorded configured command names as part of identity. Different or masked names are inconclusive; the intentional unnamed-direct-report allowance remains. Regression coverage verifies matching, different, absent and redacted names through verify clean.
