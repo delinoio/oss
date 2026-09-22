@@ -66,18 +66,18 @@ test("Runmoor source and release scripts do not rebuild DevHud desktop/mobile", 
   }
 });
 
-test("Runmoor docs select their checks and shared inputs force the workspace", () => {
-  const id = "node-runmoor-docs-test";
+test("integrated project docs select the public-docs workspace and shared inputs force it", () => {
+  const id = "node-public-docs-test";
   for (const event of [Event.PullRequest, Event.Push]) {
-    const paths = ["apps/runmoor-docs/docs/install.md"];
-    assert.deepEqual(selected(event, paths), ["repository-environment", id]);
+    const paths = ["apps/public-docs/docs/runmoor/install.md"];
+    assert.deepEqual(selected(event, paths), ["repository-environment", id, "devhud-release-contracts"]);
     assert.equal(planJobs(event, paths).forced[id], false);
     for (const path of [".nvmrc", "pnpm-lock.yaml", "scripts/run-rspress-port.mjs"]) {
       const plan = planJobs(event, [path]);
       assert.equal(plan.jobs[id], true, path);
       assert.equal(plan.forced[id], true, path);
     }
-    for (const path of ["docs/apps-runmoor-docs-foundation.md", "docs/project-runmoor.md"]) {
+    for (const path of ["docs/project-runmoor.md"]) {
       assert.deepEqual(selected(event, [path]), ["repository-environment"]);
     }
     const needs = results(event, paths);
@@ -93,7 +93,7 @@ test("async-commit-hook source and shared validation inputs select its complete 
   for (const event of [Event.PullRequest, Event.Push]) {
     for (const path of [
       "cmds/async-commit-hook/main.go", "apps/async-commit-hook/src/App.tsx",
-      "apps/async-commit-hook/public/install.ps1", "packages/async-commit-hook-api-client/src/client.ts",
+      "scripts/install/async-commit-hook.ps1", "packages/async-commit-hook-api-client/src/client.ts",
       "protos/async_commit_hook/v1/service.proto", "packaging/async-commit-hook/release-metadata.json",
       "scripts/release/build-async-commit-hook.py", "scripts/release/async-commit-hook.test.mjs",
       "scripts/release/publish-async-commit-hook.py", "scripts/release/async-commit-hook-publish-fixtures.py",
@@ -125,8 +125,11 @@ test("async-commit-hook failures, missing results and unauthorized skips fail th
 test("workspace, shared, runtime, and external contract inputs select their owners", () => {
   for (const [path, ids] of [
     ["apps/mpapp/App.tsx", ["node-mpapp-test", "node-mpapp-lint"]],
-    ["scripts/install/binpm.sh", ["node-binpm-docs-test"]],
-    ["scripts/install/nodeup.ps1", ["node-nodeup-docs-test"]],
+    ["scripts/install/binpm.sh", ["node-public-docs-test"]],
+    ["scripts/install/nodeup.ps1", ["node-public-docs-test"]],
+    ["scripts/install/async-commit-hook.sh", ["async-commit-hook", "node-public-docs-test"]],
+    ["packages/docs-site-switcher/src/index.tsx", ["node-public-docs-test"]],
+    ["apps/public-docs/theme/index.tsx", ["repository-environment", "node-public-docs-test"]],
     ["scripts/dev-environment/orchestrator.mjs", ["repository-environment"]],
     ["packages/devhud-api-client/src/client.ts", ["devhud-frontend", "devhud-protocol", "devhud-admin", "devhud-api", "rust-test"]],
     ["apps/devhud/src-tauri/src/updater.rs", ["rust-fmt", "rust-clippy", "rust-test", "devhud-rust-conformance", "devhud-frontend"]],
@@ -143,12 +146,15 @@ test("workspace, shared, runtime, and external contract inputs select their owne
   ]) {
     for (const id of ids) assert.ok(selected(Event.PullRequest, [path]).includes(id), `${path}: ${id}`);
   }
+  for (const path of ["apps/public-docs/theme/index.tsx", "apps/public-docs/docs/runmoor/install.md"]) {
+    assert.equal(planJobs(Event.PullRequest, [path]).forced["node-public-docs-test"], false, path);
+  }
   assert.equal(planJobs(Event.PullRequest, ["apps/devhud/src/App.tsx"]).forced["devhud-frontend"], false);
   assert.equal(planJobs(Event.PullRequest, ["packages/devhud-api-client/src/client.ts"]).forced["devhud-frontend"], false);
   for (const path of [".nvmrc", "Cargo.lock", "protos/devhud/v1/account.proto"]) {
     assert.equal(planJobs(Event.PullRequest, [path]).forced["devhud-frontend"], true, path);
   }
-  assert.equal(planJobs(Event.PullRequest, ["scripts/install/binpm.sh"]).forced["node-binpm-docs-test"], true);
+  assert.equal(planJobs(Event.PullRequest, ["scripts/install/binpm.sh"]).forced["node-public-docs-test"], true);
   assert.throws(() => planJobs("unknown", []), /Unsupported CI event/u);
 });
 

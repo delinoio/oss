@@ -8,6 +8,7 @@ import { archive } from './runmoor.mjs';
 import { FileStore } from './linux-packages/store.mjs';
 import { addToCatalog, saveCandidate, snapshotFor, promote } from './linux-packages/publish.mjs';
 import { validateRotation, rotationOverlapMs } from './linux-packages/keyring.mjs';
+import { isImmutableAptObject } from './linux-packages/repository.mjs';
 
 const revision = 'a'.repeat(40);
 const fingerprint = 'A'.repeat(40);
@@ -50,6 +51,16 @@ test('native setup isolates stable and preview with signature checks', () => {
   assert.match(files['setup/delino-preview.repo'].toString(), /repo_gpgcheck=1\n/u);
   assert.match(files['setup/delino.repo'].toString(), /gpgcheck=1\n/u);
   assert.match(files['setup/delino.sources'].toString(), /Signed-By: \/usr\/share\/keyrings\//u);
+});
+test('APT publication keeps only content-addressed by-hash objects immutable', () => {
+  assert.ok(isImmutableAptObject('pool/main/c/clibox/clibox_1.2.3-1_amd64.deb'));
+  assert.ok(isImmutableAptObject('dists/stable/main/binary-amd64/by-hash/MD5Sum/0123456789abcdef0123456789abcdef'));
+  assert.ok(isImmutableAptObject('dists/stable/main/binary-amd64/by-hash/SHA1/0123456789abcdef0123456789abcdef01234567'));
+  assert.ok(isImmutableAptObject(`dists/stable/main/binary-amd64/by-hash/SHA256/${'a'.repeat(64)}`));
+  assert.ok(isImmutableAptObject(`dists/stable/main/binary-amd64/by-hash/SHA512/${'b'.repeat(128)}`));
+  for (const alias of ['dists/stable/main/binary-amd64/by-hash/SHA256/Packages', 'dists/stable/by-hash/SHA256/Contents-amd64.gz', 'dists/stable/main/binary-amd64/Packages']) {
+    assert.ok(!isImmutableAptObject(alias));
+  }
 });
 test('checksums reject duplicates, missing entries and malformed digests', () => {
   const line = `${'a'.repeat(64)}  binpm.tar.gz\n`;

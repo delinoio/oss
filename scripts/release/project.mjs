@@ -2,9 +2,8 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { setTimeout as sleep } from "node:timers/promises";
 
-export const Project = Object.freeze({ Binpm: "binpm", CargoMono: "cargo-mono", Nodeup: "nodeup", WithWatch: "with-watch", Derun: "derun", Runmoor: "runmoor", Clibox: "clibox" });
+export const Project = Object.freeze({ Binpm: "binpm", CargoMono: "cargo-mono", Nodeup: "nodeup", WithWatch: "with-watch", Derun: "derun", Runmoor: "runmoor", Clibox: "clibox", AsyncCommitHook: "async-commit-hook" });
 export const Bump = Object.freeze({ Patch: "patch", Minor: "minor", Major: "major" });
 export const Kind = Object.freeze({ Rust: "rust", Go: "go" });
 const repository = "delinoio/oss";
@@ -18,7 +17,13 @@ const versions = Object.freeze({
   "with-watch": { kind: Kind.Rust, file: "crates/with-watch/Cargo.toml" },
   derun: { kind: Kind.Go, file: "cmds/derun/internal/version/version.go" },
   runmoor: { kind: Kind.Go, file: "cmds/runmoor/internal/runmoor/types.go" },
+  "async-commit-hook": { kind: Kind.Go, file: "cmds/async-commit-hook/internal/core/model.go" },
 });
+const asyncCommitHookVersions = Object.freeze([
+  { file: "apps/async-commit-hook/package.json", name: "async-commit-hook" },
+  { file: "packages/async-commit-hook-api-client/package.json", name: "@delinoio/async-commit-hook-api-client" },
+  { file: "packaging/async-commit-hook/release-metadata.json" },
+]);
 const shaPattern = /^[a-f0-9]{40}$/u;
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 
@@ -87,6 +92,25 @@ function replaceVersion(source, project, kind, next) {
   return { current, text: next ? source.replace(pattern, (_, header, body) => header + body.replace(/^version = "[^"]+"$/mu, `version = "${next}"`)) : source };
 }
 
+// Preserve every byte outside these release fields, including installer trust
+// identities. New or ambiguous layouts need an explicit versioning contract.
+function asyncCommitHookVersionChanges(read, current, next = current) {
+  return Object.fromEntries(asyncCommitHookVersions.map(({ file, name, pattern }) => {
+    const source = read(file);
+    if (!pattern) {
+      const metadata = JSON.parse(source);
+      requireValue(name ? metadata.name === name : metadata.tag_prefix === `${Project.AsyncCommitHook}@v` && metadata.executable === "ach", `Release identity mismatch: ${file}`);
+      requireValue([...source.matchAll(/"version"\s*:/gu)].length === 1, `Missing or ambiguous version declaration: ${file}`);
+      requireValue(metadata.version === current, `async-commit-hook source versions disagree: ${file}`);
+      pattern = /^(  "version": ")([^"\r\n]+)(",)$/gmu;
+    }
+    const matches = [...source.matchAll(pattern)];
+    requireValue(matches.length === 1, `Missing or ambiguous version declaration: ${file}`);
+    requireValue(matches[0][2] === current, `async-commit-hook source versions disagree: ${file}`);
+    return [file, source.replace(pattern, (_, prefix, version, suffix) => `${prefix}${next}${suffix}`)];
+  }));
+}
+
 export function readVersion(project, read = (file) => readFileSync(path.join(root, file), "utf8")) {
   const { file, kind } = descriptor(project);
   const current = replaceVersion(read(file), project, kind).current;
@@ -94,6 +118,7 @@ export function readVersion(project, read = (file) => readFileSync(path.join(roo
     const npm = JSON.parse(read("packages/clibox/package.json"));
     requireValue(npm.name === "@delino/clibox" && npm.version === current, "clibox Cargo/npm versions disagree");
   }
+  if (project === Project.AsyncCommitHook) asyncCommitHookVersionChanges(read, current);
   return current;
 }
 
@@ -111,6 +136,7 @@ export function versionChanges(project, bump, read) {
     requireValue([...source.matchAll(/^  "version": "[^"]+",$/gmu)].length === 1, "Missing or ambiguous npm source version");
     changes[file] = source.replace(/^  "version": "[^"]+",$/mu, `  "version": "${version}",`);
   }
+  if (project === Project.AsyncCommitHook) Object.assign(changes, asyncCommitHookVersionChanges(read, previous_version, version));
   return { project, bump, kind, previous_version, version, tag: `${project}@v${version}`, changes };
 }
 
@@ -238,48 +264,6 @@ export async function pushReleaseTag({ directory, identity, request }) {
   return { tag: identity.tag, revision: identity.revision, reused: existing !== null };
 }
 
-async function listPages(route, field, request) {
-  const all = [];
-  for (let page = 1; page <= 10; page++) {
-    const result = await request(`${route}${route.includes("?") ? "&" : "?"}per_page=100&page=${page}`);
-    requireValue(result.status === 200 && Array.isArray(result.body?.[field]), "Cannot inspect workflow state");
-    all.push(...result.body[field]);
-    if (result.body[field].length < 100) return all;
-  }
-  throw new Error("Workflow lookup exceeded its pagination bound");
-}
-
-export async function waitForCiWorkflow({ identity, request, now = Date.now, delay = sleep, timeoutMs = 4 * 60 * 60 * 1000, report = () => {} }) {
-  const stage = "ci";
-  const workflow = "CI.yml";
-  const branch = "main";
-  const prefix = `/repos/${repository}/actions`;
-  const started = now();
-  let lastState;
-  while (now() - started < timeoutMs) {
-    const query = new URLSearchParams({ head_sha: identity.revision, event: "push", branch });
-    const runs = await listPages(`${prefix}/workflows/${workflow}/runs?${query}`, "workflow_runs", request);
-    const matching = runs.filter((run) => run.head_sha === identity.revision && run.event === "push" && run.head_branch === branch && run.path === `.github/workflows/${workflow}`);
-    matching.sort((a, b) => b.id - a.id);
-    const run = matching[0];
-    const state = run ? `${run.id}:${run.run_attempt}:${run.status}:${run.conclusion}` : "awaiting-run";
-    if (state !== lastState) { report({ stage, state }); lastState = state; }
-    if (run) {
-      requireValue(Number.isSafeInteger(run.id) && run.id > 0, "Invalid workflow run identity");
-      const run_url = `https://github.com/${repository}/actions/runs/${run.id}`;
-      if (run.status === "completed") {
-        requireValue(run.conclusion === "success", `${stage} workflow ${run.id} did not succeed; rerun that exact workflow before resuming`);
-        const jobs = await listPages(`${prefix}/runs/${run.id}/jobs?filter=latest`, "jobs", request);
-        const result = jobs.filter((job) => job.name === "CI Result");
-        requireValue(result.length === 1 && result[0].status === "completed" && result[0].conclusion === "success" && result[0].head_sha === identity.revision, "The exact commit's CI Result did not succeed");
-        return { ci_url: run_url };
-      }
-    } else requireValue(now() - started < 10 * 60 * 1000, "Expected workflow did not start within ten minutes");
-    await delay(30000);
-  }
-  throw new Error(`${stage} workflow wait timed out`);
-}
-
 function output(values) {
   if (process.env.GITHUB_OUTPUT) for (const [key, value] of Object.entries(values)) {
     requireValue(/^[a-z_]+$/u.test(key) && !/[\r\n]/u.test(String(value)), "Unsafe workflow output");
@@ -329,8 +313,7 @@ export async function main(command) {
     return;
   }
   if (command === "tag") { output(await pushReleaseTag({ directory: root, identity, request: githubRequest })); return; }
-  requireValue(command === "wait-ci", "Unknown release command");
-  output(await waitForCiWorkflow({ identity, request: githubRequest, report: log }));
+  throw new Error("Unknown release command");
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

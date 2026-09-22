@@ -14,7 +14,7 @@ Each project must have one project index document and one or more domain contrac
 - Do not arbitrarily omit, delete, or simplify requested or source-backed content during documentation edits unless the user explicitly asks for that outcome.
 - If documentation content, scope, or intent is ambiguous, ask the user before deciding what to remove, merge, or reinterpret.
 - If a documentation change affects repository or domain policy boundaries, update or create the relevant `AGENTS.md` file in the same change when needed.
-- `docs/` remains the internal source of truth for contracts, architecture notes, repo-local paths, and implementation details. Public documentation surfaces under `apps/*-docs` and `apps/public-docs` must curate from those contracts without documenting repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
+- `docs/` remains the internal source of truth for contracts, architecture notes, repo-local paths, and implementation details. Public documentation is owned and built by `apps/public-docs`; the project content roots are `apps/public-docs/docs/{runmoor,nodeup,binpm,async-commit-hook}`. Those pages must curate from these contracts without documenting repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 
 ## Naming Rules
 - Project index docs: `docs/project-<project-id>.md`
@@ -30,7 +30,7 @@ Each project must have one project index document and one or more domain contrac
 
 ## Repository Workflow
 
-- `docs/repository-workflow-contract.md`: CI selection and validation, manual CLI project/version releases, `delino-release-bot` setup, exact-commit recovery, and Runmoor stable publication.
+- `docs/repository-workflow-contract.md`: CI selection and validation, manual CLI project/version releases, `delino-release-bot` setup, exact-commit recovery, Runmoor stable publication, and consolidated documentation publication.
 
 ## Project Catalog
 
@@ -42,7 +42,7 @@ Each project must have one project index document and one or more domain contrac
 ### binpm
 - `docs/project-binpm.md`
 - `docs/crates-binpm-foundation.md`
-- `docs/apps-binpm-docs-foundation.md` (`apps/binpm-docs`, production URL `https://binpm.delino.io`, routes: `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/releases`, `/troubleshooting`, `/reference`)
+- `docs/apps-binpm-docs-foundation.md` (`apps/public-docs/docs/binpm`, canonical URL `https://oss.delino.io/binpm`, routes published below `/binpm`: `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/releases`, `/troubleshooting`, `/reference`)
 
 ### cargo-mono
 - `docs/project-cargo-mono.md`
@@ -56,7 +56,7 @@ Each project must have one project index document and one or more domain contrac
 ### nodeup
 - `docs/project-nodeup.md`
 - `docs/crates-nodeup-foundation.md`
-- `docs/apps-nodeup-docs-foundation.md` (`apps/nodeup-docs` routes: `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, `/reference`)
+- `docs/apps-nodeup-docs-foundation.md` (`apps/public-docs/docs/nodeup`, canonical URL `https://oss.delino.io/nodeup`, routes published below `/nodeup`: `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, `/reference`)
 
 ### with-watch
 - `docs/project-with-watch.md`
@@ -65,7 +65,7 @@ Each project must have one project index document and one or more domain contrac
 ### runmoor
 - `docs/project-runmoor.md`
 - `docs/cmds-runmoor-foundation.md`
-- `docs/apps-runmoor-docs-foundation.md` (`apps/runmoor-docs`, production URL `https://runmoor.delino.io`, routes: `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, `/operations`)
+- `docs/apps-runmoor-docs-foundation.md` (`apps/public-docs/docs/runmoor`, canonical URL `https://oss.delino.io/runmoor`, routes published below `/runmoor`: `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, `/operations`)
 
 ### derun
 - `docs/project-derun.md`
@@ -77,7 +77,8 @@ Each project must have one project index document and one or more domain contrac
 
 ### public-docs
 - `docs/project-public-docs.md`
-- `docs/apps-public-docs-foundation.md` (includes the stable `/devhud` section and child routes)
+- `docs/apps-public-docs-foundation.md` (single `oss.delino.io` publisher, four project subpaths, site selector, and stable `/devhud` section)
+- `docs/packages-docs-site-switcher-contract.md` (shared accessible documentation site selector package and fixed site registry)
 
 ### serde-feather
 - `docs/project-serde-feather.md`
@@ -118,5 +119,7 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 ### async-commit-hook
 - [Project index](project-async-commit-hook.md)
 - [Command](cmds-async-commit-hook-contract.md), [app](apps-async-commit-hook-contract.md), [protocol](protos-async-commit-hook-v1-contract.md), [client](packages-async-commit-hook-api-client-contract.md)
-- [Complete requirements](cmds-async-commit-hook-requirements.md) and [implementation evidence](cmds-async-commit-hook-evidence.md)
+- [Complete requirements](cmds-async-commit-hook-requirements.md)
 - [Release and recovery](cmds-async-commit-hook-release-contract.md)
+
+- `apps-async-commit-hook-docs-foundation.md`: Rspress public documentation owned at `apps/public-docs/docs/async-commit-hook`, published below `/async-commit-hook`, with installer routes, the `/docs` migration route, and validation contract.

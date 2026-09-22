@@ -7,6 +7,7 @@
       "Cargo.toml",
       "crates/binpm/**",
       "crates/clibox/**",
+      "crates/clibox-config/**",
       "crates/clibox-system/**",
       "crates/clibox-transform/**",
       "crates/clibox-wait/**",
@@ -38,7 +39,9 @@
       "pnpm-workspace.yaml",
       "protos/**",
       "servers/**",
-      "turbo.json"
+      "turbo.json",
+      "apps/async-commit-hook/**",
+      "packages/async-commit-hook-api-client/**"
     ]
   },
   "go-test": {
@@ -55,7 +58,9 @@
       "pnpm-workspace.yaml",
       "protos/**",
       "servers/**",
-      "turbo.json"
+      "turbo.json",
+      "apps/async-commit-hook/**",
+      "packages/async-commit-hook-api-client/**"
     ]
   },
   "repository-environment": {
@@ -65,20 +70,14 @@
       ".nvmrc",
       "AGENTS.md",
       "apps/AGENTS.md",
-      "apps/binpm-docs/**",
       "apps/devhud-admin/**",
       "apps/devhud/**",
       "apps/mpapp/.env.example",
-      "apps/nodeup-docs/**",
       "apps/public-docs/**",
-      "apps/runmoor-docs/**",
       "docs/README.md",
-      "docs/apps-binpm-docs-foundation.md",
       "docs/apps-devhud-admin-contract.md",
       "docs/apps-devhud-foundation.md",
-      "docs/apps-nodeup-docs-foundation.md",
       "docs/apps-public-docs-foundation.md",
-      "docs/apps-runmoor-docs-foundation.md",
       "docs/project-binpm.md",
       "docs/project-devhud.md",
       "docs/project-nodeup.md",
@@ -194,56 +193,6 @@
       "apps/mpapp/**"
     ]
   },
-  "node-binpm-docs-test": {
-    "paths": [
-      ".npmrc",
-      ".nvmrc",
-      "apps/binpm-docs/**",
-      "package.json",
-      "pnpm-lock.yaml",
-      "pnpm-workspace.yaml",
-      "scripts/install/binpm.*",
-      "scripts/run-rspress-port.mjs",
-      "turbo.json"
-    ],
-    "workspace": "binpm-docs",
-    "workspacePaths": [
-      "apps/binpm-docs/**"
-    ]
-  },
-  "node-runmoor-docs-test": {
-    "paths": [
-      ".npmrc",
-      ".nvmrc",
-      "apps/runmoor-docs/**",
-      "package.json",
-      "pnpm-lock.yaml",
-      "pnpm-workspace.yaml",
-      "scripts/run-rspress-port.mjs",
-      "turbo.json"
-    ],
-    "workspace": "runmoor-docs",
-    "workspacePaths": [
-      "apps/runmoor-docs/**"
-    ]
-  },
-  "node-nodeup-docs-test": {
-    "paths": [
-      ".npmrc",
-      ".nvmrc",
-      "apps/nodeup-docs/**",
-      "package.json",
-      "pnpm-lock.yaml",
-      "pnpm-workspace.yaml",
-      "scripts/install/nodeup.*",
-      "scripts/run-rspress-port.mjs",
-      "turbo.json"
-    ],
-    "workspace": "nodeup-docs",
-    "workspacePaths": [
-      "apps/nodeup-docs/**"
-    ]
-  },
   "node-public-docs-test": {
     "paths": [
       ".github/workflows/package-devhud-private.yml",
@@ -251,6 +200,7 @@
       ".npmrc",
       ".nvmrc",
       "apps/public-docs/**",
+      "packages/docs-site-switcher/**",
       "docs/apps-devhud-operations-contract.md",
       "docs/apps-devhud-support-contract.md",
       "docs/project-devhud.md",
@@ -259,6 +209,9 @@
       "pnpm-lock.yaml",
       "pnpm-workspace.yaml",
       "scripts/run-rspress-port.mjs",
+      "scripts/install/async-commit-hook.*",
+      "scripts/install/binpm.*",
+      "scripts/install/nodeup.*",
       "turbo.json"
     ],
     "workspace": "public-docs",
@@ -569,7 +522,7 @@
       "buf.gen.yaml",
       "buf.yaml",
       "cmds/async-commit-hook/**",
-      "docs/*async-commit-hook*.md",
+      "docs/project-async-commit-hook.md",
       "go.mod",
       "go.sum",
       "package.json",
@@ -583,7 +536,8 @@
       "scripts/dev-environment/process.mjs",
       "scripts/run-rsbuild-dev.mjs",
       "scripts/spawn-dev-server.mjs",
-      "turbo.json"
+      "turbo.json",
+      "scripts/install/async-commit-hook.*"
     ]
   },
   "taskflow-conformance": {
@@ -617,6 +571,7 @@
       "Cargo.lock",
       "rust-toolchain",
       "crates/clibox/**",
+      "crates/clibox-config/**",
       "crates/clibox-system/**",
       "crates/clibox-transform/**",
       "crates/clibox-wait/**",

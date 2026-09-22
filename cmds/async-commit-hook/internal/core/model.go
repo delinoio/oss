@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const Version = "0.1.0"
+const Version = "0.1.1"
 const SchemaVersion = 1
 const ProjectFile = ".config/async-commit-hook.toml"
 

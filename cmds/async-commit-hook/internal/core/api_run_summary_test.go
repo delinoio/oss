@@ -80,19 +80,11 @@ func TestRunListPagesOmitLargeCheckGraphsAndPreserveDetail(t *testing.T) {
 	if 49*smallBytes+largeBytes <= 4*1024*1024 {
 		t.Fatal("fixture no longer exercises oversized expanded list responses")
 	}
-	code, err := s.PairingCode()
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, token, err := s.Pair(code, "large-page-test")
-	if err != nil {
-		t.Fatal(err)
-	}
 	request := func(method string, body []byte) *httptest.ResponseRecorder {
 		t.Helper()
 		req := httptest.NewRequest("POST", "http://127.0.0.1:46309/async_commit_hook.v1.LocalService/"+method, bytes.NewReader(body))
-		req.Header.Set("Origin", "https://ach.delino.io")
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Origin", "http://127.0.0.1:46309")
+		req.Header.Set("X-Ach-Api-Version", "1")
 		req.Header.Set("Content-Type", "application/json")
 		response := httptest.NewRecorder()
 		s.Handler().ServeHTTP(response, req)

@@ -26,7 +26,7 @@ it("loads split repositories on demand and retains selection through a page erro
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const { unmount } = render(<QueryClientProvider client={client}><TransportProvider transport={transport}>
-    <Workspace initialRun="" onPair={() => {}} />
+    <Workspace initialRun="" />
   </TransportProvider></QueryClientProvider>);
   try {
     const sidebar = within(screen.getByRole("complementary", { name: "Repositories" }));
@@ -73,7 +73,7 @@ it("pages branches without losing an unloaded selection or loaded options on err
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const { unmount } = render(<QueryClientProvider client={client}><TransportProvider transport={transport}>
-    <Workspace initialRun="" onPair={() => {}} />
+    <Workspace initialRun="" />
   </TransportProvider></QueryClientProvider>);
   try {
     const select = await screen.findByRole("combobox", { name: "Branch" });
@@ -108,7 +108,7 @@ it("keeps colliding branch labels separate and sends opaque identities in every 
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const { unmount } = render(<QueryClientProvider client={client}><TransportProvider transport={transport}>
-    <Workspace initialRun="" onPair={() => {}} />
+    <Workspace initialRun="" />
   </TransportProvider></QueryClientProvider>);
   try {
     const select = await screen.findByRole("combobox", { name: "Branch" });
@@ -122,6 +122,51 @@ it("keeps colliding branch labels separate and sends opaque identities in every 
     await waitFor(() => expect(listCommits).toHaveBeenCalledWith(expect.objectContaining({ branchId: "raw-two", ref: "" }), expect.anything()));
     fireEvent.click(screen.getByRole("button", { name: "Inbox" }));
     await waitFor(() => expect(listRuns).toHaveBeenLastCalledWith(expect.objectContaining({ branchId: "", branch: "", detached: false, inbox: true }), expect.anything()));
+  } finally { unmount(); client.clear(); }
+});
+
+it("renders the local diff-base diagnostic and accepts an explicit base", async () => {
+  const getChanges = vi.fn((request: { base: string }) => {
+    if (!request.base)
+      throw new ConnectError(
+        "diff-base-required: select a local diff base; no remote fetch is performed",
+        Code.InvalidArgument,
+      );
+    return {
+      base: request.base,
+      head: "HEAD",
+      mergeBase: "merge-base",
+      diff: "selected diff",
+      truncated: false,
+    };
+  });
+  const transport = createRouterTransport((router) => router.service(LocalService, {
+    listRepositories: () => ({ repositories: [{ id: "repo", name: "Repository", worktrees: [{ id: "tree", path: "/repo", branch: "main" }] }] }),
+    getVersion: () => ({ apiVersion: 1 }),
+    listBranches: () => ({ branches: [] }),
+    listRuns: () => ({ runs: [] }),
+    getChanges,
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const { unmount } = render(<QueryClientProvider client={client}><TransportProvider transport={transport}>
+    <Workspace initialRun="" />
+  </TransportProvider></QueryClientProvider>);
+  try {
+    await screen.findByRole("button", { name: /\/repo/ });
+    fireEvent.click(screen.getByRole("button", { name: "Changes" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("select a local diff base; no remote fetch is performed");
+    expect(alert.textContent).not.toContain("Cannot reach ach");
+
+    const base = screen.getByRole("textbox", { name: "Diff base" });
+    fireEvent.change(base, { target: { value: "HEAD" } });
+    fireEvent.submit(base.closest("form")!);
+    await waitFor(() => expect(getChanges).toHaveBeenLastCalledWith(
+      expect.objectContaining({ base: "HEAD" }),
+      expect.anything(),
+    ));
+    await screen.findByText("selected diff");
+    expect(screen.getByText("merge-base")).toBeTruthy();
   } finally { unmount(); client.clear(); }
 });
 
@@ -140,7 +185,7 @@ for (const outcome of ["selected", "empty", "error"] as const) {
     }));
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const { unmount } = render(<QueryClientProvider client={client}><TransportProvider transport={transport}>
-      <Workspace initialRun="" onPair={() => {}} />
+      <Workspace initialRun="" />
     </TransportProvider></QueryClientProvider>);
     try {
       await screen.findByText("Loading repositories…");

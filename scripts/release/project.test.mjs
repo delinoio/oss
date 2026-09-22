@@ -5,10 +5,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { Bump, Project, Kind, bumpVersion, readVersion, versionChanges, sourceMetadata, git, prepareRelease, validateCommit, preflightVersion, pushReleaseTag, tagRevision, waitForCiWorkflow } from "./project.mjs";
+import { Bump, Project, Kind, bumpVersion, readVersion, versionChanges, sourceMetadata, git, prepareRelease, validateCommit, preflightVersion, pushReleaseTag, tagRevision } from "./project.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
-const files = ["Cargo.lock", "packages/clibox/package.json", ...["binpm", "cargo-mono", "nodeup", "with-watch", "clibox"].map((name) => `crates/${name}/Cargo.toml`), "cmds/derun/internal/version/version.go", "cmds/runmoor/internal/runmoor/types.go"];
+const achFiles = [
+  "cmds/async-commit-hook/internal/core/model.go", "apps/async-commit-hook/package.json",
+  "packages/async-commit-hook-api-client/package.json", "packaging/async-commit-hook/release-metadata.json",
+];
+const files = ["Cargo.lock", "packages/clibox/package.json", ...["binpm", "cargo-mono", "nodeup", "with-watch", "clibox"].map((name) => `crates/${name}/Cargo.toml`), "cmds/derun/internal/version/version.go", "cmds/runmoor/internal/runmoor/types.go", ...achFiles];
 const sources = Object.fromEntries(files.map((file) => [file, readFileSync(path.join(root, file), "utf8")]));
 const read = (file) => sources[file];
 const bot = { name: "delino-release-bot[bot]", email: "123+delino-release-bot[bot]@users.noreply.github.com" };
@@ -17,13 +21,19 @@ const identity = { project: Project.Binpm, revision, tag: "binpm@v1.2.3" };
 const absent = async () => ({ status: 404 });
 
 for (const project of Object.values(Project)) for (const bump of Object.values(Bump)) {
-  test(`${project} ${bump} changes only the selected source and matching workspace lock entry`, () => {
+  test(`${project} ${bump} changes only the selected version sources`, () => {
     const plan = versionChanges(project, bump, read);
     assert.equal(plan.previous_version, readVersion(project, read));
     assert.equal(plan.version, bumpVersion(plan.previous_version, bump));
     const updated = { ...sources, ...plan.changes };
     for (const candidate of Object.values(Project)) assert.equal(readVersion(candidate, (file) => updated[file]), candidate === project ? plan.version : readVersion(candidate, read));
-    assert.equal(Object.keys(plan.changes).length, project === Project.Clibox ? 3 : plan.kind === Kind.Rust ? 2 : 1);
+    assert.equal(Object.keys(plan.changes).length, project === Project.AsyncCommitHook ? 4 : project === Project.Clibox ? 3 : plan.kind === Kind.Rust ? 2 : 1);
+    if (project === Project.AsyncCommitHook) {
+      assert.equal(plan.kind, Kind.Go);
+      assert.equal(plan.tag, `async-commit-hook@v${plan.version}`);
+      assert.deepEqual(Object.keys(plan.changes).sort(), [...achFiles].sort());
+      for (const file of achFiles) assert.equal(plan.changes[file], read(file).replace(plan.previous_version, plan.version));
+    }
     if (plan.kind === Kind.Rust) {
       const before = sources["Cargo.lock"].split("[[package]]");
       const after = updated["Cargo.lock"].split("[[package]]");
@@ -62,8 +72,35 @@ test("clibox releases synchronize Cargo and npm and reject npm drift before vers
   assert.throws(() => sourceMetadata({ project: Project.Clibox, event: "push", ref: `refs/tags/clibox@v${plan.previous_version}` }, drift), /versions disagree/u);
 });
 
+for (const file of achFiles) test(`async-commit-hook rejects drift and missing, duplicate or malformed versions in ${file}`, () => {
+  const current = readVersion(Project.AsyncCommitHook, read);
+  const declaration = read(file).split("\n").find((line) => line.includes(current));
+  assert.ok(declaration);
+  for (const source of [
+    read(file).replace(current, "99.0.0"),
+    read(file).replace(declaration + "\n", ""),
+    read(file).replace(declaration, `${declaration}\n${declaration}`),
+    read(file).replace(current, "01.2.3"),
+  ]) {
+    const changed = (candidate) => candidate === file ? source : read(candidate);
+    assert.throws(() => readVersion(Project.AsyncCommitHook, changed));
+    assert.throws(() => versionChanges(Project.AsyncCommitHook, Bump.Patch, changed));
+  }
+});
+
+test("async-commit-hook rejects foreign identities and ambiguously formatted JSON version keys", () => {
+  for (const file of achFiles.filter((file) => file.endsWith(".json"))) {
+    const source = read(file);
+    const declaration = source.split("\n").find((line) => line.includes('"version":'));
+    for (const changed of [
+      source.replace(/"(?:name|tag_prefix)": "[^"]+"/u, '"name": "another-project"'),
+      source.replace(declaration, `${declaration}\n "version" : "99.0.0",`),
+    ]) assert.throws(() => versionChanges(Project.AsyncCommitHook, Bump.Patch, (candidate) => candidate === file ? changed : read(candidate)));
+  }
+});
+
 test("Downstream manual and tag metadata must agree with source before builds", () => {
-  for (const project of Object.values(Project)) {
+  for (const project of Object.values(Project).filter((project) => project !== Project.AsyncCommitHook)) {
     const version = readVersion(project, read);
     const tag = `${project}@v${version}`;
     const input = { project, event: "workflow_dispatch", ref: "refs/heads/main", requestedVersion: version, requestedDryRun: "false" };
@@ -94,6 +131,24 @@ function fixture(t) {
   git(checkout, ["push", "origin", "HEAD:main"]);
   return { directory: checkout, remote, initial: git(checkout, ["rev-parse", "HEAD"]) };
 }
+
+test("async-commit-hook version drift fails before preflight or version writes", async (t) => {
+  const state = fixture(t);
+  const file = "apps/async-commit-hook/package.json";
+  writeFileSync(path.join(state.directory, file), read(file).replace(readVersion(Project.AsyncCommitHook, read), "99.0.0"));
+  git(state.directory, ["add", file]);
+  git(state.directory, ["commit", "-m", "fixture version drift"]);
+  git(state.directory, ["push", "origin", "HEAD:main"]);
+  const before = git(state.directory, ["rev-parse", "HEAD"]);
+  let checked = false;
+  await assert.rejects(prepareRelease({ directory: state.directory, project: Project.AsyncCommitHook, bump: Bump.Patch, runId: "31", ...bot,
+    preflight: async () => { checked = true; },
+  }), /versions disagree/u);
+  assert.equal(checked, false);
+  assert.equal(git(state.directory, ["status", "--porcelain"]), "");
+  assert.equal(git(state.remote, ["rev-parse", "refs/heads/main"]), before);
+  assert.equal(git(state.remote, ["tag", "--list"]), "");
+});
 
 for (const project of Object.values(Project)) test(`${project} commit journals and resumes the same run after main advances`, async (t) => {
   const fixtureState = fixture(t);
@@ -133,11 +188,11 @@ test("A concurrent main push fails without rewriting remote history", async (t) 
   assert.equal(git(state.remote, ["rev-parse", "refs/heads/main"]), competingRevision);
 });
 
-test("Recovery rejects extra paths and hidden non-version changes", async (t) => {
+for (const project of [Project.Derun, Project.AsyncCommitHook]) test(`${project} recovery rejects extra paths and hidden non-version changes`, async (t) => {
   const state = fixture(t);
-  const options = { directory: state.directory, project: Project.Derun, bump: Bump.Patch, runId: "1", ...bot };
+  const options = { directory: state.directory, project, bump: Bump.Patch, runId: "1", ...bot };
   const first = await prepareRelease(options);
-  const file = "cmds/derun/internal/version/version.go";
+  const file = project === Project.AsyncCommitHook ? "apps/async-commit-hook/package.json" : "cmds/derun/internal/version/version.go";
   writeFileSync(path.join(state.directory, file), readFileSync(path.join(state.directory, file), "utf8") + "\n// unexpected mutation\n");
   git(state.directory, ["add", file]);
   git(state.directory, ["commit", "--amend", "--no-edit"]);
@@ -157,9 +212,9 @@ test("Preflight rejects existing releases, tags and uncertain API results", asyn
   assert.equal(await tagRevision(identity.tag, async (route) => ({ status: 200, body: { object: { type: route.includes("/git/tags/") ? "commit" : "tag", sha: revision } } })), revision);
 });
 
-test("Registry-success/tag-push interruption recovers only the same tag and commit", async (t) => {
+for (const project of [Project.Binpm, Project.AsyncCommitHook]) test(`${project} tag-push interruption recovers only the same tag and commit`, async (t) => {
   const state = fixture(t);
-  const plan = await prepareRelease({ directory: state.directory, project: Project.Binpm, bump: Bump.Patch, runId: "22", ...bot });
+  const plan = await prepareRelease({ directory: state.directory, project, bump: Bump.Patch, runId: "22", ...bot });
   const request = async () => {
     const sha = git(state.remote, ["for-each-ref", "--format=%(objectname)", `refs/tags/${plan.tag}`]);
     return sha ? { status: 200, body: { object: { type: "commit", sha } } } : { status: 404 };
@@ -168,37 +223,4 @@ test("Registry-success/tag-push interruption recovers only the same tag and comm
   assert.equal((await pushReleaseTag({ directory: state.directory, identity: plan, request })).reused, true);
   await assert.rejects(pushReleaseTag({ directory: state.directory, identity: { ...plan, revision: state.initial }, request }), /different commit/u);
   assert.equal(git(state.remote, ["tag", "--list"]), plan.tag);
-});
-
-function run(overrides = {}) {
-  return { id: 5, run_attempt: 1, head_sha: revision, head_branch: "main", event: "push", path: ".github/workflows/CI.yml", status: "completed", conclusion: "success", ...overrides };
-}
-function ciRequest(runs = [run()], jobs = [{ name: "CI Result", status: "completed", conclusion: "success", head_sha: revision }]) {
-  return async (route) => ({ status: 200, body: route.includes("/jobs?") ? { jobs } : { workflow_runs: runs } });
-}
-
-test("CI wait binds workflow, event, branch, SHA and aggregate result", async () => {
-  assert.deepEqual(await waitForCiWorkflow({ identity, request: ciRequest() }), { ci_url: "https://github.com/delinoio/oss/actions/runs/5" });
-  for (const conclusion of ["failure", "cancelled", "skipped", "neutral", "timed_out", null]) {
-    await assert.rejects(waitForCiWorkflow({ identity, request: ciRequest([run({ conclusion })]) }), /did not succeed/u);
-  }
-  for (const jobs of [[], [{ name: "CI Result", conclusion: "success", status: "completed", head_sha: "2".repeat(40) }], [{ name: "CI Result", conclusion: "skipped", status: "completed", head_sha: revision }]]) {
-    await assert.rejects(waitForCiWorkflow({ identity, request: ciRequest([run()], jobs) }), /CI Result/u);
-  }
-  for (const wrong of [{ head_sha: "2".repeat(40) }, { head_branch: "topic" }, { event: "workflow_dispatch" }, { path: ".github/workflows/other.yml" }]) {
-    let clock = 0;
-    await assert.rejects(waitForCiWorkflow({ identity, request: ciRequest([run(wrong)]), now: () => clock, delay: async () => { clock += 600001; } }), /did not start/u);
-  }
-});
-
-test("Waits poll pending runs, prefer the newest matching run and have deadlines", async () => {
-  let calls = 0;
-  let clock = 0;
-  const states = [];
-  const request = async (route) => route.includes("/jobs?") ? ciRequest()(route) : { status: 200, body: { workflow_runs: [run({ id: 1, conclusion: "failure" }), run({ status: ++calls > 1 ? "completed" : "in_progress" })] } };
-  await waitForCiWorkflow({ identity, request, now: () => clock, delay: async () => { clock += 30000; }, report: (state) => states.push(state) });
-  assert.equal(states.length, 2);
-  clock = 0;
-  await assert.rejects(waitForCiWorkflow({ identity, request: ciRequest([run({ status: "in_progress" })]), now: () => clock, delay: async () => { clock += 30000; }, timeoutMs: 60000 }), /timed out/u);
-  await assert.rejects(waitForCiWorkflow({ identity, request: async () => ({ status: 403 }) }), /inspect/u);
 });

@@ -9,7 +9,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256, Sha512};
 
 use crate::{
-    cli::{Algorithm, EncodeFormat, HashEncode, HashVerify, Input, VerifyFormat},
+    cli::{Algorithm, ComputeFormat, HashCompute, HashVerify, Input, VerifyFormat},
     io::{read, reader, Cancellation, CHUNK},
     transform::write,
     transform_error::{Code, Error, Result},
@@ -115,8 +115,8 @@ fn path_from_bytes(bytes: Vec<u8>) -> Result<PathBuf> {
         .map_err(|_| Error::runtime(Code::MalformedRecord))
 }
 
-pub fn encode(args: HashEncode, writer: &mut dyn Write, cancel: &Cancellation) -> Result<u8> {
-    let checksum_path = if matches!(args.format, EncodeFormat::Checksum) {
+pub fn compute(args: HashCompute, writer: &mut dyn Write, cancel: &Cancellation) -> Result<u8> {
+    let checksum_path = if matches!(args.format, ComputeFormat::Checksum) {
         let path = args
             .source
             .input
@@ -125,16 +125,16 @@ pub fn encode(args: HashEncode, writer: &mut dyn Write, cancel: &Cancellation) -
             .ok_or_else(|| Error::argument(Code::Arguments))?;
         Some(path_bytes(&checksum_filename(
             path,
-            args.destination.output.as_deref(),
+            args.destination.file_path(),
         )?))
     } else {
         None
     };
     let digest = digest(args.algorithm, args.source.reader()?, cancel)?;
     match args.format {
-        EncodeFormat::Hex => write(writer, hex(&digest).as_bytes())?,
-        EncodeFormat::Base64 => write(writer, STANDARD.encode(&digest).as_bytes())?,
-        EncodeFormat::Checksum => {
+        ComputeFormat::Hex => write(writer, hex(&digest).as_bytes())?,
+        ComputeFormat::Base64 => write(writer, STANDARD.encode(&digest).as_bytes())?,
+        ComputeFormat::Checksum => {
             let path = checksum_path.unwrap();
             let escaped = path
                 .iter()
@@ -467,5 +467,10 @@ pub fn verify(
         failed,
         "verification completed"
     );
+    if failed {
+        // Results can be redirected or suppressed. Keep a static failure summary
+        // on stderr without disclosing filenames or expected/actual digests.
+        crate::transform_error::report(Error::runtime(Code::VerificationFailed), "hash-verify");
+    }
     Ok(u8::from(failed))
 }

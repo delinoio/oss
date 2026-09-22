@@ -71,6 +71,20 @@ impl Failure {
     pub fn report(&self, operation: &'static str) {
         // Never format a raw OS error: it can contain paths, arguments or clipboard
         // data.
-        tracing::error!(operation, code = ?self.code, pid = self.pid, port = self.port, "error: {}", self.message);
+        if tracing::enabled!(tracing::Level::ERROR) {
+            tracing::error!(operation, code = ?self.code, pid = self.pid, port = self.port, "error: {}", self.message);
+        } else {
+            // Filtering must not hide actionable failures. Ignore closed stderr
+            // rather than panicking or overriding the operation's exit status.
+            use std::io::Write;
+            let _ = writeln!(
+                std::io::stderr(),
+                "error: {} operation={operation} code={:?} pid={:?} port={:?}",
+                self.message,
+                self.code,
+                self.pid,
+                self.port
+            );
+        }
     }
 }

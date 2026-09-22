@@ -336,3 +336,7 @@ Documentation-first implementation:
 - Background automatic updates or direct replacement of Homebrew-owned binaries.
 - An `async-commit-hook` executable alias.
 
+
+## Owner amendment: local UI and separate public documentation (2026-09-20)
+
+The original issue snapshot above is retained for provenance. The owner explicitly superseded hosted application/pairing requirements: ach now embeds and serves the UI beside its API, requires no pairing or persistent browser credentials, and retains on-demand viewer behavior. https://oss.delino.io/async-commit-hook is the async-commit-hook section owned by `apps/public-docs/docs/async-commit-hook`, including the existing installer URLs. The protocol keeps Pair only as a deprecated Unimplemented tombstone. Follow the updated project, application, protocol, command and public-docs contracts for current behavior.

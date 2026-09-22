@@ -16,9 +16,69 @@ const productPages = [
   { text: "TaskFlow", link: "/taskflow", activeMatch: "^/taskflow" },
 ];
 
+const runmoorPages = [
+  { text: "Overview", link: "/runmoor/", activeMatch: "^/runmoor/$" },
+  { text: "Install and Verify", link: "/runmoor/install" },
+  { text: "Configuration", link: "/runmoor/configuration" },
+  { text: "Commands and Routing", link: "/runmoor/commands" },
+  { text: "Docker", link: "/runmoor/docker" },
+  { text: "Tart Images", link: "/runmoor/tart" },
+  { text: "Operations and Recovery", link: "/runmoor/operations" },
+];
+
+const nodeupPages = [
+  { text: "Overview", link: "/nodeup/", activeMatch: "^/nodeup/$" },
+  { text: "Installation", link: "/nodeup/installation" },
+  { text: "Getting Started", link: "/nodeup/getting-started" },
+  { text: "Commands", link: "/nodeup/commands" },
+  { text: "Runtime Resolution", link: "/nodeup/runtime-resolution" },
+  { text: "Shims and Package Managers", link: "/nodeup/shims-and-package-managers" },
+  { text: "Output", link: "/nodeup/output" },
+  { text: "Completions", link: "/nodeup/completions" },
+  { text: "Releases", link: "/nodeup/releases" },
+  { text: "Troubleshooting", link: "/nodeup/troubleshooting" },
+  { text: "Reference", link: "/nodeup/reference" },
+];
+
+const binpmPages = [
+  { text: "Overview", link: "/binpm/", activeMatch: "^/binpm/$" },
+  { text: "Installation", link: "/binpm/installation" },
+  { text: "Getting Started", link: "/binpm/getting-started" },
+  { text: "Commands", link: "/binpm/commands" },
+  { text: "Local Tooling", link: "/binpm/local-tooling" },
+  { text: "Cache and Verification", link: "/binpm/cache-and-verification" },
+  { text: "Releases", link: "/binpm/releases" },
+  { text: "Troubleshooting", link: "/binpm/troubleshooting" },
+  { text: "Reference", link: "/binpm/reference" },
+];
+
+const asyncCommitHookPages = [
+  { text: "Overview", link: "/async-commit-hook/", activeMatch: "^/async-commit-hook/$" },
+  { text: "Installation", link: "/async-commit-hook/install" },
+  { text: "Get started", link: "/async-commit-hook/start" },
+  { text: "Configuration", link: "/async-commit-hook/configuration" },
+  { text: "Final validation", link: "/async-commit-hook/validation" },
+  { text: "CLI reference", link: "/async-commit-hook/commands" },
+  { text: "Agents and MCP", link: "/async-commit-hook/agents" },
+  { text: "Browser connection", link: "/async-commit-hook/web" },
+  { text: "Privacy and trust", link: "/async-commit-hook/privacy" },
+  { text: "Operations and recovery", link: "/async-commit-hook/recovery" },
+  { text: "Compatibility and validation evidence", link: "/async-commit-hook/compatibility" },
+  { text: "Committed symbolic links", link: "/async-commit-hook/symlinks" },
+  { text: "Existing hooks and hook managers", link: "/async-commit-hook/existing-hooks" },
+];
+
+const projectPages = [
+  { text: "Runmoor", link: "/runmoor/", activeMatch: "^/runmoor" },
+  { text: "Nodeup", link: "/nodeup/", activeMatch: "^/nodeup" },
+  { text: "binpm", link: "/binpm/", activeMatch: "^/binpm" },
+  { text: "async-commit-hook", link: "/async-commit-hook/", activeMatch: "^/async-commit-hook" },
+];
+
 export default defineConfig({
   title: "Delino Public Docs",
   description: "Public documentation for Delino OSS projects.",
+  base: "/",
   root: "docs",
   outDir: "doc_build",
   builderConfig: {
@@ -30,13 +90,7 @@ export default defineConfig({
     cleanUrls: true,
   },
   themeConfig: {
-    nav: [
-      ...homePages,
-      ...productPages,
-      { text: "Nodeup", link: "https://nodeup.delino.io" },
-      { text: "binpm", link: "https://binpm.delino.io" },
-      { text: "Runmoor", link: "https://runmoor.delino.io" },
-    ],
+    nav: [],
     sidebar: {
       "/": [
         { text: "Get Started", items: homePages.slice(0, 2) },
@@ -76,6 +130,12 @@ export default defineConfig({
           text: "Command Rerun Watcher",
           items: [productPages[3]],
         },
+      ],
+      "/runmoor/": [{ text: "Runmoor", items: runmoorPages }],
+      "/nodeup/": [{ text: "Nodeup", items: nodeupPages }],
+      "/binpm/": [{ text: "binpm", items: binpmPages }],
+      "/async-commit-hook/": [
+        { text: "async-commit-hook", items: asyncCommitHookPages },
       ],
     },
     socialLinks: [

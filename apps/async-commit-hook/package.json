@@ -1,6 +1,6 @@
 {
   "name": "async-commit-hook",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,7 +12,8 @@
     "test": "pnpm --filter @delinoio/async-commit-hook-api-client build && pnpm typecheck && vitest run && pnpm build && node --test scripts/*.test.mjs",
     "test:unit": "vitest run",
     "test:components": "vitest run",
-    "test:accessibility": "vitest run"
+    "test:accessibility": "vitest run",
+    "build:embedded": "node scripts/embed.mjs --clean && pnpm --filter @delinoio/async-commit-hook-api-client build && pnpm build && node scripts/embed.mjs"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.0",
@@ -28,7 +29,7 @@
     "@rsbuild/core": "2.1.10",
     "@rsbuild/plugin-react": "2.0.1",
     "@testing-library/react": "16.3.3",
-    "@testing-library/dom": "10.4.1",
+    "@testing-library/dom": "10.4.2",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "jsdom": "20.0.3",

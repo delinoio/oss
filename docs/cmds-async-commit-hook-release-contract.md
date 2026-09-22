@@ -1,29 +1,35 @@
 # async-commit-hook release contract
 
 ## Scope
-The command release boundary owns six `ach` archives, shell/PowerShell installers, a Homebrew formula, artifact verification and explicit self-update. The static app and public `/docs` ship through the same manually dispatched release workflow. The initial version is `0.1.0`.
+The command release boundary owns six `ach` archives, shell/PowerShell installers, a Homebrew formula, artifact verification and explicit self-update. The release workflow validates the static app and the consolidated public documentation; `public-docs` is the sole documentation publisher. The initial version is `0.1.0`.
 
 ## Runtime and Language
-The Go binary uses CGO-free builds for darwin/linux/windows and amd64/arm64. Python assembles and inspects archives; GitHub Actions orchestrates validation, Sigstore signing, publication and Cloudflare Pages. A release archive contains exactly one regular `ach` or `ach.exe`, with no executable alias. Identical executable bytes produce identical archives: Unix tar members and gzip headers have fixed timestamps, gzip carries no filename, and ownership/mode metadata is fixed; Windows ZIP entries retain their fixed timestamp and mode. Archive checksums therefore do not depend on the time a retry runs.
+The Go binary uses CGO-free builds for darwin/linux/windows and amd64/arm64. Python assembles and inspects archives; GitHub Actions orchestrates validation, Sigstore signing and release publication, while the consolidated `public-docs` project automatically deploys the documentation tree through Cloudflare Pages from `main`. A release archive contains exactly one regular `ach` or `ach.exe`, with no executable alias. Identical executable bytes produce identical archives: Unix tar members and gzip headers have fixed timestamps, gzip carries no filename, and ownership/mode metadata is fixed; Windows ZIP entries retain their fixed timestamp and mode. Archive checksums therefore do not depend on the time a retry runs.
 
 ## Users and Operators
 Direct-install users, Homebrew users and authorized release maintainers. The owner explicitly excluded real six-target machine qualification and actual publication/deployment from the September 2026 implementation. Cross-build results must never be described as native integration results.
 
 ## Interfaces and Contracts
 `packaging/async-commit-hook/release-metadata.json`, the Go version constant and both package versions must match. Release identity is `async-commit-hook@v<MAJOR.MINOR.PATCH>`. Archives are named `ach-<goos>-<goarch>.tar.gz` or `ach-windows-<goarch>.zip`.
-The shell installer accepts `--version MAJOR.MINOR.PATCH`, overriding `ACH_VERSION` and then the bundled default. Both installers require canonical three-part numeric versions without leading zeroes. Missing values, unknown shell arguments and malformed versions fail before any download or installation work.
+The installers query GitHub releases and select the highest non-draft, non-prerelease `async-commit-hook@v<version>` release by default, never the repository-wide latest release. The shell installer accepts `--version MAJOR.MINOR.PATCH`, overriding `ACH_VERSION`; PowerShell accepts the same exact version through `-Version`. Explicit versions require canonical three-part numeric values without leading zeroes. Unknown arguments and malformed versions fail before any download or installation work.
+
+The public guide's primary install commands use those latest-published-stable defaults, and its primary self-update command selects the highest published stable version. Explicit-version and rollback examples use a replaceable `MAJOR.MINOR.PATCH` placeholder. The guide remains safe when a future release has been prepared but not published; production-output tests prevent reintroducing stale prepared-version defaults.
+
+Use **Actions → Release Project → Run workflow** on `main` with project `async-commit-hook` and `patch`, `minor` or `major` (default `patch`) to prepare a release. The coordinator synchronizes the Go constant, local UI/client manifests and release metadata in one version-only commit, validates that exact commit, then pushes only its `async-commit-hook@v<version>` tag. Drift and missing or ambiguous version declarations fail before writes. It uses the existing bot identity, serialized preparation, run-ID recovery and non-forced pushes, skips Cargo installation/publication and Cargo credentials, and never waits for main CI. Preparation creates no signed artifacts or GitHub Release and does not start the publication workflow.
+
+The successful coordinator summary reports the prepared version, commit and tag and links to the separate manual **Release async-commit-hook** workflow. Select `main` and enter that version explicitly; its existing `dry_run=true` default remains. Actual publication still requires its dispatch commit to match the prepared tag. If main has advanced to another commit, the existing tag check rejects publication; this preparation integration does not add historical-source recovery or permission to move tags. Failed preparation/tag steps are retried within the same coordinator run; publication retries remain owned by the separate run as described below.
 
 `scripts/release/build-async-commit-hook.py --validate` checks versions and the exact six-target set. `--output <empty-directory>` cross-builds all targets, assembles archives, copies the public installers, generates `async-commit-hook.rb`, `compatibility.json` and `SHA256SUMS`. This local dry run neither signs nor publishes. Compatibility output explicitly records unsigned/unpublished status and the real-machine exclusion.
 
-`.github/workflows/release-async-commit-hook.yml` accepts only manual dispatch on `main`, with an exact source version and `dry_run=true` by default. Validation generates the administrator embed, runs the repository Go suite, race tests, frontend/client tests, protocol checks and release fixtures, then builds all six archives. Dry-run artifacts stay in the temporary runner directory and are not uploaded; dry runs cannot sign, push a tag/tap, create a release or deploy a site. Only an explicitly publishing run uploads intermediate build artifacts, with seven-day retention, for its downstream signing/deployment jobs.
+`.github/workflows/release-async-commit-hook.yml` accepts only manual dispatch on `main`, with an exact source version and `dry_run=true` by default. Validation generates the administrator and ach UI embeds, runs the repository Go suite, race tests, local UI/client tests, consolidated public-docs tests, protocol checks and release fixtures, then builds all six archives. Dry-run artifacts stay in the temporary runner directory and are not uploaded; dry runs cannot sign, push a tag/tap, create a release or deploy a site. Only an explicitly publishing run uploads the unsigned release artifacts for its signing and Homebrew jobs. Documentation publication remains owned by the consolidated `public-docs` pipeline.
 
 Publication requires the `async-commit-hook-release` environment. The publish job receives OIDC and repository release permissions, signs every artifact and the checksum manifest using the existing fail-closed checksum helper, then publishes an immutable versioned GitHub Release through `scripts/release/publish-async-commit-hook.py`. Completed releases are rejected.
 
 The publisher first creates an unpublished draft with an exact ownership marker containing the repository, workflow, workflow run ID and validated commit. A retry of the same run can resume that draft after an interrupted creation response or partial asset upload. It requires matching tag, target commit, title, body and draft status, rereads ownership before upload, rejects unexpected assets, and replaces only the expected draft assets. Every archive, installer, formula, compatibility record, checksum manifest and corresponding Sigstore bundle must be present locally as a regular nonsymlink file. Before publication, the complete paginated remote asset set must match all expected names, sizes, SHA-256 digests and uploaded states, and the remote tag is verified again. Lookup failures cannot be interpreted as an absent release. No completed release or unowned draft is modified.
 
-Before signing, `--verify-tag COMMIT` reads the remote version ref and its peeled target. The publisher invokes the same verifier before draft creation/resumption and immediately before publishing. An absent tag is allowed for GitHub creation at the validated commit; an existing lightweight, annotated or nested tag must resolve exactly to that commit. Mismatches and lookup errors fail closed without moving or creating a tag. The GitHub release target field is not used as an existing-tag identity check. The independent `homebrew` job depends on successful `publish`, downloads the same workflow run's validated formula and uses `HOMEBREW_TAP_GH_TOKEN` only for the explicit `delinoio/homebrew-tap` update. An identical remote formula succeeds without another commit or push. The subsequent `deploy` job depends on `homebrew` and uses `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `ACH_PAGES_PROJECT`, with pinned Wrangler, to deploy the validated static bundle. Never put these credentials in source, installers or browser bundles. No credentials were created for this implementation.
+Before signing, `--verify-tag COMMIT` reads the remote version ref and its peeled target. The publisher invokes the same verifier before draft creation/resumption and immediately before publishing. An absent tag is allowed for GitHub creation at the validated commit; an existing lightweight, annotated or nested tag must resolve exactly to that commit. Mismatches and lookup errors fail closed without moving or creating a tag. The GitHub release target field is not used as an existing-tag identity check. The independent `homebrew` job depends on successful `publish`, downloads the same workflow run's validated formula and uses `HOMEBREW_TAP_GH_TOKEN` only for the explicit `delinoio/homebrew-tap` update. An identical remote formula succeeds without another commit or push. There is no async-commit-hook-specific Pages deployment job: the consolidated `public-docs` pipeline owns documentation publication. The command release builder rebuilds and validates the embedded local UI before all six Go compilations. Installer source bytes come from `scripts/install/async-commit-hook.sh` and `scripts/install/async-commit-hook.ps1`. Never put these credentials in source, installers or browser bundles. No credentials were created for this implementation.
 
-After an interrupted draft upload or a downstream Homebrew or Pages failure, use GitHub Actions **Re-run failed jobs** on that same workflow run within the seven-day artifact retention window. Successful GitHub publication remains complete and is not repeated; a Pages-only retry also preserves successful Homebrew publication. Re-running all jobs or dispatching another publication for an already published version intentionally fails the immutable-release guard. A new workflow run also cannot take over an earlier run's draft. Legacy drafts without the ownership marker, modified drafts and drafts with unexpected assets require maintainer inspection; the workflow never deletes or claims them automatically. If retained artifacts have expired, stop and recover the original validated artifacts through maintainer review; never overwrite the existing release.
+After an interrupted draft upload or a downstream Homebrew failure, use GitHub Actions **Re-run failed jobs** on that same workflow run within the seven-day artifact retention window. Successful GitHub publication remains complete and is not repeated. The consolidated documentation deployment is retried through its owning `public-docs` workflow. Re-running all jobs or dispatching another publication for an already published version intentionally fails the immutable-release guard. A new workflow run also cannot take over an earlier run's draft. Legacy drafts without the ownership marker, modified drafts and drafts with unexpected assets require maintainer inspection; the workflow never deletes or claims them automatically. If retained artifacts have expired, stop and recover the original validated artifacts through maintainer review; never overwrite the existing release.
 
 ## Storage
 Installed executable replacement uses a same-volume candidate, a retained previous executable, a durable account-scoped update journal and a consistent SQLite `VACUUM INTO` backup plus owned evidence. State version 1 is validated before use; unknown versions fail without conversion. Backups remain account-private and exclude filesystem symlink traversal.
@@ -39,13 +45,63 @@ Archive generation emits structured target, artifact and SHA-256 evidence. Runti
 ## Build and Test
 Run `node --test scripts/release/async-commit-hook.test.mjs` for dependency-free artifact/installer fixtures and offline publication recovery fixtures. Publication fixtures intercept every GitHub command and tag lookup; they cover partial uploads, lost creation responses, changed signatures on retry, wrong ownership/commit, completed releases, lookup/tag failures and incomplete or mismatched remote assets without network mutations. After the frozen workspace install, run `node --test scripts/ci/async-commit-hook-release.test.mjs`, `pnpm ci:workflows` and `pnpm ci:contracts` for YAML workflow and publication-retry contracts. Also run Go updater/installer ownership fixtures and the six-target builder. Signature tests include real upstream Sigstore verification evidence with an untrusted workflow, forged bundles and tampered bytes. Shell installer tests use isolated download/signature fixtures to prove fail-closed publication ordering. Windows installation and replacement receive cross-build/source checks here, not a falsely claimed Windows execution result.
 
+## Validation Status
+Desktop Chrome credential-free local-UI smoke, controls, accessibility-tree and focus validation passed. Desktop Edge validation remains pending because Edge was unavailable in the validation environment; no owner-approved exclusion has been recorded. Release readiness must not treat the original Edge accessibility requirement as complete until that validation is executed or explicitly waived. The only approved implementation exclusions remain real six-target machine qualification and actual public release/site deployment.
+
+## Agent-Client Validation
+The recorded actual-client result is limited to skill/MCP installation and connection checks performed with isolated temporary configuration and state; it does not establish completion of the full agent-client workflow. The observed client statuses were:
+
+| Client | Recorded validation status |
+| --- | --- |
+| Codex CLI 0.145.0 | Owned isolated skill and MCP entry discovered successfully |
+| Claude Code 2.1.126 | Isolated installation and MCP connection succeeded |
+| OpenCode 1.1.53 | Isolated installation and MCP connection succeeded |
+
+Reproduce the integration setup from a temporary `HOME`, client configuration directories and registered test repository, never a personal configuration or credential store:
+
+```sh
+ach agent install --client codex
+ach agent install --client claude-code
+ach agent install --client opencode
+ach agent-guide
+ach mcp
+```
+
+Use each actual client executable to discover its owned skill and MCP entry. The full CLI/MCP workflow—starting a check, allowing `wait` to expire without cancelling execution, waiting for terminal completion, inspecting logs, failures, comparison and acknowledgement behavior, and exercising rerun and cancellation—was covered through the official Go MCP client and automated protocol tests without invoking agent-model sessions. Therefore actual Codex, Claude Code and OpenCode workflow validation remains pending. Remove each integration with the matching client/scope command after validation. No remote results, telemetry or diagnostic uploads are part of this check.
+
+## Process-Ownership Validation
+The Unix ownership backend is validated by the committed lifecycle tests `TestScopeStartBarrierAndOutput`, `TestScopeReapsDaemonizedDescendants`, `TestReplaceReapsDaemonizedDescendantsBeforeNextStarts`, `TestScopeCancellationDoesNotTouchAnotherCheck`, `TestScopeJournalNeverStoresResolvedEnvironment`, `TestScopeMissingJournalCannotConfirmCompletion`, `TestLegacyScopeCannotClaimUnknownDescendantsExited` and `TestSupervisorLeaseBlocksConfigurationWithoutWorker`. macOS-specific supervisor recovery is covered by `TestScopeRecoveryAfterSupervisorDeath`; Linux-specific lost-subreaper recovery is covered by `TestScopeLostSubreaperFailsClosedUntilBootChanges`.
+
+Reproduce the cross-platform lifecycle coverage with:
+
+```bash
+set -Eeuo pipefail
+cleanup() {
+  local status=$?
+  rm -r -- apps/async-commit-hook/dist cmds/async-commit-hook/internal/webassets/dist servers/devhud-api/internal/adminassets/dist packages/async-commit-hook-api-client/dist packages/devhud-api-client/dist 2>/dev/null || true
+  trap - EXIT
+  exit "$status"
+}
+trap cleanup EXIT
+
+pnpm --filter async-commit-hook build:embedded
+pnpm --filter devhud-admin build:embedded
+go test -run 'TestScope(StartBarrierAndOutput|ReapsDaemonizedDescendants|CancellationDoesNotTouchAnotherCheck|JournalNeverStoresResolvedEnvironment|MissingJournalCannotConfirmCompletion)|TestLegacyScopeCannotClaimUnknownDescendantsExited|TestReplaceReapsDaemonizedDescendantsBeforeNextStarts|TestSupervisorLeaseBlocksConfigurationWithoutWorker' ./cmds/async-commit-hook/internal/core
+go test -race -run 'TestScope(StartBarrierAndOutput|ReapsDaemonizedDescendants|CancellationDoesNotTouchAnotherCheck|JournalNeverStoresResolvedEnvironment|MissingJournalCannotConfirmCompletion)|TestLegacyScopeCannotClaimUnknownDescendantsExited|TestReplaceReapsDaemonizedDescendantsBeforeNextStarts|TestSupervisorLeaseBlocksConfigurationWithoutWorker' ./cmds/async-commit-hook/internal/core
+go test -run TestScopeRecoveryAfterSupervisorDeath ./cmds/async-commit-hook/internal/core # macOS only
+go test -run TestScopeLostSubreaperFailsClosedUntilBootChanges ./cmds/async-commit-hook/internal/core # Linux only
+go test -p 1 ./...
+go vet ./cmds/async-commit-hook/...
+```
+
+The recorded local contexts are macOS 26.6.2 arm64 for supervisor-death recovery and a network-disabled Linux arm64 `node:24-bookworm` container for focused lifecycle coverage. These results do not qualify macOS 13 or the other five supported targets as native machine validation.
+
 ## Change Triggers
-Update this contract, packaging AGENTS, version metadata, evidence and public upgrade/compatibility guidance when artifact names, trust identity, update ownership or deployment behavior changes.
+Update this contract, packaging AGENTS, version metadata and public upgrade/compatibility guidance when artifact names, trust identity, update ownership or deployment behavior changes. Keep the process-ownership validation commands, Edge status and owner-approved exclusions in this contract synchronized with those changes.
 
 ## References
 - [Project](project-async-commit-hook.md)
 - [Command contract](cmds-async-commit-hook-contract.md)
-- [Implementation evidence](cmds-async-commit-hook-evidence.md)
 
 Windows helpers retain a separate UUID-scoped cleanup record before creating the replacement sibling. Successful installation can remove its update journal without losing the helper path, authenticated digest or process birth identity. Subsequent service opens retry cleanup under the account lifecycle lock, wait for the helper to exit, reject changed/nonregular files, and remove the cleanup record only after deleting the helper. Cleanup failure remains recorded and emits a stable warning without blocking ordinary queries.
 

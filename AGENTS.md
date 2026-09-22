@@ -16,7 +16,7 @@
 - Run `git commit` only after `git add`; once files are staged, commit without unnecessary delay so staged changes are preserved in history.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
 - Root `pnpm install` must install Lefthook in linked worktrees when the effective `core.hooksPath` resolves to Git's shared common-directory hooks path, preserve Lefthook's protective failure for unrelated custom hook paths, and skip hook installation without blocking app preparation when Git metadata is unavailable.
-- Root `pnpm dev` is the DevHud team workflow. Root documentation development uses `pnpm dev:public-docs`, `pnpm dev:nodeup-docs`, `pnpm dev:binpm-docs`, or `pnpm dev:runmoor-docs`; every root and package-local development command must use the app-owned fixed ports documented in `apps/AGENTS.md` and fail on conflicts instead of automatically remapping a server.
+- Root `pnpm dev` is the DevHud team workflow. Documentation development uses `pnpm dev:public-docs` on the consolidated fixed port documented in `apps/AGENTS.md`; it fails on conflicts instead of automatically remapping a server.
 - `docs/repository-environment-contract.md` is the source of truth for environment ownership. Root development orchestration may pass only the bounded `DEVHUD_LOCAL_MODE` selector, optional non-secret `CARGO_HOME` and `RUSTUP_HOME` tool locations, and platform-conditional Linux X11/XWayland `DISPLAY`, `XAUTHORITY`, and per-user `XDG_RUNTIME_DIR` session/runtime context through Turbo's exact task environment allowlist; team values are injected and validated only by their owning service wrapper, whose loopback HTTP validation must reject numeric IPv4 spellings not accepted by Go and whose public asset-base validation must inspect the raw path before WHATWG normalization. Exact API/administrator issuer parity must be proved before migration and pinned through migration plus the API, administrator, and frontend Turbo launches without writing a raw value; the frontend wrapper may receive only that validated public issuer and may use only its origin in the fixed development CSP. OSS mode must never invoke Infisical. Team startup is non-interactive and exclusive while that private comparison pin exists, checkout identity material is published atomically, and every preflight, startup, or cleanup child run under installed root signal handlers must be lifecycle-tracked. Windows process-tree termination utilities receive only minimal system lookup context, never validated service configuration. Docker children may additionally inherit only `DOCKER_HOST` and `DOCKER_CONTEXT`, but OSS startup must reject effective remote daemon endpoints before Compose startup. OSS startup is exclusive per checkout through cleanup, and an idempotent one-shot database step must repair missing Logto database creation in preserved PostgreSQL volumes before Logto seeding. Environment tests must inject temporary generated state and an external temporary Infisical config directory, and must never replace checkout identity or project-binding material.
 - Keep `.infisical.json`, `.dev-environment/`, real `.env` files, user credentials, and production/release/signing credentials uncommitted. Service-local `.env.example` files contain names, validation guidance, placeholders, and safe loopback defaults only; do not add a root environment example or expose internal secret paths in public product docs.
 - After addressing pull request review comments and pushing updates, mark the corresponding review threads as resolved.
@@ -65,6 +65,7 @@
 - `docs/project-ttl.md`: TTL compiler project index.
 - `docs/project-mpapp.md`: Expo mobile app project index.
 - `docs/project-public-docs.md`: Public docs app project index.
+- `docs/packages-docs-site-switcher-contract.md`: Shared accessible documentation site selector package contract.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-rustia.md`: Rustia multi-crate project index.
 - `docs/project-devhud.md`: DevHud cross-platform desktop/mobile utility project index and current issue #815 contract.
@@ -105,18 +106,18 @@ enum ProjectId {
 
 - `taskflow` -> `crates/taskflow`, public `/taskflow` documentation in `apps/public-docs`.
 
-- `nodeup` -> `crates/nodeup`, `apps/nodeup-docs`
-- `binpm` -> `crates/binpm`, `apps/binpm-docs`
+- `nodeup` -> `crates/nodeup`, `apps/public-docs/docs/nodeup`
+- `binpm` -> `crates/binpm`, `apps/public-docs/docs/binpm`
 - `with-watch` -> `crates/with-watch`
 - `cargo-mono` -> `crates/cargo-mono`
-- `clibox` -> `crates/clibox`, `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`, `packages/clibox`
-- `runmoor` -> `cmds/runmoor`, `apps/runmoor-docs`
+- `clibox` -> `crates/clibox`, `crates/clibox-config`, `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`, `packages/clibox`
+- `runmoor` -> `cmds/runmoor`, `apps/public-docs/docs/runmoor`
 - `derun` -> `cmds/derun`
 - `ttl` -> `cmds/ttlc`
 - `mpapp` -> `apps/mpapp`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `rustia` -> `crates/rustia`, `crates/rustia-llm`, `crates/rustia-macros`
-- `public-docs` -> `apps/public-docs`
+- `public-docs` -> `apps/public-docs`, `packages/docs-site-switcher`
 - `devhud` -> `apps/devhud` (shared shell, identity/settings/diagnostics, direct-client GitHub.com provider/setup and RealQA issue submission, desktop RealQA capture/editor/encrypted drafts/direct official and BYO R2 uploads, populated Deck surface, desktop/mobile hosts, production WidgetKit/AppWidgetProvider Deck widgets, and desktop Native Messaging listener implemented; other populated product surfaces planned), `apps/devhud-chrome-extension` (implemented), `apps/devhud-admin` (implemented), `servers/devhud-api` (Bootstrap/Settings/Upload/Account/Admin/Diagnostics and embedded administrator assets implemented), `protos/devhud/v1` (implemented), `packages/devhud-api-client` (implemented), `crates/devhud-native-messaging-host` (implemented)
 
 ### DevHud Contract
@@ -150,6 +151,7 @@ enum ProjectId {
 - `apps/devhud-admin` is the sole Rsbuild producer of the ignored embedded administrator `dist`. Run `pnpm --filter devhud-admin build:embedded` before any API or sweeper Go compilation; the command builds the generated client, produces the `/admin/`-rooted hashed bundle without source maps, and validates its exact production structure. Docker must generate that bundle inside its build boundary and compile both binaries from the same generated tree.
 - Android App Bundle validation must use the checksum-pinned artifact inspector declared in `apps/devhud/mobile-platforms.json` and verify the final merged base manifest's exact Deck widget receiver before widget evidence is recorded.
 - DevHud private packaging has no automatic trigger: it is manually dispatchable and reusable only by an explicit caller, and is signed-only except for the secret-free `plan-only` dry run. Its stable release identity is exactly `devhud@v<MAJOR.MINOR.PATCH>`, with `packaging/devhud/release-metadata.json` synchronized to every source version. Preserve updater Ed25519 signatures, platform/store signatures, and Sigstore bundles as separate trust domains; unsigned or incomplete output is never public-ready. The workflow may retain a short-lived private artifact only and must never push a tag/image, create a release, submit a store build, or deploy.
+- The coordinated DevHud release may retain only DevHud-owned public documentation in its release-bound candidate. Its candidate excludes root `search_index.*` data; Cloudflare Pages publication must rebuild the complete public-docs aggregate from current `main` and overlay only `/devhud` and its required shared runtime assets, so delayed or historical recovery cannot overwrite current root search data or newer package-local documentation subpaths.
 
 ### Repository Default Technology Choices
 
@@ -217,23 +219,22 @@ enum ProjectId {
 - `binpm env --shell` must keep supported shell values explicit: `bash`, `zsh`, `fish`, `powershell`, and `pwsh` are supported; `pwsh` targets PowerShell 7 setup profiles; and `cmd` is accepted only to return a clear deferred-shell diagnostic with actionable cmd.exe PATH guidance. `--shell` may be omitted for best-effort shell inference, and `--global`/`--local` may narrow output to one PATH command without mutating profiles.
 - Global install, add, doctor, and plain env PATH setup messaging must remain guided and non-mutating. `binpm env setup --shell <shell> [--dry-run]` is the explicit opt-in profile modification command and may append only the global bin PATH line after previewing the exact file and line; it must tell PowerShell 7 users to pass `--shell pwsh`, refuse ambiguous shell/profile targets, and not imply project-local `.binpm/bin` entries are suitable for profile persistence.
 
-### binpm Docs App Contract
+### binpm Documentation Contract
 
-- `apps/binpm-docs` is the Rspress static documentation app for `binpm` and uses the existing `apps/*` workspace.
-- The canonical production URL for `apps/binpm-docs` is `https://binpm.delino.io`.
-- `apps/binpm-docs` must use Cloudflare Pages as the default static deployment target unless `docs/project-binpm.md` and `docs/apps-binpm-docs-foundation.md` document a replacement.
-- binpm documentation content must be sourced from repository contracts and must not infer product behavior or page content from the live `https://binpm.delino.io` site.
-- `apps/binpm-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
-- binpm direct-installer documentation must include latest docs-site installer commands for `https://binpm.delino.io/install.sh` and `https://binpm.delino.io/install.ps1`, preserve current and pinned first-party raw GitHub installer commands, describe checksum verification through `SHA256SUMS`, and keep binpm release verification separate from package verification.
+- `apps/public-docs/docs/binpm` is the Rspress content root for `binpm` and is built by the existing `apps/public-docs` workspace.
+- The canonical production URL for `binpm` documentation is `https://oss.delino.io/binpm`.
+- The consolidated `public-docs` build must use Cloudflare Pages and no standalone binpm documentation deployment exists.
+- binpm documentation content must be sourced from repository contracts and must not infer product behavior or page content from the live canonical site.
+- The binpm section must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
+- binpm direct-installer documentation must include latest docs-site installer commands for `https://oss.delino.io/binpm/install.sh` and `https://oss.delino.io/binpm/install.ps1`, preserve current and pinned first-party raw GitHub installer commands, describe checksum verification through `SHA256SUMS`, and keep binpm release verification separate from package verification.
 - binpm installation and release documentation must describe Homebrew as prebuilt-only, describe disabled `cargo-binstall` quick-install and compile fallbacks, and distinguish first-party binpm release platforms from broader third-party target parsing support.
 
-### Nodeup Docs App Contract
+### Nodeup Documentation Contract
 
-- `apps/nodeup-docs` is the Rspress static documentation app for `nodeup` and uses the existing `apps/*` workspace.
-- The canonical production URL for `apps/nodeup-docs` is `https://nodeup.delino.io`.
-- `apps/nodeup-docs` must publish public direct-installer entrypoints at `https://nodeup.delino.io/install.sh` and `https://nodeup.delino.io/install.ps1`.
-- `apps/nodeup-docs` must use Cloudflare Pages as the default static deployment target unless `docs/project-nodeup.md` and `docs/apps-nodeup-docs-foundation.md` document a replacement.
-- `apps/nodeup-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
+- `apps/public-docs/docs/nodeup` is the Rspress content root for `nodeup` and is built by the existing `apps/public-docs` workspace.
+- The canonical production URL for `nodeup` documentation is `https://oss.delino.io/nodeup`.
+- The consolidated build must publish direct-installer entrypoints at `https://oss.delino.io/nodeup/install.sh` and `https://oss.delino.io/nodeup/install.ps1`.
+- The Nodeup section must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
 
 ### nodeup Shim and Self Cleanup Contract
 
@@ -355,20 +356,18 @@ enum RustiaComponent {
 Repository-wide quality CI is defined in `.github/workflows/CI.yml`. The three-OS Go test matrix uses an explicit 20-minute per-package watchdog for native Git, shell and durable SQLite integration; this is not a product command timeout.
 
 Coverage expectations:
-- `go-quality`: generates and validates the ignored administrator bundle, then runs `go fmt ./...` (failing if formatting changes are applied) and `go vet ./...` on Ubuntu.
-- `go-test`: generates and validates the ignored administrator bundle, then runs `go test ./...` on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
+- `go-quality`: generates and validates the ignored administrator and ach UI bundles, then runs `go fmt ./...` (failing if formatting changes are applied) and `go vet ./...` on Ubuntu.
+- `go-test`: generates and validates the ignored administrator and ach UI bundles, then runs `go test ./...` on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
 - `rust-fmt`: runs `cargo fmt --all --check`.
 - `rust-clippy`: runs `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
 - `rust-test`: runs `cargo test --workspace --all-targets`.
 - `node-mpapp-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter mpapp test`.
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter mpapp lint`.
-- `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter binpm-docs test`.
-- `node-runmoor-docs-test`: validates the standalone Runmoor routes with one frozen install using `--ignore-scripts`, the shared change plan, and its exact Turbo comparison; it participates in `ci-result` and saves caches only after successful main validation.
-- `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter nodeup-docs test`.
-- `node-clibox-test`: runs `cargo test --locked -p clibox`, native CLI consumer installation and launcher/distribution tests on Linux, macOS, and Windows, selected by shared CI planning and required by `CI Result`.
+- `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`, covering the root and all four project content sections.
+- `node-clibox-test`: runs `cargo test --locked -p clibox -p clibox-config -p clibox-system -p clibox-transform -p clibox-wait` for native utility/configuration/process/adapter behavior, native CLI consumer installation and launcher/distribution tests on Linux, macOS, and Windows, selected by shared CI planning and required by `CI Result`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`.
 - `ci-contracts`: validates workflow syntax and the repository CI contract with the checked-in Go `actionlint` tool and Node fixtures.
-- `async-commit-hook`: follows the central change plan, runs Go race tests, app/client tests, protocol freshness and release fixtures, and builds all six unsigned target archives. Shared setup actions restore caches; only successful main validation saves them.
+- `async-commit-hook`: follows the central change plan, runs Go race tests, local UI/docs/client tests, protocol freshness and release fixtures, and builds all six unsigned target archives. Shared setup actions restore caches; only successful main validation saves them.
 - `devhud-frontend`, `devhud-extension`, and `devhud-admin`: run package-local type, lint, unit, component, accessibility, and deterministic frontend/package builds.
 - `devhud-protocol`: runs schema formatting, lint, compatibility, and generated-freshness checks; Go binding tests; and TypeScript client lint, tests, and build on Ubuntu.
 - `devhud-api`: runs package-local Go format, vet, unit, PostgreSQL migration, integration, API, and sweeper conformance.
@@ -389,20 +388,21 @@ Change-scoped execution rules:
 - PRs run affected validation, including OCI checks, but never allocate the two Linux CLI package, ten desktop, three iOS, or four Android package entries. Relevant main pushes run the complete existing native matrices. Manual dispatch runs every check and platform. There is no nightly CI schedule.
 - PR comparisons use the base/head merge-base; main comparisons use the exact `before..sha` trees, including all commits in the push. Missing or invalid comparisons fail. Deleted and renamed files select both affected owners.
 - Node workspace jobs use `scripts/ci/run-affected.mjs` to invoke the installed Turbo Node entry point directly with `turbo run <task> --affected --filter <workspace>` arguments, without a shell or package-manager shim, and with the planner's exact `TURBO_SCM_BASE` and `TURBO_SCM_HEAD`. External inputs and forced runs omit `--affected`; an otherwise empty affected set is a successful no-op.
+- Because `public-docs` builds four project content roots directly, changes under `apps/public-docs/docs/{async-commit-hook,binpm,nodeup,runmoor}` select and force `node-public-docs-test`.
 - Central path rules cover Go, Rust, every Node workspace, repository environment tooling, DevHud domains, packaging, public docs, and package/release/review workflows. Runmoor-only release scripts do not select DevHud native packaging; shared DevHud packaging inputs still do.
 - The PR frontend job runs the complete DevHud test command, including native-script fixtures, clean desktop/mobile frontend output validation, static mobile/widget contracts, and immutable CEF pins. Its aggregate `test` task is non-cacheable because it validates consecutive clean builds and external contract inputs.
-- Protocol generation and package-local frontend outputs are deterministic and cacheable; the ignored administrator bundle, native package, mobile, smoke, signing, release, and deployment tasks remain non-cacheable.
+- Protocol generation and package-local frontend outputs are deterministic and cacheable; the ignored administrator and ach UI embeds, native package, mobile, smoke, signing, release, and deployment tasks remain non-cacheable.
 - Changes to `.github/workflows/CI.yml`, `.github/actions/**`, or `scripts/ci/**` force every check eligible for that event; PRs still exclude native packaging. `workflow_dispatch` runs all domain jobs regardless of changed paths.
 - CI installs always use the frozen pnpm lockfile with `--ignore-scripts`. Shared pnpm/Go setup actions restore caches scoped by OS, architecture, tool version, and lockfile; only successful main jobs save them. Rust compilation caches likewise save only on successful main jobs; rustfmt has no dependency cache. PRs may restore main caches but never create branch-scoped caches. The Runmoor workflow uses the same Go cache policy and cancels superseded executions on the same ref.
 - CI is read-only: it does not consume release secrets, push tags or images, create releases, upload stores, deploy services/docs, or mutate updater/controller state.
 - When build or test commands change in project contracts, update this section and `.github/workflows/CI.yml` in the same commit.
 
 Release automation baseline:
-- CLI release orchestration is owned by `docs/repository-workflow-contract.md` and the manual `Release Project` workflow: only binpm, cargo-mono, nodeup, with-watch, derun, runmoor, and clibox are selectable. Do not restore main-push workspace publishing. Version commits and individual release-tag pushes use the repository-scoped `delino-release-bot` GitHub App; Homebrew uses a separate tap-scoped token. Preserve exact-commit CI gates, version-only run-ID recovery, non-forced pushes, and existing signed artifact workflows. Keep bot keys/tokens out of files, artifacts, logs, Git URLs, and configuration.
-- Trigger contract: `release-project.yml` accepts only manual `main` runs in `delinoio/oss`, with closed `project` and `bump` choices. Its version commits must pass the exact main-push `CI Result` before registry uploads or tag pushes.
-- The coordinator ends after the verified release-tag push. The tag-triggered project release workflow runs asynchronously; downstream release failures are repaired from that workflow's Actions page and do not require retrying the coordinator when the tag push succeeded.
-- Publish command contract: `cargo run --locked -p cargo-mono -- publish --package "$RELEASE_PROJECT"` for Rust CLI targets; Go targets skip the registry phase.
-- Authentication contract: checkout disables persisted credentials, read-only run inspection uses the built-in token, and fresh `delino-release-bot` installation tokens perform source/tag and Homebrew writes with separate repository scopes. Configuration is `DELINO_RELEASE_BOT_CLIENT_ID` (Actions variable), `DELINO_RELEASE_BOT_PRIVATE_KEY` (Actions secret), and `CARGO_REGISTRY_TOKEN` (Rust upload secret). No PAT is required by these workflows.
+- CLI release orchestration is owned by `docs/repository-workflow-contract.md` and the manual `Release Project` workflow: only binpm, cargo-mono, nodeup, with-watch, derun, runmoor, clibox, and async-commit-hook are selectable. Do not restore main-push workspace publishing. Version commits and individual release-tag pushes use the repository-scoped `delino-release-bot` GitHub App; Homebrew uses a separate tap-scoped token. Preserve exact release-source validation, version-only run-ID recovery, non-forced pushes, and existing signed artifact workflows. Keep bot keys/tokens out of files, artifacts, logs, Git URLs, and configuration.
+- Trigger contract: `release-project.yml` accepts only manual `main` runs in `delinoio/oss`, with closed `project` and `bump` choices. All eight projects proceed from version preparation through registry validation/publication and the exact tag push without inspecting or waiting for main CI. Main CI runs independently; pending, failed, or canceled CI does not block release orchestration. For Rust targets that publish to crates.io, registry publication must still succeed before the tag push.
+- The coordinator ends after the verified release-tag push. The seven existing tag-triggered project release workflows run asynchronously; downstream release failures are repaired from that workflow's Actions page and do not require retrying the coordinator when the tag push succeeded. async-commit-hook is preparation-only: its tag never starts publication, and its summary directs maintainers to the separate manual release workflow.
+- Publish command contract: `cargo run --locked -p cargo-mono -- publish --package "$RELEASE_PROJECT"` for Rust CLI targets other than clibox; Go and clibox targets validate the release source without a registry upload.
+- Authentication contract: checkout disables persisted credentials, read-only release-source inspection uses the built-in token, and fresh `delino-release-bot` installation tokens perform source/tag and Homebrew writes with separate repository scopes. Configuration is `DELINO_RELEASE_BOT_CLIENT_ID` (Actions variable), `DELINO_RELEASE_BOT_PRIVATE_KEY` (Actions secret), and `CARGO_REGISTRY_TOKEN` (Rust upload secret). No PAT is required by these workflows.
 - `release-cargo-mono` is defined in `.github/workflows/release-cargo-mono.yml`.
 - Trigger contract: runs on tag push `cargo-mono@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
 - Distribution contract: publishes signed multi-OS cargo-mono release artifacts to GitHub Releases for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`.
@@ -440,23 +440,27 @@ Release automation baseline:
 
 ### async-commit-hook Contract
 
-- Project ID `async-commit-hook` owns `cmds/async-commit-hook`, `apps/async-commit-hook`, `protos/async_commit_hook/v1` and `packages/async-commit-hook-api-client`; only executable `ach` is distributed.
+- Project ID `async-commit-hook` owns `cmds/async-commit-hook`, `apps/async-commit-hook`, `apps/public-docs/docs/async-commit-hook`, `protos/async_commit_hook/v1` and `packages/async-commit-hook-api-client`; only executable `ach` is distributed.
 - Follow `docs/project-async-commit-hook.md` and its domain contracts. Issue #897 applies with the owner's recorded exclusions of actual six-target machine validation and actual public publication.
 - `release-async-commit-hook.yml` is manual-only from `main`, defaults to unsigned nonpublishing dry-run artifacts, and follows `docs/cmds-async-commit-hook-release-contract.md`. Ordinary CI must never sign or publish ach artifacts, mutate the Homebrew tap or deploy Pages.
+- `Release Project` prepares async-commit-hook versions and tags only. Keep the Go version, local UI/docs/client package versions and release metadata synchronized in one version-only commit; installer defaults must resolve the latest published stable release so an automatic Public Docs deployment cannot target an unpublished prepared version. Reject drift and missing or ambiguous declarations before writes. Keep Cargo publication credentials out of this path. Actual publication retains the separate manual main workflow and its exact signing identity and tag/dispatch-commit validation.
 - CLI/MCP/Connect share one core, exact-commit latest-compatible-attempt validation and explicit per-run acknowledgements. Never resurrect old successful evidence after pruning.
 - State, reports and logs remain local and account-owned; no telemetry. User commands require explicit repository trust. Cancellation must reconcile owned descendants before releasing exclusive scheduling groups.
-- Development uses frontend 46308 and local API 46309 with conflict failure; root DevHud development remains unchanged.
+- Development uses frontend 46308 and local UI/API 46309 with conflict failure; docs development/preview use 46310/46281. Root DevHud development remains unchanged.
+- The daemon and on-demand viewer serve the same embedded UI without pairing. Every RPC requires exact same-origin POST and the API version header. `https://oss.delino.io/async-commit-hook` is documentation-only.
+- Run `pnpm --filter async-commit-hook build:embedded` before ach Go compilation or repository-wide Go checks, including commit hooks. The app owns the generated command webassets/dist; never commit or substitute placeholder assets. Root Go checks also require the existing DevHud administrator embed.
 
 ### Linux CLI Package Distribution
 
 - Follow `docs/repository-linux-packages-contract.md` for the seven CLI APT/DNF repositories at `https://pkgs.oss.delino.io`. Native package publication is part of each selected CLI release, uses the dedicated `linux-packages` environment, and enrolls binpm, cargo-mono, nodeup, with-watch, derun, runmoor and clibox in stable.
+- Native package release callers must explicitly inherit secrets so the reusable publisher can resolve its protected `linux-packages` environment. Only the guarded publication job references production credentials; validation and installation jobs remain credential-free. Preserve the environment boundary for manual recovery of already-published release identities.
 - Runmoor uses stable for both source releases and native packages. Preview remains reserved and separately registered; callers cannot override project channels.
 - APT signing-certificate updates are distributed by the shared `delino-archive-keyring` dependency in both suites. Keep certificate versions immutable, retain historical public signing subkeys, and require a completed 30-day old-signer publication overlap before switching CI subkeys.
 - Relevant main pushes, including Rust CLI source, Cargo workspace/configuration and toolchain changes, must select the Linux package CI job so both native architectures retain the AlmaLinux 9 compatibility baseline. Manual CI dispatch always selects it. PRs skip this job even when CI configuration changes force all eligible checks; its `CI Result` dependency remains and must match the planned skip. General Linux validation, static package contracts, and release-time packaging checks remain enabled.
 
 ### Runmoor Contract
 
-- Public Runmoor documentation is owned by `apps/runmoor-docs` at `https://runmoor.delino.io`; follow `docs/apps-runmoor-docs-foundation.md`. The former `public-docs` `/runmoor` and child routes are removed without handoff pages or redirects. Keep all public discovery links pointed at the standalone site.
+- Public Runmoor documentation is Markdown-owned by `apps/public-docs/docs/runmoor` and published at `https://oss.delino.io/runmoor`; follow `docs/apps-runmoor-docs-foundation.md`. Keep all public discovery links pointed at the consolidated subpath.
 
 - Follow `docs/project-runmoor.md`, `docs/cmds-runmoor-foundation.md`, and `cmds/runmoor/AGENTS.md` for issue #893. Runmoor owns local ephemeral GitHub Actions runners through Docker and Tart, with host-only credentials, durable ownership, fair resource budgets, and single-job disposable environments.
 - Runmoor binaries use the stable release channel for darwin-arm64, linux-amd64, and linux-arm64 under `runmoor@v<MAJOR.MINOR.PATCH>`; publication dry runs are credential-free and non-publishing. No Homebrew distribution is added.
@@ -466,15 +470,18 @@ Release automation baseline:
 
 ### clibox Contract
 
+- clibox CLI consistency uses canonical `env run`, `port list`, and `hash compute` without old-name aliases. Report `--quiet` suppresses stdout; PID selection is only `port list --pids`. File-output commands interpret `--output -` as stdout and `./-` as a literal dash file; `--force` requires real file output or `--in-place`. Keep short/long help, static redacted migration guidance, numeric owned-operation cancellation (130/143), filtered-error visibility, and native/npm behavior synchronized.
+
 - The executable crate and installed command are `clibox`; the public npm entry point is `@delino/clibox`. Keep the Cargo manifest/lock, private npm source manifest, executable version, and all nine generated npm packages at the same exact version.
-- Keep `clibox` as the root CLI composer with direct path dependencies on `clibox-system`, `clibox-transform`, and `clibox-wait`; companion crates must not depend on one another or the executable. Family command definitions, runtimes, errors, and unit tests belong to their owning crate. Only the executable version participates in product release synchronization; companion versions remain internal. All four crates must be selected by clibox CI/release tests and covered by npm task cache inputs and change detection.
-- Missing subcommands for `clibox run`, `port`, `clipboard`, `wait`, `text`, `time`, `base64`, and `hash` must show command-specific clap help on stderr with exit code 2. Preserve root no-argument and explicit help success on stdout, and redact all other parser failures.
+- Keep `clibox` as the root CLI composer with direct path dependencies on `clibox-config`, `clibox-system`, `clibox-transform`, and `clibox-wait`; companion crates must not depend on one another or the executable. Family command definitions, runtimes, errors, and unit tests belong to their owning crate. Only the executable version participates in product release synchronization; companion versions remain internal. All five crates must be selected by clibox CI/release tests and covered by npm task cache inputs and change detection.
+- Missing subcommands for `clibox env`, `port`, `clipboard`, `wait`, `text`, `time`, `base64`, `hash`, `dotenv`, and `yaml` must show command-specific clap help on stderr with exit code 2. Preserve root no-argument and explicit help success on stdout, and redact all other parser failures.
 - The npm launcher supports Node.js 22+, macOS/Windows x64 and arm64, and Linux x64/arm64 with separate glibc/musl packages. It resolves only the matching exact-version `@delino/clibox-*` optional dependency and has no shell, PATH fallback, install script, runtime download, or Rust compilation fallback.
 - Generate public npm packages from the private source workspace under ignored `dist` or temporary directories. Ordinary workspace installation must not resolve unpublished clibox dependencies. Never track generated tarballs or binaries.
-- clibox implements `run env`, `port which`, `port kill`, `open`, and text `clipboard copy`/`paste` alongside help/version. Preserve child argv/signal compatibility, revalidated port-owner termination with one shared five-second wait, explicit-app-only waiting, 16 MiB NUL-free UTF-8 clipboard validation and Linux background clipboard ownership. Use current-user/session authority without persistence, elevation, automatic retries or sensitive diagnostic values.
-- The seven offline text/time/Base64/hash commands specified by issue #917 coexist with the issue #916 OS utilities. Preserve enum-backed modes, redacted stderr diagnostics, cancellable processing with exit 1 for handled transformation cancellation, permission-preserving atomic file publication, and bundled timezone data. Keep OS-command signal propagation separate from transformation publication supervision. All four clibox crates must remain `publish = false`. Release Project validates the exact-commit CI result and pushes `clibox@v<version>` without requiring or injecting a Cargo registry token or publishing to crates.io. npm and GitHub publishers must not depend on a crates.io version. The same verified npm GNU binaries also produce two signed Linux GitHub Release archives and stable APT/DNF packages; Homebrew remains excluded. The npm publication flag controls npm only.
-- `release-clibox.yml` runs native unit/process tests and validates all eight native targets and the full nine-package set before publication. Publish and verify platform packages before the main package; reuse only identical registry integrity on retries. Dry runs are secret-free and non-publishing.
-- The CLI provides help/version and `wait tcp`, `wait http`, and `wait file` under issue #919, alongside the #916 utilities and the implemented #917 transformations. Waits are stateless, use immediate nonoverlapping polling and monotonic deadlines, support handled cancellation, and expose only redacted human/quiet/JSON results.
+- clibox implements `env run`, `port list`, `port kill`, `open`, and text `clipboard copy`/`paste` alongside help/version. Preserve child argv/signal compatibility, revalidated port-owner termination with one shared five-second wait, explicit-app-only waiting, 16 MiB NUL-free UTF-8 clipboard validation and Linux background clipboard ownership. Use current-user/session authority without persistence, elevation, automatic retries or sensitive diagnostic values.
+- The seven offline text/time/Base64/hash commands specified by issue #917 coexist with the issue #916 OS utilities. Preserve enum-backed modes, redacted stderr diagnostics, cancellable processing with numeric 130/143 for handled transformation cancellation, permission-preserving atomic file publication, and bundled timezone data. Keep OS-command signal propagation separate from transformation publication supervision. All five clibox crates must remain `publish = false`. Release Project validates the exact release source and pushes `clibox@v<version>` without waiting for main CI, requiring or injecting a Cargo registry token or publishing to crates.io. npm and GitHub publishers must not depend on a crates.io version. The same verified npm GNU binaries also produce two signed Linux GitHub Release archives and stable APT/DNF packages; Homebrew remains excluded. The npm publication flag controls npm only.
+- The CLI provides help/version and `wait tcp`, `wait http`, and `wait file` under issue #919, alongside the #916 utilities, the seven offline #917 transformations, and the #920 configuration commands. Waits are stateless, use immediate nonoverlapping polling and monotonic deadlines, support handled cancellation, and expose only redacted human/quiet/JSON results. The GNU binaries also feed the stable native repository described above.
+- Preserve issue #920's `dotenv list`, `dotenv merge`, and `yaml normalize` contracts: offline Rust processing, exact value/precision preservation, independent 64 MiB input/output limits, 128 YAML collection levels, atomic permission-preserving file publication, handled cancellation, and strictly redacted stderr diagnostics.
 - HTTPS uses OS trust with Rustls/ring and no implicit proxies, credentials, redirects, custom CA overrides, or body reads. Keep parser and dependency errors redacted even under `RUST_LOG=trace`. musl crypto compilation uses `musl-tools`/target-specific `CC=musl-gcc`, while final linking remains pinned self-contained `rust-lld`; no dynamic OpenSSL dependency is permitted.
+- `release-clibox.yml` runs native unit/process tests and validates all eight native targets and the full nine-package set before publication. Publish and verify platform packages before the main package; reuse only identical registry integrity on retries. Dry runs are secret-free and non-publishing.
 - `CLIBOX_NPM_PUBLISH_ENABLED=true` and an exact first-party Trusted Publisher on all nine packages are required for npm OIDC/provenance publication. Only the separately guarded npm `publish` and GitHub `publish-release` jobs receive `id-token: write`; the latter uses it solely for Sigstore signing. The npm job must explicitly install the pinned OIDC-capable npm version before validating support and publishing, independent of Node's bundled npm.
 - Keep `docs/project-clibox.md`, both clibox domain contracts, root/domain AGENTS rules, release versioning, CI selection/aggregation, and distribution fixtures synchronized.

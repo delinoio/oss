@@ -21,7 +21,6 @@ import {
   readConnection,
   transportFor,
   describeError,
-  type Connection,
 } from "./connection";
 
 const stateNames: Record<number, string> = {
@@ -58,42 +57,17 @@ export function ErrorNotice({
   error: unknown;
   retry?: () => void;
 }) {
-  const [networkDenied, setNetworkDenied] = useState(false);
-  useEffect(() => {
-    let disposed = false;
-    let permission: PermissionStatus | undefined;
-    // Older browsers do not expose this permission name. In that case retain
-    // the ordinary connection error instead of misclassifying an offline API.
-    void navigator.permissions
-      ?.query({ name: "local-network-access" as PermissionName })
-      .then((value) => {
-        if (disposed) return;
-        permission = value;
-        const update = () => setNetworkDenied(value.state === "denied");
-        value.onchange = update;
-        update();
-      })
-      .catch(() => {});
-    return () => {
-      disposed = true;
-      if (permission) permission.onchange = null;
-    };
-  }, []);
   return (
     <div className="notice error" role="alert">
       <strong>Something needs attention</strong>
-      <p>
-        {networkDenied
-          ? "Local network permission is denied. Open this site’s browser permissions, allow local network access, then try again."
-          : describeError(error)}
-      </p>
+      <p>{describeError(error)}</p>
       {retry && <button onClick={retry}>Try again</button>}
     </div>
   );
 }
 
 export function App() {
-  const [connection, setConnection] = useState(readConnection);
+  const [connection] = useState(readConnection);
   const [client] = useState(
     () =>
       new QueryClient({
@@ -102,14 +76,18 @@ export function App() {
         },
       }),
   );
-  const transport = useMemo(
-    () => transportFor(connection),
-    [connection.port, connection.token],
-  );
+  const [transport] = useState(transportFor);
   return (
     <QueryClientProvider client={client}>
       <TransportProvider transport={transport}>
-        <a className="skip-link" href="#main">
+        <a
+          className="skip-link"
+          href="#main"
+          onClick={(event) => {
+            event.preventDefault();
+            document.getElementById("main")?.focus();
+          }}
+        >
           Skip to content
         </a>
         <header className="topbar">
@@ -119,162 +97,20 @@ export function App() {
           </a>
           <div className="header-right">
             <span className="local-tag">Local to your computer</span>
-            <a href="/docs/">Documentation ↗</a>
-            {connection.token && (
-              <button
-                className="quiet"
-                onClick={() => {
-                  client.clear();
-                  try {
-                    localStorage.removeItem(
-                      `ach-v1-browser-${connection.port}`,
-                    );
-                  } catch {}
-                  setConnection({ ...connection, token: "", code: "" });
-                }}
-              >
-                Disconnect
-              </button>
-            )}
+            <a href="https://oss.delino.io/async-commit-hook" target="_blank" rel="noreferrer">Documentation ↗</a>
           </div>
         </header>
-        {connection.token ? (
-          <Workspace
-            initialRun={connection.run}
-            onPair={() => {
-              client.clear();
-              try {
-                localStorage.removeItem(`ach-v1-browser-${connection.port}`);
-              } catch {}
-              setConnection({ ...connection, token: "" });
-            }}
-          />
-        ) : (
-          <Pairing
-            connection={connection}
-            onChange={(next) => {
-              client.clear();
-              setConnection(next);
-            }}
-          />
-        )}
+        <Workspace initialRun={connection.run} />
       </TransportProvider>
     </QueryClientProvider>
-  );
-}
-
-function Pairing({
-  connection,
-  onChange,
-}: {
-  connection: Connection;
-  onChange: (next: Connection) => void;
-}) {
-  const [code, setCode] = useState(connection.code);
-  const [port, setPort] = useState(String(connection.port));
-  const [storageWarning, setStorageWarning] = useState("");
-  const pair = useMutation(LocalQuery.pair);
-  return (
-    <main id="main" className="pair-layout">
-      <section className="pair-intro">
-        <p className="eyebrow">COMMIT. KEEP MOVING.</p>
-        <h1>
-          Your checks run.
-          <br />
-          Your work continues.
-        </h1>
-        <p>
-          See exactly what passed, what needs attention, and which commit is
-          ready. Everything stays on this computer.
-        </p>
-        <div className="terminal">
-          <span>01 / CONNECT YOUR WORKSPACE</span>
-          <code>ach ui</code>
-          <p>
-            Open the connection link printed in your terminal, or paste its
-            one-time pairing code below.
-          </p>
-        </div>
-      </section>
-      <section className="pair-card">
-        <p className="eyebrow">LOCAL CONNECTION</p>
-        <h2>Pair this browser</h2>
-        <p>
-          Your code expires after five minutes. Browser access lasts until you
-          revoke it.
-        </p>
-        <form
-          onSubmit={async (event) => {
-            event.preventDefault();
-            if (Number(port) !== connection.port) {
-              onChange({ ...connection, port: Number(port), code });
-              return;
-            }
-            try {
-              const result = await pair.mutateAsync({
-                code,
-                browserName: "ach web browser",
-              });
-              try {
-                localStorage.setItem(
-                  `ach-v1-browser-${connection.port}`,
-                  result.token,
-                );
-              } catch {
-                setStorageWarning(
-                  "Browser storage is unavailable. This session works until you close it.",
-                );
-              }
-              onChange({ ...connection, token: result.token, code: "" });
-            } catch {}
-          }}
-        >
-          <label htmlFor="pair-code">Pairing code</label>
-          <input
-            id="pair-code"
-            autoFocus
-            value={code}
-            onChange={(e) => setCode(e.target.value.trim())}
-            autoComplete="off"
-            spellCheck={false}
-            required
-          />
-          <label htmlFor="port">Local API port</label>
-          <input
-            id="port"
-            type="number"
-            min="1024"
-            max="65535"
-            value={port}
-            onChange={(e) => setPort(e.target.value)}
-            required
-          />
-          <button className="primary" disabled={pair.isPending}>
-            {Number(port) !== connection.port
-              ? "Set port"
-              : pair.isPending
-                ? "Connecting…"
-                : "Connect to ach →"}
-          </button>
-        </form>
-        {pair.error && <ErrorNotice error={pair.error} />}
-        {storageWarning && <p role="status">{storageWarning}</p>}
-        <p className="muted small">
-          When prompted, allow this site to access your local network. Your logs
-          and results are served by your own ach process.
-        </p>
-      </section>
-    </main>
   );
 }
 
 type Tab = "checks" | "changes" | "commits" | "inbox";
 export function Workspace({
   initialRun,
-  onPair,
 }: {
   initialRun: string;
-  onPair: () => void;
 }) {
   const repos = useInfiniteQuery(LocalQuery.listRepositories, { cursor: "", limit: 50 }, {
     pageParamKey: "cursor",
@@ -300,9 +136,25 @@ export function Workspace({
   const [runCursor, setRunCursor] = useState("");
   useEffect(() => setRunCursor(""), [worktree, branch, tab]);
   const lastOpenedRun = useRef(initialRun);
+  const replaceRunFragment = (id: string) => {
+    const fragment = new URLSearchParams();
+    if (id) fragment.set("run", id);
+    history.replaceState(
+      null,
+      "",
+      window.location.pathname +
+        window.location.search +
+        (fragment.toString() ? `#${fragment}` : ""),
+    );
+  };
   const selectRun = (id: string) => {
     lastOpenedRun.current = id;
+    replaceRunFragment(id);
     setRun(id);
+  };
+  const clearRun = () => {
+    replaceRunFragment("");
+    setRun("");
   };
   // This shares RunDetail's query/cache entry, so a deep link can bind the page
   // identity without another fetch or a second polling/acknowledgement path.
@@ -355,7 +207,7 @@ export function Workspace({
   }, [run, selectedTree, worktree, repositories]);
   if (version.data && version.data.apiVersion !== 1)
     return (
-      <main id="main">
+      <main id="main" tabIndex={-1}>
         <div className="notice error" role="alert">
           Incompatible local API version. Install a matching ach version.
         </div>
@@ -376,7 +228,6 @@ export function Workspace({
                 void (repos.isFetchNextPageError ? repos.fetchNextPage() : repos.refetch());
               }}
             />
-            <button onClick={onPair}>Pair again</button>
           </>
         )}
         {repositories.map((repo) => (
@@ -390,7 +241,7 @@ export function Workspace({
                 onClick={() => {
                   setWorktree(w.id);
                   setBranch(w.branchId || w.branch);
-                  setRun("");
+                  clearRun();
                 }}
               >
                 <span aria-hidden="true">⌘</span>
@@ -424,7 +275,7 @@ export function Workspace({
           <code>ach inbox --repo .</code>
         </div>
       </aside>
-      <main id="main" className="content">
+      <main id="main" className="content" tabIndex={-1}>
         <div className="page-title">
           <div>
             <p className="eyebrow">
@@ -444,7 +295,7 @@ export function Workspace({
                 value={displayedBranch}
                 onChange={(e) => {
                   setBranch(e.target.value);
-                  setRun("");
+                  clearRun();
                 }}
               >
                 <option value="">Detached HEAD / current commit</option>
@@ -471,7 +322,7 @@ export function Workspace({
               aria-current={tab === v ? "page" : undefined}
               onClick={() => {
                 setTab(v);
-                setRun("");
+                clearRun();
               }}
             >
               {v[0].toUpperCase() + v.slice(1)}
@@ -482,7 +333,7 @@ export function Workspace({
           <RunDetail
             key={run}
             id={run}
-            onBack={() => setRun("")}
+            onBack={clearRun}
             onSelect={selectRun}
           />
         ) : tab === "checks" || tab === "inbox" ? (

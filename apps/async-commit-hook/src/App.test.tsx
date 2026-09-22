@@ -1,12 +1,16 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { create } from "@bufbuild/protobuf";
+import { createRouterTransport } from "@connectrpc/connect";
 import {
   ExecutionState,
   FailureSchema,
+  LocalService,
 } from "@delinoio/async-commit-hook-api-client";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { expect, it, vi } from "vitest";
-import { Confirm, ErrorNotice, FailureList, Status } from "./App";
-import { readConnection, describeError } from "./connection";
+import { App, Confirm, ErrorNotice, FailureList, Status } from "./App";
+import * as connection from "./connection";
+import { describeError } from "./connection";
 it("renders hostile report content as inert text", () => {
   const failure = create(FailureSchema, {
     id: "f",
@@ -29,12 +33,68 @@ it("communicates every important outcome without relying on color", () => {
   expect(screen.getByText(/Evidence expired/)).toBeTruthy();
   expect(screen.getByText(/Running/)).toBeTruthy();
 });
-it("consumes pairing fragments without leaving credentials in history", () => {
+it("discards retired connection fields and preserves the run deep link", () => {
   history.replaceState(null, "", "/#port=46309&pair=private&run=receipt");
-  const connection = readConnection();
-  expect(connection.code).toBe("private");
-  expect(location.hash).toBe("");
-  expect(describeError(new Error("fetch failed"))).toMatch(/local network/);
+  const parsed = connection.readConnection();
+  expect(parsed).toEqual({ run: "receipt" });
+  expect(location.hash).toBe("#run=receipt");
+  expect(connection.describeError(new Error("fetch failed"))).toMatch(/Run ach ui/);
+});
+it("focuses the main content without replacing a run deep link", () => {
+  history.replaceState(null, "", "/#run=receipt");
+  const transport = vi.spyOn(connection, "transportFor").mockImplementation(() =>
+    createRouterTransport((router) => router.service(LocalService, {
+      getVersion: () => ({ apiVersion: 1 }),
+      listRepositories: () => ({ repositories: [] }),
+      getRun: () => ({}),
+    })),
+  );
+  const { unmount } = render(<App />);
+  try {
+    fireEvent.click(screen.getByRole("link", { name: "Skip to content" }));
+    expect(location.hash).toBe("#run=receipt");
+    expect(document.activeElement).toBe(screen.getByRole("main"));
+  } finally {
+    unmount();
+    transport.mockRestore();
+  }
+});
+it("focuses the incompatible-version recovery content from the skip link", async () => {
+  history.replaceState(null, "", "/#run=receipt");
+  const transport = vi.spyOn(connection, "transportFor").mockImplementation(() =>
+    createRouterTransport((router) => router.service(LocalService, {
+      getVersion: () => ({ apiVersion: 2 }),
+      listRepositories: () => ({ repositories: [] }),
+    })),
+  );
+  const { unmount } = render(<App />);
+  try {
+    await screen.findByText("Incompatible local API version. Install a matching ach version.");
+    fireEvent.click(screen.getByRole("link", { name: "Skip to content" }));
+    expect(location.hash).toBe("#run=receipt");
+    expect(document.activeElement).toBe(screen.getByRole("main"));
+  } finally {
+    unmount();
+    transport.mockRestore();
+  }
+});
+it("keeps structured diff-base diagnostics out of connection recovery", () => {
+  const error = new ConnectError(
+    "diff-base-required: select a local diff base; no remote fetch is performed",
+    Code.InvalidArgument,
+  );
+  expect(describeError(error)).toBe(error.rawMessage);
+  expect(describeError(error)).not.toMatch(/Cannot reach ach/);
+});
+it("recovers from a wrapped browser transport failure", () => {
+  const error = new ConnectError(
+    "fetch failed",
+    Code.Unknown,
+    undefined,
+    undefined,
+    new TypeError("Failed to fetch"),
+  );
+  expect(describeError(error)).toMatch(/Run ach ui/);
 });
 it("supports dialog cancellation and restores focus", () => {
   HTMLDialogElement.prototype.showModal = vi.fn();
@@ -61,18 +121,7 @@ it("supports dialog cancellation and restores focus", () => {
   expect(document.activeElement).toBe(prior);
   prior.remove();
 });
-it("distinguishes local network permission denial from an offline service", async () => {
-  const permissions = Object.getOwnPropertyDescriptor(navigator, "permissions");
-  Object.defineProperty(navigator, "permissions", {
-    configurable: true,
-    value: { query: vi.fn().mockResolvedValue({ state: "denied", onchange: null }) },
-  });
-  try {
-    const { unmount } = render(<ErrorNotice error={new Error("fetch failed")} />);
-    expect(await screen.findByText(/Local network permission is denied/)).toBeTruthy();
-    unmount();
-  } finally {
-    if (permissions) Object.defineProperty(navigator, "permissions", permissions);
-    else Reflect.deleteProperty(navigator, "permissions");
-  }
+it("shows local server recovery without requesting network permissions", () => {
+  render(<ErrorNotice error={new Error("fetch failed")} />);
+  expect(screen.getByText(/Run ach ui/)).toBeTruthy();
 });

@@ -48,14 +48,6 @@ func TestAPIRerunPreservesAcceptedReceiptOnStartupFailure(t *testing.T) {
 				}
 				defer leave()
 			}
-			code, err := s.PairingCode()
-			if err != nil {
-				t.Fatal(err)
-			}
-			_, token, err := s.Pair(code, "receipt-test")
-			if err != nil {
-				t.Fatal(err)
-			}
 			request := func(id string) *httptest.ResponseRecorder {
 				t.Helper()
 				body, err := protojson.Marshal(&pb.RerunRequest{RunId: id, FailedOnly: true})
@@ -63,8 +55,8 @@ func TestAPIRerunPreservesAcceptedReceiptOnStartupFailure(t *testing.T) {
 					t.Fatal(err)
 				}
 				req := httptest.NewRequest("POST", "http://127.0.0.1:46309/async_commit_hook.v1.LocalService/Rerun", bytes.NewReader(body))
-				req.Header.Set("Origin", "https://ach.delino.io")
-				req.Header.Set("Authorization", "Bearer "+token)
+				req.Header.Set("Origin", "http://127.0.0.1:46309")
+				req.Header.Set("X-Ach-Api-Version", "1")
 				req.Header.Set("Content-Type", "application/json")
 				response := httptest.NewRecorder()
 				s.Handler().ServeHTTP(response, req)

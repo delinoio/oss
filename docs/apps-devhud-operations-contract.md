@@ -28,6 +28,8 @@ The immutable desktop pin gate includes the x64 and arm64 sharun 3.0.0 AppImage 
 
 The public sequence is: complete candidate and live preflight; submit Apple, Google Play, and Chrome review inputs; wait for all exact versions to be `approved-held`; prepare API/sweeper infrastructure with updater discovery closed; publish all stores; publish the regular GitHub Release; expose all ten updater manifests; publish and verify `/devhud`; independently verify every channel; then approve GA. Do not announce or mark GA early.
 
+The `docs_candidate` artifact is intentionally limited to the release-bound `/devhud` page, its route assets, and shared runtime assets; it excludes the root `search_index.*` data. `public_docs` checks out current `main`, rebuilds the complete consolidated documentation tree, and overlays only those DevHud-owned files before the Cloudflare Pages deployment. This keeps delayed or historical DevHud recovery from publishing stale root search data or Runmoor, Nodeup, binpm, or async-commit-hook subpaths.
+
 ## Credential and signing categories
 
 - `devhud-private-build`: updater Ed25519 material, macOS Developer ID, Apple API issuer/key ID/private key for notarization, Windows PFX, iOS distribution/profile material, Android upload keystore, and Chrome extension public key. The Apple API identity is dual-use and is also required by `devhud-publication` for store submission.

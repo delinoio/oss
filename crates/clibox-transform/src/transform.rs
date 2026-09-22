@@ -1,18 +1,14 @@
 use std::{
     io::{self, Write},
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        mpsc::{self, RecvTimeoutError, SyncSender},
-        Arc,
-    },
+    sync::mpsc::{self, RecvTimeoutError, SyncSender},
     thread,
     time::Duration,
 };
 
 use crate::{
     cli::{
-        Base64Args, Base64Command, EncodeFormat, HashCommand, HashEncode, HashVerify, TextCommand,
-        TextReplace, TransformCommand as Command, VerifyFormat,
+        Base64Args, Base64Command, ComputeFormat, HashCommand, HashCompute, HashVerify,
+        TextCommand, TextReplace, TransformCommand as Command, VerifyFormat,
     },
     io::{Cancellation, CHUNK},
     publication::Publication,
@@ -29,7 +25,7 @@ enum Prepared {
     Time(String),
     Base64Encode(Base64Args),
     Base64Decode(Base64Args),
-    HashEncode(HashEncode),
+    HashCompute(HashCompute),
     HashVerify(HashVerify, Option<Vec<u8>>),
 }
 
@@ -50,9 +46,9 @@ impl Prepared {
                 command: Base64Command::Decode(args),
             } => Ok(Self::Base64Decode(args)),
             Command::Hash {
-                command: HashCommand::Encode(args),
+                command: HashCommand::Compute(args),
             } => {
-                if matches!(args.format, EncodeFormat::Checksum)
+                if matches!(args.format, ComputeFormat::Checksum)
                     && args
                         .source
                         .input
@@ -61,7 +57,7 @@ impl Prepared {
                 {
                     return Err(Error::argument(Code::Arguments));
                 }
-                Ok(Self::HashEncode(args))
+                Ok(Self::HashCompute(args))
             }
             Command::Hash {
                 command: HashCommand::Verify(args),
@@ -109,10 +105,8 @@ pub fn write(writer: &mut dyn Write, bytes: &[u8]) -> Result<()> {
 }
 
 pub fn execute(command: Command) -> Result<u8> {
-    let cancel = Cancellation(Arc::new(AtomicBool::new(false)));
-    let signal = cancel.clone();
-    ctrlc::set_handler(move || signal.0.store(true, Ordering::Release))
-        .map_err(|_| Error::runtime(Code::Runtime))?;
+    let cancel = Cancellation::install()?;
+    tracing::debug!(operation = command.operation(), "operation_started");
     let (path, replace) = command.output()?;
     let (ready_tx, ready_rx) = mpsc::channel();
     thread::Builder::new()
@@ -202,7 +196,7 @@ fn process(command: Prepared, writer: &mut dyn Write, cancel: &Cancellation) -> 
             write(writer, value.as_bytes())?;
             Ok(0)
         }
-        Prepared::HashEncode(args) => crate::hash::encode(args, writer, cancel),
+        Prepared::HashCompute(args) => crate::hash::compute(args, writer, cancel),
         Prepared::HashVerify(args, expected) => crate::hash::verify(args, expected, writer, cancel),
     }
 }

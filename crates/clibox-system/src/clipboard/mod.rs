@@ -32,14 +32,21 @@ pub enum Action {
         after_help = "Examples:\n  clibox clipboard copy \"hello\"\n  clibox clipboard copy \
                       \"\"\n  cat notes.txt | clibox clipboard copy\n\nTEXT takes precedence over \
                       stdin. Accepts at most 16 MiB of NUL-free UTF-8. Linux requires xclip (X11) \
-                      or wl-copy (Wayland), retaining ownership in the background."
+                      or wl-copy (Wayland), retaining ownership in the background.\n\nExit codes: \
+                      0 success, 1 operation failure, 2 invalid arguments, 130 Ctrl+C/Windows \
+                      Ctrl+Break, 143 Unix SIGTERM."
     )]
-    Copy { text: Option<OsString> },
+    Copy {
+        /// Exact text, including empty text; omit to read stdin until EOF.
+        text: Option<OsString>,
+    },
     /// Write UTF-8 clipboard text without adding a newline.
     #[command(
         after_help = "Example:\n  clibox clipboard paste > notes.txt\n\nAn empty clipboard \
                       succeeds with empty output. Non-text-only data fails. Linux requires xclip \
-                      or wl-paste in the current desktop session."
+                      or wl-paste in the current desktop session.\n\nExit codes: 0 success, 1 \
+                      operation failure, 2 invalid arguments, 130 Ctrl+C/Windows Ctrl+Break, 143 \
+                      Unix SIGTERM."
     )]
     Paste,
 }

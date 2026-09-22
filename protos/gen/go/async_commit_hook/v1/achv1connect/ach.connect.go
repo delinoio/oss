@@ -73,6 +73,9 @@ const (
 // LocalServiceClient is a client for the async_commit_hook.v1.LocalService service.
 type LocalServiceClient interface {
 	GetVersion(context.Context, *connect.Request[v1.GetVersionRequest]) (*connect.Response[v1.GetVersionResponse], error)
+	// Retained for v1 compatibility; always returns Unimplemented.
+	//
+	// Deprecated: do not use.
 	Pair(context.Context, *connect.Request[v1.PairRequest]) (*connect.Response[v1.PairResponse], error)
 	ListRepositories(context.Context, *connect.Request[v1.ListRepositoriesRequest]) (*connect.Response[v1.ListRepositoriesResponse], error)
 	ListBranches(context.Context, *connect.Request[v1.ListBranchesRequest]) (*connect.Response[v1.ListBranchesResponse], error)
@@ -218,6 +221,8 @@ func (c *localServiceClient) GetVersion(ctx context.Context, req *connect.Reques
 }
 
 // Pair calls async_commit_hook.v1.LocalService.Pair.
+//
+// Deprecated: do not use.
 func (c *localServiceClient) Pair(ctx context.Context, req *connect.Request[v1.PairRequest]) (*connect.Response[v1.PairResponse], error) {
 	return c.pair.CallUnary(ctx, req)
 }
@@ -290,6 +295,9 @@ func (c *localServiceClient) Cancel(ctx context.Context, req *connect.Request[v1
 // LocalServiceHandler is an implementation of the async_commit_hook.v1.LocalService service.
 type LocalServiceHandler interface {
 	GetVersion(context.Context, *connect.Request[v1.GetVersionRequest]) (*connect.Response[v1.GetVersionResponse], error)
+	// Retained for v1 compatibility; always returns Unimplemented.
+	//
+	// Deprecated: do not use.
 	Pair(context.Context, *connect.Request[v1.PairRequest]) (*connect.Response[v1.PairResponse], error)
 	ListRepositories(context.Context, *connect.Request[v1.ListRepositoriesRequest]) (*connect.Response[v1.ListRepositoriesResponse], error)
 	ListBranches(context.Context, *connect.Request[v1.ListBranchesRequest]) (*connect.Response[v1.ListBranchesResponse], error)

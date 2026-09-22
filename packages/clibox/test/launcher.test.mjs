@@ -79,6 +79,44 @@ test("spawn failures produce actionable diagnostics and remove signal handlers",
   assert.equal(parent.eventNames().length, 0);
 });
 
+test("Windows console events await native cleanup and preserve numeric cancellation", async () => {
+  for (const signal of ["SIGINT", "SIGBREAK"]) {
+    for (const code of [130, 1]) {
+      const parent = new EventEmitter();
+      const child = new EventEmitter();
+      child.exitCode = null;
+      child.signalCode = null;
+      const received = [];
+      child.kill = (value) => received.push(value);
+      const result = launch("clibox.exe", [], { platform: Platform.Windows, parent, spawnChild: () => child });
+      let settled = false;
+      result.then(() => { settled = true; });
+      assert.equal(parent.emit(signal), true);
+      await Promise.resolve();
+      assert.equal(settled, false);
+      assert.deepEqual(received, []);
+      child.emit("exit", code, null);
+      assert.deepEqual(await result, { code, signal: null });
+      assert.equal(parent.eventNames().length, 0);
+    }
+  }
+});
+
+test("Unix launchers continue forwarding SIGINT, SIGTERM and SIGHUP", async () => {
+  const parent = new EventEmitter();
+  const child = new EventEmitter();
+  child.exitCode = null;
+  child.signalCode = null;
+  const received = [];
+  child.kill = (signal) => received.push(signal);
+  const result = launch("clibox", [], { platform: Platform.Linux, parent, spawnChild: () => child });
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) parent.emit(signal);
+  assert.deepEqual(received, ["SIGINT", "SIGTERM", "SIGHUP"]);
+  child.emit("exit", null, "SIGTERM");
+  assert.deepEqual(await result, { code: null, signal: "SIGTERM" });
+  assert.equal(parent.eventNames().length, 0);
+});
+
 test("the installed launcher propagates real stdout/stderr, argv, cwd and exit status", { skip: process.platform === "win32" }, async (t) => {
   const f = fixture(t);
   for (const file of ["bin/clibox.cjs", "src/launcher.cjs", "src/platforms.cjs"]) {

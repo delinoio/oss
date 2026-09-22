@@ -74,7 +74,7 @@ def archive_bytes(binary, name, windows):
 
 def formula(version, hashes):
     base = f"https://github.com/delinoio/oss/releases/download/async-commit-hook@v{version}"
-    body = ['class AsyncCommitHook < Formula', '  desc "Asynchronous exact-commit checks for people and coding agents"', '  homepage "https://ach.delino.io"', f'  version "{version}"', '  license "Apache-2.0"']
+    body = ['class AsyncCommitHook < Formula', '  desc "Asynchronous exact-commit checks for people and coding agents"', '  homepage "https://oss.delino.io/async-commit-hook"', f'  version "{version}"', '  license "Apache-2.0"']
     for os_name, clause in [("darwin", "on_macos"), ("linux", "on_linux")]:
         body.append(f"  {clause} do")
         for arch, cpu in [("arm64", "arm"), ("amd64", "intel")]:
@@ -91,6 +91,8 @@ def build(destination):
     out.mkdir(parents=True, exist_ok=True)
     if any(out.iterdir()):
         raise ValueError("output directory must be empty")
+    # Always rebuild the UI before compilation; never package a stale embed.
+    subprocess.run(["pnpm", "--filter", "async-commit-hook", "build:embedded"], cwd=ROOT, check=True)
     hashes = {}
     with tempfile.TemporaryDirectory(prefix="ach-release-") as temporary:
         for target in m["targets"]:
@@ -106,7 +108,7 @@ def build(destination):
             print(json.dumps({"event": "archive.built", "target": target, "asset": asset, "sha256": hashes[asset]}), flush=True)
     (out / "async-commit-hook.rb").write_text(formula(m["version"], hashes))
     for name in ["install.sh", "install.ps1"]:
-        (out / name).write_bytes((ROOT / "apps/async-commit-hook/public" / name).read_bytes())
+        (out / name).write_bytes((ROOT / "scripts/install" / f"async-commit-hook{Path(name).suffix}").read_bytes())
     (out / "compatibility.json").write_text(json.dumps({**m, "cross_build": "passed for all six targets", "signed": False, "published": False}, indent=2) + "\n")
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(out.iterdir())}
     (out / "SHA256SUMS").write_text("".join(f"{digest}  {name}\n" for name, digest in hashes.items()))
