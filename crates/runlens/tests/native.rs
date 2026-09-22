@@ -7042,6 +7042,24 @@ fn compare_and_policy_bound_combined_report_bytes_before_parsing() {
 #[test]
 fn clean_baselines_require_matching_recorded_command_names() {
     let root = repository("read");
+    #[cfg(target_os = "linux")]
+    {
+        let Ok(static_fixture) = std::env::var("RUNLENS_STATIC_FIXTURE") else {
+            assert!(std::env::var_os("CI").is_none(), "static fixture required");
+            return;
+        };
+        // Rust's Linux startup reads /proc/<pid>/maps, which is legitimately
+        // different access evidence each run. Use the static open fixture to
+        // isolate configured-name compatibility without removing real evidence.
+        let path = root.path().join("runlens.toml");
+        let mut config: runlens::config::Config =
+            toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        config.commands.get_mut("build").unwrap().argv =
+            vec![static_fixture, "open-read".into(), "input.txt".into()];
+        fs::write(path, toml::to_string(&config).unwrap()).unwrap();
+        git(root.path(), &["add", "runlens.toml"]);
+        git(root.path(), &["commit", "-qm", "stable baseline fixture"]);
+    }
     assert!(
         invoke(
             root.path(),
@@ -7084,6 +7102,15 @@ fn clean_baselines_require_matching_recorded_command_names() {
                 &result_name,
             ],
         );
+        if result.status.code() != Some(code) {
+            let actual = runlens::report::read(&root.path().join(&result_name)).unwrap();
+            let comparison = runlens::analysis::compare(&old, &actual, &[]).unwrap();
+            eprintln!(
+                "findings={:?}; differences={:?}",
+                comparison.findings.iter().collect::<Vec<_>>(),
+                comparison.differences.iter().collect::<Vec<_>>()
+            );
+        }
         assert_eq!(result.status.code(), Some(code), "{name:?}: {result:?}");
         assert_eq!(parse(root.path(), &result_name)["verification"], verdict);
     }
