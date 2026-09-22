@@ -39,6 +39,8 @@
 
 ### nodeup-Specific Rules
 
+- Test cleanup must remove only the fixture-owned directory, never the process-wide temporary directory or sibling fixtures.
+
 - Preserve rustup-like shim behavior: symlink strategy plus executable-name dispatch.
 - Keep `nodeup shim setup` as the stable idempotent setup/repair command for managed `node`, `npm`, `npx`, `yarn`, and `pnpm` shims.
 - Keep `nodeup shim setup` PATH activation non-mutating by default while reporting shell- and OS-aware activation and verification guidance.
