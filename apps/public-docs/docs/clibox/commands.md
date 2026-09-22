@@ -1,10 +1,12 @@
 # Command index
 
+The index uses `run env` for the upcoming release. On published version **0.1.6**, use **`env run`** instead. All other command names below are already available in 0.1.6. See [Migration](/clibox/migration).
+
 All 19 commands are available through the native executable and the npm launcher. Use `pnpm exec clibox` or `npm exec -- clibox` for a project-local installation.
 
 | Command | Purpose |
 | --- | --- |
-| [`clibox env run`](/clibox/system#run-with-environment-variables) | Set a child environment and execute a command. |
+| [`clibox run env`](/clibox/system#run-with-environment-variables) | Set a child environment and execute a command. |
 | [`clibox port list`](/clibox/system#inspect-and-terminate-port-owners) | Inspect local listening TCP or bound UDP port owners. |
 | [`clibox port kill`](/clibox/system#inspect-and-terminate-port-owners) | Terminate revalidated port owners. |
 | [`clibox open`](/clibox/system#open-a-resource) | Open a file, directory, or URI. |

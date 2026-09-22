@@ -2,14 +2,15 @@
 
 ## Install and check the version
 
-Follow [Install clibox](/clibox/install), then run:
+After checking the requirements in [Install clibox](/clibox/install), pin published version 0.1.6 for these examples, then check its help:
 
 ```sh
+pnpm add -D -E @delino/clibox@0.1.6
 pnpm exec clibox --version
 pnpm exec clibox --help
 ```
 
-The examples below use the current command names. For an older installation, consult [Migrating older command syntax](/clibox/migration).
+These examples use the published 0.1.6 command names. The upcoming release renames `env run` to `run env`; change the environment script below only when upgrading to a release with that interface. See [Migrating older command syntax](/clibox/migration).
 
 ## Try commands without changing files
 

@@ -20,7 +20,7 @@ There are no automatic backups, file locks, or concurrent-modification checks. T
 
 ## Utility diagnostics and operation limits
 
-All operations use the current OS user's permissions and desktop session. No authentication service, saved configuration, cache, operation history or telemetry is added. Environment, port, open, clipboard, and transformation commands have no automatic retry or fixed execution timeout apart from the shared five-second port-termination verification. Readiness waits use the polling and deadline options in [Readiness waits](/clibox/wait). Owned operations return numeric 130 for Ctrl+C/Windows Ctrl+Break and 143 for Unix SIGTERM after cleanup. `env run` preserves the delegated child's exit status and Unix signal identity. Interruption does not undo completed copies, terminations, application launches or file replacements.
+All operations use the current OS user's permissions and desktop session. No authentication service, saved configuration, cache, operation history or telemetry is added. Environment, port, open, clipboard, and transformation commands have no automatic retry or fixed execution timeout apart from the shared five-second port-termination verification. Readiness waits use the polling and deadline options in [Readiness waits](/clibox/wait). Owned operations return numeric 130 for Ctrl+C/Windows Ctrl+Break and 143 for Unix SIGTERM after cleanup. `run env` (`env run` in version 0.1.6) preserves the delegated child's exit status and Unix signal identity. Interruption does not undo completed copies, terminations, application launches or file replacements.
 
 Configuration input/output and nesting limits are documented in [Configuration commands](/clibox/configuration).
 

@@ -151,7 +151,7 @@ fn in_place_force_is_redundant_and_checksum_stdout_keeps_supplied_paths() {
 fn removed_names_have_static_migration_guidance_and_parser_context_is_redacted() {
     let dir = tempfile::tempdir().unwrap();
     for (old, new) in [
-        (["run", "env"], "clibox env run --help"),
+        (["env", "run"], "clibox run env --help"),
         (["port", "which"], "clibox port list --help"),
         (["hash", "encode"], "clibox hash compute --help"),
     ] {
@@ -177,6 +177,33 @@ fn removed_names_have_static_migration_guidance_and_parser_context_is_redacted()
 }
 
 #[test]
+fn removed_environment_command_never_launches_a_child() {
+    let dir = tempfile::tempdir().unwrap();
+    for filter in ["off", "trace"] {
+        let output = Command::new(CLI)
+            .args(["env", "run", "SECRET=PRIVATE-VALUE", "--", CLI])
+            .args([
+                "base64",
+                "encode",
+                "--text",
+                "PRIVATE-ARG",
+                "--output",
+                "PRIVATE-FILE",
+            ])
+            .current_dir(dir.path())
+            .env("RUST_LOG", filter)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains("env run was renamed; use clibox run env --help."));
+        assert!(!stderr.contains("PRIVATE"));
+        assert!(!dir.path().join("PRIVATE-FILE").exists());
+    }
+}
+
+#[test]
 fn output_mode_conflicts_and_filtered_runtime_failures_remain_visible() {
     let dir = tempfile::tempdir().unwrap();
     for args in [
@@ -191,7 +218,7 @@ fn output_mode_conflicts_and_filtered_runtime_failures_remain_visible() {
         assert!(result.stdout.is_empty());
     }
     for args in [
-        vec!["env", "run", "--", "./PRIVATE-MARKER-MISSING"],
+        vec!["run", "env", "--", "./PRIVATE-MARKER-MISSING"],
         vec!["base64", "decode", "--text", "PRIVATE-MARKER!"],
     ] {
         let result = run(dir.path(), &args, b"");

@@ -31,7 +31,7 @@
 
 - Keep the npm README and `apps/public-docs/docs/clibox` aligned with user-facing command and installation behavior; link to `https://oss.delino.io/clibox`. The shared documentation selector uses clean same-origin paths on production and the consolidated development server, including clibox as its final destination.
 
-- Native and installed npm commands must share the canonical `env run`, `port list`, and `hash compute` names, quiet/PID output separation, stdout dash selector, force validation, and numeric owned-operation cancellation (130/143); validate the migration in installed consumer smoke tests without launcher-side argument rewriting.
+- Native and installed npm commands must share the canonical `run env`, `port list`, and `hash compute` names, quiet/PID output separation, stdout dash selector, force validation, and numeric owned-operation cancellation (130/143); validate the migration in installed consumer smoke tests without launcher-side argument rewriting.
 
 - Follow `docs/packages-clibox-distribution-contract.md`. Keep the source workspace private, with no unpublished platform dependencies; generate public manifests and exact optional dependencies during packaging only.
 - Preserve platform/libc/version checks, literal native argv execution, inherited stdio, and signal/exit propagation. No runtime downloads, install hooks, public JavaScript API, or system binary fallback.

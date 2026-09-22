@@ -19,7 +19,7 @@ The npm launcher requires Node.js 22 or newer. Prebuilt packages support macOS a
 
 Use the same commands from a shell or `package.json` scripts. clibox works with your current user permissions and adds no saved application configuration, cache, history, or telemetry. Command results go to stdout and redacted diagnostics go to stderr. See [output and cancellation](/clibox/output) for exit codes, partial output, and file replacement boundaries.
 
-Current command names are `env run`, `port list`, and `hash compute`. The [migration guide](/clibox/migration) explains changes from older syntax.
+Published version 0.1.6 includes `env run`, `port list`, and `hash compute`. The upcoming release renames environment execution to `run env`; the [migration guide](/clibox/migration) explains the version-specific syntax and earlier changes.
 
 ## Learn more
 

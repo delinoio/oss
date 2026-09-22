@@ -11,7 +11,7 @@ pnpm add -D -E @delino/clibox@0.1.6
 npm install --save-dev --save-exact @delino/clibox@0.1.6
 ```
 
-Run `clibox --version` through that project's package manager and commit the manifest and lockfile. Review [Migration](/clibox/migration) when upgrading scripts using older names. Version 0.1.6 already includes the current `env run`, `port list`, and `hash compute` interfaces.
+Run `clibox --version` through that project's package manager and commit the manifest and lockfile. Review [Migration](/clibox/migration) when upgrading scripts using older names. Version 0.1.6 includes `env run`, `port list`, and `hash compute`. The upcoming release renames only environment execution to `run env`; that rename is not present in the published 0.1.6 artifacts. Use the version-specific examples in [Getting started](/clibox/getting-started).
 
 ## Distribution and verification
 

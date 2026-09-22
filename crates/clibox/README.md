@@ -18,11 +18,11 @@ The npm launcher requires Node.js 22 or newer. Prebuilt binaries cover macOS and
 
 ## Migrating older command syntax
 
-The current CLI uses these command interfaces, already available in version 0.1.6. Update scripts using previous names when upgrading. Old command names are rejected with exit code 2 and migration guidance; they are not aliases.
+The examples below use `run env`, which is implemented for the next minor release. Published version **0.1.6** uses **`env run`** instead; substitute that spelling in the environment examples and use `clibox env --help` for its command group. Version 0.1.6 already includes `port list`, `hash compute`, and the output/cancellation behavior described here. Update scripts when upgrading to the corresponding interface; rejected old names return exit code 2 with migration guidance and are not aliases.
 
 | Previous use | New use |
 | --- | --- |
-| `clibox run env KEY=VALUE command` | `clibox env run KEY=VALUE command` |
+| `clibox env run KEY=VALUE command` | `clibox run env KEY=VALUE command` |
 | `clibox port which 3000` | `clibox port list 3000` |
 | `clibox hash encode --text hello` | `clibox hash compute --text hello` |
 | `clibox port which 3000 --quiet` (PIDs) | `clibox port list 3000 --pids` |
@@ -32,14 +32,14 @@ The current CLI uses these command interfaces, already available in version 0.1.
 
 Omitted output and `--output -` both select stdout. `--force` requires an actual file output or `--in-place`; redundant `--in-place --force` is accepted. Remove standalone `--force` and do not combine it with stdout output. Checksum filename rebasing applies only when a manifest is written to an actual file.
 
-Owned operations now return numeric **130** for Ctrl+C/Windows Ctrl+Break and **143** for Unix SIGTERM after cleanup, including text/Base64/hash/time operations that previously returned 1. `env run` continues to preserve its child's exit status and Unix termination signal. Completed effects are not undone.
+Owned operations now return numeric **130** for Ctrl+C/Windows Ctrl+Break and **143** for Unix SIGTERM after cleanup, including text/Base64/hash/time operations that previously returned 1. `run env` continues to preserve its child's exit status and Unix termination signal. Completed effects are not undone.
 
 Use `-h` for core rules and examples, or `--help` for those rules plus detailed constraints. Failures remain visible on stderr even with `RUST_LOG=off`.
 
 ## OS commands
 
 ```text
-clibox env run [KEY=VALUE ...] [--] COMMAND [ARG ...]
+clibox run env [KEY=VALUE ...] [--] COMMAND [ARG ...]
 clibox port list PORT... [--protocol tcp|udp|all] [--json | --quiet | --pids]
 clibox port kill PORT... [--protocol tcp|udp|all] [--json | --quiet]
 clibox open TARGET [--app APP] [--wait]
@@ -47,13 +47,13 @@ clibox clipboard copy [TEXT]
 clibox clipboard paste
 ```
 
-Use `--help` after any command for English help and examples. Root help (`clibox`, `--help`, or `-h`) also identifies the built version, Delino maintainer, repository, MIT license, and GitHub Issues support path; subcommand help stays focused on that command. Running `clibox` without arguments or using explicit `--help` prints help to stdout and returns exit code **0**. Running `clibox env`, `clibox port`, `clibox clipboard`, `clibox wait`, `clibox text`, `clibox time`, `clibox base64`, `clibox hash`, `clibox dotenv`, or `clibox yaml` without a subcommand prints that command's help to stderr and returns exit code **2**. Other invalid or missing arguments return exit code **2** with an error diagnostic; runtime failures return **1**. `env run` forwards the child program's exit status and supported termination signals.
+Use `--help` after any command for English help and examples. Root help (`clibox`, `--help`, or `-h`) also identifies the built version, Delino maintainer, repository, MIT license, and GitHub Issues support path; subcommand help stays focused on that command. Running `clibox` without arguments or using explicit `--help` prints help to stdout and returns exit code **0**. Running `clibox run`, `clibox port`, `clibox clipboard`, `clibox wait`, `clibox text`, `clibox time`, `clibox base64`, `clibox hash`, `clibox dotenv`, or `clibox yaml` without a subcommand prints that command's help to stderr and returns exit code **2**. Other invalid or missing arguments return exit code **2** with an error diagnostic; runtime failures return **1**. `run env` forwards the child program's exit status and supported termination signals.
 
 ### Run with environment variables
 
 ```sh
-clibox env run NODE_ENV=production node build.js
-clibox env run FIRST=one SECOND=two -- node script.js
+clibox run env NODE_ENV=production node build.js
+clibox run env FIRST=one SECOND=two -- node script.js
 ```
 
 Use this command in npm scripts to set a child environment across operating systems. It inherits the working directory, standard input/output/error, and parent environment. Assignments never change the calling shell. Duplicate assignments use the last value; empty values and empty child arguments are preserved. A child command is required.
@@ -62,7 +62,7 @@ Assignment escaping, variable references, PATH/NODE_PATH lists and platform-spec
 
 Environment execution has no shell-expression mode, dotenv loading or stored command preset. The child is awaited, and signal termination (including SIGINT) is not reported as success. Windows console interruption uses supported process-group CTRL_BREAK delivery.
 
-On Windows, `env run` also treats `$1` as an environment-variable reference and removes it when unset. Invoke `clibox text replace` directly when passing regex capture references; wrapping it in `env run` applies that extra conversion even after shell quoting.
+On Windows, `run env` also treats `$1` as an environment-variable reference and removes it when unset. Invoke `clibox text replace` directly when passing regex capture references; wrapping it in `run env` applies that extra conversion even after shell quoting.
 
 ### Inspect and terminate port owners
 
@@ -333,7 +333,7 @@ In PowerShell, set `$env:RUST_LOG = "clibox=debug"` before invoking the command.
 
 ## Utility diagnostics and operation limits
 
-All operations use the current OS user's permissions and desktop session. No authentication service, saved configuration, cache, operation history or telemetry is added. Environment, port, open, clipboard, and transformation commands have no automatic retry or fixed execution timeout apart from the shared five-second port-termination verification. Readiness waits use their polling/deadline options above. Owned operations return numeric 130 for Ctrl+C/Windows Ctrl+Break and 143 for Unix SIGTERM after cleanup. `env run` preserves the delegated child's exit status and Unix signal identity. Interruption does not undo completed copies, terminations, application launches or file replacements.
+All operations use the current OS user's permissions and desktop session. No authentication service, saved configuration, cache, operation history or telemetry is added. Environment, port, open, clipboard, and transformation commands have no automatic retry or fixed execution timeout apart from the shared five-second port-termination verification. Readiness waits use their polling/deadline options above. Owned operations return numeric 130 for Ctrl+C/Windows Ctrl+Break and 143 for Unix SIGTERM after cleanup. `run env` preserves the delegated child's exit status and Unix signal identity. Interruption does not undo completed copies, terminations, application launches or file replacements.
 
 Configuration input/output and nesting limits are documented below.
 

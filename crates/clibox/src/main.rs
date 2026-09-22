@@ -42,10 +42,10 @@ fn main() {
     // location with a stable classification. Normal errors never panic.
     std::panic::set_hook(Box::new(|_| clibox_config::report_runtime_failure()));
     let raw: Vec<_> = std::env::args_os().collect();
-    // Clap consumes this separator, but env run must distinguish it from an
+    // Clap consumes this separator, but run env must distinguish it from an
     // assignment token and preserve the child command boundary.
-    let leading_separator = raw.get(1).is_some_and(|s| s == "env")
-        && raw.get(2).is_some_and(|s| s == "run")
+    let leading_separator = raw.get(1).is_some_and(|s| s == "run")
+        && raw.get(2).is_some_and(|s| s == "env")
         && raw.get(3).is_some_and(|s| s == "--");
     let cli = match Cli::try_parse_from(&raw) {
         Ok(cli) => cli,
