@@ -45,7 +45,7 @@ fi
 
 # Convert to raw URL
 # Format: https://gist.github.com/user/id -> https://gist.githubusercontent.com/user/id/raw/filename
-GIST_ID=$(echo "$GIST_URL" | sed 's|.*/||')
+GIST_ID=$(echo "$GIST_URL" | pnpm exec clibox text replace '^.*/' '' --regex)
 FILENAME=$(basename "$FILE")
 
 # Get the raw URL via gh api

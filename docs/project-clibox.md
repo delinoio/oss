@@ -13,13 +13,15 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 - `crates/clibox-transform`: offline command definitions, transformations, cancellation, and atomic publication.
 - `crates/clibox-wait`: readiness command definitions, validation, probes, polling, and reporting.
 - `packages/clibox`: private source workspace for the public npm launcher, platform packages, packaging, and publication tooling.
+- `apps/public-docs/docs/clibox`: English public guides published at `https://oss.delino.io/clibox`.
 
 ## Domain Contract Documents
 - [Rust foundation](crates-clibox-foundation.md)
 - [npm distribution](packages-clibox-distribution-contract.md)
+- [Public documentation](apps-clibox-docs-foundation.md)
 
 ## Cross-Domain Invariants
-- The next minor release adopts the CLI consistency revision in the Rust contract: canonical names without old aliases, quiet/PID separation, explicit stdout output, validated force, complete help, and numeric owned-operation cancellation (130/143). Versioning remains in the manual release workflow.
+- The implemented CLI adopts the CLI consistency revision in the Rust contract: canonical names without old aliases, quiet/PID separation, explicit stdout output, validated force, complete help, and numeric owned-operation cancellation (130/143). Versioning remains in the manual release workflow.
 - The executable crate and command are `clibox`; the public npm entry point is `@delino/clibox`.
 - Native binaries and npm show command-specific help on stderr with exit code 2 when `run`, `port`, `clipboard`, `wait`, `text`, `time`, `base64`, `hash`, `dotenv`, or `yaml` is missing a subcommand. Root no-argument and explicit help remain successful stdout output and include the Cargo-derived version, Delino maintainer, repository, MIT license, and GitHub Issues support URL; other invalid inputs retain redacted diagnostics. Subcommand help and `--version` output remain compact and compatible.
 - Rust is explicitly selected instead of the repository's default Go language. Node.js 22+ is required only for the npm launcher; repository tooling uses Node.js 24.
@@ -34,15 +36,15 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 - Environment, port, open, and clipboard OS effects use current-user/session permissions without elevation, application persistence, automatic retries, or telemetry. Diagnostics omit clipboard text, environment values, complete argv, URLs, and paths.
 - `wait tcp`, `wait http`, and `wait file` share immediate nonoverlapping polling, unlimited default waiting, monotonic bounded attempts, handled cancellation, and redacted human/quiet/JSON results.
 - Network checks run in Rust without external utilities. HTTPS verifies OS trust and hostname, negotiates HTTP/2 or HTTP/1.1, disables proxies/authentication/redirects, and finishes at response headers. Files are observed through metadata only.
-- All commands except named run locks and rate buckets remain stateless. Those two controls retain only private, hashed, local same-user coordination state; they add no synchronized settings, telemetry, service, queue, or cross-machine coordination.
+- All commands except named run locks and rate buckets remain stateless. Those two controls retain only private, hashed, local same-user coordination state; they add no synchronized settings, telemetry, service, queue, or cross-machine coordination. No other persistent application state, remote telemetry, public library API, or Homebrew is added.
 - The seven issue #917 commands share redacted diagnostics, cancellable processing, and permission-preserving atomic file publication. Timezone data is bundled identically across platform artifacts of a version. Owned operations return numeric 130 for Ctrl+C/Windows Ctrl+Break and 143 for Unix SIGTERM; `run env` preserves delegated child status and Unix signal identity.
 - Automated local fixtures and Linux/macOS/Windows process CI are the completion gate. All eight artifact checks and Alpine consumers remain required; musl crypto compilation uses target-native `musl-gcc` while final linking retains pinned self-contained `rust-lld`.
 - Automated parser, process, OS-adapter, and distribution tests are the completion gate. Real GUI, clipboard persistence, and application-wait verification remain follow-up work.
 - Linux/macOS/Windows process tests and installed npm/pnpm smoke tests cover all three configuration commands and environment execution. Eight-target and Alpine release gates remain unchanged.
-- A dedicated docs website and Homebrew remain outside this project. The two GNU Linux binaries also ship as signed GitHub Release archives and stable APT/DNF packages under [the Linux package contract](repository-linux-packages-contract.md).
+- Public guides are owned by the consolidated `public-docs` site under `/clibox`; no standalone documentation workspace or deployment is added. Homebrew remains excluded. The two GNU Linux binaries also ship as signed GitHub Release archives and stable APT/DNF packages under [the Linux package contract](repository-linux-packages-contract.md).
 
 ## Change Policy
-Update both domain contracts, this index, relevant AGENTS files, version synchronization, platform fixtures, and release workflows together when these boundaries change.
+Update the relevant domain contracts, this index, relevant AGENTS files, version synchronization, platform fixtures, and release workflows together when these boundaries change.
 
 ## References
 - [Repository defaults](repository-defaults.md)

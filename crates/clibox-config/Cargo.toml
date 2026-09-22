@@ -21,4 +21,4 @@ signal-hook = "0.3.18"
 
 [target.'cfg(windows)'.dependencies]
 ctrlc = { version = "3.4", features = ["termination"] }
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security", "Win32_Security_Authorization"] }

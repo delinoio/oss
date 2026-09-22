@@ -1,0 +1,35 @@
+name: Setup pinned clibox prebuilt
+description: Install or reuse the locked npm prebuilt without compiling Rust
+inputs:
+  working-directory:
+    description: Checkout containing the tooling manifest and lockfile
+    default: .
+  install:
+    description: Set false when Node, pnpm and the locked workspace are already installed
+    default: 'true'
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v5
+      if: ${{ inputs.install == 'true' }}
+      with:
+        version: 10.26.2
+    - uses: actions/setup-node@v6
+      if: ${{ inputs.install == 'true' }}
+      with:
+        node-version-file: ${{ inputs.working-directory }}/.nvmrc
+        package-manager-cache: false
+    - name: Install locked repository tools
+      if: ${{ inputs.install == 'true' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: pnpm install --frozen-lockfile --ignore-scripts --filter delinoio-oss-workspace
+    - name: Verify clibox
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        expected=$(node -p 'require("./package.json").devDependencies["clibox-prebuilt"].split("@").pop()')
+        actual=$(pnpm exec clibox --version)
+        test "$actual" = "clibox $expected"
+        printf '[clibox.setup] %s\n' "$actual"
+        node -p 'require("node:fs").realpathSync("node_modules/clibox-prebuilt")'

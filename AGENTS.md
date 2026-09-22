@@ -58,7 +58,8 @@
 - `docs/project-binpm.md`: binpm binary package manager project index.
 - `docs/apps-binpm-docs-foundation.md`: binpm Rspress documentation app, route, validation, canonical production URL, and Cloudflare Pages deployment contract.
 - `docs/project-cargo-mono.md`: Cargo subcommand project index.
-- `docs/project-clibox.md`: clibox Rust CLI and npm distribution project index.
+- `docs/project-clibox.md`: clibox Rust CLI, npm distribution, and public documentation project index.
+- `docs/apps-clibox-docs-foundation.md`: clibox public guides and route/validation contract.
 - `docs/project-nodeup.md`: Node.js version manager project index.
 - `docs/project-with-watch.md`: Command rerun watcher CLI project index.
 - `docs/project-derun.md`: Derun CLI project index.
@@ -107,7 +108,7 @@ enum ProjectId {
 - `binpm` -> `crates/binpm`, `apps/public-docs/docs/binpm`
 - `with-watch` -> `crates/with-watch`
 - `cargo-mono` -> `crates/cargo-mono`
-- `clibox` -> `crates/clibox`, `crates/clibox-config`, `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`, `packages/clibox`
+- `clibox` -> `crates/clibox`, `crates/clibox-config`, `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`, `packages/clibox`, `apps/public-docs/docs/clibox`
 - `runmoor` -> `cmds/runmoor`, `apps/public-docs/docs/runmoor`
 - `derun` -> `cmds/derun`
 - `ttl` -> `cmds/ttlc`
@@ -358,7 +359,7 @@ Coverage expectations:
 - `rust-test`: runs `cargo test --workspace --all-targets`.
 - `node-mpapp-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter mpapp test`.
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter mpapp lint`.
-- `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`, covering the root and all four project content sections.
+- `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`, covering the root and all five project content sections.
 - `node-clibox-test`: runs `cargo test --locked -p clibox -p clibox-config -p clibox-system -p clibox-transform -p clibox-wait` for native utility/configuration/process/adapter behavior, native CLI consumer installation and launcher/distribution tests on Linux, macOS, and Windows, selected by shared CI planning and required by `CI Result`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`.
 - `ci-contracts`: validates workflow syntax and the repository CI contract with the checked-in Go `actionlint` tool and Node fixtures.
@@ -381,7 +382,7 @@ Change-scoped execution rules:
 - PRs run affected validation, including OCI checks, but never allocate the two Linux CLI package, ten desktop, three iOS, or four Android package entries. Relevant main pushes run the complete existing native matrices. Manual dispatch runs every check and platform. There is no nightly CI schedule.
 - PR comparisons use the base/head merge-base; main comparisons use the exact `before..sha` trees, including all commits in the push. Missing or invalid comparisons fail. Deleted and renamed files select both affected owners.
 - Node workspace jobs use `scripts/ci/run-affected.mjs` to invoke the installed Turbo Node entry point directly with `turbo run <task> --affected --filter <workspace>` arguments, without a shell or package-manager shim, and with the planner's exact `TURBO_SCM_BASE` and `TURBO_SCM_HEAD`. External inputs and forced runs omit `--affected`; an otherwise empty affected set is a successful no-op.
-- Because `public-docs` builds four project content roots directly, changes under `apps/public-docs/docs/{async-commit-hook,binpm,nodeup,runmoor}` select and force `node-public-docs-test`.
+- Because `public-docs` builds five project content roots directly, changes under `apps/public-docs/docs/{async-commit-hook,binpm,nodeup,runmoor,clibox}` select and force `node-public-docs-test`.
 - Central path rules cover Go, Rust, every Node workspace, repository environment tooling, DevHud domains, packaging, public docs, and package/release/review workflows. Runmoor-only release scripts do not select DevHud native packaging; shared DevHud packaging inputs still do.
 - The PR frontend job runs the complete DevHud test command, including native-script fixtures, clean desktop/mobile frontend output validation, static mobile/widget contracts, and immutable CEF pins. Its aggregate `test` task is non-cacheable because it validates consecutive clean builds and external contract inputs.
 - Protocol generation and package-local frontend outputs are deterministic and cacheable; the ignored administrator and ach UI embeds, native package, mobile, smoke, signing, release, and deployment tasks remain non-cacheable.
@@ -463,6 +464,9 @@ Release automation baseline:
 
 ### clibox Contract
 
+- Public clibox documentation is owned by `apps/public-docs/docs/clibox` at `https://oss.delino.io/clibox`, a major project alongside Runmoor in the shared selector. Follow `docs/apps-clibox-docs-foundation.md`; synchronize public behavior with native/npm guides and keep release internals in `docs/`.
+- Repository tooling consumes the published prebuilt through the exact root `clibox-prebuilt` npm alias and lockfile, independently of the private source workspace. Invoke `pnpm exec clibox` directly from the repository root. Verify the installed version in the `setup-clibox` workflow action; do not add a repository launcher, compile Rust, or download at command runtime. Keep public installers and minimal toolchain bootstraps independent, and preserve existing data formats, secret handling, and stronger readiness/lifecycle checks.
+
 - clibox CLI consistency uses canonical `run env`, `port list`, and `hash compute` without old-name aliases. Report `--quiet` suppresses stdout; PID selection is only `port list --pids`. File-output commands interpret `--output -` as stdout and `./-` as a literal dash file; `--force` requires real file output or `--in-place`. Keep short/long help, static redacted migration guidance, numeric owned-operation cancellation (130/143), filtered-error visibility, and native/npm behavior synchronized.
 
 - The executable crate and installed command are `clibox`; the public npm entry point is `@delino/clibox`. Keep the Cargo manifest/lock, private npm source manifest, executable version, and all nine generated npm packages at the same exact version.
@@ -478,4 +482,4 @@ Release automation baseline:
 - HTTPS uses OS trust with Rustls/ring and no implicit proxies, credentials, redirects, custom CA overrides, or body reads. Keep parser and dependency errors redacted even under `RUST_LOG=trace`. musl crypto compilation uses `musl-tools`/target-specific `CC=musl-gcc`, while final linking remains pinned self-contained `rust-lld`; no dynamic OpenSSL dependency is permitted.
 - `release-clibox.yml` runs native unit/process tests and validates all eight native targets and the full nine-package set before publication. Publish and verify platform packages before the main package; reuse only identical registry integrity on retries. Dry runs are secret-free and non-publishing.
 - `CLIBOX_NPM_PUBLISH_ENABLED=true` and an exact first-party Trusted Publisher on all nine packages are required for npm OIDC/provenance publication. Only the separately guarded npm `publish` and GitHub `publish-release` jobs receive `id-token: write`; the latter uses it solely for Sigstore signing. The npm job must explicitly install the pinned OIDC-capable npm version before validating support and publishing, independent of Node's bundled npm.
-- Keep `docs/project-clibox.md`, both clibox domain contracts, root/domain AGENTS rules, release versioning, CI selection/aggregation, and distribution fixtures synchronized.
+- Keep `docs/project-clibox.md`, the clibox domain contracts, root/domain AGENTS rules, release versioning, CI selection/aggregation, and distribution fixtures synchronized.

@@ -3,6 +3,8 @@
 mod config_command;
 mod config_publication;
 mod config_runtime;
+#[cfg(windows)]
+mod config_windows_publication;
 mod dotenv;
 mod yaml;
 

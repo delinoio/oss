@@ -289,43 +289,40 @@ fn publish_prepared(
         .map_err(|_| Failure::Write)?;
     cancel.check()?;
     #[cfg(windows)]
-    if existing.is_some() {
-        use std::os::windows::ffi::OsStrExt;
-        // ReplaceFileW opens the replacement without sharing, so even our own
-        // staging writer must be closed first. Keep the TempPath guard alive to
-        // remove unpublished bytes if replacement fails.
-        let temporary = temporary.file.into_temp_path();
-        let old: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
-        let new: Vec<u16> = temporary.as_os_str().encode_wide().chain([0]).collect();
-        // ReplaceFile preserves the destination DACL. Do not set IGNORE_ACL_ERRORS
-        // or IGNORE_MERGE_ERRORS: inability to preserve access must fail closed.
-        let success = unsafe {
-            windows_sys::Win32::Storage::FileSystem::ReplaceFileW(
-                old.as_ptr(),
-                new.as_ptr(),
-                std::ptr::null(),
-                0,
-                std::ptr::null(),
-                std::ptr::null(),
-            )
-        };
-        if success == 0 {
-            return Err(Failure::Publish.into());
+    {
+        let mut publication = crate::config_windows_publication::Publication::prepare(
+            temporary.file.path(),
+            existing.is_some(),
+        )?;
+        if let Some((source, _)) = &existing {
+            publication.preserve_dacl(source)?;
         }
-        return Ok(());
+        // FileRenameInfo cannot replace a destination with an open data handle,
+        // including our own inspection handle even though it shares deletion.
+        // Keep that handle only until its DACL has been copied to staging.
+        // https://learn.microsoft.com/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information
+        drop(existing);
+        cancel.check()?;
+        publication.commit(path, replace)?;
+        // The held handle now owns the destination. Never clean up by its old name.
+        temporary.file.into_temp_path().disable_cleanup(true);
+        Ok(())
     }
-    if replace {
-        temporary.file.persist(path).map_err(|_| Failure::Publish)?;
-    } else {
-        temporary.file.persist_noclobber(path).map_err(|error| {
-            if error.error.kind() == std::io::ErrorKind::AlreadyExists {
-                Failure::DestinationExists
-            } else {
-                Failure::Publish
-            }
-        })?;
+    #[cfg(not(windows))]
+    {
+        if replace {
+            temporary.file.persist(path).map_err(|_| Failure::Publish)?;
+        } else {
+            temporary.file.persist_noclobber(path).map_err(|error| {
+                if error.error.kind() == std::io::ErrorKind::AlreadyExists {
+                    Failure::DestinationExists
+                } else {
+                    Failure::Publish
+                }
+            })?;
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 #[cfg(test)]

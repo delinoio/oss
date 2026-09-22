@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+// @vitest-environment-options {"url":"http://127.0.0.1:46302/"}
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -7,7 +8,6 @@ import {
   DOCUMENTATION_SITES,
   DocumentationSiteId,
   DocsSiteSwitcher,
-  getDocumentationSiteHref,
   getDocumentationSiteForPathname,
 } from "../src/index";
 
@@ -36,6 +36,7 @@ describe("DocsSiteSwitcher", () => {
       "Nodeup",
       "binpm",
       "async-commit-hook",
+      "clibox",
     ]);
     expect(menu.getAttribute("id")).toBe(trigger.getAttribute("aria-controls"));
     expect(items[1]?.getAttribute("aria-current")).toBe("page");
@@ -45,6 +46,7 @@ describe("DocsSiteSwitcher", () => {
       "/nodeup/",
       "/binpm/",
       "/async-commit-hook/",
+      "/clibox/",
     ]);
   });
 
@@ -102,27 +104,45 @@ describe("DocsSiteSwitcher", () => {
     );
   });
 
-  it("maps fixed loopback development ports to package-local roots", () => {
-    expect(
-      getDocumentationSiteHref(DOCUMENTATION_SITES[0], {
-        hostname: "localhost",
-        port: "46303",
-        protocol: "http:",
-      }),
-    ).toBe("http://localhost:46302/");
-    expect(
-      getDocumentationSiteHref(DOCUMENTATION_SITES[1], {
-        hostname: "127.0.0.1",
-        port: "46303",
-        protocol: "http:",
-      }),
-    ).toBe("http://127.0.0.1:46309/");
-    expect(
-      getDocumentationSiteHref(DOCUMENTATION_SITES[2], {
-        hostname: "oss.delino.io",
-        port: "",
-        protocol: "https:",
-      }),
-    ).toBe("/nodeup/");
+  it.each(["/clibox", "/clibox/", "/clibox/configuration", "/clibox/wait/"])(
+    "selects clibox for %s",
+    (pathname) => {
+      renderSwitcher(getDocumentationSiteForPathname(pathname));
+      fireEvent.click(screen.getByRole("button", { name: "clibox" }));
+      const selected = screen.getByRole("menuitem", { name: "clibox" });
+      expect(selected.getAttribute("aria-current")).toBe("page");
+      expect(document.activeElement).toBe(selected);
+    },
+  );
+
+  it.each(["/clibox-extra", "/cliboxish/wait"])(
+    "does not select clibox for unrelated path %s",
+    (pathname) => expect(getDocumentationSiteForPathname(pathname)).toBe(DocumentationSiteId.PublicDocs),
+  );
+
+  it("retains same-origin destinations on the consolidated development server", () => {
+    expect(window.location.port).toBe("46302");
+    renderSwitcher(DocumentationSiteId.Clibox);
+    fireEvent.click(screen.getByRole("button", { name: "clibox" }));
+    for (const [index, item] of screen.getAllByRole("menuitem").entries()) {
+      const destination = new URL(item.getAttribute("href")!, window.location.href);
+      expect(destination.origin).toBe(window.location.origin);
+      expect(destination.pathname).toBe(DOCUMENTATION_SITES[index].href);
+    }
+  });
+
+  it("reaches clibox at the end and restores its trigger on Escape", () => {
+    renderSwitcher(DocumentationSiteId.Clibox);
+    const trigger = screen.getByRole("button", { name: "clibox" });
+    fireEvent.keyDown(trigger, { key: "ArrowUp" });
+    const item = screen.getByRole("menuitem", { name: "clibox" });
+    expect(document.activeElement).toBe(item);
+    fireEvent.keyDown(item, { key: "Home" });
+    expect(document.activeElement).toBe(screen.getAllByRole("menuitem")[0]);
+    fireEvent.keyDown(document.activeElement!, { key: "End" });
+    expect(document.activeElement).toBe(item);
+    fireEvent.keyDown(item, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
 });

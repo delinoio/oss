@@ -4,6 +4,20 @@ Repository workflows are reviewed as source-backed contracts. Workflow IDs, job 
 
 ## Continuous integration
 
+### Pinned repository utilities
+
+The root `clibox-prebuilt` dev dependency aliases the published `@delino/clibox@0.1.6` package. Its exact launcher and optional native packages are integrity-pinned in `pnpm-lock.yaml`; the private `packages/clibox` workspace is not an executable dependency. Ordinary `pnpm install` installs the prebuilt without Rust compilation. Run repository utility scripts from the repository root; they invoke `pnpm exec clibox` directly. There is no additional repository launcher or runtime download.
+
+Development-port recovery guidance retains `env run`, as supported by the pinned 0.1.6 prebuilt. The source CLI's newer `run env` spelling does not change that installed binary's interface.
+
+`.github/actions/setup-clibox` prepares Node/pnpm and installs only the root workspace with `--frozen-lockfile --ignore-scripts`. Jobs with an existing workspace install use `install: 'false'` to verify the same executable without a second install. `working-directory` supports a separate immutable tooling checkout for historical release recovery. The action checks `pnpm exec clibox --version` against the root dependency pin and logs the installed package path. Linux/macOS/Windows repository-tool fixtures run through `pnpm ci:tools`.
+
+Compatible shell hashing, Base64, literal template replacement, timestamp formatting, and clipboard work use clibox. Preserve checksum record compatibility, private output permissions, and secret-free argv/logs. Public standalone installers, minimal Rust toolchain bootstraps, and provenance timestamps captured before tooling installation retain their existing tools. In-process Node data handling and signing, structured parsing, port binding checks, database health, nonempty-file readiness, and child lifecycle checks retain their existing stronger contracts.
+
+The shared checksum generator keeps sorted recursive paths, GNU filename escaping, and the existing two-space text marker; it computes digests with clibox and writes the compatible relative filename records explicitly, independent of pnpm’s working directory. Template values use literal replacement. Signing inputs pass through stdin, and shell umasks or platform file permissions remain authoritative. In DevHud store recovery, only the Apple row checks out `github.workflow_sha` under `.clibox-tooling` and prepares its pinned utility there, using the step’s `working-directory` for `pnpm exec clibox`; the selected historical release source and artifact identities remain unchanged.
+
+### Validation workflow
+
 `.github/workflows/CI.yml` is a read-only validation workflow. It uses `contents: read` and `pull-requests: read`, does not consume repository secrets, and must not push tags, create or upload releases, submit stores, push OCI images, deploy documentation or infrastructure, promote updater state, or call any mutating release-controller operation. Release workflows and packaging inputs are tested as source and deterministic fixtures only.
 
 CI never builds a signed private candidate and never publishes.
