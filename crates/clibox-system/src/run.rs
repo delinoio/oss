@@ -1673,7 +1673,12 @@ fn read_bucket(path: &Path, limit: u64, period: Duration, burst: u64, now: i64) 
         );
     }
     if now > bucket.refill_utc_ms {
-        let elapsed = (now - bucket.refill_utc_ms) as f64;
+        let elapsed = now.checked_sub(bucket.refill_utc_ms).ok_or_else(|| {
+            Failure::new(
+                Code::IoFailed,
+                "Execution rate-limit state is malformed or unsupported.",
+            )
+        })? as f64;
         bucket.tokens = (bucket.tokens + elapsed * bucket.limit as f64 / bucket.period_ms as f64)
             .min(bucket.burst as f64);
         bucket.refill_utc_ms = now;
@@ -2260,4 +2265,41 @@ fn parse_http_url(value: &str) -> std::result::Result<reqwest::Url, &'static str
         return Err(ERROR);
     }
     Ok(url)
+}
+
+#[cfg(all(test, unix))]
+mod rate_limit_tests {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    use super::*;
+
+    #[test]
+    fn overflowing_refill_baseline_fails_closed() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("bucket.json");
+        let bucket = Bucket {
+            version: STATE_VERSION,
+            limit: 1,
+            period_ms: 1_000,
+            burst: 1,
+            tokens: 0.0,
+            refill_utc_ms: i64::MIN,
+        };
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(&path)
+            .unwrap();
+        file.write_all(&serde_json::to_vec(&bucket).unwrap())
+            .unwrap();
+        drop(file);
+
+        let error = match read_bucket(&path, 1, Duration::from_secs(1), 1, 0) {
+            Ok(_) => panic!("overflowing state must be rejected"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.code, Code::IoFailed);
+    }
 }
