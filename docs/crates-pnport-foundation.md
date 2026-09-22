@@ -16,6 +16,8 @@ Commands are `run -- <command> [args...]`, `doctor [--json]`, and `cache path|li
 
 Read inline and split Yarn 4 data without evaluating loader JavaScript. Validate before calling pnp hydration, including its required top-level locator. Preserve aliases, fallback policy, workspaces and peer-specific virtual identity. One owned process tree uses one graph snapshot; no independent-project merging.
 
+Hydration builds immutable indexes of hard-linked locators and package-location ancestors. Filesystem translation queries those indexes instead of scanning the complete raw registry for each source or unplugged-package access; reconstruct them when loading a serialized snapshot.
+
 Dependency content and virtual directories are read-only. Project source/output writes are native. Read, stat, enumeration, links, realpath, directory-relative handles, watches, mmap, native loading and execution are conformance requirements. Detect physical node_modules conflicts before access, including conflicts created during execution. Do not delete conflicting user content. Ordinary misses return normal filesystem errors.
 
 Inherit cwd, environment and stdio. Never capture child output; stdout remains suitable for language-server protocols. Preserve literal arguments and child status. Owned failures use 2 (arguments), 127 (not found), 126 (not executable), or 125 (initialization/runtime/restart). Structured stable codes disambiguate owned failures from child status. Signals use conventional signal-derived status.

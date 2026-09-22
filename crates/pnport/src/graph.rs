@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashSet},
     fs,
     io::Read,
     path::{Component, Path, PathBuf},
@@ -138,6 +138,8 @@ pub struct Graph {
     pub snapshot: Snapshot,
     pub manifest: Manifest,
     pub identity: String,
+    managed_locators: HashSet<PackageLocator>,
+    location_ancestors: HashSet<PathBuf>,
 }
 
 impl Graph {
@@ -186,12 +188,42 @@ impl Graph {
             serde_json::from_value(snapshot.data.clone()).map_err(|_| manifest_error())?;
         validate_references(&manifest)?;
         pnp::init_pnp_manifest(&mut manifest, &snapshot.manifest_path);
+        // pnp does not retain linkType. Index it once instead of rescanning the
+        // JSON registry for every source-file syscall under the preload mutex.
+        let mut managed_locators = HashSet::new();
+        for record in snapshot.data["packageRegistryData"]
+            .as_array()
+            .ok_or_else(manifest_error)?
+        {
+            for entry in record[1].as_array().ok_or_else(manifest_error)? {
+                if entry[1]["linkType"] == "HARD" {
+                    managed_locators.insert(PackageLocator {
+                        name: record[0].as_str().unwrap_or("").to_owned(),
+                        reference: entry[0].as_str().unwrap_or("").to_owned(),
+                    });
+                }
+            }
+        }
+        let location_ancestors = manifest
+            .package_registry_data
+            .values()
+            .flat_map(|entries| entries.values())
+            .flat_map(|package| {
+                normalize(&package.package_location)
+                    .ancestors()
+                    .skip(1)
+                    .map(Path::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
         let identity = digest(&serde_json::to_vec(&snapshot).map_err(|_| manifest_error())?);
         tracing::debug!(action = "graph_loaded", graph = %identity, packages = manifest.package_registry_data.len());
         Ok(Self {
             snapshot,
             manifest,
             identity,
+            managed_locators,
+            location_ancestors,
         })
     }
 
@@ -231,19 +263,11 @@ impl Graph {
         let Some(locator) = pnp::find_locator(&self.manifest, path) else {
             return false;
         };
-        self.snapshot.data["packageRegistryData"]
-            .as_array()
-            .is_some_and(|registry| {
-                registry.iter().any(|record| {
-                    record[0].as_str().unwrap_or("") == locator.name
-                        && record[1].as_array().is_some_and(|entries| {
-                            entries.iter().any(|entry| {
-                                entry[0].as_str().unwrap_or("") == locator.reference
-                                    && entry[1]["linkType"] == "HARD"
-                            })
-                        })
-                })
-            })
+        self.managed_locators.contains(locator)
+    }
+
+    pub fn is_location_ancestor(&self, path: &Path) -> bool {
+        self.location_ancestors.contains(path)
     }
 
     pub fn dependency_names(&self, issuer: &Path) -> Vec<String> {

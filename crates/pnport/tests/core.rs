@@ -71,6 +71,12 @@ fn inline_and_split_load_without_executing_javascript() {
     let root = fixture();
     let graph = Graph::load(&root.path().join(".pnp.cjs")).unwrap();
     let root_path = fs::canonicalize(root.path()).unwrap();
+    assert!(!graph.managed(&root_path.join("source.ts")));
+    assert!(graph.managed(&root_path.join("cache.zip/node_modules/dep/file.txt")));
+    assert!(!graph.managed(&root_path.parent().unwrap().join("unrelated.ts")));
+    let restored = Graph::from_snapshot(graph.snapshot.clone()).unwrap();
+    assert!(!restored.managed(&root_path));
+    assert!(restored.managed(&root_path.join("cache.zip/node_modules/dep/file.txt")));
     assert_eq!(
         graph.resolve("dep", &root_path).unwrap(),
         graph.resolve("alias", &root_path).unwrap()
