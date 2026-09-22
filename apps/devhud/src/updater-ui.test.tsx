@@ -150,7 +150,7 @@ describe("desktop updater approvals", () => {
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
   });
 
-  it("closes download approval when a scheduled check replaces the displayed candidate", async () => {
+  it.each(["before", "after"] as const)("closes stale download approval when an animation frame runs %s the status commit", async (frameOrder) => {
     let listener: ((event: NativeBridgeEventV1) => void) | undefined;
     const operations: string[] = [];
     const bridge: NativeBridgeV1 = {
@@ -166,7 +166,19 @@ describe("desktop updater approvals", () => {
     fireEvent.click(screen.getByRole("button", { name: "Approve download" }));
     expect(screen.getByRole("dialog")).toBeTruthy();
 
-    listener?.({ version: 1, kind: "desktop-update-status", status: { ...available, kind: "checking", candidate: null } });
+    const frames: FrameRequestCallback[] = [];
+    const animationFrame = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => frames.push(callback));
+    const runFrames = () => frames.splice(0).forEach((callback) => callback(0));
+    try {
+      act(() => {
+        listener?.({ version: 1, kind: "desktop-update-status", status: { ...available, kind: "checking", candidate: null } });
+        // A native event can yield to a browser frame before React commits its updates.
+        if (frameOrder === "before") runFrames();
+      });
+      if (frameOrder === "after") act(runFrames);
+    } finally {
+      animationFrame.mockRestore();
+    }
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await waitFor(() => expect(screen.getByRole("region", { name: "Desktop updates" })).toBe(document.activeElement));
 
