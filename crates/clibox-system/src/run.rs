@@ -4,13 +4,15 @@
 //! planning remains in `environment` so every workload, including a managed
 //! service, keeps the exact `run env` assignment and executable lookup rules.
 
+#[cfg(windows)]
+use std::process::Child;
 use std::{
     env,
     ffi::OsString,
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
     path::{Path, PathBuf},
-    process::{Child, Command as ProcessCommand, ExitStatus, Stdio},
+    process::{Command as ProcessCommand, ExitStatus, Stdio},
     sync::{mpsc, Arc},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -501,7 +503,7 @@ fn with_service(options: Service) -> Result<Outcome> {
             let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
             return check_cancelled().and_then(|()| unreachable!());
         }
-        if service_child.try_wait()?.is_some() {
+        if service_child.completion()?.is_some() {
             let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
             return runtime_failure("The managed service exited before it became ready.");
         }
@@ -511,7 +513,7 @@ fn with_service(options: Service) -> Result<Outcome> {
                 // The service can exit while one bounded HTTP attempt is in
                 // progress. Prefer that owned-process failure to reporting a
                 // coincident readiness deadline.
-                if service_child.try_wait()?.is_some() {
+                if service_child.completion()?.is_some() {
                     let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
                     return runtime_failure("The managed service exited before it became ready.");
                 }
@@ -527,7 +529,7 @@ fn with_service(options: Service) -> Result<Outcome> {
                 }
             }
             Err(HttpProbeError::OverallTimeout) => {
-                if service_child.try_wait()?.is_some() {
+                if service_child.completion()?.is_some() {
                     let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
                     return runtime_failure("The managed service exited before it became ready.");
                 }
@@ -905,16 +907,27 @@ fn run_once(
                 "Execution was cancelled; owned children were asked to stop.",
             ));
         }
-        if let Some(service) = monitored_service.as_deref_mut() {
-            if service.try_wait()?.is_some() {
-                let _ = cleanup_or_log(service, kill_after);
-                let _ = cleanup_or_log(&mut child, kill_after);
-                return runtime_failure(
-                    "The managed service exited before the workload completed.",
-                );
-            }
+        let service_completion = monitored_service
+            .as_deref_mut()
+            .map(OwnedChild::completion)
+            .transpose()?
+            .flatten();
+        let workload_completion = child.completion()?;
+        if service_completion.is_some_and(|service| {
+            service_exited_before_workload(
+                service.observed_at,
+                workload_completion
+                    .as_ref()
+                    .map(|workload| workload.observed_at),
+            )
+        }) {
+            let service = monitored_service.expect("a completed service is monitored");
+            let _ = cleanup_or_log(service, kill_after);
+            let _ = cleanup_or_log(&mut child, kill_after);
+            return runtime_failure("The managed service exited before the workload completed.");
         }
-        if let Some(status) = child.try_wait()? {
+        if let Some(completion) = workload_completion {
+            let status = completion.status;
             // Reaping the direct child does not end ownership of its process
             // group or Job Object. A background descendant can otherwise
             // retain an inherited pipe or outlive the wrapper after its parent
@@ -971,11 +984,19 @@ enum OutputMode {
 }
 
 struct OwnedChild {
-    child: Child,
+    pid: u32,
     #[cfg(windows)]
     job: Job,
+    completions: mpsc::Receiver<Result<Completion>>,
+    completion: Option<Completion>,
     activity: Option<mpsc::Receiver<()>>,
     output_threads: Vec<thread::JoinHandle<()>>,
+}
+
+#[derive(Clone)]
+struct Completion {
+    status: ExitStatus,
+    observed_at: Instant,
 }
 
 fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
@@ -1035,10 +1056,24 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
             return Err(error);
         }
     };
+    let pid = child.id();
+    let (completion_tx, completions) = mpsc::sync_channel(1);
+    thread::spawn(move || {
+        let completion = child
+            .wait()
+            .map(|status| Completion {
+                status,
+                observed_at: Instant::now(),
+            })
+            .map_err(|error| Failure::io(&error));
+        let _ = completion_tx.send(completion);
+    });
     Ok(OwnedChild {
-        child,
+        pid,
         #[cfg(windows)]
         job,
+        completions,
+        completion: None,
         activity,
         output_threads,
     })
@@ -1074,13 +1109,19 @@ fn forward(
 }
 
 impl OwnedChild {
-    fn try_wait(&mut self) -> Result<Option<ExitStatus>> {
-        self.child.try_wait().map_err(|_| {
-            Failure::new(
-                Code::IoFailed,
-                "Cannot observe the owned child process; cleanup may be incomplete.",
-            )
-        })
+    fn completion(&mut self) -> Result<Option<Completion>> {
+        if self.completion.is_none() {
+            match self.completions.try_recv() {
+                Ok(completion) => self.completion = Some(completion?),
+                Err(mpsc::TryRecvError::Empty) => (),
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    return runtime_failure(
+                        "Cannot observe the owned child process; cleanup may be incomplete.",
+                    );
+                }
+            }
+        }
+        Ok(self.completion.clone())
     }
 
     fn cleanup(&mut self, kill_after: Duration, initial_cancellation: Option<usize>) -> Result<()> {
@@ -1093,7 +1134,7 @@ impl OwnedChild {
         }
         tracing::debug!(
             operation = "run",
-            pid = self.child.id(),
+            pid = self.pid,
             stage = "graceful",
             "run_cleanup"
         );
@@ -1115,7 +1156,7 @@ impl OwnedChild {
         }
         tracing::debug!(
             operation = "run",
-            pid = self.child.id(),
+            pid = self.pid,
             stage = "forced",
             "run_cleanup"
         );
@@ -1145,17 +1186,17 @@ impl OwnedChild {
 
     #[cfg(unix)]
     fn signal(&self, force: bool) -> Result<()> {
-        signal_process_tree(self.child.id(), force)
+        signal_process_tree(self.pid, force)
     }
 
     #[cfg(windows)]
     fn signal(&self, force: bool) -> Result<()> {
-        self.job.signal(self.child.id(), force)
+        self.job.signal(self.pid, force)
     }
 
     #[cfg(unix)]
     fn tree_running(&self) -> Result<bool> {
-        process_tree_running(self.child.id())
+        process_tree_running(self.pid)
     }
 
     #[cfg(windows)]
@@ -2118,6 +2159,10 @@ fn clip_to_deadline(duration: Duration, deadline: Option<Instant>) -> Duration {
         .unwrap_or(duration)
 }
 
+fn service_exited_before_workload(service: Instant, workload: Option<Instant>) -> bool {
+    workload.is_none_or(|workload| service < workload)
+}
+
 fn sleep_cancellable(duration: Duration) -> Result<()> {
     let end = Instant::now()
         .checked_add(duration)
@@ -2301,5 +2346,21 @@ mod rate_limit_tests {
         };
 
         assert_eq!(error.code, Code::IoFailed);
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+
+    #[test]
+    fn service_completion_requires_a_strictly_earlier_event() {
+        let start = Instant::now();
+        let later = start.checked_add(Duration::from_millis(1)).unwrap();
+
+        assert!(service_exited_before_workload(start, None));
+        assert!(service_exited_before_workload(start, Some(later)));
+        assert!(!service_exited_before_workload(later, Some(start)));
+        assert!(!service_exited_before_workload(start, Some(start)));
     }
 }
