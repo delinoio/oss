@@ -46,6 +46,10 @@ fn windows_handle_metadata_reads_preserve_results_and_policy_evidence() {
         "bad-buffer",
         "invalid-handle",
         "pipe",
+        "ea-standard",
+        "ea-bad-buffer",
+        "ea-invalid-handle",
+        "ea-pipe",
     ] {
         let root = tempfile::tempdir().unwrap();
         let external = tempfile::tempdir().unwrap();
@@ -81,7 +85,11 @@ fn windows_handle_metadata_reads_preserve_results_and_policy_evidence() {
         );
         assert_eq!(
             result.status.code(),
-            Some(if mode == "invalid-handle" { 4 } else { 0 }),
+            Some(if mode.ends_with("invalid-handle") {
+                4
+            } else {
+                0
+            }),
             "{mode}: {result:?}"
         );
         assert_eq!(result.stdout, direct.stdout, "{mode}");
@@ -99,7 +107,10 @@ fn windows_handle_metadata_reads_preserve_results_and_policy_evidence() {
             .filter(|(path, _)| path.ends_with("/metadata-input"))
             .collect::<Vec<_>>();
         assert!(!accesses.is_empty(), "{mode}: {execution}");
-        let reads_file = matches!(mode, "standard" | "basic" | "bad-buffer");
+        let reads_file = matches!(
+            mode,
+            "standard" | "basic" | "bad-buffer" | "ea-standard" | "ea-bad-buffer"
+        );
         assert_eq!(
             accesses.iter().any(|(_, access)| access["read"] == true),
             reads_file,
@@ -114,7 +125,7 @@ fn windows_handle_metadata_reads_preserve_results_and_policy_evidence() {
             policy.status.code(),
             Some(if reads_file {
                 5
-            } else if mode == "invalid-handle" {
+            } else if mode.ends_with("invalid-handle") {
                 4
             } else {
                 0

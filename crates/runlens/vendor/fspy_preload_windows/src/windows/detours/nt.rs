@@ -556,20 +556,7 @@ static DETOUR_NT_QUERY_DIRECTORY_FILE_EX: Detour<NtQueryDirectoryFileExFn> =
         })
     };
 
-// Metadata can affect a target even when the handle was opened write-only.
-// Observe the attempt without touching the caller's output pointers or class.
-static DETOUR_NT_QUERY_INFORMATION_FILE: Detour<
-    unsafe extern "system" fn(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, FILE_INFORMATION_CLASS) -> NTSTATUS,
-> = unsafe {
-    // SAFETY: the replacement has the exact NtQueryInformationFile ABI.
-    Detour::new(c"NtQueryInformationFile", ntapi::ntioapi::NtQueryInformationFile, {
-        unsafe extern "system" fn query_information(
-            handle: HANDLE,
-            status: PIO_STATUS_BLOCK,
-            information: PVOID,
-            length: ULONG,
-            class: FILE_INFORMATION_CLASS,
-        ) -> NTSTATUS {
+unsafe fn observe_handle_read(handle: HANDLE) {
             if !crate::windows::winapi_utils::resolving_path() {
                 // SAFETY: handle inspection is kernel-validated. Retain Win32
                 // last-error state as well as the original NT result.
@@ -592,6 +579,41 @@ static DETOUR_NT_QUERY_INFORMATION_FILE: Detour<
                 }
                 unsafe { windows_sys::Win32::Foundation::SetLastError(saved_error) };
             }
+}
+
+// EA buffers and names remain opaque; only the handle identity is evidence.
+static DETOUR_NT_QUERY_EA_FILE: Detour<
+    unsafe extern "system" fn(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, BOOLEAN, PVOID, ULONG, *mut ULONG, BOOLEAN) -> NTSTATUS,
+> = unsafe {
+    // SAFETY: the replacement matches the native NtQueryEaFile ABI.
+    Detour::new(c"NtQueryEaFile", ntapi::ntioapi::NtQueryEaFile, {
+        unsafe extern "system" fn query_ea(
+            handle: HANDLE, status: PIO_STATUS_BLOCK, buffer: PVOID, length: ULONG,
+            single: BOOLEAN, list: PVOID, list_length: ULONG, index: *mut ULONG, restart: BOOLEAN,
+        ) -> NTSTATUS {
+            unsafe { observe_handle_read(handle) };
+            // SAFETY: forward all operands, including invalid pointers, unchanged.
+            unsafe { (DETOUR_NT_QUERY_EA_FILE.real())(handle, status, buffer, length, single, list, list_length, index, restart) }
+        }
+        query_ea
+    })
+};
+
+// Metadata can affect a target even when the handle was opened write-only.
+// Observe the attempt without touching the caller's output pointers or class.
+static DETOUR_NT_QUERY_INFORMATION_FILE: Detour<
+    unsafe extern "system" fn(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, FILE_INFORMATION_CLASS) -> NTSTATUS,
+> = unsafe {
+    // SAFETY: the replacement has the exact NtQueryInformationFile ABI.
+    Detour::new(c"NtQueryInformationFile", ntapi::ntioapi::NtQueryInformationFile, {
+        unsafe extern "system" fn query_information(
+            handle: HANDLE,
+            status: PIO_STATUS_BLOCK,
+            information: PVOID,
+            length: ULONG,
+            class: FILE_INFORMATION_CLASS,
+        ) -> NTSTATUS {
+            unsafe { observe_handle_read(handle) };
             // SAFETY: preserve even invalid handles, pointers and lengths for NT.
             unsafe { (DETOUR_NT_QUERY_INFORMATION_FILE.real())(handle, status, information, length, class) }
         }
@@ -651,6 +673,7 @@ static DETOUR_NT_DELETE_FILE: Detour<unsafe extern "system" fn(POBJECT_ATTRIBUTE
 };
 
 pub const DETOURS: &[DetourAny] = &[
+    DETOUR_NT_QUERY_EA_FILE.as_any(),
     DETOUR_NT_QUERY_INFORMATION_FILE.as_any(),
     DETOUR_NT_DELETE_FILE.as_any(),
     DETOUR_NT_SET_INFORMATION_FILE.as_any(),

@@ -349,3 +349,5 @@
 - macOS statfs/statvfs and descriptor variants must retain filesystem metadata read attempts, including write-only descriptors and failed path lookups, while preserving native output and errors without retaining statistics payloads.
 
 - Windows process-tree liveness must inspect job members through synchronized process handles, not the accounting ActiveProcesses count, which can include terminated objects with retained references. Recheck membership after an apparently empty scan and fail closed on query/identity uncertainty.
+
+- Windows NtQueryEaFile records independent handle read attempts, including failed queries; EA names and buffers remain opaque and unresolvable file handles make collection incomplete.

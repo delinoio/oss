@@ -172,10 +172,12 @@ pub fn handle_metadata(path: &str, mode: &str) {
         FILE_BASIC_INFORMATION, FILE_STANDARD_INFORMATION, FileBasicInformation,
         FileStandardInformation, NtQueryInformationFile,
     };
-    use winapi::um::winnt::{FILE_READ_ATTRIBUTES, FILE_WRITE_DATA, SYNCHRONIZE};
+    use winapi::um::winnt::{FILE_READ_ATTRIBUTES, FILE_READ_EA, FILE_WRITE_DATA, SYNCHRONIZE};
+    let ea = mode.starts_with("ea-");
+    let mode = mode.strip_prefix("ea-").unwrap_or(mode);
     let file = std::fs::OpenOptions::new()
         .write(true)
-        .access_mode(FILE_WRITE_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE)
+        .access_mode(FILE_WRITE_DATA | FILE_READ_ATTRIBUTES | FILE_READ_EA | SYNCHRONIZE)
         .open(path)
         .unwrap();
     if mode == "open-only" {
@@ -220,28 +222,46 @@ pub fn handle_metadata(path: &str, mode: &str) {
                 FileStandardInformation,
             )
         };
-        let status = NtQueryInformationFile(
-            handle,
-            &mut io,
-            if mode == "bad-buffer" {
-                16usize as *mut _
-            } else {
-                information
-            },
-            length,
-            class,
-        );
+        let status = if ea {
+            ntapi::ntioapi::NtQueryEaFile(
+                handle,
+                &mut io,
+                if mode == "bad-buffer" {
+                    16usize as *mut _
+                } else {
+                    information
+                },
+                length,
+                0,
+                ptr::null_mut(),
+                0,
+                ptr::null_mut(),
+                1,
+            )
+        } else {
+            NtQueryInformationFile(
+                handle,
+                &mut io,
+                if mode == "bad-buffer" {
+                    16usize as *mut _
+                } else {
+                    information
+                },
+                length,
+                class,
+            )
+        };
         println!("status={status}");
-        if matches!(mode, "standard" | "basic") {
+        if !ea && matches!(mode, "standard" | "basic") {
             assert!(status >= 0);
         }
-        if matches!(mode, "bad-buffer" | "invalid-handle") {
+        if mode == "invalid-handle" || (!ea && mode == "bad-buffer") {
             assert!(status < 0);
         }
-        if status >= 0 && mode == "standard" {
+        if !ea && status >= 0 && mode == "standard" {
             println!("size={}", standard.EndOfFile.QuadPart());
         }
-        if status >= 0 && mode == "basic" {
+        if !ea && status >= 0 && mode == "basic" {
             println!("attributes={}", basic.FileAttributes);
         }
         if !read_pipe.is_null() {
