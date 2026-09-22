@@ -927,8 +927,8 @@ fn run_once(
     let mut last_activity = Instant::now();
     loop {
         if let Some(activity) = &child.activity {
-            while activity.try_recv().is_ok() {
-                last_activity = Instant::now();
+            while let Ok(observed_at) = activity.try_recv() {
+                last_activity = observed_at;
             }
         }
         if runtime::cancelled() {
@@ -1023,7 +1023,7 @@ struct OwnedChild {
     job: Job,
     completions: mpsc::Receiver<Result<Completion>>,
     completion: Option<Completion>,
-    activity: Option<mpsc::Receiver<()>>,
+    activity: Option<mpsc::Receiver<Instant>>,
     output_threads: Vec<thread::JoinHandle<()>>,
 }
 
@@ -1169,7 +1169,7 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
 fn forward(
     mut reader: impl Read + Send + 'static,
     stderr: bool,
-    activity: Option<mpsc::SyncSender<()>>,
+    activity: Option<mpsc::SyncSender<Instant>>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut buffer = [0u8; 8192];
@@ -1180,8 +1180,11 @@ fn forward(
             };
             // A successful read is workload activity even when a slow consumer
             // blocks forwarding these bytes for longer than the idle limit.
+            // Preserve the read's timestamp rather than the supervisor poll
+            // time so an already-completed workload cannot extend its idle
+            // deadline by sitting in the bounded notification channel.
             if let Some(sender) = &activity {
-                let _ = sender.try_send(());
+                let _ = sender.try_send(Instant::now());
             }
             let write = if stderr {
                 io::stderr().lock().write_all(&buffer[..count])

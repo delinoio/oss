@@ -276,6 +276,29 @@ fn timeout_terminates_a_silent_workload() {
 }
 
 #[test]
+fn idle_timeout_uses_the_output_read_time_before_completion() {
+    let home = tempfile::tempdir().unwrap();
+    let output = command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--idle-timeout",
+            "1ms",
+            "--kill-after",
+            "0",
+            "--",
+            "sh",
+            "-c",
+            "printf output; sleep 0.005",
+        ],
+    )
+    .output()
+    .unwrap();
+    assert_eq!(output.status.code(), Some(124));
+}
+
+#[test]
 #[cfg(target_os = "linux")]
 fn interactive_workload_keeps_foreground_terminal_access() {
     let home = tempfile::tempdir().unwrap();
