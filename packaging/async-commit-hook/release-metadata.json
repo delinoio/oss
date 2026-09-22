@@ -3,7 +3,7 @@
   "version": "0.1.1",
   "tag_prefix": "async-commit-hook@v",
   "executable": "ach",
-  "site": "https://ach.delino.io",
+  "site": "https://oss.delino.io/async-commit-hook",
   "targets": [
     {"os": "darwin", "arch": "amd64", "minimum": "macOS 13"},
     {"os": "darwin", "arch": "arm64", "minimum": "macOS 13"},

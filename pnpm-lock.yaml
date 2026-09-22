@@ -116,21 +116,6 @@ importers:
         specifier: 4.1.11
         version: 4.1.11(@types/node@25.5.0)(jsdom@20.0.3)(vite@8.2.1(@types/node@25.5.0)(jiti@2.6.1)(terser@5.46.1))
 
-  apps/async-commit-hook-docs:
-    devDependencies:
-      '@rspress/core':
-        specifier: ^2.0.14
-        version: 2.0.14(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)
-      entities:
-        specifier: 6.0.1
-        version: 6.0.1
-
-  apps/binpm-docs:
-    devDependencies:
-      '@rspress/core':
-        specifier: ^2.0.14
-        version: 2.0.14(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)
-
   apps/devhud:
     dependencies:
       '@connectrpc/connect':
@@ -311,17 +296,14 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  apps/nodeup-docs:
-    devDependencies:
-      '@rspress/core':
-        specifier: ^2.0.14
-        version: 2.0.14(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)
-
   apps/public-docs:
     devDependencies:
+      '@delinoio/docs-site-switcher':
+        specifier: workspace:*
+        version: link:../../packages/docs-site-switcher
       '@rspress/core':
         specifier: ^2.0.14
-        version: 2.0.14(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)
+        version: 2.0.14(@rspack/core@2.1.8(@swc/helpers@0.5.23))(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)
       entities:
         specifier: 6.0.1
         version: 6.0.1
@@ -330,16 +312,7 @@ importers:
     devDependencies:
       '@rspress/core':
         specifier: ^2.0.14
-        version: 2.0.14(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)
-      entities:
-        specifier: 6.0.1
-        version: 6.0.1
-
-  apps/runmoor-docs:
-    devDependencies:
-      '@rspress/core':
-        specifier: ^2.0.14
-        version: 2.0.14(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)
+        version: 2.0.14(@rspack/core@2.1.8(@swc/helpers@0.5.23))(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)
       entities:
         specifier: 6.0.1
         version: 6.0.1
@@ -413,6 +386,33 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
+      vitest:
+        specifier: 4.1.11
+        version: 4.1.11(@types/node@25.5.0)(jsdom@20.0.3)(vite@8.2.1(@types/node@25.5.0)(jiti@2.6.1)(terser@5.46.1))
+
+  packages/docs-site-switcher:
+    devDependencies:
+      '@testing-library/dom':
+        specifier: 10.4.2
+        version: 10.4.2
+      '@testing-library/react':
+        specifier: 16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@types/react':
+        specifier: 19.2.14
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: 19.2.3
+        version: 19.2.3(@types/react@19.2.14)
+      jsdom:
+        specifier: 20.0.3
+        version: 20.0.3
+      react:
+        specifier: 19.2.8
+        version: 19.2.8
+      react-dom:
+        specifier: 19.2.8
+        version: 19.2.8(react@19.2.8)
       vitest:
         specifier: 4.1.11
         version: 4.1.11(@types/node@25.5.0)(jsdom@20.0.3)(vite@8.2.1(@types/node@25.5.0)(jiti@2.6.1)(terser@5.46.1))
@@ -8023,7 +8023,7 @@ snapshots:
     optionalDependencies:
       '@rspack/core': 2.1.8(@swc/helpers@0.5.23)
 
-  '@rspress/core@2.0.14(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)':
+  '@rspress/core@2.0.14(@rspack/core@2.1.8(@swc/helpers@0.5.23))(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)':
     dependencies:
       '@mdx-js/mdx': 3.1.1
       '@mdx-js/react': 3.1.1(@types/react@19.2.14)(react@19.2.8)

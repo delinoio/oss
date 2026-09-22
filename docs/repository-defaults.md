@@ -21,7 +21,7 @@ This document defines default technology choices and repository workflow default
 - Pull request title scopes should use stable lowercase project, component, domain, or tooling identifiers from repository contracts when one applies.
 - Pull request titles must not omit the scope and must not use bracket-style project prefixes.
 - Root `pnpm install` must support linked worktrees when the effective Git hooks path resolves to the repository's shared common-directory hooks directory, without overriding an unrelated custom hooks path. Source archives and other workspaces without Git metadata skip hook installation while continuing app preparation.
-- Root `pnpm dev` is reserved for the DevHud team workflow. Documentation apps retain root entry points through `pnpm dev:public-docs`, `pnpm dev:nodeup-docs`, `pnpm dev:binpm-docs`, `pnpm dev:runmoor-docs`, and `pnpm dev:runlens-docs`; package-local development continues to use `pnpm dev`. Every development command uses its app's documented fixed loopback host and port, prevents CLI address overrides from changing that binding, and fails when that port is occupied rather than automatically selecting another port. Development wrappers forward termination signals to the child server and wait for it to exit so stopped commands do not leave orphaned listeners.
+- Root `pnpm dev` is reserved for the DevHud team workflow. Documentation development uses the single `pnpm dev:public-docs` entry point; the Runmoor, Nodeup, binpm, and async-commit-hook content sections are served from that consolidated site. Every documentation development command uses the documented fixed loopback host and port, prevents CLI address overrides from changing that binding, and fails when that port is occupied rather than automatically selecting another port. Development wrappers forward termination signals to the child server and wait for it to exit so stopped commands do not leave orphaned listeners.
 
 ## References
 - `docs/README.md`
@@ -29,3 +29,5 @@ This document defines default technology choices and repository workflow default
 - `docs/domain-template.md`
 - `AGENTS.md`
 - `apps/AGENTS.md`
+
+Runlens retains its standalone documentation app and root `pnpm dev:runlens-docs` entry point at `127.0.0.1:46310`, with preview at `127.0.0.1:46272`; it does not require the DevHud environment.

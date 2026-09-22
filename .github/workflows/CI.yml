@@ -446,70 +446,6 @@ jobs:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
 
-  node-binpm-docs-test:
-    needs: changes
-    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['node-binpm-docs-test'] }}
-    name: Node binpm-docs test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node.js
-        id: ci-node
-        uses: ./.github/actions/setup-ci-node
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Run binpm-docs tests
-        env:
-          FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['node-binpm-docs-test'] }}
-          TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
-          TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
-        run: node scripts/ci/run-affected.mjs binpm-docs test
-
-      - name: Save pnpm cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
-        with:
-          path: ${{ steps.ci-node.outputs.cache-path }}
-          key: ${{ steps.ci-node.outputs.cache-key }}
-
-  node-runmoor-docs-test:
-    needs: changes
-    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['node-runmoor-docs-test'] }}
-    name: Node runmoor-docs test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node.js
-        id: ci-node
-        uses: ./.github/actions/setup-ci-node
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Run runmoor-docs tests
-        env:
-          FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['node-runmoor-docs-test'] }}
-          TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
-          TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
-        run: node scripts/ci/run-affected.mjs runmoor-docs test
-
-      - name: Save pnpm cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
-        with:
-          path: ${{ steps.ci-node.outputs.cache-path }}
-          key: ${{ steps.ci-node.outputs.cache-key }}
-
   node-runlens-docs-test:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['node-runlens-docs-test'] }}
@@ -534,38 +470,6 @@ jobs:
           TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
           TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
         run: node scripts/ci/run-affected.mjs runlens-docs test
-
-      - name: Save pnpm cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
-        with:
-          path: ${{ steps.ci-node.outputs.cache-path }}
-          key: ${{ steps.ci-node.outputs.cache-key }}
-
-  node-nodeup-docs-test:
-    needs: changes
-    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['node-nodeup-docs-test'] }}
-    name: Node nodeup-docs test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node.js
-        id: ci-node
-        uses: ./.github/actions/setup-ci-node
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Run nodeup-docs tests
-        env:
-          FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['node-nodeup-docs-test'] }}
-          TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
-          TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
-        run: node scripts/ci/run-affected.mjs nodeup-docs test
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -1662,7 +1566,7 @@ jobs:
           pnpm --filter async-commit-hook build:embedded
           go test -race ./cmds/async-commit-hook/...
           pnpm --filter async-commit-hook test
-          pnpm --filter async-commit-hook-docs test
+          pnpm --filter public-docs test
           pnpm --filter @delinoio/async-commit-hook-api-client test
           pnpm proto:check
           node --test scripts/release/async-commit-hook.test.mjs
@@ -1740,10 +1644,7 @@ jobs:
       - rust-test
       - node-mpapp-test
       - node-mpapp-lint
-      - node-binpm-docs-test
-      - node-runmoor-docs-test
       - node-runlens-docs-test
-      - node-nodeup-docs-test
       - node-public-docs-test
       - node-clibox-test
       - devhud-frontend

@@ -1,1 +1,4 @@
 doc_build/
+docs/public/async-commit-hook/install.*
+docs/public/binpm/
+docs/public/nodeup/

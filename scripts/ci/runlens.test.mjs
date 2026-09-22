@@ -153,9 +153,9 @@ test("every authenticated installer row verifies its actual platform and exact m
 
 test("documentation apps retain distinct fixed development ports after integration", () => {
   const runlens = JSON.parse(read("apps/runlens-docs/package.json"));
-  const ach = JSON.parse(read("apps/async-commit-hook-docs/package.json"));
+  const publicDocs = JSON.parse(read("apps/public-docs/package.json"));
   assert.match(runlens.scripts.dev, /runlens-docs dev 46310 -$/u);
-  assert.match(ach.scripts.dev, /async-commit-hook-docs dev 46311 -$/u);
+  assert.match(publicDocs.scripts.dev, /public-docs dev 46302 -$/u);
 });
 
 test("Runlens documentation resolves to a retained peer snapshot in the frozen lockfile", () => {

@@ -19,8 +19,8 @@ const stableRouteIds = [
   "/cargo-mono",
   "/derun",
   "/with-watch",
-  "/nodeup",
 ];
+const projectSlugs = ["runmoor", "nodeup", "binpm", "async-commit-hook"];
 
 const outputDir = path.resolve("doc_build");
 const stableRoutePathPattern = stableRouteIds
@@ -52,7 +52,7 @@ async function pathExists(filePath) {
   }
 }
 
-async function collectHtmlFiles(directory) {
+async function collectHtmlFiles(directory, depth = 0) {
   const entries = await readdir(directory);
   const htmlFiles = [];
 
@@ -61,8 +61,9 @@ async function collectHtmlFiles(directory) {
     const entryStat = await stat(entryPath);
 
     if (entryStat.isDirectory()) {
-      htmlFiles.push(...(await collectHtmlFiles(entryPath)));
-    } else if (entryPath.endsWith(".html")) {
+      if (depth === 0 && projectSlugs.includes(entry)) continue;
+      htmlFiles.push(...(await collectHtmlFiles(entryPath, depth + 1)));
+    } else if (entryPath.endsWith(".html") && entry !== "404.html") {
       htmlFiles.push(entryPath);
     }
   }
@@ -73,11 +74,10 @@ async function collectHtmlFiles(directory) {
 const htmlFiles = await collectHtmlFiles(outputDir);
 const failures = [];
 
-// These routes were intentionally removed, without redirects or handoff pages.
-// Reject stale output as well as navigation that would recreate the old surface.
-for (const oldOutput of ["runmoor.html", "runmoor"]) {
-  if (await pathExists(path.join(outputDir, oldOutput))) {
-    failures.push(`${oldOutput} retains a removed Runmoor route`);
+// Project sections are validated separately from the root-owned route set.
+for (const slug of projectSlugs) {
+  if (!(await pathExists(path.join(outputDir, slug)))) {
+    failures.push(`${slug} is missing from the public documentation tree`);
   }
 }
 
@@ -96,8 +96,8 @@ const requiredHeadings = new Map([
   ["/devhud/releases", ["DevHud Releases"]],
 ]);
 const requiredLinks = new Map([
-  ["/", ["https://runmoor.delino.io"]],
-  ["/projects-overview", ["https://runmoor.delino.io"]],
+  ["/", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/"]],
+  ["/projects-overview", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/"]],
   ["/devhud", ["/devhud/install", "/devhud/privacy", "/devhud/security", "/devhud/support"]],
   ["/devhud/install", ["/devhud/releases", "/devhud/security", "/devhud/support"]],
   ["/devhud/guide", ["/devhud/privacy", "/devhud/security", "/devhud/support"]],
@@ -298,8 +298,9 @@ function publicPathText(text, htmlFile) {
   }
   return text;
 }
+const allowedPublicPathPattern = `${stableRoutePathPattern}|(?:${projectSlugs.join("|")})(?:[/\\\\][A-Za-z0-9._~-]+)*(?:[/\\\\])?|(?:assets|static)(?:[/\\\\][A-Za-z0-9._~-]+)*`;
 const forbiddenPathContent = [
-  new RegExp(`(?:^|[\\s("'\\x60>])/(?!${stableRoutePathPattern}(?:\\.html)?(?:[?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
+  new RegExp(`(?:^|[\\s("'\\x60>])/(?!${allowedPublicPathPattern}(?:\\.html)?(?:[?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
   /(?:^|[\s("'`>])(?:\.\.[\\/])+(?:[A-Za-z0-9._~-]+[\\/])+[^\s"'`<>]*/u,
   /(?:^|[\s("'`>])(?:apps|cmds|crates|docs|packaging|packages|protos|scripts|servers)(?:[\\/][^\s"'`<>]+)+/u,
   /(?:^|[\s("'`>])[A-Za-z]:[\\/][^\s"'`<>]*/u,
@@ -443,12 +444,6 @@ for (const htmlFile of htmlFiles) {
     } catch {
       continue;
     }
-    if (target.origin === validatorOrigin && /^\/runmoor(?:\/|(?:\.html)?$)/u.test(target.pathname)) {
-      failures.push(`${path.relative(outputDir, htmlFile)} links to removed Runmoor route ${target.pathname}`);
-    }
-  }
-  if (!contents.includes('href="https://runmoor.delino.io"')) {
-    failures.push(`${path.relative(outputDir, htmlFile)} is missing the Runmoor navigation link`);
   }
 
   for (const htmlRoute of findHtmlRouteLinks(contents, htmlFile)) {

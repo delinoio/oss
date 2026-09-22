@@ -9,7 +9,7 @@ Run trusted repository checks asynchronously against committed source, with dura
 ## Domain Ownership Map
 - `cmds/async-commit-hook`: Go core, CLI, workers, local API, stdio MCP, installation and update lifecycle.
 - `apps/async-commit-hook`: React/Rsbuild UI embedded in ach.
-- `apps/async-commit-hook-docs`: Rspress documentation and installer endpoints at https://ach.delino.io.
+- `apps/public-docs/docs/async-commit-hook`: Rspress documentation content published at `https://oss.delino.io/async-commit-hook`; installer assets remain in `scripts/install`.
 - `protos/async_commit_hook/v1`: versioned Connect protocol.
 - `packages/async-commit-hook-api-client`: generated TypeScript/Connect Query client.
 - `packaging/async-commit-hook`: supported release metadata and compatibility evidence.
@@ -34,9 +34,9 @@ Defaults: daemon mode, API loopback port 46309, frontend development port 46308,
 
 Results, reports and credentials remain local: this deliberately overrides the repository's R2 file-storage default. Trusted host commands are not a hostile-code sandbox. No telemetry, remote result storage, login autostart, automatic update, execution timeout or global command concurrency cap.
 
-Release preparation is available through `Release Project` with project `async-commit-hook`: it synchronizes all seven source/installer version fields and creates the exact version tag. Signing, GitHub Release, Homebrew and Pages remain separate manual operations through the existing release workflow; see the release contract for exact-commit validation and recovery boundaries.
+Release preparation is available through `Release Project` with project `async-commit-hook`: it synchronizes the five source version fields and creates the exact version tag. Installers resolve the latest published stable release by default, so the automatic consolidated `public-docs` deployment remains safe before publication. Signing, GitHub Release, and Homebrew remain separate manual operations through the existing release workflow; documentation validation stays in that workflow, while publication is owned by the consolidated `public-docs` pipeline. See the release contract for exact-commit validation and recovery boundaries.
 
-Primary public installation instructions follow the downloaded installers' synchronized versions, and upgrade instructions select the highest published stable release. Explicit version selection and rollback remain documented separately without pinning the primary commands to a historical release.
+Primary public installation instructions follow the downloaded installers' latest-published-stable defaults, and upgrade instructions select the highest published stable release. Explicit version selection and rollback remain documented separately without pinning the primary commands to a historical release.
 
 ## Change Policy
 Update the owning domain contract, the relevant requirements or release contract, and relevant AGENTS.md alongside interface, ownership, security or lifecycle changes. Generate protocol sources; never edit generated output. Public documentation describes supported user workflows, not repository internals.
@@ -56,5 +56,4 @@ Branch navigation preserves opaque worktree-scoped identities independently of n
 
 Changes preserve safe server diagnostics when automatic diff-base resolution has no result: `diff-base-required` remains local-base guidance rather than being classified as a disconnected UI.
 
-The owner amendment on 2026-09-20 replaces remote-hosted UI/pairing with an embedded same-origin local UI served by the daemon or on-demand viewer, and moves public docs/installers to a dedicated Rspress app. Check execution, evidence and gate semantics remain unchanged. Public deployment remains a separate manual release operation. Documentation development/preview use fixed ports 46311/46281.
-
+The owner amendment on 2026-09-20 replaces remote-hosted UI/pairing with an embedded same-origin local UI served by the daemon or on-demand viewer, and moves public docs/installers into the consolidated Rspress site. Check execution, evidence and gate semantics remain unchanged. Async documentation is owned by `apps/public-docs/docs/async-commit-hook` and published below `/async-commit-hook`; its release workflow does not publish documentation. Documentation development uses the consolidated public-docs server.

@@ -1,7 +1,7 @@
 # async-commit-hook application contract
 
 ## Scope
-`apps/async-commit-hook`: local UI embedded in the `ach` executable. Public documentation is owned separately by `apps/async-commit-hook-docs` at https://ach.delino.io.
+`apps/async-commit-hook`: local UI embedded in the `ach` executable. Public documentation is owned by `apps/public-docs/docs/async-commit-hook` at https://oss.delino.io/async-commit-hook.
 
 ## Runtime and Language
 React/TypeScript, Rsbuild, React Query with Connect Query. The Go daemon and on-demand viewer serve the same compiled UI and Connect API on the configured loopback endpoint. No Node server or external assets are required at runtime. Fixed localhost development port 46308; conflicts and address overrides fail.
@@ -16,7 +16,7 @@ The acknowledgement action stays disabled while an execution is queued, preparin
 Selecting Detached HEAD in Checks shows detached executions only. Inbox spans branches in the selected worktree; switching a filter resets its cursor.
 Repository/worktree and branch navigation; Changes, Commits, Checks, Inbox; run detail, logs, failures and comparison. Explicit acknowledgement, rerun and cancellation. No configuration authoring or arbitrary commands. Changes use configured base, local origin/HEAD, then explicit selection; compare the merge base without fetching. When no automatic base is available, the `diff-base-required` diagnostic directs the user to choose a local base and is never rendered as a connection outage.
 
-Open the local URL printed by `ach ui` without pairing, login or browser authorization. The Connect transport uses `window.location.origin` with mandatory `X-Ach-Api-Version: 1`; it never accepts a renderer-selected API authority. Keep `#run=ID` for refreshable execution links and discard retired pairing/port fragment fields without reading stored browser tokens. Disconnected, version, empty/loading and execution states retain actionable recovery and accessible keyboard/focus behavior. Documentation opens https://ach.delino.io separately.
+Open the local URL printed by `ach ui` without pairing, login or browser authorization. The Connect transport uses `window.location.origin` with mandatory `X-Ach-Api-Version: 1`; it never accepts a renderer-selected API authority. Keep `#run=ID` for refreshable execution links and discard retired pairing/port fragment fields without reading stored browser tokens. Disconnected, version, empty/loading and execution states retain actionable recovery and accessible keyboard/focus behavior. Documentation opens https://oss.delino.io/async-commit-hook separately.
 
 A rerun accepted before a startup failure shows its run ID, diagnostic, recovery hint, status command and an Open accepted execution action. Both rerun submission buttons stay disabled after acceptance to avoid accidental duplicate attempts. Successful startup navigates directly to the accepted execution.
 

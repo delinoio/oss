@@ -16,23 +16,29 @@ pnpm --filter public-docs preview
 ```
 
 `pnpm --filter public-docs dev` runs Rspress on fixed port `46302`. It checks the exact port before startup and exits on conflicts instead of automatically selecting another port.
-Production output is written to `doc_build` for Cloudflare Pages. Rspress clean
-URLs are enabled, so stable public routes such as `/getting-started` do not use
+Production output is written to `doc_build` for Cloudflare Pages. This is one
+Rspress site: project Markdown is owned directly by
+`docs/runmoor`, `docs/nodeup`, `docs/binpm`, and `docs/async-commit-hook`, so
+the build emits every root and project-subpath route in one pass. Installer
+entrypoints are copied from the canonical files in `scripts/install` before the
+build. Rspress clean URLs are enabled, so stable public routes do not use
 `.html` suffixes.
 
 `pnpm --filter public-docs test` builds the site and runs
-`scripts/validate-clean-urls.mjs`. The validator checks generated artifacts for
-`/`, `/getting-started`, `/projects-overview`, `/documentation-lifecycle`,
-all stable routes, required headings and links, accessibility landmarks, public
-content limits, rejects generated internal `.html` route links across all
-navigation attributes, and rejects forbidden paths in HTML resources and CSS
-`url()` values. The release workflow injects the configured non-secret DevHud
-store identifiers into every generated text asset before publication.
+the shared `@delinoio/docs-site-switcher` test, then runs
+`scripts/validate-clean-urls.mjs` and `scripts/validate-public-docs.mjs`.
+The validators check root and project-subpath artifacts, clean routes, required
+headings and links, accessibility landmarks, site-selector markup, installer
+byte identity, the async `/docs` compatibility route, public-content limits,
+and forbidden paths in HTML resources and CSS `url()` values.
 
 ## Files
 
 - `rspress.config.ts`: Rspress site configuration, navigation, and sidebar.
-- `scripts/validate-clean-urls.mjs`: Production clean-route validator.
+- `docs/public/_headers`: Root Cloudflare Pages headers for the async-commit-hook subpath.
+- `scripts/copy-public-assets.mjs`: Copies canonical installer files into the Cloudflare Pages public root.
+- `scripts/validate-clean-urls.mjs`: Root production clean-route validator.
+- `scripts/validate-public-docs.mjs`: Project-subpath, selector, installer, and compatibility validator.
 - `docs/index.md`: Landing page.
 - `docs/getting-started.md`: Local setup and contribution flow.
 - `docs/projects-overview.md`: High-level public project catalog.
@@ -40,16 +46,12 @@ store identifiers into every generated text asset before publication.
 - `docs/cargo-mono.md`: Public project guide for `cargo-mono`.
 - `docs/derun.md`: Public project guide for `derun`.
 - `docs/with-watch.md`: Public project guide for `with-watch`.
-- `docs/nodeup.md`: Compatibility handoff page for legacy `/nodeup` links.
 - `docs/devhud/`: Stable DevHud installation, usage, privacy, security, support, administration, and release guidance routes.
 
 Cargo Mono, Derun, and With Watch remain in-site product documentation. Nodeup,
-binpm, and Runmoor are external top-level links to their standalone documentation apps:
-
-- Nodeup documentation is owned by `apps/nodeup-docs` and published at `https://nodeup.delino.io`.
-- binpm documentation is owned by `apps/binpm-docs` and published at `https://binpm.delino.io`.
-- Runmoor documentation is owned by `apps/runmoor-docs` and published at `https://runmoor.delino.io`. Its former `/runmoor` and six child routes are removed without redirects or handoff pages.
-
-The legacy `/nodeup` route is kept as a lightweight handoff to
-`https://nodeup.delino.io` for existing external links. Do not add in-site
-Nodeup, binpm, or Runmoor guide routes under `apps/public-docs`.
+binpm, Runmoor, and async-commit-hook are now first-class subdirectories of
+this app and publish at `https://oss.delino.io/nodeup/`,
+`https://oss.delino.io/binpm/`, `https://oss.delino.io/runmoor/`, and
+`https://oss.delino.io/async-commit-hook/`. The old standalone domains are not
+redirected by this repository; their Pages projects and DNS records are an
+operator decommissioning task after the consolidated publication is verified.
