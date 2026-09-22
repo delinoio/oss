@@ -1031,6 +1031,23 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
         stage = "started",
         "run_child"
     );
+    #[cfg(windows)]
+    let job = match Job::attach(&child) {
+        Ok(job) => job,
+        Err(error) => {
+            // The child has not executed application code yet. It must never
+            // escape a failed ownership setup.
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
+        }
+    };
+    #[cfg(windows)]
+    if let Err(error) = resume_suspended_process(&child) {
+        let _ = job.signal(child.id(), true);
+        let _ = child.wait();
+        return Err(error);
+    }
     let (activity_tx, activity) = if matches!(mode, OutputMode::WorkloadPiped) {
         let (tx, rx) = mpsc::sync_channel(1);
         (Some(tx), Some(rx))
@@ -1045,17 +1062,6 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
     if let Some(stderr) = child.stderr.take() {
         output_threads.push(forward(stderr, true, activity_tx));
     }
-    #[cfg(windows)]
-    let job = match Job::attach(&child) {
-        Ok(job) => job,
-        Err(error) => {
-            // A process that cannot be placed in the ownership job must not
-            // survive a failed wrapper start without a cleanup attempt.
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(error);
-        }
-    };
     let pid = child.id();
     let (completion_tx, completions) = mpsc::sync_channel(1);
     thread::spawn(move || {
@@ -1225,7 +1231,79 @@ fn configure_process_group(command: &mut ProcessCommand) {
 #[cfg(windows)]
 fn configure_process_group(command: &mut ProcessCommand) {
     use std::os::windows::process::CommandExt;
-    command.creation_flags(windows_sys::Win32::System::Threading::CREATE_NEW_PROCESS_GROUP);
+
+    use windows_sys::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, CREATE_SUSPENDED};
+
+    command.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED);
+}
+
+#[cfg(windows)]
+fn resume_suspended_process(child: &Child) -> Result<()> {
+    use std::os::windows::io::AsRawHandle;
+
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, FALSE, INVALID_HANDLE_VALUE},
+        System::{
+            Diagnostics::ToolHelp::{
+                CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD,
+                THREADENTRY32,
+            },
+            Threading::{GetProcessId, OpenThread, ResumeThread, THREAD_SUSPEND_RESUME},
+        },
+    };
+
+    let process = child.as_raw_handle() as _;
+    let pid = unsafe { GetProcessId(process) };
+    if pid == 0 {
+        return Err(Failure::io(&io::Error::last_os_error()));
+    }
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return Err(Failure::io(&io::Error::last_os_error()));
+    }
+    // std::process exposes the process handle but not the primary-thread
+    // handle needed by ResumeThread. The snapshot is safe here because
+    // CREATE_SUSPENDED prevents the child from creating any threads before
+    // Job::attach completes. Remove this narrow workaround if std exposes the
+    // primary thread handle for suspended children.
+    let result = (|| {
+        let mut entry = THREADENTRY32 {
+            dwSize: std::mem::size_of::<THREADENTRY32>() as u32,
+            ..Default::default()
+        };
+        if unsafe { Thread32First(snapshot, &mut entry) } == FALSE {
+            return Err(Failure::io(&io::Error::last_os_error()));
+        }
+        let mut resumed = false;
+        loop {
+            if entry.th32OwnerProcessID == pid {
+                let thread =
+                    unsafe { OpenThread(THREAD_SUSPEND_RESUME, FALSE, entry.th32ThreadID) };
+                if thread.is_null() {
+                    return Err(Failure::io(&io::Error::last_os_error()));
+                }
+                let resume_result = unsafe { ResumeThread(thread) };
+                unsafe {
+                    CloseHandle(thread);
+                }
+                if resume_result == u32::MAX {
+                    return Err(Failure::io(&io::Error::last_os_error()));
+                }
+                resumed = true;
+            }
+            if unsafe { Thread32Next(snapshot, &mut entry) } == FALSE {
+                break;
+            }
+        }
+        if !resumed {
+            return runtime_failure("Could not resume the owned Windows child process.");
+        }
+        Ok(())
+    })();
+    unsafe {
+        CloseHandle(snapshot);
+    }
+    result
 }
 
 #[cfg(unix)]
