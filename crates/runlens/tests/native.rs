@@ -6878,3 +6878,64 @@ async fn terminated_windows_job_members_with_retained_handles_are_not_lingering(
         drop(retained);
     }
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_lchflags_preserves_results_and_observes_the_link() {
+    use std::os::macos::fs::MetadataExt;
+    for exists in [true, false] {
+        let root = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        let target = external.path().join("target");
+        let link = external.path().join("flag-link");
+        fs::write(&target, "unchanged").unwrap();
+        if exists {
+            std::os::unix::fs::symlink(&target, &link).unwrap();
+        }
+        fs::write(
+            root.path().join("runlens.toml"),
+            "schema_version=1\n[policy]\ndeny_writes=[\"**/flag-link\"]\n",
+        )
+        .unwrap();
+        let args = ["macos-lchflags", link.to_str().unwrap()];
+        let direct = isolated_command(fixture()).args(args).output().unwrap();
+        let traced = invoke(
+            root.path(),
+            &[
+                "run",
+                "--save",
+                "flags.json",
+                "--",
+                fixture(),
+                args[0],
+                args[1],
+            ],
+        );
+        assert_eq!(traced.status.code(), Some(0), "{traced:?}");
+        assert_eq!(traced.stdout, direct.stdout);
+        assert_eq!(
+            fs::metadata(&target).unwrap().st_flags() & libc::UF_HIDDEN,
+            0
+        );
+        if exists {
+            assert_ne!(
+                fs::symlink_metadata(&link).unwrap().st_flags() & libc::UF_HIDDEN,
+                0
+            );
+        }
+        let report = parse(root.path(), "flags.json");
+        assert!(
+            report["executions"][0]["accesses"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .any(|(path, access)| path.ends_with("/flag-link") && access["write"] == true)
+        );
+        assert_eq!(
+            invoke(root.path(), &["policy", "check", "flags.json", "--json"])
+                .status
+                .code(),
+            Some(5)
+        );
+    }
+}

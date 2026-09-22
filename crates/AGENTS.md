@@ -351,3 +351,5 @@
 - Windows process-tree liveness must inspect job members through synchronized process handles, not the accounting ActiveProcesses count, which can include terminated objects with retained references. Recheck membership after an apparently empty scan and fail closed on query/identity uncertainty.
 
 - Windows NtQueryEaFile records independent handle read attempts, including failed queries; EA names and buffers remain opaque and unresolvable file handles make collection incomplete.
+
+- macOS lchflags records writes to the symlink leaf without following it, preserving flags, errors and native results.

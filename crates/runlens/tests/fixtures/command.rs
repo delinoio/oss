@@ -7,6 +7,23 @@ fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str).unwrap_or("read-write") {
         #[cfg(target_os = "macos")]
+        "macos-lchflags" => {
+            let path = std::ffi::CString::new(args[1].as_str()).unwrap();
+            unsafe extern "C" {
+                fn lchflags(path: *const libc::c_char, flags: libc::c_uint) -> libc::c_int;
+            }
+            // SAFETY: the C string lives through the call. No buffers are borrowed.
+            let result = unsafe { lchflags(path.as_ptr(), libc::UF_HIDDEN) };
+            println!(
+                "result={result};errno={}",
+                if result == 0 {
+                    0
+                } else {
+                    std::io::Error::last_os_error().raw_os_error().unwrap()
+                }
+            );
+        }
+        #[cfg(target_os = "macos")]
         "macos-filesystem-statistics" => {
             let path = std::ffi::CString::new(args[2].as_bytes()).unwrap();
             // SAFETY: exact native structures and live pathname; missing paths

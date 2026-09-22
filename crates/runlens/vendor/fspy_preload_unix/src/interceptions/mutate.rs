@@ -93,6 +93,9 @@ path_mutation!(removexattr, name: *const c_char, options: c_int);
 fd_mutation!(fremovexattr, name: *const c_char, options: c_int);
 #[cfg(target_os = "macos")]
 path_mutation!(chflags, flags: c_uint);
+// lchflags mutates the link itself; PathAt retains its lexical leaf.
+#[cfg(target_os = "macos")]
+path_mutation!(lchflags, flags: c_uint);
 #[cfg(target_os = "macos")]
 fd_mutation!(fchflags, flags: c_uint);
 

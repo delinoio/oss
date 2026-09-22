@@ -908,3 +908,5 @@ Access ancestry is checked against every observed ancestor replacement/removal a
 The Windows descriptor-metadata native fixture canonicalizes its one external test file before launch and checks read/write observations across all retained names for that file. NT open names and handle-resolved names need not occupy one report row; do not select an arbitrary first matching row. An open-only control must remain write-only, while successful and failed metadata queries add read evidence and enforce the policy. Failure diagnostics retain the case and redacted matching observations for native CI diagnosis.
 
 Windows EA queries use the same independent handle-read boundary as file-information queries. Native fixtures compare query status for valid, bad-buffer, invalid-handle and pipe cases without retaining attribute names or values.
+
+macOS flag mutation coverage includes lchflags on symlinks and missing paths, with native-result parity and independent external write-denial tests.

@@ -1,6 +1,10 @@
 pub use libc::*;
 
 unsafe extern "C" {
+    // Darwin sys/stat.h exports lchflags; remove this declaration when libc does.
+    #[cfg(target_os = "macos")]
+    pub unsafe fn lchflags(path: *const c_char, flags: c_uint) -> c_int;
+
     // glibc exports this GNU interface on both supported 64-bit Linux targets,
     // but pinned libc 0.2.185 does not declare it. Remove once libc supplies it.
     // Signature: glibc time/sys/time.h, __USE_GNU futimesat declaration.
