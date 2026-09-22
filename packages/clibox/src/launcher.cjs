@@ -34,7 +34,7 @@ function resolveBinary(manifestPath = path.join(__dirname, "..", "package.json")
   return binary;
 }
 
-function launch(binary, args, { spawnChild = spawn, parent = process, platform = process.platform } = {}) {
+function launch(binary, args, { spawnChild = spawn, parent = process, platform = process.platform, terminalInput = parent.stdin?.isTTY === true } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawnChild(binary, args, { stdio: "inherit", shell: false });
     const signals = ["SIGINT", "SIGTERM", "SIGHUP", ...(platform === Platform.Windows ? ["SIGBREAK"] : [])];
@@ -42,8 +42,12 @@ function launch(binary, args, { spawnChild = spawn, parent = process, platform =
       // Windows broadcasts console Ctrl+C/Break to both processes. Node's kill
       // API forcibly terminates Windows children, so forwarding would race the
       // native handler's cleanup and numeric exit status. Await that handler;
-      // Unix signals still require explicit forwarding.
+      // non-terminal Unix signals still require explicit forwarding. A
+      // foreground terminal already delivers its signal to the native child in
+      // this process group, so forwarding it would turn one cancellation into
+      // a second cancellation and skip the configured cleanup grace.
       if (platform === Platform.Windows && (signal === "SIGINT" || signal === "SIGBREAK")) return;
+      if (platform !== Platform.Windows && terminalInput) return;
       if (child.exitCode === null && child.signalCode === null) child.kill(signal);
     }]);
     for (const [signal, handler] of handlers) parent.on(signal, handler);

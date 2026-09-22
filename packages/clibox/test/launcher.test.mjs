@@ -117,6 +117,21 @@ test("Unix launchers continue forwarding SIGINT, SIGTERM and SIGHUP", async () =
   assert.equal(parent.eventNames().length, 0);
 });
 
+test("Unix foreground terminal signals are not forwarded twice", async () => {
+  const parent = new EventEmitter();
+  const child = new EventEmitter();
+  child.exitCode = null;
+  child.signalCode = null;
+  const received = [];
+  child.kill = (signal) => received.push(signal);
+  const result = launch("clibox", [], { platform: Platform.Linux, parent, terminalInput: true, spawnChild: () => child });
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) parent.emit(signal);
+  assert.deepEqual(received, []);
+  child.emit("exit", null, "SIGTERM");
+  assert.deepEqual(await result, { code: null, signal: "SIGTERM" });
+  assert.equal(parent.eventNames().length, 0);
+});
+
 test("the installed launcher propagates real stdout/stderr, argv, cwd and exit status", { skip: process.platform === "win32" }, async (t) => {
   const f = fixture(t);
   for (const file of ["bin/clibox.cjs", "src/launcher.cjs", "src/platforms.cjs"]) {
