@@ -372,9 +372,11 @@ clibox dotenv merge base.env local.env --output local.env --force
 
 Supply at least one input. Inputs are read in order; `-` may occur once to read stdin at that position. The last assignment within each file wins, and later inputs override earlier inputs, including explicit empty values. Malformed records fail even if a later assignment would overwrite them. All inputs are read before any file replacement.
 
-The [Node.js dotenv syntax](https://nodejs.org/api/environment_variables.html#dotenv) is the baseline: keys match `[A-Za-z_][A-Za-z0-9_]*`, with optional `export`, assignment whitespace, comments, empty values, and multiline single- or double-quoted values. Invalid keys, missing `=`, unterminated quotes, and unexpected content following quoted values are errors.
+The [Node.js dotenv syntax](https://nodejs.org/api/environment_variables.html#dotenv) is the baseline: keys match `[A-Za-z_][A-Za-z0-9_]*`, with an optional `export` prefix, assignment whitespace, comments, empty values, and multiline single- or double-quoted values. Invalid keys, missing `=`, unterminated quotes, and unexpected content following quoted values are errors.
 
-Merging emits sorted `KEY=<winning value token>` records. It removes `export`, assignment whitespace, comments outside values, and unrelated blank lines. Quotes, escapes, quoted internal line endings, and the original winning value representation are preserved without decoding/re-encoding. `$VAR`, `${VAR}`, and command substitutions remain literal: no process environment is loaded into results and no shell code is executed.
+The `export` prefix is recognized only when followed immediately by an ASCII space and another assignment key, as in `export NAME=value`. Tabs may follow that initial space, but `export<TAB>NAME=value` is invalid. The word `export` can itself be a key: `export=value`, `export =value`, and `export<TAB>=value` are ordinary assignments and merge to `export=value`. Here, `<TAB>` denotes an actual tab character.
+
+Merging emits sorted `KEY=<winning value token>` records. It removes the optional `export` prefix, assignment whitespace, comments outside values, and unrelated blank lines. Quotes, escapes, quoted internal line endings, and the original winning value representation are preserved without decoding/re-encoding. `$VAR`, `${VAR}`, and command substitutions remain literal: no process environment is loaded into results and no shell code is executed.
 
 For `base.env` containing `B=base` and `A="keep ${HOME}"`, and `local.env` containing `B=local`, the result is:
 
