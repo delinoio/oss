@@ -18,7 +18,7 @@ fn help_and_no_arguments_succeed_on_stdout() {
         assert!(stdout.contains("License: MIT"));
         assert!(stdout.contains("Support: https://github.com/delinoio/oss/issues"));
         for command in [
-            "env",
+            "run",
             "port",
             "open",
             "clipboard",
@@ -37,6 +37,9 @@ fn help_and_no_arguments_succeed_on_stdout() {
                 "missing {command} in root help"
             );
         }
+        assert!(!stdout
+            .lines()
+            .any(|line| line.trim_start().starts_with("env ")));
         assert!(output.stderr.is_empty());
     }
 }
@@ -60,7 +63,7 @@ fn version_comes_from_the_cargo_package() {
 #[test]
 fn missing_subcommands_show_command_help_on_stderr() {
     let groups: [(&str, &[&str]); 10] = [
-        ("env", &["run"]),
+        ("run", &["env"]),
         ("port", &["list", "kill"]),
         ("clipboard", &["copy", "paste"]),
         ("wait", &["tcp", "http", "file"]),
@@ -111,7 +114,7 @@ fn unknown_arguments_fail_on_stderr() {
     for arguments in [
         vec!["--PRIVATE-MARKER"],
         vec!["PRIVATE-MARKER"],
-        vec!["env", "PRIVATE-MARKER"],
+        vec!["run", "PRIVATE-MARKER"],
         vec!["port", "PRIVATE-MARKER"],
         vec!["clipboard", "PRIVATE-MARKER"],
         vec!["wait", "PRIVATE-MARKER"],
@@ -141,7 +144,7 @@ fn every_command_has_help_and_examples() {
         vec!["wait", "tcp", "--help"],
         vec!["wait", "http", "--help"],
         vec!["wait", "file", "--help"],
-        vec!["env", "run", "--help"],
+        vec!["run", "env", "--help"],
         vec!["port", "list", "--help"],
         vec!["port", "kill", "--help"],
         vec!["open", "--help"],
@@ -188,8 +191,9 @@ fn every_command_has_help_and_examples() {
 #[test]
 fn invalid_shapes_fail_before_any_os_effect() {
     for args in [
-        vec!["env", "run"],
-        vec!["env", "run", "FOO=bar"],
+        vec!["run", "env"],
+        vec!["run", "env", "--"],
+        vec!["run", "env", "FOO=bar"],
         vec!["port", "list"],
         vec!["port", "list", "0"],
         vec!["port", "kill", "65536"],
@@ -203,11 +207,16 @@ fn invalid_shapes_fail_before_any_os_effect() {
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
             .args(&args)
+            .env("RUST_LOG", "off")
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2), "{args:?}");
         assert!(output.stdout.is_empty());
-        assert!(String::from_utf8(output.stderr).unwrap().contains("error:"));
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains("error:"));
+        if args[0] == "run" {
+            assert!(stderr.contains("clibox run env --help."));
+        }
     }
 }
 
@@ -225,6 +234,7 @@ fn help_never_forces_color_on_a_pipe() {
 #[test]
 fn parser_failures_remain_redacted_and_visible_with_logging_disabled() {
     for args in [
+        vec!["run", "SECRET-PARSER"],
         vec!["wait", "http", "https://SECRET-PARSER@localhost"],
         vec!["hash", "compute", "--algorithm", "SECRET-PARSER"],
         vec!["port", "list", "SECRET-PARSER"],
