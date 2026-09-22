@@ -1869,22 +1869,25 @@ fn ensure_private_dir(path: &Path) -> Result<()> {
             restrict_windows_state_directory(&directory)?;
         }
         ensure_windows_private_dacl(&directory)?;
-        return Ok(());
+        Ok(())
     }
-    let metadata = fs::symlink_metadata(path).map_err(|error| Failure::io(&error))?;
-    if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
-        return runtime_failure("Execution state directory is not a safe directory.");
-    }
-    #[cfg(unix)]
+    #[cfg(not(windows))]
     {
-        use std::os::unix::fs::PermissionsExt;
-        if metadata.permissions().mode() & 0o077 != 0 || !owned_by_effective_user(&metadata) {
-            return runtime_failure(
-                "Execution state directory permissions or ownership are unsafe.",
-            );
+        let metadata = fs::symlink_metadata(path).map_err(|error| Failure::io(&error))?;
+        if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
+            return runtime_failure("Execution state directory is not a safe directory.");
         }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if metadata.permissions().mode() & 0o077 != 0 || !owned_by_effective_user(&metadata) {
+                return runtime_failure(
+                    "Execution state directory permissions or ownership are unsafe.",
+                );
+            }
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 fn open_lock(path: &Path) -> Result<File> {
@@ -2278,7 +2281,7 @@ fn ensure_windows_state_owner(
         Foundation::{LocalFree, ERROR_SUCCESS},
         Security::{
             Authorization::{GetSecurityInfo, SE_FILE_OBJECT},
-            EqualSid, OWNER_SECURITY_INFORMATION,
+            OWNER_SECURITY_INFORMATION,
         },
     };
 
