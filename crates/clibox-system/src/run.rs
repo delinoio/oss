@@ -1463,13 +1463,13 @@ impl ForegroundTerminal {
     fn suspend_wrapper(&self) -> Result<()> {
         // Ctrl+Z is delivered to the foreground child group, not to this
         // wrapper. Observe that stop with waitpid, return terminal ownership
-        // to the wrapper's job, then stop the wrapper as well. Once the shell
-        // continues the wrapper, put the child back in the foreground and
-        // continue its separate process group before waiting again.
+        // to the wrapper's job, then stop that whole job. The installed Node
+        // launcher shares this group, so stopping only this process would not
+        // return control to the shell. Once the shell continues the job, put
+        // the child back in the foreground and continue its separate process
+        // group before waiting again.
         set_terminal_foreground_group(self.parent_group).map_err(|error| Failure::io(&error))?;
-        if unsafe { libc::raise(libc::SIGTSTP) } != 0 {
-            return Err(Failure::io(&io::Error::last_os_error()));
-        }
+        suspend_process_group(self.parent_group)?;
         set_terminal_foreground_group(self.child_group).map_err(|error| Failure::io(&error))?;
         continue_process_group(self.child_group as u32)
     }
@@ -1625,6 +1625,15 @@ fn continue_process_group(pid: u32) -> Result<()> {
         if error.raw_os_error() != Some(libc::ESRCH) {
             return Err(Failure::io(&error));
         }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn suspend_process_group(group: libc::pid_t) -> Result<()> {
+    let result = unsafe { libc::kill(-group, libc::SIGTSTP) };
+    if result == -1 {
+        return Err(Failure::io(&io::Error::last_os_error()));
     }
     Ok(())
 }
