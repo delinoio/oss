@@ -29,7 +29,7 @@ pub fn prepare(
         let translation = view.translate(&path)?;
         let mut prefix = Vec::new();
         fs::File::open(&translation.physical)
-            .map_err(|_| invalid())?
+            .map_err(access_error)?
             .take(4097)
             .read_to_end(&mut prefix)
             .map_err(|_| invalid())?;
@@ -130,7 +130,7 @@ pub fn find_on_path(name: &OsStr, search_path: Option<&OsStr>, cwd: &Path) -> Op
 }
 
 fn executable_permissions(path: &Path) -> Result<()> {
-    let meta = fs::metadata(path).map_err(|_| invalid())?;
+    let meta = fs::metadata(path).map_err(access_error)?;
     if !meta.is_file() {
         return Err(invalid());
     }
@@ -145,16 +145,7 @@ fn executable_permissions(path: &Path) -> Result<()> {
 }
 
 pub fn validate(path: &Path) -> Result<()> {
-    let path = fs::canonicalize(path).map_err(|e| {
-        Error::new(
-            if e.kind() == std::io::ErrorKind::NotFound {
-                Code::PnportCommandNotFound
-            } else {
-                Code::PnportCommandNotExecutable
-            },
-            "Cannot access the requested executable.",
-        )
-    })?;
+    let path = fs::canonicalize(path).map_err(access_error)?;
     executable_permissions(&path)?;
     #[cfg(target_os = "macos")]
     {
@@ -164,7 +155,7 @@ pub fn validate(path: &Path) -> Result<()> {
         {
             return Err(protected());
         }
-        let mut file = fs::File::open(&path).map_err(|_| invalid())?;
+        let mut file = fs::File::open(&path).map_err(access_error)?;
         let mut header = [0u8; 32];
         file.read_exact(&mut header).map_err(|_| invalid())?;
         use std::io::{Seek, SeekFrom};
@@ -271,6 +262,17 @@ pub fn validate(path: &Path) -> Result<()> {
     }
     Ok(())
 }
+fn access_error(error: std::io::Error) -> Error {
+    Error::new(
+        if error.kind() == std::io::ErrorKind::NotFound {
+            Code::PnportCommandNotFound
+        } else {
+            Code::PnportCommandNotExecutable
+        },
+        "Cannot access the requested executable.",
+    )
+}
+
 fn invalid() -> Error {
     Error::new(
         Code::PnportCommandNotExecutable,

@@ -396,6 +396,49 @@ fn concurrent_materializers_publish_one_entry() {
 
 #[cfg(target_os = "macos")]
 #[test]
+fn missing_executables_and_interpreters_return_not_found() {
+    use std::{os::unix::fs::PermissionsExt, process::Command};
+    let root = fixture();
+    let missing = root.path().join("missing-command-canary");
+    let script = root.path().join("script");
+    fs::write(&script, format!("#!{}\n", missing.display())).unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+    let invalid = root.path().join("invalid");
+    fs::write(&invalid, "not executable").unwrap();
+    fs::set_permissions(&invalid, fs::Permissions::from_mode(0o600)).unwrap();
+    for (command, status, code) in [
+        (
+            Path::new("./missing-command-canary"),
+            127,
+            "PNPORT_COMMAND_NOT_FOUND",
+        ),
+        (missing.as_path(), 127, "PNPORT_COMMAND_NOT_FOUND"),
+        (script.as_path(), 127, "PNPORT_COMMAND_NOT_FOUND"),
+        (invalid.as_path(), 126, "PNPORT_COMMAND_NOT_EXECUTABLE"),
+    ] {
+        let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(root.path().join("private-cache"))
+            .args(["run", "--"])
+            .arg(command)
+            .output()
+            .unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(status),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(result.stdout.is_empty());
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert!(stderr.contains(code));
+        assert!(!stderr.contains("missing-command-canary"));
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
 fn script_interpreters_preserve_logical_arguments_and_reject_protection() {
     use std::{os::unix::fs::PermissionsExt, process::Command};
     let root = fixture();
