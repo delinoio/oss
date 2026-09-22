@@ -337,6 +337,60 @@ fn wrappers_preserve_a_leading_literal_workload_separator() {
 }
 
 #[test]
+fn first_cancellation_honors_the_configured_cleanup_grace() {
+    let home = tempfile::tempdir().unwrap();
+    let marker = home.path().join("graceful-cleanup");
+    let ready = home.path().join("graceful-cleanup-ready");
+    let assignment = format!("MARKER={}", marker.display());
+    let ready_assignment = format!("READY={}", ready.display());
+    let mut wrapper = command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--timeout",
+            "30s",
+            "--kill-after",
+            "500ms",
+            &assignment,
+            &ready_assignment,
+            "--",
+            "sh",
+            "-c",
+            ": > \"$READY\"; trap 'sleep 0.1; : > \"$MARKER\"; exit 0' TERM; while :; do :; done",
+        ],
+    )
+    .stdout(Stdio::null())
+    .stderr(Stdio::null())
+    .spawn()
+    .unwrap();
+    let ready_deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !ready.is_file() {
+        if wrapper.try_wait().unwrap().is_some() || std::time::Instant::now() >= ready_deadline {
+            let _ = wrapper.kill();
+            let _ = wrapper.wait();
+            panic!("workload did not become ready for cancellation");
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(unsafe { libc::kill(wrapper.id() as i32, libc::SIGINT) }, 0);
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while wrapper.try_wait().unwrap().is_none() {
+        if std::time::Instant::now() >= deadline {
+            let _ = wrapper.kill();
+            let _ = wrapper.wait();
+            panic!("first cancellation did not complete bounded cleanup");
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(wrapper.wait().unwrap().code(), Some(130));
+    assert!(
+        marker.is_file(),
+        "first cancellation skipped the grace period"
+    );
+}
+
+#[test]
 fn external_service_is_observed_without_becoming_owned() {
     let home = tempfile::tempdir().unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();

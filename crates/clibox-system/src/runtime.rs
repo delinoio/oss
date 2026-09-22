@@ -2,7 +2,7 @@ use std::{
     io::Read,
     process::{Child, Command, ExitStatus, Stdio},
     sync::{
-        atomic::{AtomicI32, Ordering},
+        atomic::{AtomicI32, AtomicUsize, Ordering},
         mpsc,
     },
     time::Duration,
@@ -11,6 +11,7 @@ use std::{
 use crate::error::{Code, Failure, Result};
 
 static SIGNAL: AtomicI32 = AtomicI32::new(0);
+static CANCELLATION_GENERATION: AtomicUsize = AtomicUsize::new(0);
 pub const POLL: Duration = Duration::from_millis(20);
 
 pub fn install_signals() -> Result<()> {
@@ -21,6 +22,7 @@ pub fn install_signals() -> Result<()> {
         unsafe {
             signal_hook::low_level::register(signal, move || {
                 SIGNAL.store(signal, Ordering::SeqCst);
+                CANCELLATION_GENERATION.fetch_add(1, Ordering::SeqCst);
             })
         }
         .map_err(|e| Failure::io(&e))?;
@@ -34,6 +36,7 @@ pub fn install_signals() -> Result<()> {
                 CTRL_BREAK_EVENT => SIGNAL.store(21, Ordering::SeqCst),
                 _ => return 0,
             }
+            CANCELLATION_GENERATION.fetch_add(1, Ordering::SeqCst);
             1
         }
         if SetConsoleCtrlHandler(Some(handler), 1) == 0 {
@@ -45,6 +48,10 @@ pub fn install_signals() -> Result<()> {
 
 pub fn cancelled() -> bool {
     SIGNAL.load(Ordering::SeqCst) != 0
+}
+
+pub fn cancellation_generation() -> usize {
+    CANCELLATION_GENERATION.load(Ordering::SeqCst)
 }
 pub fn check_cancelled() -> Result<()> {
     if cancelled() {

@@ -824,7 +824,8 @@ fn run_once(
 }
 
 fn cleanup_or_log(child: &mut OwnedChild, kill_after: Duration) -> bool {
-    match child.cleanup(kill_after) {
+    let initial_cancellation = runtime::cancelled().then(runtime::cancellation_generation);
+    match child.cleanup(kill_after, initial_cancellation) {
         Ok(()) => true,
         Err(error) => {
             error.report("run");
@@ -952,7 +953,7 @@ impl OwnedChild {
         })
     }
 
-    fn cleanup(&mut self, kill_after: Duration) -> Result<()> {
+    fn cleanup(&mut self, kill_after: Duration, initial_cancellation: Option<usize>) -> Result<()> {
         // Reap the direct child when it has already exited, but continue to
         // supervise the owned process group/job. A child can exit while a
         // descendant still holds an inherited output pipe open.
@@ -977,7 +978,10 @@ impl OwnedChild {
                 self.join_output();
                 return Ok(());
             }
-            if runtime::cancelled() {
+            if initial_cancellation
+                .is_none_or(|generation| runtime::cancellation_generation() != generation)
+                && runtime::cancelled()
+            {
                 break;
             }
             thread::sleep(POLL);
