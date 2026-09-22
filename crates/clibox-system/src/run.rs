@@ -971,7 +971,7 @@ struct OwnedChild {
 }
 
 fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
-    let mut command = environment::command(plan);
+    let mut command = environment::command(plan)?;
     configure_process_group(&mut command);
     let pipe = !matches!(mode, OutputMode::WorkloadInherited);
     command.stdin(if matches!(mode, OutputMode::Service) {

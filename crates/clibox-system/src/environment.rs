@@ -155,24 +155,28 @@ fn plan(args: Vec<OsString>, parent: Environment, windows: bool) -> Result<Plan>
 /// `run env`. Run wrappers use this rather than reparsing environment
 /// assignments so nesting does not change command or PATH behavior.
 pub(crate) fn prepare(args: Vec<OsString>) -> Result<Plan> {
-    let plan = plan(args, std::env::vars_os().collect(), cfg!(windows))?;
-    #[cfg(windows)]
-    let plan = windows_plan(plan)?;
-    Ok(plan)
+    plan(args, std::env::vars_os().collect(), cfg!(windows))
 }
 
-pub(crate) fn command(plan: &Plan) -> Command {
+pub(crate) fn command(plan: &Plan) -> Result<Command> {
+    // Wrapper admission must complete before Windows resolves the executable:
+    // `with-lock --on-locked skip` and rate-limit token consumption are defined
+    // independently of whether a later workload spawn can succeed.
+    #[cfg(windows)]
+    let plan = windows_plan(plan.clone())?;
+    #[cfg(not(windows))]
+    let plan = plan.clone();
     let mut command = Command::new(&plan.command);
     command
         .args(plan.args.clone())
         .env_clear()
         .envs(plan.env.clone());
-    command
+    Ok(command)
 }
 
 pub fn execute(args: Vec<OsString>) -> Result<ExitStatus> {
     let plan = prepare(args)?;
-    runtime::delegated(command(&plan))
+    runtime::delegated(command(&plan)?)
 }
 
 #[cfg(windows)]
@@ -345,5 +349,15 @@ mod tests {
         assert!(plan(args(&["FOO=bar", ""]), parent(), false).is_err());
         let p = plan(args(&["--", "NAME=command", "x"]), parent(), false).unwrap();
         assert_eq!(p.command, "NAME=command");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn prepare_defers_windows_executable_lookup() {
+        let missing = format!(".\\clibox-missing-workload-{}", std::process::id());
+        let prepared = prepare(args(&[&missing])).unwrap();
+
+        assert_eq!(prepared.command, missing);
+        assert!(command(&prepared).is_err());
     }
 }
