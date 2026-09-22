@@ -106,6 +106,9 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
     let mut status = None;
     let mut watch = crate::input_watch::InputWatch::default();
     let mut active_markers = std::collections::HashSet::new();
+    let starting = view.session.join("starting").join(pid.to_string());
+    let ready = view.session.join("ready").join(pid.to_string());
+    let mut initialization_started = false;
     let result = (|| loop {
         if SIGNAL.load(Ordering::SeqCst) != 0 {
             return Ok(128 + SIGNAL.load(Ordering::SeqCst));
@@ -135,10 +138,17 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
             }
         }
         watch.poll()?;
+        if !initialization_started && starting.is_file() {
+            initialization_started = true;
+            tracing::debug!(
+                action = "initialization_started",
+                "Native preload entered initialization"
+            );
+        }
         if let Some(exit) = child.try_wait().map_err(|_| injection_error())? {
             status = Some(exit);
             tracing::debug!(action="child_exit", status=?exit, "Child exited");
-            if !view.session.join("ready").join(pid.to_string()).is_file() {
+            if !ready.is_file() {
                 return Err(Error::new(
                     Code::PnportInjectionFailed,
                     "The executable did not initialize native interception; its result is not a \
@@ -147,9 +157,7 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
             }
             return Ok(exit_code(exit));
         }
-        if start.elapsed() > Duration::from_secs(5)
-            && !view.session.join("ready").join(pid.to_string()).is_file()
-        {
+        if start.elapsed() > Duration::from_secs(5) && !initialization_started && !ready.is_file() {
             return Err(Error::new(
                 Code::PnportInjectionFailed,
                 "The executable did not acknowledge native injection; execution was stopped.",
@@ -191,5 +199,131 @@ fn exit_code(status: ExitStatus) -> i32 {
     #[cfg(not(unix))]
     {
         status.code().unwrap_or(125)
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use fs2::FileExt;
+    use pnport::{
+        cache::{private_dir, Cache},
+        graph::{Graph, Snapshot},
+    };
+    use serde_json::json;
+
+    use super::*;
+
+    fn fixture() -> (tempfile::TempDir, View, PathBuf) {
+        let root = tempfile::tempdir().unwrap();
+        let path = fs::canonicalize(root.path()).unwrap();
+        let session = path.join("session");
+        private_dir(&session).unwrap();
+        let graph = Graph::from_snapshot(Snapshot {
+            schema_version: 1,
+            manifest_path: path.join(".pnp.cjs"),
+            data: json!({
+                "enableTopLevelFallback": false, "ignorePatternData": null,
+                "dependencyTreeRoots": [], "fallbackPool": [], "fallbackExclusionList": [],
+                "packageRegistryData": [[null, [[null, {
+                    "packageLocation": "./", "packageDependencies": [], "linkType": "SOFT"
+                }]]]]
+            }),
+            inputs: vec![],
+        })
+        .unwrap();
+        fs::write(
+            session.join("graph.json"),
+            serde_json::to_vec(&graph.snapshot).unwrap(),
+        )
+        .unwrap();
+        let cache = Cache::open(path.join("cache")).unwrap();
+        let source = path.join("probe.c");
+        let executable = path.join("probe");
+        fs::write(&source, "int main(void) { return 0; }\n").unwrap();
+        assert!(Command::new("cc")
+            .arg(&source)
+            .arg("-o")
+            .arg(&executable)
+            .status()
+            .unwrap()
+            .success());
+        (root, View::new(graph, cache, session), executable)
+    }
+
+    #[test]
+    fn cache_contention_after_initializer_entry_can_exceed_five_seconds() {
+        let (_root, mut view, executable) = fixture();
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(view.cache.root.join(".lock"))
+            .unwrap();
+        lock.lock_exclusive().unwrap();
+        let session = view.session.clone();
+        let release = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(15);
+            loop {
+                if fs::read_dir(session.join("starting"))
+                    .ok()
+                    .is_some_and(|mut entries| entries.next().is_some())
+                {
+                    break;
+                }
+                assert!(Instant::now() < deadline, "The preload did not start.");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            // Begin the long wait only after actual constructor entry, so a
+            // slow compiler/signature check cannot shorten cache contention.
+            std::thread::sleep(Duration::from_secs(6));
+            assert!(
+                !session.join("ready").exists(),
+                "Readiness must wait for cache coordination."
+            );
+            drop(lock);
+        });
+        let result = run(&mut view, &artifact().unwrap(), &executable, &[]);
+        release.join().unwrap();
+        assert_eq!(result.unwrap(), 0);
+        assert_eq!(fs::read_dir(view.session.join("ready")).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn initializer_entry_without_readiness_cannot_accept_a_child_result() {
+        let (root, mut view, executable) = fixture();
+        let source = root.path().join("incomplete.c");
+        let library = root.path().join("incomplete.dylib");
+        fs::write(
+            &source,
+            r#"
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <unistd.h>
+__attribute__((constructor)) static void start(void) {
+    char path[4096];
+    snprintf(path, sizeof(path), "%s/starting", getenv("PNPORT_SESSION"));
+    mkdir(path, 0700);
+    snprintf(path, sizeof(path), "%s/starting/%d", getenv("PNPORT_SESSION"), getpid());
+    int fd = open(path, O_WRONLY | O_CREAT, 0600);
+    if (fd >= 0) close(fd);
+}
+"#,
+        )
+        .unwrap();
+        assert!(Command::new("cc")
+            .arg("-dynamiclib")
+            .arg(&source)
+            .arg("-o")
+            .arg(&library)
+            .status()
+            .unwrap()
+            .success());
+        let result = run(&mut view, &library, &executable, &[]);
+        assert_eq!(result.unwrap_err().code, Code::PnportInjectionFailed);
+        assert_eq!(
+            fs::read_dir(view.session.join("starting")).unwrap().count(),
+            1
+        );
     }
 }

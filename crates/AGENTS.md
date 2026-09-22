@@ -199,3 +199,4 @@
 
 - pnport macOS interpreter admission preserves logical script paths, verifies signed native images offline, and permits hardened images only with both DYLD-environment and disabled-library-validation entitlements. Never rewrite compiler binaries or signatures; native TypeScript fixtures pin the verified official release explicitly.
 - pnport cache extraction must use a private snapshot verified against the destination archive digest. Rechecking only the mutable source after extraction cannot prove which bytes were published; retain rewrite-and-restore regression coverage.
+- pnport preload constructor entry and completed readiness are distinct acknowledgements. Supported cache lock waits after entry must not trigger the missing-injection deadline; a child result without readiness remains a failure.

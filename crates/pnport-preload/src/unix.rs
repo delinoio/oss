@@ -234,6 +234,10 @@ unsafe extern "C" fn initialize() {
     }
     INJECTION_ENV.set(injection_env).ok();
     let result = (|| {
+        // Acknowledge entry before graph/cache work that may legitimately wait
+        // on another materializer. Only the later ready marker confirms setup.
+        fs::create_dir_all(session.join("starting")).ok()?;
+        fs::write(session.join("starting").join(getpid().to_string()), b"1").ok()?;
         let snapshot: Snapshot =
             serde_json::from_slice(&fs::read(session.join("graph.json")).ok()?).ok()?;
         let graph = Graph::from_snapshot(snapshot).ok()?;
