@@ -363,3 +363,5 @@
 - Imported passed repeat reports require at least two target executions with consecutive repetition numbers from one; historical/preparation records cannot satisfy this minimum. Preserve partial inconclusive reports.
 
 - Linux x86_64 creat has its own syscall interception with create/write/truncate intent; dynamic and static creation, truncation and failed attempts must retain write evidence.
+
+- Cache and require-input policies may exempt an output read only after proving its before-state absent, using bounded Windows ordinal alias lookup and unknown evidence for exhausted or uncertain identity searches.

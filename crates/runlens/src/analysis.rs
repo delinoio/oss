@@ -147,6 +147,7 @@ fn matches(set: &globset::GlobSet, path: &str) -> bool {
 }
 pub fn cache(report: &Report, command: &Command, expected: &Identity) -> Result<Analysis> {
     let mut result = Analysis::new(AnalysisKind::Cache);
+    let mut alias_budget = 4_000_000usize;
     target_quality(&mut result, report)?;
     for execution in report.targets() {
         quality(&mut result, execution)?;
@@ -158,7 +159,14 @@ pub fn cache(report: &Report, command: &Command, expected: &Identity) -> Result<
             )?;
             continue;
         }
-        coverage(&mut result, execution, command, true, true)?;
+        coverage(
+            &mut result,
+            execution,
+            command,
+            true,
+            true,
+            &mut alias_budget,
+        )?;
     }
     result.finish()?;
     Ok(result)
@@ -197,12 +205,53 @@ fn target_quality(result: &mut Analysis, report: &Report) -> Result<()> {
     }
     Ok(())
 }
+// Absence permits an output read only after every possible alias is excluded.
+fn before_knowledge(
+    before: &Entries<FileState>,
+    path: &str,
+    windows: bool,
+    complete: bool,
+    remaining: &mut usize,
+) -> Result<Knowledge> {
+    let exact = before.get(path)?;
+    if let Some(state) = &exact {
+        if state.knowledge != Knowledge::Missing {
+            return Ok(state.knowledge);
+        }
+    }
+    let mut uncertain = !complete;
+    if windows {
+        for entry in before.iter() {
+            let (stored, state) = entry?;
+            if *remaining == 0 {
+                return Ok(Knowledge::Unknown);
+            }
+            *remaining -= 1;
+            let (equal, unknown) = crate::privacy::windows_query_eq(path, &stored);
+            uncertain |= unknown;
+            if equal && !unknown {
+                match state.knowledge {
+                    Knowledge::Known => return Ok(Knowledge::Known),
+                    Knowledge::Unknown => uncertain = true,
+                    Knowledge::Missing => {}
+                }
+            }
+        }
+    }
+    Ok(if uncertain {
+        Knowledge::Unknown
+    } else {
+        Knowledge::Missing
+    })
+}
+
 fn coverage(
     result: &mut Analysis,
     execution: &Execution,
     command: &Command,
     inputs_required: bool,
     outputs_required: bool,
+    alias_budget: &mut usize,
 ) -> Result<()> {
     let inputs = config::patterns_for_os(&command.inputs, &execution.environment.os)?;
     let outputs = config::patterns_for_os(&command.outputs, &execution.environment.os)?;
@@ -210,15 +259,26 @@ fn coverage(
         let (path, access) = item?;
         let input = matches(&inputs, &path);
         let output = matches(&outputs, &path);
-        let existed_before = execution
-            .before
-            .get(&path)?
-            .is_some_and(|state| state.knowledge != Knowledge::Missing);
-        if inputs_required
-            && (access.read || access.read_directory)
-            && !input
-            && (!output || existed_before)
-        {
+        let needs_input = inputs_required && (access.read || access.read_directory) && !input;
+        let prior = if needs_input && output {
+            before_knowledge(
+                &execution.before,
+                &path,
+                execution.environment.os == "windows",
+                execution.scope.before_complete,
+                alias_budget,
+            )?
+        } else {
+            Knowledge::Known
+        };
+        if needs_input && output && prior == Knowledge::Unknown {
+            result.finding(
+                FindingCode::UnknownEvidence,
+                Classification::Unknown,
+                vec![evidence(execution, Some(&path), EvidenceSource::Access)],
+            )?;
+        }
+        if needs_input && (!output || prior == Knowledge::Known) {
             result.finding(
                 FindingCode::UndeclaredInput,
                 Classification::Violation,
@@ -459,6 +519,7 @@ pub fn policy(
                     command,
                     rules.require_inputs,
                     rules.require_outputs,
+                    &mut alias_budget,
                 )?;
             } else {
                 result.finding(
@@ -1327,6 +1388,32 @@ fn absent_state(complete: bool) -> FileState {
 #[cfg(test)]
 mod baseline_tests {
     use super::*;
+
+    #[test]
+    fn prior_output_alias_search_retains_unknown_on_exhaustion() {
+        let mut before = Entries::new(0);
+        before
+            .insert(
+                "${workspace}/Input.txt".into(),
+                FileState {
+                    knowledge: Knowledge::Known,
+                    ..FileState::missing()
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            before_knowledge(&before, "${workspace}/input.txt", true, true, &mut 0).unwrap(),
+            Knowledge::Unknown
+        );
+        assert_eq!(
+            before_knowledge(&before, "${workspace}/input.txt", true, true, &mut 1).unwrap(),
+            Knowledge::Known
+        );
+        assert_eq!(
+            before_knowledge(&before, "${workspace}/input.txt", false, true, &mut 0).unwrap(),
+            Knowledge::Missing
+        );
+    }
 
     #[test]
     fn exhausted_alias_search_cannot_prove_new_access() {

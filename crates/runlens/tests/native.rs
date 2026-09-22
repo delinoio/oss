@@ -7213,3 +7213,84 @@ fn linux_creat_records_external_creation_truncation_and_failure() {
         }
     }
 }
+
+#[test]
+fn output_reads_require_inputs_for_proven_windows_snapshot_aliases() {
+    use runlens::{analysis, config, entries::Entries, model::*};
+    let root = repository("read");
+    assert!(run(root.path(), "original.json", "read").status.success());
+    let template = runlens::report::read(&root.path().join("original.json")).unwrap();
+    for (stored, requested, unicode) in
+        [("Input.txt", "input.txt", false), ("Ä.txt", "ä.txt", true)]
+    {
+        for os in ["windows", "linux"] {
+            let mut report = template.clone();
+            let execution = &mut report.executions[0];
+            execution.environment.os = os.into();
+            execution.command.name = Some("build".into());
+            execution.before = Entries::default();
+            execution.after = Entries::default();
+            execution.changes = Entries::default();
+            execution.accesses = Entries::default();
+            let state = template.executions[0]
+                .before
+                .get("${workspace}/input.txt")
+                .unwrap()
+                .unwrap();
+            execution
+                .before
+                .insert(format!("${{workspace}}/{stored}"), state)
+                .unwrap();
+            execution
+                .accesses
+                .insert(
+                    format!("${{workspace}}/{requested}"),
+                    Access {
+                        read: true,
+                        write: false,
+                        read_directory: false,
+                        unsupported: false,
+                        in_scope: true,
+                    },
+                )
+                .unwrap();
+            let mut command = config::Command::direct(execution.command.argv.clone());
+            command.outputs = vec![requested.into()];
+            let identity = execution.command.clone();
+            let cache = analysis::cache(&report, &command, &identity).unwrap();
+            let policy = analysis::policy(
+                &report,
+                &config::Policy {
+                    require_inputs: true,
+                    ..Default::default()
+                },
+                &[("build".into(), command)].into(),
+                &[("build".into(), identity)].into(),
+                None,
+            )
+            .unwrap();
+            for result in [cache, policy] {
+                let findings = result
+                    .findings
+                    .iter()
+                    .map(|entry| entry.unwrap().1)
+                    .collect::<Vec<_>>();
+                let violation = findings
+                    .iter()
+                    .any(|f| f.code == FindingCode::UndeclaredInput);
+                assert_eq!(
+                    violation,
+                    os == "windows" && (!unicode || cfg!(windows)),
+                    "{os}/{requested}: {findings:?}"
+                );
+                if os == "windows" && unicode && !cfg!(windows) {
+                    assert!(
+                        findings
+                            .iter()
+                            .any(|f| f.code == FindingCode::UnknownEvidence)
+                    );
+                }
+            }
+        }
+    }
+}
