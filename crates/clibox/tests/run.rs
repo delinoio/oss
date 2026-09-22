@@ -535,6 +535,78 @@ fn outer_timeout_terminates_descendants_of_a_nested_wrapper() {
 }
 
 #[test]
+fn outer_timeout_terminates_descendants_of_a_nested_npm_launcher() {
+    let home = tempfile::tempdir().unwrap();
+    let marker = home.path().join("nested-npm-descendant-pid");
+    let launcher = home.path().join("launcher.cjs");
+    let clibox_launcher = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../packages/clibox/src/launcher.cjs")
+        .canonicalize()
+        .unwrap();
+    fs::write(
+        &launcher,
+        concat!(
+            "const { launch } = require(process.env.CLIBOX_LAUNCHER);\n",
+            "launch(process.env.CLIBOX_TEST_BINARY, process.argv.slice(2)).then(({ code, signal \
+             }) => {\n",
+            "  if (signal) process.kill(process.pid, signal);\n",
+            "  else process.exitCode = code ?? 1;\n",
+            "});\n",
+        ),
+    )
+    .unwrap();
+    let assignment = format!("MARKER={}", marker.display());
+    let output = command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--timeout",
+            "5s",
+            "--kill-after",
+            "0",
+            &assignment,
+            "--",
+            "node",
+            launcher.to_str().unwrap(),
+            "run",
+            "with-timeout",
+            "--timeout",
+            "30s",
+            "--kill-after",
+            "10s",
+            "--",
+            "sh",
+            "-c",
+            "sleep 30 & echo $! > \"$MARKER\"; wait",
+        ],
+    )
+    .env("CLIBOX_LAUNCHER", clibox_launcher)
+    .env("CLIBOX_TEST_BINARY", env!("CARGO_BIN_EXE_clibox"))
+    .output()
+    .unwrap();
+    assert_eq!(output.status.code(), Some(124));
+    assert!(
+        marker.is_file(),
+        "nested npm workload did not start: {output:?}"
+    );
+    let pid = fs::read_to_string(marker)
+        .unwrap()
+        .trim()
+        .parse::<i32>()
+        .unwrap();
+    for _ in 0..50 {
+        if unsafe { libc::kill(pid, 0) } == -1
+            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+        {
+            return;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    panic!("outer timeout left a nested npm launcher descendant running");
+}
+
+#[test]
 fn completed_workload_cleans_up_its_background_descendants() {
     let home = tempfile::tempdir().unwrap();
     let marker = home.path().join("completed-descendant-pid");

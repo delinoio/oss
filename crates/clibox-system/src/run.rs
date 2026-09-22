@@ -1372,27 +1372,56 @@ fn unix_ownership() -> UnixOwnership {
 fn nested_wrapper_state() -> bool {
     let parent = unsafe { libc::getppid() };
     let own_process = unsafe { libc::getpid() };
-    if parent <= 0
-        || own_process <= 0
-        || unsafe { libc::getpgrp() } != own_process
-        || unsafe { libc::getpgid(parent) } == own_process
-    {
+    let process_group = unsafe { libc::getpgrp() };
+    if parent <= 0 || own_process <= 0 || process_group <= 0 {
         return false;
     }
     let Ok(current) = env::current_exe().and_then(fs::canonicalize) else {
         return false;
     };
-    let Some(parent_executable) = parent_executable(parent) else {
+    if process_group == own_process
+        && unsafe { libc::getpgid(parent) } != own_process
+        && executable_matches(parent, &current)
+    {
+        return true;
+    }
+
+    // The installed launcher is a supported intermediate process: the outer
+    // wrapper creates its group for Node, and the inner native wrapper shares
+    // that group. Verify the complete parent/grandparent relationship rather
+    // than trusting launcher arguments or environment values, which workloads
+    // can control.
+    if process_group != parent || unsafe { libc::getpgid(parent) } != parent {
+        return false;
+    }
+    let Some(grandparent) = parent_process(parent) else {
         return false;
     };
-    parent_executable
-        .canonicalize()
-        .is_ok_and(|parent_executable| parent_executable == current)
+    grandparent > 0
+        && unsafe { libc::getpgid(grandparent) } != process_group
+        && executable_matches(grandparent, &current)
+}
+
+#[cfg(unix)]
+fn executable_matches(process: libc::pid_t, current: &Path) -> bool {
+    parent_executable(process)
+        .and_then(|path| path.canonicalize().ok())
+        .is_some_and(|executable| executable == current)
 }
 
 #[cfg(target_os = "linux")]
 fn parent_executable(parent: libc::pid_t) -> Option<PathBuf> {
     fs::read_link(format!("/proc/{parent}/exe")).ok()
+}
+
+#[cfg(target_os = "linux")]
+fn parent_process(process: libc::pid_t) -> Option<libc::pid_t> {
+    let stat = fs::read_to_string(format!("/proc/{process}/stat")).ok()?;
+    let (_, fields) = stat.rsplit_once(") ")?;
+    fields
+        .split_whitespace()
+        .nth(1)
+        .and_then(|parent| parent.parse().ok())
 }
 
 #[cfg(target_os = "macos")]
@@ -1402,8 +1431,22 @@ fn parent_executable(parent: libc::pid_t) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+#[cfg(target_os = "macos")]
+fn parent_process(process: libc::pid_t) -> Option<libc::pid_t> {
+    use libproc::libproc::{bsd_info::BSDInfo, proc_pid::pidinfo};
+
+    pidinfo::<BSDInfo>(process, 0)
+        .ok()
+        .and_then(|info| libc::pid_t::try_from(info.pbi_ppid).ok())
+}
+
 #[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
 fn parent_executable(_parent: libc::pid_t) -> Option<PathBuf> {
+    None
+}
+
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+fn parent_process(_process: libc::pid_t) -> Option<libc::pid_t> {
     None
 }
 
