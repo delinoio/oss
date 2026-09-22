@@ -898,6 +898,15 @@ struct Limits {
     idle: Option<Duration>,
 }
 
+fn limits_expired_at(limits: &Limits, last_activity: Instant, observed_at: Instant) -> bool {
+    limits
+        .overall
+        .is_some_and(|deadline| observed_at >= deadline)
+        || limits
+            .idle
+            .is_some_and(|idle| observed_at.saturating_duration_since(last_activity) >= idle)
+}
+
 fn run_once(
     plan: &environment::Plan,
     kill_after: Duration,
@@ -950,6 +959,11 @@ fn run_once(
             return runtime_failure("The managed service exited before the workload completed.");
         }
         if let Some(completion) = workload_completion {
+            if limits_expired_at(&limits, last_activity, completion.observed_at) {
+                tracing::debug!(operation = "run", stage = "timeout", "run_cleanup");
+                let _ = cleanup_or_log(&mut child, kill_after);
+                return Ok(Outcome::Code(124));
+            }
             let status = completion.status;
             // Reaping the direct child does not end ownership of its process
             // group or Job Object. A background descendant can otherwise
@@ -974,13 +988,7 @@ fn run_once(
             child.join_output();
             return Ok(Outcome::Child(status));
         }
-        let timed_out = limits
-            .overall
-            .is_some_and(|deadline| Instant::now() >= deadline)
-            || limits
-                .idle
-                .is_some_and(|idle| last_activity.elapsed() >= idle);
-        if timed_out {
+        if limits_expired_at(&limits, last_activity, Instant::now()) {
             tracing::debug!(operation = "run", stage = "timeout", "run_cleanup");
             let _ = cleanup_or_log(&mut child, kill_after);
             return Ok(Outcome::Code(124));
@@ -2942,6 +2950,30 @@ mod lifecycle_tests {
         assert!(service_exited_before_workload(start, Some(later)));
         assert!(!service_exited_before_workload(later, Some(start)));
         assert!(!service_exited_before_workload(start, Some(start)));
+    }
+
+    #[test]
+    fn completion_observed_after_a_limit_is_a_timeout() {
+        let start = Instant::now();
+        let deadline = start.checked_add(Duration::from_millis(1)).unwrap();
+        let completion = deadline.checked_add(Duration::from_millis(1)).unwrap();
+
+        assert!(limits_expired_at(
+            &Limits {
+                overall: Some(deadline),
+                idle: None,
+            },
+            start,
+            completion,
+        ));
+        assert!(limits_expired_at(
+            &Limits {
+                overall: None,
+                idle: Some(Duration::from_millis(1)),
+            },
+            start,
+            completion,
+        ));
     }
 }
 
