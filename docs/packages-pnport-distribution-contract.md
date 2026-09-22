@@ -28,6 +28,10 @@ Stable bounded launcher error codes on stderr; no raw argv, environments, child 
 ## Build and Test
 Use Node built-in tests, six-target native execution and temporary npm/Yarn 4 PnP consumers installed with scripts disabled. Validate inventories, exact versions, executable modes, missing optional packages, source identity, signature verification and partial-publication recovery. Release cannot pass by cross-compilation alone.
 
+### Current implementation status
+
+The private source workspace, built-in-only launcher, platform registry and manifest generation helpers are implemented. Four unit tests verify metadata, missing/mismatched packages and companion artifacts, literal argv, inherited streams and Unix/Windows signal policy. Package tests are package-owned Turbo tasks whose inputs include both Rust crates and the root Cargo/toolchain inputs. These tests do not install actual npm/Yarn consumers or verify native distribution archives. Packaging, installers, Homebrew, complete-set source-bound publication/recovery and six-target installation evidence remain required. No publication script or release coordinator selection is enabled while runtime acceptance remains incomplete.
+
 ## Dependencies and Integrations
 [Native foundation](crates-pnport-foundation.md), [repository workflow](repository-workflow-contract.md), and consolidated public guides. Source workspace remains private and does not depend on unpublished platform packages.
 
