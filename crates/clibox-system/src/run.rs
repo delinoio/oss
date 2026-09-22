@@ -924,12 +924,14 @@ fn run_once(
         OutputMode::WorkloadInherited
     };
     let mut child = spawn(plan, output_mode)?;
-    let mut last_activity = Instant::now();
+    let mut last_activity = child
+        .activity
+        .as_ref()
+        .map(Activity::last_observed_at)
+        .unwrap_or_else(Instant::now);
     loop {
         if let Some(activity) = &child.activity {
-            while let Ok(observed_at) = activity.try_recv() {
-                last_activity = observed_at;
-            }
+            last_activity = activity.last_observed_at();
         }
         if runtime::cancelled() {
             let _ = cleanup_or_log(&mut child, kill_after);
@@ -1023,7 +1025,7 @@ struct OwnedChild {
     job: Job,
     completions: mpsc::Receiver<Result<Completion>>,
     completion: Option<Completion>,
-    activity: Option<mpsc::Receiver<Instant>>,
+    activity: Option<Activity>,
     output_threads: Vec<thread::JoinHandle<()>>,
 }
 
@@ -1120,19 +1122,14 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
         let _ = child.wait();
         return Err(error);
     }
-    let (activity_tx, activity) = if matches!(mode, OutputMode::WorkloadPiped) {
-        let (tx, rx) = mpsc::sync_channel(1);
-        (Some(tx), Some(rx))
-    } else {
-        (None, None)
-    };
+    let activity = matches!(mode, OutputMode::WorkloadPiped).then(Activity::new);
     let stderr_for_both = matches!(mode, OutputMode::Service);
     let mut output_threads = Vec::new();
     if let Some(stdout) = child.stdout.take() {
-        output_threads.push(forward(stdout, stderr_for_both, activity_tx.clone()));
+        output_threads.push(forward(stdout, stderr_for_both, activity.clone()));
     }
     if let Some(stderr) = child.stderr.take() {
-        output_threads.push(forward(stderr, true, activity_tx));
+        output_threads.push(forward(stderr, true, activity.clone()));
     }
     let pid = child.id();
     let (completion_tx, completions) = mpsc::sync_channel(1);
@@ -1169,7 +1166,7 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
 fn forward(
     mut reader: impl Read + Send + 'static,
     stderr: bool,
-    activity: Option<mpsc::SyncSender<Instant>>,
+    activity: Option<Activity>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut buffer = [0u8; 8192];
@@ -1180,11 +1177,11 @@ fn forward(
             };
             // A successful read is workload activity even when a slow consumer
             // blocks forwarding these bytes for longer than the idle limit.
-            // Preserve the read's timestamp rather than the supervisor poll
-            // time so an already-completed workload cannot extend its idle
-            // deadline by sitting in the bounded notification channel.
-            if let Some(sender) = &activity {
-                let _ = sender.try_send(Instant::now());
+            // Retain the most recent read timestamp rather than a bounded
+            // notification. Output can outpace supervisor polls, and a stale
+            // earlier event must not make a later read look idle.
+            if let Some(activity) = &activity {
+                activity.observe(Instant::now());
             }
             let write = if stderr {
                 io::stderr().lock().write_all(&buffer[..count])
@@ -1196,6 +1193,43 @@ fn forward(
             }
         }
     })
+}
+
+#[derive(Clone)]
+struct Activity {
+    started_at: Instant,
+    latest_elapsed_nanos: Arc<std::sync::atomic::AtomicU64>,
+}
+
+impl Activity {
+    fn new() -> Self {
+        Self::at(Instant::now())
+    }
+
+    fn at(started_at: Instant) -> Self {
+        Self {
+            started_at,
+            latest_elapsed_nanos: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        }
+    }
+
+    fn observe(&self, observed_at: Instant) {
+        let elapsed = observed_at
+            .saturating_duration_since(self.started_at)
+            .as_nanos();
+        let elapsed = u64::try_from(elapsed).unwrap_or(u64::MAX);
+        self.latest_elapsed_nanos
+            .fetch_max(elapsed, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn last_observed_at(&self) -> Instant {
+        self.started_at
+            .checked_add(Duration::from_nanos(
+                self.latest_elapsed_nanos
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            ))
+            .unwrap_or_else(Instant::now)
+    }
 }
 
 impl OwnedChild {
@@ -3142,6 +3176,19 @@ mod lifecycle_tests {
             start,
             completion,
         ));
+    }
+
+    #[test]
+    fn activity_retains_the_latest_read_before_supervision() {
+        let start = Instant::now();
+        let first = start.checked_add(Duration::from_millis(1)).unwrap();
+        let latest = start.checked_add(Duration::from_millis(10)).unwrap();
+        let activity = Activity::at(start);
+
+        activity.observe(first);
+        activity.observe(latest);
+
+        assert_eq!(activity.last_observed_at(), latest);
     }
 }
 
