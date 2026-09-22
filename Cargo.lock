@@ -1738,14 +1738,18 @@ name = "clibox-system"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "fs4",
  "libc",
  "libproc",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
+ "rand 0.9.4",
  "regex",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "signal-hook",
  "tempfile",
  "tracing",
@@ -3626,6 +3630,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b91aa448ca50d7e79433bdf3ee8d99215430d2ec02ade5aefab2a073a1822e8a"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "fs4"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e72ed92b67c146290f88e9c89d60ca163ea417a446f61ffd7b72df3e7f1dfd5"
+dependencies = [
+ "rustix",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

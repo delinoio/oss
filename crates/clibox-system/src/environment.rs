@@ -94,7 +94,8 @@ fn command_convert(arg: OsString, env: &Environment, windows: bool) -> OsString 
         .into()
 }
 
-struct Plan {
+#[derive(Clone)]
+pub(crate) struct Plan {
     command: OsString,
     args: Vec<OsString>,
     env: Environment,
@@ -150,13 +151,28 @@ fn plan(args: Vec<OsString>, parent: Environment, windows: bool) -> Result<Plan>
     })
 }
 
-pub fn execute(args: Vec<OsString>) -> Result<ExitStatus> {
+/// Prepare one literal child invocation using the same compatibility rules as
+/// `env run`. Run wrappers use this rather than reparsing environment
+/// assignments so nesting does not change command or PATH behavior.
+pub(crate) fn prepare(args: Vec<OsString>) -> Result<Plan> {
     let plan = plan(args, std::env::vars_os().collect(), cfg!(windows))?;
     #[cfg(windows)]
     let plan = windows_plan(plan)?;
+    Ok(plan)
+}
+
+pub(crate) fn command(plan: &Plan) -> Command {
     let mut command = Command::new(&plan.command);
-    command.args(plan.args).env_clear().envs(plan.env);
-    runtime::delegated(command)
+    command
+        .args(plan.args.clone())
+        .env_clear()
+        .envs(plan.env.clone());
+    command
+}
+
+pub fn execute(args: Vec<OsString>) -> Result<ExitStatus> {
+    let plan = prepare(args)?;
+    runtime::delegated(command(&plan))
 }
 
 #[cfg(windows)]

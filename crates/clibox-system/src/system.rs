@@ -2,7 +2,7 @@ use std::ffi::OsString;
 
 use clap::Subcommand;
 
-use crate::{clipboard, environment, error::Result, open, port, runtime};
+use crate::{clipboard, environment, error::Result, open, port, run, runtime};
 
 #[derive(Subcommand)]
 pub enum Action {
@@ -10,6 +10,11 @@ pub enum Action {
     Env {
         #[command(subcommand)]
         command: Env,
+    },
+    /// Run a workload with local execution controls.
+    Run {
+        #[command(subcommand)]
+        command: run::Command,
     },
     /// Inspect or forcibly terminate local port owners.
     Port {
@@ -64,6 +69,7 @@ impl Action {
     pub fn operation(&self) -> &'static str {
         match self {
             Self::Env { .. } => "env-run",
+            Self::Run { command } => command.operation(),
             Self::Port {
                 command: port::Action::List { .. },
             } => "port-list",
@@ -91,6 +97,10 @@ pub fn execute(command: Action, leading_separator: bool) -> Result<i32> {
             }
             runtime::exit_child(environment::execute(args)?);
         }
+        Action::Run { command } => match run::execute(command)? {
+            run::Outcome::Child(status) => runtime::exit_child(status),
+            run::Outcome::Code(code) => return Ok(code),
+        },
         Action::Port { command } => return port::execute(command),
         Action::Open { target, app, wait } => open::execute(target, app, wait)?,
         Action::Clipboard { command } => clipboard::execute(command)?,

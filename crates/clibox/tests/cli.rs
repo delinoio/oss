@@ -19,6 +19,7 @@ fn help_and_no_arguments_succeed_on_stdout() {
         assert!(stdout.contains("Support: https://github.com/delinoio/oss/issues"));
         for command in [
             "env",
+            "run",
             "port",
             "open",
             "clipboard",
@@ -59,8 +60,18 @@ fn version_comes_from_the_cargo_package() {
 
 #[test]
 fn missing_subcommands_show_command_help_on_stderr() {
-    let groups: [(&str, &[&str]); 10] = [
+    let groups: [(&str, &[&str]); 11] = [
         ("env", &["run"]),
+        (
+            "run",
+            &[
+                "with-rate-limit",
+                "with-lock",
+                "with-service",
+                "with-retry",
+                "with-timeout",
+            ],
+        ),
         ("port", &["list", "kill"]),
         ("clipboard", &["copy", "paste"]),
         ("wait", &["tcp", "http", "file"]),
@@ -112,6 +123,7 @@ fn unknown_arguments_fail_on_stderr() {
         vec!["--PRIVATE-MARKER"],
         vec!["PRIVATE-MARKER"],
         vec!["env", "PRIVATE-MARKER"],
+        vec!["run", "PRIVATE-MARKER"],
         vec!["port", "PRIVATE-MARKER"],
         vec!["clipboard", "PRIVATE-MARKER"],
         vec!["wait", "PRIVATE-MARKER"],
@@ -142,6 +154,11 @@ fn every_command_has_help_and_examples() {
         vec!["wait", "http", "--help"],
         vec!["wait", "file", "--help"],
         vec!["env", "run", "--help"],
+        vec!["run", "with-rate-limit", "--help"],
+        vec!["run", "with-lock", "--help"],
+        vec!["run", "with-service", "--help"],
+        vec!["run", "with-retry", "--help"],
+        vec!["run", "with-timeout", "--help"],
         vec!["port", "list", "--help"],
         vec!["port", "kill", "--help"],
         vec!["open", "--help"],

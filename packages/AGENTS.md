@@ -30,6 +30,7 @@
 ### clibox Rules
 
 - Native and installed npm commands must share the canonical `env run`, `port list`, and `hash compute` names, quiet/PID output separation, stdout dash selector, force validation, and numeric owned-operation cancellation (130/143); validate the migration in installed consumer smoke tests without launcher-side argument rewriting.
+- Native and installed npm commands must also share the five `run with-*` wrappers for rate admission, lock ownership, service readiness, retries, and timeouts. The launcher remains a literal argv/stdio/signal forwarder: it must not parse wrapper options, own local state, make readiness requests, or introduce a shell.
 
 - Follow `docs/packages-clibox-distribution-contract.md`. Keep the source workspace private, with no unpublished platform dependencies; generate public manifests and exact optional dependencies during packaging only.
 - Preserve platform/libc/version checks, literal native argv execution, inherited stdio, and signal/exit propagation. No runtime downloads, install hooks, public JavaScript API, or system binary fallback.

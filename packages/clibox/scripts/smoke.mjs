@@ -28,7 +28,22 @@ try {
   for (const manager of ["npm", "pnpm"]) {
     const consumer = path.join(directory, manager);
     mkdirSync(consumer, { recursive: true });
-    writeFileSync(path.join(consumer, "package.json"), JSON.stringify({ name: "clibox-smoke", private: true, scripts: { check: "clibox --version" }, dependencies: { [main.name]: `file:${path.join(output, "tarballs", main.filename)}`, [native.name]: `file:${path.join(output, "tarballs", native.filename)}` } }, null, 2));
+    const nativeTarball = `file:${path.join(output, "tarballs", native.filename)}`;
+    const consumerPackage = {
+      name: "clibox-smoke",
+      private: true,
+      scripts: { check: "clibox --version" },
+      dependencies: {
+        [main.name]: `file:${path.join(output, "tarballs", main.filename)}`,
+        [native.name]: nativeTarball,
+      },
+      // pnpm does not deduplicate a direct file dependency with the
+      // launcher's registry-shaped optional dependency. Pin the nested
+      // optional dependency to the same test-owned tarball so this remains a
+      // fully offline published-boundary smoke test.
+      ...(manager === "pnpm" ? { pnpm: { overrides: { [native.name]: nativeTarball } } } : {}),
+    };
+    writeFileSync(path.join(consumer, "package.json"), JSON.stringify(consumerPackage, null, 2));
     // Local tarballs exercise the published package boundary without registry
     // credentials or any dependency on an already-published clibox version.
     const run = (args) => manager === "npm" ? npm(args, { cwd: consumer }) : execFileSync(process.execPath, [process.env.npm_execpath, ...args], { cwd: consumer, encoding: "utf8", stdio: "pipe" });
@@ -120,6 +135,14 @@ try {
       execFileSync(process.execPath, [launcher, "env", "run", "CLIBOX_TEST_EXIT=1", "--", process.execPath, fixture], { cwd: consumer, stdio: "pipe" });
     } catch (error) { delegatedStatus = error.status; }
     ensure(delegatedStatus === 37, `${manager} utility exit propagation failed`);
+    const wrapperHome = path.join(consumer, "wrapper-state");
+    const wrapperEnv = { ...process.env, HOME: wrapperHome, XDG_STATE_HOME: path.join(wrapperHome, "xdg-state") };
+    ensure(invoke(["run", "with-rate-limit", "--name", "consumer-rate", "--limit", "1", "--period", "1m", "--", process.execPath, "-e", "process.exit(0)"], { env: wrapperEnv }).length === 0, `${manager} rate-limit wrapper smoke failed`);
+    ensure(invoke(["run", "with-lock", "--name", "consumer-lock", "--", process.execPath, "-e", "process.exit(0)"], { env: wrapperEnv }).length === 0, `${manager} lock wrapper smoke failed`);
+    ensure(invoke(["run", "with-retry", "--max-attempts", "1", "--", process.execPath, "-e", "process.exit(0)"], { env: wrapperEnv }).length === 0, `${manager} retry wrapper smoke failed`);
+    ensure(invoke(["run", "with-timeout", "--timeout", "5s", "--", process.execPath, "-e", "process.exit(0)"], { env: wrapperEnv }).length === 0, `${manager} timeout wrapper smoke failed`);
+    const serviceSyntax = spawnSync(process.execPath, [launcher, "run", "with-service", "http://127.0.0.1:9", "--ready-timeout", "1ms", "--", process.execPath, "-e", "process.exit(0)"], { cwd: consumer, env: wrapperEnv, encoding: "utf8" });
+    ensure(serviceSyntax.status !== 2, `${manager} service wrapper parsing failed`);
     const installed = JSON.parse(readFileSync(path.join(consumer, "node_modules", native.name, "package.json"), "utf8"));
     ensure(installed.version === metadata().version, "Installed native version mismatch");
     event("consumer_smoke", { manager, target: target.suffix, version: installed.version });
