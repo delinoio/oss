@@ -7088,3 +7088,65 @@ fn clean_baselines_require_matching_recorded_command_names() {
         assert_eq!(parse(root.path(), &result_name)["verification"], verdict);
     }
 }
+
+#[test]
+fn imported_repeat_pass_requires_multiple_consecutive_targets() {
+    use runlens::{model::*, report};
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("input.txt"), "input").unwrap();
+    assert!(run(root.path(), "original.json", "read").status.success());
+    let mut repeat = report::read(&root.path().join("original.json")).unwrap();
+    repeat.kind = ReportKind::Repeat;
+    repeat.verification = Some(Verdict::Passed);
+    for (index, rounds) in [
+        vec![1],
+        vec![0, 1],
+        vec![1, 1],
+        vec![1, 3],
+        vec![2, 1],
+        vec![1, 2],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut value = repeat.clone();
+        value.executions = rounds
+            .iter()
+            .map(|round| {
+                let mut target = repeat.executions[0].clone();
+                target.id = uuid::Uuid::now_v7();
+                target.repetition = *round;
+                target
+            })
+            .collect();
+        let mut historical = repeat.executions[0].clone();
+        historical.id = uuid::Uuid::now_v7();
+        historical.role = Role::Baseline;
+        value.executions.push(historical);
+        let name = format!("import-{index}.json");
+        fs::write(root.path().join(&name), serde_json::to_vec(&value).unwrap()).unwrap();
+        assert_eq!(
+            report::read(&root.path().join(&name)).is_ok(),
+            rounds == [1, 2]
+        );
+        let result = invoke(
+            root.path(),
+            &[
+                "export",
+                &name,
+                "--format",
+                "json",
+                "--output",
+                &format!("export-{index}.json"),
+            ],
+        );
+        assert_eq!(
+            result.status.code(),
+            Some(if rounds == [1, 2] { 0 } else { 2 }),
+            "{result:?}"
+        );
+    }
+    // Interrupted repetitions remain importable as incomplete evidence.
+    repeat.verification = Some(Verdict::Inconclusive);
+    assert!(report::validate(&repeat).is_ok());
+}

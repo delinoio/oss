@@ -359,3 +359,5 @@
 - Every offline multi-report command, including compare and policy baselines, preflights the shared 1 GiB aggregate file-size bound before parsing any report.
 
 - Comparison compatibility rejects differing recorded command names and redacted names. An unnamed direct execution may still match an explicitly supplied named baseline when all other identity fields agree.
+
+- Imported passed repeat reports require at least two target executions with consecutive repetition numbers from one; historical/preparation records cannot satisfy this minimum. Preserve partial inconclusive reports.

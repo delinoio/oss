@@ -344,6 +344,19 @@ pub fn validate(report: &Report) -> Result<()> {
             ));
         }
     }
+    if report.kind == ReportKind::Repeat && report.verification == Some(Verdict::Passed) {
+        let targets = report.targets().collect::<Vec<_>>();
+        if targets.len() < 2
+            || targets
+                .iter()
+                .enumerate()
+                .any(|(index, target)| target.repetition as usize != index + 1)
+        {
+            return Err(Error::input(
+                "passed repeat reports require consecutive target repetitions starting at one",
+            ));
+        }
+    }
     if report.targets().next().is_none() && report.verification == Some(Verdict::Passed) {
         return Err(Error::input(
             "verification cannot pass without a target execution",

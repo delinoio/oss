@@ -916,3 +916,5 @@ Linux deleted descriptor resolution fails closed, including actual filenames end
 The 1 GiB aggregate input bound applies to compare, policy with a baseline, explain, and conflicts. Sparse oversized-pair regressions ensure compare and policy reject before JSON parsing.
 
 Clean baseline comparison checks recorded configured command names as part of identity. Different or masked names are inconclusive; the intentional unnamed-direct-report allowance remains. Regression coverage verifies matching, different, absent and redacted names through verify clean.
+
+The report parser rejects passed repeat claims with fewer than two target rounds or duplicate, skipped, zero-based, or reordered repetition numbers. Partial inconclusive evidence remains readable; the import/export regression covers each structure.
