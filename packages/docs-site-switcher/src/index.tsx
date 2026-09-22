@@ -5,7 +5,6 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
 } from "react";
 
 import "./styles.css";
@@ -16,6 +15,7 @@ export enum DocumentationSiteId {
   Nodeup = "nodeup",
   Binpm = "binpm",
   AsyncCommitHook = "async-commit-hook",
+  Clibox = "clibox",
 }
 
 export interface DocumentationSite {
@@ -50,48 +50,14 @@ export const DOCUMENTATION_SITES = [
     label: "async-commit-hook",
     href: "/async-commit-hook/",
   },
+  {
+    id: DocumentationSiteId.Clibox,
+    label: "clibox",
+    href: "/clibox/",
+  },
 ] as const satisfies readonly DocumentationSite[];
 
 const PUBLIC_DOCS_SITE = DOCUMENTATION_SITES[0];
-
-export interface DocumentationLocation {
-  readonly hostname: string;
-  readonly port: string;
-  readonly protocol: string;
-}
-
-const LOCAL_DOCUMENTATION_PORTS = {
-  [DocumentationSiteId.PublicDocs]: "46302",
-  [DocumentationSiteId.Runmoor]: "46309",
-  [DocumentationSiteId.Nodeup]: "46303",
-  [DocumentationSiteId.Binpm]: "46304",
-  [DocumentationSiteId.AsyncCommitHook]: "46310",
-} as const satisfies Record<DocumentationSiteId, string>;
-
-const LOCAL_DOCUMENTATION_PORT_SET = new Set(Object.values(LOCAL_DOCUMENTATION_PORTS));
-
-function getBrowserLocation(): DocumentationLocation | undefined {
-  if (typeof window === "undefined") {
-    return undefined;
-  }
-
-  return window.location;
-}
-
-export function getDocumentationSiteHref(
-  site: DocumentationSite,
-  location: DocumentationLocation | undefined = getBrowserLocation(),
-) {
-  if (
-    !location ||
-    !["localhost", "127.0.0.1"].includes(location.hostname) ||
-    !LOCAL_DOCUMENTATION_PORT_SET.has(location.port)
-  ) {
-    return site.href;
-  }
-
-  return `${location.protocol}//${location.hostname}:${LOCAL_DOCUMENTATION_PORTS[site.id]}/`;
-}
 
 function normalizePathname(pathname: string) {
   if (pathname === "/") {
@@ -131,7 +97,6 @@ export function DocsSiteSwitcher({ currentSite, className }: DocsSiteSwitcherPro
   const menuItemRefs = useRef<Array<HTMLAnchorElement | null>>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
-  const [isHydrated, setIsHydrated] = useState(false);
   const menuId = `delino-docs-site-menu-${useId().replace(/:/g, "")}`;
   const currentSiteDefinition =
     DOCUMENTATION_SITES.find((site) => site.id === currentSite) ?? PUBLIC_DOCS_SITE;
@@ -152,10 +117,6 @@ export function DocsSiteSwitcher({ currentSite, className }: DocsSiteSwitcherPro
   const openMenu = useCallback((index: number | null = null) => {
     setIsOpen(true);
     setFocusedIndex(index);
-  }, []);
-
-  useEffect(() => {
-    setIsHydrated(true);
   }, []);
 
   useEffect(() => {
@@ -251,19 +212,6 @@ export function DocsSiteSwitcher({ currentSite, className }: DocsSiteSwitcherPro
     }
   }
 
-  function handleMenuItemClick(
-    event: ReactMouseEvent<HTMLAnchorElement>,
-    site: DocumentationSite,
-  ) {
-    const targetHref = getDocumentationSiteHref(site);
-    if (targetHref !== site.href) {
-      event.preventDefault();
-      window.location.assign(targetHref);
-    }
-
-    closeMenu(false);
-  }
-
   const rootClassName = ["delino-docs-site-switcher", className].filter(Boolean).join(" ");
 
   return (
@@ -300,9 +248,9 @@ export function DocsSiteSwitcher({ currentSite, className }: DocsSiteSwitcherPro
             <a
               aria-current={isCurrent ? "page" : undefined}
               className="delino-docs-site-switcher__item"
-              href={isHydrated ? getDocumentationSiteHref(site) : site.href}
+              href={site.href}
               key={site.id}
-              onClick={(event) => handleMenuItemClick(event, site)}
+              onClick={() => closeMenu(false)}
               onKeyDown={(event) => handleMenuItemKeyDown(event, index)}
               ref={(element) => {
                 menuItemRefs.current[index] = element;

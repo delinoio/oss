@@ -1,5 +1,6 @@
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
+import { projectRoutes } from "./project-routes.mjs";
 
 const outputDirectory = path.resolve("doc_build");
 const retiredOrigins = [
@@ -8,13 +9,8 @@ const retiredOrigins = [
   "https://binpm.delino.io",
   "https://ach.delino.io",
 ];
-const projectRoutes = {
-  runmoor: ["/", "/install", "/configuration", "/commands", "/docker", "/tart", "/operations"],
-  nodeup: ["/", "/installation", "/getting-started", "/commands", "/runtime-resolution", "/shims-and-package-managers", "/output", "/completions", "/releases", "/troubleshooting", "/reference"],
-  binpm: ["/", "/installation", "/getting-started", "/commands", "/local-tooling", "/cache-and-verification", "/releases", "/troubleshooting", "/reference"],
-  "async-commit-hook": ["/", "/install", "/start", "/configuration", "/validation", "/commands", "/agents", "/web", "/privacy", "/recovery", "/compatibility", "/symlinks", "/existing-hooks"],
-};
-const selectorDestinations = ["/", "/runmoor/", "/nodeup/", "/binpm/", "/async-commit-hook/"];
+
+const selectorDestinations = ["/", "/runmoor/", "/nodeup/", "/binpm/", "/async-commit-hook/", "/clibox/"];
 const projectSecuritySlugs = new Set(["runmoor", "async-commit-hook"]);
 const forbiddenProjectContent = [
   /(?:GH_TOKEN|DEVHUD_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)|Authorization:\s*Bearer)/iu,
@@ -99,6 +95,32 @@ for (const [slug, routes] of Object.entries(projectRoutes)) {
         failures.push(`${publicRoute(slug, route)} is missing selector destination ${destination}`);
       }
     }
+    if (slug === "clibox") {
+      const sidebar = contents.match(/<aside\b[^>]*class="[^"]*rp-doc-layout__sidebar[^"]*"[^>]*>[\s\S]*?<\/aside>/iu)?.[0] ?? "";
+      const menuItems = [...contents.matchAll(/<a\b[^>]*role="menuitem"[^>]*>/giu)].map(([tag]) => tag);
+      for (const destination of selectorDestinations) {
+        if (!menuItems.some((tag) => tag.includes(`href="${destination}"`))) {
+          failures.push(`${publicRoute(slug, route)} is missing a site-selector link`);
+        }
+      }
+      const activeItems = menuItems.filter((tag) => tag.includes('aria-current="page"'));
+      if (activeItems.length !== 1 || !activeItems[0].includes('href="/clibox/"')) {
+        failures.push(`${publicRoute(slug, route)} has an incorrect selected site`);
+      }
+      for (const child of routes) {
+        if (!sidebar.includes(`href="${publicRoute(slug, child)}"`)) {
+          failures.push(`${publicRoute(slug, route)} is missing a sidebar link`);
+        }
+      }
+      const socialLinks = [...contents.matchAll(/<a\b[^>]*class="[^"]*rp-social-links__item[^"]*"[^>]*>/giu)].map(([tag]) => tag);
+      if (!socialLinks.some((tag) => tag.includes('href="https://github.com/delinoio/oss"'))) {
+        failures.push(`${publicRoute(slug, route)} is missing the repository social link`);
+      }
+      const footer = contents.match(/<footer\b[^>]*class="delino-repository-footer"[^>]*>[\s\S]*?<\/footer>/iu)?.[0] ?? "";
+      if (!footer.includes('href="https://github.com/delinoio/oss"')) {
+        failures.push(`${publicRoute(slug, route)} is missing the repository footer link`);
+      }
+    }
     const selected = (contents.match(/aria-current="page"/gu) ?? []).length;
     if (selected !== 1) failures.push(`${publicRoute(slug, route)} has ${selected} selected site destinations`);
     if (!contents.includes("https://github.com/delinoio/oss")) {
@@ -154,7 +176,7 @@ const installerChecks = [
 ];
 for (const [slug, filename, source] of installerChecks) {
   const generated = path.join(outputDirectory, slug, filename);
-  const sourceFile = path.resolve("../..", source);
+  const sourceFile = new URL(`../../../${source}`, import.meta.url);
   if (!(await exists(generated))) {
     failures.push(`/${slug}/${filename} is missing`);
     continue;

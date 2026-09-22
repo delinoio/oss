@@ -308,6 +308,8 @@ mod tests {
 
         assert_eq!(resolved.runtime_id(), "v22.0.0");
 
-        let _ = fs::remove_dir_all(paths.data_root.parent().unwrap().parent().unwrap());
+        // The parent of data_root is this fixture; its parent is the shared temp
+        // directory.
+        fs::remove_dir_all(paths.data_root.parent().unwrap()).unwrap();
     }
 }

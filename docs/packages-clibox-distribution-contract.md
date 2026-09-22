@@ -10,7 +10,8 @@ The launcher is unbundled CommonJS using Node.js built-ins on Node.js 22+. Build
 JavaScript developers using `pnpm add -D -E @delino/clibox` followed by `pnpm exec clibox`, npm users installing the same package as an exact dev dependency, and release maintainers.
 
 ## Interfaces and Contracts
-- The next minor release carries the Rust CLI consistency revision without launcher-side translation: renamed commands reject old names with static migration help; `--quiet` suppresses results, `port list --pids` selects PIDs, `--output -` selects stdout, and force requires real file output or in-place replacement. Native and installed consumer tests cover these contracts, including numeric owned-operation cancellation 130/143.
+- The implemented CLI carries the Rust CLI consistency revision without launcher-side translation: renamed commands reject old names with static migration help; `--quiet` suppresses results, `port list --pids` selects PIDs, `--output -` selects stdout, and force requires real file output or in-place replacement. Native and installed consumer tests cover these contracts, including numeric owned-operation cancellation 130/143.
+- Published version 0.1.6 already carries the port/hash names and output/cancellation semantics, but uses `env run`. The implemented `run env` rename targets the next minor release; keep published-version examples explicit.
 - The installed command is `clibox`; no public JavaScript import API is provided. All target packages carry `run env`, `port list`, `port kill`, `open`, text `clipboard copy`/`paste`, `dotenv list`/`merge`, and `yaml normalize` from the Rust contract without feature flags. Configuration commands retain bounded, offline processing and redacted diagnostics; the launcher forwards arguments unchanged. Linux desktop tools are runtime capabilities, not npm install scripts or bundled dependencies.
 - Native binaries and npm expose the same `wait tcp HOST:PORT`, `wait http URL`, and `wait file PATH` interfaces from [the Rust contract](crates-clibox-foundation.md), including unlimited default waiting, bounded network attempts, human/quiet/JSON output, redacted errors, and exit codes 0/1/2/130/143. No launcher-side parsing or network implementation is added. #916 utilities and the seven #917 transformations remain implemented alongside readiness and configuration commands.
 - Consumer READMEs document duration units, target syntax, readiness limits, HTTP OS trust and unsupported connection features, file symlink/metadata semantics, retry/terminal failures, cancellation, and redacted `RUST_LOG` troubleshooting. Release internals remain in these contracts.
@@ -58,6 +59,8 @@ Public package READMEs describe installation, supported platforms, all seven iss
 
 ## Change Triggers
 Keep the project index, Rust contract, package tests, CI path rules, release coordinator, workflows, and root/package AGENTS rules synchronized.
+
+Public consumer documentation is maintained at `apps/public-docs/docs/clibox` and `https://oss.delino.io/clibox`; follow `docs/apps-clibox-docs-foundation.md`. Both consumer READMEs retain their detailed guidance and link to that section.
 
 ## References
 - [Project index](project-clibox.md)

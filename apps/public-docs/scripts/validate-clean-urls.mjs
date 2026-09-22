@@ -1,8 +1,94 @@
 import { access, readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { decodeHTML } from "entities";
+import { projectRoutes } from "./project-routes.mjs";
+
+const cliboxHeadings = {
+  "/clibox/releases": [
+    "Releases and verification",
+    "Choose a version",
+    "Distribution and verification",
+    "Native package availability",
+    "Use an earlier version"
+  ],
+  "/clibox/troubleshooting": [
+    "Troubleshooting clibox",
+    "Missing native package or version mismatch",
+    "Arguments, timestamps, and files",
+    "Desktop commands",
+    "Waits and configuration",
+    "Diagnostics and support",
+    "Validation limits and recovery"
+  ],
+  "/clibox/commands": [
+    "Command index",
+    "Help and version"
+  ],
+  "/clibox/output": [
+    "Output and cancellation",
+    "Input, output, and exit codes",
+    "File replacement",
+    "Utility diagnostics and operation limits"
+  ],
+  "/clibox/install": [
+    "Install clibox",
+    "Pin with pnpm",
+    "Pin with npm",
+    "Requirements",
+    "Linux release archives",
+    "Linux APT and DNF",
+    "Desktop prerequisites"
+  ],
+  "/clibox/migration": [
+    "Migrating older command syntax"
+  ],
+  "/clibox/getting-started": [
+    "Getting started with clibox",
+    "Install and check the version",
+    "Try commands without changing files",
+    "Use a package script",
+    "Process local configuration"
+  ],
+  "/clibox/transformations": [
+    "Text, time, Base64, and hashes",
+    "Text replacement",
+    "Time formatting and arithmetic",
+    "Base64",
+    "Hashes and verification"
+  ],
+  "/clibox/": [
+    "clibox",
+    "What you can do",
+    "Supported environments",
+    "Predictable scripts",
+    "Learn more"
+  ],
+  "/clibox/configuration": [
+    "Configuration commands",
+    "List dotenv keys",
+    "Merge dotenv files",
+    "Normalize YAML",
+    "Input limits and output safety",
+    "Exit codes and diagnostics"
+  ],
+  "/clibox/system": [
+    "System commands",
+    "Run with environment variables",
+    "Inspect and terminate port owners",
+    "Open a resource",
+    "Copy and paste text"
+  ],
+  "/clibox/wait": [
+    "Readiness waits",
+    "TCP",
+    "HTTP",
+    "Files",
+    "Results and cancellation"
+  ]
+};
 
 const stableRouteIds = [
+  ...Object.entries(projectRoutes).flatMap(([slug, routes]) => routes.map((route) => `/${slug}${route}`)),
   "/",
   "/getting-started",
   "/projects-overview",
@@ -20,23 +106,23 @@ const stableRouteIds = [
   "/derun",
   "/with-watch",
 ];
-const projectSlugs = ["runmoor", "nodeup", "binpm", "async-commit-hook"];
+const projectSlugs = Object.keys(projectRoutes).filter((slug) => slug !== "clibox");
 
 const outputDir = path.resolve("doc_build");
 const stableRoutePathPattern = stableRouteIds
   .filter((routeId) => routeId !== "/")
   .sort((left, right) => right.length - left.length)
-  .map((routeId) => routeId.slice(1).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
+  .map((routeId) => RegExp.escape(routeId.slice(1)).replace(/\/$/u, "/?"))
   .join("|");
 const routeOutputFiles = stableRouteIds.map((routeId) => ({
   routeId,
   outputFile:
-    routeId === "/"
-      ? path.join(outputDir, "index.html")
+    routeId.endsWith("/")
+      ? path.join(outputDir, routeId.slice(1), "index.html")
       : path.join(outputDir, `${routeId.slice(1)}.html`),
 }));
 const htmlRoutePaths = new Set(
-  stableRouteIds.map((routeId) => (routeId === "/" ? "/index.html" : `${routeId}.html`)),
+  routeOutputFiles.map(({ outputFile }) => `/${path.relative(outputDir, outputFile).split(path.sep).join("/")}`),
 );
 const urlAttributePattern = /\b(?:href|src|srcset|poster|action|formaction|data)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu;
 const cssUrlPattern = /\burl\s*\(\s*(?:"([^"]*)"|'([^']*)'|([^\s)]+))\s*\)/giu;
@@ -50,6 +136,16 @@ async function pathExists(filePath) {
   } catch {
     return false;
   }
+}
+
+async function collectCssFiles(directory) {
+  const files = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...await collectCssFiles(file));
+    else if (entry.isFile() && entry.name.endsWith(".css")) files.push(file);
+  }
+  return files;
 }
 
 async function collectHtmlFiles(directory, depth = 0) {
@@ -74,7 +170,8 @@ async function collectHtmlFiles(directory, depth = 0) {
 const htmlFiles = await collectHtmlFiles(outputDir);
 const failures = [];
 
-// Project sections are validated separately from the root-owned route set.
+// Existing project sections have separate validators. clibox also uses the
+// strict article/resource checks below, with exact route exceptions only.
 for (const slug of projectSlugs) {
   if (!(await pathExists(path.join(outputDir, slug)))) {
     failures.push(`${slug} is missing from the public documentation tree`);
@@ -86,6 +183,7 @@ function attributeValue(match) {
 }
 
 const requiredHeadings = new Map([
+  ...Object.entries(cliboxHeadings),
   ["/devhud", ["DevHud"]],
   ["/devhud/install", ["Install and Verify DevHud", "Desktop", "Mobile stores", "Chrome extension"]],
   ["/devhud/guide", ["Using DevHud", "First run and identity", "Settings and PAT profiles", "Capture, drafts, and browser context", "Decks and widgets"]],
@@ -96,8 +194,11 @@ const requiredHeadings = new Map([
   ["/devhud/releases", ["DevHud Releases"]],
 ]);
 const requiredLinks = new Map([
-  ["/", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/"]],
-  ["/projects-overview", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/"]],
+  ["/clibox/", ["/clibox/install", "/clibox/getting-started", "/clibox/commands", "/clibox/migration"]],
+  ["/clibox/install", ["/clibox/releases", "https://oss.delino.io/linux-packages"]],
+  ["/clibox/commands", ["/clibox/system#run-with-environment-variables", "/clibox/transformations#hashes-and-verification", "/clibox/wait#http", "/clibox/configuration#normalize-yaml"]],
+  ["/", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/", "https://oss.delino.io/clibox/"]],
+  ["/projects-overview", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/", "https://oss.delino.io/clibox/"]],
   ["/devhud", ["/devhud/install", "/devhud/privacy", "/devhud/security", "/devhud/support"]],
   ["/devhud/install", ["/devhud/releases", "/devhud/security", "/devhud/support"]],
   ["/devhud/guide", ["/devhud/privacy", "/devhud/security", "/devhud/support"]],
@@ -203,7 +304,8 @@ function containsCredentialBearingQuery(url) {
 function containsCredentialBearingFragment(url) {
   if (!url.hash) return false;
   const fragment = url.hash.slice(1).replace(/^\?/u, "");
-  return containsCredentialBearingParameters(new URLSearchParams(fragment));
+  return containsCredentialBearingParameters(new URLSearchParams(fragment))
+    || (fragment.includes("?") && containsCredentialBearingParameters(new URLSearchParams(fragment.slice(fragment.indexOf("?") + 1))));
 }
 
 function containsCredentialBearingParameters(parameters) {
@@ -298,7 +400,8 @@ function publicPathText(text, htmlFile) {
   }
   return text;
 }
-const allowedPublicPathPattern = `${stableRoutePathPattern}|(?:${projectSlugs.join("|")})(?:[/\\\\][A-Za-z0-9._~-]+)*(?:[/\\\\])?|(?:assets|static)(?:[/\\\\][A-Za-z0-9._~-]+)*`;
+// The terminal boundary must apply to every alternative, not just static assets.
+const allowedPublicPathPattern = `(?:${stableRoutePathPattern}|(?:assets|static)(?:[/\\\\][A-Za-z0-9._~-]+)*)`;
 const forbiddenPathContent = [
   new RegExp(`(?:^|[\\s("'\\x60>])/(?!${allowedPublicPathPattern}(?:\\.html)?(?:[?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
   /(?:^|[\s("'`>])(?:\.\.[\\/])+(?:[A-Za-z0-9._~-]+[\\/])+[^\s"'`<>]*/u,
@@ -472,6 +575,28 @@ for (const htmlFile of htmlFiles) {
   }
   if (containsAffirmativeReleaseClaim(renderedText)) {
     failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
+  }
+}
+
+for (const cssFile of await collectCssFiles(outputDir)) {
+  const contents = await readFile(cssFile, "utf8");
+  const relativeFile = path.relative(outputDir, cssFile);
+  if (
+    forbiddenContent.some((pattern) => pattern.test(contents))
+    || containsCredentialBearingResource(contents, cssFile)
+    || containsForbiddenResourcePath(contents, cssFile)
+  ) {
+    failures.push(`${relativeFile} contains prohibited public content`);
+  }
+  for (const target of resourceTargets(contents)) {
+    try {
+      const url = new URL(decodeHTML(target), new URL(`/${relativeFile}`, validatorOrigin));
+      if (url.origin === validatorOrigin && htmlRoutePaths.has(url.pathname)) {
+        failures.push(`${relativeFile} contains a non-clean route`);
+      }
+    } catch {
+      failures.push(`${relativeFile} contains a malformed resource URL`);
+    }
   }
 }
 

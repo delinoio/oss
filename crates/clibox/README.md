@@ -1,5 +1,7 @@
 # clibox
 
+[Documentation](https://oss.delino.io/clibox/) · [Command reference](https://oss.delino.io/clibox/commands)
+
 A native Rust CLI distributed through native packages and `@delino/clibox` on npm for project-local version pinning.
 
 Cross-platform utilities for child environments, local port owners, resource opening, the desktop text clipboard, text replacement, time formatting/arithmetic, Base64 encoding/decoding, checksum generation/verification, and TCP/HTTP/file readiness waits.
@@ -14,9 +16,9 @@ pnpm exec clibox --version
 
 The npm launcher requires Node.js 22 or newer. Prebuilt binaries cover macOS and Windows x64/arm64, and Linux x64/arm64 with glibc or musl. npm installation does not require Rust or installation scripts.
 
-## Migrating from 0.1.x
+## Migrating older command syntax
 
-The next minor release changes these command interfaces. Old command names are rejected with exit code 2 and migration guidance; they are not aliases.
+The examples below use `run env`, which is implemented for the next minor release. Published version **0.1.6** uses **`env run`** instead; substitute that spelling in the environment examples and use `clibox env --help` for its command group. Version 0.1.6 already includes `port list`, `hash compute`, and the output/cancellation behavior described here. Update scripts when upgrading to the corresponding interface; rejected old names return exit code 2 with migration guidance and are not aliases.
 
 | Previous use | New use |
 | --- | --- |
@@ -370,9 +372,11 @@ clibox dotenv merge base.env local.env --output local.env --force
 
 Supply at least one input. Inputs are read in order; `-` may occur once to read stdin at that position. The last assignment within each file wins, and later inputs override earlier inputs, including explicit empty values. Malformed records fail even if a later assignment would overwrite them. All inputs are read before any file replacement.
 
-The [Node.js dotenv syntax](https://nodejs.org/api/environment_variables.html#dotenv) is the baseline: keys match `[A-Za-z_][A-Za-z0-9_]*`, with optional `export`, assignment whitespace, comments, empty values, and multiline single- or double-quoted values. Invalid keys, missing `=`, unterminated quotes, and unexpected content following quoted values are errors.
+The [Node.js dotenv syntax](https://nodejs.org/api/environment_variables.html#dotenv) is the baseline: keys match `[A-Za-z_][A-Za-z0-9_]*`, with an optional `export` prefix, assignment whitespace, comments, empty values, and multiline single- or double-quoted values. Invalid keys, missing `=`, unterminated quotes, and unexpected content following quoted values are errors.
 
-Merging emits sorted `KEY=<winning value token>` records. It removes `export`, assignment whitespace, comments outside values, and unrelated blank lines. Quotes, escapes, quoted internal line endings, and the original winning value representation are preserved without decoding/re-encoding. `$VAR`, `${VAR}`, and command substitutions remain literal: no process environment is loaded into results and no shell code is executed.
+The `export` prefix is recognized only when followed immediately by an ASCII space and another assignment key, as in `export NAME=value`. Tabs may follow that initial space, but `export<TAB>NAME=value` is invalid. The word `export` can itself be a key: `export=value`, `export =value`, and `export<TAB>=value` are ordinary assignments and merge to `export=value`. Here, `<TAB>` denotes an actual tab character.
+
+Merging emits sorted `KEY=<winning value token>` records. It removes the optional `export` prefix, assignment whitespace, comments outside values, and unrelated blank lines. Quotes, escapes, quoted internal line endings, and the original winning value representation are preserved without decoding/re-encoding. `$VAR`, `${VAR}`, and command substitutions remain literal: no process environment is loaded into results and no shell code is executed.
 
 For `base.env` containing `B=base` and `A="keep ${HOME}"`, and `local.env` containing `B=local`, the result is:
 

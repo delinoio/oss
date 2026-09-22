@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { SupportedLanguage } from "./localization";
 import { NativeBridgeError, NativeBridgeErrorCode, type DesktopUpdaterStatus, type NativeBridgeResponseV1, type NativeBridgeV1 } from "./native-bridge";
@@ -68,15 +68,18 @@ export function DesktopUpdaterPanel({ bridge, language, onApprovalOpenChange }: 
   const confirmationDialog = useRef<HTMLElement>(null);
   const approvalOpener = useRef<HTMLElement | null>(null);
   const updaterPanel = useRef<HTMLElement>(null);
+  const approvalFocusPending = useRef(false);
 
-  function restoreApprovalFocus() {
+  useLayoutEffect(() => {
+    if (approval !== null || !approvalFocusPending.current) return;
+    approvalFocusPending.current = false;
     const opener = approvalOpener.current;
     approvalOpener.current = null;
-    requestAnimationFrame(() => {
-      const target = opener?.isConnected ? opener : updaterPanel.current;
-      target?.focus();
-    });
-  }
+    // Native events may render after a browser frame; select the target only after
+    // React commits the dismissal and any removal of the original opener.
+    const target = opener?.isConnected ? opener : updaterPanel.current;
+    target?.focus();
+  }, [approval, status]);
 
   const applyStatus = (nextStatus: DesktopUpdaterStatus) => {
     statusRevision.current += 1;
@@ -85,7 +88,7 @@ export function DesktopUpdaterPanel({ bridge, language, onApprovalOpenChange }: 
       approvedDownloadCandidate.current = null;
       onApprovalOpenChange?.(false);
       setApproval((current) => current === "download" ? null : current);
-      restoreApprovalFocus();
+      approvalFocusPending.current = true;
     }
     setStatus(nextStatus);
   };
@@ -139,7 +142,7 @@ export function DesktopUpdaterPanel({ bridge, language, onApprovalOpenChange }: 
     approvedDownloadCandidate.current = null;
     onApprovalOpenChange?.(false);
     setApproval(null);
-    restoreApprovalFocus();
+    approvalFocusPending.current = true;
   };
   const handleConfirmationKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") {

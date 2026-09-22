@@ -115,6 +115,7 @@
 - Completion generation logs must include shell, command scope, and `generated|failed` outcome state.
 
 ## Build and Test
+- Temporary fixture cleanup is bounded to its own root; never delete the shared temporary parent needed by later workspace tests.
 - Local validation: `cargo test -p nodeup`
 - Workspace baseline: `cargo test --workspace --all-targets`
 - Release contract checks should align with `release-nodeup` workflow expectations.
