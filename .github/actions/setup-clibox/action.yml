@@ -24,7 +24,12 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: pnpm install --frozen-lockfile --ignore-scripts --filter delinoio-oss-workspace
-    - name: Verify and expose clibox
+    - name: Verify clibox
       shell: bash
       working-directory: ${{ inputs.working-directory }}
-      run: node scripts/setup/verify-clibox.cjs
+      run: |
+        expected=$(node -p 'require("./package.json").devDependencies["clibox-prebuilt"].split("@").pop()')
+        actual=$(pnpm exec clibox --version)
+        test "$actual" = "clibox $expected"
+        printf '[clibox.setup] %s\n' "$actual"
+        node -p 'require("node:fs").realpathSync("node_modules/clibox-prebuilt")'

@@ -14,7 +14,8 @@ test("clibox setup uses the lockfile and reuses existing installs", () => {
   assert.equal(install.run, "pnpm install --frozen-lockfile --ignore-scripts --filter delinoio-oss-workspace");
   assert.equal(install.if, "${{ inputs.install == 'true' }}");
   assert.equal(install["working-directory"], "${{ inputs.working-directory }}");
-  assert.equal(action.runs.steps.at(-1).run, "node scripts/setup/verify-clibox.cjs");
+  assert.ok(action.runs.steps.at(-1).run.includes("pnpm exec clibox --version"));
+  assert.ok(action.runs.steps.at(-1).run.includes('test "$actual" = "clibox $expected"'));
   const ci = workflow("CI");
   for (const id of ["node-clibox-test", "devhud-android-emulator", "devhud-supply-chain", "devhud-release-contracts"]) {
     const steps = ci.jobs[id].steps;
@@ -59,9 +60,12 @@ test("historical store recovery gets clibox from the workflow revision without r
   assert.equal(setup.if, tooling.if);
   assert.ok(steps.indexOf(tooling) < steps.indexOf(setup));
   assert.ok(steps.indexOf(setup) < steps.findIndex(({ run }) => run?.includes("clibox base64 decode")));
+  const upload = steps.find(({ name }) => name === "Upload the processed App Store package");
+  assert.equal(upload["working-directory"], tooling.with.path);
+  assert.ok(upload.run.includes('"$GITHUB_WORKSPACE/private-artifacts/devhud-ios-arm64-app-store.ipa"'));
 });
 
-test("shared clibox launcher changes select its consumers and release fixtures", () => {
-  const jobs = planJobs(Event.Push, ["scripts/clibox.cjs"]).jobs;
+test("clibox dependency changes select its consumers and release fixtures", () => {
+  const jobs = planJobs(Event.Push, ["pnpm-lock.yaml"]).jobs;
   for (const id of ["node-clibox-test", "devhud-supply-chain", "devhud-release-contracts", "devhud-desktop"]) assert.equal(jobs[id], true, id);
 });

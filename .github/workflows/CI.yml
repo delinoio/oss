@@ -1106,7 +1106,7 @@ jobs:
           expected=$(node -p "require('./apps/devhud/mobile-platforms.json').androidArtifactInspector.sha256")
           jar="$RUNNER_TEMP/bundletool-all-$version.jar"
           curl --fail --location --silent --show-error --output "$jar" "$url"
-          clibox hash verify "$expected" --input="$jar" --quiet
+          pnpm exec clibox hash verify "$expected" --input="$jar" --quiet
           echo "jar=$jar" >> "$GITHUB_OUTPUT"
 
       - name: Install Linux host prerequisites

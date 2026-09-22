@@ -14,9 +14,6 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CLIBOX_RUNNER="$SCRIPT_DIR/../../../../../scripts/clibox.cjs"
-
 FILE="$1"
 
 if [[ -z "$FILE" ]]; then
@@ -48,7 +45,7 @@ fi
 
 # Convert to raw URL
 # Format: https://gist.github.com/user/id -> https://gist.githubusercontent.com/user/id/raw/filename
-GIST_ID=$(echo "$GIST_URL" | node "$CLIBOX_RUNNER" text replace '^.*/' '' --regex)
+GIST_ID=$(echo "$GIST_URL" | pnpm exec clibox text replace '^.*/' '' --regex)
 FILENAME=$(basename "$FILE")
 
 # Get the raw URL via gh api

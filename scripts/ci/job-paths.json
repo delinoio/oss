@@ -324,8 +324,7 @@
       "scripts/release/linux/**",
       "scripts/run-rsbuild-dev.mjs",
       "scripts/spawn-dev-server.mjs",
-      "turbo.json",
-      "scripts/clibox.cjs"
+      "turbo.json"
     ],
     "native": true
   },
@@ -477,8 +476,7 @@
       "pnpm-lock.yaml",
       "pnpm-workspace.yaml",
       "scripts/release/**",
-      "turbo.json",
-      "scripts/clibox.cjs"
+      "turbo.json"
     ]
   },
   "devhud-release-contracts": {
@@ -512,8 +510,7 @@
       "scripts/release/devhud-operations.test.mjs",
       "servers/**",
       "servers/devhud-api/internal/rpc/diagnostics.go",
-      "turbo.json",
-      "scripts/clibox.cjs"
+      "turbo.json"
     ]
   },
   "async-commit-hook": {
@@ -564,8 +561,6 @@
       "scripts/release/linux-packages/**",
       "packaging/linux/**",
       "scripts/release/project.test.mjs",
-      "scripts/clibox.cjs",
-      "scripts/setup/verify-clibox.cjs",
       "scripts/tools/**",
       ".agents/skills/before-and-after/scripts/**"
     ],

@@ -14,7 +14,7 @@ test("screenshot helper delegates clipboard copying and preserves output when un
   mkdirSync(bin);
   copyFileSync(new URL("../../.agents/skills/before-and-after/scripts/upload-and-copy.sh", import.meta.url), join(scripts, "upload-and-copy.sh"));
   writeFileSync(join(scripts, "adapters/0x0st.sh"), '#!/bin/sh\nprintf "https://example.invalid/%s\\n" "$(basename "$1")"\n', { mode: 0o755 });
-  writeFileSync(join(bin, "node"), '#!/bin/sh\n[ "$2" = clipboard ] && [ "$3" = copy ] || exit 99\ncat > "$CLIPBOARD_FIXTURE"\nexit "${CLIPBOARD_STATUS:-0}"\n', { mode: 0o755 });
+  writeFileSync(join(bin, "pnpm"), '#!/bin/sh\n[ "$1" = exec ] && [ "$2" = clibox ] && [ "$3" = clipboard ] && [ "$4" = copy ] || exit 99\ncat > "$CLIPBOARD_FIXTURE"\nexit "${CLIPBOARD_STATUS:-0}"\n', { mode: 0o755 });
   for (const name of ["before.png", "after.png"]) writeFileSync(join(root, name), "fixture");
   const clipboard = join(root, "clipboard");
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, IMAGE_ADAPTER: "0x0st", CLIPBOARD_FIXTURE: clipboard };

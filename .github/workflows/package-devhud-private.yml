@@ -199,8 +199,8 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          printf '%s' "$P12_B64" | clibox base64 decode > "$RUNNER_TEMP/devhud-macos.p12"
-          printf '%s' "$API_KEY_B64" | clibox base64 decode > "$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$P12_B64" | pnpm exec clibox base64 decode > "$RUNNER_TEMP/devhud-macos.p12"
+          printf '%s' "$API_KEY_B64" | pnpm exec clibox base64 decode > "$RUNNER_TEMP/AuthKey.p8"
           security create-keychain -p "$RUNNER_TEMP" "$RUNNER_TEMP/devhud.keychain-db"
           security unlock-keychain -p "$RUNNER_TEMP" "$RUNNER_TEMP/devhud.keychain-db"
           security import "$RUNNER_TEMP/devhud-macos.p12" -k "$RUNNER_TEMP/devhud.keychain-db" -P "$P12_PASSWORD" -T /usr/bin/codesign
@@ -211,7 +211,7 @@ jobs:
         shell: pwsh
         env: { PFX_B64: "${{ secrets.DEVHUD_WINDOWS_SIGNING_PFX_B64 }}" }
         run: |
-          $env:PFX_B64 | clibox base64 decode --output "$env:RUNNER_TEMP\devhud.pfx"
+          $env:PFX_B64 | pnpm exec clibox base64 decode --output "$env:RUNNER_TEMP\devhud.pfx"
           if ($LASTEXITCODE -ne 0) { throw "PFX Base64 decoding failed" }
           "DEVHUD_WINDOWS_SIGNING_PFX_PATH=$env:RUNNER_TEMP\devhud.pfx" | Out-File $env:GITHUB_ENV -Append
       - run: pnpm --filter devhud verify:pins
@@ -448,7 +448,7 @@ jobs:
           expected=$(node -p "require('./apps/devhud/mobile-platforms.json').androidArtifactInspector.sha256")
           jar="$RUNNER_TEMP/bundletool-all-$version.jar"
           curl --fail --location --silent --show-error --output "$jar" "$url"
-          clibox hash verify "$expected" --input="$jar" --quiet
+          pnpm exec clibox hash verify "$expected" --input="$jar" --quiet
           echo "jar=$jar" >> "$GITHUB_OUTPUT"
       - name: Install Android Linux host prerequisites
         if: ${{ matrix.platform == 'android' }}
@@ -461,7 +461,7 @@ jobs:
         env: { KEYSTORE_B64: "${{ secrets.DEVHUD_ANDROID_UPLOAD_KEYSTORE_B64 }}" }
         run: |
           umask 077
-          printf '%s' "$KEYSTORE_B64" | clibox base64 decode > "$RUNNER_TEMP/devhud-upload.jks"
+          printf '%s' "$KEYSTORE_B64" | pnpm exec clibox base64 decode > "$RUNNER_TEMP/devhud-upload.jks"
           export TAURI_ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/devhud-upload.jks"
           export TAURI_ANDROID_KEYSTORE_PASSWORD="$DEVHUD_ANDROID_KEYSTORE_PASSWORD"
           export TAURI_ANDROID_KEY_ALIAS="$DEVHUD_ANDROID_KEY_ALIAS"
@@ -493,13 +493,13 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          printf '%s' "$P12_B64" | clibox base64 decode > "$RUNNER_TEMP/ios.p12"
+          printf '%s' "$P12_B64" | pnpm exec clibox base64 decode > "$RUNNER_TEMP/ios.p12"
           security create-keychain -p "$RUNNER_TEMP" "$RUNNER_TEMP/ios.keychain-db"
           security unlock-keychain -p "$RUNNER_TEMP" "$RUNNER_TEMP/ios.keychain-db"
           security import "$RUNNER_TEMP/ios.p12" -k "$RUNNER_TEMP/ios.keychain-db" -P "$P12_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k "$RUNNER_TEMP" "$RUNNER_TEMP/ios.keychain-db"
           security list-keychains -d user -s "$RUNNER_TEMP/ios.keychain-db"
-          for item in APP WIDGET INTENT; do value="${item}_PROFILE_B64"; printf '%s' "${!value}" | clibox base64 decode > "$RUNNER_TEMP/${item}.mobileprovision"; uuid=$(security cms -D -i "$RUNNER_TEMP/${item}.mobileprovision" | plutil -extract UUID raw -); mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"; cp "$RUNNER_TEMP/${item}.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$uuid.mobileprovision"; done
+          for item in APP WIDGET INTENT; do value="${item}_PROFILE_B64"; printf '%s' "${!value}" | pnpm exec clibox base64 decode > "$RUNNER_TEMP/${item}.mobileprovision"; uuid=$(security cms -D -i "$RUNNER_TEMP/${item}.mobileprovision" | plutil -extract UUID raw -); mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"; cp "$RUNNER_TEMP/${item}.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$uuid.mobileprovision"; done
           pnpm --filter devhud build:ios -- --ci
           app=$(find apps/devhud/src-tauri/gen/apple/build -name '*.app' -type d | head -1)
           test -d "$app/PlugIns/DevHUD Deck.appex"
@@ -624,7 +624,7 @@ jobs:
           DEVHUD_PROVENANCE_INVOCATION_ID: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
           DEVHUD_PROVENANCE_STARTED_ON: ${{ needs.plan.outputs.started_on }}
         run: |
-          build_finished_on=$(clibox time format --timezone UTC --format '%Y-%m-%dT%H:%M:%SZ')
+          build_finished_on=$(pnpm exec clibox time format --timezone UTC --format '%Y-%m-%dT%H:%M:%SZ')
           node scripts/release/generate-devhud-supply-chain.mjs --artifacts-dir private-artifacts --output-dir private-artifacts --invocation-id "$DEVHUD_PROVENANCE_INVOCATION_ID" --started-on "$DEVHUD_PROVENANCE_STARTED_ON" --finished-on "$build_finished_on"
           REQUIRE_COSIGN=1 scripts/release/generate-checksums.sh --artifacts-dir private-artifacts --sigstore-dir private-artifacts/sigstore
       - name: Validate complete private candidate and absence of secrets

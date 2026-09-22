@@ -55,8 +55,6 @@ if [ ! -d "$artifacts_dir" ]; then
 fi
 
 require_cosign="${REQUIRE_COSIGN:-1}"
-script_dir="$(cd "$(dirname "$0")" && pwd -P)"
-clibox=(node "$script_dir/../clibox.cjs")
 
 artifacts_dir="$(cd "$artifacts_dir" && pwd -P)"
 if [ -z "$sigstore_dir" ]; then
@@ -66,11 +64,9 @@ else
   sigstore_dir="$(cd "$sigstore_dir" && pwd -P)"
 fi
 
-pushd "$artifacts_dir" >/dev/null
-
 artifacts=()
 while IFS= read -r -d '' artifact; do
-  artifact="${artifact#./}"
+  artifact="${artifact#"$artifacts_dir/"}"
   case "$artifact" in
     *$'\n'*|*$'\r'*)
       echo "[release.checksum] artifact names must not contain newlines" >&2
@@ -79,7 +75,7 @@ while IFS= read -r -d '' artifact; do
   esac
   artifacts+=("$artifact")
 done < <(
-  find . -type f \
+  find "$artifacts_dir" -type f \
     ! -name 'SHA256SUMS' \
     ! -name '*.sigstore.json' \
     -print0
@@ -107,17 +103,20 @@ while IFS= read -r artifact; do
 done < <(printf '%s\n' "${artifacts[@]}" | LC_ALL=C sort)
 artifacts=("${sorted[@]}")
 
-: > SHA256SUMS
+manifest="$artifacts_dir/SHA256SUMS"
+: > "$manifest"
 for artifact in "${artifacts[@]}"; do
-  if [ ! -f "$artifact" ]; then
+  if [ ! -f "$artifacts_dir/$artifact" ]; then
     continue
   fi
-  # clibox emits GNU binary records. Retain the existing text marker and
-  # relative spelling for release consumers while preserving GNU escaping.
-  # Prefix inputs so a literal "-" filename never selects stdin.
-  # Remove marker normalization only after all consumers accept binary records.
-  "${clibox[@]}" hash compute --input="./$artifact" --format checksum \
-    | "${clibox[@]}" text replace ' *./' '  ' --first >> SHA256SUMS
+  # Run pnpm from the repository even when artifacts live outside the checkout.
+  # Keep the manifest's relative names, GNU escaping, and two-space text marker.
+  checksum=$(pnpm exec clibox hash compute --input="$artifacts_dir/$artifact")
+  if [[ "$artifact" == *\\* ]]; then
+    printf '\\%s  %s\n' "$checksum" "${artifact//\\/\\\\}" >> "$manifest"
+  else
+    printf '%s  %s\n' "$checksum" "$artifact" >> "$manifest"
+  fi
   echo "[release.checksum] checksum generated for $artifact" >&2
 done
 
@@ -131,7 +130,7 @@ if command -v cosign >/dev/null 2>&1; then
     echo "[release.checksum] signing $artifact with cosign" >&2
     cosign sign-blob --yes \
       --bundle "$bundle" \
-      "$artifact"
+      "$artifacts_dir/$artifact"
   done
 
   checksum_bundle="$sigstore_dir/SHA256SUMS.sigstore.json"
@@ -139,12 +138,10 @@ if command -v cosign >/dev/null 2>&1; then
   echo "[release.checksum] signing SHA256SUMS with cosign" >&2
   cosign sign-blob --yes \
     --bundle "$checksum_bundle" \
-    SHA256SUMS
+    "$manifest"
 elif [ "$require_cosign" = "1" ]; then
   echo "[release.checksum] cosign is required but not available" >&2
   exit 1
 else
   echo "[release.checksum] cosign unavailable; signing skipped" >&2
 fi
-
-popd >/dev/null

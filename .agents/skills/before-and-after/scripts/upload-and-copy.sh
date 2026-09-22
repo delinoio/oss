@@ -21,10 +21,9 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ADAPTERS_DIR="$SCRIPT_DIR/adapters"
-CLIBOX_RUNNER="$SCRIPT_DIR/../../../../scripts/clibox.cjs"
 
 copy_result() {
-    if printf '%s\n' "$1" | node "$CLIBOX_RUNNER" clipboard copy; then
+    if printf '%s\n' "$1" | pnpm exec clibox clipboard copy; then
         echo "$2 copied to clipboard!"
     else
         echo "(clipboard unavailable; use the output above; install repository dependencies with pnpm install)"

@@ -80,7 +80,7 @@ npx @vercel/before-and-after url1 url2
 
 ## Image Upload
 
-The repository-local upload helper uses the pinned clibox prebuilt for clipboard copying. Run root `pnpm install` first. If the platform clipboard is unavailable, the helper still prints the URLs or Markdown for manual copying. Upload adapter behavior is unchanged.
+The repository-local upload helper uses `pnpm exec clibox` for clipboard copying. Install dependencies with `pnpm install` and run the helper from the repository root. If the platform clipboard is unavailable, the helper still prints the URLs or Markdown for manual copying. Upload adapter behavior is unchanged.
 
 ```bash
 # Default (0x0.st - no signup needed)

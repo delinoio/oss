@@ -10,7 +10,7 @@ const script = fileURLToPath(new URL("./generate-checksums.sh", import.meta.url)
 
 function run(artifacts, sigstore) {
   const bin = mkdtempSync(join(tmpdir(), "checksum-signing-stub-"));
-  writeFileSync(join(bin, "cosign"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  writeFileSync(join(bin, "cosign"), '#!/bin/sh\nwhile [ "$#" -gt 1 ]; do shift; done\ntest -f "$1"\n', { mode: 0o755 });
   try {
     execFileSync("bash", [script, "--artifacts-dir", artifacts, "--sigstore-dir", sigstore], {
       env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, REQUIRE_COSIGN: "1" },
@@ -64,10 +64,9 @@ test("checksum bytes match existing tools for spaces, backslashes, and option-li
   run(root, join(root, "sigstore"));
   const manifest = join(root, "SHA256SUMS");
   assert.equal(readFileSync(manifest, "utf8"), expected);
-  const clibox = fileURLToPath(new URL("../clibox.cjs", import.meta.url));
-  execFileSync(process.execPath, [clibox, "hash", "verify", "--check", manifest, "--quiet"], { cwd: tmpdir() });
+  execFileSync("pnpm", ["exec", "clibox", "hash", "verify", "--check", manifest, "--quiet"]);
   writeFileSync(join(root, names[0]), "tampered");
-  assert.throws(() => execFileSync(process.execPath, [clibox, "hash", "verify", "--check", manifest, "--quiet"], { stdio: "pipe" }));
+  assert.throws(() => execFileSync("pnpm", ["exec", "clibox", "hash", "verify", "--check", manifest, "--quiet"], { stdio: "pipe" }));
 });
 
 test("a literal dash is hashed as a file and newline-bearing filenames fail before manifest replacement", (t) => {

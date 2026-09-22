@@ -148,8 +148,6 @@ fi
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 repo_root="$(git -C "$script_dir/../.." rev-parse --show-toplevel)"
 
-clibox=(node "$repo_root/scripts/clibox.cjs")
-
 rendered_file=""
 destination_path=""
 
@@ -178,15 +176,15 @@ case "$project" in
     fi
 
     rendered_file="$(mktemp)"
-    "${clibox[@]}" text replace "__DARWIN_AMD64_URL__" "$darwin_amd64_url" --input="$template_path" \
-      | "${clibox[@]}" text replace "__DARWIN_AMD64_SHA256__" "$darwin_amd64_sha256" \
-      | "${clibox[@]}" text replace "__DARWIN_ARM64_URL__" "$darwin_arm64_url" \
-      | "${clibox[@]}" text replace "__DARWIN_ARM64_SHA256__" "$darwin_arm64_sha256" \
-      | "${clibox[@]}" text replace "__LINUX_AMD64_URL__" "$linux_amd64_url" \
-      | "${clibox[@]}" text replace "__LINUX_AMD64_SHA256__" "$linux_amd64_sha256" \
-      | "${clibox[@]}" text replace "__LINUX_ARM64_URL__" "$linux_arm64_url" \
-      | "${clibox[@]}" text replace "__LINUX_ARM64_SHA256__" "$linux_arm64_sha256" \
-      | "${clibox[@]}" text replace "__VERSION__" "$version" >"$rendered_file"
+    pnpm exec clibox text replace "__DARWIN_AMD64_URL__" "$darwin_amd64_url" --input="$template_path" \
+      | pnpm exec clibox text replace "__DARWIN_AMD64_SHA256__" "$darwin_amd64_sha256" \
+      | pnpm exec clibox text replace "__DARWIN_ARM64_URL__" "$darwin_arm64_url" \
+      | pnpm exec clibox text replace "__DARWIN_ARM64_SHA256__" "$darwin_arm64_sha256" \
+      | pnpm exec clibox text replace "__LINUX_AMD64_URL__" "$linux_amd64_url" \
+      | pnpm exec clibox text replace "__LINUX_AMD64_SHA256__" "$linux_amd64_sha256" \
+      | pnpm exec clibox text replace "__LINUX_ARM64_URL__" "$linux_arm64_url" \
+      | pnpm exec clibox text replace "__LINUX_ARM64_SHA256__" "$linux_arm64_sha256" \
+      | pnpm exec clibox text replace "__VERSION__" "$version" >"$rendered_file"
     ;;
   *)
     log "unsupported project: $project"
