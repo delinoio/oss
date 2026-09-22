@@ -50,7 +50,7 @@ jobs:
           go test ./...
           go test -race ./cmds/async-commit-hook/...
           pnpm --filter async-commit-hook test
-          pnpm --filter async-commit-hook-docs test
+          pnpm --filter public-docs test
           pnpm --filter @delinoio/async-commit-hook-api-client test
           pnpm proto:check
           node --test scripts/release/async-commit-hook.test.mjs

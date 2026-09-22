@@ -1,33 +1,33 @@
-# apps-runmoor-docs-foundation
+# Runmoor public documentation foundation
 
 ## Scope
-- Project/component: Runmoor public documentation app
-- Canonical path: `apps/runmoor-docs`
+- Project/component: Runmoor public documentation content
+- Canonical path: `apps/public-docs/docs/runmoor`
 
 ## Runtime and Language
 - Runtime: Rspress static documentation app, aligned with the other repository documentation apps.
 - Primary language: English Markdown and TypeScript configuration.
-- Deployment target: package-local static output assembled into the `public-docs` Cloudflare Pages publication.
+- Deployment target: the `apps/public-docs` static output published by the consolidated Cloudflare Pages site.
 
 ## Users and Operators
 - Runmoor users reading installation, configuration, runner execution, and operations guidance.
 - Maintainers reviewing and publishing the documentation.
 
 ## Interfaces and Contracts
-- Package name: `runmoor-docs`, registered by the existing `apps/*` pnpm workspace glob.
+- The content is built by the `public-docs` Rspress application; there is no standalone Runmoor documentation package or workspace.
 - Canonical production URL: `https://oss.delino.io/runmoor`.
-- Stable clean routes: `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, and `/operations`.
-- The overview and six guides are owned by this app and assembled under `/runmoor` without removing their content, verification limitations, fork policies, shared-kernel boundaries, or external software licensing guidance. Package-local links remain relative; assembled links receive the `/runmoor` prefix.
-- Every assembled page includes the shared site selector with Runmoor selected via `aria-current`; it must offer the root, Nodeup, binpm, and async-commit-hook subpaths.
+- Stable clean routes: `/runmoor/`, `/runmoor/install`, `/runmoor/configuration`, `/runmoor/commands`, `/runmoor/docker`, `/runmoor/tart`, and `/runmoor/operations`.
+- The overview and six guides are owned by this content section and published under `/runmoor` without removing their content, verification limitations, fork policies, shared-kernel boundaries, or external software licensing guidance. Links use the consolidated site's `/runmoor` base.
+- Every page includes the shared site selector with Runmoor selected via `aria-current`; it must offer the root, Nodeup, binpm, and async-commit-hook subpaths.
 - Use the default Rspress theme with every stable route in the navigation and sidebar, plus visible GitHub repository links in the social navigation and footer.
 - Validate top-navigation, sidebar, social-link, and document-footer regions separately on every stable page. Removing a link from one region must fail even when article content or another region still links to that destination.
-- Development uses `127.0.0.1:46309`; production preview uses `127.0.0.1:46271`. Both use the shared fixed-port wrapper, reject host changes, prevent port overrides, fail on conflicts without remapping, and forward termination signals to the server.
+- Development uses the consolidated `public-docs` server at `127.0.0.1:46302`; it owns the Runmoor section alongside the other project sections.
 - Public content is curated from the Runmoor project and command contracts. User-owned configuration and guest runner paths are public interfaces; repository-internal architecture and operational details remain in `docs/`.
 - The CLI release README remains in `cmds/runmoor/README.md` with a link to the consolidated Runmoor subpath.
 
 ## Storage
-- Markdown sources live in `apps/runmoor-docs/docs`.
-- Static output is generated into the ignored `apps/runmoor-docs/doc_build` directory.
+- Markdown sources live in `apps/public-docs/docs/runmoor`.
+- Static output is generated into the ignored `apps/public-docs/doc_build` directory.
 - No user data or credentials are stored by this documentation app.
 
 ## Security
@@ -44,17 +44,16 @@
 - Development port conflicts include recovery instructions. Logs contain no credentials.
 
 ## Build and Test
-- Development: package-local `pnpm dev` or root `pnpm dev:runmoor-docs`, independent of the DevHud team environment.
-- Build: `pnpm --filter runmoor-docs build`.
-- Preview: `pnpm --filter runmoor-docs preview`.
-- Validation: package-local `pnpm test` or `pnpm --filter runmoor-docs test`, building the site and validating route artifacts, required article headings and links, main landmarks, base-prefixed clean internal links, absence of retired standalone-origin links or root-path escapes, and public-content restrictions. The command also runs regression fixtures against temporary copies of the real generated HTML to prove rejection of credentials and internal paths without logging their values.
-- Preparation: `prepare:app` is an explicit no-op.
+- Development: `pnpm --filter public-docs dev`, independent of the DevHud team environment.
+- Build: `pnpm --filter public-docs build`.
+- Preview: use the `public-docs` preview command for the consolidated output.
+- Validation: `pnpm --filter public-docs test`, building the site and validating Runmoor route artifacts, required article headings and links, main landmarks, base-prefixed clean internal links, absence of retired standalone-origin links or root-path escapes, and public-content restrictions.
 - Clean URL validation covers `href`, `src`, `srcset`, `poster`, `action`, `formaction`, and `data` attributes plus CSS resource references. It resolves entity-encoded, relative, and absolute destinations before checking same-origin `.html` routes; external `.html` URLs and generated static assets remain usable.
-- CI: `node-runmoor-docs-test` uses the shared job-level change plan, one frozen install with `--ignore-scripts`, the planner's exact Turbo comparison, and successful-main-only cache saves. App changes select both this job and repository-environment validation; changes to the shared Rspress wrapper force documentation checks even outside the workspace graph. The job participates in `ci-result`.
+- CI: `node-public-docs-test` uses the consolidated documentation build and validation boundary, including the Runmoor content section.
 
 ## Dependencies and Integrations
-- Uses the repository's existing Rspress dependency version and pnpm workspace.
-- `pnpm --filter runmoor-docs build` produces the package output from the repository root. `public-docs` consumes that output under `doc_build/runmoor`; the package output is not independently published.
+- Uses the repository's existing Rspress dependency version through the `public-docs` pnpm workspace.
+- `pnpm --filter public-docs build` produces the complete output, including `doc_build/runmoor`; no standalone Runmoor documentation output is published.
 - Operators may decommission the former standalone Runmoor Pages project and DNS record after consolidated route verification. No redirect or alias is added.
 
 ## Change Triggers

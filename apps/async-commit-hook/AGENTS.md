@@ -12,7 +12,7 @@
 - The daemon and on-demand viewer serve the same embedded UI. Use same-origin Connect with mandatory API version headers, no pairing or browser credential persistence; keep result caches in memory and run fragments refreshable.
 - Reject foreign/missing Origin, Host, method and version header before the development proxy rewrites a request. Production API security cannot depend on a dev-only CORS grant.
 - Preserve keyboard navigation, dialog focus restoration, status words and recoverable network/version states.
-- Public documentation and installers are owned by the separate async-commit-hook-docs app. The UI links to https://oss.delino.io/async-commit-hook.
+- Public documentation is owned by `apps/public-docs/docs/async-commit-hook`, and installers are maintained in `scripts/install`. The UI links to https://oss.delino.io/async-commit-hook.
 - `build:embedded` is the sole producer of command webassets/dist: clear the previous embed before building, validate real hashed assets and copy only after success. Include license files; never substitute a placeholder bundle.
 - Run `pnpm test` from this directory after frontend changes. Generated `dist` is untracked and must be removed from the final worktree.
 

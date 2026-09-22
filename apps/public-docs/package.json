@@ -6,10 +6,10 @@
   "scripts": {
     "prepare:app": "echo \"public-docs prepared\"",
     "dev": "node ../../scripts/run-rspress-port.mjs public-docs dev 46302 -",
-    "build": "rspress build && node scripts/build-integrated-docs.mjs",
+    "build": "node scripts/copy-public-assets.mjs && rspress build",
     "build:frontend": "pnpm build",
     "preview": "rspress preview",
-    "test:routes": "pnpm --filter @delinoio/docs-site-switcher test && pnpm build:frontend && node scripts/validate-clean-urls.mjs && node scripts/validate-integrated-docs.mjs",
+    "test:routes": "pnpm --filter @delinoio/docs-site-switcher test && pnpm build:frontend && node scripts/validate-clean-urls.mjs && node scripts/validate-public-docs.mjs",
     "test": "pnpm test:routes"
   },
   "devDependencies": {

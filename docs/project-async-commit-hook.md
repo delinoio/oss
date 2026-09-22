@@ -9,7 +9,7 @@ Run trusted repository checks asynchronously against committed source, with dura
 ## Domain Ownership Map
 - `cmds/async-commit-hook`: Go core, CLI, workers, local API, stdio MCP, installation and update lifecycle.
 - `apps/async-commit-hook`: React/Rsbuild UI embedded in ach.
-- `apps/async-commit-hook-docs`: Rspress documentation and installer assets assembled at `https://oss.delino.io/async-commit-hook`.
+- `apps/public-docs/docs/async-commit-hook`: Rspress documentation content published at `https://oss.delino.io/async-commit-hook`; installer assets remain in `scripts/install`.
 - `protos/async_commit_hook/v1`: versioned Connect protocol.
 - `packages/async-commit-hook-api-client`: generated TypeScript/Connect Query client.
 - `packaging/async-commit-hook`: supported release metadata and compatibility evidence.
@@ -56,4 +56,4 @@ Branch navigation preserves opaque worktree-scoped identities independently of n
 
 Changes preserve safe server diagnostics when automatic diff-base resolution has no result: `diff-base-required` remains local-base guidance rather than being classified as a disconnected UI.
 
-The owner amendment on 2026-09-20 replaces remote-hosted UI/pairing with an embedded same-origin local UI served by the daemon or on-demand viewer, and moves public docs/installers to a dedicated Rspress app. Check execution, evidence and gate semantics remain unchanged. Async documentation is assembled below `/async-commit-hook`; its release workflow validates the package but does not publish a standalone site. Documentation development/preview use fixed ports 46310/46281.
+The owner amendment on 2026-09-20 replaces remote-hosted UI/pairing with an embedded same-origin local UI served by the daemon or on-demand viewer, and moves public docs/installers into the consolidated Rspress site. Check execution, evidence and gate semantics remain unchanged. Async documentation is owned by `apps/public-docs/docs/async-commit-hook` and published below `/async-commit-hook`; its release workflow does not publish documentation. Documentation development uses the consolidated public-docs server.

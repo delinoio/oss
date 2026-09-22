@@ -1,7 +1,7 @@
 # async-commit-hook application contract
 
 ## Scope
-`apps/async-commit-hook`: local UI embedded in the `ach` executable. Public documentation is owned separately by `apps/async-commit-hook-docs` at https://oss.delino.io/async-commit-hook.
+`apps/async-commit-hook`: local UI embedded in the `ach` executable. Public documentation is owned by `apps/public-docs/docs/async-commit-hook` at https://oss.delino.io/async-commit-hook.
 
 ## Runtime and Language
 React/TypeScript, Rsbuild, React Query with Connect Query. The Go daemon and on-demand viewer serve the same compiled UI and Connect API on the configured loopback endpoint. No Node server or external assets are required at runtime. Fixed localhost development port 46308; conflicts and address overrides fail.

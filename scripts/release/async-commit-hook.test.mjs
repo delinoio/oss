@@ -14,7 +14,7 @@ test('source versions and six target contract agree', () => {
 });
 test('installers verify signatures and checksum before extraction and preserve existing installs', () => {
  for(const path of ['install.sh','install.ps1']) {
-  const text=read(`apps/async-commit-hook-docs/public/${path}`);
+  const text=read(`scripts/install/async-commit-hook.${path.endsWith('.ps1') ? 'ps1' : 'sh'}`);
   assert.match(text,/verify-blob/);assert.match(text,/SHA256SUMS.sigstore.json/);
   assert.match(text,/release-async-commit-hook.yml@refs\/heads\/main/);
   assert.match(text,/token.actions.githubusercontent.com/);
@@ -23,7 +23,7 @@ test('installers verify signatures and checksum before extraction and preserve e
   assert.doesNotMatch(text,/releases\/latest\/download/);
   assert.match(text,/self-update/);assert.match(text,/Checksum mismatch/);
  }
- const shell=spawnSync('sh',['-n','apps/async-commit-hook-docs/public/install.sh'],{cwd:root,encoding:'utf8'});
+ const shell=spawnSync('sh',['-n','scripts/install/async-commit-hook.sh'],{cwd:root,encoding:'utf8'});
  assert.equal(shell.status,0,shell.stderr);
 });
 test('archives reject extra paths and formula supports four Unix targets', () => {
@@ -61,7 +61,7 @@ test('shell installer rejects invalid signature and checksum before publishing a
   for(const [signatureExit,checksum,success] of [['1',digest,false],['0','0'.repeat(64),false],['0',digest,true]]) {
    writeFileSync(join(assets,'SHA256SUMS'),`${checksum}  ${asset}\n`);
    const destination=join(directory,`install-${signatureExit}-${checksum.slice(0,8)}`);
-   const result=spawnSync('sh',['apps/async-commit-hook-docs/public/install.sh'],{cwd:root,env:{...process.env,PATH:bin+':'+process.env.PATH,ACH_INSTALL_DIR:destination,TEST_ASSETS:assets,TEST_RELEASES:join(assets,'releases.json'),TEST_SIGNATURE_EXIT:signatureExit},encoding:'utf8'});
+   const result=spawnSync('sh',['scripts/install/async-commit-hook.sh'],{cwd:root,env:{...process.env,PATH:bin+':'+process.env.PATH,ACH_INSTALL_DIR:destination,TEST_ASSETS:assets,TEST_RELEASES:join(assets,'releases.json'),TEST_SIGNATURE_EXIT:signatureExit},encoding:'utf8'});
    assert.equal(result.status===0,success,result.stderr);
    if(success) assert.equal(readFileSync(join(destination,'ach'),'utf8'),'fixture');
   }
@@ -90,7 +90,7 @@ test('installer selects the highest published project release by default and exa
    [['--version','0.2.0','extra'],undefined,null],
   ]) {
    rmSync(requests,{force:true});
-   const result=spawnSync('sh',['apps/async-commit-hook-docs/public/install.sh',...args],{
+   const result=spawnSync('sh',['scripts/install/async-commit-hook.sh',...args],{
     cwd:root,encoding:'utf8',env:{...process.env,PATH:bin+':'+process.env.PATH,ACH_VERSION:environment,TEST_REQUESTS:requests,TEST_RELEASES:releases},
    });
    assert.equal(result.status,version?77:2,`${JSON.stringify(args)}: ${result.stderr}`);

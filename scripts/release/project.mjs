@@ -21,7 +21,6 @@ const versions = Object.freeze({
 });
 const asyncCommitHookVersions = Object.freeze([
   { file: "apps/async-commit-hook/package.json", name: "async-commit-hook" },
-  { file: "apps/async-commit-hook-docs/package.json", name: "async-commit-hook-docs" },
   { file: "packages/async-commit-hook-api-client/package.json", name: "@delinoio/async-commit-hook-api-client" },
   { file: "packaging/async-commit-hook/release-metadata.json" },
 ]);

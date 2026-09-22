@@ -20,7 +20,7 @@ const stableRouteIds = [
   "/derun",
   "/with-watch",
 ];
-const integratedProjectSlugs = ["runmoor", "nodeup", "binpm", "async-commit-hook"];
+const projectSlugs = ["runmoor", "nodeup", "binpm", "async-commit-hook"];
 
 const outputDir = path.resolve("doc_build");
 const stableRoutePathPattern = stableRouteIds
@@ -61,9 +61,9 @@ async function collectHtmlFiles(directory, depth = 0) {
     const entryStat = await stat(entryPath);
 
     if (entryStat.isDirectory()) {
-      if (depth === 0 && integratedProjectSlugs.includes(entry)) continue;
+      if (depth === 0 && projectSlugs.includes(entry)) continue;
       htmlFiles.push(...(await collectHtmlFiles(entryPath, depth + 1)));
-    } else if (entryPath.endsWith(".html")) {
+    } else if (entryPath.endsWith(".html") && entry !== "404.html") {
       htmlFiles.push(entryPath);
     }
   }
@@ -74,12 +74,10 @@ async function collectHtmlFiles(directory, depth = 0) {
 const htmlFiles = await collectHtmlFiles(outputDir);
 const failures = [];
 
-// The project docs are assembled by the integrated build and are validated by
-// validate-integrated-docs.mjs. Root validation must not mistake their nested
-// artifacts for root-owned routes.
-for (const slug of integratedProjectSlugs) {
+// Project sections are validated separately from the root-owned route set.
+for (const slug of projectSlugs) {
   if (!(await pathExists(path.join(outputDir, slug)))) {
-    failures.push(`${slug} is missing from the integrated publication`);
+    failures.push(`${slug} is missing from the public documentation tree`);
   }
 }
 
@@ -300,7 +298,7 @@ function publicPathText(text, htmlFile) {
   }
   return text;
 }
-const allowedPublicPathPattern = `${stableRoutePathPattern}|(?:${integratedProjectSlugs.join("|")})(?:[/\\\\][A-Za-z0-9._~-]+)*(?:[/\\\\])?`;
+const allowedPublicPathPattern = `${stableRoutePathPattern}|(?:${projectSlugs.join("|")})(?:[/\\\\][A-Za-z0-9._~-]+)*(?:[/\\\\])?|(?:assets|static)(?:[/\\\\][A-Za-z0-9._~-]+)*`;
 const forbiddenPathContent = [
   new RegExp(`(?:^|[\\s("'\\x60>])/(?!${allowedPublicPathPattern}(?:\\.html)?(?:[?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
   /(?:^|[\s("'`>])(?:\.\.[\\/])+(?:[A-Za-z0-9._~-]+[\\/])+[^\s"'`<>]*/u,

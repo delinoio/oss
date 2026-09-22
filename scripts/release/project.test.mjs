@@ -10,7 +10,6 @@ import { Bump, Project, Kind, bumpVersion, readVersion, versionChanges, sourceMe
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const achFiles = [
   "cmds/async-commit-hook/internal/core/model.go", "apps/async-commit-hook/package.json",
-  "apps/async-commit-hook-docs/package.json",
   "packages/async-commit-hook-api-client/package.json", "packaging/async-commit-hook/release-metadata.json",
 ];
 const files = ["Cargo.lock", "packages/clibox/package.json", ...["binpm", "cargo-mono", "nodeup", "with-watch", "clibox"].map((name) => `crates/${name}/Cargo.toml`), "cmds/derun/internal/version/version.go", "cmds/runmoor/internal/runmoor/types.go", ...achFiles];
@@ -28,7 +27,7 @@ for (const project of Object.values(Project)) for (const bump of Object.values(B
     assert.equal(plan.version, bumpVersion(plan.previous_version, bump));
     const updated = { ...sources, ...plan.changes };
     for (const candidate of Object.values(Project)) assert.equal(readVersion(candidate, (file) => updated[file]), candidate === project ? plan.version : readVersion(candidate, read));
-    assert.equal(Object.keys(plan.changes).length, project === Project.AsyncCommitHook ? 5 : project === Project.Clibox ? 3 : plan.kind === Kind.Rust ? 2 : 1);
+    assert.equal(Object.keys(plan.changes).length, project === Project.AsyncCommitHook ? 4 : project === Project.Clibox ? 3 : plan.kind === Kind.Rust ? 2 : 1);
     if (project === Project.AsyncCommitHook) {
       assert.equal(plan.kind, Kind.Go);
       assert.equal(plan.tag, `async-commit-hook@v${plan.version}`);
@@ -135,7 +134,7 @@ function fixture(t) {
 
 test("async-commit-hook version drift fails before preflight or version writes", async (t) => {
   const state = fixture(t);
-  const file = "apps/async-commit-hook-docs/package.json";
+  const file = "apps/async-commit-hook/package.json";
   writeFileSync(path.join(state.directory, file), read(file).replace(readVersion(Project.AsyncCommitHook, read), "99.0.0"));
   git(state.directory, ["add", file]);
   git(state.directory, ["commit", "-m", "fixture version drift"]);
@@ -193,7 +192,7 @@ for (const project of [Project.Derun, Project.AsyncCommitHook]) test(`${project}
   const state = fixture(t);
   const options = { directory: state.directory, project, bump: Bump.Patch, runId: "1", ...bot };
   const first = await prepareRelease(options);
-  const file = project === Project.AsyncCommitHook ? "apps/async-commit-hook-docs/package.json" : "cmds/derun/internal/version/version.go";
+  const file = project === Project.AsyncCommitHook ? "apps/async-commit-hook/package.json" : "cmds/derun/internal/version/version.go";
   writeFileSync(path.join(state.directory, file), readFileSync(path.join(state.directory, file), "utf8") + "\n// unexpected mutation\n");
   git(state.directory, ["add", file]);
   git(state.directory, ["commit", "--amend", "--no-edit"]);
