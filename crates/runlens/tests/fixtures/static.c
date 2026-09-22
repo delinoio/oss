@@ -1,3 +1,5 @@
+#include <sys/socket.h>
+#include <sys/un.h>
 /* A static Linux child must be observed by seccomp, without LD_PRELOAD. */
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -47,6 +49,27 @@ int main(int argc, char **argv) {
         }
         if (mount >= 0) close(mount);
         return 0;
+    }
+
+    if (argc == 4 && !strcmp(argv[1], "linux-bind")) {
+        const char *mode = argv[3], *name = argv[2];
+        char parent[4096];
+        if (!strcmp(mode, "relative")) {
+            if (strlen(name) >= sizeof(parent)) return 90;
+            strcpy(parent, name); char *slash = strrchr(parent, '/');
+            if (!slash) return 90; *slash = 0;
+            if (chdir(parent)) return 90;
+            name = strrchr(argv[2], '/') + 1;
+        }
+        int fd = socket(AF_UNIX, SOCK_DGRAM, 0);
+        if (fd < 0) return 90;
+        struct sockaddr_un address = {0}; address.sun_family = AF_UNIX;
+        if (strlen(name) >= sizeof(address.sun_path)) return 90;
+        strcpy(address.sun_path, name);
+        unsigned length = !strcmp(mode, "abstract") ? 2 : 2 + strlen(name) + 1;
+        long result = syscall(SYS_bind, fd, !strcmp(mode, "bad-pointer") ? (void *)16 : &address, length);
+        printf("result=%ld;errno=%d\n", result, result == 0 ? 0 : errno);
+        close(fd); return 0;
     }
 
     if (argc == 3 && !strcmp(argv[1], "linux-creat")) {

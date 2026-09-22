@@ -13,6 +13,7 @@ mod io_uring;
 mod inotify;
 mod fanotify;
 mod namespace;
+mod bind;
 
 use std::{
     borrow::Cow,
@@ -95,6 +96,7 @@ impl_handler!(
 
     #[cfg(target_arch = "x86_64")] open,
     #[cfg(target_arch = "x86_64")] creat,
+    bind,
     openat,
     openat2,
     open_by_handle_at,

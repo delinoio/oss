@@ -365,3 +365,5 @@
 - Linux x86_64 creat has its own syscall interception with create/write/truncate intent; dynamic and static creation, truncation and failed attempts must retain write evidence.
 
 - Cache and require-input policies may exempt an output read only after proving its before-state absent, using bounded Windows ordinal alias lookup and unknown evidence for exhausted or uncertain identity searches.
+
+- Linux pathname Unix socket binds record write attempts, including relative and failed binds. Abstract/autobind addresses are not filesystem paths; unreadable addresses mark collection incomplete without changing native results.

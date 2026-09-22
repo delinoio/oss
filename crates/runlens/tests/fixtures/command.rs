@@ -122,6 +122,51 @@ fn main() {
             }
         }
         #[cfg(target_os = "linux")]
+        "linux-bind" => {
+            let mode = &args[2];
+            let path = std::path::Path::new(&args[1]);
+            if mode == "relative" {
+                std::env::set_current_dir(path.parent().unwrap()).unwrap();
+            }
+            let name = if mode == "relative" {
+                path.file_name().unwrap().to_str().unwrap()
+            } else {
+                &args[1]
+            };
+            // SAFETY: initialized sockaddr storage, bounded copied pathname,
+            // and deliberately invalid pointer checked by the kernel.
+            unsafe {
+                let fd = libc::socket(libc::AF_UNIX, libc::SOCK_DGRAM, 0);
+                assert!(fd >= 0);
+                let mut address: libc::sockaddr_un = std::mem::zeroed();
+                address.sun_family = libc::AF_UNIX as _;
+                let length = if mode == "abstract" {
+                    2
+                } else {
+                    assert!(name.len() < address.sun_path.len());
+                    for (destination, byte) in address.sun_path.iter_mut().zip(name.bytes()) {
+                        *destination = byte as _;
+                    }
+                    2 + name.len() + 1
+                };
+                let pointer = if mode == "bad-pointer" {
+                    16usize as *const libc::sockaddr
+                } else {
+                    (&address as *const libc::sockaddr_un).cast()
+                };
+                let result = libc::bind(fd, pointer, length as _);
+                println!(
+                    "result={result};errno={}",
+                    if result == 0 {
+                        0
+                    } else {
+                        std::io::Error::last_os_error().raw_os_error().unwrap()
+                    }
+                );
+                libc::close(fd);
+            }
+        }
+        #[cfg(target_os = "linux")]
         "linux-creat" => {
             let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
             // SAFETY: live pathname, successful descriptor closed exactly once.

@@ -7294,3 +7294,65 @@ fn output_reads_require_inputs_for_proven_windows_snapshot_aliases() {
         }
     }
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_socket_binds_retain_path_writes_and_preserve_native_results() {
+    let mut executables = vec![fixture().to_owned()];
+    if let Ok(path) = std::env::var("RUNLENS_STATIC_FIXTURE") {
+        executables.push(path);
+    } else {
+        assert!(std::env::var_os("CI").is_none(), "static fixture required");
+    }
+    for executable in executables {
+        for mode in ["absolute", "relative", "missing", "bad-pointer", "abstract"] {
+            let root = tempfile::tempdir().unwrap();
+            let external = tempfile::tempdir().unwrap();
+            let path = external.path().join(if mode == "missing" {
+                "missing/socket"
+            } else {
+                "socket"
+            });
+            let args = ["linux-bind", path.to_str().unwrap(), mode];
+            let direct = Command::new(&executable).args(args).output().unwrap();
+            if path.exists() {
+                fs::remove_file(&path).unwrap();
+            }
+            fs::write(
+                root.path().join("runlens.toml"),
+                format!("schema_version=1\n[policy]\ndeny_writes=[{:?}]\n", args[1]),
+            )
+            .unwrap();
+            let traced = invoke(
+                root.path(),
+                &[
+                    "run",
+                    "--save",
+                    "socket.json",
+                    "--",
+                    &executable,
+                    args[0],
+                    args[1],
+                    args[2],
+                ],
+            );
+            assert_eq!(traced.stdout, direct.stdout, "{mode}");
+            assert_eq!(
+                traced.status.code(),
+                Some(if mode == "bad-pointer" { 4 } else { 0 }),
+                "{executable}/{mode}: {traced:?}"
+            );
+            let report = parse(root.path(), "socket.json");
+            if matches!(mode, "absolute" | "relative" | "missing") {
+                assert_eq!(report["executions"][0]["accesses"][args[1]]["write"], true);
+                assert_eq!(
+                    invoke(root.path(), &["policy", "check", "socket.json", "--json"])
+                        .status
+                        .code(),
+                    Some(5)
+                );
+            }
+            assert_eq!(path.exists(), matches!(mode, "absolute" | "relative"));
+        }
+    }
+}

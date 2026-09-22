@@ -922,3 +922,5 @@ The report parser rejects passed repeat claims with fewer than two target rounds
 Linux creation coverage includes the x86_64 creat syscall. The dynamic libc and static raw-syscall regression verifies new external files, truncation, failures, native stdout parity and deny-writes outcomes; arm64 exercises equivalent openat semantics.
 
 Prior-output input coverage resolves Windows before-snapshot aliases under a shared four-million-comparison budget. Proven existing aliases require input declarations; incomplete snapshots, exhausted lookup and non-native Unicode table uncertainty cannot prove a new output. Tests cover cache, require-input policy, ASCII/Unicode, Unix case sensitivity and budget exhaustion.
+
+Linux kernel collection includes pathname AF_UNIX binds. Bounded remote address decoding records only the filesystem path, ignores non-filesystem abstract/autobind identities, and retains uncertainty for unreadable addresses. Dynamic and static native tests cover absolute, relative, missing, invalid-pointer and autobind calls.
