@@ -7,9 +7,9 @@ use crate::{clipboard, environment, error::Result, open, port, runtime};
 #[derive(Subcommand)]
 pub enum Action {
     /// Run commands with a child-only environment.
-    Env {
+    Run {
         #[command(subcommand)]
-        command: Env,
+        command: Run,
     },
     /// Inspect or forcibly terminate local port owners.
     Port {
@@ -43,16 +43,16 @@ pub enum Action {
 }
 
 #[derive(Subcommand)]
-pub enum Env {
+pub enum Run {
     /// Set cross-env compatible assignments and wait for a child command.
     #[command(
-        after_help = "Examples:\n  clibox env run NODE_ENV=production node build.js\n  clibox env \
-                      run -- node script.js\n\nInherits cwd and stdio. No shell expressions. \
+        after_help = "Examples:\n  clibox run env NODE_ENV=production node build.js\n  clibox run \
+                      env -- node script.js\n\nInherits cwd and stdio. No shell expressions. \
                       Empty child arguments and exit signals are preserved.\n\nChild exit status \
                       and supported termination signals are preserved. Invalid arguments exit 2; \
                       startup failures exit 1."
     )]
-    Run {
+    Env {
         /// Child-only assignments followed by the command and its literal
         /// arguments.
         #[arg(value_name = "KEY=VALUE ... COMMAND ARG", trailing_var_arg = true, allow_hyphen_values = true, num_args = 1..)]
@@ -63,7 +63,7 @@ pub enum Env {
 impl Action {
     pub fn operation(&self) -> &'static str {
         match self {
-            Self::Env { .. } => "env-run",
+            Self::Run { .. } => "run-env",
             Self::Port {
                 command: port::Action::List { .. },
             } => "port-list",
@@ -83,8 +83,8 @@ impl Action {
 
 pub fn execute(command: Action, leading_separator: bool) -> Result<i32> {
     match command {
-        Action::Env {
-            command: Env::Run { mut args },
+        Action::Run {
+            command: Run::Env { mut args },
         } => {
             if leading_separator {
                 args.insert(0, "--".into());

@@ -140,7 +140,7 @@ fn plan(args: Vec<OsString>, parent: Environment, windows: bool) -> Result<Plan>
     let command = converted.next().filter(|s| !s.is_empty()).ok_or_else(|| {
         Failure::new(
             Code::InvalidInput,
-            "A child command is required after environment assignments; use env run --help.",
+            "A child command is required after environment assignments; use clibox run env --help.",
         )
     })?;
     Ok(Plan {
