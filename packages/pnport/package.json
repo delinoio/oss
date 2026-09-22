@@ -6,6 +6,8 @@
   "license": "MIT",
   "engines": { "node": ">=22" },
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "test:typescript:prepare": "node scripts/typescript-conformance.mjs prepare",
+    "test:typescript": "node scripts/typescript-conformance.mjs run"
   }
 }

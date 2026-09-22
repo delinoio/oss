@@ -4,6 +4,8 @@
     "test": {
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/crates/pnport/**", "$TURBO_ROOT$/crates/pnport-preload/**", "$TURBO_ROOT$/Cargo.toml", "$TURBO_ROOT$/Cargo.lock", "$TURBO_ROOT$/rust-toolchain"],
       "outputs": []
-    }
+    },
+    "test:typescript:prepare": { "cache": false },
+    "test:typescript": { "cache": false }
   }
 }
