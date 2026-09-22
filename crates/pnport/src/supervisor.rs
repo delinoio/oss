@@ -8,7 +8,6 @@ use std::{
 };
 
 use pnport::{
-    cache::archive_identity,
     diagnostic::{Code, Error, Result},
     graph::Input,
     view::View,
@@ -105,11 +104,15 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
     let pid = child.id() as i32;
     let start = Instant::now();
     let mut status = None;
+    let mut watch = crate::input_watch::InputWatch::default();
+    let mut active_markers = std::collections::HashSet::new();
     let result = (|| loop {
         if SIGNAL.load(Ordering::SeqCst) != 0 {
             return Ok(128 + SIGNAL.load(Ordering::SeqCst));
         }
-        view.graph.unchanged()?;
+        for input in &view.graph.snapshot.inputs {
+            watch.register(input)?;
+        }
         view.graph.check_conflicts()?;
         if view.session.join("failure").exists() {
             return Err(Error::new(
@@ -120,20 +123,18 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
         if let Ok(entries) = fs::read_dir(view.session.join("active")) {
             for entry in entries {
                 let entry = entry.map_err(|_| injection_error())?;
-                if entry.file_name().to_string_lossy().starts_with('.') {
+                if entry.file_name().to_string_lossy().starts_with('.')
+                    || !active_markers.insert(entry.path())
+                {
                     continue;
                 }
                 let input: Input =
                     serde_json::from_slice(&fs::read(entry.path()).map_err(|_| injection_error())?)
                         .map_err(|_| injection_error())?;
-                if archive_identity(&input.path).ok().as_ref() != Some(&input.sha256) {
-                    return Err(Error::new(
-                        Code::PnportGraphChanged,
-                        "An active package archive changed or disappeared; restart pnport.",
-                    ));
-                }
+                watch.register(&input)?;
             }
         }
+        watch.poll()?;
         if let Some(exit) = child.try_wait().map_err(|_| injection_error())? {
             status = Some(exit);
             tracing::debug!(action="child_exit", status=?exit, "Child exited");

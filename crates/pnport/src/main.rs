@@ -14,6 +14,7 @@ use pnport::{
 };
 use serde::Serialize;
 
+mod input_watch;
 mod supervisor;
 
 #[derive(Parser)]
