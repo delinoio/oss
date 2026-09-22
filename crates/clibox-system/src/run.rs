@@ -919,12 +919,20 @@ fn run_once(
             // group or Job Object. A background descendant can otherwise
             // retain an inherited pipe or outlive the wrapper after its parent
             // exits, so confirm bounded cleanup before returning this status.
-            if child.tree_running()? && !cleanup_or_log(&mut child, kill_after) {
+            let descendants_running = child.tree_running()?;
+            if descendants_running && !cleanup_or_log(&mut child, kill_after) {
                 // Never join inherited pipes after unconfirmed cleanup: a
                 // surviving descendant could hold one forever. Cleanup has
                 // already sent graceful and forced signals within its bounded
                 // deadlines, so preserve the direct child's status rather
                 // than turn a completed workload into a hang.
+                return Ok(Outcome::Child(status));
+            }
+            if descendants_running {
+                // Cleanup is bounded, but an output forwarding thread can
+                // still be blocked by the wrapper's own downstream pipe. Do
+                // not turn a successful bounded cleanup into an unbounded
+                // output join; returning drops the detached forwarders.
                 return Ok(Outcome::Child(status));
             }
             child.join_output();
@@ -1076,12 +1084,11 @@ impl OwnedChild {
     }
 
     fn cleanup(&mut self, kill_after: Duration, initial_cancellation: Option<usize>) -> Result<()> {
-        // Reap the direct child when it has already exited, but continue to
-        // supervise the owned process group/job. A child can exit while a
-        // descendant still holds an inherited output pipe open.
-        let _ = self.try_wait()?;
+        // Continue to supervise the owned process group/job after the direct
+        // child exits. A descendant can retain an inherited output pipe, and
+        // a forwarding thread can block writing to the wrapper's consumer.
+        // Bounded cleanup must never wait for either thread to drain.
         if !self.tree_running()? {
-            self.join_output();
             return Ok(());
         }
         tracing::debug!(
@@ -1095,9 +1102,7 @@ impl OwnedChild {
             Failure::new(Code::IoFailed, "Cleanup deadline cannot be represented.")
         })?;
         while Instant::now() < graceful_deadline {
-            let _ = self.try_wait()?;
             if !self.tree_running()? {
-                self.join_output();
                 return Ok(());
             }
             if initial_cancellation
@@ -1121,9 +1126,7 @@ impl OwnedChild {
                 Failure::new(Code::IoFailed, "Cleanup deadline cannot be represented.")
             })?;
         while Instant::now() < confirmation {
-            let _ = self.try_wait()?;
             if !self.tree_running()? {
-                self.join_output();
                 return Ok(());
             }
             thread::sleep(POLL);
