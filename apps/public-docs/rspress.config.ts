@@ -67,11 +67,27 @@ const asyncCommitHookPages = [
   { text: "Existing hooks and hook managers", link: "/async-commit-hook/existing-hooks" },
 ];
 
+const cliboxPages = [
+  { text: "Overview", link: "/clibox/", activeMatch: "^/clibox/$" },
+  { text: "Install", link: "/clibox/install" },
+  { text: "Getting Started", link: "/clibox/getting-started" },
+  { text: "Command Index", link: "/clibox/commands" },
+  { text: "System Commands", link: "/clibox/system" },
+  { text: "Text, Time, Base64, and Hashes", link: "/clibox/transformations" },
+  { text: "Readiness Waits", link: "/clibox/wait" },
+  { text: "Configuration", link: "/clibox/configuration" },
+  { text: "Output and Cancellation", link: "/clibox/output" },
+  { text: "Migration", link: "/clibox/migration" },
+  { text: "Releases and Verification", link: "/clibox/releases" },
+  { text: "Troubleshooting", link: "/clibox/troubleshooting" },
+];
+
 const projectPages = [
   { text: "Runmoor", link: "/runmoor/", activeMatch: "^/runmoor" },
   { text: "Nodeup", link: "/nodeup/", activeMatch: "^/nodeup" },
   { text: "binpm", link: "/binpm/", activeMatch: "^/binpm" },
   { text: "async-commit-hook", link: "/async-commit-hook/", activeMatch: "^/async-commit-hook" },
+  { text: "clibox", link: "/clibox/", activeMatch: "^/clibox(?:/|$)" },
 ];
 
 export default defineConfig({
@@ -120,6 +136,7 @@ export default defineConfig({
           items: [productPages[3]],
         },
       ],
+      "/clibox/": [{ text: "clibox", items: cliboxPages }],
       "/runmoor/": [{ text: "Runmoor", items: runmoorPages }],
       "/nodeup/": [{ text: "Nodeup", items: nodeupPages }],
       "/binpm/": [{ text: "binpm", items: binpmPages }],

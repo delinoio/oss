@@ -1,5 +1,7 @@
 # clibox
 
+[Documentation](https://oss.delino.io/clibox/) · [Command reference](https://oss.delino.io/clibox/commands)
+
 A native Rust CLI distributed through native packages and `@delino/clibox` on npm for project-local version pinning.
 
 Cross-platform utilities for child environments, local port owners, resource opening, the desktop text clipboard, text replacement, time formatting/arithmetic, Base64 encoding/decoding, checksum generation/verification, and TCP/HTTP/file readiness waits.
@@ -14,9 +16,9 @@ pnpm exec clibox --version
 
 The npm launcher requires Node.js 22 or newer. Prebuilt binaries cover macOS and Windows x64/arm64, and Linux x64/arm64 with glibc or musl. npm installation does not require Rust or installation scripts.
 
-## Migrating from 0.1.x
+## Migrating older command syntax
 
-The next minor release changes these command interfaces. Old command names are rejected with exit code 2 and migration guidance; they are not aliases.
+The current CLI uses these command interfaces, already available in version 0.1.6. Update scripts using previous names when upgrading. Old command names are rejected with exit code 2 and migration guidance; they are not aliases.
 
 | Previous use | New use |
 | --- | --- |

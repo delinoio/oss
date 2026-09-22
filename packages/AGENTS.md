@@ -9,7 +9,7 @@
 
 - `packages/devhud-api-client`: implemented generated TypeScript DevHud API client, Connect Query bindings, and safe handwritten wire helpers.
 
-- `packages/docs-site-switcher`: shared accessible documentation site selector used by the consolidated Public Docs root and all four package-local documentation apps. Follow `docs/packages-docs-site-switcher-contract.md`; keep its fixed site registry, enum IDs, keyboard behavior, focus management, and active-route semantics synchronized across consumers.
+- `packages/docs-site-switcher`: shared accessible documentation site selector used by the consolidated Public Docs root and all five project content sections. Follow `docs/packages-docs-site-switcher-contract.md`; keep its fixed site registry, enum IDs, keyboard behavior, focus management, and active-route semantics synchronized across consumers.
 
 ### DevHud Rules
 
@@ -28,6 +28,8 @@
 - `packages/async-commit-hook-api-client` owns `@delinoio/async-commit-hook-api-client`, generated exclusively from `async_commit_hook.v1`. Follow `docs/packages-async-commit-hook-api-client-contract.md`; no client-side duplicate gate logic or persistence.
 
 ### clibox Rules
+
+- Keep the npm README and `apps/public-docs/docs/clibox` aligned with user-facing command and installation behavior; link to `https://oss.delino.io/clibox`. The shared documentation selector uses clean same-origin paths on production and the consolidated development server, including clibox as its final destination.
 
 - Native and installed npm commands must share the canonical `env run`, `port list`, and `hash compute` names, quiet/PID output separation, stdout dash selector, force validation, and numeric owned-operation cancellation (130/143); validate the migration in installed consumer smoke tests without launcher-side argument rewriting.
 

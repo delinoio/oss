@@ -18,7 +18,7 @@
 ### Scope in This Domain
 
 - `apps/mpapp`: Expo React Native mobile app.
-- `apps/public-docs`: Rspress static public documentation app, including the `docs/binpm`, `docs/nodeup`, `docs/runmoor`, and `docs/async-commit-hook` content roots.
+- `apps/public-docs`: Rspress static public documentation app, including the `docs/binpm`, `docs/nodeup`, `docs/runmoor`, `docs/async-commit-hook`, and `docs/clibox` content roots.
 - `apps/devhud`: implemented deterministic bilingual React/TypeScript shell, complete guest/Logto identity, synchronized Settings and opt-in diagnostics boundaries, direct-client GitHub.com provider/setup and issue submission, desktop RealQA capture/editor/encrypted drafts/direct official and BYO R2 uploads, populated Deck surface, desktop Native Messaging integration, target-isolated Rust/Tauri desktop CEF plus iOS/Android system-webview hosts, and production WidgetKit/AppWidgetProvider Deck widgets; other populated product surfaces remain planned.
 - `apps/devhud-chrome-extension`: implemented deterministic bilingual Chrome Manifest V3 DevHud context-picker extension.
 - `apps/devhud-admin`: implemented React/TypeScript Rsbuild administrator SPA embedded at `/admin`; it is the sole producer and validator of the ignored production administrator `dist`.
@@ -99,16 +99,24 @@
 
 - `public-docs` must remain Rspress-based and use Cloudflare Pages static output unless its project contract documents a replacement.
 - `public-docs` production is `https://oss.delino.io`, served by the Cloudflare Pages `public-docs` project from `main`; build at the repository root with the repository's Node and pnpm versions and publish only `apps/public-docs/doc_build`.
-- `public-docs` is the sole production documentation publisher. It builds the `docs/runmoor`, `docs/nodeup`, `docs/binpm`, and `docs/async-commit-hook` content roots directly below `/runmoor`, `/nodeup`, `/binpm`, and `/async-commit-hook`; no package-local documentation workspaces or output directories are independently published.
-- Every assembled documentation page must expose the shared site selector for Delino OSS, Runmoor, Nodeup, binpm, and async-commit-hook. Production uses same-origin clean routes; on the documented fixed loopback development ports the selector targets each package's local root. It must expose `aria-expanded` and `aria-current`, support keyboard selection, Escape/outside-click close, and focus return.
+- `public-docs` is the sole production documentation publisher. It builds the `docs/runmoor`, `docs/nodeup`, `docs/binpm`, `docs/async-commit-hook`, and `docs/clibox` content roots directly below `/runmoor`, `/nodeup`, `/binpm`, `/async-commit-hook`, and `/clibox`; no package-local documentation workspaces or output directories are independently published.
+- Every assembled documentation page must expose the shared site selector for Delino OSS, Runmoor, Nodeup, binpm, async-commit-hook, and clibox. Production and the consolidated development server at port `46302` use the same clean relative destinations; never remap project links to retired per-project ports. It must expose `aria-expanded` and `aria-current`, support keyboard selection, Escape/outside-click close, and focus return.
 - Rspress routes, navigation, and sidebar in `apps/public-docs/rspress.config.ts` must stay aligned with `docs/apps-public-docs-foundation.md`.
 - `public-docs` must use clean URLs, write production output to `apps/public-docs/doc_build`, and validate stable route artifacts plus generated internal `.html` links through `pnpm --filter public-docs test`.
 - Current public-docs in-site top-level product page IDs are `devhud`, `cargo-mono`, `derun`, and `with-watch`.
 - The stable `/devhud` page documents public product availability and the coordinated all-channels GA rule without exposing release credentials, private workflow details, or deployment internals.
-- Nodeup, binpm, Runmoor, and async-commit-hook are exposed from `apps/public-docs/docs` through canonical same-origin subpaths `/nodeup`, `/binpm`, `/runmoor`, and `/async-commit-hook`. Their Markdown is owned directly by these content roots and must not be duplicated elsewhere.
+- Nodeup, binpm, Runmoor, async-commit-hook, and clibox are exposed from `apps/public-docs/docs` through canonical same-origin subpaths `/nodeup`, `/binpm`, `/runmoor`, `/async-commit-hook`, and `/clibox`. Their Markdown is owned directly by these content roots and must not be duplicated elsewhere.
 - Do not add legacy handoff pages, aliases, or redirects for the consolidated project subpaths. Operators decommission the former standalone Pages projects and DNS records only after the consolidated deployment, route, switcher, and installer checks pass.
 - `public-docs` must curate repository contracts into public guidance and must not document repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 - When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
+
+### clibox-docs Rules
+
+- `apps/public-docs/docs/clibox` owns the twelve English public guide routes in `docs/apps-clibox-docs-foundation.md`, with `https://oss.delino.io/clibox` as the canonical destination. Use the existing public-docs build, deployment, theme, and fixed development port.
+- Expose clibox as a peer of Runmoor in the shared project selector, with every clibox route in its desktop/mobile sidebar and visible repository social/footer links. Keep the root top navbar empty.
+- Preserve all 19 commands, input/output limits, file-publication behavior, cancellation, platform prerequisites, migration, and verification limits from the clibox contracts and READMEs. Do not claim unpublished APT/DNF availability or describe already released syntax as a future feature.
+- Validate every clibox route, required article heading/link, exact selector state, sidebar link, and repository region. Apply clean-URL, credential, and private-path checks to clibox HTML and shared stylesheets, with regression fixtures for removed links and rejected content.
+- When command or installation behavior changes, synchronize these guides, both clibox READMEs, and the clibox project/domain contracts.
 
 ### runmoor-docs Rules
 
@@ -116,7 +124,7 @@
 - `apps/public-docs/docs/runmoor` owns the Runmoor public guides published at `https://oss.delino.io/runmoor`. Keep every stable route in navigation and the sidebar, with visible GitHub repository links in the social navigation and footer.
 - Stable clean routes are `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, and `/operations`; validate output artifacts, article headings and links, main landmarks, and absence of retired standalone-origin links or root-path escapes.
 - Preserve the credential and internal-path publication checks that covered Runmoor in public-docs. Reject prohibited content in rendered text, HTML comments, URL attributes, and CSS resource references, including encoded URL credentials and local/repository paths. Credential parameters must be checked in ordinary queries, direct fragments, and queries inside hash-routed fragments. Keep valid public routes, static assets, and documented credential placeholders usable; route exceptions must match a complete route ID, never a prefix of a private path. Validation diagnostics must not echo rejected content. Exercise these boundaries against temporary copies of generated HTML in `pnpm test`.
-- Development uses `127.0.0.1:46309` and preview uses `127.0.0.1:46271`, through the shared fixed-port wrapper without address overrides or automatic remapping.
+- Development uses the consolidated `127.0.0.1:46302` server through the shared fixed-port wrapper without address overrides or automatic remapping.
 - Malformed documentation links must fail validation with only the output page and error classification; never propagate URL parser errors that include the original input.
 - Enforce clean internal URLs across every recognized HTML URL attribute, each `srcset` candidate, and CSS resource references, while permitting external `.html` URLs and generated static assets.
 - Preserve the former public-docs release-claim classifier and its negation fixtures: reject affirmative beta-channel, partial/staged GA, phased/fractional rollout, early-access, and early-announcement claims while allowing Runmoor stable-channel disclosures and explicit prohibitions.
@@ -163,7 +171,7 @@
 - Follow `docs/repository-linux-packages-contract.md`. The shared public `/linux-packages` route owns APT/DNF setup and key verification; standalone CLI installation pages retain product-specific guidance.
 - Public package documentation includes the exact public fingerprint, supported systems, stable/preview registration, installation/update/removal, and explicit Runmoor service ownership. Keep R2, signing secrets, CI and recovery internals in `docs/`.
 - Only the shared package registration page may show its exact contracted `/etc/apt`, `/etc/yum.repos.d` and `/usr/share/keyrings` installation paths; never broaden unrelated public filesystem-path exceptions.
-- The canonical public-docs production origin is `https://oss.delino.io`; shared Linux package guidance is `https://oss.delino.io/linux-packages`. Consolidated project documentation uses the same origin with `/runmoor`, `/nodeup`, `/binpm`, and `/async-commit-hook` prefixes.
+- The canonical public-docs production origin is `https://oss.delino.io`; shared Linux package guidance is `https://oss.delino.io/linux-packages`. Consolidated project documentation uses the same origin with `/runmoor`, `/nodeup`, `/binpm`, `/async-commit-hook`, and `/clibox` prefixes.
 - Public native-package registration examples must spell out the complete repository configuration with a quoted heredoc, preserving APT Signed-By and both DNF signature checks. Do not bootstrap trust by installing an unverified configuration file downloaded from package storage.
 
 - Native package documentation must distinguish implemented release integration from published availability. No native packages have been published yet; mark every CLI package-manager example as unavailable until its own public installation verification completes. Runmoor and clibox use stable.

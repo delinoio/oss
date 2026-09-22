@@ -154,6 +154,8 @@
 
 ### clibox Rules
 
+- Keep the CLI README and `apps/public-docs/docs/clibox` aligned with user-facing behavior. Follow `docs/apps-clibox-docs-foundation.md`; the consolidated public guide covers all 19 commands and preserves their limits, cancellation, and migration guidance.
+
 - clibox CLI consistency uses canonical `env run`, `port list`, and `hash compute` without old-name aliases. Report `--quiet` suppresses stdout; PID selection is only `port list --pids`. File-output commands interpret `--output -` as stdout and `./-` as a literal dash file; `--force` requires real file output or `--in-place`. Keep short/long help, static redacted migration guidance, numeric owned-operation cancellation (130/143), filtered-error visibility, and native/npm behavior synchronized.
 
 - Preserve clap's generated missing-subcommand help for `env`, `port`, `clipboard`, `wait`, `text`, `time`, `base64`, `hash`, `dotenv`, and `yaml` on stderr with exit code 2; keep root no-argument and explicit help output successful on stdout. Only generated help/version may bypass static redacted parser diagnostics.

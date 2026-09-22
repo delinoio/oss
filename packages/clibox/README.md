@@ -1,5 +1,7 @@
 # @delino/clibox
 
+[Documentation](https://oss.delino.io/clibox/) · [Command reference](https://oss.delino.io/clibox/commands)
+
 Run the native `clibox` CLI with a version pinned in your JavaScript project's package manifest and lockfile.
 
 ```sh
@@ -33,9 +35,9 @@ If versions disagree, reinstall the dependency so `@delino/clibox` and its selec
 
 The package provides the `clibox` command only, with no public JavaScript import API.
 
-## Migrating from 0.1.x
+## Migrating older command syntax
 
-The next minor release changes these command interfaces. Old command names are rejected with exit code 2 and migration guidance; they are not aliases.
+The current CLI uses these command interfaces, already available in version 0.1.6. Update scripts using previous names when upgrading. Old command names are rejected with exit code 2 and migration guidance; they are not aliases.
 
 | Previous use | New use |
 | --- | --- |
