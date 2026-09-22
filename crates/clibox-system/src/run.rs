@@ -34,6 +34,8 @@ const POLL: Duration = Duration::from_millis(20);
 const CLEANUP_CONFIRMATION: Duration = Duration::from_secs(5);
 const STATE_VERSION: u8 = 1;
 const MAX_EXACT_TOKEN_COUNT: u64 = 1 << 53;
+#[cfg(unix)]
+const PARENT_WRAPPER_MARKER: &str = "CLIBOX_RUN_PARENT_WRAPPER";
 
 #[derive(Subcommand)]
 pub enum Command {
@@ -1008,6 +1010,8 @@ enum OutputMode {
 
 struct OwnedChild {
     pid: u32,
+    #[cfg(unix)]
+    unix_ownership: UnixOwnership,
     #[cfg(windows)]
     job: Job,
     completions: mpsc::Receiver<Result<Completion>>,
@@ -1022,8 +1026,26 @@ struct Completion {
     observed_at: Instant,
 }
 
+#[cfg(unix)]
+#[derive(Clone, Copy)]
+enum UnixOwnership {
+    ProcessGroup,
+    DirectChild,
+}
+
 fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
     let mut command = environment::command(plan)?;
+    #[cfg(unix)]
+    let unix_ownership = unix_ownership();
+    #[cfg(unix)]
+    {
+        // Descendant clibox wrappers must keep their workloads in this
+        // wrapper's group. The outer wrapper can then terminate descendants
+        // even after the inner wrapper exits.
+        command.env(PARENT_WRAPPER_MARKER, "1");
+        configure_process_group(&mut command, unix_ownership);
+    }
+    #[cfg(windows)]
     configure_process_group(&mut command);
     let pipe = !matches!(mode, OutputMode::WorkloadInherited);
     command.stdin(if matches!(mode, OutputMode::Service) {
@@ -1099,6 +1121,8 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
     });
     Ok(OwnedChild {
         pid,
+        #[cfg(unix)]
+        unix_ownership,
         #[cfg(windows)]
         job,
         completions,
@@ -1215,7 +1239,10 @@ impl OwnedChild {
 
     #[cfg(unix)]
     fn signal(&self, force: bool) -> Result<()> {
-        signal_process_tree(self.pid, force)
+        match self.unix_ownership {
+            UnixOwnership::ProcessGroup => signal_process_group(self.pid, force),
+            UnixOwnership::DirectChild => signal_process(self.pid, force),
+        }
     }
 
     #[cfg(windows)]
@@ -1225,7 +1252,10 @@ impl OwnedChild {
 
     #[cfg(unix)]
     fn tree_running(&self) -> Result<bool> {
-        process_tree_running(self.pid)
+        match self.unix_ownership {
+            UnixOwnership::ProcessGroup => process_group_running(self.pid),
+            UnixOwnership::DirectChild => process_running(self.pid),
+        }
     }
 
     #[cfg(windows)]
@@ -1235,11 +1265,21 @@ impl OwnedChild {
 }
 
 #[cfg(unix)]
-fn configure_process_group(command: &mut ProcessCommand) {
+fn unix_ownership() -> UnixOwnership {
+    if env::var_os(PARENT_WRAPPER_MARKER).is_some_and(|value| value == "1") {
+        UnixOwnership::DirectChild
+    } else {
+        UnixOwnership::ProcessGroup
+    }
+}
+
+#[cfg(unix)]
+fn configure_process_group(command: &mut ProcessCommand, ownership: UnixOwnership) {
     use std::os::unix::process::CommandExt;
 
-    // Every wrapper owns a dedicated group. An outer wrapper signals the inner
-    // clibox process, which then performs its own bounded cleanup for its group.
+    if matches!(ownership, UnixOwnership::DirectChild) {
+        return;
+    }
     unsafe {
         command.pre_exec(|| {
             if libc::setpgid(0, 0) == -1 {
@@ -1330,7 +1370,7 @@ fn resume_suspended_process(child: &Child) -> Result<()> {
 }
 
 #[cfg(unix)]
-fn signal_process_tree(pid: u32, force: bool) -> Result<()> {
+fn signal_process_group(pid: u32, force: bool) -> Result<()> {
     let signal = if force { libc::SIGKILL } else { libc::SIGTERM };
     let result = unsafe { libc::kill(-(pid as i32), signal) };
     if result == -1 {
@@ -1343,8 +1383,32 @@ fn signal_process_tree(pid: u32, force: bool) -> Result<()> {
 }
 
 #[cfg(unix)]
-fn process_tree_running(pid: u32) -> Result<bool> {
+fn signal_process(pid: u32, force: bool) -> Result<()> {
+    let signal = if force { libc::SIGKILL } else { libc::SIGTERM };
+    let result = unsafe { libc::kill(pid as i32, signal) };
+    if result == -1 {
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() != Some(libc::ESRCH) {
+            return Err(Failure::io(&error));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn process_group_running(pid: u32) -> Result<bool> {
     let result = unsafe { libc::kill(-(pid as i32), 0) };
+    process_running_result(result)
+}
+
+#[cfg(unix)]
+fn process_running(pid: u32) -> Result<bool> {
+    let result = unsafe { libc::kill(pid as i32, 0) };
+    process_running_result(result)
+}
+
+#[cfg(unix)]
+fn process_running_result(result: i32) -> Result<bool> {
     if result == 0 {
         return Ok(true);
     }

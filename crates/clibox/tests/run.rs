@@ -255,6 +255,54 @@ fn timeout_terminates_owned_descendants() {
 }
 
 #[test]
+fn outer_timeout_terminates_descendants_of_a_nested_wrapper() {
+    let home = tempfile::tempdir().unwrap();
+    let marker = home.path().join("nested-descendant-pid");
+    let assignment = format!("MARKER={}", marker.display());
+    let output = command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--timeout",
+            "100ms",
+            "--kill-after",
+            "0",
+            &assignment,
+            "--",
+            env!("CARGO_BIN_EXE_clibox"),
+            "run",
+            "with-timeout",
+            "--timeout",
+            "30s",
+            "--kill-after",
+            "10s",
+            "--",
+            "sh",
+            "-c",
+            "sleep 30 & echo $! > \"$MARKER\"; wait",
+        ],
+    )
+    .output()
+    .unwrap();
+    assert_eq!(output.status.code(), Some(124));
+    let pid = fs::read_to_string(marker)
+        .unwrap()
+        .trim()
+        .parse::<i32>()
+        .unwrap();
+    for _ in 0..50 {
+        if unsafe { libc::kill(pid, 0) } == -1
+            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+        {
+            return;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    panic!("outer timeout left a nested wrapper descendant running");
+}
+
+#[test]
 fn completed_workload_cleans_up_its_background_descendants() {
     let home = tempfile::tempdir().unwrap();
     let marker = home.path().join("completed-descendant-pid");
