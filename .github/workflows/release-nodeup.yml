@@ -180,7 +180,7 @@ jobs:
           find dist -maxdepth 2 -type f -exec cp {} release-dist/ \;
           rm -rf dist
           mv release-dist dist
-          find dist -maxdepth 1 -type f | pnpm exec clibox text replace '(?m)^(.+)$' 'artifact: $1' --regex >&2
+          find dist -maxdepth 1 -type f | pnpm exec clibox text replace '(?m)^(.+)$' "artifact: \$1" --regex >&2
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v4.1.1
