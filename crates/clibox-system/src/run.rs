@@ -1339,11 +1339,53 @@ fn wait_for_completion(
 
 #[cfg(unix)]
 fn unix_ownership() -> UnixOwnership {
-    if env::var_os(PARENT_WRAPPER_MARKER).is_some_and(|value| value == "1") {
+    if nested_wrapper_state() {
         UnixOwnership::DirectChild
     } else {
         UnixOwnership::ProcessGroup
     }
+}
+
+#[cfg(unix)]
+fn nested_wrapper_state() -> bool {
+    if !env::var_os(PARENT_WRAPPER_MARKER).is_some_and(|value| value == "1") {
+        return false;
+    }
+    let parent = unsafe { libc::getppid() };
+    let own_process = unsafe { libc::getpid() };
+    if parent <= 0
+        || own_process <= 0
+        || unsafe { libc::getpgrp() } != own_process
+        || unsafe { libc::getpgid(parent) } == own_process
+    {
+        return false;
+    }
+    let Ok(current) = env::current_exe().and_then(fs::canonicalize) else {
+        return false;
+    };
+    let Some(parent_executable) = parent_executable(parent) else {
+        return false;
+    };
+    parent_executable
+        .canonicalize()
+        .is_ok_and(|parent_executable| parent_executable == current)
+}
+
+#[cfg(target_os = "linux")]
+fn parent_executable(parent: libc::pid_t) -> Option<PathBuf> {
+    fs::read_link(format!("/proc/{parent}/exe")).ok()
+}
+
+#[cfg(target_os = "macos")]
+fn parent_executable(parent: libc::pid_t) -> Option<PathBuf> {
+    libproc::libproc::proc_pid::pidpath(parent)
+        .ok()
+        .map(PathBuf::from)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn parent_executable(_parent: libc::pid_t) -> Option<PathBuf> {
+    None
 }
 
 #[cfg(unix)]

@@ -400,6 +400,47 @@ fn timeout_terminates_owned_descendants() {
 }
 
 #[test]
+fn caller_marker_cannot_disable_root_descendant_cleanup() {
+    let home = tempfile::tempdir().unwrap();
+    let marker = home.path().join("caller-marker-descendant-pid");
+    let assignment = format!("MARKER={}", marker.display());
+    let output = command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--timeout",
+            "50ms",
+            "--kill-after",
+            "0",
+            &assignment,
+            "--",
+            "sh",
+            "-c",
+            "sleep 30 & echo $! > \"$MARKER\"; wait",
+        ],
+    )
+    .env("CLIBOX_RUN_PARENT_WRAPPER", "1")
+    .output()
+    .unwrap();
+    assert_eq!(output.status.code(), Some(124));
+    let pid = fs::read_to_string(marker)
+        .unwrap()
+        .trim()
+        .parse::<i32>()
+        .unwrap();
+    for _ in 0..50 {
+        if unsafe { libc::kill(pid, 0) } == -1
+            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+        {
+            return;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    panic!("caller marker disabled owned descendant cleanup");
+}
+
+#[test]
 fn outer_timeout_terminates_descendants_of_a_nested_wrapper() {
     let home = tempfile::tempdir().unwrap();
     let marker = home.path().join("nested-descendant-pid");
