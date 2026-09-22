@@ -6939,3 +6939,69 @@ fn macos_lchflags_preserves_results_and_observes_the_link() {
         );
     }
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn deleted_descriptor_identity_cannot_pass_exact_read_policy() {
+    let mut executables = vec![fixture().to_owned()];
+    if let Ok(path) = std::env::var("RUNLENS_STATIC_FIXTURE") {
+        executables.push(path);
+    } else {
+        assert!(std::env::var_os("CI").is_none(), "static fixture required");
+    }
+    for executable in executables {
+        for mode in ["deleted", "file"] {
+            let root = tempfile::tempdir().unwrap();
+            let external = tempfile::tempdir().unwrap();
+            // A real leaf containing the suffix is ambiguous too; do not strip it.
+            let path = external.path().join(if mode == "deleted" {
+                "input"
+            } else {
+                "input (deleted)"
+            });
+            fs::write(&path, "same bytes").unwrap();
+            fs::write(
+                root.path().join("runlens.toml"),
+                format!(
+                    "schema_version=1\n[policy]\ndeny_reads=[{:?}]\n",
+                    path.to_str().unwrap()
+                ),
+            )
+            .unwrap();
+            let args = ["fd-stat", path.to_str().unwrap(), mode];
+            let plain = Command::new(&executable).args(args).output().unwrap();
+            fs::write(&path, "same bytes").unwrap();
+            let traced = invoke(
+                root.path(),
+                &[
+                    "run",
+                    "--save",
+                    "deleted.json",
+                    "--",
+                    &executable,
+                    args[0],
+                    args[1],
+                    args[2],
+                ],
+            );
+            assert_eq!(traced.stdout, plain.stdout);
+            assert_eq!(
+                traced.status.code(),
+                Some(4),
+                "{executable}/{mode}: {traced:?}"
+            );
+            let report = parse(root.path(), "deleted.json");
+            assert_eq!(report["executions"][0]["outcome"]["child_exit_code"], 0);
+            assert_eq!(
+                report["executions"][0]["outcome"]["collection_complete"],
+                false
+            );
+            assert_ne!(
+                invoke(root.path(), &["policy", "check", "deleted.json", "--json"])
+                    .status
+                    .code(),
+                Some(0)
+            );
+        }
+    }
+}

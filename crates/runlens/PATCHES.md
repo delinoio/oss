@@ -305,3 +305,5 @@ Ancestor identity: add private PATH_MUTATION evidence for Unix rename/removal an
 Windows EA queries: interpose NtQueryEaFile through the recursion-guarded handle-read observer, preserving every operand and native result. The windows_handle_metadata_reads_preserve_results_and_policy_evidence regression now includes EA success/error/pipe cases. Remove when upstream supplies equivalent EA observation and privacy guarantees.
 
 Darwin symlink flags: add lchflags to pathname mutation interposition, preserving the lexical link identity and native operands. macos_lchflags_preserves_results_and_observes_the_link checks successful/missing paths, target flag preservation and policy denial. Remove when upstream covers no-follow flag mutations equivalently.
+
+Linux deleted descriptor names: reject the procfs ` (deleted)` suffix as ESTALE so collection retains uncertainty without rewriting an ambiguous identity. deleted_descriptor_identity_cannot_pass_exact_read_policy covers unlinked files and real suffix-bearing names with dynamic/static fstat. Remove when upstream binds descriptors to trustworthy identities across unlink and rename.

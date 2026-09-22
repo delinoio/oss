@@ -168,14 +168,21 @@ impl Fd {
     /// # Errors
     /// Returns an error if the `/proc` readlink fails (e.g., the process has exited).
     pub fn get_path(self, caller: Caller<'_>) -> nix::Result<OsString> {
-        nix::fcntl::readlink(
+        let path = nix::fcntl::readlink(
             if self.fd == libc::AT_FDCWD {
                 format!("/proc/{}/cwd", caller.pid)
             } else {
                 format!("/proc/{}/fd/{}", caller.pid, self.fd)
             }
             .as_str(),
-        )
+        )?;
+        // procfs appends this ambiguous suffix after unlink. Never strip it:
+        // a live filename can contain the same bytes. Until identity is bound,
+        // either case must fail closed rather than invent an exact policy path.
+        if path.as_encoded_bytes().ends_with(b" (deleted)") {
+            return Err(nix::errno::Errno::ESTALE);
+        }
+        Ok(path)
     }
 }
 

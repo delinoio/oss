@@ -353,3 +353,5 @@
 - Windows NtQueryEaFile records independent handle read attempts, including failed queries; EA names and buffers remain opaque and unresolvable file handles make collection incomplete.
 
 - macOS lchflags records writes to the symlink leaf without following it, preserving flags, errors and native results.
+
+- Linux procfs descriptor/cwd names ending in ` (deleted)` are ambiguous and must mark collection incomplete; never strip the suffix to invent a policy identity.

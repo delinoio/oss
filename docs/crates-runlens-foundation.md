@@ -910,3 +910,5 @@ The Windows descriptor-metadata native fixture canonicalizes its one external te
 Windows EA queries use the same independent handle-read boundary as file-information queries. Native fixtures compare query status for valid, bad-buffer, invalid-handle and pipe cases without retaining attribute names or values.
 
 macOS flag mutation coverage includes lchflags on symlinks and missing paths, with native-result parity and independent external write-denial tests.
+
+Linux deleted descriptor resolution fails closed, including actual filenames ending in the ambiguous procfs suffix. Dynamic and static fstat regressions preserve native results while exact read policies cannot pass.

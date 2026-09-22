@@ -54,6 +54,7 @@ int main(int argc, char **argv) {
         if (!strcmp(argv[3], "invalid")) fd = -1;
         else if (!strcmp(argv[3], "pipe")) { if (pipe(pipes)) return 90; fd = pipes[0]; }
         else fd = open(argv[2], O_WRONLY);
+        if (!strcmp(argv[3], "deleted") && syscall(SYS_unlinkat, AT_FDCWD, argv[2], 0)) return 90;
         struct stat stats;
         long result = syscall(SYS_fstat, fd, !strcmp(argv[3], "bad-buffer") ? NULL : &stats);
         if (result == 0) printf("size=%lld kind=%u\n", (long long)stats.st_size, stats.st_mode & S_IFMT);

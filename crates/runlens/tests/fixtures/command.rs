@@ -136,6 +136,9 @@ fn main() {
                     }
                     _ => libc::open(path.as_ptr(), libc::O_WRONLY),
                 };
+                if args[2] == "deleted" {
+                    assert_eq!(libc::unlink(path.as_ptr()), 0);
+                }
                 let mut stats = std::mem::MaybeUninit::<libc::stat>::zeroed();
                 let output = if args[2] == "bad-buffer" {
                     std::ptr::null_mut()
