@@ -701,6 +701,7 @@ impl Workspace {
         }
         let mut modules = BTreeMap::new();
         let mut declarations = vec![];
+        let mut declared_paths = BTreeSet::new();
         for path in paths {
             let data = metadata(&path, &["go", "mod", "edit", "-json"], &environment).await?;
             let name = data
@@ -708,12 +709,22 @@ impl Workspace {
                 .and_then(Value::as_str)
                 .context("Go module lacks path")?;
             modules.insert(name.to_owned(), self.add_project(&path, "go")?);
+            declared_paths.insert(crate::files::canonical_path(&path)?);
             declarations.push((path, data));
         }
         let mut complete = true;
         let mut projects: BTreeSet<_> = modules.values().cloned().collect();
-        for (path, declaration) in declarations {
-            let source = modules[declaration["Module"]["Path"].as_str().unwrap()].clone();
+        let mut index = 0;
+        while index < declarations.len() {
+            let (path, declaration) = declarations[index].clone();
+            index += 1;
+            let module_name = declaration["Module"]["Path"]
+                .as_str()
+                .context("Go declaration lacks module path")?;
+            let source = modules
+                .get(module_name)
+                .cloned()
+                .context("Go declaration has no discovered project")?;
             let args = ["go", "list", "-mod=readonly", "-m", "-json", "all"];
             let output = output_tool(&path, &args, &environment).await;
             let output = match output {
@@ -739,7 +750,23 @@ impl Workspace {
                     if dir.starts_with(&self.root) && dir.join("go.mod").is_file() {
                         let id = self.add_project(&dir, "go")?;
                         projects.insert(id.clone());
-                        targets.insert(name, id);
+                        targets.insert(name, id.clone());
+                        // `go list -m all` reports local replacements as members,
+                        // but their own requirements are only visible when their
+                        // module declaration is queried too. Queue each local
+                        // replacement once so dependencies of a replacement are
+                        // represented by the same native edge logic.
+                        if declared_paths.insert(dir.clone()) {
+                            let replacement =
+                                metadata(&dir, &["go", "mod", "edit", "-json"], &environment)
+                                    .await?;
+                            let replacement_name = replacement
+                                .pointer("/Module/Path")
+                                .and_then(Value::as_str)
+                                .context("Go replacement module lacks path")?;
+                            modules.insert(replacement_name.to_owned(), id);
+                            declarations.push((dir, replacement));
+                        }
                     }
                 }
             }

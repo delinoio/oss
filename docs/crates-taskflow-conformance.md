@@ -225,6 +225,8 @@ Update this matrix when scenario behavior, adapter scope, or fixture ownership c
 
 `go_sharding_preserves_separated_flag_values_and_package_failures` uses real Go coverage, shuffle, and vet arguments across a passing root and failing child package. Unsupported flags and selection/output overrides fail configuration validation rather than losing positional values.
 
+`go_local_replacements_contribute_their_own_dependencies` discovers a Go module replaced from the workspace and recursively queries its local `go.mod`, preserving the replacement's dependency edge instead of limiting declarations to the initial workspace modules.
+
 `partial_output_globs_preserve_neighboring_inputs_and_watch_changes` verifies that a partial JavaScript output glob preserves neighboring JSON inputs for affected selection and watching, while matching outputs and exact output directory descendants cannot self-trigger their producer.
 
 `generic_shard_inventory_and_execution_use_the_configured_shell` runs a portable explicit interpreter that the OS default shell cannot substitute. Both inventory collection and every generic shard execution must use the task's shell setting.

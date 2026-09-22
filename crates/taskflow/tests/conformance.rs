@@ -3560,6 +3560,39 @@ fn go_metadata_queries_do_not_contact_module_proxies() {
         )));
 }
 
+#[tokio::test]
+#[ignore = "requires Go"]
+async fn go_local_replacements_contribute_their_own_dependencies() {
+    let root = tempfile::tempdir().unwrap();
+    let write = |name: &str, content: &str| {
+        files::atomic_write(&root.path().join(name), content.as_bytes()).unwrap()
+    };
+    write("go.work", "go 1.25.0\nuse ./a\n");
+    write(
+        "a/go.mod",
+        "module example.test/a\ngo 1.25.0\nrequire (\n  example.test/b v0.0.0\n  example.test/c \
+         v0.0.0\n)\nreplace example.test/b => ../b\nreplace example.test/c => ../c\n",
+    );
+    write(
+        "b/go.mod",
+        "module example.test/b\ngo 1.25.0\nrequire example.test/c v0.0.0\nreplace example.test/c \
+         => ../c\n",
+    );
+    write("c/go.mod", "module example.test/c\ngo 1.25.0\n");
+    write("a/a.go", "package a\n");
+    write("b/b.go", "package b\n");
+    write("c/c.go", "package c\n");
+
+    let workspace = Workspace::discover(root.path()).await.unwrap();
+    assert!(workspace.complete(), "{:?}", workspace.coverage);
+    assert!(workspace.edges.iter().any(|edge| {
+        edge.from == "path:a" && edge.to == "path:b" && edge.name == "example.test/b"
+    }));
+    assert!(workspace.edges.iter().any(|edge| {
+        edge.from == "path:b" && edge.to == "path:c" && edge.name == "example.test/c"
+    }));
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn docker_service_cleanup_failure_survives_session_cancellation() {
