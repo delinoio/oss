@@ -954,70 +954,84 @@ fn aggregate_raw_input_boundaries_and_serialized_growth() {
 
 #[test]
 fn concurrent_authorized_replacements_produce_one_complete_result() {
-    let dir = tempfile::tempdir().unwrap();
-    fs::write(dir.path().join("out"), "original").unwrap();
-    let payloads = [
-        format!("A={}\n", "x".repeat(65536)),
-        format!("B={}\n", "y".repeat(65536)),
-    ];
-    let mut children = Vec::new();
-    for (i, payload) in payloads.iter().enumerate() {
-        fs::write(dir.path().join(format!("in{i}")), payload).unwrap();
-        children.push(
-            command(dir.path())
-                .args([
-                    "dotenv",
-                    "merge",
-                    &format!("in{i}"),
-                    "--output",
-                    "out",
-                    "--force",
-                ])
-                .stdout(Stdio::null())
-                .stderr(Stdio::piped())
-                .spawn()
-                .unwrap(),
-        );
-    }
-    let mut successful_payloads = Vec::new();
-    for (mut child, payload) in children.into_iter().zip(&payloads) {
-        wait(&mut child);
-        let output = child.wait_with_output().unwrap();
-        if output.status.success() {
-            successful_payloads.push(payload);
-        } else {
-            let diagnostic = String::from_utf8_lossy(&output.stderr);
-            // ReplaceFileW opens its replacement exclusively. Another writer
-            // may encounter that handle after it becomes the destination, so
-            // Windows can reject overlapping inspection/publication. The
-            // contract guarantees a complete successful result, not that all
-            // writers succeed; no locks or automatic retries are promised.
-            #[cfg(not(windows))]
-            panic!("{diagnostic}");
-            #[cfg(windows)]
-            {
-                assert_eq!(output.status.code(), Some(1), "{diagnostic}");
-                assert!(
-                    diagnostic.contains("classification=Publish")
-                        || diagnostic.contains("classification=Permissions"),
-                    "{diagnostic}"
-                );
+    for round in 0..8 {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("out"), "original").unwrap();
+        let payloads = [
+            format!("A={}\n", "x".repeat(65536)),
+            format!("B={}\n", "y".repeat(65536)),
+        ];
+        let mut children = Vec::new();
+        for (i, payload) in payloads.iter().enumerate() {
+            fs::write(dir.path().join(format!("in{i}")), payload).unwrap();
+            children.push(
+                command(dir.path())
+                    .args([
+                        "dotenv",
+                        "merge",
+                        &format!("in{i}"),
+                        "--output",
+                        "out",
+                        "--force",
+                    ])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .unwrap(),
+            );
+        }
+        let mut successful_payloads = Vec::new();
+        let mut outcomes = Vec::new();
+        for (mut child, payload) in children.into_iter().zip(&payloads) {
+            wait(&mut child);
+            let output = child.wait_with_output().unwrap();
+            outcomes.push((
+                output.status.code(),
+                String::from_utf8_lossy(&output.stderr).into_owned(),
+            ));
+            if output.status.success() {
+                successful_payloads.push(payload);
+            } else {
+                let diagnostic = String::from_utf8_lossy(&output.stderr);
+                // Windows sharing can reject concurrent inspection/publication.
+                // A failed writer must not overwrite a successful writer's result;
+                // no locks or automatic retries are promised.
+                #[cfg(not(windows))]
+                panic!("{diagnostic}");
+                #[cfg(windows)]
+                {
+                    assert_eq!(output.status.code(), Some(1), "{diagnostic}");
+                    assert!(
+                        diagnostic.contains("classification=Publish")
+                            || diagnostic.contains("classification=Permissions"),
+                        "{diagnostic}"
+                    );
+                }
             }
         }
+        assert!(
+            !successful_payloads.is_empty(),
+            "round {round}: {outcomes:?}"
+        );
+        let result = fs::read_to_string(dir.path().join("out")).unwrap();
+        assert!(
+            successful_payloads.contains(&&result),
+            "round {round}: final length={}, matching writer={:?}, outcomes={outcomes:?}",
+            result.len(),
+            payloads.iter().position(|payload| payload == &result)
+        );
+        no_temps(dir.path());
+        // A replacement started after both have finished deterministically wins.
+        assert!(run(
+            dir.path(),
+            &["dotenv", "merge", "-", "--output", "out", "--force"],
+            b"C=last"
+        )
+        .status
+        .success());
+        assert_eq!(fs::read(dir.path().join("out")).unwrap(), b"C=last\n");
+        no_temps(dir.path());
     }
-    assert!(!successful_payloads.is_empty());
-    let result = fs::read_to_string(dir.path().join("out")).unwrap();
-    assert!(successful_payloads.contains(&&result));
-    // A replacement started after both have finished deterministically wins.
-    assert!(run(
-        dir.path(),
-        &["dotenv", "merge", "-", "--output", "out", "--force"],
-        b"C=last"
-    )
-    .status
-    .success());
-    assert_eq!(fs::read(dir.path().join("out")).unwrap(), b"C=last\n");
-    no_temps(dir.path());
 }
 
 #[cfg(windows)]
@@ -1175,7 +1189,7 @@ fn windows_replacement_preserves_explicit_dacl() {
         let mut defaulted = 0;
         let mut dacl = std::ptr::null_mut();
         // Compare the actual ACL and its protection/control semantics, not the
-        // self-relative descriptor's storage layout. ReplaceFileW may set
+        // self-relative descriptor's storage layout. Windows may set
         // SE_DACL_AUTO_INHERITED while preserving every ACE and protection from
         // parent inheritance. That bookkeeping bit grants no additional access.
         // SAFETY: data holds a valid OS-produced descriptor throughout these
