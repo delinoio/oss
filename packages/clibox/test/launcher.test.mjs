@@ -117,7 +117,7 @@ test("Unix launchers continue forwarding SIGINT, SIGTERM and SIGHUP", async () =
   assert.equal(parent.eventNames().length, 0);
 });
 
-test("Unix foreground terminal signals are not forwarded twice", async () => {
+test("Unix foreground terminal SIGINT is not forwarded twice", async () => {
   const parent = new EventEmitter();
   const child = new EventEmitter();
   child.exitCode = null;
@@ -126,7 +126,7 @@ test("Unix foreground terminal signals are not forwarded twice", async () => {
   child.kill = (signal) => received.push(signal);
   const result = launch("clibox", [], { platform: Platform.Linux, parent, terminalInput: true, spawnChild: () => child });
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) parent.emit(signal);
-  assert.deepEqual(received, []);
+  assert.deepEqual(received, ["SIGTERM", "SIGHUP"]);
   child.emit("exit", null, "SIGTERM");
   assert.deepEqual(await result, { code: null, signal: "SIGTERM" });
   assert.equal(parent.eventNames().length, 0);

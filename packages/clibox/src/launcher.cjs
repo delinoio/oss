@@ -41,13 +41,12 @@ function launch(binary, args, { spawnChild = spawn, parent = process, platform =
     const handlers = signals.map((signal) => [signal, () => {
       // Windows broadcasts console Ctrl+C/Break to both processes. Node's kill
       // API forcibly terminates Windows children, so forwarding would race the
-      // native handler's cleanup and numeric exit status. Await that handler;
-      // non-terminal Unix signals still require explicit forwarding. A
-      // foreground terminal already delivers its signal to the native child in
-      // this process group, so forwarding it would turn one cancellation into
-      // a second cancellation and skip the configured cleanup grace.
+      // native handler's cleanup and numeric exit status. A foreground Unix
+      // terminal broadcasts SIGINT to the native child's process group too;
+      // SIGTERM and SIGHUP can instead target only this launcher and must keep
+      // their explicit forwarding semantics.
       if (platform === Platform.Windows && (signal === "SIGINT" || signal === "SIGBREAK")) return;
-      if (platform !== Platform.Windows && terminalInput) return;
+      if (platform !== Platform.Windows && terminalInput && signal === "SIGINT") return;
       if (child.exitCode === null && child.signalCode === null) child.kill(signal);
     }]);
     for (const [signal, handler] of handlers) parent.on(signal, handler);
