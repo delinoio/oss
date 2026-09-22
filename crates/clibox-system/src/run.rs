@@ -1348,7 +1348,7 @@ fn unix_ownership() -> UnixOwnership {
 
 #[cfg(unix)]
 fn nested_wrapper_state() -> bool {
-    if !env::var_os(PARENT_WRAPPER_MARKER).is_some_and(|value| value == "1") {
+    if env::var_os(PARENT_WRAPPER_MARKER).is_none_or(|value| value != "1") {
         return false;
     }
     let parent = unsafe { libc::getppid() };
