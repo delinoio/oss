@@ -716,6 +716,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: false
+          cache-targets: false
 
       - name: Fetch locked Rust dependencies
         shell: bash

@@ -151,6 +151,7 @@ test("DevHud desktop retries its locked Rust fetch before offline contract verif
   assert.equal(cache.uses, "Swatinem/rust-cache@v2");
   assert.equal(cache.with["save-if"], "${{ github.ref == 'refs/heads/main' }}");
   assert.equal(cache.with["cache-on-failure"], false);
+  assert.equal(cache.with["cache-targets"], false);
   for (const expected of ["for attempt in 1 2 3", "cargo fetch --locked", "attempt * 15", "Cargo dependency fetch failed after three attempts"]) {
     assert.ok(fetch.run.includes(expected), expected);
   }
