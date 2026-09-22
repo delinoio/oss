@@ -315,13 +315,10 @@ fn resolve_command(view: &mut View, cwd: &Path, command: &OsString) -> Result<Pa
     if let Some(bin) = bins.into_iter().next() {
         return Ok(bin);
     }
-    if let Some(path) = std::env::var_os("PATH") {
-        for entry in std::env::split_paths(&path) {
-            let candidate = cwd.join(entry).join(command);
-            if candidate.is_file() {
-                return Ok(candidate);
-            }
-        }
+    if let Some(candidate) =
+        pnport::executable::find_on_path(command, std::env::var_os("PATH").as_deref(), cwd)
+    {
+        return Ok(candidate);
     }
     Err(Error::new(
         Code::PnportCommandNotFound,

@@ -92,19 +92,41 @@ pub fn prepare(
 }
 
 pub fn find_interpreter(name: &OsStr, search_path: Option<&OsStr>) -> Result<PathBuf> {
+    find_on_path(
+        name,
+        search_path,
+        &std::env::current_dir().map_err(|_| invalid())?,
+    )
+    .ok_or_else(|| {
+        Error::new(
+            Code::PnportCommandNotFound,
+            "The requested interpreter is not executable on PATH.",
+        )
+    })
+}
+
+pub fn find_on_path(name: &OsStr, search_path: Option<&OsStr>, cwd: &Path) -> Option<PathBuf> {
     for directory in std::env::split_paths(search_path.unwrap_or_default()) {
-        let candidate = std::env::current_dir()
-            .map_err(|_| invalid())?
-            .join(directory)
-            .join(name);
-        if candidate.is_file() && executable_permissions(&candidate).is_ok() {
-            return Ok(candidate);
+        let candidate = cwd.join(directory).join(name);
+        if !candidate.is_file() {
+            continue;
         }
+        #[cfg(unix)]
+        {
+            use std::{ffi::CString, os::unix::ffi::OsStrExt};
+            let Ok(path) = CString::new(candidate.as_os_str().as_bytes()) else {
+                continue;
+            };
+            if unsafe { libc::access(path.as_ptr(), libc::X_OK) } != 0 {
+                continue;
+            }
+        }
+        // Injection admission happens after PATH selection. A protected, but
+        // executable, candidate must fail explicitly rather than select a
+        // different program from a later directory.
+        return Some(candidate);
     }
-    Err(Error::new(
-        Code::PnportCommandNotFound,
-        "The requested interpreter is not executable on PATH.",
-    ))
+    None
 }
 
 fn executable_permissions(path: &Path) -> Result<()> {

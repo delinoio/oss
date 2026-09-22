@@ -266,6 +266,30 @@ fn pnp_unaware_native_process_reads_virtual_dependencies() {
     assert_eq!(result.stdout, b"protocol-output\nprotocol-output\n");
     assert_eq!(fs::read(root.path().join("output.txt")).unwrap(), b"native");
     assert!(!root.path().join("node_modules").exists());
+    // PATH lookup must skip a regular, non-executable file with the same name.
+    use std::os::unix::fs::PermissionsExt;
+    let shadow = root.path().join("shadow");
+    fs::create_dir(&shadow).unwrap();
+    fs::write(shadow.join("fixture"), "not executable").unwrap();
+    fs::set_permissions(shadow.join("fixture"), fs::Permissions::from_mode(0o644)).unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .env(
+            "PATH",
+            std::env::join_paths([shadow.as_path(), root.path()]).unwrap(),
+        )
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--", "fixture", "", "literal;$() argument"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(result.stdout, b"protocol-output\nprotocol-output\n");
 }
 
 #[test]
