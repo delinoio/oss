@@ -32,8 +32,6 @@ const POLL: Duration = Duration::from_millis(20);
 const CLEANUP_CONFIRMATION: Duration = Duration::from_secs(5);
 const STATE_VERSION: u8 = 1;
 const MAX_EXACT_TOKEN_COUNT: u64 = 1 << 53;
-#[cfg(unix)]
-const PARENT_WRAPPER_MARKER: &str = "CLIBOX_RUN_PARENT_WRAPPER";
 
 #[derive(Subcommand)]
 pub enum Command {
@@ -1057,8 +1055,8 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
     {
         // Descendant clibox wrappers must keep their workloads in this
         // wrapper's group. The outer wrapper can then terminate descendants
-        // even after the inner wrapper exits.
-        command.env(PARENT_WRAPPER_MARKER, "1");
+        // even after the inner wrapper exits. Parent executable and process
+        // group state provide that evidence without changing workload values.
         configure_process_group(&mut command, unix_ownership);
     }
     #[cfg(windows)]
@@ -1366,9 +1364,6 @@ fn unix_ownership() -> UnixOwnership {
 
 #[cfg(unix)]
 fn nested_wrapper_state() -> bool {
-    if env::var_os(PARENT_WRAPPER_MARKER).is_none_or(|value| value != "1") {
-        return false;
-    }
     let parent = unsafe { libc::getppid() };
     let own_process = unsafe { libc::getpid() };
     if parent <= 0

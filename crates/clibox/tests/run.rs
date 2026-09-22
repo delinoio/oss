@@ -441,6 +441,29 @@ fn caller_marker_cannot_disable_root_descendant_cleanup() {
 }
 
 #[test]
+fn wrapper_preserves_explicit_parent_marker_workload_value() {
+    let home = tempfile::tempdir().unwrap();
+    let output = command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--timeout",
+            "1s",
+            "CLIBOX_RUN_PARENT_WRAPPER=workload-value",
+            "--",
+            "sh",
+            "-c",
+            "test \"$CLIBOX_RUN_PARENT_WRAPPER\" = workload-value",
+        ],
+    )
+    .output()
+    .unwrap();
+
+    assert!(output.status.success(), "{output:?}");
+}
+
+#[test]
 fn outer_timeout_terminates_descendants_of_a_nested_wrapper() {
     let home = tempfile::tempdir().unwrap();
     let marker = home.path().join("nested-descendant-pid");
