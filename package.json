@@ -8,9 +8,6 @@
     "env:doctor": "node scripts/dev-environment/cli.mjs doctor",
     "dev": "node scripts/dev-environment/cli.mjs start team",
     "dev:public-docs": "pnpm --filter public-docs dev",
-    "dev:nodeup-docs": "pnpm --filter nodeup-docs dev",
-    "dev:binpm-docs": "pnpm --filter binpm-docs dev",
-    "dev:runmoor-docs": "pnpm --filter runmoor-docs dev",
     "dev:oss": "node scripts/dev-environment/cli.mjs start oss",
     "dev:oss:down": "node scripts/dev-environment/cli.mjs down",
     "test:dev-environment": "node --test scripts/dev-environment/*.test.mjs && node scripts/dev-environment/verify-turbo.mjs",
@@ -28,8 +25,7 @@
     "proto:breaking": "./scripts/check-proto-breaking.sh",
     "proto:fresh": "turbo run //#proto:generate --force && git diff --exit-code -- 'protos/gen' 'packages/devhud-api-client/src/gen' 'packages/async-commit-hook-api-client/src/gen' && test -z \"$(git ls-files --others --exclude-standard -- 'protos/gen' 'packages/devhud-api-client/src/gen' 'packages/async-commit-hook-api-client/src/gen')\"",
     "proto:check": "pnpm proto:lint && pnpm proto:breaking && pnpm proto:fresh",
-    "dev:async-commit-hook": "pnpm --filter async-commit-hook dev",
-    "dev:async-commit-hook-docs": "turbo run dev --filter=async-commit-hook-docs"
+    "dev:async-commit-hook": "pnpm --filter async-commit-hook dev"
   },
   "pnpm": {
     "overrides": {

@@ -16,30 +16,29 @@ pnpm --filter public-docs preview
 ```
 
 `pnpm --filter public-docs dev` runs Rspress on fixed port `46302`. It checks the exact port before startup and exits on conflicts instead of automatically selecting another port.
-Production output is written to `doc_build` for Cloudflare Pages. The build first
-creates the root Rspress site and then assembles the validated outputs from
-`runmoor-docs`, `nodeup-docs`, `binpm-docs`, and `async-commit-hook-docs` under
-`doc_build/runmoor`, `doc_build/nodeup`, `doc_build/binpm`, and
-`doc_build/async-commit-hook`. Rspress clean URLs are enabled, so stable public
-routes do not use `.html` suffixes.
+Production output is written to `doc_build` for Cloudflare Pages. This is one
+Rspress site: project Markdown is owned directly by
+`docs/runmoor`, `docs/nodeup`, `docs/binpm`, and `docs/async-commit-hook`, so
+the build emits every root and project-subpath route in one pass. Installer
+entrypoints are copied from the canonical files in `scripts/install` before the
+build. Rspress clean URLs are enabled, so stable public routes do not use
+`.html` suffixes.
 
 `pnpm --filter public-docs test` builds the site and runs
 the shared `@delinoio/docs-site-switcher` test, then runs
-`scripts/validate-clean-urls.mjs` and `scripts/validate-integrated-docs.mjs`.
+`scripts/validate-clean-urls.mjs` and `scripts/validate-public-docs.mjs`.
 The validators check root and project-subpath artifacts, clean routes, required
 headings and links, accessibility landmarks, site-selector markup, installer
 byte identity, the async `/docs` compatibility route, public-content limits,
-and forbidden paths in HTML resources and CSS `url()` values. The release
-workflow injects the configured non-secret DevHud store identifiers into every
-generated text asset before publication.
+and forbidden paths in HTML resources and CSS `url()` values.
 
 ## Files
 
 - `rspress.config.ts`: Rspress site configuration, navigation, and sidebar.
-- `docs/public/_headers`: Root Cloudflare Pages headers for the assembled async-commit-hook subpath.
-- `scripts/build-integrated-docs.mjs`: Builds and assembles the four project documentation apps.
+- `docs/public/_headers`: Root Cloudflare Pages headers for the async-commit-hook subpath.
+- `scripts/copy-public-assets.mjs`: Copies canonical installer files into the Cloudflare Pages public root.
 - `scripts/validate-clean-urls.mjs`: Root production clean-route validator.
-- `scripts/validate-integrated-docs.mjs`: Aggregated subpath, selector, installer, and compatibility validator.
+- `scripts/validate-public-docs.mjs`: Project-subpath, selector, installer, and compatibility validator.
 - `docs/index.md`: Landing page.
 - `docs/getting-started.md`: Local setup and contribution flow.
 - `docs/projects-overview.md`: High-level public project catalog.
@@ -50,8 +49,8 @@ generated text asset before publication.
 - `docs/devhud/`: Stable DevHud installation, usage, privacy, security, support, administration, and release guidance routes.
 
 Cargo Mono, Derun, and With Watch remain in-site product documentation. Nodeup,
-binpm, Runmoor, and async-commit-hook retain Markdown ownership in their own
-apps and are assembled at `https://oss.delino.io/nodeup/`,
+binpm, Runmoor, and async-commit-hook are now first-class subdirectories of
+this app and publish at `https://oss.delino.io/nodeup/`,
 `https://oss.delino.io/binpm/`, `https://oss.delino.io/runmoor/`, and
 `https://oss.delino.io/async-commit-hook/`. The old standalone domains are not
 redirected by this repository; their Pages projects and DNS records are an

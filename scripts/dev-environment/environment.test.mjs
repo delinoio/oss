@@ -1576,30 +1576,6 @@ test("root documentation development commands bypass the DevHud team environment
         "docs/apps-public-docs-foundation.md",
       ],
     },
-    {
-      name: "dev:nodeup-docs",
-      value: "pnpm --filter nodeup-docs dev",
-      contracts: [
-        "docs/project-nodeup.md",
-        "docs/apps-nodeup-docs-foundation.md",
-      ],
-    },
-    {
-      name: "dev:runmoor-docs",
-      value: "pnpm --filter runmoor-docs dev",
-      contracts: [
-        "docs/project-runmoor.md",
-        "docs/apps-runmoor-docs-foundation.md",
-      ],
-    },
-    {
-      name: "dev:binpm-docs",
-      value: "pnpm --filter binpm-docs dev",
-      contracts: [
-        "docs/project-binpm.md",
-        "docs/apps-binpm-docs-foundation.md",
-      ],
-    },
   ];
   for (const command of commands) {
     assert.equal(rootPackage.scripts[command.name], command.value, command.name);
@@ -1654,7 +1630,7 @@ test("environment source of truth, catalog, domain contracts, READMEs, and AGENT
   // `/devhud/admin` is also the stable public administration route, so its bare
   // value cannot distinguish a public link from the internal team secret path.
   const forbiddenPublicEnvironmentDetail = /\/devhud\/api|Infisical/u;
-  for (const publicRoot of ["apps/public-docs", "apps/binpm-docs", "apps/nodeup-docs", "apps/runmoor-docs"]) {
+  for (const publicRoot of ["apps/public-docs"]) {
     const entries = await readdir(resolve(repositoryRoot, publicRoot), {
       recursive: true,
       withFileTypes: true,

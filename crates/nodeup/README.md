@@ -321,4 +321,4 @@ cargo test
 
 - Project index: [`docs/project-nodeup.md`](../../docs/project-nodeup.md)
 - Runtime contract: [`docs/crates-nodeup-foundation.md`](../../docs/crates-nodeup-foundation.md)
-- Dedicated docs app: [`apps/nodeup-docs`](../../apps/nodeup-docs) (`https://oss.delino.io/nodeup`)
+- Documentation: [`apps/public-docs/docs/nodeup`](../../apps/public-docs/docs/nodeup) (`https://oss.delino.io/nodeup`)

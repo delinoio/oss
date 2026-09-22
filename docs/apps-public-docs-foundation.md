@@ -17,26 +17,27 @@
 ## Interfaces and Contracts
 - Rspress route, navigation, and sidebar contracts in `apps/public-docs/rspress.config.ts` must remain aligned with this contract. The root site's top-level navbar is intentionally empty; route access remains available through the sidebar and documented links.
 - Documentation sources live in `apps/public-docs/docs`; the production output directory is `apps/public-docs/doc_build` and is not source-controlled.
-- The publication root owns Cloudflare Pages control files. Its `_headers` contains the path-scoped security headers for `/async-commit-hook/*`; package-local `_headers` files remain package inputs but do not replace the root rule.
+- The publication root owns Cloudflare Pages control files. Its `_headers` contains the path-scoped security headers for `/async-commit-hook/*`.
 - Rspress clean URLs are enabled. Stable route IDs owned directly by this app are `/`, `/getting-started`, `/projects-overview`, `/documentation-lifecycle`, `/linux-packages`, `/devhud`, `/devhud/install`, `/devhud/guide`, `/devhud/privacy`, `/devhud/security`, `/devhud/support`, `/devhud/admin`, `/devhud/releases`, `/cargo-mono`, `/derun`, and `/with-watch`; generated internal links must not use `.html` suffixes.
 - Public-facing routes and content groupings must map to canonical docs contracts.
 - Content must curate internal contracts from `docs/` into user-facing guidance and must not document repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
+- Top-level in-site product page IDs currently include `devhud`, `cargo-mono`, `derun`, and `with-watch`.
+- The canonical public origin is `https://oss.delino.io`. The public documentation build owns the root site and the four project content roots at `apps/public-docs/docs/runmoor`, `apps/public-docs/docs/nodeup`, `apps/public-docs/docs/binpm`, and `apps/public-docs/docs/async-commit-hook`; the resulting output is the only production publication surface.
+- The site selector is present on every documentation page. It offers Delino OSS (`/`), Runmoor (`/runmoor`), Nodeup (`/nodeup`), binpm (`/binpm`), and async-commit-hook (`/async-commit-hook`) as same-origin destinations. The selector exposes the current site, `aria-expanded`, keyboard navigation, Escape close, outside-click close, focus return, and `aria-current` for the selected destination.
+- Project route IDs are authored in the consolidated site with their canonical subpath. Generated links and assets must remain clean and same-origin, using `/runmoor`, `/nodeup`, `/binpm`, and `/async-commit-hook` as appropriate or targeting another explicitly documented public route.
+- Runmoor, Nodeup, binpm, and async-commit-hook guides are owned directly by the four content roots above and are published below the canonical subpaths. They must not be duplicated in the root app or represented by compatibility handoff pages.
 - Root in-site product page IDs currently include `devhud`, `cargo-mono`, `derun`, and `with-watch`; they are not rendered as top-level navbar items.
-- The canonical public origin is `https://oss.delino.io`. The public documentation build owns the root site and assembles the four project documentation apps under `/runmoor`, `/nodeup`, `/binpm`, and `/async-commit-hook`. Each project keeps its Markdown ownership and package-local validation; the assembled output is the only production publication surface.
-- The site selector is present on every assembled documentation page. It offers Delino OSS (`/`), Runmoor (`/runmoor`), Nodeup (`/nodeup`), binpm (`/binpm`), and async-commit-hook (`/async-commit-hook`) as same-origin destinations. The selector exposes the current site, `aria-expanded`, keyboard navigation, Escape close, outside-click close, focus return, and `aria-current` for the selected destination. On the documented fixed loopback development ports, activation targets the selected package's own local root so each independently running docs app remains reachable.
-- Package-local route IDs remain relative to each documentation app. When assembled, every route and asset is prefixed by its project subpath, and generated links must stay within that subpath or target an explicitly documented same-origin public route.
-- Runmoor, Nodeup, binpm, and async-commit-hook guides are owned by their respective documentation apps and are published below the canonical subpaths. They must not be duplicated in the root app or represented by compatibility handoff pages.
 - `/devhud` is the public DevHud overview and coordinated-release page. Its child routes cover installation/verification, implemented usage, privacy, security, support, administrator operations, and releases. These pages describe only public behavior and supported limits; internal credentials, arbitrary paths, architecture, endpoints, workflow structure, and deployment implementation remain in repository contracts. The coordinated release injects a non-secret version-and-revision marker into the built page and verifies the exact marker through the production `/devhud` route before GA. It also injects validated non-secret App Store, Google Play, and Chrome Web Store identifiers into every generated text asset containing the compiled public docs, then verifies the exact official listing destinations in `/devhud/install` before deployment.
-- A coordinated DevHud release may publish its release-bound `/devhud` page, route assets, and shared runtime assets, but its retained candidate must not contain the four package-local documentation subpaths or the root `search_index.*` data. The `public_docs` release job rebuilds the complete aggregate from current `main` and overlays only those DevHud-owned candidate files before deploying, so a delayed or recovered DevHud release cannot roll back root-project search data or Runmoor, Nodeup, binpm, or async-commit-hook documentation.
+- A coordinated DevHud release may publish its release-bound `/devhud` page, route assets, and shared runtime assets, but its retained candidate must not contain the four project subpaths or the root `search_index.*` data. The `public_docs` release job rebuilds the complete tree from current `main` and overlays only those DevHud-owned candidate files before deploying, so a delayed or recovered DevHud release cannot roll back root-project search data or Runmoor, Nodeup, binpm, or async-commit-hook documentation.
 - Major project navigation uses the canonical same-origin subpaths `/runmoor`, `/nodeup`, `/binpm`, and `/async-commit-hook`; it must not point to retired standalone documentation hosts.
-- Nodeup, binpm, Runmoor, and async-commit-hook public documentation remains owned by `apps/nodeup-docs`, `apps/binpm-docs`, `apps/runmoor-docs`, and `apps/async-commit-hook-docs`; public-docs only assembles their validated output.
-- The `With Watch` page must route to the stable page ID `with-watch` and keep the `Command Rerun Watcher` grouping unless contracts are updated together.
+- Nodeup, binpm, Runmoor, and async-commit-hook public documentation is owned directly by `apps/public-docs/docs/nodeup`, `apps/public-docs/docs/binpm`, `apps/public-docs/docs/runmoor`, and `apps/public-docs/docs/async-commit-hook`.
+- The `With Watch` tab must route to the stable page ID `with-watch` and keep the `Command Rerun Watcher` grouping unless contracts are updated together.
 - Rust CLI/crate product pages may omit repo-local installer script flows from public guidance even when those installers remain supported by release/runtime contracts elsewhere in the repository.
 - Breaking navigation changes require explicit migration notes.
 
 ## Storage
 - Source docs are versioned in-repo.
-- Build artifacts are generated in `apps/public-docs/doc_build`. The build assembles validated package output at `doc_build/runmoor`, `doc_build/nodeup`, `doc_build/binpm`, and `doc_build/async-commit-hook`, then publishes the complete tree through the single `public-docs` Cloudflare Pages project.
+- Build artifacts are generated in `apps/public-docs/doc_build`, including the four project subpaths, and the complete tree is published through the single `public-docs` Cloudflare Pages project.
 
 ## Security
 - Public content must avoid leaking internal-only secrets or environment details.
@@ -49,13 +50,13 @@
 
 ## Build and Test
 - Development: package-local `pnpm dev` or repository-root `pnpm dev:public-docs`.
-- Local validation: `pnpm --filter public-docs test`, which runs the shared `@delinoio/docs-site-switcher` interaction suite, builds the root site and aggregated subpaths, and runs `scripts/validate-clean-urls.mjs` to verify every root and subpath route artifact, required headings/links/accessibility landmarks, site-selector state, public-content limits, generated internal `.html` links across navigation-bearing HTML attributes, and forbidden paths or URL credentials in HTML attributes, HTML resources, and CSS `url()` values. Package-local validators remain required for each assembled project.
-- CI alignment: `node-public-docs-test`, selected and forced for this app, the shared site-switcher package, and every package-local docs app consumed by the aggregate build.
+- Local validation: `pnpm --filter public-docs test`, which runs the shared `@delinoio/docs-site-switcher` interaction suite, builds the complete root and project-subpath tree, and validates every route artifact, required heading/link/accessibility landmark, site-selector state, public-content limit, clean link, and forbidden path or URL credential.
+- CI alignment: `node-public-docs-test`, selected and forced for this app and the shared site-switcher package.
 - Production build: `pnpm --filter public-docs build`; Cloudflare Pages must publish `apps/public-docs/doc_build`.
 
 ## Dependencies and Integrations
 - Integrates with repository contract docs under `docs/`.
-- Integrates with the four package-local Rspress builds, their unchanged installer assets, the shared site-selector contract, and Cloudflare Pages deployment tooling.
+- Integrates with the four in-tree project content roots, their canonical installer assets, the shared site-selector contract, and Cloudflare Pages deployment tooling.
 
 ## Change Triggers
 - Update `docs/project-public-docs.md` and this file when navigation or public doc platform contracts change.

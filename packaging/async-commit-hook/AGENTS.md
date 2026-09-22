@@ -10,4 +10,4 @@
 - Resume only an unpublished draft whose exact ownership marker, target commit, version and workflow run ID match the current run. Reread ownership before replacing partial uploads, reject unexpected assets, and verify the full uploaded names, sizes, SHA-256 digests and uploaded states before publication. Published releases and unowned drafts are never overwritten.
 - Release artifact/installer fixtures under `scripts/release` use Node built-ins only and run without dependency installation. YAML workflow fixtures belong to `scripts/ci` and run after the frozen workspace install.
 - Do not label cross-compilation as native integration validation. Preserve the owner-approved exclusions in `docs/cmds-async-commit-hook-release-contract.md`.
-- Public installers are authored under `apps/async-commit-hook-docs/public`; release preparation copies those exact bytes into downloadable assets.
+- Public installers are authored under `scripts/install/async-commit-hook.sh` and `scripts/install/async-commit-hook.ps1`; release preparation copies those exact bytes into downloadable assets.

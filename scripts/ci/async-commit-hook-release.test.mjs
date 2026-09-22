@@ -66,7 +66,7 @@ test('release tag identity is checked before signing and again before creation',
 test('release embeds the UI before Go validation and leaves docs publication to public-docs', () => {
  const validate = workflow.jobs.validate.steps.map((step) => step.run ?? '').join('\n');
  assert.ok(validate.indexOf('pnpm --filter async-commit-hook build:embedded') < validate.indexOf('go test ./...'));
- assert.match(validate, /pnpm --filter async-commit-hook-docs test/);
+ assert.match(validate, /pnpm --filter public-docs test/);
  assert.doesNotMatch(JSON.stringify(workflow.jobs.validate), /ach-site|ACH_PAGES_PROJECT|pages deploy/);
  const builder = readFileSync(new URL('scripts/release/build-async-commit-hook.py', root), 'utf8');
  assert.ok(builder.indexOf('"build:embedded"') < builder.indexOf('for target in m["targets"]'));

@@ -15,6 +15,36 @@ const projectRoutes = {
   "async-commit-hook": ["/", "/install", "/start", "/configuration", "/validation", "/commands", "/agents", "/web", "/privacy", "/recovery", "/compatibility", "/symlinks", "/existing-hooks"],
 };
 const selectorDestinations = ["/", "/runmoor/", "/nodeup/", "/binpm/", "/async-commit-hook/"];
+const projectSecuritySlugs = new Set(["runmoor", "async-commit-hook"]);
+const forbiddenProjectContent = [
+  /(?:GH_TOKEN|DEVHUD_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)|Authorization:\s*Bearer)/iu,
+  /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/iu,
+  /BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY/iu,
+  /(?:\/Users\/|\/home\/[a-z]|\.infisical)/iu,
+  /(?:apps|cmds|servers|protos)\/(?:runmoor|async-commit-hook|devhud)(?:\/|\b)/iu,
+];
+const rootRoutes = [
+  "/",
+  "/getting-started",
+  "/projects-overview",
+  "/documentation-lifecycle",
+  "/linux-packages",
+  "/devhud",
+  "/devhud/install",
+  "/devhud/guide",
+  "/devhud/privacy",
+  "/devhud/security",
+  "/devhud/support",
+  "/devhud/admin",
+  "/devhud/releases",
+  "/cargo-mono",
+  "/derun",
+  "/with-watch",
+];
+const publicRoutePrefixes = new Set([...selectorDestinations, ...rootRoutes]);
+for (const [slug, routes] of Object.entries(projectRoutes)) {
+  for (const route of routes) publicRoutePrefixes.add(publicRoute(slug, route));
+}
 const failures = [];
 
 async function exists(filePath) {
@@ -41,6 +71,13 @@ function collectSameOriginLinks(contents) {
     .filter((value) => value.startsWith("/"));
 }
 
+function visibleProjectText(contents) {
+  return contents
+    .replace(/<(?:script|style)\b[^>]*>[\s\S]*?<\/(?:script|style)>/giu, " ")
+    .replace(/<[^>]*>/gu, " ")
+    .replace(/\s+/gu, " ");
+}
+
 for (const [slug, routes] of Object.entries(projectRoutes)) {
   const projectRoot = path.join(outputDirectory, slug);
   if (!(await exists(projectRoot))) {
@@ -64,16 +101,45 @@ for (const [slug, routes] of Object.entries(projectRoutes)) {
     }
     const selected = (contents.match(/aria-current="page"/gu) ?? []).length;
     if (selected !== 1) failures.push(`${publicRoute(slug, route)} has ${selected} selected site destinations`);
+    if (!contents.includes("https://github.com/delinoio/oss")) {
+      failures.push(`${publicRoute(slug, route)} is missing the repository link`);
+    }
+    if (!contents.includes("delino-repository-footer")) {
+      failures.push(`${publicRoute(slug, route)} is missing the document footer repository link`);
+    }
+    if (projectSecuritySlugs.has(slug)) {
+      const publicText = visibleProjectText(contents);
+      if (forbiddenProjectContent.some((pattern) => pattern.test(contents) || pattern.test(publicText))) {
+        failures.push(`${publicRoute(slug, route)} contains prohibited public content`);
+      }
+      for (const link of collectSameOriginLinks(contents)) {
+        try {
+          const url = new URL(link, "https://oss.delino.io");
+          if (url.username || url.password || url.searchParams.has("token") || url.searchParams.has("secret")) {
+            failures.push(`${publicRoute(slug, route)} contains credential-bearing URL content`);
+          }
+        } catch {
+          failures.push(`${publicRoute(slug, route)} contains a malformed public URL`);
+        }
+      }
+    }
+    for (const linkedRoute of routes) {
+      const destination = publicRoute(slug, linkedRoute);
+      if (!contents.includes(`href="${destination}"`) && !contents.includes(`href='${destination}'`)) {
+        failures.push(`${publicRoute(slug, route)} is missing project navigation link ${destination}`);
+      }
+    }
     for (const oldOrigin of retiredOrigins) {
       if (contents.includes(oldOrigin)) failures.push(`${publicRoute(slug, route)} contains retired origin ${oldOrigin}`);
     }
     for (const link of collectSameOriginLinks(contents)) {
       if (/\.html(?:[?#]|$)/iu.test(link)) failures.push(`${publicRoute(slug, route)} contains an .html link: ${link}`);
-      if (link.startsWith(`/${slug}/`) || link === `/${slug}`) continue;
-      if (selectorDestinations.includes(link)) continue;
+      const linkPath = link.split(/[?#]/u, 1)[0];
+      if (publicRoutePrefixes.has(linkPath)) continue;
+      if (linkPath.startsWith(`/${slug}/`) || linkPath === `/${slug}`) continue;
       if (/^\/(?:assets|static)\//u.test(link)) continue;
-      if (link.startsWith("#")) continue;
-      if (link.startsWith("/")) failures.push(`${publicRoute(slug, route)} escapes its project subpath: ${link}`);
+      if (linkPath.startsWith("#")) continue;
+      if (linkPath.startsWith("/")) failures.push(`${publicRoute(slug, route)} links to an unknown public route: ${link}`);
     }
   }
 }
@@ -83,8 +149,8 @@ const installerChecks = [
   ["nodeup", "install.ps1", "scripts/install/nodeup.ps1"],
   ["binpm", "install.sh", "scripts/install/binpm.sh"],
   ["binpm", "install.ps1", "scripts/install/binpm.ps1"],
-  ["async-commit-hook", "install.sh", "apps/async-commit-hook-docs/public/install.sh"],
-  ["async-commit-hook", "install.ps1", "apps/async-commit-hook-docs/public/install.ps1"],
+  ["async-commit-hook", "install.sh", "scripts/install/async-commit-hook.sh"],
+  ["async-commit-hook", "install.ps1", "scripts/install/async-commit-hook.ps1"],
 ];
 for (const [slug, filename, source] of installerChecks) {
   const generated = path.join(outputDirectory, slug, filename);
@@ -115,9 +181,9 @@ const expectedAsyncHeaders = `/async-commit-hook/*
 if (headers !== expectedAsyncHeaders) failures.push("aggregate async security headers are missing or incorrect");
 
 if (failures.length > 0) {
-  console.error("Integrated public docs validation failed:");
+  console.error("Public docs project validation failed:");
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
 
-console.log("Integrated public docs validation passed.");
+console.log("Public docs project validation passed.");
