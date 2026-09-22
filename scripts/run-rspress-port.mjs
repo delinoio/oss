@@ -62,31 +62,13 @@ function printPortConflict(portInUse) {
   console.error("");
   console.error("Recovery:");
 
-  if (process.platform === "win32") {
-    console.error(
-      `  1. Find the listener (PowerShell): Get-NetTCPConnection -LocalPort ${portInUse} -State Listen`,
-    );
-  } else {
-    console.error(
-      `  1. Find the listener: lsof -nP -iTCP:${portInUse} -sTCP:LISTEN`,
-    );
-  }
-
+  console.error(`  1. Find the listener: pnpm exec clibox port list ${portInUse}`);
   console.error("  2. Stop that process, then rerun this command.");
 
   if (hasOverride) {
-    if (process.platform === "win32") {
-      console.error(
-        `  3. Explicit temporary override (PowerShell): $env:${overrideEnvName}='<free-port>'; ${packageCommand}`,
-      );
-      console.error(
-        `     Explicit temporary override (cmd.exe): set "${overrideEnvName}=<free-port>" && ${packageCommand}`,
-      );
-    } else {
-      console.error(
-        `  3. For an explicit temporary override, run: ${overrideEnvName}=<free-port> ${packageCommand}`,
-      );
-    }
+    console.error(
+      `  3. Explicit temporary override: pnpm exec clibox env run "${overrideEnvName}=<free-port>" -- ${packageCommand}`,
+    );
   }
 
   console.error("");

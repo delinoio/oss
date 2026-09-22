@@ -64,10 +64,9 @@ else
   sigstore_dir="$(cd "$sigstore_dir" && pwd -P)"
 fi
 
-pushd "$artifacts_dir" >/dev/null
-
 artifacts=()
-while IFS= read -r artifact; do
+while IFS= read -r -d '' artifact; do
+  artifact="${artifact#"$artifacts_dir/"}"
   case "$artifact" in
     *$'\n'*|*$'\r'*)
       echo "[release.checksum] artifact names must not contain newlines" >&2
@@ -76,10 +75,10 @@ while IFS= read -r artifact; do
   esac
   artifacts+=("$artifact")
 done < <(
-  find . -type f \
+  find "$artifacts_dir" -type f \
     ! -name 'SHA256SUMS' \
     ! -name '*.sigstore.json' \
-    -print | sed 's#^\./##' | LC_ALL=C sort
+    -print0
 )
 
 # When Sigstore output is nested below the artifact directory, exclude it from
@@ -98,15 +97,25 @@ if [ "${#artifacts[@]}" -eq 0 ]; then
   exit 1
 fi
 
-: > SHA256SUMS
+sorted=()
+while IFS= read -r artifact; do
+  sorted+=("$artifact")
+done < <(printf '%s\n' "${artifacts[@]}" | LC_ALL=C sort)
+artifacts=("${sorted[@]}")
+
+manifest="$artifacts_dir/SHA256SUMS"
+: > "$manifest"
 for artifact in "${artifacts[@]}"; do
-  if [ ! -f "$artifact" ]; then
+  if [ ! -f "$artifacts_dir/$artifact" ]; then
     continue
   fi
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum -- "$artifact" >> SHA256SUMS
+  # Run pnpm from the repository even when artifacts live outside the checkout.
+  # Keep the manifest's relative names, GNU escaping, and two-space text marker.
+  checksum=$(pnpm exec clibox hash compute --input="$artifacts_dir/$artifact")
+  if [[ "$artifact" == *\\* ]]; then
+    printf '\\%s  %s\n' "$checksum" "${artifact//\\/\\\\}" >> "$manifest"
   else
-    shasum -a 256 -- "$artifact" >> SHA256SUMS
+    printf '%s  %s\n' "$checksum" "$artifact" >> "$manifest"
   fi
   echo "[release.checksum] checksum generated for $artifact" >&2
 done
@@ -121,7 +130,7 @@ if command -v cosign >/dev/null 2>&1; then
     echo "[release.checksum] signing $artifact with cosign" >&2
     cosign sign-blob --yes \
       --bundle "$bundle" \
-      "$artifact"
+      "$artifacts_dir/$artifact"
   done
 
   checksum_bundle="$sigstore_dir/SHA256SUMS.sigstore.json"
@@ -129,12 +138,10 @@ if command -v cosign >/dev/null 2>&1; then
   echo "[release.checksum] signing SHA256SUMS with cosign" >&2
   cosign sign-blob --yes \
     --bundle "$checksum_bundle" \
-    SHA256SUMS
+    "$manifest"
 elif [ "$require_cosign" = "1" ]; then
   echo "[release.checksum] cosign is required but not available" >&2
   exit 1
 else
   echo "[release.checksum] cosign unavailable; signing skipped" >&2
 fi
-
-popd >/dev/null

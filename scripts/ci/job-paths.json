@@ -560,7 +560,9 @@
       "scripts/release/project.mjs",
       "scripts/release/linux-packages/**",
       "packaging/linux/**",
-      "scripts/release/project.test.mjs"
+      "scripts/release/project.test.mjs",
+      "scripts/tools/**",
+      ".agents/skills/before-and-after/scripts/**"
     ],
     "workspace": "@delino/clibox",
     "workspacePaths": [

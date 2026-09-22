@@ -1114,6 +1114,13 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - uses: ./.github/actions/setup-clibox
+        with:
+          install: 'false'
+
       - name: Download checksum-pinned bundletool
         id: bundletool
         if: ${{ matrix.production }}
@@ -1125,16 +1132,13 @@ jobs:
           expected=$(node -p "require('./apps/devhud/mobile-platforms.json').androidArtifactInspector.sha256")
           jar="$RUNNER_TEMP/bundletool-all-$version.jar"
           curl --fail --location --silent --show-error --output "$jar" "$url"
-          printf '%s  %s\n' "$expected" "$jar" | sha256sum --check
+          pnpm exec clibox hash verify "$expected" --input="$jar" --quiet
           echo "jar=$jar" >> "$GITHUB_OUTPUT"
 
       - name: Install Linux host prerequisites
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libx11-dev libxtst-dev ninja-build
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Generate pinned Android project
         run: pnpm --filter devhud mobile:generate -- --platform android
@@ -1496,6 +1500,12 @@ jobs:
         id: ci-node
         uses: ./.github/actions/setup-ci-node
 
+      - name: Install locked repository tools
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter delinoio-oss-workspace
+      - uses: ./.github/actions/setup-clibox
+        with:
+          install: 'false'
+
       - name: Validate installer, SPDX, provenance, updater, and key-rotation fixtures
         run: |
           node --test scripts/release/finalize-devhud-deb.test.mjs
@@ -1528,6 +1538,12 @@ jobs:
       - name: Setup Node.js
         id: ci-node
         uses: ./.github/actions/setup-ci-node
+
+      - name: Install locked repository tools
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter delinoio-oss-workspace
+      - uses: ./.github/actions/setup-clibox
+        with:
+          install: 'false'
 
       - name: Validate deterministic release contracts
         run: node --test scripts/release/*.test.mjs
@@ -1605,6 +1621,11 @@ jobs:
           cache-on-failure: false
       - name: Install clean locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: ./.github/actions/setup-clibox
+        with:
+          install: 'false'
+      - name: Test pinned repository utilities
+        run: pnpm ci:tools
       - name: Verify affected workspace runner
         run: node --test scripts/ci/run-affected.test.mjs
       - name: Test Rust utilities, readiness, configuration processing, and OS adapters

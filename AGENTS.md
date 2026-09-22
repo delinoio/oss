@@ -465,6 +465,7 @@ Release automation baseline:
 ### clibox Contract
 
 - Public clibox documentation is owned by `apps/public-docs/docs/clibox` at `https://oss.delino.io/clibox`, a major project alongside Runmoor in the shared selector. Follow `docs/apps-clibox-docs-foundation.md`; synchronize public behavior with native/npm guides and keep release internals in `docs/`.
+- Repository tooling consumes the published prebuilt through the exact root `clibox-prebuilt` npm alias and lockfile, independently of the private source workspace. Invoke `pnpm exec clibox` directly from the repository root. Verify the installed version in the `setup-clibox` workflow action; do not add a repository launcher, compile Rust, or download at command runtime. Keep public installers and minimal toolchain bootstraps independent, and preserve existing data formats, secret handling, and stronger readiness/lifecycle checks.
 
 - clibox CLI consistency uses canonical `run env`, `port list`, and `hash compute` without old-name aliases. Report `--quiet` suppresses stdout; PID selection is only `port list --pids`. File-output commands interpret `--output -` as stdout and `./-` as a literal dash file; `--force` requires real file output or `--in-place`. Keep short/long help, static redacted migration guidance, numeric owned-operation cancellation (130/143), filtered-error visibility, and native/npm behavior synchronized.
 

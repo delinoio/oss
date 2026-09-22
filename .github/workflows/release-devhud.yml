@@ -368,6 +368,18 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+      - name: Checkout immutable workflow tooling
+        if: ${{ matrix.provider == 'apple' }}
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.workflow_sha }}
+          path: .clibox-tooling
+      - name: Prepare clibox independently of the recovery source
+        if: ${{ matrix.provider == 'apple' }}
+        uses: ./.clibox-tooling/.github/actions/setup-clibox
+        with:
+          working-directory: .clibox-tooling
       - uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
@@ -392,12 +404,13 @@ jobs:
           echo "status=$(jq -er '.status' apple-build-status.json)" >> "$GITHUB_OUTPUT"
       - name: Upload the processed App Store package
         if: ${{ steps.apple_build.outputs.status == 'absent' }}
+        working-directory: .clibox-tooling
         run: |
           set -euo pipefail
           umask 077
           mkdir -p "$HOME/.appstoreconnect/private_keys"
-          printf '%s' "$APPLE_API_PRIVATE_KEY_B64" | base64 --decode > "$HOME/.appstoreconnect/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
-          xcrun iTMSTransporter -m upload -assetFile private-artifacts/devhud-ios-arm64-app-store.ipa -apiKey "$APPLE_API_KEY_ID" -apiIssuer "$APPLE_API_ISSUER"
+          printf '%s' "$APPLE_API_PRIVATE_KEY_B64" | pnpm exec clibox base64 decode > "$HOME/.appstoreconnect/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
+          xcrun iTMSTransporter -m upload -assetFile "$GITHUB_WORKSPACE/private-artifacts/devhud-ios-arm64-app-store.ipa" -apiKey "$APPLE_API_KEY_ID" -apiIssuer "$APPLE_API_ISSUER"
       - name: Wait for App Store package processing
         if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' && (steps.store_state.outputs.status == 'unsubmitted' || steps.store_state.outputs.status == 'withdrawn') }}
         run: |

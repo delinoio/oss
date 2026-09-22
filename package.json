@@ -15,6 +15,7 @@
     "ci:contracts": "node --test scripts/ci/*.test.mjs",
     "ci:workflows": "node scripts/ci/workflows.mjs",
     "ci:release-fixtures": "node --test scripts/release/*.test.mjs",
+    "ci:tools": "node --test scripts/tools/*.test.cjs",
     "build": "turbo build",
     "test": "turbo test",
     "lint": "turbo lint",
@@ -65,6 +66,7 @@
     "@bufbuild/buf": "1.72.0",
     "@bufbuild/protoc-gen-es": "2.14.0",
     "@connectrpc/protoc-gen-connect-query": "2.3.1",
+    "clibox-prebuilt": "npm:@delino/clibox@0.1.6",
     "js-yaml": "4.3.1",
     "lefthook": "^2.1.4",
     "turbo": "^2.9.14"
