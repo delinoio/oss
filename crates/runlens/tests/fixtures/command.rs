@@ -184,6 +184,69 @@ fn main() {
             }
         }
         #[cfg(unix)]
+        "symlink-observe" => {
+            let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            // SAFETY: live path and initialized owned result buffers. Contents
+            // remain private; print only native status for parity checks.
+            unsafe {
+                let mut stat = std::mem::zeroed();
+                let mut bytes = [0u8; 4096];
+                let result = match args[2].as_str() {
+                    "lstat" => libc::lstat(path.as_ptr(), &mut stat) as isize,
+                    "fstatat" => libc::fstatat(
+                        libc::AT_FDCWD,
+                        path.as_ptr(),
+                        &mut stat,
+                        libc::AT_SYMLINK_NOFOLLOW,
+                    ) as isize,
+                    "mixed" => {
+                        libc::readlink(path.as_ptr(), bytes.as_mut_ptr().cast(), bytes.len());
+                        libc::stat(path.as_ptr(), &mut stat) as isize
+                    }
+                    "readlink" => {
+                        libc::readlink(path.as_ptr(), bytes.as_mut_ptr().cast(), bytes.len())
+                    }
+                    #[cfg(target_os = "linux")]
+                    "empty" => {
+                        let fd = libc::open(path.as_ptr(), libc::O_PATH | libc::O_NOFOLLOW);
+                        let result = libc::readlinkat(
+                            fd,
+                            c"".as_ptr(),
+                            bytes.as_mut_ptr().cast(),
+                            bytes.len(),
+                        );
+                        libc::close(fd);
+                        result
+                    }
+                    #[cfg(target_os = "linux")]
+                    "statx" => {
+                        let mut statx = std::mem::zeroed();
+                        libc::statx(
+                            libc::AT_FDCWD,
+                            path.as_ptr(),
+                            libc::AT_SYMLINK_NOFOLLOW,
+                            libc::STATX_TYPE,
+                            &mut statx,
+                        ) as isize
+                    }
+                    _ => libc::readlinkat(
+                        libc::AT_FDCWD,
+                        path.as_ptr(),
+                        bytes.as_mut_ptr().cast(),
+                        bytes.len(),
+                    ),
+                };
+                println!(
+                    "result={result};errno={}",
+                    if result >= 0 {
+                        0
+                    } else {
+                        std::io::Error::last_os_error().raw_os_error().unwrap()
+                    }
+                );
+            }
+        }
+        #[cfg(unix)]
         "fd-stat" => {
             let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
             let mut pipe = [-1; 2];

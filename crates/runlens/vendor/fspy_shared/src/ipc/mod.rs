@@ -23,6 +23,8 @@ bitflags! {
         const IMAGE = 1 << 5;
         // Private path replacement/removal attempt, used to invalidate ancestry.
         const PATH_MUTATION = 1 << 6;
+        // Independent from READ: their union retains mixed follow/no-follow attempts.
+        const READ_NOFOLLOW = 1 << 7;
     }
 }
 
@@ -42,7 +44,6 @@ impl Debug for AccessMode {
 pub struct PathAccess<'a> {
     pub mode: AccessMode,
     pub path: &'a IpcPath,
-    // TODO: add follow_symlinks (O_NOFOLLOW)
 }
 
 impl<'a> PathAccess<'a> {

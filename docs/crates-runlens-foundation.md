@@ -928,3 +928,5 @@ Linux kernel collection includes pathname AF_UNIX binds. Bounded remote address 
 The configured-name baseline regression uses a static open-only target on Linux because Rust startup legitimately reads a PID-specific maps path. Keep real access comparison intact and isolate only the test stimulus.
 
 macOS attribute-list mutation coverage includes path, relative and descriptor forms with unchanged caller buffers/options/results. Opaque requests conservatively invalidate descendant identities. Native tests cover file/directory permission changes, missing paths, invalid buffers, write denial and body canaries.
+
+Readlink/lstat and no-follow stat/open observations preserve leaf semantics through private IPC aggregation without a public schema change. A known unchanged symlink leaf may satisfy input coverage; link ancestors, unknown/redacted link states and mixed following reads cannot. Dynamic/macOS and dynamic/static Linux regressions cover literal policy, isolated cache coverage and mixed-mode controls.

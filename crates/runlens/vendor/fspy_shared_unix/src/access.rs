@@ -14,6 +14,10 @@ pub fn open_flags(flags: libc::c_int) -> AccessMode {
     #[cfg(target_os = "linux")]
     let mutation = mutation || flags & libc::O_TMPFILE == libc::O_TMPFILE;
     if mutation { mode |= AccessMode::WRITE; }
+    if flags & libc::O_NOFOLLOW != 0 && mode.contains(AccessMode::READ) {
+        mode.remove(AccessMode::READ);
+        mode |= AccessMode::READ_NOFOLLOW;
+    }
     mode
 }
 

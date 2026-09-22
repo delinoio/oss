@@ -369,3 +369,5 @@
 - Linux pathname Unix socket binds record write attempts, including relative and failed binds. Abstract/autobind addresses are not filesystem paths; unreadable addresses mark collection incomplete without changing native results.
 
 - macOS setattrlist/setattrlistat/fsetattrlist retain metadata write attempts without reading attribute buffers; preserve the native LP64 u32 options ABI and invalidate descendant identity for opaque attribute mutations.
+
+- No-follow symlink reads retain an independent private mode through aggregation. Only an unchanged known symlink leaf may be in scope; symlink ancestors and any mixed following access remain unknown. Public reports keep the existing read boolean.

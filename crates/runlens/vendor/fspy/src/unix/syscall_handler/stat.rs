@@ -16,10 +16,12 @@ impl SyscallHandler {
             if flags & libc::AT_EMPTY_PATH == 0 { return Ok(()); }
             let path = fd.get_path(caller)?;
             self.record(fspy_shared::ipc::PathAccess {
-                mode: fspy_shared::ipc::AccessMode::READ,
+                mode: if flags & libc::AT_SYMLINK_NOFOLLOW != 0 { AccessMode::READ_NOFOLLOW } else { AccessMode::READ },
                 path: path.as_os_str().into(),
             });
             Ok(())
+        } else if flags & libc::AT_SYMLINK_NOFOLLOW != 0 {
+            self.handle_read_nofollow(caller, fd, path)
         } else {
             self.handle_open(caller, fd, path, libc::O_RDONLY)
         }
@@ -32,7 +34,7 @@ impl SyscallHandler {
 
     #[cfg(target_arch = "x86_64")]
     pub(super) fn lstat(&mut self, caller: Caller, (path,): (CStrPtr,)) -> io::Result<()> {
-        self.handle_open(caller, Fd::cwd(), path, libc::O_RDONLY)
+        self.handle_read_nofollow(caller, Fd::cwd(), path)
     }
 
     #[cfg(target_arch = "aarch64")]

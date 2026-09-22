@@ -59,6 +59,12 @@ impl SyscallHandler {
         Ok(())
     }
 
+    fn handle_read_nofollow(&mut self, caller: Caller, fd: Fd, path: CStrPtr) -> io::Result<()> {
+        let path = self.resolve_path(caller, fd, path)?;
+        self.record(PathAccess { mode: AccessMode::READ_NOFOLLOW, path: path.as_os_str().into() });
+        Ok(())
+    }
+
     fn handle_path_mutation(&mut self, caller: Caller, dir_fd: Fd, path_ptr: CStrPtr) -> io::Result<()> {
         let path = self.resolve_path(caller, dir_fd, path_ptr)?;
         self.record(PathAccess { mode: AccessMode::WRITE.union(AccessMode::PATH_MUTATION),

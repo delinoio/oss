@@ -267,19 +267,28 @@ async fn observe_inner(request: Request<'_>, hook: impl FnOnce()) -> Result<Exec
                             write: false,
                             read_directory: false,
                             unsupported: false,
-                            in_scope: observed_in_scope(
+                            in_scope: true,
+                        });
+                        // Merge conservatively even if redaction unifies separate raw
+                        // observations: one following access invalidates a link leaf.
+                        let nofollow_only =
+                            observation.mode.contains(fspy::AccessMode::READ_NOFOLLOW)
+                                && !observation.mode.intersects(
+                                    fspy::AccessMode::READ
+                                        | fspy::AccessMode::WRITE
+                                        | fspy::AccessMode::READ_DIR,
+                                );
+                        value.in_scope &=
+                            observed_in_scope(
                                 path,
                                 request.root,
                                 &before.entries,
                                 &redactor,
-                            ) && !snapshot::excluded(
-                                path,
-                                request.root,
-                                &matcher,
-                                &temporary,
-                            ),
-                        });
-                        value.read |= observation.mode.contains(fspy::AccessMode::READ);
+                                nofollow_only,
+                            ) && !snapshot::excluded(path, request.root, &matcher, &temporary);
+                        value.read |= observation
+                            .mode
+                            .intersects(fspy::AccessMode::READ | fspy::AccessMode::READ_NOFOLLOW);
                         value.write |= observation.mode.contains(fspy::AccessMode::WRITE);
                         value.read_directory |=
                             observation.mode.contains(fspy::AccessMode::READ_DIR);
@@ -518,6 +527,7 @@ fn observed_in_scope(
     root: &Path,
     before: &Entries<FileState>,
     redactor: &Redactor,
+    nofollow_only: bool,
 ) -> bool {
     let normalized = crate::privacy::normalized(path);
     let root_text = crate::privacy::normalized(root);
@@ -538,14 +548,37 @@ fn observed_in_scope(
         let Ok(previous) = before.get(&redactor.path(ancestor)) else {
             return false;
         };
-        if current
+        if previous
             .as_ref()
-            .is_some_and(|metadata| metadata.is_symlink())
-            || previous.as_ref().is_some_and(|state| {
-                state.kind == Some(FileKind::Symlink) || state.knowledge == Knowledge::Unknown
-            })
+            .is_some_and(|state| state.knowledge == Knowledge::Unknown)
         {
             return false;
+        }
+        let link = current
+            .as_ref()
+            .is_some_and(|metadata| metadata.is_symlink())
+            || previous
+                .as_ref()
+                .is_some_and(|state| state.kind == Some(FileKind::Symlink));
+        if link {
+            // Only an unchanged, known leaf can be a no-follow input. Link
+            // ancestors and any aggregate following access remain uncertain.
+            if ancestor != path
+                || !nofollow_only
+                || !current
+                    .as_ref()
+                    .is_some_and(|metadata| metadata.is_symlink())
+                || !previous.as_ref().is_some_and(|state| {
+                    state.knowledge == Knowledge::Known
+                        && state.kind == Some(FileKind::Symlink)
+                        && std::fs::read_link(path)
+                            .ok()
+                            .and_then(|target| target.to_str().map(|text| redactor.text(text)))
+                            == state.link_target
+                })
+            {
+                return false;
+            }
         }
         // A missing leaf is a valid failed attempt. Every ancestor must be a
         // known directory both before and after execution: a removed or newly

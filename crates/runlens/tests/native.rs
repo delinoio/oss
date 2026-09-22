@@ -7466,3 +7466,113 @@ fn macos_attribute_mutations_preserve_native_results_and_write_boundaries() {
         }
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn nofollow_symlink_reads_keep_leaf_identity_without_certifying_following_accesses() {
+    use runlens::{analysis, config, entries::Entries, model::*};
+    let mut executables = vec![fixture().to_owned()];
+    if cfg!(target_os = "linux") {
+        if let Ok(path) = std::env::var("RUNLENS_STATIC_FIXTURE") {
+            executables.push(path);
+        } else {
+            assert!(std::env::var_os("CI").is_none(), "static fixture required");
+        }
+    }
+    for executable in executables {
+        for form in [
+            "readlink",
+            "readlinkat",
+            "lstat",
+            "fstatat",
+            "mixed",
+            #[cfg(target_os = "linux")]
+            "empty",
+            #[cfg(target_os = "linux")]
+            "statx",
+        ] {
+            for ancestor in [false, true] {
+                let root = tempfile::tempdir().unwrap();
+                let external = tempfile::tempdir().unwrap();
+                fs::write(external.path().join("target"), "SYMLINK-BODY-CANARY").unwrap();
+                std::os::unix::fs::symlink(
+                    external.path().join("target"),
+                    external.path().join("link"),
+                )
+                .unwrap();
+                let relative = if ancestor { "dir/link" } else { "link" };
+                std::os::unix::fs::symlink(
+                    if ancestor {
+                        external.path().to_path_buf()
+                    } else {
+                        external.path().join("target")
+                    },
+                    root.path().join(if ancestor { "dir" } else { "link" }),
+                )
+                .unwrap();
+                fs::write(
+                    root.path().join("runlens.toml"),
+                    "schema_version=1\n[policy]\nallow_reads=['**']\n",
+                )
+                .unwrap();
+                let args = ["symlink-observe", relative, form];
+                let direct = isolated_command(&executable)
+                    .current_dir(root.path())
+                    .args(args)
+                    .output()
+                    .unwrap();
+                let traced = invoke(
+                    root.path(),
+                    &[
+                        "run",
+                        "--save",
+                        "link.json",
+                        "--",
+                        &executable,
+                        args[0],
+                        args[1],
+                        args[2],
+                    ],
+                );
+                assert_eq!(
+                    traced.status.code(),
+                    Some(0),
+                    "{form}/{ancestor}: {traced:?}"
+                );
+                assert_eq!(traced.stdout, direct.stdout);
+                let mut report = runlens::report::read(&root.path().join("link.json")).unwrap();
+                let key = format!("${{workspace}}/{relative}");
+                let access = report.executions[0].accesses.get(&key).unwrap().unwrap();
+                let known = !ancestor && form != "mixed";
+                assert_eq!(
+                    access.in_scope, known,
+                    "{executable}/{form}/{ancestor}: {access:?}"
+                );
+                assert!(access.read);
+                assert_eq!(
+                    invoke(root.path(), &["policy", "check", "link.json", "--json"])
+                        .status
+                        .code(),
+                    Some(if known { 0 } else { 4 })
+                );
+                // Isolate the leaf's cache declaration check from unrelated
+                // runtime inputs; keep its real snapshot and access evidence.
+                report.executions[0].accesses = Entries::default();
+                report.executions[0].accesses.insert(key, access).unwrap();
+                let identity = report.executions[0].command.clone();
+                let mut command = config::Command::direct(identity.argv.clone());
+                command.inputs = vec![relative.into()];
+                assert_eq!(
+                    analysis::cache(&report, &command, &identity)
+                        .unwrap()
+                        .verdict,
+                    Some(if known {
+                        Verdict::Passed
+                    } else {
+                        Verdict::Inconclusive
+                    })
+                );
+            }
+        }
+    }
+}

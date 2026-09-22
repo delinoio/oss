@@ -1,7 +1,7 @@
-#include <sys/socket.h>
-#include <sys/un.h>
 /* A static Linux child must be observed by seccomp, without LD_PRELOAD. */
 #define _GNU_SOURCE
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -255,6 +255,24 @@ int main(int argc, char **argv) {
         }
         return 93;
     }
+    if (argc == 4 && !strcmp(argv[1], "symlink-observe")) {
+        const char *path = argv[2], *mode = argv[3];
+        struct stat stats; char bytes[4096]; long result;
+#ifdef SYS_lstat
+        if (!strcmp(mode, "lstat")) result = syscall(SYS_lstat, path, &stats);
+        else
+#endif
+        if (!strcmp(mode, "lstat") || !strcmp(mode, "fstatat")) result = fstatat(AT_FDCWD, path, &stats, AT_SYMLINK_NOFOLLOW);
+        else if (!strcmp(mode, "statx")) { /* Ubuntu 22.04 musl omits statx declarations. The kernel writes a 256-byte structure; remove opaque storage when minimum headers declare it. */ uint64_t statsx[32] = {0}; result = syscall(SYS_statx, AT_FDCWD, path, AT_SYMLINK_NOFOLLOW, 0x0001U, statsx); }
+        else if (!strcmp(mode, "mixed")) { syscall(SYS_readlinkat, AT_FDCWD, path, bytes, sizeof(bytes)); result = fstatat(AT_FDCWD, path, &stats, 0); }
+        else if (!strcmp(mode, "empty")) { int fd = open(path, O_PATH | O_NOFOLLOW); result = syscall(SYS_readlinkat, fd, "", bytes, sizeof(bytes)); close(fd); }
+#ifdef SYS_readlink
+        else if (!strcmp(mode, "readlink")) result = syscall(SYS_readlink, path, bytes, sizeof(bytes));
+#endif
+        else result = syscall(SYS_readlinkat, AT_FDCWD, path, bytes, sizeof(bytes));
+        printf("result=%ld;errno=%d\n", result, result >= 0 ? 0 : errno); return 0;
+    }
+
     if (argc == 3 && !strncmp(argv[1], "readlink", 8)) {
         char buffer[4096];
 #ifdef SYS_readlink
