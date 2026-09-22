@@ -2,7 +2,7 @@
 //!
 //! This module deliberately owns only the wrapper lifecycle. Environment
 //! planning remains in `environment` so every workload, including a managed
-//! service, keeps the exact `env run` assignment and executable lookup rules.
+//! service, keeps the exact `run env` assignment and executable lookup rules.
 
 use std::{
     env,
@@ -224,18 +224,6 @@ impl HttpProbeError {
 pub(crate) enum Outcome {
     Child(ExitStatus),
     Code(i32),
-}
-
-impl Command {
-    pub(crate) fn operation(&self) -> &'static str {
-        match self {
-            Self::WithRateLimit(_) => "run-with-rate-limit",
-            Self::WithLock(_) => "run-with-lock",
-            Self::WithService(_) => "run-with-service",
-            Self::WithRetry(_) => "run-with-retry",
-            Self::WithTimeout(_) => "run-with-timeout",
-        }
-    }
 }
 
 pub(crate) fn execute(command: Command) -> Result<Outcome> {

@@ -141,7 +141,7 @@ fn plan(args: Vec<OsString>, parent: Environment, windows: bool) -> Result<Plan>
     let command = converted.next().filter(|s| !s.is_empty()).ok_or_else(|| {
         Failure::new(
             Code::InvalidInput,
-            "A child command is required after environment assignments; use env run --help.",
+            "A child command is required after environment assignments; use clibox run env --help.",
         )
     })?;
     Ok(Plan {
@@ -152,7 +152,7 @@ fn plan(args: Vec<OsString>, parent: Environment, windows: bool) -> Result<Plan>
 }
 
 /// Prepare one literal child invocation using the same compatibility rules as
-/// `env run`. Run wrappers use this rather than reparsing environment
+/// `run env`. Run wrappers use this rather than reparsing environment
 /// assignments so nesting does not change command or PATH behavior.
 pub(crate) fn prepare(args: Vec<OsString>) -> Result<Plan> {
     let plan = plan(args, std::env::vars_os().collect(), cfg!(windows))?;

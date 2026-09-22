@@ -16,7 +16,7 @@ fn environment_delegates_transform_commands_with_platform_variable_conversion() 
             vec![
                 "text", "replace", "(hello)", "$1 🦀", "--regex", "--text", "hello",
             ],
-            // Windows env run applies cross-env's command-variable conversion,
+            // Windows run env applies cross-env's command-variable conversion,
             // including numeric references; direct text replace keeps captures.
             if cfg!(windows) { " 🦀" } else { "hello 🦀" },
         ),
@@ -29,7 +29,7 @@ fn environment_delegates_transform_commands_with_platform_variable_conversion() 
         ),
     ] {
         let output = Command::new(CLI)
-            .args(["env", "run", "--"])
+            .args(["run", "env", "--"])
             .arg(CLI)
             .args(arguments)
             .env_remove("1")
@@ -40,7 +40,7 @@ fn environment_delegates_transform_commands_with_platform_variable_conversion() 
         assert!(output.stderr.is_empty());
     }
     let output = Command::new(CLI)
-        .args(["env", "run", "--"])
+        .args(["run", "env", "--"])
         .arg(CLI)
         .args([
             "hash",
@@ -159,7 +159,7 @@ fn bounded_wait(child: &mut Child) -> std::process::ExitStatus {
 fn environment_inherits_streams_cwd_and_literal_arguments() {
     let directory = tempfile::tempdir().unwrap();
     let mut cmd = Command::new(CLI);
-    cmd.args(["env", "run", "CLIBOX_TEST_VALUE=한글 🦀", "--"])
+    cmd.args(["run", "env", "CLIBOX_TEST_VALUE=한글 🦀", "--"])
         .arg(std::env::current_exe().unwrap());
     helper(&mut cmd, "inspect");
     let literals = [
@@ -203,17 +203,56 @@ fn environment_inherits_streams_cwd_and_literal_arguments() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("FIXTURE_STDERR"));
 }
 #[test]
+fn environment_preserves_command_boundaries_with_and_without_separator() {
+    let directory = tempfile::tempdir().unwrap();
+    // An assignment-shaped executable catches a consumed leading separator:
+    // without restoring it, environment planning would treat the path as a setter.
+    let assignment_shaped = directory
+        .path()
+        .join(format!("COMMAND=value{}", std::env::consts::EXE_SUFFIX));
+    std::fs::copy(CLI, &assignment_shaped).unwrap();
+    for (prefix, child) in [
+        (vec![], std::path::Path::new(CLI)),
+        (vec!["SECRET=PRIVATE-VALUE"], std::path::Path::new(CLI)),
+        (vec!["--"], assignment_shaped.as_path()),
+        (
+            vec!["SECRET=PRIVATE-VALUE", "--"],
+            assignment_shaped.as_path(),
+        ),
+    ] {
+        let output = Command::new(CLI)
+            .args(["run", "env"])
+            .args(prefix)
+            .arg(child)
+            .arg("--version")
+            .env("RUST_LOG", "debug")
+            .env("NO_COLOR", "1")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{:?}", output.stderr);
+        assert_eq!(
+            output.stdout,
+            format!("clibox {}\n", env!("CARGO_PKG_VERSION")).as_bytes()
+        );
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains("run-env"));
+        assert!(!stderr.contains("env-run"));
+        assert!(!stderr.contains("PRIVATE"));
+    }
+}
+
+#[test]
 fn environment_propagates_status_and_redacts_failures() {
     let mut cmd = Command::new(CLI);
-    cmd.args(["env", "run", "--"])
+    cmd.args(["run", "env", "--"])
         .arg(std::env::current_exe().unwrap());
     helper(&mut cmd, "exit");
     assert_eq!(cmd.status().unwrap().code(), Some(37));
     for args in [
-        vec!["env", "run", "SECRET=PRIVATE_VALUE"],
+        vec!["run", "env", "SECRET=PRIVATE_VALUE"],
         vec![
-            "env",
             "run",
+            "env",
             "SECRET=PRIVATE_VALUE",
             "/not-existing/PRIVATE_PATH",
             "PRIVATE_ARG",
@@ -236,7 +275,7 @@ fn environment_propagates_status_and_redacts_failures() {
 fn environment_forwards_and_reproduces_termination_signal() {
     use std::os::unix::process::ExitStatusExt;
     let mut cmd = Command::new(CLI);
-    cmd.args(["env", "run", "--"])
+    cmd.args(["run", "env", "--"])
         .arg(std::env::current_exe().unwrap());
     helper(&mut cmd, "wait");
     cmd.stdout(Stdio::piped()).stderr(Stdio::null());
@@ -422,7 +461,7 @@ fn windows_npm_style_cmd_dispatch_preserves_argument_boundaries() {
         r"\\server\share\tool.exe",
     ];
     let output = Command::new(CLI)
-        .args(["env", "run", "--"])
+        .args(["run", "env", "--"])
         .arg(&shim)
         .args(args)
         .output()

@@ -711,8 +711,34 @@ jobs:
         # which pnpm otherwise invokes through cmd.exe on Windows.
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: false
+          cache-targets: false
+
+      - name: Fetch locked Rust dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if cargo fetch --locked; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::Cargo dependency fetch failed after three attempts." >&2
+              exit 1
+            fi
+            delay=$((attempt * 15))
+            echo "Cargo dependency fetch attempt $attempt failed; retrying in ${delay}s." >&2
+            sleep "$delay"
+          done
+
       - name: Verify frontend and immutable pins
         shell: bash
+        env:
+          CARGO_NET_OFFLINE: "true"
         run: |
           pnpm --filter devhud-chrome-extension test
           pnpm --filter devhud test
