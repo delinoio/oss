@@ -273,10 +273,10 @@ pub fn host_os() -> Os {
     }
 }
 pub fn host_arch() -> Arch {
-    if cfg!(target_arch = "aarch64") {
-        Arch::Arm64
-    } else {
-        Arch::X64
+    match std::env::consts::ARCH {
+        "aarch64" => Arch::Arm64,
+        "x86_64" => Arch::X64,
+        architecture => panic!("unsupported host architecture: {architecture}"),
     }
 }
 

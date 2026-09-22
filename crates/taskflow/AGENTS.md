@@ -177,6 +177,7 @@
 - Encode Docker bind-mount sources as quoted CSV fields with doubled literal quotes. Reject source spellings the Docker parser cannot preserve before creating helpers or launching a client.
 
 - Preflight every pending host task against the native OS/architecture before scheduling any prerequisite, probe, or installer. Apply the same boundary to the full CLI plan and session activation set before bootstrap and after rediscovery; validated provided receipts require no local execution.
+- Host architecture resolution accepts only `x86_64` and `aarch64`; every other target must fail closed rather than inheriting the x64 platform key.
 
 - Read-only watcher conformance measures a gated execution only after a successful input-triggered warmup and a fresh independent subscriber receipt. Count executions relative to that settled baseline; delayed startup directory causes are legitimate work outside the measurement window.
 
