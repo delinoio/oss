@@ -387,8 +387,13 @@ fn rate_limit(options: RateLimit) -> Result<Outcome> {
     let key = StateKey::new(Namespace::Rate, &options.name, &options.scope)?;
     let start = Instant::now();
     let deadline = admission_deadline(start, options.wait_timeout)?;
+    let mut attempted = false;
     loop {
         check_cancelled()?;
+        if admission_deadline_expired(deadline, attempted) {
+            return Ok(Outcome::Code(124));
+        }
+        attempted = true;
         let lock = match acquire(&key.lock_path, deadline) {
             Ok(lock) => lock,
             Err(error) if error.code == Code::TerminationTimeout => return Ok(Outcome::Code(124)),
@@ -1717,8 +1722,16 @@ fn try_acquire(path: &Path) -> Result<Option<File>> {
 }
 
 fn acquire(path: &Path, deadline: Option<Instant>) -> Result<File> {
+    let mut attempted = false;
     loop {
         check_cancelled()?;
+        if admission_deadline_expired(deadline, attempted) {
+            return Err(Failure::new(
+                Code::TerminationTimeout,
+                "Execution admission wait timed out.",
+            ));
+        }
+        attempted = true;
         if let Some(lock) = try_acquire(path)? {
             return Ok(lock);
         }
@@ -2310,6 +2323,10 @@ fn admission_deadline(start: Instant, duration: Option<Duration>) -> Result<Opti
         .transpose()
 }
 
+fn admission_deadline_expired(deadline: Option<Instant>, attempted: bool) -> bool {
+    attempted && deadline.is_some_and(|limit| Instant::now() >= limit)
+}
+
 fn clip_to_deadline(duration: Duration, deadline: Option<Instant>) -> Duration {
     deadline
         .map(|limit| duration.min(limit.saturating_duration_since(Instant::now())))
@@ -2473,6 +2490,8 @@ fn parse_http_url(value: &str) -> std::result::Result<reqwest::Url, &'static str
 mod rate_limit_tests {
     use std::os::unix::fs::OpenOptionsExt;
 
+    use fs4::FileExt;
+
     use super::*;
 
     #[test]
@@ -2503,6 +2522,27 @@ mod rate_limit_tests {
         };
 
         assert_eq!(error.code, Code::IoFailed);
+    }
+
+    #[test]
+    fn admission_deadline_precedes_a_later_lock_retry() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("admission.lock");
+        let holder = open_lock(&path).unwrap();
+        FileExt::lock(&holder).unwrap();
+        let release = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(10));
+            drop(holder);
+        });
+
+        let deadline = Instant::now() + Duration::from_millis(1);
+        let error = match acquire(&path, Some(deadline)) {
+            Ok(_) => panic!("a lock released after the deadline must not be acquired"),
+            Err(error) => error,
+        };
+
+        release.join().unwrap();
+        assert_eq!(error.code, Code::TerminationTimeout);
     }
 }
 
