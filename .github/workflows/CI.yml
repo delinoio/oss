@@ -1579,6 +1579,11 @@ jobs:
           cache-on-failure: false
       - name: Install clean locked workspace
         run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: ./.github/actions/setup-clibox
+        with:
+          install: 'false'
+      - name: Test pinned repository utilities
+        run: pnpm ci:tools
       - name: Verify affected workspace runner
         run: node --test scripts/ci/run-affected.test.mjs
       - name: Test Rust utilities, readiness, configuration processing, and OS adapters

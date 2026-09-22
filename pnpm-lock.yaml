@@ -51,6 +51,9 @@ importers:
       '@connectrpc/protoc-gen-connect-query':
         specifier: 2.3.1
         version: 2.3.1(@bufbuild/protoc-gen-es@2.14.0(@bufbuild/protobuf@2.14.0))
+      clibox-prebuilt:
+        specifier: npm:@delino/clibox@0.1.6
+        version: '@delino/clibox@0.1.6'
       js-yaml:
         specifier: 4.3.1
         version: 4.3.1
@@ -1144,6 +1147,51 @@ packages:
   '@cspotcode/source-map-support@0.8.1':
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
     engines: {node: '>=12'}
+
+  '@delino/clibox-darwin-arm64@0.1.6':
+    resolution: {integrity: sha512-ufmH6zzTyaEtMOutYflCsyH3GRwn+TiEt0l4cRsy8WEdgWTiHx5B0hQZJQhj0Op7gRGiLhZ9QGHuRjwcr30nOQ==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@delino/clibox-darwin-x64@0.1.6':
+    resolution: {integrity: sha512-v46jA9IwQWA6XWn4clL2eMOHR2q7RZWan9lLmAQmQ31xhWOoycJb9lmQiWT8xLFH+YxXNP3vlks93OPcAigczA==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@delino/clibox-linux-arm64-gnu@0.1.6':
+    resolution: {integrity: sha512-+peM7aMda63+1Tr6/FzhUOTmj7tsGT92Q6QHGZl0NEaTKWms/MdZvEH+yJHy2zhd6LYE/RCgenAQmGD4fJg1uQ==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@delino/clibox-linux-arm64-musl@0.1.6':
+    resolution: {integrity: sha512-deM1UebUHGXSZBh6QA0B8VmmInJns5oSMV/V31Fo/7/0QtdOp80l7oZACSOSYCgkTZASMJTlbuKvILFaTNwfCQ==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@delino/clibox-linux-x64-gnu@0.1.6':
+    resolution: {integrity: sha512-AJrmN9VCM14qy9NFSoTIGQClbZSDNZX4Co6banfHpRIB5vOJtfFoNZAieRdqHEFgwORhNYUMucD8NACtA303Qg==}
+    cpu: [x64]
+    os: [linux]
+
+  '@delino/clibox-linux-x64-musl@0.1.6':
+    resolution: {integrity: sha512-Eu4jnqSbtG6ntebtWAfjIQtmcBHuPy/VKkrN5DnkAul1vWLznfcrmTNn6qJofQ1cQF0IN55nF1ZTs4KL3N8RWA==}
+    cpu: [x64]
+    os: [linux]
+
+  '@delino/clibox-win32-arm64-msvc@0.1.6':
+    resolution: {integrity: sha512-ZY3iQtusdT/Dqbjgkdxp+P4olRmoEzNacIV3+DQfTPszRoa0hGDWWXoo0YYu2ODFLJVoUM6cDloxm6eIubBL6g==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@delino/clibox-win32-x64-msvc@0.1.6':
+    resolution: {integrity: sha512-0VxF29Pa0Ed/17Gfxa66g8TTFLytdVB4lGFeb/nK/utQVN2I0X7WkCFpzya1BZq9touogWlSYRKJfCR8zfYj7w==}
+    cpu: [x64]
+    os: [win32]
+
+  '@delino/clibox@0.1.6':
+    resolution: {integrity: sha512-gfELug497qMVf6Y/CSEgqx4S6pmARTRxmNf4WavhtWjhKcN9jsm9xtP0vS17egWYWKG/3h/jc/QOEjO7Lz6ztw==}
+    engines: {node: '>=22'}
+    hasBin: true
 
   '@emnapi/core@1.11.3':
     resolution: {integrity: sha512-zLpS5asjEb7lq8jYLq37N6XKaE41DIexlY1rF/z4/tIl3wo13Sqm28fRyfIsKZD+NZ8mM5RoKkpW/rBcuoSZSg==}
@@ -7098,6 +7146,41 @@ snapshots:
   '@cspotcode/source-map-support@0.8.1':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.9
+
+  '@delino/clibox-darwin-arm64@0.1.6':
+    optional: true
+
+  '@delino/clibox-darwin-x64@0.1.6':
+    optional: true
+
+  '@delino/clibox-linux-arm64-gnu@0.1.6':
+    optional: true
+
+  '@delino/clibox-linux-arm64-musl@0.1.6':
+    optional: true
+
+  '@delino/clibox-linux-x64-gnu@0.1.6':
+    optional: true
+
+  '@delino/clibox-linux-x64-musl@0.1.6':
+    optional: true
+
+  '@delino/clibox-win32-arm64-msvc@0.1.6':
+    optional: true
+
+  '@delino/clibox-win32-x64-msvc@0.1.6':
+    optional: true
+
+  '@delino/clibox@0.1.6':
+    optionalDependencies:
+      '@delino/clibox-darwin-arm64': 0.1.6
+      '@delino/clibox-darwin-x64': 0.1.6
+      '@delino/clibox-linux-arm64-gnu': 0.1.6
+      '@delino/clibox-linux-arm64-musl': 0.1.6
+      '@delino/clibox-linux-x64-gnu': 0.1.6
+      '@delino/clibox-linux-x64-musl': 0.1.6
+      '@delino/clibox-win32-arm64-msvc': 0.1.6
+      '@delino/clibox-win32-x64-msvc': 0.1.6
 
   '@emnapi/core@1.11.3':
     dependencies:

@@ -4,6 +4,16 @@ Repository workflows are reviewed as source-backed contracts. Workflow IDs, job 
 
 ## Continuous integration
 
+### Pinned repository utilities
+
+The root `clibox-prebuilt` dev dependency aliases the published `@delino/clibox@0.1.6` package. Its exact launcher and optional native packages are integrity-pinned in `pnpm-lock.yaml`; the private `packages/clibox` workspace is not an executable dependency. Ordinary `pnpm install` installs the prebuilt without Rust compilation. `scripts/clibox.cjs` resolves and validates only that installed alias, then delegates argv, stdio, platform selection, and signals to the official launcher. Missing or mismatched installs fail with installation guidance; commands never download or use a system fallback.
+
+`.github/actions/setup-clibox` prepares Node/pnpm and installs only the root workspace with `--frozen-lockfile --ignore-scripts`. Jobs with an existing workspace install use `install: 'false'` to verify and expose the same executable without a second install. `working-directory` supports a separate immutable tooling checkout for historical release recovery. `scripts/setup/verify-clibox.cjs` checks the actual executable version before exposing the installed bin directory. Linux/macOS/Windows repository-tool fixtures run through `pnpm ci:tools`.
+
+Compatible shell hashing, Base64, literal template replacement, timestamp formatting, and clipboard work use clibox. Preserve checksum record compatibility, private output permissions, and secret-free argv/logs. Public standalone installers, minimal Rust toolchain bootstraps, and provenance timestamps captured before tooling installation retain their existing tools. In-process Node data handling and signing, structured parsing, port binding checks, database health, nonempty-file readiness, and child lifecycle checks retain their existing stronger contracts.
+
+### Validation workflow
+
 `.github/workflows/CI.yml` is a read-only validation workflow. It uses `contents: read` and `pull-requests: read`, does not consume repository secrets, and must not push tags, create or upload releases, submit stores, push OCI images, deploy documentation or infrastructure, promote updater state, or call any mutating release-controller operation. Release workflows and packaging inputs are tested as source and deterministic fixtures only.
 
 CI never builds a signed private candidate and never publishes.

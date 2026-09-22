@@ -463,6 +463,8 @@ Release automation baseline:
 
 ### clibox Contract
 
+- Repository tooling consumes the published prebuilt through the exact root `clibox-prebuilt` npm alias and lockfile, independently of the private source workspace. Use `scripts/clibox.cjs` from standalone repository scripts and the verified `setup-clibox` action in workflows; never compile Rust, download at command runtime, or fall back to an ambient executable. Keep public installers and minimal toolchain bootstraps independent, and preserve existing data formats, secret handling, and stronger readiness/lifecycle checks.
+
 - clibox CLI consistency uses canonical `env run`, `port list`, and `hash compute` without old-name aliases. Report `--quiet` suppresses stdout; PID selection is only `port list --pids`. File-output commands interpret `--output -` as stdout and `./-` as a literal dash file; `--force` requires real file output or `--in-place`. Keep short/long help, static redacted migration guidance, numeric owned-operation cancellation (130/143), filtered-error visibility, and native/npm behavior synchronized.
 
 - The executable crate and installed command are `clibox`; the public npm entry point is `@delino/clibox`. Keep the Cargo manifest/lock, private npm source manifest, executable version, and all nine generated npm packages at the same exact version.
