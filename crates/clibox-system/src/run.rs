@@ -1383,7 +1383,7 @@ fn parent_executable(parent: libc::pid_t) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
 fn parent_executable(_parent: libc::pid_t) -> Option<PathBuf> {
     None
 }
