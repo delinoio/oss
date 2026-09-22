@@ -357,7 +357,7 @@ mod tests {
         let missing = format!(".\\clibox-missing-workload-{}", std::process::id());
         let prepared = prepare(args(&[&missing])).unwrap();
 
-        assert_eq!(prepared.command, missing);
+        assert_eq!(prepared.command, OsString::from(missing));
         assert!(command(&prepared).is_err());
     }
 }
