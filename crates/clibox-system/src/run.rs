@@ -344,6 +344,42 @@ mod workload_tests {
     }
 }
 
+#[cfg(all(test, windows))]
+mod windows_state_tests {
+    use super::*;
+
+    #[test]
+    fn state_directory_and_files_retain_the_current_users_private_dacl() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let state = temporary.path().join("state");
+        ensure_private_dir(&state).expect("private state directory");
+
+        let directory = open_state_directory(&state).expect("state directory handle");
+        ensure_windows_state_object(&directory, true).expect("state directory is not a reparse");
+        ensure_windows_private_dacl(&directory).expect("state directory DACL");
+
+        let lock = open_lock(&state.join("admission.lock")).expect("state lock");
+        ensure_windows_private_dacl(&lock).expect("state lock DACL");
+
+        let bucket_path = state.join("admission.json");
+        write_bucket(
+            &bucket_path,
+            &Bucket {
+                version: STATE_VERSION,
+                limit: 1,
+                period_ms: 1,
+                burst: 1,
+                tokens: 1.0,
+                refill_utc_ms: 0,
+            },
+        )
+        .expect("state bucket");
+        let bucket = open_state_for_read(&bucket_path).expect("state bucket handle");
+        ensure_windows_state_object(&bucket, false).expect("state bucket links");
+        ensure_windows_private_dacl(&bucket).expect("state bucket DACL");
+    }
+}
+
 fn rate_limit(options: RateLimit) -> Result<Outcome> {
     let plan = environment::prepare(options.workload.args)?;
     let key = StateKey::new(Namespace::Rate, &options.name, &options.scope)?;
@@ -1435,6 +1471,19 @@ fn ensure_private_dir(path: &Path) -> Result<()> {
         fs::set_permissions(path, fs::Permissions::from_mode(0o700))
             .map_err(|error| Failure::io(&error))?;
     }
+    #[cfg(windows)]
+    {
+        let directory = open_state_directory(path)?;
+        ensure_windows_state_object(&directory, true)?;
+        if !existed {
+            // A state directory is created only after its handle proves it is
+            // not a reparse substitute owned by another account. Restrict its
+            // DACL before creating lock or bucket files beneath it.
+            restrict_windows_state_directory(&directory)?;
+        }
+        ensure_windows_private_dacl(&directory)?;
+        return Ok(());
+    }
     let metadata = fs::symlink_metadata(path).map_err(|error| Failure::io(&error))?;
     if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
         return runtime_failure("Execution state directory is not a safe directory.");
@@ -1459,6 +1508,18 @@ fn open_lock(path: &Path) -> Result<File> {
     {
         options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        use windows_sys::Win32::{
+            Foundation::{GENERIC_READ, GENERIC_WRITE},
+            Storage::FileSystem::{FILE_FLAG_OPEN_REPARSE_POINT, READ_CONTROL},
+        };
+        options
+            .access_mode(GENERIC_READ | GENERIC_WRITE | READ_CONTROL)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    }
     let file = options.open(path).map_err(|error| Failure::io(&error))?;
     let metadata = file.metadata().map_err(|error| Failure::io(&error))?;
     if !metadata.is_file() {
@@ -1467,6 +1528,11 @@ fn open_lock(path: &Path) -> Result<File> {
     #[cfg(unix)]
     if metadata.permissions().mode() & 0o077 != 0 || metadata.nlink() != 1 {
         return runtime_failure("Execution state lock permissions or links are unsafe.");
+    }
+    #[cfg(windows)]
+    {
+        ensure_windows_state_object(&file, false)?;
+        ensure_windows_private_dacl(&file)?;
     }
     Ok(file)
 }
@@ -1523,6 +1589,11 @@ fn read_bucket(path: &Path, limit: u64, period: Duration, burst: u64, now: i64) 
         Ok(mut file) => {
             let metadata = file.metadata().map_err(|error| Failure::io(&error))?;
             ensure_safe_state_metadata(&metadata)?;
+            #[cfg(windows)]
+            {
+                ensure_windows_state_object(&file, false)?;
+                ensure_windows_private_dacl(&file)?;
+            }
             let mut bytes = Vec::new();
             file.read_to_end(&mut bytes)
                 .map_err(|error| Failure::io(&error))?;
@@ -1594,9 +1665,26 @@ fn write_bucket(path: &Path, bucket: &Bucket) -> Result<()> {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
         }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+
+            use windows_sys::Win32::{
+                Foundation::GENERIC_WRITE,
+                Storage::FileSystem::{FILE_FLAG_OPEN_REPARSE_POINT, READ_CONTROL},
+            };
+            options
+                .access_mode(GENERIC_WRITE | READ_CONTROL)
+                .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+        }
         let mut file = options
             .open(&temporary)
             .map_err(|error| Failure::io(&error))?;
+        #[cfg(windows)]
+        {
+            ensure_windows_state_object(&file, false)?;
+            ensure_windows_private_dacl(&file)?;
+        }
         file.write_all(&bytes)
             .map_err(|error| Failure::io(&error))?;
         file.sync_all().map_err(|error| Failure::io(&error))?;
@@ -1632,6 +1720,18 @@ fn open_state_for_read(path: &Path) -> io::Result<File> {
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(libc::O_NOFOLLOW);
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        use windows_sys::Win32::{
+            Foundation::GENERIC_READ,
+            Storage::FileSystem::{FILE_FLAG_OPEN_REPARSE_POINT, READ_CONTROL},
+        };
+        options
+            .access_mode(GENERIC_READ | READ_CONTROL)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    }
     options.open(path)
 }
 
@@ -1647,6 +1747,264 @@ fn ensure_safe_state_metadata(metadata: &fs::Metadata) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(windows)]
+fn open_state_directory(path: &Path) -> Result<File> {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES,
+        READ_CONTROL, WRITE_DAC,
+    };
+
+    OpenOptions::new()
+        .access_mode(FILE_READ_ATTRIBUTES | READ_CONTROL | WRITE_DAC)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+        .map_err(|error| Failure::io(&error))
+}
+
+#[cfg(windows)]
+fn ensure_windows_state_object(file: &File, directory: bool) -> Result<()> {
+    use std::os::windows::io::AsRawHandle;
+
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_REPARSE_POINT,
+    };
+
+    let mut information = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle(), information.as_mut_ptr()) } == 0 {
+        return runtime_failure("Execution state object metadata could not be verified.");
+    }
+    let information = unsafe { information.assume_init() };
+    if information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        || (!directory && information.nNumberOfLinks != 1)
+    {
+        return runtime_failure("Execution state object links are unsafe.");
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn restrict_windows_state_directory(file: &File) -> Result<()> {
+    use std::os::windows::io::AsRawHandle;
+
+    use windows_sys::Win32::{
+        Foundation::{ERROR_SUCCESS, GENERIC_ALL},
+        Security::{
+            AddAccessAllowedAceEx,
+            Authorization::{SetSecurityInfo, SE_FILE_OBJECT},
+            GetLengthSid, InitializeAcl, ACL, ACL_REVISION, CONTAINER_INHERIT_ACE,
+            DACL_SECURITY_INFORMATION, OBJECT_INHERIT_ACE, PROTECTED_DACL_SECURITY_INFORMATION,
+        },
+    };
+
+    let token = current_user_token()?;
+    let user = token_user_sid(&token)?;
+    // Refuse to alter an object owned by another account even if a permissive
+    // parent DACL temporarily granted this process WRITE_DAC access.
+    ensure_windows_state_owner(file, user)?;
+    let size = std::mem::size_of::<ACL>()
+        + std::mem::size_of::<windows_sys::Win32::Security::ACCESS_ALLOWED_ACE>()
+        - std::mem::size_of::<u32>()
+        + unsafe { GetLengthSid(user) as usize };
+    let mut bytes = vec![0u8; size];
+    let acl = bytes.as_mut_ptr().cast::<ACL>();
+    if unsafe { InitializeAcl(acl, size as u32, ACL_REVISION) } == 0
+        || unsafe {
+            AddAccessAllowedAceEx(
+                acl,
+                ACL_REVISION,
+                CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE,
+                GENERIC_ALL,
+                user,
+            )
+        } == 0
+    {
+        return runtime_failure(
+            "Execution state directory access controls could not be initialized.",
+        );
+    }
+    if unsafe {
+        SetSecurityInfo(
+            file.as_raw_handle(),
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            acl,
+            std::ptr::null(),
+        )
+    } != ERROR_SUCCESS
+    {
+        return runtime_failure(
+            "Execution state directory access controls could not be restricted.",
+        );
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn ensure_windows_state_owner(file: &File, user: windows_sys::Win32::Security::PSID) -> Result<()> {
+    use std::os::windows::io::AsRawHandle;
+
+    use windows_sys::Win32::{
+        Foundation::{LocalFree, ERROR_SUCCESS},
+        Security::{
+            Authorization::{GetSecurityInfo, SE_FILE_OBJECT},
+            EqualSid, OWNER_SECURITY_INFORMATION,
+        },
+    };
+
+    let mut owner = std::ptr::null_mut();
+    let mut descriptor = std::ptr::null_mut();
+    if unsafe {
+        GetSecurityInfo(
+            file.as_raw_handle(),
+            SE_FILE_OBJECT,
+            OWNER_SECURITY_INFORMATION,
+            &mut owner,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut descriptor,
+        )
+    } != ERROR_SUCCESS
+    {
+        return runtime_failure("Execution state ownership could not be verified.");
+    }
+    let owned_by_current_user = !owner.is_null() && unsafe { EqualSid(owner, user) } != 0;
+    unsafe {
+        LocalFree(descriptor);
+    }
+    if !owned_by_current_user {
+        return runtime_failure("Execution state ownership is unsafe.");
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn ensure_windows_private_dacl(file: &File) -> Result<()> {
+    use std::os::windows::io::AsRawHandle;
+
+    use windows_sys::Win32::{
+        Foundation::{LocalFree, ERROR_SUCCESS, GENERIC_ALL},
+        Security::{
+            Authorization::{GetSecurityInfo, SE_FILE_OBJECT},
+            EqualSid, GetAce, GetAclInformation, ACCESS_ALLOWED_ACE, ACL_SIZE_INFORMATION,
+            DACL_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION,
+        },
+        System::SystemServices::ACCESS_ALLOWED_ACE_TYPE,
+    };
+
+    let token = current_user_token()?;
+    let user = token_user_sid(&token)?;
+    let mut owner = std::ptr::null_mut();
+    let mut dacl = std::ptr::null_mut();
+    let mut descriptor = std::ptr::null_mut();
+    let status = unsafe {
+        GetSecurityInfo(
+            file.as_raw_handle(),
+            SE_FILE_OBJECT,
+            OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+            &mut owner,
+            std::ptr::null_mut(),
+            &mut dacl,
+            std::ptr::null_mut(),
+            &mut descriptor,
+        )
+    };
+    if status != ERROR_SUCCESS {
+        return runtime_failure("Execution state ownership could not be verified.");
+    }
+    let result = (|| {
+        if owner.is_null() || dacl.is_null() || unsafe { EqualSid(owner, user) } == 0 {
+            return runtime_failure("Execution state ownership is unsafe.");
+        }
+        let mut information = ACL_SIZE_INFORMATION::default();
+        if unsafe {
+            GetAclInformation(
+                dacl,
+                (&mut information as *mut ACL_SIZE_INFORMATION).cast(),
+                std::mem::size_of_val(&information) as u32,
+                windows_sys::Win32::Security::AclSizeInformation,
+            )
+        } == 0
+            || information.AceCount != 1
+        {
+            return runtime_failure("Execution state access controls are unsafe.");
+        }
+        let mut raw_ace = std::ptr::null_mut();
+        if unsafe { GetAce(dacl, 0, &mut raw_ace) } == 0 || raw_ace.is_null() {
+            return runtime_failure("Execution state access controls are unsafe.");
+        }
+        let ace = unsafe { &*raw_ace.cast::<ACCESS_ALLOWED_ACE>() };
+        let sid = (&ace.SidStart as *const u32).cast_mut().cast();
+        if ace.Header.AceType as u32 != ACCESS_ALLOWED_ACE_TYPE
+            || ace.Mask != GENERIC_ALL
+            || unsafe { EqualSid(sid, user) } == 0
+        {
+            return runtime_failure("Execution state access controls are unsafe.");
+        }
+        Ok(())
+    })();
+    unsafe {
+        LocalFree(descriptor);
+    }
+    result
+}
+
+#[cfg(windows)]
+fn current_user_token() -> Result<Vec<u8>> {
+    use windows_sys::Win32::{
+        Foundation::CloseHandle,
+        Security::{GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER},
+        System::Threading::{GetCurrentProcess, OpenProcessToken},
+    };
+
+    let mut handle = std::ptr::null_mut();
+    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut handle) } == 0 {
+        return runtime_failure("Current-user ownership could not be verified.");
+    }
+    let result = (|| {
+        let mut length = 0;
+        unsafe {
+            GetTokenInformation(handle, TokenUser, std::ptr::null_mut(), 0, &mut length);
+        }
+        if length < std::mem::size_of::<TOKEN_USER>() as u32 {
+            return runtime_failure("Current-user ownership could not be verified.");
+        }
+        let mut bytes = vec![0u8; length as usize];
+        if unsafe {
+            GetTokenInformation(
+                handle,
+                TokenUser,
+                bytes.as_mut_ptr().cast(),
+                length,
+                &mut length,
+            )
+        } == 0
+        {
+            return runtime_failure("Current-user ownership could not be verified.");
+        }
+        Ok(bytes)
+    })();
+    unsafe {
+        CloseHandle(handle);
+    }
+    result
+}
+
+#[cfg(windows)]
+fn token_user_sid(token: &[u8]) -> Result<windows_sys::Win32::Security::PSID> {
+    use windows_sys::Win32::Security::TOKEN_USER;
+
+    let user = unsafe { std::ptr::read_unaligned(token.as_ptr().cast::<TOKEN_USER>()) };
+    if user.User.Sid.is_null() {
+        return runtime_failure("Current-user ownership could not be verified.");
+    }
+    Ok(user.User.Sid)
 }
 
 fn retryable_status(status: &ExitStatus, selected: &std::collections::BTreeSet<i32>) -> bool {
