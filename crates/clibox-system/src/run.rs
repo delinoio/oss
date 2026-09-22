@@ -2355,13 +2355,14 @@ fn restrict_windows_state_directory(file: &File) -> Result<()> {
     use std::os::windows::io::AsRawHandle;
 
     use windows_sys::Win32::{
-        Foundation::{ERROR_SUCCESS, GENERIC_ALL},
+        Foundation::ERROR_SUCCESS,
         Security::{
             AddAccessAllowedAceEx,
             Authorization::{SetSecurityInfo, SE_FILE_OBJECT},
             GetLengthSid, InitializeAcl, ACL, ACL_REVISION, CONTAINER_INHERIT_ACE,
             DACL_SECURITY_INFORMATION, OBJECT_INHERIT_ACE, PROTECTED_DACL_SECURITY_INFORMATION,
         },
+        Storage::FileSystem::FILE_ALL_ACCESS,
     };
 
     let user_token = current_user_token()?;
@@ -2383,7 +2384,7 @@ fn restrict_windows_state_directory(file: &File) -> Result<()> {
                 acl,
                 ACL_REVISION,
                 CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE,
-                GENERIC_ALL,
+                FILE_ALL_ACCESS,
                 user,
             )
         } == 0
@@ -2459,12 +2460,13 @@ fn ensure_windows_private_dacl(file: &File) -> Result<()> {
     use std::os::windows::io::AsRawHandle;
 
     use windows_sys::Win32::{
-        Foundation::{LocalFree, ERROR_SUCCESS, GENERIC_ALL},
+        Foundation::{LocalFree, ERROR_SUCCESS},
         Security::{
             Authorization::{GetSecurityInfo, SE_FILE_OBJECT},
             EqualSid, GetAce, GetAclInformation, ACCESS_ALLOWED_ACE, ACL_SIZE_INFORMATION,
             DACL_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION,
         },
+        Storage::FileSystem::FILE_ALL_ACCESS,
         System::SystemServices::ACCESS_ALLOWED_ACE_TYPE,
     };
 
@@ -2514,7 +2516,7 @@ fn ensure_windows_private_dacl(file: &File) -> Result<()> {
         let ace = unsafe { &*raw_ace.cast::<ACCESS_ALLOWED_ACE>() };
         let sid = (&ace.SidStart as *const u32).cast_mut().cast();
         if ace.Header.AceType as u32 != ACCESS_ALLOWED_ACE_TYPE
-            || ace.Mask != GENERIC_ALL
+            || ace.Mask != FILE_ALL_ACCESS
             || unsafe { EqualSid(sid, user) } == 0
         {
             return runtime_failure("Execution state access controls are unsafe.");
