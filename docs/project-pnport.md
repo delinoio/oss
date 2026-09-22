@@ -7,7 +7,7 @@ Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph withou
 `Pnport = "pnport"`.
 
 ## Domain Ownership Map
-- Rust: `crates/pnport`, the private native CLI and filesystem/runtime implementation.
+- Rust: `crates/pnport` and `crates/pnport-preload`, the private native CLI and filesystem/runtime implementation.
 - Packages: `packages/pnport`, the private source of the npm launcher and six native optional packages.
 - Apps: `apps/public-docs/docs/pnport`, the consolidated public guides at `https://oss.delino.io/pnport`.
 
@@ -26,6 +26,8 @@ Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph withou
 - Native/npm versions agree; release identity is pnport@v<MAJOR.MINOR.PATCH>. Preserve 0.1.x command and diagnostic compatibility. Native artifacts, installers, Homebrew, npm, conformance and documentation must pass all six targets before publication.
 - Unsupported interception fails closed. Never substitute a protected executable, elevate privileges, silently run without virtualization, or claim universal executable compatibility.
 - The complete requirements remain normative even when a development build has incomplete platform capabilities. Readiness must describe evidence truthfully and block publication until every gate passes.
+
+The current source change provides a tested development foundation. [The Rust evidence section](crates-pnport-foundation.md#current-implementation-evidence-and-remaining-gates) records the remaining acceptance work. It must not be described as a completed issue or a releasable 0.1.0 implementation.
 
 ## Change Policy
 Update this index, the relevant domain contracts and AGENTS files together. Record implemented behavior and outstanding release gates separately; do not narrow #958 by omission.

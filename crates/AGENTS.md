@@ -195,4 +195,4 @@
 
 ### pnport Rules
 
-- Private pnport runtime belongs to `crates/pnport`; follow `docs/crates-pnport-foundation.md` and the complete requirements. Keep exact pnp/fspy pins, data-only graph loading, fail-closed interception, read-only dependency views, private leased cache and all six native conformance gates. No crates.io publication.
+- Private pnport runtime belongs to `crates/pnport` and its matched native injection artifact to `crates/pnport-preload`; follow `docs/crates-pnport-foundation.md` and the complete requirements. Keep exact pnp/fspy pins, data-only graph loading, fail-closed interception, read-only dependency views, private leased cache and all six native conformance gates. No crates.io publication.

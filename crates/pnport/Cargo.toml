@@ -1,0 +1,26 @@
+[package]
+name = "pnport"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Delino"]
+description = "A native Yarn Plug'n'Play subprocess filesystem"
+repository = "https://github.com/delinoio/oss"
+publish = false
+
+[dependencies]
+clap = { version = "4.5.32", features = ["derive"] }
+dirs = "6"
+fs2 = "0.4.3"
+libc = "0.2.182"
+pnp = "=0.12.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tempfile = "3.25"
+tracing = "0.1.44"
+tracing-subscriber = "0.3.22"
+uuid = { version = "1", features = ["v7"] }
+zip = { version = "2.4.2", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
