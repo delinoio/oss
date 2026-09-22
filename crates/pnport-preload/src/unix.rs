@@ -86,6 +86,20 @@ unsafe fn path_from(
     if path.is_absolute() {
         return Ok(path.to_owned());
     }
+    if dirfd != AT_FDCWD {
+        // Check the live kernel descriptor before normalizing '..'. Checking
+        // only a remembered path would treat a regular file as a directory;
+        // live metadata also covers duplicated and untracked descriptors.
+        let mut metadata = std::mem::MaybeUninit::<stat>::uninit();
+        if fstat(dirfd, metadata.as_mut_ptr()) != 0 {
+            return Err(std::io::Error::last_os_error()
+                .raw_os_error()
+                .unwrap_or(EBADF));
+        }
+        if metadata.assume_init().st_mode & S_IFMT != S_IFDIR {
+            return Err(ENOTDIR);
+        }
+    }
     let base = if dirfd == AT_FDCWD {
         runtime
             .cwd

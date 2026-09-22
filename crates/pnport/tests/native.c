@@ -21,6 +21,21 @@ int main(int argc, char **argv) {
     if (stat("node_modules/dep/file.txt", &info) || info.st_size != 13) return 21;
     int fd = open("node_modules/dep/file.txt", O_RDONLY);
     if (fd < 0) { perror("open"); return 22; }
+    int copied = dup(fd);
+    int untracked = fcntl(fd, F_DUPFD_CLOEXEC, 0);
+    if (copied < 0 || untracked < 0) return 44;
+    int files[] = {fd, copied, untracked};
+    for (int i = 0; i < 3; i++) {
+        errno = 0;
+        if (openat(files[i], "../file.txt", O_RDONLY) != -1 || errno != ENOTDIR) return 45;
+        errno = 0;
+        if (fstatat(files[i], "../file.txt", &info, 0) != -1 || errno != ENOTDIR) return 46;
+        errno = 0;
+        if (unlinkat(files[i], "../file.txt", 0) != -1 || errno != ENOTDIR) return 47;
+    }
+    close(copied); close(untracked);
+    errno = 0;
+    if (fstatat(-1, "file.txt", &info, 0) != -1 || errno != EBADF) return 48;
     char *bytes = mmap(NULL, 13, PROT_READ, MAP_PRIVATE, fd, 0);
     if (bytes == MAP_FAILED || memcmp(bytes, "package bytes", 13)) return 23;
     munmap(bytes, 13); close(fd);
@@ -36,6 +51,7 @@ int main(int argc, char **argv) {
     close(fd);
     char *canonical = realpath("node_modules/dep/file.txt", NULL);
     if (!canonical || !strstr(canonical, "cache.zip/node_modules/dep/file.txt")) return 28;
+    if (fstatat(-1, canonical, &info, 0) || info.st_size != 13) return 49;
     free(canonical);
     dir = opendir("node_modules/dep");
     if (!dir) return 29;
