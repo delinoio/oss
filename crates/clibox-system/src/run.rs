@@ -769,7 +769,7 @@ fn http_attempt(
         .map_err(|error| {
             if error.is_timeout() {
                 HttpProbeError::AttemptTimeout
-            } else if error.is_connect() {
+            } else if error.is_connect() && !has_tls_failure(&error) {
                 HttpProbeError::NotReady
             } else {
                 HttpProbeError::Terminal
@@ -784,6 +784,24 @@ fn http_attempt(
     } else {
         Err(HttpProbeError::NotReady)
     }
+}
+
+fn has_tls_failure(error: &reqwest::Error) -> bool {
+    contains_tls_failure(error)
+}
+
+fn contains_tls_failure(error: &(dyn std::error::Error + 'static)) -> bool {
+    if error.downcast_ref::<rustls::Error>().is_some() {
+        return true;
+    }
+    if let Some(io_error) = error.downcast_ref::<std::io::Error>() {
+        if let Some(source) = io_error.get_ref() {
+            if contains_tls_failure(source) {
+                return true;
+            }
+        }
+    }
+    error.source().is_some_and(contains_tls_failure)
 }
 
 fn service_http_client(https: bool) -> Result<reqwest::blocking::Client> {

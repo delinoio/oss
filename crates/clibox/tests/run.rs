@@ -442,7 +442,7 @@ fn service_probe_ignores_custom_ca_override_variables() {
     .env("SSL_CERT_DIR", home.path())
     .output()
     .unwrap();
-    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(1));
     assert!(!marker.exists());
     server.join().unwrap();
 }
