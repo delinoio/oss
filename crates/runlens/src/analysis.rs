@@ -214,10 +214,10 @@ fn before_knowledge(
     remaining: &mut usize,
 ) -> Result<Knowledge> {
     let exact = before.get(path)?;
-    if let Some(state) = &exact {
-        if state.knowledge != Knowledge::Missing {
-            return Ok(state.knowledge);
-        }
+    if let Some(state) = &exact
+        && state.knowledge != Knowledge::Missing
+    {
+        return Ok(state.knowledge);
     }
     let mut uncertain = !complete;
     if windows {
