@@ -1385,14 +1385,27 @@ fn write_bucket(path: &Path, bucket: &Bucket) -> Result<()> {
             .map_err(|error| Failure::io(&error))?;
         file.sync_all().map_err(|error| Failure::io(&error))?;
         atomic_rename(&temporary, path).map_err(|error| Failure::io(&error))?;
-        File::open(parent)
-            .and_then(|directory| directory.sync_all())
-            .map_err(|error| Failure::io(&error))
+        sync_state_directory(parent).map_err(|error| Failure::io(&error))
     })();
     if result.is_err() {
         let _ = fs::remove_file(&temporary);
     }
     result
+}
+
+fn sync_state_directory(parent: &Path) -> io::Result<()> {
+    #[cfg(not(windows))]
+    {
+        File::open(parent).and_then(|directory| directory.sync_all())
+    }
+    #[cfg(windows)]
+    {
+        // MoveFileExW uses MOVEFILE_WRITE_THROUGH, which is the Windows
+        // durability boundary for this replacement. Directories cannot be
+        // opened through std::fs::File without directory-specific flags.
+        let _ = parent;
+        Ok(())
+    }
 }
 
 fn open_state_for_read(path: &Path) -> io::Result<File> {
