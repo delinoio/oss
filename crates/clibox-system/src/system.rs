@@ -143,7 +143,7 @@ impl Action {
     }
 }
 
-pub fn execute(command: Action, leading_separator: bool) -> Result<i32> {
+pub fn execute(command: Action, leading_separator: bool, raw: &[OsString]) -> Result<i32> {
     match command {
         Action::Run {
             command: Run::Env { mut args },
@@ -155,31 +155,31 @@ pub fn execute(command: Action, leading_separator: bool) -> Result<i32> {
         }
         Action::Run {
             command: Run::WithRateLimit(options),
-        } => match run::execute(run::Command::WithRateLimit(options))? {
+        } => match run::execute(run::Command::WithRateLimit(options), raw)? {
             run::Outcome::Child(status) => runtime::exit_child(status),
             run::Outcome::Code(code) => return Ok(code),
         },
         Action::Run {
             command: Run::WithLock(options),
-        } => match run::execute(run::Command::WithLock(options))? {
+        } => match run::execute(run::Command::WithLock(options), raw)? {
             run::Outcome::Child(status) => runtime::exit_child(status),
             run::Outcome::Code(code) => return Ok(code),
         },
         Action::Run {
             command: Run::WithService(options),
-        } => match run::execute(run::Command::WithService(options))? {
+        } => match run::execute(run::Command::WithService(options), raw)? {
             run::Outcome::Child(status) => runtime::exit_child(status),
             run::Outcome::Code(code) => return Ok(code),
         },
         Action::Run {
             command: Run::WithRetry(options),
-        } => match run::execute(run::Command::WithRetry(options))? {
+        } => match run::execute(run::Command::WithRetry(options), raw)? {
             run::Outcome::Child(status) => runtime::exit_child(status),
             run::Outcome::Code(code) => return Ok(code),
         },
         Action::Run {
             command: Run::WithTimeout(options),
-        } => match run::execute(run::Command::WithTimeout(options))? {
+        } => match run::execute(run::Command::WithTimeout(options), raw)? {
             run::Outcome::Child(status) => runtime::exit_child(status),
             run::Outcome::Code(code) => return Ok(code),
         },

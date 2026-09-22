@@ -286,6 +286,30 @@ fn completed_workload_cleans_up_its_background_descendants() {
 }
 
 #[test]
+fn wrappers_preserve_a_leading_literal_workload_separator() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let home = tempfile::tempdir().unwrap();
+    let executable = home.path().join("tool=value");
+    fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    let output = command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--timeout",
+            "1s",
+            "--",
+            executable.to_str().unwrap(),
+        ],
+    )
+    .output()
+    .unwrap();
+    assert!(output.status.success(), "{output:?}");
+}
+
+#[test]
 fn external_service_is_observed_without_becoming_owned() {
     let home = tempfile::tempdir().unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();

@@ -226,13 +226,120 @@ pub(crate) enum Outcome {
     Code(i32),
 }
 
-pub(crate) fn execute(command: Command) -> Result<Outcome> {
+pub(crate) fn execute(command: Command, raw: &[OsString]) -> Result<Outcome> {
     match command {
-        Command::WithRateLimit(options) => rate_limit(options),
-        Command::WithLock(options) => with_lock(options),
-        Command::WithService(options) => with_service(options),
-        Command::WithRetry(options) => with_retry(options),
-        Command::WithTimeout(options) => with_timeout(options),
+        Command::WithRateLimit(mut options) => {
+            options.workload.restore_leading_separator(raw, false);
+            rate_limit(options)
+        }
+        Command::WithLock(mut options) => {
+            options.workload.restore_leading_separator(raw, false);
+            with_lock(options)
+        }
+        Command::WithService(mut options) => {
+            options
+                .workload
+                .restore_leading_separator(raw, options.service.is_some());
+            with_service(options)
+        }
+        Command::WithRetry(mut options) => {
+            options.workload.restore_leading_separator(raw, false);
+            with_retry(options)
+        }
+        Command::WithTimeout(mut options) => {
+            options.workload.restore_leading_separator(raw, false);
+            with_timeout(options)
+        }
+    }
+}
+
+impl Workload {
+    fn restore_leading_separator(&mut self, raw: &[OsString], service_delimiter: bool) {
+        let Some(start) = raw.len().checked_sub(self.args.len()) else {
+            return;
+        };
+        let Some(separator) = start.checked_sub(1) else {
+            return;
+        };
+        if raw.get(separator).is_none_or(|value| value != "--") {
+            return;
+        }
+        // `--service` consumes its own delimiter before the workload. Only a
+        // second adjacent delimiter starts the literal workload itself.
+        if service_delimiter
+            && separator
+                .checked_sub(1)
+                .and_then(|index| raw.get(index))
+                .is_none_or(|value| value != "--")
+        {
+            return;
+        }
+        self.args.insert(0, "--".into());
+    }
+}
+
+#[cfg(test)]
+mod workload_tests {
+    use super::*;
+
+    #[test]
+    fn restores_only_the_workload_separator() {
+        for wrapper in ["with-rate-limit", "with-lock", "with-retry", "with-timeout"] {
+            let raw = vec![
+                "clibox".into(),
+                "run".into(),
+                wrapper.into(),
+                "--".into(),
+                "tool=value".into(),
+            ];
+            let mut workload = Workload {
+                kill_after: Duration::ZERO,
+                args: vec!["tool=value".into()],
+            };
+            workload.restore_leading_separator(&raw, false);
+            assert_eq!(
+                workload.args,
+                [OsString::from("--"), OsString::from("tool=value")]
+            );
+        }
+
+        let mut service_workload = Workload {
+            kill_after: Duration::ZERO,
+            args: vec!["tool=value".into()],
+        };
+        let raw = vec![
+            "clibox".into(),
+            "run".into(),
+            "with-service".into(),
+            "http://127.0.0.1:3000/health".into(),
+            "--service".into(),
+            "server".into(),
+            "--".into(),
+            "--".into(),
+            "tool=value".into(),
+        ];
+        service_workload.restore_leading_separator(&raw, true);
+        assert_eq!(
+            service_workload.args,
+            [OsString::from("--"), OsString::from("tool=value")]
+        );
+
+        let mut service_workload = Workload {
+            kill_after: Duration::ZERO,
+            args: vec!["tool=value".into()],
+        };
+        let raw = vec![
+            "clibox".into(),
+            "run".into(),
+            "with-service".into(),
+            "http://127.0.0.1:3000/health".into(),
+            "--service".into(),
+            "server".into(),
+            "--".into(),
+            "tool=value".into(),
+        ];
+        service_workload.restore_leading_separator(&raw, true);
+        assert_eq!(service_workload.args, [OsString::from("tool=value")]);
     }
 }
 

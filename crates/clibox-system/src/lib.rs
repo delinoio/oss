@@ -12,11 +12,11 @@ mod system;
 pub use system::Action as Command;
 
 /// Execute one OS command and preserve its native child/signal exit behavior.
-pub fn execute(command: Command, leading_separator: bool) -> ! {
+pub fn execute(command: Command, leading_separator: bool, raw: &[std::ffi::OsString]) -> ! {
     let operation = command.operation();
     let result = runtime::install_signals().and_then(|()| {
         tracing::debug!(operation, "operation_started");
-        system::execute(command, leading_separator)
+        system::execute(command, leading_separator, raw)
     });
     let status = match result {
         Ok(status) => status,
