@@ -44,6 +44,23 @@ impl View {
             ));
         }
         let path = normalize(path);
+        // Yarn's unplugged containers include a real node_modules before the
+        // package locator. Those ancestors are installation structure, not an
+        // issuer's virtual dependency directory.
+        if self
+            .graph
+            .manifest
+            .package_registry_data
+            .values()
+            .flat_map(|entries| entries.values())
+            .any(|package| {
+                normalize(&package.package_location).starts_with(&path)
+                    && normalize(&package.package_location) != path
+            })
+        {
+            return self.backing(path, false, false);
+        }
+
         // Locations already in the graph (including ZIP-internal node_modules)
         // must not be interpreted as a second dependency lookup.
         if let Some(package) = self.graph.package(&path) {

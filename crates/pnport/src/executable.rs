@@ -1,9 +1,126 @@
 //! Executable admission shared by the supervisor and descendant hooks.
-#[cfg(target_os = "macos")]
-use std::io::Read;
-use std::{fs, path::Path};
+use std::{
+    ffi::{OsStr, OsString},
+    fs,
+    io::Read as _,
+    path::{Path, PathBuf},
+};
 
-use crate::diagnostic::{Code, Error, Result};
+use crate::{
+    diagnostic::{Code, Error, Result},
+    view::View,
+};
+
+/// A resolved execution keeps script arguments in the logical PnP namespace.
+pub struct Prepared {
+    pub program: PathBuf,
+    pub args: Vec<OsString>,
+}
+
+pub fn prepare(
+    view: &mut View,
+    path: &Path,
+    args: &[OsString],
+    search_path: Option<&OsStr>,
+) -> Result<Prepared> {
+    let mut path = path.to_owned();
+    let mut args = args.to_vec();
+    for _ in 0..8 {
+        let translation = view.translate(&path)?;
+        let mut prefix = Vec::new();
+        fs::File::open(&translation.physical)
+            .map_err(|_| invalid())?
+            .take(4097)
+            .read_to_end(&mut prefix)
+            .map_err(|_| invalid())?;
+        if !prefix.starts_with(b"#!") {
+            validate(&translation.physical)?;
+            return Ok(Prepared {
+                program: translation.physical,
+                args,
+            });
+        }
+        executable_permissions(&translation.physical)?;
+        let end = prefix
+            .iter()
+            .position(|b| *b == b'\n')
+            .ok_or_else(invalid)?;
+        let line = std::str::from_utf8(&prefix[2..end])
+            .map_err(|_| invalid())?
+            .trim();
+        let mut fields = line.splitn(2, char::is_whitespace);
+        let interpreter = fields
+            .next()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(invalid)?;
+        let argument = fields.next().map(str::trim).filter(|s| !s.is_empty());
+        let mut interpreter_args = Vec::new();
+        path = if interpreter == "/usr/bin/env" {
+            // env in a shebang declares PATH-based interpreter selection. Resolve
+            // that declaration directly; never execute or replace protected env.
+            let argument = argument.ok_or_else(invalid)?;
+            let words: Vec<_> = if let Some(split) = argument.strip_prefix("-S ") {
+                shell_words::split(split).map_err(|_| invalid())?
+            } else {
+                vec![argument.to_owned()]
+            };
+            let name = words
+                .first()
+                .filter(|s| {
+                    !s.starts_with('-') && !s.contains('=') && !s.contains(char::is_whitespace)
+                })
+                .ok_or_else(invalid)?;
+            interpreter_args.extend(words.iter().skip(1).map(OsString::from));
+            find_interpreter(name.as_ref(), search_path)?
+        } else {
+            if !Path::new(interpreter).is_absolute() {
+                return Err(invalid());
+            }
+            if let Some(argument) = argument {
+                interpreter_args.push(argument.into());
+            }
+            PathBuf::from(interpreter)
+        };
+        interpreter_args.push(translation.logical.into_os_string());
+        interpreter_args.extend(args);
+        args = interpreter_args;
+    }
+    Err(Error::new(
+        Code::PnportUnsupportedOperation,
+        "The interpreter chain is cyclic or too deep.",
+    ))
+}
+
+pub fn find_interpreter(name: &OsStr, search_path: Option<&OsStr>) -> Result<PathBuf> {
+    for directory in std::env::split_paths(search_path.unwrap_or_default()) {
+        let candidate = std::env::current_dir()
+            .map_err(|_| invalid())?
+            .join(directory)
+            .join(name);
+        if candidate.is_file() && executable_permissions(&candidate).is_ok() {
+            return Ok(candidate);
+        }
+    }
+    Err(Error::new(
+        Code::PnportCommandNotFound,
+        "The requested interpreter is not executable on PATH.",
+    ))
+}
+
+fn executable_permissions(path: &Path) -> Result<()> {
+    let meta = fs::metadata(path).map_err(|_| invalid())?;
+    if !meta.is_file() {
+        return Err(invalid());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if meta.mode() & 0o6000 != 0 || meta.mode() & 0o111 == 0 {
+            return Err(invalid());
+        }
+    }
+    Ok(())
+}
 
 pub fn validate(path: &Path) -> Result<()> {
     let path = fs::canonicalize(path).map_err(|e| {
@@ -16,16 +133,7 @@ pub fn validate(path: &Path) -> Result<()> {
             "Cannot access the requested executable.",
         )
     })?;
-    #[cfg(not(unix))]
-    let _ = &path;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        let meta = fs::metadata(&path).map_err(|_| invalid())?;
-        if meta.mode() & 0o6000 != 0 || meta.mode() & 0o111 == 0 {
-            return Err(invalid());
-        }
-    }
+    executable_permissions(&path)?;
     #[cfg(target_os = "macos")]
     {
         if ["/bin", "/sbin", "/usr/bin", "/usr/sbin", "/System"]
@@ -34,27 +142,65 @@ pub fn validate(path: &Path) -> Result<()> {
         {
             return Err(protected());
         }
-        let mut file = fs::File::open(path).map_err(|_| invalid())?;
+        let mut file = fs::File::open(&path).map_err(|_| invalid())?;
         let mut header = [0u8; 32];
         file.read_exact(&mut header).map_err(|_| invalid())?;
-        // A direct script would pass through an unchecked kernel-selected
-        // interpreter. Admit only native images until the complete shebang
-        // chain can be checked without executable substitution.
-        if &header[..4] != b"\xcf\xfa\xed\xfe" {
-            return Err(protected());
-        }
-        let cpu = u32::from_le_bytes(header[4..8].try_into().unwrap());
+        use std::io::{Seek, SeekFrom};
         let expected = if cfg!(target_arch = "aarch64") {
             0x0100000c
         } else {
             0x01000007
         };
-        if cpu != expected {
+        let mut slice_offset = 0u64;
+        let mut slice_length = file.metadata().map_err(|_| invalid())?.len();
+        if matches!(&header[..4], b"\xca\xfe\xba\xbe" | b"\xca\xfe\xba\xbf") {
+            let count = u32::from_be_bytes(header[4..8].try_into().unwrap());
+            if count > 64 {
+                return Err(invalid());
+            }
+            let wide = header[3] == 0xbf;
+            file.seek(SeekFrom::Start(8)).map_err(|_| invalid())?;
+            let mut selected = None;
+            for _ in 0..count {
+                let mut entry = vec![0u8; if wide { 32 } else { 20 }];
+                file.read_exact(&mut entry).map_err(|_| invalid())?;
+                if u32::from_be_bytes(entry[..4].try_into().unwrap()) == expected {
+                    if selected.is_some() {
+                        return Err(invalid());
+                    }
+                    let offset = if wide {
+                        u64::from_be_bytes(entry[8..16].try_into().unwrap())
+                    } else {
+                        u32::from_be_bytes(entry[8..12].try_into().unwrap()) as u64
+                    };
+                    let length = if wide {
+                        u64::from_be_bytes(entry[16..24].try_into().unwrap())
+                    } else {
+                        u32::from_be_bytes(entry[12..16].try_into().unwrap()) as u64
+                    };
+                    if offset
+                        .checked_add(length)
+                        .is_none_or(|end| end > slice_length)
+                        || length < 32
+                    {
+                        return Err(invalid());
+                    }
+                    selected = Some((offset, length));
+                }
+            }
+            (slice_offset, slice_length) = selected.ok_or_else(protected)?;
+            file.seek(SeekFrom::Start(slice_offset))
+                .map_err(|_| invalid())?;
+            file.read_exact(&mut header).map_err(|_| invalid())?;
+        }
+        if &header[..4] != b"\xcf\xfa\xed\xfe"
+            || u32::from_le_bytes(header[4..8].try_into().unwrap()) != expected
+        {
             return Err(protected());
         }
         let count = u32::from_le_bytes(header[16..20].try_into().unwrap()) as usize;
         let size = u32::from_le_bytes(header[20..24].try_into().unwrap()) as usize;
-        if size > 16 * 1024 * 1024 || count > size / 8 {
+        if size > 16 * 1024 * 1024 || count > size / 8 || 32 + size as u64 > slice_length {
             return Err(invalid());
         }
         let mut commands = vec![0; size];
@@ -80,21 +226,29 @@ pub fn validate(path: &Path) -> Result<()> {
                 }
                 let start = u32::from_le_bytes(command[8..12].try_into().unwrap());
                 let length = u32::from_le_bytes(command[12..16].try_into().unwrap()) as usize;
-                if length > 16 * 1024 * 1024 {
+                if length > 16 * 1024 * 1024 || u64::from(start) + length as u64 > slice_length {
                     return Err(invalid());
                 }
-                file.seek(SeekFrom::Start(start as u64))
+                file.seek(SeekFrom::Start(slice_offset + start as u64))
                     .map_err(|_| invalid())?;
                 let mut signature = vec![0u8; length];
                 file.read_exact(&mut signature).map_err(|_| invalid())?;
                 check_signature(&signature)?;
+                use core_foundation::url::CFURL;
+                use security_framework::os::macos::code_signing::{
+                    Flags, SecRequirement, SecStaticCode,
+                };
+                let url = CFURL::from_path(&path, false).ok_or_else(invalid)?;
+                let code = SecStaticCode::from_path(&url, Flags::NONE).map_err(|_| invalid())?;
+                let requirement: SecRequirement = "true".parse().map_err(|_| invalid())?;
+                code.check_validity(Flags::NO_NETWORK_ACCESS, &requirement)
+                    .map_err(|_| invalid())?;
             }
             offset += length;
         }
     }
     Ok(())
 }
-#[cfg(unix)]
 fn invalid() -> Error {
     Error::new(
         Code::PnportCommandNotExecutable,
@@ -127,16 +281,40 @@ fn check_signature(bytes: &[u8]) -> Result<()> {
     if count > bytes.len() / 8 {
         return Err(invalid());
     }
+    let mut flags = 0;
+    let mut entitlements = None;
     for i in 0..count {
         let start = number(bytes, 16 + i * 8)? as usize;
-        if number(bytes, start)? == 0xfade0c02 {
-            let flags = number(bytes, start + 12)?;
-            // Hardened runtime, restricted image or library validation requires
-            // entitlement-specific admission; never optimistically inject it.
-            if flags & (0x10000 | 0x800 | 0x2000) != 0 {
-                return Err(protected());
+        let length = number(bytes, start + 4)? as usize;
+        let blob = bytes
+            .get(start..start.checked_add(length).ok_or_else(invalid)?)
+            .ok_or_else(invalid)?;
+        match number(blob, 0)? {
+            0xfade0c02 => flags |= number(blob, 12)?,
+            0xfade7171 => {
+                entitlements =
+                    Some(plist::Value::from_reader_xml(&blob[8..]).map_err(|_| invalid())?)
             }
+            _ => {}
         }
+    }
+    if flags & 0x800 != 0 {
+        return Err(protected());
+    }
+    let allowed = |key: &str| {
+        entitlements
+            .as_ref()
+            .and_then(plist::Value::as_dictionary)
+            .and_then(|d| d.get(key))
+            .and_then(plist::Value::as_boolean)
+            == Some(true)
+    };
+    if flags & 0x10000 != 0
+        && (!allowed("com.apple.security.cs.allow-dyld-environment-variables")
+            || !allowed("com.apple.security.cs.disable-library-validation"))
+        || flags & 0x2000 != 0 && !allowed("com.apple.security.cs.disable-library-validation")
+    {
+        return Err(protected());
     }
     Ok(())
 }

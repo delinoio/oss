@@ -354,3 +354,120 @@ fn concurrent_materializers_publish_one_entry() {
     assert_eq!(entries.len(), 1);
     assert!(matches!(entries[0].state, State::Active));
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn script_interpreters_preserve_logical_arguments_and_reject_protection() {
+    use std::{os::unix::fs::PermissionsExt, process::Command};
+    let root = fixture();
+    let source = root.path().join("interpreter.c");
+    fs::write(&source, r#"
+#include <stdio.h>
+#include <string.h>
+int main(int argc, char **argv) {
+    FILE *file = fopen("node_modules/dep/file.txt", "r");
+    if (!file) return 70;
+    fclose(file);
+    if (argc != 5 || strcmp(argv[1], "two words") || strcmp(argv[3], "") || strcmp(argv[4], "literal;$()")) return 71;
+    puts("script-ok");
+    return 0;
+}
+"#).unwrap();
+    let interpreter = root.path().join("interpreter");
+    assert!(Command::new("cc")
+        .arg(&source)
+        .arg("-o")
+        .arg(&interpreter)
+        .status()
+        .unwrap()
+        .success());
+    let script = root.path().join("script with spaces");
+    fs::write(
+        &script,
+        "#!/usr/bin/env -S interpreter 'two words'\nunused\n",
+    )
+    .unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+    let run = || {
+        Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .env("PATH", root.path())
+            .args(["--cache-dir"])
+            .arg(root.path().join("private-cache"))
+            .args(["run", "--"])
+            .arg(&script)
+            .args(["", "literal;$()"])
+            .output()
+            .unwrap()
+    };
+    let result = run();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(result.stdout, b"script-ok\n");
+    assert!(Command::new("codesign")
+        .args(["--force", "--sign", "-", "--options", "runtime"])
+        .arg(&interpreter)
+        .status()
+        .unwrap()
+        .success());
+    let result = run();
+    assert_eq!(result.status.code(), Some(125));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+    let entitlements = root.path().join("entitlements.plist");
+    fs::write(&entitlements, r#"<?xml version="1.0"?><plist version="1.0"><dict><key>com.apple.security.cs.allow-dyld-environment-variables</key><true/><key>com.apple.security.cs.disable-library-validation</key><true/></dict></plist>"#).unwrap();
+    assert!(Command::new("codesign")
+        .args([
+            "--force",
+            "--sign",
+            "-",
+            "--options",
+            "runtime",
+            "--entitlements"
+        ])
+        .arg(&entitlements)
+        .arg(&interpreter)
+        .status()
+        .unwrap()
+        .success());
+    let result = run();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    fs::write(&script, "#!/bin/sh\nexit 0\n").unwrap();
+    assert_eq!(run().status.code(), Some(125));
+}
+
+#[test]
+fn unplugged_installation_containers_are_not_dependency_conflicts() {
+    let root = fixture();
+    let location = "./.yarn/unplugged/dep/node_modules/dep/";
+    let mut value = data();
+    value["packageRegistryData"][2][1][0][1]["packageLocation"] = json!(location);
+    fs::create_dir_all(root.path().join(location)).unwrap();
+    fs::write(
+        root.path().join(location).join("package.json"),
+        r#"{"name":"dep"}"#,
+    )
+    .unwrap();
+    inline(root.path(), &value);
+    let graph = Graph::load(&root.path().join(".pnp.cjs")).unwrap();
+    graph.check_conflicts().unwrap();
+    let canonical = fs::canonicalize(root.path()).unwrap();
+    let mut view = View::new(
+        graph,
+        Cache::open(root.path().join("private-cache")).unwrap(),
+        root.path().join("session"),
+    );
+    let ancestor = canonical.join(".yarn/unplugged/dep/node_modules");
+    assert_eq!(view.translate(&ancestor).unwrap().physical, ancestor);
+    let file = view
+        .translate(&canonical.join("node_modules/dep/package.json"))
+        .unwrap();
+    assert!(file.readonly);
+    assert!(file.physical.is_file());
+}

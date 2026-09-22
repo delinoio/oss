@@ -250,7 +250,7 @@ fn execute(cli: &Cli) -> Result<i32> {
 fn resolve_command(view: &mut View, cwd: &Path, command: &OsString) -> Result<PathBuf> {
     let path = Path::new(command);
     if path.components().count() > 1 || path.is_absolute() {
-        return Ok(view.translate(&cwd.join(path))?.physical);
+        return Ok(cwd.join(path));
     }
     let Some(name) = command.to_str() else {
         return Err(Error::new(
@@ -313,7 +313,7 @@ fn resolve_command(view: &mut View, cwd: &Path, command: &OsString) -> Result<Pa
         ));
     }
     if let Some(bin) = bins.into_iter().next() {
-        return Ok(view.translate(&bin)?.physical);
+        return Ok(bin);
     }
     if let Some(path) = std::env::var_os("PATH") {
         for entry in std::env::split_paths(&path) {

@@ -61,10 +61,11 @@ extern "C" fn signal_handler(signal: i32) {
 }
 
 pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString]) -> Result<i32> {
-    pnport::executable::validate(executable)?;
-    let mut command = Command::new(executable);
+    let prepared =
+        pnport::executable::prepare(view, executable, args, std::env::var_os("PATH").as_deref())?;
+    let mut command = Command::new(&prepared.program);
     command
-        .args(args)
+        .args(&prepared.args)
         .env("PNPORT_SESSION", &view.session)
         .env("PNPORT_CACHE", &view.cache.root);
     let variable = if cfg!(target_os = "macos") {

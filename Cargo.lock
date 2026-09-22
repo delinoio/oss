@@ -7903,13 +7903,17 @@ name = "pnport"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "core-foundation 0.10.1",
  "dirs 6.0.0",
  "fs2",
  "libc",
+ "plist",
  "pnp",
+ "security-framework 3.7.0",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "shell-words",
  "tempfile",
  "tracing",
  "tracing-subscriber",
