@@ -6,6 +6,12 @@ use super::SyscallHandler;
 
 impl SyscallHandler {
     #[cfg(target_arch = "x86_64")]
+    pub(super) fn creat(&mut self, caller: Caller, (path,): (CStrPtr,)) -> io::Result<()> {
+        // x86_64 has a separate creat syscall; mode does not alter write intent.
+        self.handle_open(caller, Fd::cwd(), path, libc::O_CREAT | libc::O_WRONLY | libc::O_TRUNC)
+    }
+
+    #[cfg(target_arch = "x86_64")]
     pub(super) fn open(
         &mut self,
         caller: Caller,

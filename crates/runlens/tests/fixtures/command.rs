@@ -121,6 +121,23 @@ fn main() {
                 }
             }
         }
+        #[cfg(target_os = "linux")]
+        "linux-creat" => {
+            let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();
+            // SAFETY: live pathname, successful descriptor closed exactly once.
+            unsafe {
+                let fd = libc::creat(path.as_ptr(), 0o600);
+                if fd >= 0 {
+                    println!("created");
+                    libc::close(fd);
+                } else {
+                    println!(
+                        "error={}",
+                        std::io::Error::last_os_error().raw_os_error().unwrap()
+                    );
+                }
+            }
+        }
         #[cfg(unix)]
         "fd-stat" => {
             let path = std::ffi::CString::new(args[1].as_bytes()).unwrap();

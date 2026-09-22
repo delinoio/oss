@@ -7150,3 +7150,66 @@ fn imported_repeat_pass_requires_multiple_consecutive_targets() {
     repeat.verification = Some(Verdict::Inconclusive);
     assert!(report::validate(&repeat).is_ok());
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_creat_records_external_creation_truncation_and_failure() {
+    let mut executables = vec![fixture().to_owned()];
+    if let Ok(path) = std::env::var("RUNLENS_STATIC_FIXTURE") {
+        executables.push(path);
+    } else {
+        assert!(std::env::var_os("CI").is_none(), "static fixture required");
+    }
+    for executable in executables {
+        for mode in ["new", "truncate", "missing"] {
+            let root = tempfile::tempdir().unwrap();
+            let external = tempfile::tempdir().unwrap();
+            let path = external.path().join(if mode == "missing" {
+                "missing/created"
+            } else {
+                "created"
+            });
+            if mode == "truncate" {
+                fs::write(&path, "original").unwrap();
+            }
+            let args = ["linux-creat", path.to_str().unwrap()];
+            let direct = Command::new(&executable).args(args).output().unwrap();
+            if mode != "missing" {
+                fs::remove_file(&path).unwrap();
+            }
+            if mode == "truncate" {
+                fs::write(&path, "original").unwrap();
+            }
+            fs::write(
+                root.path().join("runlens.toml"),
+                format!("schema_version=1\n[policy]\ndeny_writes=[{:?}]\n", args[1]),
+            )
+            .unwrap();
+            let traced = invoke(
+                root.path(),
+                &[
+                    "run",
+                    "--save",
+                    "creat.json",
+                    "--",
+                    &executable,
+                    args[0],
+                    args[1],
+                ],
+            );
+            assert_eq!(traced.status.code(), Some(0), "{traced:?}");
+            assert_eq!(traced.stdout, direct.stdout);
+            if mode != "missing" {
+                assert_eq!(fs::metadata(&path).unwrap().len(), 0);
+            }
+            let report = parse(root.path(), "creat.json");
+            assert_eq!(report["executions"][0]["accesses"][args[1]]["write"], true);
+            assert_eq!(
+                invoke(root.path(), &["policy", "check", "creat.json", "--json"])
+                    .status
+                    .code(),
+                Some(5)
+            );
+        }
+    }
+}

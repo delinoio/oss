@@ -361,3 +361,5 @@
 - Comparison compatibility rejects differing recorded command names and redacted names. An unnamed direct execution may still match an explicitly supplied named baseline when all other identity fields agree.
 
 - Imported passed repeat reports require at least two target executions with consecutive repetition numbers from one; historical/preparation records cannot satisfy this minimum. Preserve partial inconclusive reports.
+
+- Linux x86_64 creat has its own syscall interception with create/write/truncate intent; dynamic and static creation, truncation and failed attempts must retain write evidence.

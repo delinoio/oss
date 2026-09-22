@@ -307,3 +307,5 @@ Windows EA queries: interpose NtQueryEaFile through the recursion-guarded handle
 Darwin symlink flags: add lchflags to pathname mutation interposition, preserving the lexical link identity and native operands. macos_lchflags_preserves_results_and_observes_the_link checks successful/missing paths, target flag preservation and policy denial. Remove when upstream covers no-follow flag mutations equivalently.
 
 Linux deleted descriptor names: reject the procfs ` (deleted)` suffix as ESTALE so collection retains uncertainty without rewriting an ambiguous identity. deleted_descriptor_identity_cannot_pass_exact_read_policy covers unlinked files and real suffix-bearing names with dynamic/static fstat. Remove when upstream binds descriptors to trustworthy identities across unlink and rename.
+
+Linux creat: register x86_64 syscall 85 through the existing open classifier with O_CREAT | O_WRONLY | O_TRUNC. linux_creat_records_external_creation_truncation_and_failure covers dynamic and static callers, using openat on arm64 where creat has no syscall number. Remove when upstream covers creat with equivalent attempted-write semantics.

@@ -918,3 +918,5 @@ The 1 GiB aggregate input bound applies to compare, policy with a baseline, expl
 Clean baseline comparison checks recorded configured command names as part of identity. Different or masked names are inconclusive; the intentional unnamed-direct-report allowance remains. Regression coverage verifies matching, different, absent and redacted names through verify clean.
 
 The report parser rejects passed repeat claims with fewer than two target rounds or duplicate, skipped, zero-based, or reordered repetition numbers. Partial inconclusive evidence remains readable; the import/export regression covers each structure.
+
+Linux creation coverage includes the x86_64 creat syscall. The dynamic libc and static raw-syscall regression verifies new external files, truncation, failures, native stdout parity and deny-writes outcomes; arm64 exercises equivalent openat semantics.

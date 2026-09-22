@@ -49,6 +49,17 @@ int main(int argc, char **argv) {
         return 0;
     }
 
+    if (argc == 3 && !strcmp(argv[1], "linux-creat")) {
+#ifdef SYS_creat
+        int fd = syscall(SYS_creat, argv[2], 0600);
+#else
+        int fd = syscall(SYS_openat, AT_FDCWD, argv[2], O_CREAT | O_WRONLY | O_TRUNC, 0600);
+#endif
+        if (fd >= 0) { puts("created"); close(fd); }
+        else printf("error=%d\n", errno);
+        return 0;
+    }
+
     if (argc == 4 && !strcmp(argv[1], "fd-stat")) {
         int pipes[2] = {-1, -1}, fd;
         if (!strcmp(argv[3], "invalid")) fd = -1;
