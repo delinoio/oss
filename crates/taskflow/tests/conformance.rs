@@ -3174,7 +3174,12 @@ async fn go_sharding_preserves_separated_flag_values_and_package_failures() {
     .unwrap();
     files::atomic_write(
         &directory.path().join("root_test.go"),
-        b"package flags\nimport \"testing\"\nfunc TestRoot(t *testing.T) {}\n",
+        b"package flags\nimport (\"fmt\"; \"os\"; \"testing\")\nfunc TestMain(m *testing.M) { fmt.Println(\"TestPhantom\"); TestPhantom(); os.Exit(m.Run()) }\nfunc TestRoot(t *testing.T) {}\n",
+    )
+    .unwrap();
+    files::atomic_write(
+        &directory.path().join("helper.go"),
+        b"package flags\nfunc TestPhantom() {}\n",
     )
     .unwrap();
     files::atomic_write(&directory.path().join("leaf/leaf_test.go"), b"package leaf\nimport \"testing\"\nfunc TestFailure(t *testing.T) { t.Fatal(\"expected failure\") }\n").unwrap();

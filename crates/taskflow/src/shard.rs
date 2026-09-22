@@ -380,11 +380,12 @@ pub async fn inventory(
             for (package, name) in candidates {
                 // `go test -list` reports package Output lines, including
                 // arbitrary TestMain text. Compile the package without running
-                // it and accept only a matching test symbol from the resulting
-                // binary; arbitrary output cannot become a shard unit.
+                // it and accept only a name registered in the generated
+                // testing harness; arbitrary output or reachable functions
+                // cannot become a shard unit.
                 if symbols
                     .get(&package)
-                    .is_some_and(|package_symbols| go_symbols_confirm_test(package_symbols, &name))
+                    .is_some_and(|package_tests| package_tests.contains(&name))
                 {
                     let mut run = vec!["go".into(), "test".into()];
                     run.extend(flags.clone());
@@ -723,18 +724,27 @@ async fn go_package_symbols(
 ) -> Result<BTreeSet<String>> {
     let relative = format!(".taskflow/go-shard-probe-{}", uuid::Uuid::now_v7().simple());
     let probe_dir = directory.join(&relative);
-    std::fs::create_dir_all(&probe_dir)?;
+    let temporary = probe_dir.join("tmp");
+    std::fs::create_dir_all(&temporary)?;
     let binary = format!("{relative}/testbin");
     let result = async {
         let mut compile = vec!["go".into(), "test".into()];
         compile.extend(flags.iter().cloned());
-        compile.extend([package.to_owned(), "-c".into(), "-o".into(), binary.clone()]);
+        compile.extend([
+            package.to_owned(),
+            "-work".into(),
+            "-c".into(),
+            "-o".into(),
+            binary,
+        ]);
+        let mut compile_env = env.clone();
+        compile_env.insert("GOTMPDIR".into(), format!("{relative}/tmp"));
         let (_, status) = process::capture_task_process(
             root,
             directory,
             task,
             &Command::Argv(compile),
-            env,
+            &compile_env,
             overrides,
             cancel,
         )
@@ -743,21 +753,13 @@ async fn go_package_symbols(
             status.code == 0 && !status.cancelled(),
             "Go test package {package} could not be compiled for inventory"
         );
-        let (nm, status) = process::capture_task_process(
-            root,
-            directory,
-            task,
-            &Command::Argv(vec!["go".into(), "tool".into(), "nm".into(), binary]),
-            env,
-            overrides,
-            cancel,
-        )
-        .await?;
-        ensure!(
-            status.code == 0 && !status.cancelled(),
-            "Go test package {package} symbol inventory failed"
-        );
-        Ok(nm)
+        let generated = walkdir::WalkDir::new(&temporary)
+            .into_iter()
+            .filter_map(Result::ok)
+            .find(|entry| entry.file_name() == "_testmain.go")
+            .context("Go test did not produce its generated harness")?;
+        let source = files::read_regular_limited(generated.path(), 1024 * 1024)?;
+        Ok(go_testmain_tests(&source))
     }
     .await;
     let cleanup = std::fs::remove_dir_all(&probe_dir);
@@ -773,17 +775,32 @@ async fn go_package_symbols(
             return Err(error);
         }
     };
-    Ok(bytes
-        .split(|byte| *byte == b'\n')
-        .filter_map(|line| std::str::from_utf8(line).ok())
-        .filter_map(|line| line.split_whitespace().nth(2))
-        .map(str::to_owned)
-        .collect())
+    Ok(bytes)
 }
 
-fn go_symbols_confirm_test(symbols: &BTreeSet<String>, name: &str) -> bool {
-    let suffix = format!(".{name}");
-    symbols.iter().any(|symbol| symbol.ends_with(&suffix))
+fn go_testmain_tests(source: &[u8]) -> BTreeSet<String> {
+    let mut tests = BTreeSet::new();
+    let mut in_tests = false;
+    for line in String::from_utf8_lossy(source).lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("var tests =") {
+            in_tests = true;
+            continue;
+        }
+        if trimmed.starts_with("var benchmarks =") {
+            in_tests = false;
+        }
+        if !in_tests || !trimmed.starts_with("{\"") {
+            continue;
+        }
+        if let Some(name) = trimmed
+            .strip_prefix("{\"")
+            .and_then(|value| value.split_once('"').map(|(name, _)| name))
+        {
+            tests.insert(name.to_owned());
+        }
+    }
+    tests
 }
 
 fn go_flags(arguments: &[String]) -> Result<(Vec<String>, bool)> {
@@ -1238,18 +1255,19 @@ fn read_metadata(path: &Path, kind: &str) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod inventory_tests {
-    use std::collections::BTreeSet;
-
-    use super::go_symbols_confirm_test;
+    use super::go_testmain_tests;
 
     #[test]
-    fn go_inventory_requires_compiled_test_symbol() {
-        let symbols = BTreeSet::from([
-            "example.test/local.TestMain".to_owned(),
-            "example.test/local.TestReal".to_owned(),
-        ]);
-        assert!(!go_symbols_confirm_test(&symbols, "TestPhantom"));
-        assert!(go_symbols_confirm_test(&symbols, "TestReal"));
-        assert!(!go_symbols_confirm_test(&symbols, "TestOther"));
+    fn go_inventory_requires_generated_harness_registration() {
+        let source = br#"
+var tests = []testing.InternalTest{
+    {"TestReal", _test.TestReal},
+}
+var benchmarks = []testing.InternalBenchmark{}
+"#;
+        let tests = go_testmain_tests(source);
+        assert!(!tests.contains("TestPhantom"));
+        assert!(tests.contains("TestReal"));
+        assert!(!tests.contains("TestOther"));
     }
 }

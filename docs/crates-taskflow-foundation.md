@@ -135,4 +135,4 @@ Host execution validates the selected pending tasks against the actual OS and ar
 
 Output identity version 3 invalidates historical flattened root-link snapshots before restoration or successful-baseline reuse. The root-link fixture rejects a correctly hashed version-2 directory artifact while preserving the existing link.
 
-Configuration loading uses bounded no-follow regular-file reads. Input declarations keep explicit pattern matches when automatic scanning is also enabled. Go shard inventory compiles each package without running it and accepts only symbols present in the resulting test binary, avoiding `TestMain` output as a test.
+Configuration loading uses bounded no-follow regular-file reads. Input declarations keep explicit pattern matches when automatic scanning is also enabled. Go shard inventory compiles each package without running it and parses the generated test harness registration, avoiding `TestMain` output or reachable helper functions as tests.

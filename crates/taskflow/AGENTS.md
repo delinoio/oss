@@ -182,4 +182,4 @@
 
 - Output identity version 3 rejects older root-link snapshots that lost link shape; never restore those flattened artifacts or reuse their output baselines.
 
-- Configuration reads must reject non-regular files and bound both metadata and actual bytes before YAML parsing. Automatic input scanning establishes its default without erasing earlier explicit patterns. Go inventory must confirm candidates from compiled test symbols, so `TestMain` output cannot create phantom shard units.
+- Configuration reads must reject non-regular files and bound both metadata and actual bytes before YAML parsing. Automatic input scanning establishes its default without erasing earlier explicit patterns. Go inventory must confirm candidates from the generated test harness, so `TestMain` output or reachable helper functions cannot create phantom shard units.
