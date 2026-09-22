@@ -38,8 +38,22 @@ int main(int argc, char **argv) {
     if (fd < 0) return 30;
     close(fd); closedir(dir);
     if (lstat("node_modules/dep", &info) || !S_ISLNK(info.st_mode)) return 31;
+    struct stat link_info = info;
     char target[4096];
-    if (readlink("node_modules/dep", target, sizeof(target)) < 0) return 32;
+    if (readlink("node_modules/dep", target, sizeof(target)) != link_info.st_size) return 32;
+    dir = opendir("node_modules");
+    if (!dir) return 35;
+    if (fstatat(dirfd(dir), "dep", &info, AT_SYMLINK_NOFOLLOW)
+        || !S_ISLNK(info.st_mode) || info.st_size != link_info.st_size) return 36;
+    if (fstatat(AT_FDCWD, "node_modules/dep", &info, AT_SYMLINK_NOFOLLOW)
+        || !S_ISLNK(info.st_mode) || info.st_size != link_info.st_size) return 37;
+    if (fstatat(dirfd(dir), "dep", &info, 0) || !S_ISDIR(info.st_mode)) return 38;
+    if (fstatat(dirfd(dir), "dep/file.txt", &info, AT_SYMLINK_NOFOLLOW)
+        || !S_ISREG(info.st_mode) || info.st_size != 13) return 39;
+    errno = 0;
+    if (fstatat(dirfd(dir), "dep/missing", &info, AT_SYMLINK_NOFOLLOW) != -1
+        || errno != ENOENT) return 40;
+    closedir(dir);
     if (!getenv("PNPORT_TEST_CHILD")) {
         pid_t child;
         char *environment[] = {"PNPORT_TEST_CHILD=1", NULL};

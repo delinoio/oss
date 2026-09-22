@@ -367,11 +367,21 @@ path_hook!(chmod, pnport_chmod, (path:*const c_char, mode:mode_t) -> c_int, true
 path_hook!(truncate, pnport_truncate, (path:*const c_char, length:off_t) -> c_int, true, -1);
 path_hook!(dlopen, pnport_dlopen, (path:*const c_char, flags:c_int) -> *mut c_void, false, ptr::null_mut());
 
+unsafe fn virtual_link_metadata(output: *mut stat, translation: &Translation) {
+    if translation.virtual_link {
+        (*output).st_mode = ((*output).st_mode & !S_IFMT) | S_IFLNK;
+        (*output).st_size = translation.logical.as_os_str().as_bytes().len() as off_t;
+    }
+}
+
 hook!(fstatat, pnport_fstatat, (dirfd:c_int,path:*const c_char,output:*mut stat,flags:c_int) -> c_int, {
     let original = original!(fstatat, unsafe extern "C" fn(c_int,*const c_char,*mut stat,c_int)->c_int);
     let Some(_guard) = Guard::enter() else { return original(dirfd,path,output,flags); };
     if RUNTIME.get().is_none() { return original(dirfd,path,output,flags); }
-    let (path,_) = translated!(path,dirfd,false,-1); original(AT_FDCWD,path.as_ptr(),output,flags)
+    let (path,translation) = translated!(path,dirfd,false,-1);
+    let result = original(AT_FDCWD,path.as_ptr(),output,flags);
+    if result == 0 && flags & AT_SYMLINK_NOFOLLOW != 0 { virtual_link_metadata(output,&translation); }
+    result
 });
 hook!(fopen, pnport_fopen, (path:*const c_char, mode:*const c_char) -> *mut FILE, {
     let original = original!(fopen, unsafe extern "C" fn(*const c_char,*const c_char)->*mut FILE);
@@ -448,7 +458,7 @@ hook!(lstat, pnport_lstat, (path:*const c_char,output:*mut stat) -> c_int, {
     if RUNTIME.get().is_none() {return original(path,output);}
     let (path,translation)=translated!(path,AT_FDCWD,false,-1);
     let result=original(path.as_ptr(),output);
-    if result==0 && translation.virtual_link {(*output).st_mode=((*output).st_mode & !S_IFMT)|S_IFLNK;(*output).st_size=translation.logical.as_os_str().as_bytes().len() as off_t;} result
+    if result==0 {virtual_link_metadata(output,&translation);} result
 });
 hook!(rename, pnport_rename, (from:*const c_char,to:*const c_char) -> c_int, {
     let original=original!(rename,unsafe extern "C" fn(*const c_char,*const c_char)->c_int);
