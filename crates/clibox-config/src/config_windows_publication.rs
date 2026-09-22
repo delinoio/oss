@@ -17,11 +17,29 @@ use windows_sys::Win32::{
     Storage::FileSystem::{
         FileBasicInfo, FileDispositionInfo, FileRenameInfo, SetFileInformationByHandle, DELETE,
         FILE_ATTRIBUTE_NORMAL, FILE_BASIC_INFO, FILE_DISPOSITION_INFO, FILE_RENAME_INFO,
-        FILE_WRITE_ATTRIBUTES, WRITE_DAC,
+        FILE_WRITE_ATTRIBUTES, READ_CONTROL, WRITE_DAC,
     },
 };
 
-use crate::config_runtime::{Failure, Result};
+use crate::config_runtime::{Error, Failure, Result};
+
+#[derive(Debug)]
+enum PermissionOperation {
+    OpenStaging,
+    SetAttributes,
+    ReadDacl,
+    ReadDaclControl,
+    WriteDacl,
+}
+
+fn permission_failure(operation: PermissionOperation, os_code: Option<i32>) -> Error {
+    tracing::debug!(
+        ?operation,
+        os_code,
+        "configuration permission preservation failed"
+    );
+    Failure::Permissions.into()
+}
 
 pub(super) struct Publication {
     file: File,
@@ -32,10 +50,23 @@ impl Publication {
     pub(super) fn prepare(path: &Path, preserve_dacl: bool) -> Result<Self> {
         // Retain rename, ACL and cleanup authority before applying a DACL that
         // may deny new handles. The staging writer shares deletion access.
+        // SetSecurityInfo inspects the file's current DACL while applying its
+        // inheritance state, so staging needs READ_CONTROL as well as WRITE_DAC.
+        // Keep both rights on this handle instead of reopening after DACL copying.
         let file = OpenOptions::new()
-            .access_mode(DELETE | FILE_WRITE_ATTRIBUTES | if preserve_dacl { WRITE_DAC } else { 0 })
+            .access_mode(
+                DELETE
+                    | FILE_WRITE_ATTRIBUTES
+                    | if preserve_dacl {
+                        READ_CONTROL | WRITE_DAC
+                    } else {
+                        0
+                    },
+            )
             .open(path)
-            .map_err(|_| Failure::Permissions)?;
+            .map_err(|error| {
+                permission_failure(PermissionOperation::OpenStaging, error.raw_os_error())
+            })?;
         let publication = Self {
             file,
             committed: false,
@@ -55,7 +86,10 @@ impl Publication {
             )
         } == 0
         {
-            return Err(Failure::Permissions.into());
+            return Err(permission_failure(
+                PermissionOperation::SetAttributes,
+                std::io::Error::last_os_error().raw_os_error(),
+            ));
         }
         Ok(publication)
     }
@@ -78,37 +112,45 @@ impl Publication {
             )
         };
         if status != ERROR_SUCCESS {
-            return Err(Failure::Permissions.into());
+            return Err(permission_failure(
+                PermissionOperation::ReadDacl,
+                Some(status as i32),
+            ));
         }
         let mut control = 0;
         let mut revision = 0;
-        let valid =
-            unsafe { GetSecurityDescriptorControl(descriptor, &mut control, &mut revision) } != 0;
+        if unsafe { GetSecurityDescriptorControl(descriptor, &mut control, &mut revision) } == 0 {
+            let error = std::io::Error::last_os_error();
+            unsafe { LocalFree(descriptor) };
+            return Err(permission_failure(
+                PermissionOperation::ReadDaclControl,
+                error.raw_os_error(),
+            ));
+        }
         let information = DACL_SECURITY_INFORMATION
             | if control & SE_DACL_PROTECTED != 0 {
                 PROTECTED_DACL_SECURITY_INFORMATION
             } else {
                 UNPROTECTED_DACL_SECURITY_INFORMATION
             };
-        let status = if valid {
-            // The handle's WRITE_DAC right remains valid after the copied DACL.
-            unsafe {
-                SetSecurityInfo(
-                    self.file.as_raw_handle(),
-                    SE_FILE_OBJECT,
-                    information,
-                    std::ptr::null_mut(),
-                    std::ptr::null_mut(),
-                    dacl,
-                    std::ptr::null(),
-                )
-            }
-        } else {
-            1
+        // The handle's security rights remain valid after the copied DACL.
+        let status = unsafe {
+            SetSecurityInfo(
+                self.file.as_raw_handle(),
+                SE_FILE_OBJECT,
+                information,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                dacl,
+                std::ptr::null(),
+            )
         };
         unsafe { LocalFree(descriptor) };
         if status != ERROR_SUCCESS {
-            return Err(Failure::Permissions.into());
+            return Err(permission_failure(
+                PermissionOperation::WriteDacl,
+                Some(status as i32),
+            ));
         }
         Ok(())
     }
@@ -199,6 +241,38 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn copied_dacl_allows_commit_and_unpublished_staging_cleanup() {
+        for commit in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let destination = dir.path().join("output");
+            std::fs::write(&destination, b"original").unwrap();
+            let source = File::open(&destination).unwrap();
+            // Retain the production temporary writer while copying permissions.
+            let staging = tempfile::NamedTempFile::new_in(dir.path()).unwrap();
+            std::fs::write(staging.path(), b"replacement").unwrap();
+            let staging_path = staging.path().to_path_buf();
+            let mut publication = Publication::prepare(&staging_path, true).unwrap();
+            publication.preserve_dacl(&source).unwrap();
+            drop(source);
+            if commit {
+                publication.commit(&destination, true).unwrap();
+            }
+            drop(publication);
+            // Disable pathname cleanup so the assertion proves handle cleanup.
+            staging.into_temp_path().disable_cleanup(true);
+            assert!(!staging_path.exists());
+            assert_eq!(
+                std::fs::read(&destination).unwrap(),
+                if commit {
+                    b"replacement".as_slice()
+                } else {
+                    b"original".as_slice()
+                }
+            );
+        }
+    }
 
     #[test]
     fn no_clobber_commit_preserves_a_destination_created_after_preparation() {

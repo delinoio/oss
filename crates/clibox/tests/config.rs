@@ -966,6 +966,7 @@ fn concurrent_authorized_replacements_produce_one_complete_result() {
             fs::write(dir.path().join(format!("in{i}")), payload).unwrap();
             children.push(
                 command(dir.path())
+                    .env("RUST_LOG", "clibox=debug")
                     .args([
                         "dotenv",
                         "merge",
@@ -1055,7 +1056,11 @@ fn windows_sharing_conflict_preserves_destination_and_cleans_staging() {
     let failed = run(dir.path(), &args, b"A=new");
     assert_eq!(failed.status.code(), Some(1));
     assert!(failed.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&failed.stderr).contains("classification=Publish"));
+    assert!(
+        String::from_utf8_lossy(&failed.stderr).contains("classification=Publish"),
+        "{}",
+        String::from_utf8_lossy(&failed.stderr)
+    );
     assert_eq!(fs::read(&path).unwrap(), b"original");
     no_temps(dir.path());
 
