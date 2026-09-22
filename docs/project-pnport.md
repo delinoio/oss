@@ -9,7 +9,7 @@ Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph withou
 ## Domain Ownership Map
 - Rust: `crates/pnport` and `crates/pnport-preload`, the private native CLI and filesystem/runtime implementation.
 - Packages: `packages/pnport`, the private source of the npm launcher and six native optional packages.
-- Apps: `apps/public-docs/docs/pnport`, the consolidated public guides at `https://oss.delino.io/pnport`.
+- Apps (planned content): `apps/public-docs/docs/pnport`, the consolidated public guides at `https://oss.delino.io/pnport`.
 
 ## Domain Contract Documents
 - [Rust foundation](crates-pnport-foundation.md)

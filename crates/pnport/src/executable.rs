@@ -1,5 +1,7 @@
 //! Executable admission shared by the supervisor and descendant hooks.
-use std::{fs, io::Read, path::Path};
+#[cfg(target_os = "macos")]
+use std::io::Read;
+use std::{fs, path::Path};
 
 use crate::diagnostic::{Code, Error, Result};
 
@@ -14,6 +16,8 @@ pub fn validate(path: &Path) -> Result<()> {
             "Cannot access the requested executable.",
         )
     })?;
+    #[cfg(not(unix))]
+    let _ = &path;
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -90,12 +94,14 @@ pub fn validate(path: &Path) -> Result<()> {
     }
     Ok(())
 }
+#[cfg(unix)]
 fn invalid() -> Error {
     Error::new(
         Code::PnportCommandNotExecutable,
         "The executable is malformed, protected, or has no execute permission.",
     )
 }
+#[cfg(target_os = "macos")]
 fn protected() -> Error {
     Error::new(
         Code::PnportUnsupportedOperation,

@@ -31,6 +31,7 @@ pub struct Lease {
 #[serde(rename_all = "kebab-case")]
 pub enum State {
     Complete,
+    Corrupt,
     Active,
     Incomplete,
     Unknown,
@@ -284,7 +285,7 @@ impl Cache {
                     && entry_name
                         .bytes()
                         .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-                    && verify(&entry.path(), &entry_name, &name).is_ok();
+                    && receipt(&entry.path(), &entry_name, &name).is_ok();
                 if !owned {
                     result.push(Entry {
                         name: label,
@@ -302,6 +303,7 @@ impl Cache {
                     {
                         remove_state(&entry.path())
                     }
+                    Ok(()) if verify(&entry.path(), &entry_name, &name).is_err() => State::Corrupt,
                     Ok(()) => State::Complete,
                 };
                 result.push(Entry { name: label, state });
@@ -336,6 +338,11 @@ fn writable_directories(path: &Path) -> Result<()> {
         }
     }
     #[cfg(windows)]
+    #[allow(
+        clippy::permissions_set_readonly_false,
+        reason = "Windows-only code clears FILE_ATTRIBUTE_READONLY; Unix mode changes use \
+                  PermissionsExt"
+    )]
     if meta.is_file() {
         let mut permissions = meta.permissions();
         permissions.set_readonly(false);
@@ -364,10 +371,23 @@ fn readonly_tree(path: &Path) -> Result<()> {
         });
     }
     #[cfg(windows)]
+    #[allow(
+        clippy::permissions_set_readonly_false,
+        reason = "Windows-only code clears FILE_ATTRIBUTE_READONLY; Unix mode changes use \
+                  PermissionsExt"
+    )]
     mode.set_readonly(true);
     fs::set_permissions(path, mode).map_err(|_| cache_error())
 }
 fn verify(path: &Path, identity: &str, format: &str) -> Result<()> {
+    let receipt = receipt(path, identity, format)?;
+    if receipt.items != inventory(&path.join("content"))? {
+        return Err(cache_error());
+    }
+    Ok(())
+}
+
+fn receipt(path: &Path, identity: &str, format: &str) -> Result<Receipt> {
     if fs::symlink_metadata(path)
         .map_err(|_| cache_error())?
         .file_type()
@@ -391,11 +411,10 @@ fn verify(path: &Path, identity: &str, format: &str) -> Result<()> {
         || receipt.cleanup_version != 1
         || receipt.format != format
         || receipt.sha256 != identity
-        || receipt.items != inventory(&path.join("content"))?
     {
         return Err(cache_error());
     }
-    Ok(())
+    Ok(receipt)
 }
 fn inventory(root: &Path) -> Result<BTreeMap<PathBuf, Item>> {
     fn visit(root: &Path, path: &Path, items: &mut BTreeMap<PathBuf, Item>) -> Result<()> {
@@ -428,6 +447,11 @@ fn inventory(root: &Path) -> Result<BTreeMap<PathBuf, Item>> {
                     meta.permissions().mode() & 0o111 != 0
                 };
                 #[cfg(windows)]
+                #[allow(
+                    clippy::permissions_set_readonly_false,
+                    reason = "Windows-only code clears FILE_ATTRIBUTE_READONLY; Unix mode changes \
+                              use PermissionsExt"
+                )]
                 let executable = false;
                 Item::File {
                     sha256: format!("{:x}", hash.finalize()),
@@ -524,6 +548,11 @@ fn extract(file: File, destination: &Path) -> Result<()> {
         #[cfg(unix)]
         std::os::unix::fs::symlink(&target, &path).map_err(|_| archive_error())?;
         #[cfg(windows)]
+        #[allow(
+            clippy::permissions_set_readonly_false,
+            reason = "Windows-only code clears FILE_ATTRIBUTE_READONLY; Unix mode changes use \
+                      PermissionsExt"
+        )]
         {
             let target_path = path.parent().ok_or_else(archive_error)?.join(&target);
             if target_path.is_dir() {

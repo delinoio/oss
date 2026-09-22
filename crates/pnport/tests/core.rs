@@ -181,11 +181,34 @@ fn leases_survive_cleanup_and_cache_corruption_is_not_reused() {
         cache.entries(Operation::Clean).unwrap()[0].state,
         State::Active
     ));
+    let changed = lease.content.join("node_modules/dep/file.txt");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&changed, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    #[cfg(windows)]
+    #[allow(
+        clippy::permissions_set_readonly_false,
+        reason = "Windows-only code clears FILE_ATTRIBUTE_READONLY; Unix mode changes use \
+                  PermissionsExt"
+    )]
+    {
+        let mut permissions = fs::metadata(&changed).unwrap().permissions();
+        permissions.set_readonly(false);
+        fs::set_permissions(&changed, permissions).unwrap();
+    }
+    fs::write(&changed, b"corrupt").unwrap();
+    assert!(cache.materialize(&root.path().join("cache.zip")).is_err());
+    assert!(matches!(
+        cache.entries(Operation::Clean).unwrap()[0].state,
+        State::Active
+    ));
     drop(second);
     drop(lease);
     assert!(matches!(
         cache.entries(Operation::Prune).unwrap()[0].state,
-        State::Complete
+        State::Corrupt
     ));
     assert!(matches!(
         cache.entries(Operation::Clean).unwrap()[0].state,

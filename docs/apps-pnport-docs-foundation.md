@@ -3,6 +3,8 @@
 ## Scope
 `apps/public-docs/docs/pnport` owns English guides at https://oss.delino.io/pnport, using the existing consolidated documentation app and publisher.
 
+The content/navigation implementation is still planned; this document establishes its contract before runtime work. No pnport public route or distribution availability is claimed by the current development source.
+
 ## Runtime and Language
 Rspress, shared accessible navigation and Cloudflare Pages. Use pnpm dev:public-docs on fixed loopback port 46302. No standalone app, publisher or port.
 
