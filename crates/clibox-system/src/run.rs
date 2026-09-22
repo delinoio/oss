@@ -1407,17 +1407,60 @@ fn state_root() -> Result<PathBuf> {
     }
     #[cfg(windows)]
     {
-        return env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .filter(|path| path.is_absolute())
-            .map(|path| path.join("clibox").join("run"))
-            .ok_or_else(|| {
-                Failure::new(
-                    Code::IoFailed,
-                    "Cannot resolve the current user's LocalAppData state directory.",
-                )
-            });
+        return windows_local_app_data().map(|path| path.join("clibox").join("run"));
     }
+}
+
+#[cfg(windows)]
+fn windows_local_app_data() -> Result<PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+
+    use windows_sys::Win32::{
+        Foundation::{RPC_E_CHANGED_MODE, S_FALSE, S_OK},
+        System::Com::{CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_MULTITHREADED},
+        UI::Shell::{FOLDERID_LocalAppData, SHGetKnownFolderPath},
+    };
+
+    let initialized = match unsafe { CoInitializeEx(std::ptr::null(), COINIT_MULTITHREADED as u32) }
+    {
+        S_OK | S_FALSE => true,
+        // The thread already has a compatible COM initialization boundary for
+        // the shell API. Do not balance an initialization this call did not
+        // create.
+        RPC_E_CHANGED_MODE => false,
+        _ => {
+            return runtime_failure("Cannot initialize the LocalAppData directory lookup.");
+        }
+    };
+    let mut path = std::ptr::null_mut();
+    let status =
+        unsafe { SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, std::ptr::null_mut(), &mut path) };
+    if status < 0 || path.is_null() {
+        if initialized {
+            unsafe {
+                CoUninitialize();
+            }
+        }
+        return runtime_failure("Cannot resolve the current user's LocalAppData state directory.");
+    }
+    // SHGetKnownFolderPath allocates a NUL-terminated UTF-16 string with the
+    // COM task allocator. Copy it before balancing the caller initialization.
+    let value = unsafe {
+        let length = (0..).take_while(|index| *path.add(*index) != 0).count();
+        PathBuf::from(OsString::from_wide(std::slice::from_raw_parts(
+            path, length,
+        )))
+    };
+    unsafe {
+        CoTaskMemFree(path.cast());
+        if initialized {
+            CoUninitialize();
+        }
+    }
+    value
+        .is_absolute()
+        .then_some(value)
+        .ok_or_else(|| Failure::new(Code::IoFailed, "LocalAppData is not an absolute path."))
 }
 
 #[cfg(not(windows))]
