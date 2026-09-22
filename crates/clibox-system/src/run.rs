@@ -1968,11 +1968,13 @@ fn restrict_windows_state_directory(file: &File) -> Result<()> {
         },
     };
 
-    let token = current_user_token()?;
-    let user = token_user_sid(&token)?;
+    let user_token = current_user_token()?;
+    let user = token_user_sid(&user_token)?;
+    let default_owner_token = current_default_owner_token()?;
+    let default_owner = token_owner_sid(&default_owner_token)?;
     // Refuse to alter an object owned by another account even if a permissive
     // parent DACL temporarily granted this process WRITE_DAC access.
-    ensure_windows_state_owner(file, user)?;
+    ensure_windows_state_owner(file, user, default_owner)?;
     let size = std::mem::size_of::<ACL>()
         + std::mem::size_of::<windows_sys::Win32::Security::ACCESS_ALLOWED_ACE>()
         - std::mem::size_of::<u32>()
@@ -2014,7 +2016,11 @@ fn restrict_windows_state_directory(file: &File) -> Result<()> {
 }
 
 #[cfg(windows)]
-fn ensure_windows_state_owner(file: &File, user: windows_sys::Win32::Security::PSID) -> Result<()> {
+fn ensure_windows_state_owner(
+    file: &File,
+    user: windows_sys::Win32::Security::PSID,
+    default_owner: windows_sys::Win32::Security::PSID,
+) -> Result<()> {
     use std::os::windows::io::AsRawHandle;
 
     use windows_sys::Win32::{
@@ -2042,11 +2048,11 @@ fn ensure_windows_state_owner(file: &File, user: windows_sys::Win32::Security::P
     {
         return runtime_failure("Execution state ownership could not be verified.");
     }
-    let owned_by_current_user = !owner.is_null() && unsafe { EqualSid(owner, user) } != 0;
+    let owned_by_current_identity = owner_belongs_to_current_identity(owner, user, default_owner);
     unsafe {
         LocalFree(descriptor);
     }
-    if !owned_by_current_user {
+    if !owned_by_current_identity {
         return runtime_failure("Execution state ownership is unsafe.");
     }
     Ok(())
@@ -2066,8 +2072,10 @@ fn ensure_windows_private_dacl(file: &File) -> Result<()> {
         System::SystemServices::ACCESS_ALLOWED_ACE_TYPE,
     };
 
-    let token = current_user_token()?;
-    let user = token_user_sid(&token)?;
+    let user_token = current_user_token()?;
+    let user = token_user_sid(&user_token)?;
+    let default_owner_token = current_default_owner_token()?;
+    let default_owner = token_owner_sid(&default_owner_token)?;
     let mut owner = std::ptr::null_mut();
     let mut dacl = std::ptr::null_mut();
     let mut descriptor = std::ptr::null_mut();
@@ -2087,7 +2095,7 @@ fn ensure_windows_private_dacl(file: &File) -> Result<()> {
         return runtime_failure("Execution state ownership could not be verified.");
     }
     let result = (|| {
-        if owner.is_null() || dacl.is_null() || unsafe { EqualSid(owner, user) } == 0 {
+        if dacl.is_null() || !owner_belongs_to_current_identity(owner, user, default_owner) {
             return runtime_failure("Execution state ownership is unsafe.");
         }
         let mut information = ACL_SIZE_INFORMATION::default();
@@ -2125,9 +2133,26 @@ fn ensure_windows_private_dacl(file: &File) -> Result<()> {
 
 #[cfg(windows)]
 fn current_user_token() -> Result<Vec<u8>> {
+    use windows_sys::Win32::Security::{TokenUser, TOKEN_USER};
+
+    current_token_information(TokenUser, std::mem::size_of::<TOKEN_USER>())
+}
+
+#[cfg(windows)]
+fn current_default_owner_token() -> Result<Vec<u8>> {
+    use windows_sys::Win32::Security::{TokenOwner, TOKEN_OWNER};
+
+    current_token_information(TokenOwner, std::mem::size_of::<TOKEN_OWNER>())
+}
+
+#[cfg(windows)]
+fn current_token_information(
+    information_class: windows_sys::Win32::Security::TOKEN_INFORMATION_CLASS,
+    minimum_length: usize,
+) -> Result<Vec<u8>> {
     use windows_sys::Win32::{
         Foundation::CloseHandle,
-        Security::{GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER},
+        Security::{GetTokenInformation, TOKEN_QUERY},
         System::Threading::{GetCurrentProcess, OpenProcessToken},
     };
 
@@ -2138,16 +2163,22 @@ fn current_user_token() -> Result<Vec<u8>> {
     let result = (|| {
         let mut length = 0;
         unsafe {
-            GetTokenInformation(handle, TokenUser, std::ptr::null_mut(), 0, &mut length);
+            GetTokenInformation(
+                handle,
+                information_class,
+                std::ptr::null_mut(),
+                0,
+                &mut length,
+            );
         }
-        if length < std::mem::size_of::<TOKEN_USER>() as u32 {
+        if length < minimum_length as u32 {
             return runtime_failure("Current-user ownership could not be verified.");
         }
         let mut bytes = vec![0u8; length as usize];
         if unsafe {
             GetTokenInformation(
                 handle,
-                TokenUser,
+                information_class,
                 bytes.as_mut_ptr().cast(),
                 length,
                 &mut length,
@@ -2173,6 +2204,35 @@ fn token_user_sid(token: &[u8]) -> Result<windows_sys::Win32::Security::PSID> {
         return runtime_failure("Current-user ownership could not be verified.");
     }
     Ok(user.User.Sid)
+}
+
+#[cfg(windows)]
+fn token_owner_sid(token: &[u8]) -> Result<windows_sys::Win32::Security::PSID> {
+    use windows_sys::Win32::Security::TOKEN_OWNER;
+
+    let owner = unsafe { std::ptr::read_unaligned(token.as_ptr().cast::<TOKEN_OWNER>()) };
+    if owner.Owner.is_null() {
+        return runtime_failure("Current-user ownership could not be verified.");
+    }
+    Ok(owner.Owner)
+}
+
+#[cfg(windows)]
+fn owner_belongs_to_current_identity(
+    owner: windows_sys::Win32::Security::PSID,
+    user: windows_sys::Win32::Security::PSID,
+    default_owner: windows_sys::Win32::Security::PSID,
+) -> bool {
+    use windows_sys::Win32::Security::EqualSid;
+
+    if owner.is_null() {
+        return false;
+    }
+    // Elevated Windows tokens can create objects owned by TokenOwner (for
+    // example the Administrators group) rather than TokenUser. Accept only
+    // that token-declared alternative; the DACL remains an exact single ACE
+    // for TokenUser, so no inherited group access is retained.
+    unsafe { EqualSid(owner, user) != 0 || EqualSid(owner, default_owner) != 0 }
 }
 
 fn retryable_status(status: &ExitStatus, selected: &std::collections::BTreeSet<i32>) -> bool {
