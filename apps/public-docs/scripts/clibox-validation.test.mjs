@@ -127,3 +127,28 @@ test("stylesheet path exceptions accept only complete project routes", async () 
     await rm(file, { force: true });
   }
 });
+
+
+test("shared stylesheets reject raw credentials in comments and custom properties", async () => {
+  const file = path.join(fixtureDirectory, "doc_build/raw-credential-fixture.css");
+  try {
+    for (const [contents, hiddenValue] of [
+      ['/* Authorization: Bearer fixture-sensitive */', 'fixture-sensitive'],
+      [':root { --api-key: fixture-sensitive; }', 'fixture-sensitive'],
+      ['/* {"refresh_token":"fixture-sensitive"} */', 'fixture-sensitive'],
+      ['/* password: fixture-sensitive */', 'fixture-sensitive'],
+      ['/* GH_TOKEN=fixture-sensitive */', 'fixture-sensitive'],
+      ['/* DEVHUD_UPLOAD_SECRET=fixture-sensitive */', 'fixture-sensitive'],
+      ['/* ghp_fixture_sensitive */', 'ghp_fixture_sensitive'],
+      ['/* github_pat_fixture_sensitive */', 'github_pat_fixture_sensitive'],
+    ]) {
+      await writeFile(file, contents);
+      const result = validate(cleanValidator);
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.match(result.stderr, /raw-credential-fixture.css contains prohibited public content/u);
+      assert.ok(!result.stderr.includes(hiddenValue), "diagnostic exposed a rejected credential");
+    }
+  } finally {
+    await rm(file, { force: true });
+  }
+});

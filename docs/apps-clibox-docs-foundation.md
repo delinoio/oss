@@ -31,7 +31,7 @@ Markdown is committed source. Static output is ignored generated `apps/public-do
 
 ## Security
 
-Public pages describe supported user behavior, not repository architecture, private paths, or release operations. Public archive names, checksum/signature verification and exact signer identity are supported consumer interfaces. Validators reject credentials and internal paths in text, comments and resources, including encoded URLs and shared CSS. clibox path exceptions match complete public routes, not arbitrary paths under a project prefix.
+Public pages describe supported user behavior, not repository architecture, private paths, or release operations. Public archive names, checksum/signature verification and exact signer identity are supported consumer interfaces. Validators reject credentials and internal paths in text, comments and resources, including encoded URLs and raw shared CSS comments/custom properties as well as its parsed resource URLs. clibox path exceptions match complete public routes, not arbitrary paths under a project prefix.
 
 ## Logging
 

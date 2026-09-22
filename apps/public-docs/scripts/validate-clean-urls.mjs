@@ -581,7 +581,11 @@ for (const htmlFile of htmlFiles) {
 for (const cssFile of await collectCssFiles(outputDir)) {
   const contents = await readFile(cssFile, "utf8");
   const relativeFile = path.relative(outputDir, cssFile);
-  if (containsCredentialBearingResource(contents, cssFile) || containsForbiddenResourcePath(contents, cssFile)) {
+  if (
+    forbiddenContent.some((pattern) => pattern.test(contents))
+    || containsCredentialBearingResource(contents, cssFile)
+    || containsForbiddenResourcePath(contents, cssFile)
+  ) {
     failures.push(`${relativeFile} contains prohibited public content`);
   }
   for (const target of resourceTargets(contents)) {

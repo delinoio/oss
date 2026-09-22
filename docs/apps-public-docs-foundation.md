@@ -41,6 +41,7 @@
 
 ## Security
 - Public content must avoid leaking internal-only secrets or environment details. Shared HTML/CSS validators derive project-route exemptions from one explicit stable-route catalog; root directory routes may omit their trailing slash, but project prefixes never exempt arbitrary descendants.
+- Stylesheet validation applies the same raw credential patterns used for HTML to the complete CSS source, including comments and custom properties, in addition to parsed resource URL checks. Diagnostics identify only the output file and error classification.
 - Public content must avoid exposing internal architecture, operational, CI, or repository-layout details that are not part of a stable public contract.
 - Documentation publishing pipelines must use approved credentials only.
 
