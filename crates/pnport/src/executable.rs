@@ -308,6 +308,9 @@ fn check_signature(bytes: &[u8]) -> Result<()> {
     for i in 0..count {
         let start = number(bytes, 16 + i * 8)? as usize;
         let length = number(bytes, start + 4)? as usize;
+        if length < 8 {
+            return Err(invalid());
+        }
         let blob = bytes
             .get(start..start.checked_add(length).ok_or_else(invalid)?)
             .ok_or_else(invalid)?;
@@ -339,4 +342,21 @@ fn check_signature(bytes: &[u8]) -> Result<()> {
         return Err(protected());
     }
     Ok(())
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncated_entitlement_blob_is_rejected_without_panicking() {
+        let signature: Vec<u8> = [0xfade0cc0u32, 28, 1, 5, 20, 0xfade7171, 4]
+            .into_iter()
+            .flat_map(u32::to_be_bytes)
+            .collect();
+        assert_eq!(
+            check_signature(&signature).unwrap_err().code,
+            Code::PnportCommandNotExecutable
+        );
+    }
 }
