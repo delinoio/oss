@@ -1012,6 +1012,8 @@ struct OwnedChild {
     pid: u32,
     #[cfg(unix)]
     unix_ownership: UnixOwnership,
+    #[cfg(unix)]
+    foreground_terminal: Option<ForegroundTerminal>,
     #[cfg(windows)]
     job: Job,
     completions: mpsc::Receiver<Result<Completion>>,
@@ -1033,10 +1035,18 @@ enum UnixOwnership {
     DirectChild,
 }
 
+#[cfg(unix)]
+struct ForegroundTerminal {
+    parent_group: libc::pid_t,
+    child_group: libc::pid_t,
+}
+
 fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
     let mut command = environment::command(plan)?;
     #[cfg(unix)]
     let unix_ownership = unix_ownership();
+    #[cfg(unix)]
+    let foreground_parent_group = foreground_parent_group(unix_ownership, &mode)?;
     #[cfg(unix)]
     {
         // Descendant clibox wrappers must keep their workloads in this
@@ -1076,6 +1086,18 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
         stage = "started",
         "run_child"
     );
+    #[cfg(unix)]
+    let foreground_terminal = match foreground_parent_group {
+        Some(parent_group) => match ForegroundTerminal::transfer(parent_group, child.id()) {
+            Ok(terminal) => Some(terminal),
+            Err(error) => {
+                let _ = signal_process_group(child.id(), true);
+                let _ = child.wait();
+                return Err(error);
+            }
+        },
+        None => None,
+    };
     #[cfg(windows)]
     let job = match Job::attach(&child) {
         Ok(job) => job,
@@ -1123,6 +1145,8 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
         pid,
         #[cfg(unix)]
         unix_ownership,
+        #[cfg(unix)]
+        foreground_terminal,
         #[cfg(windows)]
         job,
         completions,
@@ -1265,12 +1289,113 @@ impl OwnedChild {
 }
 
 #[cfg(unix)]
+impl Drop for OwnedChild {
+    fn drop(&mut self) {
+        if let Some(terminal) = self.foreground_terminal.take() {
+            terminal.restore();
+        }
+    }
+}
+
+#[cfg(unix)]
 fn unix_ownership() -> UnixOwnership {
     if env::var_os(PARENT_WRAPPER_MARKER).is_some_and(|value| value == "1") {
         UnixOwnership::DirectChild
     } else {
         UnixOwnership::ProcessGroup
     }
+}
+
+#[cfg(unix)]
+fn foreground_parent_group(
+    ownership: UnixOwnership,
+    mode: &OutputMode,
+) -> Result<Option<libc::pid_t>> {
+    if !matches!(ownership, UnixOwnership::ProcessGroup)
+        || matches!(mode, OutputMode::Service)
+        || unsafe { libc::isatty(libc::STDIN_FILENO) } == 0
+    {
+        return Ok(None);
+    }
+    let foreground_group = unsafe { libc::tcgetpgrp(libc::STDIN_FILENO) };
+    if foreground_group == -1 {
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() == Some(libc::ENOTTY) {
+            return Ok(None);
+        }
+        return Err(Failure::io(&error));
+    }
+    let parent_group = unsafe { libc::getpgrp() };
+    if parent_group <= 0 {
+        return Err(Failure::new(
+            Code::IoFailed,
+            "Could not identify the wrapper's terminal process group.",
+        ));
+    }
+    Ok((foreground_group == parent_group).then_some(parent_group))
+}
+
+#[cfg(unix)]
+impl ForegroundTerminal {
+    fn transfer(parent_group: libc::pid_t, child_pid: u32) -> Result<Self> {
+        let child_group = child_pid as libc::pid_t;
+        set_terminal_foreground_group(child_group).map_err(|error| Failure::io(&error))?;
+        if let Err(error) = continue_process_group(child_pid) {
+            let _ = set_terminal_foreground_group(parent_group);
+            return Err(error);
+        }
+        Ok(Self {
+            parent_group,
+            child_group,
+        })
+    }
+
+    fn restore(&self) {
+        if unsafe { libc::tcgetpgrp(libc::STDIN_FILENO) } != self.child_group {
+            return;
+        }
+        if set_terminal_foreground_group(self.parent_group).is_err() {
+            tracing::debug!(
+                operation = "run",
+                child_group = self.child_group,
+                stage = "terminal_restore_failed",
+                "run_cleanup"
+            );
+        }
+    }
+}
+
+#[cfg(unix)]
+fn set_terminal_foreground_group(group: libc::pid_t) -> io::Result<()> {
+    // A completed workload leaves the wrapper in a background group until its
+    // terminal is restored. Block SIGTTOU in this thread around tcsetpgrp so
+    // restoration cannot stop the wrapper before it returns control to the
+    // invoking shell.
+    unsafe {
+        let mut blocked = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+        if libc::sigemptyset(blocked.as_mut_ptr()) == -1
+            || libc::sigaddset(blocked.as_mut_ptr(), libc::SIGTTOU) == -1
+        {
+            return Err(io::Error::last_os_error());
+        }
+        let mut original = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+        let blocked_result =
+            libc::pthread_sigmask(libc::SIG_BLOCK, blocked.as_ptr(), original.as_mut_ptr());
+        if blocked_result != 0 {
+            return Err(io::Error::from_raw_os_error(blocked_result));
+        }
+        let result = libc::tcsetpgrp(libc::STDIN_FILENO, group);
+        let operation_error = io::Error::last_os_error();
+        let restore_result =
+            libc::pthread_sigmask(libc::SIG_SETMASK, original.as_ptr(), std::ptr::null_mut());
+        if restore_result != 0 {
+            return Err(io::Error::from_raw_os_error(restore_result));
+        }
+        if result == -1 {
+            return Err(operation_error);
+        }
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -1373,6 +1498,18 @@ fn resume_suspended_process(child: &Child) -> Result<()> {
 fn signal_process_group(pid: u32, force: bool) -> Result<()> {
     let signal = if force { libc::SIGKILL } else { libc::SIGTERM };
     let result = unsafe { libc::kill(-(pid as i32), signal) };
+    if result == -1 {
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() != Some(libc::ESRCH) {
+            return Err(Failure::io(&error));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn continue_process_group(pid: u32) -> Result<()> {
+    let result = unsafe { libc::kill(-(pid as i32), libc::SIGCONT) };
     if result == -1 {
         let error = io::Error::last_os_error();
         if error.raw_os_error() != Some(libc::ESRCH) {

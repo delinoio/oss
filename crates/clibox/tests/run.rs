@@ -1,5 +1,7 @@
 #![cfg(unix)]
 
+#[cfg(target_os = "linux")]
+use std::os::{fd::FromRawFd, unix::process::CommandExt};
 use std::{
     fs,
     io::{Read, Write},
@@ -17,6 +19,58 @@ fn command(home: &std::path::Path, args: &[&str]) -> Command {
     #[cfg(target_os = "macos")]
     command.env_remove("XDG_STATE_HOME");
     command
+}
+
+#[cfg(target_os = "linux")]
+fn terminal_command(home: &std::path::Path, args: &[&str]) -> (Command, fs::File) {
+    let mut master = -1;
+    let mut slave = -1;
+    assert_eq!(
+        unsafe {
+            libc::openpty(
+                &mut master,
+                &mut slave,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        },
+        0
+    );
+    let master = unsafe { fs::File::from_raw_fd(master) };
+    let slave = unsafe { fs::File::from_raw_fd(slave) };
+    let mut command = command(home, args);
+    command
+        .stdin(Stdio::from(slave.try_clone().unwrap()))
+        .stdout(Stdio::from(slave.try_clone().unwrap()))
+        .stderr(Stdio::from(slave));
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1
+                || libc::ioctl(libc::STDIN_FILENO, libc::TIOCSCTTY as _, 0) == -1
+            {
+                Err(std::io::Error::last_os_error())
+            } else {
+                Ok(())
+            }
+        });
+    }
+    (command, master)
+}
+
+#[cfg(target_os = "linux")]
+fn read_terminal(mut terminal: fs::File) -> String {
+    let mut output = Vec::new();
+    let mut buffer = [0; 1024];
+    loop {
+        match terminal.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(count) => output.extend_from_slice(&buffer[..count]),
+            Err(error) if error.raw_os_error() == Some(libc::EIO) => break,
+            Err(error) => panic!("could not read the test terminal: {error}"),
+        }
+    }
+    String::from_utf8(output).unwrap()
 }
 
 #[test]
@@ -212,6 +266,31 @@ fn timeout_terminates_a_silent_workload() {
     .output()
     .unwrap();
     assert_eq!(output.status.code(), Some(124));
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn interactive_workload_keeps_foreground_terminal_access() {
+    let home = tempfile::tempdir().unwrap();
+    let (mut wrapper, mut terminal) = terminal_command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--timeout",
+            "1s",
+            "--kill-after",
+            "0",
+            "--",
+            "sh",
+            "-c",
+            "read value; printf 'reply=%s\\n' \"$value\"",
+        ],
+    );
+    let mut wrapper = wrapper.spawn().unwrap();
+    terminal.write_all(b"answer\n").unwrap();
+    assert!(wrapper.wait().unwrap().success());
+    assert!(read_terminal(terminal).contains("reply=answer"));
 }
 
 #[test]

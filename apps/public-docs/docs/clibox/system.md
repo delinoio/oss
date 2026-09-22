@@ -69,7 +69,7 @@ Service probes use only absolute HTTP(S) URLs without user information. Redirect
 
 `with-retry` defaults to three total attempts, a `1s` initial delay, a backoff factor of `2`, a `30s` maximum delay, and full jitter. Use `--retry-exit-code CODE` one or more times to retry only those nonzero numeric exit statuses. It never replays stdin and does not retry startup failures or Unix signal termination. `--timeout 0` disables the wrapper's overall retry deadline.
 
-`with-timeout` requires a positive `--timeout` or `--idle-timeout`. The first bounds total runtime; the second resets whenever the workload writes bytes to stdout or stderr. Output is forwarded promptly, but a workload's interactive TTY identity is not guaranteed. Set either limit to `0` only to disable that individual limit while the other remains positive.
+`with-timeout` requires a positive `--timeout` or `--idle-timeout`. The first bounds total runtime; the second resets whenever the workload writes bytes to stdout or stderr. Output is forwarded promptly. In a foreground Unix terminal, a workload that inherits stdin remains the foreground terminal process group, so interactive prompts and reads work normally. Set either limit to `0` only to disable that individual limit while the other remains positive.
 
 ## Inspect and terminate port owners
 
