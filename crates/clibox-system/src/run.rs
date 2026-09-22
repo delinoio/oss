@@ -924,6 +924,11 @@ fn forward(
                 Ok(0) | Err(_) => return,
                 Ok(count) => count,
             };
+            // A successful read is workload activity even when a slow consumer
+            // blocks forwarding these bytes for longer than the idle limit.
+            if let Some(sender) = &activity {
+                let _ = sender.try_send(());
+            }
             let write = if stderr {
                 io::stderr().lock().write_all(&buffer[..count])
             } else {
@@ -931,9 +936,6 @@ fn forward(
             };
             if write.is_err() {
                 return;
-            }
-            if let Some(sender) = &activity {
-                let _ = sender.try_send(());
             }
         }
     })
