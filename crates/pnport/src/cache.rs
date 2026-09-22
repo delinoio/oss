@@ -173,7 +173,6 @@ impl Cache {
         let mut hasher = Sha256::new();
         std::io::copy(&mut file, &mut hasher).map_err(|_| archive_error())?;
         let identity = format!("{:x}", hasher.finalize());
-        file.seek(SeekFrom::Start(0)).map_err(|_| archive_error())?;
         let _guard = self.lock()?;
         let destination = self.root.join(FORMAT).join(&identity);
         if !destination.exists() {
@@ -188,7 +187,11 @@ impl Cache {
                 .map_err(|_| cache_error())?;
             let content = stage.path().join("content");
             fs::create_dir(&content).map_err(|_| cache_error())?;
-            extract(file, &content)?;
+            // A package manager can rewrite the open archive between hashing
+            // and extraction. Extract only the private bytes whose digest was
+            // checked, so even a change-and-restore race cannot poison a key.
+            let snapshot = snapshot_archive(&mut file, stage.path(), &identity)?;
+            extract(snapshot, &content)?;
             let receipt = Receipt {
                 owner: "pnport".into(),
                 cleanup_version: 1,
@@ -481,6 +484,36 @@ fn safe_relative(name: &str) -> Result<PathBuf> {
     }
     Ok(path)
 }
+fn snapshot_archive(source: &mut File, directory: &Path, identity: &str) -> Result<File> {
+    source
+        .seek(SeekFrom::Start(0))
+        .map_err(|_| archive_error())?;
+    let mut snapshot = tempfile::tempfile_in(directory).map_err(|_| cache_error())?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let count = source.read(&mut buffer).map_err(|_| archive_error())?;
+        if count == 0 {
+            break;
+        }
+        snapshot
+            .write_all(&buffer[..count])
+            .map_err(|_| cache_error())?;
+        hasher.update(&buffer[..count]);
+    }
+    if format!("{:x}", hasher.finalize()) != identity {
+        tracing::debug!(
+            action = "archive_changed",
+            "Archive changed before extraction; refusing cache publication"
+        );
+        return Err(archive_error());
+    }
+    snapshot
+        .seek(SeekFrom::Start(0))
+        .map_err(|_| cache_error())?;
+    Ok(snapshot)
+}
+
 fn extract(file: File, destination: &Path) -> Result<()> {
     let mut archive = zip::ZipArchive::new(file).map_err(|_| archive_error())?;
     let mut links = vec![];
@@ -579,4 +612,64 @@ pub fn archive_identity(path: &Path) -> Result<String> {
 
 pub fn path_identity(path: &Path) -> String {
     digest(path.to_string_lossy().as_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn archive_bytes(contents: &[u8]) -> Vec<u8> {
+        let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        archive
+            .start_file(
+                "node_modules/dep/file.txt",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+        archive.write_all(contents).unwrap();
+        archive.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn rewritten_archive_cannot_be_extracted_under_the_original_digest() {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("source.zip");
+        let original = archive_bytes(b"original");
+        fs::write(&archive, &original).unwrap();
+        let mut source = File::open(&archive).unwrap();
+        let identity = archive_identity(&archive).unwrap();
+        // Rewrite the same inode after the identity read, as a concurrent
+        // package manager could do while the materializer waits for its lock.
+        fs::write(&archive, archive_bytes(b"modified")).unwrap();
+        let staging = tempfile::tempdir().unwrap();
+        assert!(snapshot_archive(&mut source, staging.path(), &identity).is_err());
+        assert_eq!(fs::read_dir(staging.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn archive_rewrite_and_restore_cannot_change_the_extraction_snapshot() {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("source.zip");
+        let original = archive_bytes(b"original");
+        fs::write(&archive, &original).unwrap();
+        let mut source = File::open(&archive).unwrap();
+        let staging = tempfile::tempdir().unwrap();
+        let mut snapshot =
+            snapshot_archive(&mut source, staging.path(), &digest(&original)).unwrap();
+        fs::write(&archive, archive_bytes(b"modified")).unwrap();
+        let content = staging.path().join("content");
+        fs::create_dir(&content).unwrap();
+        let mut bytes = Vec::new();
+        snapshot.read_to_end(&mut bytes).unwrap();
+        assert_eq!(digest(&bytes), digest(&original));
+        snapshot.seek(SeekFrom::Start(0)).unwrap();
+        extract(snapshot, &content).unwrap();
+        fs::write(&archive, &original).unwrap();
+        assert_eq!(
+            fs::read(content.join("node_modules/dep/file.txt")).unwrap(),
+            b"original"
+        );
+        assert_eq!(archive_identity(&archive).unwrap(), digest(&original));
+        assert_eq!(fs::read_dir(staging.path()).unwrap().count(), 1);
+    }
 }
