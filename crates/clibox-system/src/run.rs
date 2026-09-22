@@ -2001,19 +2001,53 @@ fn machine_identity() -> Result<Vec<u8>> {
 
 #[cfg(windows)]
 fn machine_identity() -> Result<Vec<u8>> {
-    use std::ffi::CStr;
+    use windows_sys::Win32::{
+        Foundation::ERROR_SUCCESS,
+        System::Registry::{RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ},
+    };
 
-    use windows_sys::Win32::System::WindowsProgramming::{GetCurrentHwProfileA, HW_PROFILE_INFOA};
-
-    let mut profile = HW_PROFILE_INFOA::default();
-    if unsafe { GetCurrentHwProfileA(&mut profile) } == 0 {
-        return Err(Failure::io(&io::Error::last_os_error()));
+    let key = wide("SOFTWARE\\Microsoft\\Cryptography");
+    let name = wide("MachineGuid");
+    let mut value = [0u16; 64];
+    let mut value_bytes = std::mem::size_of_val(&value) as u32;
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_LOCAL_MACHINE,
+            key.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            value.as_mut_ptr().cast(),
+            &mut value_bytes,
+        )
+    };
+    if status != ERROR_SUCCESS {
+        return Err(Failure::io(&io::Error::from_raw_os_error(status as i32)));
     }
-    let identity = unsafe { CStr::from_ptr(profile.szHwProfileGuid.as_ptr().cast()) }.to_bytes();
-    if identity.is_empty() {
+    let value_len = usize::try_from(value_bytes)
+        .ok()
+        .filter(|length| length % std::mem::size_of::<u16>() == 0)
+        .map(|length| length / std::mem::size_of::<u16>())
+        .filter(|&length| length > 0 && length <= value.len())
+        .ok_or_else(|| Failure::new(Code::IoFailed, "The local machine identity is invalid."))?;
+    let value = value[..value_len]
+        .strip_suffix(&[0])
+        .unwrap_or(&value[..value_len]);
+    let identity = String::from_utf16(value)
+        .map_err(|_| Failure::new(Code::IoFailed, "The local machine identity is invalid."))?;
+    if identity.is_empty()
+        || !identity
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() || matches!(byte, b'-' | b'{' | b'}'))
+    {
         return runtime_failure("The local machine identity is invalid.");
     }
-    Ok(identity.to_vec())
+    Ok(identity.into_bytes())
+}
+
+#[cfg(windows)]
+fn wide(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 fn ensure_private_dir(path: &Path) -> Result<()> {
