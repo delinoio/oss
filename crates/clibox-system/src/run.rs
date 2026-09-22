@@ -1810,7 +1810,8 @@ impl StateKey {
             Namespace::Lock => "lock",
             Namespace::Rate => "rate",
         };
-        let digest = hash_key(kind, scope.scope, &identity, name);
+        let machine = machine_identity()?;
+        let digest = hash_key(kind, scope.scope, &machine, &identity, name);
         let namespace_root = root.join(match namespace {
             Namespace::Lock => "locks",
             Namespace::Rate => "buckets",
@@ -1930,7 +1931,7 @@ fn canonical_project(project_dir: Option<&Path>) -> Result<Vec<u8>> {
     Ok(actual.into_os_string().as_encoded_bytes().to_vec())
 }
 
-fn hash_key(kind: &str, scope: Scope, identity: &[u8], name: &str) -> String {
+fn hash_key(kind: &str, scope: Scope, machine: &[u8], identity: &[u8], name: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(kind.as_bytes());
     hasher.update([0]);
@@ -1939,10 +1940,55 @@ fn hash_key(kind: &str, scope: Scope, identity: &[u8], name: &str) -> String {
         Scope::User => b"user".as_slice(),
     });
     hasher.update([0]);
+    hasher.update(machine);
+    hasher.update([0]);
     hasher.update(identity);
     hasher.update([0]);
     hasher.update(name.as_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+#[cfg(target_os = "linux")]
+fn machine_identity() -> Result<Vec<u8>> {
+    let value = fs::read_to_string("/etc/machine-id").map_err(|error| Failure::io(&error))?;
+    let value = value.trim_end();
+    if value.len() != 32 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return runtime_failure("The local machine identity is invalid.");
+    }
+    Ok(value.as_bytes().to_vec())
+}
+
+#[cfg(target_os = "macos")]
+fn machine_identity() -> Result<Vec<u8>> {
+    let mut identity = [0u8; 16];
+    let timeout = libc::timespec {
+        tv_sec: 1,
+        tv_nsec: 0,
+    };
+    if unsafe { libc::gethostuuid(identity.as_mut_ptr(), &timeout) } != 0 {
+        return Err(Failure::io(&io::Error::last_os_error()));
+    }
+    if identity.iter().all(|byte| *byte == 0) {
+        return runtime_failure("The local machine identity is invalid.");
+    }
+    Ok(identity.to_vec())
+}
+
+#[cfg(windows)]
+fn machine_identity() -> Result<Vec<u8>> {
+    use std::ffi::CStr;
+
+    use windows_sys::Win32::System::WindowsProgramming::{GetCurrentHwProfileA, HW_PROFILE_INFOA};
+
+    let mut profile = HW_PROFILE_INFOA::default();
+    if unsafe { GetCurrentHwProfileA(&mut profile) } == 0 {
+        return Err(Failure::io(&io::Error::last_os_error()));
+    }
+    let identity = unsafe { CStr::from_ptr(profile.szHwProfileGuid.as_ptr().cast()) }.to_bytes();
+    if identity.is_empty() {
+        return runtime_failure("The local machine identity is invalid.");
+    }
+    Ok(identity.to_vec())
 }
 
 fn ensure_private_dir(path: &Path) -> Result<()> {
@@ -2877,5 +2923,30 @@ mod lifecycle_tests {
         assert!(service_exited_before_workload(start, Some(later)));
         assert!(!service_exited_before_workload(later, Some(start)));
         assert!(!service_exited_before_workload(start, Some(start)));
+    }
+}
+
+#[cfg(test)]
+mod state_key_tests {
+    use super::*;
+
+    #[test]
+    fn machine_identity_namespaces_coordination_keys() {
+        let first = hash_key(
+            "lock",
+            Scope::Project,
+            b"machine-one",
+            b"project",
+            "migration",
+        );
+        let second = hash_key(
+            "lock",
+            Scope::Project,
+            b"machine-two",
+            b"project",
+            "migration",
+        );
+
+        assert_ne!(first, second);
     }
 }
