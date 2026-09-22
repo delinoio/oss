@@ -4,15 +4,13 @@
 //! planning remains in `environment` so every workload, including a managed
 //! service, keeps the exact `run env` assignment and executable lookup rules.
 
-#[cfg(windows)]
-use std::process::Child;
 use std::{
     env,
     ffi::OsString,
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
     path::{Path, PathBuf},
-    process::{Command as ProcessCommand, ExitStatus, Stdio},
+    process::{Child, Command as ProcessCommand, ExitStatus, Stdio},
     sync::{mpsc, Arc},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -1013,7 +1011,7 @@ struct OwnedChild {
     #[cfg(unix)]
     unix_ownership: UnixOwnership,
     #[cfg(unix)]
-    foreground_terminal: Option<ForegroundTerminal>,
+    foreground_terminal: Option<Arc<ForegroundTerminal>>,
     #[cfg(windows)]
     job: Job,
     completions: mpsc::Receiver<Result<Completion>>,
@@ -1089,7 +1087,7 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
     #[cfg(unix)]
     let foreground_terminal = match foreground_parent_group {
         Some(parent_group) => match ForegroundTerminal::transfer(parent_group, child.id()) {
-            Ok(terminal) => Some(terminal),
+            Ok(terminal) => Some(Arc::new(terminal)),
             Err(error) => {
                 let _ = signal_process_group(child.id(), true);
                 let _ = child.wait();
@@ -1131,7 +1129,12 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
     }
     let pid = child.id();
     let (completion_tx, completions) = mpsc::sync_channel(1);
+    #[cfg(unix)]
+    let completion_terminal = foreground_terminal.clone();
     thread::spawn(move || {
+        #[cfg(unix)]
+        let completion = wait_for_completion(child, completion_terminal);
+        #[cfg(not(unix))]
         let completion = child
             .wait()
             .map(|status| Completion {
@@ -1298,6 +1301,43 @@ impl Drop for OwnedChild {
 }
 
 #[cfg(unix)]
+fn wait_for_completion(
+    child: Child,
+    foreground_terminal: Option<Arc<ForegroundTerminal>>,
+) -> Result<Completion> {
+    use std::os::unix::process::ExitStatusExt;
+
+    let pid = child.id() as libc::pid_t;
+    // waitpid owns reaping from this point. Keeping std::process::Child would
+    // add no supervision capability, and dropping it never terminates a child.
+    drop(child);
+    loop {
+        let mut status = 0;
+        let observed = unsafe { libc::waitpid(pid, &mut status, libc::WUNTRACED) };
+        if observed == -1 {
+            let error = io::Error::last_os_error();
+            if error.kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(Failure::io(&error));
+        }
+        if libc::WIFSTOPPED(status) {
+            if let Some(terminal) = &foreground_terminal {
+                terminal.suspend_wrapper()?;
+            }
+            continue;
+        }
+        if libc::WIFEXITED(status) || libc::WIFSIGNALED(status) {
+            return Ok(Completion {
+                status: ExitStatus::from_raw(status),
+                observed_at: Instant::now(),
+            });
+        }
+        return runtime_failure("Owned child reported an unsupported process state.");
+    }
+}
+
+#[cfg(unix)]
 fn unix_ownership() -> UnixOwnership {
     if env::var_os(PARENT_WRAPPER_MARKER).is_some_and(|value| value == "1") {
         UnixOwnership::DirectChild
@@ -1362,6 +1402,20 @@ impl ForegroundTerminal {
                 "run_cleanup"
             );
         }
+    }
+
+    fn suspend_wrapper(&self) -> Result<()> {
+        // Ctrl+Z is delivered to the foreground child group, not to this
+        // wrapper. Observe that stop with waitpid, return terminal ownership
+        // to the wrapper's job, then stop the wrapper as well. Once the shell
+        // continues the wrapper, put the child back in the foreground and
+        // continue its separate process group before waiting again.
+        set_terminal_foreground_group(self.parent_group).map_err(|error| Failure::io(&error))?;
+        if unsafe { libc::raise(libc::SIGTSTP) } != 0 {
+            return Err(Failure::io(&io::Error::last_os_error()));
+        }
+        set_terminal_foreground_group(self.child_group).map_err(|error| Failure::io(&error))?;
+        continue_process_group(self.child_group as u32)
     }
 }
 

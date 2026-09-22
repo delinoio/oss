@@ -73,6 +73,13 @@ fn read_terminal(mut terminal: fs::File) -> String {
     String::from_utf8(output).unwrap()
 }
 
+#[cfg(target_os = "linux")]
+fn terminal_foreground_group(terminal: &fs::File) -> libc::pid_t {
+    let group = unsafe { libc::tcgetpgrp(std::os::fd::AsRawFd::as_raw_fd(terminal)) };
+    assert_ne!(group, -1, "could not read the foreground terminal group");
+    group
+}
+
 #[test]
 fn rate_limit_uses_shared_hashed_state_and_zero_wait_is_immediate() {
     let home = tempfile::tempdir().unwrap();
@@ -288,6 +295,65 @@ fn interactive_workload_keeps_foreground_terminal_access() {
         ],
     );
     let mut wrapper = wrapper.spawn().unwrap();
+    terminal.write_all(b"answer\n").unwrap();
+    assert!(wrapper.wait().unwrap().success());
+    assert!(read_terminal(terminal).contains("reply=answer"));
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn interactive_workload_stop_suspends_and_resumes_the_wrapper_job() {
+    let home = tempfile::tempdir().unwrap();
+    let (mut wrapper, mut terminal) = terminal_command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--timeout",
+            "5s",
+            "--kill-after",
+            "0",
+            "--",
+            "sh",
+            "-c",
+            "read value; printf 'reply=%s\\n' \"$value\"",
+        ],
+    );
+    let mut wrapper = wrapper.spawn().unwrap();
+    let wrapper_group = wrapper.id() as libc::pid_t;
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    let child_group = loop {
+        let group = terminal_foreground_group(&terminal);
+        if group != wrapper_group {
+            break group;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "workload did not receive terminal ownership"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(unsafe { libc::kill(-child_group, libc::SIGTSTP) }, 0);
+
+    let mut stopped = 0;
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        assert_eq!(terminal_foreground_group(&terminal), wrapper_group);
+        let observed =
+            unsafe { libc::waitpid(wrapper_group, &mut stopped, libc::WUNTRACED | libc::WNOHANG) };
+        if observed == wrapper_group {
+            assert!(libc::WIFSTOPPED(stopped));
+            break;
+        }
+        assert_eq!(observed, 0, "wrapper exited before it suspended");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "wrapper did not suspend after the workload stopped"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    assert_eq!(unsafe { libc::kill(wrapper_group, libc::SIGCONT) }, 0);
     terminal.write_all(b"answer\n").unwrap();
     assert!(wrapper.wait().unwrap().success());
     assert!(read_terminal(terminal).contains("reply=answer"));
