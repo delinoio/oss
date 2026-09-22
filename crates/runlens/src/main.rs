@@ -335,11 +335,14 @@ async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
             right,
             mappings,
             output,
-        } => print_analysis(
-            analysis::compare(&report::read(&left)?, &report::read(&right)?, &mappings)?,
-            output,
-            false,
-        ),
+        } => {
+            let reports = read_reports(&[left, right])?;
+            print_analysis(
+                analysis::compare(&reports[0], &reports[1], &mappings)?,
+                output,
+                false,
+            )
+        }
         Commands::Receipt {
             report: path,
             output,
@@ -375,14 +378,16 @@ async fn run(cli: Cli, cancel: CancellationToken) -> Result<i32> {
                 },
         } => {
             let config = load_config(cli.config.as_deref(), &root)?;
-            let baseline = baseline.map(|path| report::read(&path)).transpose()?;
+            let mut paths = vec![path];
+            paths.extend(baseline);
+            let reports = read_reports(&paths)?;
             print_analysis(
                 analysis::policy(
-                    &report::read(&path)?,
+                    &reports[0],
                     &config.policy,
                     &config.commands,
                     &runlens::privacy::command_identities(&config, &root, &[])?,
-                    baseline.as_ref(),
+                    reports.get(1),
                 )?,
                 output,
                 true,

@@ -7005,3 +7005,36 @@ fn deleted_descriptor_identity_cannot_pass_exact_read_policy() {
         }
     }
 }
+
+#[test]
+fn compare_and_policy_bound_combined_report_bytes_before_parsing() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("runlens.toml"), "schema_version=1\n").unwrap();
+    // Sparse invalid reports prove that aggregate preflight precedes parsing.
+    // Neither file alone exceeds the per-report limit.
+    for name in ["left.json", "right.json"] {
+        fs::File::create(root.path().join(name))
+            .unwrap()
+            .set_len(runlens::report::MAX_REPORT_BYTES / 2 + 1)
+            .unwrap();
+    }
+    for args in [
+        vec!["compare", "left.json", "right.json", "--json"],
+        vec![
+            "policy",
+            "check",
+            "left.json",
+            "--baseline",
+            "right.json",
+            "--json",
+        ],
+    ] {
+        let result = invoke(root.path(), &args);
+        assert_eq!(result.status.code(), Some(2), "{result:?}");
+        assert!(
+            String::from_utf8_lossy(&result.stderr).contains("combined report inputs exceed 1 GiB"),
+            "{result:?}"
+        );
+        assert!(result.stdout.is_empty());
+    }
+}

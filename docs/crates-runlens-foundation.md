@@ -912,3 +912,5 @@ Windows EA queries use the same independent handle-read boundary as file-informa
 macOS flag mutation coverage includes lchflags on symlinks and missing paths, with native-result parity and independent external write-denial tests.
 
 Linux deleted descriptor resolution fails closed, including actual filenames ending in the ambiguous procfs suffix. Dynamic and static fstat regressions preserve native results while exact read policies cannot pass.
+
+The 1 GiB aggregate input bound applies to compare, policy with a baseline, explain, and conflicts. Sparse oversized-pair regressions ensure compare and policy reject before JSON parsing.

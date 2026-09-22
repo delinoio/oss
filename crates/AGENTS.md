@@ -355,3 +355,5 @@
 - macOS lchflags records writes to the symlink leaf without following it, preserving flags, errors and native results.
 
 - Linux procfs descriptor/cwd names ending in ` (deleted)` are ambiguous and must mark collection incomplete; never strip the suffix to invent a policy identity.
+
+- Every offline multi-report command, including compare and policy baselines, preflights the shared 1 GiB aggregate file-size bound before parsing any report.
