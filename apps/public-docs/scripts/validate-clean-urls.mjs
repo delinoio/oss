@@ -1,6 +1,7 @@
 import { access, readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { decodeHTML } from "entities";
+import { projectRoutes } from "./project-routes.mjs";
 
 const cliboxHeadings = {
   "/clibox/releases": [
@@ -87,7 +88,7 @@ const cliboxHeadings = {
 };
 
 const stableRouteIds = [
-  ...Object.keys(cliboxHeadings),
+  ...Object.entries(projectRoutes).flatMap(([slug, routes]) => routes.map((route) => `/${slug}${route}`)),
   "/",
   "/getting-started",
   "/projects-overview",
@@ -105,13 +106,13 @@ const stableRouteIds = [
   "/derun",
   "/with-watch",
 ];
-const projectSlugs = ["runmoor", "nodeup", "binpm", "async-commit-hook"];
+const projectSlugs = Object.keys(projectRoutes).filter((slug) => slug !== "clibox");
 
 const outputDir = path.resolve("doc_build");
 const stableRoutePathPattern = stableRouteIds
   .filter((routeId) => routeId !== "/")
   .sort((left, right) => right.length - left.length)
-  .map((routeId) => routeId.slice(1).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
+  .map((routeId) => RegExp.escape(routeId.slice(1)).replace(/\/$/u, "/?"))
   .join("|");
 const routeOutputFiles = stableRouteIds.map((routeId) => ({
   routeId,
@@ -400,7 +401,7 @@ function publicPathText(text, htmlFile) {
   return text;
 }
 // The terminal boundary must apply to every alternative, not just static assets.
-const allowedPublicPathPattern = `(?:${stableRoutePathPattern}|(?:${projectSlugs.join("|")})(?:[/\\\\][A-Za-z0-9._~-]+)*(?:[/\\\\])?|(?:assets|static)(?:[/\\\\][A-Za-z0-9._~-]+)*)`;
+const allowedPublicPathPattern = `(?:${stableRoutePathPattern}|(?:assets|static)(?:[/\\\\][A-Za-z0-9._~-]+)*)`;
 const forbiddenPathContent = [
   new RegExp(`(?:^|[\\s("'\\x60>])/(?!${allowedPublicPathPattern}(?:\\.html)?(?:[?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
   /(?:^|[\s("'`>])(?:\.\.[\\/])+(?:[A-Za-z0-9._~-]+[\\/])+[^\s"'`<>]*/u,

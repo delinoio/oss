@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
+import { projectRoutes } from "./project-routes.mjs";
 
 let fixtureDirectory;
 const cleanValidator = fileURLToPath(new URL("./validate-clean-urls.mjs", import.meta.url));
@@ -99,6 +100,28 @@ test("shared CSS applies credential and clean-route checks", async () => {
       assert.equal(result.status, 1);
       assert.match(result.stderr, /clibox-fixture.css contains (?:prohibited public content|a non-clean route)/u);
       assert.ok(!result.stderr.includes('fixture-sensitive'));
+    }
+  } finally {
+    await rm(file, { force: true });
+  }
+});
+
+
+test("stylesheet path exceptions accept only complete project routes", async () => {
+  const file = path.join(fixtureDirectory, "doc_build/route-fixture.css");
+  try {
+    const routes = Object.entries(projectRoutes).flatMap(([slug, children]) => children.map((route) => `/${slug}${route}`));
+    await writeFile(file, routes.map((route) => `@import "${route}#section";`).join("\n"));
+    const accepted = validate(cleanValidator);
+    assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
+    for (const slug of Object.keys(projectRoutes)) {
+      for (const target of [`/${slug}/private-fixture.css`, `/${slug}/internal/secret.png`, `/${slug}/commands/private.png`, `/${slug}/%69nternal/secret.png`]) {
+        await writeFile(file, `.x { background: url("${target}") }`);
+        const rejected = validate(cleanValidator);
+        assert.equal(rejected.status, 1, `${target}: ${rejected.stdout}${rejected.stderr}`);
+        assert.match(rejected.stderr, /route-fixture.css contains prohibited public content/u);
+        assert.ok(!rejected.stderr.includes(target), "diagnostic exposed a rejected path");
+      }
     }
   } finally {
     await rm(file, { force: true });

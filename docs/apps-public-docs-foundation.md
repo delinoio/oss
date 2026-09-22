@@ -40,7 +40,7 @@
 - Build artifacts are generated in `apps/public-docs/doc_build`, including the five project subpaths, and the complete tree is published through the single `public-docs` Cloudflare Pages project.
 
 ## Security
-- Public content must avoid leaking internal-only secrets or environment details.
+- Public content must avoid leaking internal-only secrets or environment details. Shared HTML/CSS validators derive project-route exemptions from one explicit stable-route catalog; root directory routes may omit their trailing slash, but project prefixes never exempt arbitrary descendants.
 - Public content must avoid exposing internal architecture, operational, CI, or repository-layout details that are not part of a stable public contract.
 - Documentation publishing pipelines must use approved credentials only.
 

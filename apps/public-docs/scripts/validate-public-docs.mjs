@@ -1,5 +1,6 @@
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
+import { projectRoutes } from "./project-routes.mjs";
 
 const outputDirectory = path.resolve("doc_build");
 const retiredOrigins = [
@@ -8,13 +9,7 @@ const retiredOrigins = [
   "https://binpm.delino.io",
   "https://ach.delino.io",
 ];
-const projectRoutes = {
-  clibox: ["/releases", "/troubleshooting", "/commands", "/output", "/install", "/migration", "/getting-started", "/transformations", "/", "/configuration", "/system", "/wait"],
-  runmoor: ["/", "/install", "/configuration", "/commands", "/docker", "/tart", "/operations"],
-  nodeup: ["/", "/installation", "/getting-started", "/commands", "/runtime-resolution", "/shims-and-package-managers", "/output", "/completions", "/releases", "/troubleshooting", "/reference"],
-  binpm: ["/", "/installation", "/getting-started", "/commands", "/local-tooling", "/cache-and-verification", "/releases", "/troubleshooting", "/reference"],
-  "async-commit-hook": ["/", "/install", "/start", "/configuration", "/validation", "/commands", "/agents", "/web", "/privacy", "/recovery", "/compatibility", "/symlinks", "/existing-hooks"],
-};
+
 const selectorDestinations = ["/", "/runmoor/", "/nodeup/", "/binpm/", "/async-commit-hook/", "/clibox/"];
 const projectSecuritySlugs = new Set(["runmoor", "async-commit-hook"]);
 const forbiddenProjectContent = [
