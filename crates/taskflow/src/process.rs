@@ -608,8 +608,12 @@ pub(crate) async fn capture_task_process(
     )
     .await;
     let cleanup = container.cleanup().await;
-    let (output, status) = result?;
+    // Cleanup proves that the probe owner is gone. If that proof fails, it
+    // takes precedence over the command result so callers cannot replace an
+    // unverified container or misclassify its cancellation as an ordinary
+    // probe error.
     cleanup?;
+    let (output, status) = result?;
     Ok((output.stdout, status))
 }
 
