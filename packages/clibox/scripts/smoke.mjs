@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createServer } from "node:net";
 import path from "node:path";
@@ -28,7 +28,14 @@ try {
   for (const manager of ["npm", "pnpm"]) {
     const consumer = path.join(directory, manager);
     mkdirSync(consumer, { recursive: true });
-    writeFileSync(path.join(consumer, "package.json"), JSON.stringify({ name: "clibox-smoke", private: true, scripts: { check: "clibox --version" }, dependencies: { [main.name]: `file:${path.join(output, "tarballs", main.filename)}`, [native.name]: `file:${path.join(output, "tarballs", native.filename)}` } }, null, 2));
+    const nativeTarball = `file:${path.join(output, "tarballs", native.filename)}`;
+    // pnpm can resolve the launcher's exact-version optional dependency
+    // separately from the direct file dependency. Pin both to this test's
+    // artifact so offline validation never needs a published native tarball.
+    // Remove this override only when the supported pnpm version deduplicates
+    // the transitive dependency to the supplied file tarball without it.
+    const consumerOverrides = manager === "pnpm" ? { pnpm: { overrides: { [native.name]: nativeTarball } } } : {};
+    writeFileSync(path.join(consumer, "package.json"), JSON.stringify({ name: "clibox-smoke", private: true, scripts: { check: "clibox --version" }, dependencies: { [main.name]: `file:${path.join(output, "tarballs", main.filename)}`, [native.name]: nativeTarball }, ...consumerOverrides }, null, 2));
     // Local tarballs exercise the published package boundary without registry
     // credentials or any dependency on an already-published clibox version.
     const run = (args) => manager === "npm" ? npm(args, { cwd: consumer }) : execFileSync(process.execPath, [process.env.npm_execpath, ...args], { cwd: consumer, encoding: "utf8", stdio: "pipe" });
@@ -81,7 +88,7 @@ try {
     equal(invoke(["base64", "encode", "--text", "abc", "--output", "./-"]), "", "Installed literal dash file leaked stdout");
     equal(readFileSync(path.join(consumer, "-")), "YWJj", "Installed literal dash file failed");
     for (const args of [
-      ["run", "env"], ["port", "which"], ["hash", "encode"],
+      ["port", "which"], ["hash", "encode"],
       ["base64", "encode", "--force"],
       ["yaml", "normalize", "--output", "-", "--force"],
       ["port", "list", "80", "--pids", "--quiet"],
@@ -89,6 +96,12 @@ try {
     ]) {
       const rejected = spawnSync(process.execPath, [launcher, ...args], { cwd: consumer, encoding: "utf8", input: "", env: { ...process.env, RUST_LOG: "off" } });
       ensure(rejected.status === 2 && rejected.stdout === "" && rejected.stderr.includes("--help"), `${manager} consistency rejection failed`);
+    }
+    const removedOutput = path.join(consumer, "PRIVATE-OUTPUT");
+    for (const RUST_LOG of ["off", "trace"]) {
+      const rejected = spawnSync(process.execPath, [launcher, "env", "run", "SECRET=PRIVATE-VALUE", "--", process.execPath, "-e", 'require("node:fs").writeFileSync(process.argv[1], "PRIVATE-ARG")', removedOutput], { cwd: consumer, encoding: "utf8", env: { ...process.env, RUST_LOG } });
+      ensure(rejected.status === 2 && rejected.stdout === "" && rejected.stderr.includes("env run was renamed; use clibox run env --help."), `${manager} environment migration guidance failed`);
+      ensure(!rejected.stderr.includes("PRIVATE") && !existsSync(removedOutput), `${manager} removed environment command leaked input or launched a child`);
     }
     // Keep a test-owned listener bound throughout inspection; never kill or
     // release/reacquire a port that another concurrent test could inherit.
@@ -103,7 +116,7 @@ try {
     } finally {
       await new Promise((resolve) => listener.close(resolve));
     }
-    for (const group of ["env", "port", "clipboard", "wait", "text", "time", "base64", "hash", "dotenv", "yaml"]) {
+    for (const group of ["run", "port", "clipboard", "wait", "text", "time", "base64", "hash", "dotenv", "yaml"]) {
       const missing = spawnSync(process.execPath, [launcher, group], { cwd: consumer, encoding: "utf8" });
       ensure(missing.status === 2 && missing.stdout === "" && missing.stderr.includes(`Usage: ${target.binary} ${group}`) && missing.stderr.includes("Commands:"), `${manager} ${group} missing-subcommand help smoke failed`);
     }
@@ -113,11 +126,11 @@ try {
     ensure(ready.kind === "file" && ready.status === "ready" && ready.attempts === 1 && ready.error === null, `${manager} readiness smoke failed`);
     const fixture = path.join(consumer, "utility-check.cjs");
     writeFileSync(fixture, "if (process.env.CLIBOX_TEST_EXIT) process.exit(37); process.stdout.write(JSON.stringify({ value: process.env.CLIBOX_TEST_VALUE, args: process.argv.slice(2) }));");
-    const utility = JSON.parse(execFileSync(process.execPath, [launcher, "env", "run", "CLIBOX_TEST_VALUE=unicode 🦀", "--", process.execPath, fixture, "", "two words", "a&b|c"], { cwd: consumer, encoding: "utf8" }));
+    const utility = JSON.parse(execFileSync(process.execPath, [launcher, "run", "env", "CLIBOX_TEST_VALUE=unicode 🦀", "--", process.execPath, fixture, "", "two words", "a&b|c"], { cwd: consumer, encoding: "utf8" }));
     ensure(utility.value === "unicode 🦀" && JSON.stringify(utility.args) === JSON.stringify(["", "two words", "a&b|c"]), `${manager} utility argv/environment smoke failed`);
     let delegatedStatus;
     try {
-      execFileSync(process.execPath, [launcher, "env", "run", "CLIBOX_TEST_EXIT=1", "--", process.execPath, fixture], { cwd: consumer, stdio: "pipe" });
+      execFileSync(process.execPath, [launcher, "run", "env", "CLIBOX_TEST_EXIT=1", "--", process.execPath, fixture], { cwd: consumer, stdio: "pipe" });
     } catch (error) { delegatedStatus = error.status; }
     ensure(delegatedStatus === 37, `${manager} utility exit propagation failed`);
     const installed = JSON.parse(readFileSync(path.join(consumer, "node_modules", native.name, "package.json"), "utf8"));

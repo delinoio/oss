@@ -21,7 +21,7 @@ fn color_choice() -> clap::ColorChoice {
         "Diagnostics use stderr, omit sensitive inputs, and honor RUST_LOG and NO_COLOR.\n",
         "Exit codes: 0 success, 1 operation failure, 2 invalid input,\n",
         "130 Ctrl+C/Windows Ctrl+Break, 143 Unix SIGTERM.\n",
-        "env run preserves the child command's exit status and termination signals.\n\n",
+        "run env preserves the child command's exit status and termination signals.\n\n",
         "Version: ", env!("CARGO_PKG_VERSION"), "\n",
         "Maintained by: ", env!("CARGO_PKG_AUTHORS"), "\n",
         "Repository: ", env!("CARGO_PKG_REPOSITORY"), "\n",
@@ -58,7 +58,7 @@ pub fn parser_message(kind: clap::error::ErrorKind, raw: &[std::ffi::OsString]) 
     let group = raw.get(1).and_then(|value| value.to_str());
     let operation = raw.get(2).and_then(|value| value.to_str());
     let migration = match (group, operation) {
-        (Some("run"), Some("env")) => Some("run env was renamed; use clibox env run --help."),
+        (Some("env"), Some("run")) => Some("env run was renamed; use clibox run env --help."),
         (Some("port"), Some("which")) => {
             Some("port which was renamed; use clibox port list --help.")
         }
@@ -71,7 +71,7 @@ pub fn parser_message(kind: clap::error::ErrorKind, raw: &[std::ffi::OsString]) 
         return message.to_owned();
     }
     let command = match (group, operation) {
-        (Some("env"), Some("run")) => "clibox env run",
+        (Some("run"), Some("env")) => "clibox run env",
         (Some("port"), Some("list")) => "clibox port list",
         (Some("port"), Some("kill")) => "clibox port kill",
         (Some("clipboard"), Some("copy")) => "clibox clipboard copy",
@@ -89,7 +89,7 @@ pub fn parser_message(kind: clap::error::ErrorKind, raw: &[std::ffi::OsString]) 
         (Some("wait"), Some("tcp")) => "clibox wait tcp",
         (Some("wait"), Some("http")) => "clibox wait http",
         (Some("wait"), Some("file")) => "clibox wait file",
-        (Some("env"), _) => "clibox env",
+        (Some("run"), _) => "clibox run",
         (Some("port"), _) => "clibox port",
         (Some("open"), _) => "clibox open",
         (Some("clipboard"), _) => "clibox clipboard",

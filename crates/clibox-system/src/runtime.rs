@@ -108,7 +108,7 @@ pub fn delegated(mut command: Command) -> Result<ExitStatus> {
              supported argument encoding.",
         )
     })?;
-    tracing::debug!(operation = "env-run", pid = child.id(), "Child started");
+    tracing::debug!(operation = "run-env", pid = child.id(), "Child started");
     loop {
         let signal = SIGNAL.swap(0, Ordering::SeqCst);
         if signal != 0 {
