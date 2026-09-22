@@ -89,11 +89,7 @@ export default defineConfig({
     cleanUrls: true,
   },
   themeConfig: {
-    nav: [
-      ...homePages,
-      ...productPages,
-      { text: "Project Docs", items: projectPages },
-    ],
+    nav: [],
     sidebar: {
       "/": [
         { text: "Get Started", items: homePages.slice(0, 2) },
