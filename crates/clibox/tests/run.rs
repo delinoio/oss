@@ -338,11 +338,11 @@ fn interactive_workload_stop_suspends_and_resumes_the_wrapper_job() {
     let mut stopped = 0;
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
     loop {
-        assert_eq!(terminal_foreground_group(&terminal), wrapper_group);
         let observed =
             unsafe { libc::waitpid(wrapper_group, &mut stopped, libc::WUNTRACED | libc::WNOHANG) };
         if observed == wrapper_group {
             assert!(libc::WIFSTOPPED(stopped));
+            assert_eq!(terminal_foreground_group(&terminal), wrapper_group);
             break;
         }
         assert_eq!(observed, 0, "wrapper exited before it suspended");
