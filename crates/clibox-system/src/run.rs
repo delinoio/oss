@@ -32,6 +32,7 @@ const POLL: Duration = Duration::from_millis(20);
 const CLEANUP_CONFIRMATION: Duration = Duration::from_secs(5);
 const STATE_VERSION: u8 = 1;
 const MAX_EXACT_TOKEN_COUNT: u64 = 1 << 53;
+const MAX_BUCKET_STATE_BYTES: u64 = 4 * 1024;
 
 #[derive(Subcommand)]
 pub enum Command {
@@ -2223,14 +2224,22 @@ fn read_bucket(path: &Path, limit: u64, period: Duration, burst: u64, now: i64) 
         Ok(mut file) => {
             let metadata = file.metadata().map_err(|error| Failure::io(&error))?;
             ensure_safe_state_metadata(&metadata)?;
+            if metadata.len() > MAX_BUCKET_STATE_BYTES {
+                return runtime_failure("Execution rate-limit state is malformed or unsupported.");
+            }
             #[cfg(windows)]
             {
                 ensure_windows_state_object(&file, false)?;
                 ensure_windows_private_dacl(&file)?;
             }
-            let mut bytes = Vec::new();
-            file.read_to_end(&mut bytes)
+            let mut bytes = Vec::with_capacity((MAX_BUCKET_STATE_BYTES + 1) as usize);
+            Read::by_ref(&mut file)
+                .take(MAX_BUCKET_STATE_BYTES + 1)
+                .read_to_end(&mut bytes)
                 .map_err(|error| Failure::io(&error))?;
+            if bytes.len() as u64 > MAX_BUCKET_STATE_BYTES {
+                return runtime_failure("Execution rate-limit state is malformed or unsupported.");
+            }
             serde_json::from_slice::<Bucket>(&bytes).map_err(|_| {
                 Failure::new(
                     Code::IoFailed,
@@ -2971,6 +2980,28 @@ mod rate_limit_tests {
 
         let error = match read_bucket(&path, 1, Duration::from_secs(1), 1, 0) {
             Ok(_) => panic!("overflowing state must be rejected"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.code, Code::IoFailed);
+    }
+
+    #[test]
+    fn oversized_bucket_state_fails_before_deserialization() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("bucket.json");
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(&path)
+            .unwrap();
+        file.write_all(&vec![b'x'; (MAX_BUCKET_STATE_BYTES + 1) as usize])
+            .unwrap();
+        drop(file);
+
+        let error = match read_bucket(&path, 1, Duration::from_secs(1), 1, 0) {
+            Ok(_) => panic!("oversized state must be rejected"),
             Err(error) => error,
         };
 
