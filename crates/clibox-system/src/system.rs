@@ -155,31 +155,31 @@ pub fn execute(command: Action, leading_separator: bool, raw: &[OsString]) -> Re
         }
         Action::Run {
             command: Run::WithRateLimit(options),
-        } => match run::execute(run::Command::WithRateLimit(options), raw)? {
+        } => match run::execute(run::Command::RateLimit(options), raw)? {
             run::Outcome::Child(status) => runtime::exit_child(status),
             run::Outcome::Code(code) => return Ok(code),
         },
         Action::Run {
             command: Run::WithLock(options),
-        } => match run::execute(run::Command::WithLock(options), raw)? {
+        } => match run::execute(run::Command::Lock(options), raw)? {
             run::Outcome::Child(status) => runtime::exit_child(status),
             run::Outcome::Code(code) => return Ok(code),
         },
         Action::Run {
             command: Run::WithService(options),
-        } => match run::execute(run::Command::WithService(options), raw)? {
+        } => match run::execute(run::Command::Service(options), raw)? {
             run::Outcome::Child(status) => runtime::exit_child(status),
             run::Outcome::Code(code) => return Ok(code),
         },
         Action::Run {
             command: Run::WithRetry(options),
-        } => match run::execute(run::Command::WithRetry(options), raw)? {
+        } => match run::execute(run::Command::Retry(options), raw)? {
             run::Outcome::Child(status) => runtime::exit_child(status),
             run::Outcome::Code(code) => return Ok(code),
         },
         Action::Run {
             command: Run::WithTimeout(options),
-        } => match run::execute(run::Command::WithTimeout(options), raw)? {
+        } => match run::execute(run::Command::Timeout(options), raw)? {
             run::Outcome::Child(status) => runtime::exit_child(status),
             run::Outcome::Code(code) => return Ok(code),
         },

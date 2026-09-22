@@ -44,7 +44,7 @@ pub enum Command {
                       codes: 124 admission timeout, 2 invalid arguments, 1 wrapper failure; \
                       natural child status is preserved."
     )]
-    WithRateLimit(RateLimit),
+    RateLimit(RateLimit),
     /// Run one workload while holding a shared local exclusive lock.
     #[command(
         name = "with-lock",
@@ -53,14 +53,14 @@ pub enum Command {
                       indefinitely. Exit codes: 75 locked/fail, 0 locked/skip, 124 wait timeout, \
                       2 invalid arguments, 1 wrapper failure; natural child status is preserved."
     )]
-    WithLock(Lock),
+    Lock(Lock),
     /// Wait for HTTP readiness before running a workload, optionally owning a
     /// service.
     #[command(
         name = "with-service",
         after_help = "Examples:\n  clibox run with-service http://127.0.0.1:3000/health -- npm test\n  clibox run with-service http://127.0.0.1:3000/health --service node server.js -- npm test\n\nA managed service is started only after a retryable not-ready preflight. The first standalone -- after --service separates service arguments from the workload; -- inside service arguments is unsupported. External services are never terminated. Exit codes: 124 readiness timeout, 2 invalid arguments, 1 wrapper failure; natural child status is preserved."
     )]
-    WithService(Service),
+    Service(Service),
     /// Retry a workload after eligible nonzero numeric exit statuses.
     #[command(
         name = "with-retry",
@@ -70,7 +70,7 @@ pub enum Command {
                       are not retried. Exit codes: 124 overall timeout, 2 invalid arguments, 1 \
                       wrapper failure; the final child status is preserved."
     )]
-    WithRetry(Retry),
+    Retry(Retry),
     /// Bound a workload's total runtime and optional output-idle interval.
     #[command(
         name = "with-timeout",
@@ -79,7 +79,7 @@ pub enum Command {
                       forwarded immediately, but workload TTY identity is not guaranteed. A \
                       timeout exits 124 after bounded cleanup."
     )]
-    WithTimeout(Timeout),
+    Timeout(Timeout),
 }
 
 #[derive(Args)]
@@ -229,25 +229,25 @@ pub(crate) enum Outcome {
 
 pub(crate) fn execute(command: Command, raw: &[OsString]) -> Result<Outcome> {
     match command {
-        Command::WithRateLimit(mut options) => {
+        Command::RateLimit(mut options) => {
             options.workload.restore_leading_separator(raw, false);
             rate_limit(options)
         }
-        Command::WithLock(mut options) => {
+        Command::Lock(mut options) => {
             options.workload.restore_leading_separator(raw, false);
             with_lock(options)
         }
-        Command::WithService(mut options) => {
+        Command::Service(mut options) => {
             options
                 .workload
                 .restore_leading_separator(raw, options.service.is_some());
             with_service(options)
         }
-        Command::WithRetry(mut options) => {
+        Command::Retry(mut options) => {
             options.workload.restore_leading_separator(raw, false);
             with_retry(options)
         }
-        Command::WithTimeout(mut options) => {
+        Command::Timeout(mut options) => {
             options.workload.restore_leading_separator(raw, false);
             with_timeout(options)
         }
@@ -1394,7 +1394,7 @@ fn state_root() -> Result<PathBuf> {
             }
             return runtime_failure("XDG_STATE_HOME must be an absolute path.");
         }
-        return home_dir().map(|home| home.join(".local").join("state").join("clibox").join("run"));
+        home_dir().map(|home| home.join(".local").join("state").join("clibox").join("run"))
     }
     #[cfg(target_os = "macos")]
     {
