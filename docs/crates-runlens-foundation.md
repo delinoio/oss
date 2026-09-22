@@ -909,6 +909,8 @@ The Windows descriptor-metadata native fixture canonicalizes its one external te
 
 Windows EA queries use the same independent handle-read boundary as file-information queries. Native fixtures compare query status for valid, bad-buffer, invalid-handle and pipe cases without retaining attribute names or values.
 
+Kernel-confirmed pipe/character handles have no filesystem identity in relative-root resolution or information mutations either. Type inspection preserves last-error and excludes its own native queries; unknown/invalid handles remain fail-closed. The descriptor metadata fixture includes pipe creation alone, a relative pipe operation, and pipe-mode mutation, alongside metadata/EA queries. These cases compare native results and must preserve complete collection without introducing file-read evidence. This follows Microsoft's [GetFileType classification](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfiletype) and [anonymous pipe implementation](https://learn.microsoft.com/en-us/windows/win32/ipc/anonymous-pipe-operations).
+
 macOS flag mutation coverage includes lchflags on symlinks and missing paths, with native-result parity and independent external write-denial tests.
 
 Linux deleted descriptor resolution fails closed, including actual filenames ending in the ambiguous procfs suffix. Dynamic and static fstat regressions preserve native results while exact read policies cannot pass.

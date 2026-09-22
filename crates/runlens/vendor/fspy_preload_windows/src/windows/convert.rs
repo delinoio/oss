@@ -8,7 +8,7 @@ use winapi::{
 };
 
 use crate::windows::winapi_utils::{
-    access_mask_to_mode, combine_paths, get_path_name,
+    access_mask_to_mode, combine_paths, get_path_name, is_non_filesystem_handle,
 };
 
 pub trait ToAccessMode: Debug {
@@ -65,6 +65,11 @@ impl ToAbsolutePath for POBJECT_ATTRIBUTES {
         if is_absolute {
             f(Some(fname_str))
         } else {
+            // CreatePipe can open an endpoint relative to a pipe handle.
+            // Its lack of a DOS path is not a lost filesystem observation.
+            if unsafe { is_non_filesystem_handle(root) } {
+                return f(None);
+            }
             // SAFETY: the kernel validates the copied handle value.
             let Ok(mut root_dir) = (unsafe { get_path_name(root) }) else {
                 // A valid NT operation can outlive failed normalized-name lookup

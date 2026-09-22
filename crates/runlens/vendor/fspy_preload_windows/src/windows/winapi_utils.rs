@@ -50,6 +50,19 @@ impl Drop for PathResolutionGuard {
     fn drop(&mut self) { RESOLVING_PATH.set(self.0); }
 }
 
+pub unsafe fn is_non_filesystem_handle(handle: HANDLE) -> bool {
+    // A pipe/character handle has no filesystem identity. Classify it before
+    // normalized-name lookup, including relative NT opens during CreatePipe.
+    // Unknown or invalid handles must still take the fail-closed path. Keep
+    // collector-owned type queries out of evidence and preserve last-error.
+    let _guard = PathResolutionGuard(RESOLVING_PATH.replace(true));
+    let saved_error = unsafe { windows_sys::Win32::Foundation::GetLastError() };
+    let kind = unsafe { winapi::um::fileapi::GetFileType(handle) };
+    unsafe { windows_sys::Win32::Foundation::SetLastError(saved_error) };
+    kind == winapi::um::winbase::FILE_TYPE_PIPE
+        || kind == winapi::um::winbase::FILE_TYPE_CHAR
+}
+
 pub unsafe fn get_path_name(handle: HANDLE) -> winsafe::SysResult<SmallVec<u16, MAX_PATH>> {
     let _guard = PathResolutionGuard(RESOLVING_PATH.replace(true));
     let mut path = SmallVec::<u16, MAX_PATH>::new();

@@ -195,7 +195,7 @@ pub fn handle_metadata(path: &str, mode: &str) {
         let mut handle = file.as_raw_handle().cast();
         let mut read_pipe = ptr::null_mut();
         let mut write_pipe = ptr::null_mut();
-        if mode == "pipe" {
+        if mode.starts_with("pipe") {
             assert_ne!(
                 winapi::um::namedpipeapi::CreatePipe(
                     &mut read_pipe,
@@ -222,7 +222,26 @@ pub fn handle_metadata(path: &str, mode: &str) {
                 FileStandardInformation,
             )
         };
-        let status = if ea {
+        let status = if mode == "pipe-open-only" {
+            // Isolate endpoint creation from subsequent metadata queries.
+            0
+        } else if mode == "pipe-set" {
+            let mut pipe: ntapi::ntioapi::FILE_PIPE_INFORMATION = mem::zeroed();
+            ntapi::ntioapi::NtSetInformationFile(
+                read_pipe,
+                &mut io,
+                (&mut pipe as *mut ntapi::ntioapi::FILE_PIPE_INFORMATION).cast(),
+                mem::size_of_val(&pipe) as u32,
+                ntapi::ntioapi::FilePipeInformation,
+            )
+        } else if mode == "pipe-relative" {
+            // The NT object manager validates this relative pipe operation;
+            // the collector must not require a DOS filesystem path for it.
+            let mut attributes: winapi::shared::ntdef::OBJECT_ATTRIBUTES = mem::zeroed();
+            attributes.Length = mem::size_of_val(&attributes) as u32;
+            attributes.RootDirectory = read_pipe;
+            ntapi::ntioapi::NtQueryAttributesFile(&mut attributes, &mut basic)
+        } else if ea {
             ntapi::ntioapi::NtQueryEaFile(
                 handle,
                 &mut io,
@@ -252,7 +271,7 @@ pub fn handle_metadata(path: &str, mode: &str) {
             )
         };
         println!("status={status}");
-        if !ea && matches!(mode, "standard" | "basic") {
+        if !ea && matches!(mode, "standard" | "basic" | "pipe-set") {
             assert!(status >= 0);
         }
         if mode == "invalid-handle" || (!ea && mode == "bad-buffer") {

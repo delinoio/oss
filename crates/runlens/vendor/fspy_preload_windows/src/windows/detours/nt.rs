@@ -561,9 +561,7 @@ unsafe fn observe_handle_read(handle: HANDLE) {
                 // SAFETY: handle inspection is kernel-validated. Retain Win32
                 // last-error state as well as the original NT result.
                 let saved_error = unsafe { windows_sys::Win32::Foundation::GetLastError() };
-                let kind = unsafe { winapi::um::fileapi::GetFileType(handle) };
-                if kind != winapi::um::winbase::FILE_TYPE_PIPE
-                    && kind != winapi::um::winbase::FILE_TYPE_CHAR {
+                if !unsafe { crate::windows::winapi_utils::is_non_filesystem_handle(handle) } {
                     let observed = unsafe { handle.to_absolute_path(|path| {
                         if let Some(path) = path {
                             global_client().send(PathAccess {
@@ -635,7 +633,8 @@ static DETOUR_NT_SET_INFORMATION_FILE: Detour<
         ) -> NTSTATUS {
             use fspy_shared::windows_access::{information_mutation, InformationMutation};
             let mutation = information_mutation(class);
-            if mutation != InformationMutation::HandleOnly {
+            if mutation != InformationMutation::HandleOnly
+                && !unsafe { crate::windows::winapi_utils::is_non_filesystem_handle(handle) } {
                 // Resolve before deletion/rename invalidates the old name. An
                 // unresolved handle or destination must not silently disappear.
                 let observed = unsafe { handle.to_absolute_path(|path| {
