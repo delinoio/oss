@@ -22,6 +22,8 @@ Dependency content and virtual directories are read-only. Project source/output 
 
 Virtual dependency entries expose matching symlink type and target-byte length through `lstat` and `fstatat(..., AT_SYMLINK_NOFOLLOW)`, including directory-relative handles. Following `fstatat` calls expose the target directory; ordinary files and missing paths keep native metadata/error behavior.
 
+`dlopen(NULL, flags)` delegates directly to the native loader's process/global symbol namespace. Named library paths continue through filesystem translation; the null form is not a path error.
+
 Inherit cwd, environment and stdio. Never capture child output; stdout remains suitable for language-server protocols. Preserve literal arguments and child status. Owned failures use 2 (arguments), 127 (not found), 126 (not executable), or 125 (initialization/runtime/restart). Structured stable codes disambiguate owned failures from child status. Signals use conventional signal-derived status.
 
 Graph-data or active archive changes/deletion require restart and tree termination. Source edits use native watch behavior. Cancellation and runtime failures request graceful termination, wait five seconds, then terminate/reap remaining descendants. Detached descendants cannot survive the supervisor. No normal timeout or automatic retry. Injection is tree-scoped, with explicit capability errors; no protected-executable replacement or privilege escalation.

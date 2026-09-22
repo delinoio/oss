@@ -1,4 +1,5 @@
 #include <dirent.h>
+#include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -12,6 +13,10 @@
 
 int main(int argc, char **argv) {
     if (argc != 3 || strcmp(argv[1], "") || strcmp(argv[2], "literal;$() argument")) return 20;
+    void *main_program = dlopen(NULL, RTLD_LAZY);
+    if (!main_program) return 41;
+    if (!dlsym(main_program, "malloc")) return 42;
+    if (dlclose(main_program)) return 43;
     struct stat info;
     if (stat("node_modules/dep/file.txt", &info) || info.st_size != 13) return 21;
     int fd = open("node_modules/dep/file.txt", O_RDONLY);

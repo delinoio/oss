@@ -365,7 +365,15 @@ path_hook!(rmdir, pnport_rmdir, (path:*const c_char) -> c_int, true, -1);
 path_hook!(mkdir, pnport_mkdir, (path:*const c_char, mode:mode_t) -> c_int, true, -1);
 path_hook!(chmod, pnport_chmod, (path:*const c_char, mode:mode_t) -> c_int, true, -1);
 path_hook!(truncate, pnport_truncate, (path:*const c_char, length:off_t) -> c_int, true, -1);
-path_hook!(dlopen, pnport_dlopen, (path:*const c_char, flags:c_int) -> *mut c_void, false, ptr::null_mut());
+hook!(dlopen, pnport_dlopen, (path:*const c_char,flags:c_int) -> *mut c_void, {
+    let original = original!(dlopen, unsafe extern "C" fn(*const c_char,c_int)->*mut c_void);
+    // NULL requests the process/global symbol namespace, not a filesystem path.
+    if path.is_null() { return original(path,flags); }
+    let Some(_guard) = Guard::enter() else { return original(path,flags); };
+    if RUNTIME.get().is_none() { return original(path,flags); }
+    let (path,_) = translated!(path,AT_FDCWD,false,ptr::null_mut());
+    original(path.as_ptr(),flags)
+});
 
 unsafe fn virtual_link_metadata(output: *mut stat, translation: &Translation) {
     if translation.virtual_link {
