@@ -13,6 +13,7 @@ const productPages = [
   { text: "Cargo Mono", link: "/cargo-mono" },
   { text: "Derun", link: "/derun" },
   { text: "With Watch", link: "/with-watch" },
+  { text: "TaskFlow", link: "/taskflow", activeMatch: "^/taskflow" },
 ];
 
 const runmoorPages = [
@@ -94,6 +95,16 @@ export default defineConfig({
       "/": [
         { text: "Get Started", items: homePages.slice(0, 2) },
         { text: "Reference", items: homePages.slice(2) },
+        {
+          text: "TaskFlow",
+          items: [
+            { text: "Overview and Installation", link: "/taskflow" },
+            { text: "Configuration", link: "/taskflow/configuration" },
+            { text: "Commands and Sessions", link: "/taskflow/commands" },
+            { text: "Caching and Secrets", link: "/taskflow/cache" },
+            { text: "Sharding and CI", link: "/taskflow/ci" },
+          ],
+        },
         {
           text: "Developer Utility",
           items: [

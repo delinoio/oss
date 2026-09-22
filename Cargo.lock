@@ -2183,6 +2183,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "790eea4361631c5e7d22598ecd5723ff611904e3344ce8720784c93e3d83d40b"
 
 [[package]]
+name = "cron"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5877d3fbf742507b66bc2a1945106bd30dd8504019d596901ddd012a4dd01740"
+dependencies = [
+ "chrono",
+ "once_cell",
+ "winnow 0.6.26",
+]
+
+[[package]]
 name = "crossbeam-channel"
 version = "0.5.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2936,6 +2947,12 @@ dependencies = [
  "selectors 0.36.1",
  "tendril 0.5.1",
 ]
+
+[[package]]
+name = "dotenvy"
+version = "0.15.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
 name = "downcast-rs"
@@ -10585,6 +10602,43 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "591ef38edfb78ca4771ee32cf494cb8771944bee237a9b91fc9c1424ac4b777b"
 
 [[package]]
+name = "taskflow"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "base64 0.22.1",
+ "cargo-platform 0.3.3",
+ "cc",
+ "chrono",
+ "chrono-tz",
+ "clap",
+ "cron",
+ "dotenvy",
+ "futures",
+ "globset",
+ "hmac",
+ "nix",
+ "notify",
+ "predicates",
+ "reqwest 0.12.28",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "toml 0.8.23",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "walkdir",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "tauri"
 version = "2.11.5"
 source = "git+https://github.com/tauri-apps/tauri?rev=4af26a3f7f8b692d62cca549bbacd93f5ce90b41#4af26a3f7f8b692d62cca549bbacd93f5ce90b41"
@@ -11295,6 +11349,7 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
+ "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2",
@@ -13439,6 +13494,15 @@ name = "winnow"
 version = "0.5.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f593a95398737aeed53e489c785df13f3618e41dbcd6718c6addbf1395aa6876"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
+name = "winnow"
+version = "0.6.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e90edd2ac1aa278a5c4599b1d89cf03074b610800f866d4026dc199d7929a28"
 dependencies = [
  "memchr",
 ]

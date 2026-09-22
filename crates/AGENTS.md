@@ -7,6 +7,8 @@
 
 ### Scope in This Domain
 
+- `crates/taskflow`: Rust TaskFlow graph and command engine, CLI `tflow`, governed by `docs/crates-taskflow-foundation.md`. Do not infer command tasks, compiler actions, or native package edges from names. Preserve task causes, output ownership, masked logs, and complete process cleanup across local and CI execution.
+
 - `crates/binpm`: Rust-based Node-free binary package manager for release assets.
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
 - `crates/clibox`: non-publishable Rust executable distributed through npm and native packages.
@@ -38,6 +40,8 @@
 - Keep proc-macro crates and runtime crates separated by explicit crate boundaries.
 
 ### nodeup-Specific Rules
+
+- Resolver test fixtures must retain an owning `TempDir` guard and clean only that directory; never derive cleanup scope by traversing parents of a data/cache/config path.
 
 - Preserve rustup-like shim behavior: symlink strategy plus executable-name dispatch.
 - Keep `nodeup shim setup` as the stable idempotent setup/repair command for managed `node`, `npm`, `npx`, `yarn`, and `pnpm` shims.

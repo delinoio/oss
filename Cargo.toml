@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/taskflow",
     "apps/devhud/src-tauri",
     "crates/devhud-native-messaging-host",
     "crates/binpm",

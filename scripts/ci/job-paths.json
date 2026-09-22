@@ -540,6 +540,30 @@
       "scripts/install/async-commit-hook.*"
     ]
   },
+  "taskflow-conformance": {
+    "paths": [
+      ".cargo/**",
+      "Cargo.lock",
+      "Cargo.toml",
+      "crates/taskflow/**",
+      "docs/*taskflow*",
+      "go.mod",
+      "go.sum",
+      "rust-toolchain",
+      "rust-toolchain.toml"
+    ]
+  },
+  "taskflow-docker": {
+    "paths": [
+      ".cargo/**",
+      "Cargo.lock",
+      "Cargo.toml",
+      "crates/taskflow/**",
+      "docs/*taskflow*",
+      "rust-toolchain",
+      "rust-toolchain.toml"
+    ]
+  },
   "node-clibox-test": {
     "paths": [
       ".nvmrc",

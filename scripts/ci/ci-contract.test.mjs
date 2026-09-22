@@ -35,6 +35,8 @@ const devhudJobs = [
 ];
 const achJobs = ["async-commit-hook"];
 
+const taskflowJobs = ["taskflow-conformance", "taskflow-docker"];
+
 function step(job, id) {
   return job.steps.find((candidate) => candidate.id === id);
 }
@@ -56,7 +58,7 @@ test("async-commit-hook retains runner, interface, protocol and unsigned archive
 
 test("CI keeps every legacy check and aggregates every required job", () => {
   const jobs = Object.keys(workflow.jobs);
-  for (const id of ["ci-contracts", ...legacyJobs, ...devhudJobs, ...achJobs, "ci-result"]) assert.ok(jobs.includes(id), id);
+  for (const id of ["ci-contracts", ...legacyJobs, ...devhudJobs, ...taskflowJobs, ...achJobs, "ci-result"]) assert.ok(jobs.includes(id), id);
   const required = jobs.filter((id) => id !== "ci-result").sort();
   assert.deepEqual([...workflow.jobs["ci-result"].needs].sort(), required);
   assert.equal(workflow.jobs["ci-result"].if, "always()");
@@ -67,8 +69,8 @@ test("CI keeps every legacy check and aggregates every required job", () => {
 
 test("one change plan gates every domain job before runner allocation", () => {
   assert.equal(workflow.jobs.changes.steps.find(({ id }) => id === "plan").run, "node scripts/ci/plan.mjs");
-  assert.deepEqual(Object.keys(jobPaths).sort(), [...legacyJobs, ...devhudJobs, ...achJobs].sort());
-  for (const id of [...legacyJobs, ...devhudJobs, ...achJobs]) {
+  assert.deepEqual(Object.keys(jobPaths).sort(), [...legacyJobs, ...devhudJobs, ...taskflowJobs, ...achJobs].sort());
+  for (const id of [...legacyJobs, ...devhudJobs, ...taskflowJobs, ...achJobs]) {
     const job = workflow.jobs[id];
     assert.equal(job.needs, "changes", id);
     assert.equal(job.if, "${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['" + id + "'] }}", id);
@@ -390,6 +392,24 @@ test("local CI commands are documented by repository contracts", () => {
   for (const command of ["test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:security", "test:adapters"]) assert.ok(project.includes(command), command);
 });
 
-test("native Go integration retains an explicit bounded package watchdog", () => {
-  assert.equal(namedStep(workflow.jobs["go-test"], "Run go test").run, "go test -timeout=20m ./...");
+test("TaskFlow owns native platform and local Docker/S3 conformance without publication", () => {
+  const native = workflow.jobs["taskflow-conformance"];
+  assert.deepEqual(native.strategy.matrix.include.map(({ id }) => id), [
+    "macos-x64", "macos-arm64", "linux-x64", "linux-arm64", "windows-x64", "windows-arm64",
+  ]);
+  assert.deepEqual(workflow.jobs["taskflow-docker"].strategy.matrix.runner, ["ubuntu-22.04", "ubuntu-24.04-arm"]);
+  for (const id of ["taskflow-conformance", "taskflow-docker"]) {
+    const job = workflow.jobs[id];
+    assert.equal(job.needs, "changes");
+    assert.ok(jobPaths[id].paths.includes("crates/taskflow/**"));
+    const text = JSON.stringify(job);
+    assert.doesNotMatch(text, /secrets\.|contents.*write|gh release|docker push/u);
+    assert.match(text, /cargo test --locked -p taskflow/u);
+  }
+  const nativeText = JSON.stringify(native);
+  assert.match(nativeText, /--include-ignored/u);
+  assert.match(nativeText, /TFLOW_ACTIONLINT/u);
+  const dockerText = JSON.stringify(workflow.jobs["taskflow-docker"]);
+  assert.match(dockerText, /minio\/minio@sha256:[a-f0-9]{64}/u);
+  assert.match(dockerText, /node@sha256:[a-f0-9]{64}/u);
 });

@@ -19,6 +19,11 @@ const stableRouteIds = [
   "/cargo-mono",
   "/derun",
   "/with-watch",
+  "/taskflow",
+  "/taskflow/configuration",
+  "/taskflow/commands",
+  "/taskflow/cache",
+  "/taskflow/ci",
 ];
 const projectSlugs = ["runmoor", "nodeup", "binpm", "async-commit-hook"];
 
@@ -86,6 +91,11 @@ function attributeValue(match) {
 }
 
 const requiredHeadings = new Map([
+  ["/taskflow", ["TaskFlow", "Build from source", "First task", "Guides"]],
+  ["/taskflow/configuration", ["TaskFlow Configuration", "Native discovery", "Commands and dependencies", "Inputs and outputs", "Execution controls"]],
+  ["/taskflow/commands", ["TaskFlow Commands and Sessions", "Queries and execution", "Reporting unchanged", "Development sessions"]],
+  ["/taskflow/cache", ["TaskFlow Caching and Secrets", "Local reuse and restoration", "Environment and secrets", "R2 and S3-compatible storage"]],
+  ["/taskflow/ci", ["TaskFlow Sharding and CI", "Test adapters", "GitHub Actions export", "Trust and external effects"]],
   ["/devhud", ["DevHud"]],
   ["/devhud/install", ["Install and Verify DevHud", "Desktop", "Mobile stores", "Chrome extension"]],
   ["/devhud/guide", ["Using DevHud", "First run and identity", "Settings and PAT profiles", "Capture, drafts, and browser context", "Decks and widgets"]],
@@ -96,6 +106,7 @@ const requiredHeadings = new Map([
   ["/devhud/releases", ["DevHud Releases"]],
 ]);
 const requiredLinks = new Map([
+  ["/taskflow", ["/taskflow/configuration", "/taskflow/commands", "/taskflow/cache", "/taskflow/ci"]],
   ["/", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/"]],
   ["/projects-overview", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/"]],
   ["/devhud", ["/devhud/install", "/devhud/privacy", "/devhud/security", "/devhud/support"]],

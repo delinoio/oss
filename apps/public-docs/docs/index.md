@@ -9,7 +9,7 @@ This site provides a curated, user-facing layer of documentation that complement
 - Read [Getting Started](getting-started) for local setup and editing workflow.
 - See [Projects Overview](projects-overview) for the current public project catalog.
 - Review [Documentation Lifecycle](documentation-lifecycle) for the relationship between internal contracts and this public site.
-- Open [DevHud](devhud), [Cargo Mono](cargo-mono), [Derun](derun), and [With Watch](with-watch) from the top navigation for project guides on this site.
+- Open [DevHud](devhud), [Cargo Mono](cargo-mono), [Derun](derun), [With Watch](with-watch), and [TaskFlow](taskflow) from the site's project guides.
 - Open the [Nodeup](https://oss.delino.io/nodeup/), [binpm](https://oss.delino.io/binpm/), [Runmoor](https://oss.delino.io/runmoor/), or [async-commit-hook](https://oss.delino.io/async-commit-hook/) documentation from the site selector.
 
 ## Scope

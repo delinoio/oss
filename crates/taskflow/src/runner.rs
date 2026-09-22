@@ -1,0 +1,2210 @@
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs::File,
+    io::Write,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
+
+use anyhow::{ensure, Context, Result};
+use futures::{stream::FuturesUnordered, StreamExt};
+use serde::{Deserialize, Serialize};
+use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio_util::sync::CancellationToken;
+
+use crate::{
+    cache,
+    config::{self, Executor, Readiness},
+    environment::{Environment, Redactor},
+    files,
+    graph::Graph,
+    plan::{Cause, Plan},
+    process::{ExitReason, OwnedProcess, ProcessExit},
+    remote::Remote,
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Outcome {
+    Executed,
+    LocalCache,
+    RemoteCache,
+    Restored,
+    Suppressed,
+    Ready,
+    Failed,
+    Blocked,
+    Cancelled,
+    Invalidated,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Receipt {
+    pub version: u32,
+    pub task: String,
+    pub execution: String,
+    pub outcome: Outcome,
+    pub changed: bool,
+    pub key: String,
+    pub output: String,
+    pub causes: BTreeSet<Cause>,
+    pub duration_ms: u64,
+    pub exit_code: i32,
+    pub diagnostic: Option<String>,
+}
+impl Receipt {
+    pub fn success(&self) -> bool {
+        matches!(
+            self.outcome,
+            Outcome::Executed
+                | Outcome::LocalCache
+                | Outcome::RemoteCache
+                | Outcome::Restored
+                | Outcome::Suppressed
+                | Outcome::Ready
+        )
+    }
+
+    fn skipped(task: &str, outcome: Outcome, causes: BTreeSet<Cause>) -> Self {
+        Self {
+            version: 1,
+            task: task.into(),
+            execution: uuid::Uuid::now_v7().to_string(),
+            outcome,
+            changed: false,
+            key: String::new(),
+            output: String::new(),
+            causes,
+            duration_ms: 0,
+            exit_code: match outcome {
+                Outcome::Suppressed | Outcome::Ready => 0,
+                Outcome::Cancelled => 130,
+                _ => 1,
+            },
+            diagnostic: None,
+        }
+    }
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunResult {
+    pub version: u32,
+    pub success: bool,
+    pub results: BTreeMap<String, Receipt>,
+}
+impl RunResult {
+    pub fn exit_code(&self) -> i32 {
+        if self.success {
+            0
+        } else if self
+            .results
+            .values()
+            .any(|r| r.outcome == Outcome::Cancelled)
+        {
+            130
+        } else if self
+            .results
+            .values()
+            .any(|r| r.outcome == Outcome::Failed && r.exit_code == 124)
+        {
+            124
+        } else {
+            1
+        }
+    }
+}
+
+pub struct Services {
+    pub controls: Mutex<BTreeMap<String, CancellationToken>>,
+    pub events: tokio::sync::mpsc::UnboundedSender<(String, ProcessExit)>,
+    pub joins: Mutex<Vec<tokio::task::JoinHandle<Result<()>>>>,
+}
+impl Services {
+    pub async fn shutdown(&self) -> Result<()> {
+        for token in self.controls.lock().unwrap().values() {
+            token.cancel();
+        }
+        let joins = std::mem::take(&mut *self.joins.lock().unwrap());
+        let mut failures = 0;
+        for join in joins {
+            if !matches!(join.await, Ok(Ok(()))) {
+                failures += 1;
+                tracing::error!(
+                    code = "service-cleanup-failed",
+                    "Service owner could not confirm cleanup"
+                );
+            }
+        }
+        self.controls.lock().unwrap().clear();
+        ensure!(
+            failures == 0,
+            "{failures} service owner(s) could not confirm cleanup"
+        );
+        Ok(())
+    }
+}
+#[derive(Clone)]
+pub struct RunOptions {
+    pub jobs: usize,
+    pub force: bool,
+    pub env: BTreeMap<String, String>,
+    pub no_dotenv: bool,
+    pub show_secrets: bool,
+    pub quiet: bool,
+    pub provided: BTreeMap<String, Receipt>,
+    pub services: Option<Arc<Services>>,
+    pub task_cancellations: Arc<Mutex<BTreeMap<String, CancellationToken>>>,
+    /// Receipts become visible only after the task releases execution
+    /// ownership.
+    pub completions: Option<tokio::sync::mpsc::UnboundedSender<Receipt>>,
+    pub shard: Option<(usize, usize)>,
+    pub os: Option<config::Os>,
+    pub arch: Option<config::Arch>,
+}
+impl Default for RunOptions {
+    fn default() -> Self {
+        Self {
+            jobs: std::thread::available_parallelism().map_or(1, usize::from),
+            force: false,
+            env: BTreeMap::new(),
+            no_dotenv: false,
+            show_secrets: false,
+            quiet: false,
+            provided: BTreeMap::new(),
+            services: None,
+            task_cancellations: Arc::new(Mutex::new(BTreeMap::new())),
+            completions: None,
+            shard: None,
+            os: None,
+            arch: None,
+        }
+    }
+}
+
+pub fn validate_shard_selection(graph: &Graph, plan: &Plan, options: &RunOptions) -> Result<()> {
+    if let Some((index, count)) = options.shard {
+        ensure!(count > 0 && index < count, "invalid shard index/count");
+        let pending: Vec<_> = plan
+            .order
+            .iter()
+            .filter(|id| !options.provided.contains_key(*id))
+            .collect();
+        if !pending.is_empty() {
+            let shards: Vec<_> = pending
+                .iter()
+                .filter_map(|id| graph.tasks[*id].task.shard.as_ref())
+                .collect();
+            ensure!(
+                !shards.is_empty(),
+                "--shard requires a selected task with shard configuration"
+            );
+            ensure!(
+                shards.iter().all(|shard| shard.count == count),
+                "--shard count must match every selected sharded task"
+            );
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_host_platforms<'a>(
+    graph: &Graph,
+    tasks: impl IntoIterator<Item = &'a String>,
+    provided: &BTreeMap<String, Receipt>,
+) -> Result<()> {
+    for id in tasks {
+        if provided.contains_key(id) {
+            // Validated CI/session receipts need no local command execution.
+            continue;
+        }
+        let platform = &graph.tasks[id].task.platform;
+        ensure!(
+            platform.executor != Executor::Host
+                || platform.resolved() == (config::host_os(), config::host_arch()),
+            "{id}: task platform does not match host"
+        );
+    }
+    Ok(())
+}
+
+pub async fn run_plan(
+    graph: Arc<Graph>,
+    plan: Plan,
+    options: RunOptions,
+    cancel: CancellationToken,
+) -> Result<RunResult> {
+    ensure!(
+        plan.generation == graph.workspace.generation,
+        "execution plan is stale"
+    );
+    validate_shard_selection(&graph, &plan, &options)?;
+    validate_host_platforms(&graph, &plan.order, &options.provided)?;
+    for id in &plan.order {
+        ensure!(
+            !graph.unresolved.contains(id),
+            "{id}: native selector cannot execute with unresolved metadata; run its installation \
+             prerequisite first"
+        );
+        ensure!(
+            !graph.tasks[id].task.service || options.services.is_some(),
+            "service tasks require tflow start"
+        );
+    }
+    let mut pending: BTreeSet<_> = plan.order.iter().cloned().collect();
+    let mut results = BTreeMap::new();
+    for (id, receipt) in &options.provided {
+        if pending.remove(id) {
+            record_completion(&mut results, &options, receipt.clone());
+        }
+    }
+    let mut active = FuturesUnordered::new();
+    while !pending.is_empty() || !active.is_empty() {
+        if cancel.is_cancelled() {
+            for id in std::mem::take(&mut pending) {
+                record_completion(
+                    &mut results,
+                    &options,
+                    Receipt::skipped(&id, Outcome::Cancelled, plan.causes[&id].clone()),
+                );
+            }
+        }
+        let mut eligible: Vec<_> = pending
+            .iter()
+            .filter(|id| {
+                graph
+                    .prerequisites(id)
+                    .iter()
+                    .all(|p| results.contains_key(p))
+            })
+            .cloned()
+            .collect();
+        eligible.sort_by_key(|id| {
+            (
+                std::cmp::Reverse(critical_duration(&graph, id, &mut BTreeSet::new())),
+                id.clone(),
+            )
+        });
+        for id in eligible {
+            if active.len() >= options.jobs.max(1) {
+                break;
+            }
+            pending.remove(&id);
+            let prerequisites: BTreeMap<_, _> = graph
+                .prerequisites(&id)
+                .into_iter()
+                .map(|p| (p.clone(), results[&p].clone()))
+                .collect();
+            if prerequisites.values().any(|r| !r.success()) {
+                record_completion(
+                    &mut results,
+                    &options,
+                    Receipt::skipped(&id, Outcome::Blocked, plan.causes[&id].clone()),
+                );
+                continue;
+            }
+            let causes = &plan.causes[&id];
+            let graph = graph.clone();
+            let causes = causes.clone();
+            let options = options.clone();
+            let token = cancel.child_token();
+            options
+                .task_cancellations
+                .lock()
+                .unwrap()
+                .insert(id.clone(), token.clone());
+            active.push(async move {
+                let result = run_task(
+                    &graph,
+                    &id,
+                    causes.clone(),
+                    &prerequisites,
+                    &options,
+                    token.clone(),
+                )
+                .await;
+                options.task_cancellations.lock().unwrap().remove(&id);
+                let receipt = match result {
+                    Ok(receipt) => receipt,
+                    Err(error) => {
+                        // Setup can be cancelled before there is a normal process
+                        // exit. Unverified cleanup still overrides cancellation.
+                        let cancelled = token.is_cancelled()
+                            && !error.is::<crate::docker::CleanupFailure>()
+                            && !error.is::<crate::process::CleanupFailure>()
+                            && !error.is::<cache::PublicationRollbackFailure>();
+                        let timed_out =
+                            !cancelled && crate::process::error_exit_code(&error) == 124;
+                        let status = ProcessExit {
+                            code: if cancelled {
+                                130
+                            } else if timed_out {
+                                124
+                            } else {
+                                1
+                            },
+                            reason: if cancelled {
+                                ExitReason::Cancelled
+                            } else if timed_out {
+                                ExitReason::TimedOut
+                            } else {
+                                ExitReason::Completed
+                            },
+                        };
+                        // Detailed native stderr already passes through the masker;
+                        // engine errors contain identifiers and stable context only.
+                        let node = &graph.tasks[&id];
+                        if node.task.service {
+                            if let Some(services) = &options.services {
+                                let _ = services.events.send((id.clone(), status));
+                            }
+                        }
+                        let secrets = Environment::build(
+                            &graph.workspace,
+                            &graph.workspace.projects[&node.project],
+                            &node.task,
+                            &options.env,
+                            options.no_dotenv,
+                        )
+                        .map(|e| e.secrets)
+                        .unwrap_or_default();
+                        let message = String::from_utf8_lossy(&Redactor::mask(
+                            error.to_string().as_bytes(),
+                            secrets,
+                        ))
+                        .into_owned();
+                        let outcome = if cancelled {
+                            Outcome::Cancelled
+                        } else {
+                            Outcome::Failed
+                        };
+                        if cancelled {
+                            tracing::info!(task = %id, outcome = ?outcome, "Task setup cancelled");
+                        } else {
+                            tracing::error!(task = %id, error = %message, "Task failed");
+                        }
+                        let mut receipt = Receipt::skipped(&id, outcome, causes);
+                        receipt.exit_code = status.code;
+                        receipt.diagnostic = Some(message);
+                        receipt
+                    }
+                };
+                (id, receipt)
+            });
+        }
+        if let Some((_, receipt)) = active.next().await {
+            record_completion(&mut results, &options, receipt);
+        } else if !pending.is_empty() {
+            // Skipped/blocked nodes may make another layer eligible without any
+            // active child. The validated DAG guarantees progress on the next pass.
+            ensure!(
+                pending.iter().any(|id| graph
+                    .prerequisites(id)
+                    .iter()
+                    .all(|p| results.contains_key(p))),
+                "scheduler cannot satisfy prerequisites"
+            );
+        }
+    }
+    Ok(RunResult {
+        version: 1,
+        // Pending/active cancellations already have their own receipts. A late
+        // token cannot retract tasks that crossed guarded local publication.
+        success: results.values().all(Receipt::success),
+        results,
+    })
+}
+
+fn record_completion(
+    results: &mut BTreeMap<String, Receipt>,
+    options: &RunOptions,
+    receipt: Receipt,
+) {
+    if let Some(completions) = &options.completions {
+        let _ = completions.send(receipt.clone());
+    }
+    results.insert(receipt.task.clone(), receipt);
+}
+
+fn critical_duration(graph: &Graph, id: &str, seen: &mut BTreeSet<String>) -> u64 {
+    if !seen.insert(id.into()) {
+        return 0;
+    }
+    let duration = previous(&graph.workspace.root, id).map_or(1, |r| r.duration_ms.max(1))
+        + graph
+            .dependents(id)
+            .iter()
+            .map(|next| critical_duration(graph, next, seen))
+            .max()
+            .unwrap_or(0);
+    // Guard only the current ancestry. A diamond's shared suffix contributes
+    // to every alternative path, including a longer branch visited later.
+    seen.remove(id);
+    duration
+}
+pub fn receipt_path(root: &Path, id: &str) -> PathBuf {
+    root.join(".taskflow/results")
+        .join(format!("{}.json", files::digest(id.as_bytes())))
+}
+const RECEIPT_LIMIT: u64 = 1024 * 1024;
+
+pub fn previous(root: &Path, id: &str) -> Option<Receipt> {
+    let bytes = match files::read_regular_limited(&receipt_path(root, id), RECEIPT_LIMIT) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            if error
+                .downcast_ref::<std::io::Error>()
+                .is_none_or(|e| e.kind() != std::io::ErrorKind::NotFound)
+            {
+                tracing::warn!(
+                    task = id,
+                    code = "invalid-previous-receipt",
+                    "Discarded unreadable prior receipt"
+                );
+            }
+            return None;
+        }
+    };
+    serde_json::from_slice::<Receipt>(&bytes)
+        .ok()
+        .filter(|receipt| receipt.version == 1 && receipt.task == id)
+}
+
+struct PreparedInputs {
+    environment: Environment,
+    inputs: BTreeMap<String, String>,
+    result_key: String,
+    key: String,
+}
+
+async fn prepare_inputs(
+    graph: &Graph,
+    id: &str,
+    prerequisites: &BTreeMap<String, Receipt>,
+    options: &RunOptions,
+    cancel: &CancellationToken,
+) -> Result<PreparedInputs> {
+    crate::process::check_cancelled(cancel)?;
+    let node = &graph.tasks[id];
+    let project = &graph.workspace.projects[&node.project];
+    let task = &node.task;
+    let environment = Environment::build(
+        &graph.workspace,
+        project,
+        task,
+        &options.env,
+        options.no_dotenv,
+    )?;
+    let inputs = files::input_state(&graph.workspace, project, task)?;
+    let mut tools = BTreeMap::new();
+    for (name, command) in &task.tools {
+        let identity = crate::process::tool_identity(
+            &graph.workspace.root,
+            &project.directory,
+            task,
+            command,
+            &environment.values,
+            &options.env,
+            cancel,
+        )
+        .await?;
+        tools.insert(name, identity);
+    }
+    let prerequisite_outputs: BTreeMap<_, _> = prerequisites
+        .iter()
+        .map(|(id, r)| (id, &r.output))
+        .collect();
+    let result_key = files::digest(&serde_json::to_vec(&(
+        1,
+        id,
+        task,
+        &inputs,
+        &environment.fingerprint,
+        &tools,
+        &prerequisite_outputs,
+        task.platform.key(),
+        None::<(usize, usize)>,
+    ))?);
+    let key = if task.shard.is_some() && options.shard.is_some() {
+        files::digest(&serde_json::to_vec(&(&result_key, options.shard))?)
+    } else {
+        result_key.clone()
+    };
+    crate::process::check_cancelled(cancel)?;
+    Ok(PreparedInputs {
+        environment,
+        inputs,
+        result_key,
+        key,
+    })
+}
+
+pub(crate) fn next_install(
+    graph: &Graph,
+    order: &[String],
+    provided: &BTreeMap<String, Receipt>,
+) -> Result<Option<String>> {
+    let install = order
+        .iter()
+        .find(|id| graph.tasks[*id].task.install && !provided.contains_key(*id))
+        .cloned();
+    ensure!(
+        install.is_some() || !order.iter().any(|id| graph.unresolved.contains(id)),
+        "unresolved native metadata requires an explicit install: true prerequisite"
+    );
+    Ok(install)
+}
+
+/// Installation can change declarations, inputs, native metadata, or outputs.
+/// A receipt may cross rediscovery only if its complete refreshed identity and
+/// output contract still hold, including every prerequisite it relied on.
+/// Retained service receipts are semantic evidence only: their owners have been
+/// stopped, so callers must exclude them from execution's provided receipts.
+pub(crate) async fn revalidate_bootstrap(
+    graph: &Graph,
+    receipts: BTreeMap<String, Receipt>,
+    options: &RunOptions,
+    cancel: &CancellationToken,
+) -> Result<(BTreeMap<String, Receipt>, BTreeSet<String>)> {
+    let selected = receipts
+        .keys()
+        .filter(|id| graph.tasks.contains_key(*id))
+        .cloned()
+        .collect();
+    let mut invalid: BTreeSet<_> = receipts.keys().cloned().collect();
+    let mut retained: BTreeMap<String, Receipt> = BTreeMap::new();
+    for id in graph.topological(&selected)? {
+        crate::process::check_cancelled(cancel)?;
+        let receipt = &receipts[&id];
+        let node = &graph.tasks[&id];
+        let dependencies = graph.prerequisites(&id);
+        if !receipt.success()
+            || (node.task.service && receipt.outcome != Outcome::Ready)
+            || dependencies.iter().any(|id| !retained.contains_key(id))
+        {
+            continue;
+        }
+        let prerequisites = dependencies
+            .into_iter()
+            .map(|id| (id.clone(), retained[&id].clone()))
+            .collect();
+        let _locks =
+            acquire_locks(&graph.workspace.root, &id, &node.task.resources, cancel).await?;
+        let identity = match prepare_inputs(graph, &id, &prerequisites, options, cancel).await {
+            Ok(identity) => identity,
+            Err(error)
+                if crate::process::aborts_discovery(&error)
+                    || error.is::<crate::docker::CleanupFailure>() =>
+            {
+                return Err(error)
+            }
+            Err(_) => continue,
+        };
+        let outputs_match = if node.task.service {
+            receipt.output == identity.key
+        } else {
+            node.task.output.as_ref().is_none_or(Vec::is_empty)
+                || cache::output_state(&graph.workspace.projects[&node.project], &node.task)
+                    .is_ok_and(|output| output == receipt.output)
+        };
+        if identity.key == receipt.key && outputs_match {
+            retained.insert(id.clone(), receipt.clone());
+            invalid.remove(&id);
+        }
+    }
+    for id in &invalid {
+        tracing::info!(
+            task = id,
+            code = "bootstrap-receipt-invalid",
+            "Revalidating task after native metadata refresh"
+        );
+    }
+    Ok((retained, invalid))
+}
+
+async fn run_task(
+    graph: &Graph,
+    id: &str,
+    causes: BTreeSet<Cause>,
+    prerequisites: &BTreeMap<String, Receipt>,
+    options: &RunOptions,
+    cancel: CancellationToken,
+) -> Result<Receipt> {
+    crate::process::check_cancelled(&cancel)?;
+    let node = &graph.tasks[id];
+    let project = &graph.workspace.projects[&node.project];
+    let task = &node.task;
+    if task.service {
+        if let Some(services) = &options.services {
+            if services.controls.lock().unwrap().contains_key(id) {
+                return Ok(Receipt::skipped(id, Outcome::Ready, causes));
+            }
+        }
+    }
+    if task.platform.executor == Executor::Host {
+        ensure!(
+            task.platform.resolved() == (config::host_os(), config::host_arch()),
+            "task platform does not match host"
+        );
+    }
+    let locks = acquire_locks(&graph.workspace.root, id, &task.resources, &cancel).await?;
+    crate::process::check_cancelled(&cancel)?;
+    let old = previous(&graph.workspace.root, id).filter(Receipt::success);
+    // Hold the old baseline only inside this attempt. A failed or interrupted
+    // replacement must not leave an earlier success eligible for suppression.
+    // The task lock serializes invalidation with execution and publication.
+    match std::fs::remove_file(receipt_path(&graph.workspace.root, id)) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error).context("cannot invalidate previous task receipt"),
+    }
+    let started = Instant::now();
+    let PreparedInputs {
+        environment,
+        inputs,
+        result_key,
+        key,
+    } = prepare_inputs(graph, id, prerequisites, options, &cancel).await?;
+    // Unchanged prerequisites remove only their propagated causes. A previous
+    // success cannot authorize suppression after this task's own environment,
+    // tools, inputs, configuration, or partition changed. Reuse the execution
+    // identity and validate outputs under the same task/resource locks.
+    if !causes.iter().any(Cause::independent)
+        && !prerequisites.values().any(|receipt| receipt.changed)
+    {
+        if let Some(baseline) = old.as_ref().filter(|baseline| {
+            baseline.key == key
+                && (task.output.as_ref().is_none_or(Vec::is_empty)
+                    || cache::output_state(project, task)
+                        .is_ok_and(|output| output == baseline.output))
+        }) {
+            crate::process::check_cancelled(&cancel)?;
+            persist(&graph.workspace.root, baseline)?;
+            let mut receipt = Receipt::skipped(id, Outcome::Suppressed, causes);
+            receipt.key = key;
+            receipt.output = baseline.output.clone();
+            tracing::info!(
+                task = id,
+                "Suppressed task with current identity and valid outputs"
+            );
+            return Ok(receipt);
+        }
+        tracing::info!(task = id, "Task baseline requires execution or restoration");
+    }
+    let remote = if task.cache {
+        graph
+            .workspace
+            .config
+            .remote
+            .as_ref()
+            .and_then(|c| match Remote::new(c) {
+                Ok(remote) => remote,
+                Err(_) => {
+                    tracing::warn!(
+                        task = id,
+                        code = "remote-unavailable",
+                        "Remote cache unavailable; using local execution"
+                    );
+                    None
+                }
+            })
+    } else {
+        None
+    };
+    if task.cache && !options.force && !cancel.is_cancelled() {
+        let valid_artifact = |artifact: &cache::Artifact| {
+            let valid_shards = match (&task.shard, &artifact.shards) {
+                (None, None) => true,
+                (Some(config), Some((inventory, reports))) => {
+                    crate::shard::validate_reports(inventory, config.count, reports).is_ok_and(
+                        |passed| {
+                            passed
+                                && match options.shard {
+                                    Some((index, count)) => {
+                                        reports.len() == 1
+                                            && reports[0].index == index
+                                            && reports[0].count == count
+                                    }
+                                    None => reports.len() == config.count,
+                                }
+                        },
+                    )
+                }
+                _ => false,
+            };
+            valid_shards && artifact.validate(&key, id, project, task).is_ok()
+        };
+        let mut source = Outcome::LocalCache;
+        let mut artifact = match cache::load(&graph.workspace.root, &key) {
+            Ok(value) => value,
+            Err(_) => {
+                tracing::warn!(
+                    task = id,
+                    code = "cache-corrupt",
+                    "Ignoring invalid local cache entry"
+                );
+                None
+            }
+        };
+        artifact = artifact.filter(|artifact| {
+            let valid = valid_artifact(artifact);
+            if !valid {
+                tracing::warn!(
+                    task = id,
+                    code = "cache-invalid",
+                    "Ignoring incompatible local artifact before remote lookup"
+                );
+            }
+            valid
+        });
+        if artifact.is_none() {
+            if let Some(remote) = &remote {
+                let fetched = tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => anyhow::bail!("task cancelled during cache lookup"),
+                    result = remote.get(&key) => result,
+                };
+                match fetched {
+                    Ok(value) => {
+                        artifact = value;
+                        source = Outcome::RemoteCache;
+                    }
+                    Err(_) => tracing::warn!(
+                        task = id,
+                        code = "remote-read-failed",
+                        "Remote cache unavailable or invalid"
+                    ),
+                }
+            }
+        }
+        if let Some(artifact) = artifact {
+            if source == Outcome::LocalCache || valid_artifact(&artifact) {
+                ensure!(
+                    !cancel.is_cancelled(),
+                    "task cancelled before cache restoration"
+                );
+                let before = cache::output_state(project, task).ok();
+                if before.as_deref() != Some(&artifact.output_digest) {
+                    ensure!(
+                        files::input_state(&graph.workspace, project, task)? == inputs,
+                        "inputs changed before cache restoration"
+                    );
+                    artifact.restore(&key, id, project, task)?;
+                    source = Outcome::Restored;
+                }
+                ensure!(
+                    files::input_state(&graph.workspace, project, task)? == inputs,
+                    "inputs changed during cache restoration"
+                );
+                let receipt = Receipt {
+                    version: 1,
+                    task: id.into(),
+                    execution: uuid::Uuid::now_v7().to_string(),
+                    outcome: source,
+                    changed: old
+                        .as_ref()
+                        .is_none_or(|r| r.output != artifact.result_output()),
+                    key,
+                    output: artifact.result_output().into(),
+                    causes,
+                    duration_ms: started.elapsed().as_millis() as u64,
+                    exit_code: 0,
+                    diagnostic: None,
+                };
+                if let Some((inventory, reports)) = &artifact.shards {
+                    crate::shard::write_reports(
+                        &graph
+                            .workspace
+                            .root
+                            .join(".taskflow/runs")
+                            .join(&receipt.execution),
+                        inventory,
+                        reports,
+                    )?;
+                }
+                // Restoration and report writes are synchronous. Cancellation
+                // can arrive from a signal or session owner while they run.
+                ensure!(!cancel.is_cancelled(), "task cancelled during cache reuse");
+                ensure!(
+                    cache::store_if(&graph.workspace.root, &artifact, || {
+                        Ok(!cancel.is_cancelled()
+                            && files::input_state(&graph.workspace, project, task)? == inputs)
+                    })?,
+                    "task invalidated during cache publication"
+                );
+                ensure!(
+                    !cancel.is_cancelled(),
+                    "task cancelled during cache publication"
+                );
+                // Persistence finalizes this reuse just as it finalizes fresh
+                // execution. Later cancellation cannot contradict that receipt.
+                persist(&graph.workspace.root, &receipt)?;
+                tracing::info!(task = id, outcome = ?receipt.outcome, changed = receipt.changed, "Reused task result");
+                return Ok(receipt);
+            }
+            tracing::warn!(
+                task = id,
+                code = "cache-invalid",
+                "Ignoring incompatible cache artifact"
+            );
+        }
+    }
+    let execution = uuid::Uuid::now_v7().to_string();
+    crate::process::check_cancelled(&cancel)?;
+    let run_directory = graph.workspace.root.join(".taskflow/runs").join(&execution);
+    std::fs::create_dir_all(&run_directory)?;
+    let result_file = run_directory.join("result.json");
+    let mut values = environment.values.clone();
+    crate::environment::insert(
+        &mut values,
+        "TFLOW_RESULT_FILE".into(),
+        result_file.to_string_lossy().into_owned(),
+    );
+    crate::environment::insert(&mut values, "TFLOW_EXECUTION_ID".into(), execution.clone());
+    if let Ok(exe) = std::env::current_exe() {
+        crate::environment::insert(
+            &mut values,
+            "TFLOW_BIN".into(),
+            exe.to_string_lossy().into_owned(),
+        );
+    }
+    let log = Arc::new(Mutex::new(OutputLog::new(
+        File::create(run_directory.join("output.log"))?,
+        environment.secrets.clone(),
+        options.show_secrets,
+        options.quiet,
+    )));
+    let mut docker = None;
+    let mut command = task.command.clone();
+    if task.platform.executor == Executor::Docker && task.shard.is_none() {
+        let prepared = crate::docker::prepare(
+            &graph.workspace.root,
+            &project.directory,
+            task,
+            &values,
+            &options.env,
+            &execution,
+            &cancel,
+        )
+        .await?;
+        command = prepared.0;
+        values = prepared.1.host_environment().clone();
+        docker = Some(prepared.1);
+    }
+    if cancel.is_cancelled() {
+        cleanup_container(docker).await?;
+        return Err(crate::process::Cancelled.into());
+    }
+    if task.shard.is_some() {
+        let result = crate::shard::execute(
+            graph,
+            id,
+            &values,
+            &environment.secrets,
+            options,
+            &cancel,
+            &execution,
+            &key,
+            causes,
+            log.clone(),
+        )
+        .await;
+        let flushed = log.lock().unwrap().finish();
+        let mut receipt = result?;
+        flushed?;
+        // Shard selection partitions cache storage, not the semantic identity
+        // of the tested input version passed to downstream tasks and CI jobs.
+        receipt.output = result_key;
+        publish(
+            graph,
+            id,
+            &mut receipt,
+            &inputs,
+            old.as_ref(),
+            remote.as_ref(),
+            &cancel,
+        )
+        .await?;
+        return Ok(receipt);
+    }
+    let mut process = OwnedProcess::spawn(
+        &project.directory,
+        &command,
+        task.shell.as_deref(),
+        Some(&values),
+    )?;
+    let process_started = Instant::now();
+    let timeout = task
+        .timeout
+        .as_ref()
+        .map(|s| config::duration(s))
+        .transpose()?;
+    let log_failed = CancellationToken::new();
+    let stdout = tokio::spawn(monitored_log(
+        process.child.stdout.take().unwrap(),
+        log.clone(),
+        environment.secrets.clone(),
+        log_failed.clone(),
+    ));
+    let stderr = tokio::spawn(monitored_log(
+        process.child.stderr.take().unwrap(),
+        log.clone(),
+        environment.secrets.clone(),
+        log_failed.clone(),
+    ));
+    tracing::info!(task = id, execution = %execution, causes = ?causes, "Task started");
+    if task.service {
+        if let Some(readiness) = &task.readiness {
+            let readiness_cancel = cancel.child_token();
+            let result = {
+                let ready = wait_ready(
+                    &mut process,
+                    readiness,
+                    task.shell.as_deref(),
+                    &project.directory,
+                    &values,
+                    &readiness_cancel,
+                    timeout.map(|limit| limit.saturating_sub(process_started.elapsed())),
+                );
+                tokio::pin!(ready);
+                tokio::select! {
+                    biased;
+                    _ = log_failed.cancelled() => {
+                        readiness_cancel.cancel();
+                        // A failed logger must not drop an active readiness probe.
+                        let _ = ready.await;
+                        Err(anyhow::anyhow!("service output failed before readiness"))
+                    }
+                    result = &mut ready => result,
+                }
+            };
+            if let Err(error) = result {
+                let reaped = process.terminate().await;
+                drop(process);
+                let drained =
+                    finish_logs_and_container(stdout, stderr, cleanup_container(docker)).await;
+                let flushed = log.lock().unwrap().finish();
+                reaped?;
+                drained?;
+                flushed?;
+                return Err(error);
+            }
+        }
+        let services = options.services.as_ref().unwrap().clone();
+        // Services outlive the finite activation wave; their token is owned by the
+        // session registry and explicitly cancelled during ownership reconciliation.
+        let stop = CancellationToken::new();
+        services
+            .controls
+            .lock()
+            .unwrap()
+            .insert(id.into(), stop.clone());
+        let event_id = id.to_owned();
+        let events = services.events.clone();
+        let join = tokio::spawn(async move {
+            let _locks = locks;
+            let remaining =
+                timeout.map(|duration| duration.saturating_sub(process_started.elapsed()));
+            let completed = finish_service(
+                process,
+                (stdout, stderr),
+                log,
+                &stop,
+                &log_failed,
+                remaining,
+                cleanup_container(docker),
+            )
+            .await;
+            let result = completed.as_ref().copied().unwrap_or(ProcessExit {
+                code: 1,
+                reason: ExitReason::Completed,
+            });
+            if result.reason == ExitReason::TimedOut {
+                tracing::warn!(task = %event_id, code = "service-timeout", "Service exceeded its timeout");
+            }
+            if completed.is_err() {
+                tracing::error!(task = %event_id, code = "service-owner-failed", "Service process, output, or container owner failed");
+            }
+            let _ = events.send((event_id, result));
+            completed.map(|_| ())
+        });
+        services.joins.lock().unwrap().push(join);
+        return Ok(Receipt {
+            version: 1,
+            task: id.into(),
+            execution,
+            outcome: Outcome::Ready,
+            changed: true,
+            output: key.clone(),
+            key,
+            causes,
+            duration_ms: started.elapsed().as_millis() as u64,
+            exit_code: 0,
+            diagnostic: None,
+        });
+    }
+    let waited = wait_with_log_failure(&mut process, &cancel, &log_failed, timeout).await;
+    let reaped = if waited.is_err() {
+        process.terminate().await
+    } else {
+        Ok(())
+    };
+    // A failed Windows job API still needs the owner's destructor retry and
+    // kill-on-close fallback before descendant-held output pipes can reach EOF.
+    drop(process);
+    let drained = finish_logs_and_container(stdout, stderr, cleanup_container(docker)).await;
+    let flushed = log.lock().unwrap().finish();
+    reaped?;
+    let status = waited?;
+    drained?;
+    flushed?;
+    let stable = (task.install && !task.cache)
+        || files::input_state(&graph.workspace, project, task)? == inputs;
+    let mut receipt = Receipt {
+        version: 1,
+        task: id.into(),
+        execution: execution.clone(),
+        outcome: if status.reason == ExitReason::TimedOut {
+            Outcome::Failed
+        } else if status.cancelled() || cancel.is_cancelled() {
+            Outcome::Cancelled
+        } else if status.code != 0 {
+            Outcome::Failed
+        } else if !stable {
+            Outcome::Invalidated
+        } else {
+            Outcome::Executed
+        },
+        changed: true,
+        key,
+        output: String::new(),
+        causes,
+        duration_ms: started.elapsed().as_millis() as u64,
+        exit_code: status.code,
+        diagnostic: (status.reason == ExitReason::TimedOut).then(|| "task timeout elapsed".into()),
+    };
+    if receipt.outcome == Outcome::Cancelled {
+        receipt.exit_code = 130;
+    }
+    if receipt.success() {
+        let unchanged = if let Some(report) = read_task_report(&result_file)? {
+            ensure!(
+                report.version == 1 && report.execution == execution,
+                "task result belongs to another execution"
+            );
+            report.result == TaskReported::Unchanged
+        } else {
+            false
+        };
+        receipt.changed = !unchanged;
+        receipt.output = if task.output.as_ref().is_some_and(|v| !v.is_empty()) {
+            cache::output_state(project, task)?
+        } else if unchanged {
+            old.as_ref()
+                .map_or(receipt.key.clone(), |r| r.output.clone())
+        } else {
+            receipt.key.clone()
+        };
+        publish(
+            graph,
+            id,
+            &mut receipt,
+            &inputs,
+            old.as_ref(),
+            remote.as_ref(),
+            &cancel,
+        )
+        .await?;
+    }
+    tracing::info!(task = id, outcome = ?receipt.outcome, changed = receipt.changed, duration_ms = receipt.duration_ms, "Task finished");
+    Ok(receipt)
+}
+
+async fn publish(
+    graph: &Graph,
+    id: &str,
+    receipt: &mut Receipt,
+    inputs: &BTreeMap<String, String>,
+    baseline: Option<&Receipt>,
+    remote: Option<&Remote>,
+    cancel: &CancellationToken,
+) -> Result<()> {
+    let node = &graph.tasks[id];
+    let project = &graph.workspace.projects[&node.project];
+    let task = &node.task;
+    let valid = |receipt: &mut Receipt| -> Result<bool> {
+        if cancel.is_cancelled() {
+            receipt.outcome = Outcome::Cancelled;
+            receipt.exit_code = 130;
+        } else if (!task.install || task.cache)
+            && files::input_state(&graph.workspace, project, task)? != *inputs
+        {
+            receipt.outcome = Outcome::Invalidated;
+        }
+        Ok(receipt.success())
+    };
+    if !valid(receipt)? {
+        return Ok(());
+    }
+    let previous_output = baseline
+        .filter(|receipt| receipt.success())
+        .map(|receipt| receipt.output.clone());
+    if task.output.as_ref().is_some_and(|v| !v.is_empty()) {
+        receipt.output = cache::output_state(project, task)?;
+        // An unchanged report cannot override observed artifact changes. With
+        // no successful baseline, consumers must see the newly produced output.
+        receipt.changed |= previous_output.as_ref() != Some(&receipt.output);
+    }
+    if task.cache {
+        let mut artifact = cache::Artifact::capture(receipt.key.clone(), id.into(), project, task)?;
+        if task.shard.is_some() {
+            artifact.shards = Some(crate::shard::read_reports(
+                &graph
+                    .workspace
+                    .root
+                    .join(".taskflow/runs")
+                    .join(&receipt.execution),
+            )?);
+        }
+        if artifact.files.is_empty() {
+            // Checks may preserve an older semantic identity via unchanged.
+            artifact.result_identity = Some(receipt.output.clone());
+        } else {
+            receipt.output = artifact.output_digest.clone();
+            receipt.changed |= previous_output.as_ref() != Some(&receipt.output);
+        }
+        let staged = if let Some(remote) = remote {
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => None,
+                result = remote.stage(&artifact) => match result {
+                    Ok(digest) => digest,
+                    Err(_) => { tracing::warn!(task = id, code = "remote-write-failed", "Remote cache object upload failed"); None }
+                }
+            }
+        } else {
+            None
+        };
+        if !valid(receipt)? {
+            return Ok(());
+        }
+        if !cache::store_if(&graph.workspace.root, &artifact, || valid(receipt))? {
+            return Ok(());
+        }
+        // The guarded local commit completes this task. Persist that decision
+        // before exposing a remote entry: an in-flight PUT may succeed even if
+        // its response is lost, so cancellation cannot retract this completion.
+        persist(&graph.workspace.root, receipt)?;
+        if let (Some(remote), Some(digest)) = (remote, staged) {
+            if !cancel.is_cancelled() && remote.commit(&artifact.key, &digest).await.is_err() {
+                tracing::warn!(
+                    task = id,
+                    code = "remote-write-failed",
+                    "Remote cache publication failed"
+                );
+            }
+        }
+        return Ok(());
+    }
+    if valid(receipt)? {
+        persist(&graph.workspace.root, receipt)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+tokio::task_local! {
+    // Deterministic cancellation at the durable-receipt boundary, without
+    // relying on filesystem notification latency or production test switches.
+    static CANCEL_AFTER_PERSIST: CancellationToken;
+}
+
+pub fn persist(root: &Path, receipt: &Receipt) -> Result<()> {
+    let bytes = serde_json::to_vec(receipt)?;
+    ensure!(
+        bytes.len() as u64 <= RECEIPT_LIMIT,
+        "receipt exceeded 1 MiB"
+    );
+    files::atomic_write(&receipt_path(root, &receipt.task), &bytes)?;
+    #[cfg(test)]
+    let _ = CANCEL_AFTER_PERSIST.try_with(CancellationToken::cancel);
+    Ok(())
+}
+
+// The execution report contains only a version, UUID, and one result enum.
+// Bound both the file length and actual read after the process owner is reaped;
+// process cancellation cannot interrupt a blocking special-file read here.
+fn read_task_report(path: &Path) -> Result<Option<TaskReport>> {
+    const LIMIT: u64 = 1024;
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    ensure!(metadata.is_file(), "task result must be a regular file");
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+    let file = options.open(path).context("cannot open task result")?;
+    let metadata = file.metadata()?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        ensure!(
+            metadata.file_attributes()
+                & windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT
+                == 0,
+            "task result must not be a reparse point"
+        );
+    }
+    ensure!(metadata.is_file(), "task result must be a regular file");
+    ensure!(metadata.len() <= LIMIT, "task result exceeded 1 KiB");
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut std::io::Read::take(file, LIMIT + 1), &mut bytes)?;
+    ensure!(bytes.len() as u64 <= LIMIT, "task result exceeded 1 KiB");
+    Ok(Some(serde_json::from_slice(&bytes)?))
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskReport {
+    pub version: u32,
+    pub execution: String,
+    pub result: TaskReported,
+}
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TaskReported {
+    Unchanged,
+}
+pub fn report_unchanged() -> Result<()> {
+    let path = std::env::var("TFLOW_RESULT_FILE")
+        .context("result reporting requires a running TaskFlow task")?;
+    let execution = std::env::var("TFLOW_EXECUTION_ID").context("execution identity missing")?;
+    uuid::Uuid::parse_str(&execution)?;
+    files::atomic_write(
+        Path::new(&path),
+        &serde_json::to_vec(&TaskReport {
+            version: 1,
+            execution,
+            result: TaskReported::Unchanged,
+        })?,
+    )
+}
+
+pub async fn acquire_locks(
+    root: &Path,
+    id: &str,
+    resources: &[String],
+    cancel: &CancellationToken,
+) -> Result<Vec<File>> {
+    crate::process::check_cancelled(cancel)?;
+    let names: BTreeSet<_> = std::iter::once(format!("task:{id}"))
+        .chain(resources.iter().map(|s| format!("resource:{s}")))
+        .collect();
+    let mut held = vec![];
+    for name in names {
+        let file = crate::coordination::open(root, &name)?;
+        loop {
+            crate::process::check_cancelled(cancel)?;
+            match file.try_lock() {
+                Ok(()) => break,
+                Err(std::fs::TryLockError::WouldBlock) => {
+                    tokio::select! { _ = cancel.cancelled() => anyhow::bail!("cancelled while waiting for resource"), _ = tokio::time::sleep(Duration::from_millis(25)) => {} }
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+        held.push(file);
+    }
+    Ok(held)
+}
+
+pub(crate) async fn cleanup_container(docker: Option<crate::docker::Container>) -> Result<()> {
+    if let Some(mut docker) = docker {
+        docker.cleanup().await?;
+    }
+    Ok(())
+}
+
+pub(crate) async fn finish_logs_and_container(
+    stdout: tokio::task::JoinHandle<Result<()>>,
+    stderr: tokio::task::JoinHandle<Result<()>>,
+    cleanup: impl std::future::Future<Output = Result<()>>,
+) -> Result<()> {
+    // Collect every owner before returning an output error. A failed logger
+    // must never replace awaited daemon verification with best-effort Drop.
+    let stdout = stdout.await.context("task stdout owner failed");
+    let stderr = stderr.await.context("task stderr owner failed");
+    cleanup.await?;
+    if stdout.as_ref().map_or(true, |result| result.is_err())
+        || stderr.as_ref().map_or(true, |result| result.is_err())
+    {
+        tracing::error!(
+            code = "task-output-drain-failed",
+            "Task output failed after completing owned container cleanup"
+        );
+    }
+    stdout??;
+    stderr??;
+    Ok(())
+}
+
+async fn wait_with_log_failure(
+    process: &mut OwnedProcess,
+    cancel: &CancellationToken,
+    log_failed: &CancellationToken,
+    timeout: Option<Duration>,
+) -> Result<ProcessExit> {
+    let stop = cancel.child_token();
+    let waited = process.wait(&stop, timeout);
+    tokio::pin!(waited);
+    tokio::select! {
+        biased;
+        _ = log_failed.cancelled() => {
+            stop.cancel();
+            // Keep the same ownership future alive through termination/reaping.
+            waited.await
+        }
+        result = &mut waited => result,
+    }
+}
+
+async fn finish_service(
+    mut process: OwnedProcess,
+    logs: (
+        tokio::task::JoinHandle<Result<()>>,
+        tokio::task::JoinHandle<Result<()>>,
+    ),
+    log: Arc<Mutex<OutputLog>>,
+    stop: &CancellationToken,
+    log_failed: &CancellationToken,
+    timeout: Option<Duration>,
+    cleanup: impl std::future::Future<Output = Result<()>>,
+) -> Result<ProcessExit> {
+    let waited = wait_with_log_failure(&mut process, stop, log_failed, timeout).await;
+    let reaped = if waited.is_err() {
+        process.terminate().await
+    } else {
+        Ok(())
+    };
+    drop(process);
+    let output = finish_logs_and_container(logs.0, logs.1, cleanup).await;
+    let flushed = log.lock().unwrap().finish();
+    reaped?;
+    let status = waited?;
+    output?;
+    flushed?;
+    Ok(status)
+}
+
+/// Serializes the final masked byte stream for one task, including all shards.
+/// Per-pipe masking also remains necessary when another pipe interrupts a
+/// secret.
+pub struct OutputLog {
+    file: File,
+    masker: Redactor,
+    show: bool,
+    quiet: bool,
+}
+impl OutputLog {
+    fn new(file: File, secrets: Vec<Vec<u8>>, show: bool, quiet: bool) -> Self {
+        Self {
+            file,
+            masker: Redactor::new(secrets),
+            show,
+            quiet,
+        }
+    }
+
+    fn write(&mut self, masked: &[u8], raw: &[u8], eof: bool) -> Result<()> {
+        // EOF belongs to the task, not a pipe or shard: either can leave a
+        // partial secret that the next writer completes in the shared log.
+        let combined = self.masker.push(masked, eof);
+        self.file.write_all(&combined)?;
+        if !self.quiet {
+            std::io::stderr()
+                .lock()
+                .write_all(if self.show { raw } else { &combined })?;
+        }
+        Ok(())
+    }
+
+    fn finish(&mut self) -> Result<()> {
+        self.write(&[], &[], true)
+    }
+}
+
+async fn monitored_log(
+    reader: impl AsyncRead + Unpin,
+    file: Arc<Mutex<OutputLog>>,
+    secrets: Vec<Vec<u8>>,
+    failed: CancellationToken,
+) -> Result<()> {
+    // Cancellation on drop also covers panics/aborted log owners. A successful
+    // EOF is normal and must leave a still-running service alone.
+    let failure = failed.drop_guard();
+    let result = stream_log(reader, file, secrets).await;
+    if result.is_ok() {
+        failure.disarm();
+    }
+    result
+}
+
+pub async fn stream_log(
+    mut reader: impl AsyncRead + Unpin,
+    file: Arc<Mutex<OutputLog>>,
+    secrets: Vec<Vec<u8>>,
+) -> Result<()> {
+    let mut masker = Redactor::new(secrets);
+    let mut block = [0; 8192];
+    loop {
+        let n = reader.read(&mut block).await?;
+        let masked = masker.push(&block[..n], n == 0);
+        file.lock().unwrap().write(&masked, &block[..n], false)?;
+        if n == 0 {
+            break;
+        }
+    }
+    Ok(())
+}
+
+async fn wait_ready(
+    process: &mut OwnedProcess,
+    readiness: &Readiness,
+    shell: Option<&[String]>,
+    directory: &Path,
+    environment: &BTreeMap<String, String>,
+    cancel: &CancellationToken,
+    service_remaining: Option<Duration>,
+) -> Result<()> {
+    let timeout = match readiness {
+        Readiness::Tcp { timeout, .. }
+        | Readiness::Http { timeout, .. }
+        | Readiness::Command { timeout, .. } => config::duration(timeout)?,
+    };
+    let deadline = tokio::time::Instant::now()
+        + service_remaining.map_or(timeout, |remaining| remaining.min(timeout));
+    let service_expires_first = service_remaining.is_some_and(|remaining| remaining <= timeout);
+    let expired = || {
+        if service_expires_first {
+            anyhow::Error::new(crate::process::TimedOut)
+                .context("service timeout elapsed during readiness")
+        } else {
+            anyhow::anyhow!("service readiness timed out")
+        }
+    };
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(1))
+        .build()?;
+    loop {
+        ensure!(
+            process.child.try_wait()?.is_none(),
+            "service exited before readiness"
+        );
+        let probe_cancel = cancel.child_token();
+        let check = async {
+            match readiness {
+                Readiness::Tcp { address, .. } => tokio::select! {
+                    _ = probe_cancel.cancelled() => Ok(false),
+                    result = tokio::net::TcpStream::connect(address) => Ok(result.is_ok()),
+                },
+                Readiness::Http { url, .. } => tokio::select! {
+                    _ = probe_cancel.cancelled() => Ok(false),
+                    result = client.get(url).send() => Ok(result.is_ok_and(|r| r.status().is_success())),
+                },
+                Readiness::Command { command, .. } => {
+                    crate::process::readiness_command(
+                        directory,
+                        command,
+                        shell,
+                        environment,
+                        &probe_cancel,
+                    )
+                    .await
+                }
+            }
+        };
+        tokio::pin!(check);
+        // Cancelling a readiness future is not cleanup: its process and pipe
+        // owners must finish before the service/session can return or restart.
+        let ready = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => {
+                probe_cancel.cancel();
+                // An unstarted command probe reports the cancellation we just
+                // requested. Preserve the selected cause while still surfacing
+                // real probe/owner cleanup errors.
+                check.await.or_else(|error| {
+                    if error.is::<crate::process::Cancelled>() { Ok(false) } else { Err(error) }
+                })?;
+                anyhow::bail!("service readiness cancelled");
+            }
+            _ = tokio::time::sleep_until(deadline) => {
+                probe_cancel.cancel();
+                // An unstarted command probe reports the cancellation we just
+                // requested. Preserve the selected cause while still surfacing
+                // real probe/owner cleanup errors.
+                check.await.or_else(|error| {
+                    if error.is::<crate::process::Cancelled>() { Ok(false) } else { Err(error) }
+                })?;
+                return Err(expired());
+            }
+            exited = process.child.wait() => {
+                probe_cancel.cancel();
+                // An unstarted command probe reports the cancellation we just
+                // requested. Preserve the selected cause while still surfacing
+                // real probe/owner cleanup errors.
+                check.await.or_else(|error| {
+                    if error.is::<crate::process::Cancelled>() { Ok(false) } else { Err(error) }
+                })?;
+                exited?;
+                anyhow::bail!("service exited before readiness");
+            }
+            result = &mut check => result?,
+        };
+        if ready {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(expired());
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+#[cfg(test)]
+mod output_cleanup_tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use super::*;
+
+    #[test]
+    fn previous_receipts_reject_unbounded_or_nonregular_state() {
+        let root = tempfile::tempdir().unwrap();
+        let id = "app#test";
+        let receipt = Receipt::skipped(id, Outcome::Executed, BTreeSet::new());
+        persist(root.path(), &receipt).unwrap();
+        assert!(previous(root.path(), id).is_some());
+        let path = receipt_path(root.path(), id);
+        File::create(&path)
+            .unwrap()
+            .set_len(RECEIPT_LIMIT + 1)
+            .unwrap();
+        assert!(previous(root.path(), id).is_none());
+        std::fs::remove_file(&path).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            let target = root.path().join("other.json");
+            std::fs::write(&target, serde_json::to_vec(&receipt).unwrap()).unwrap();
+            std::os::unix::fs::symlink(&target, &path).unwrap();
+            assert!(previous(root.path(), id).is_none());
+            std::fs::remove_file(&path).unwrap();
+            let native = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+            assert_eq!(unsafe { nix::libc::mkfifo(native.as_ptr(), 0o600) }, 0);
+            assert!(previous(root.path(), id).is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn combined_log_keeps_masking_across_pipe_eof() {
+        let secret = "pipe\nsecret-☃".as_bytes();
+        for split in 1..secret.len() {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("output.log");
+            let secrets = vec![secret.to_vec()];
+            let log = Arc::new(Mutex::new(OutputLog::new(
+                File::create(&path).unwrap(),
+                secrets.clone(),
+                false,
+                true,
+            )));
+            // The first pipe reaches EOF before the second pipe starts writing.
+            // Flushing a pipe's own mask must not flush the combined log's mask.
+            stream_log(&secret[..split], log.clone(), secrets.clone())
+                .await
+                .unwrap();
+            stream_log(&secret[split..], log.clone(), secrets)
+                .await
+                .unwrap();
+            log.lock().unwrap().finish().unwrap();
+            assert_eq!(std::fs::read(&path).unwrap(), b"[REDACTED]");
+        }
+    }
+
+    #[tokio::test]
+    async fn bootstrap_receipts_require_current_keys_outputs_and_prerequisites() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("taskflow.yml"),
+            "version: 1\nproject: app\ntasks:\n  prepare:\n    command: [unused]\n    input: []\n    output: [middle]\n  install:\n    command: [unused]\n    input: []\n    dependsOn: [prepare]\n").unwrap();
+        std::fs::write(directory.path().join("middle"), "original").unwrap();
+        let graph = Graph::build(
+            crate::discover::Workspace::discover(directory.path())
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        let options = RunOptions::default();
+        let cancel = CancellationToken::new();
+        let mut receipts = BTreeMap::new();
+        for id in ["app#prepare", "app#install"] {
+            let state = prepare_inputs(&graph, id, &receipts, &options, &cancel)
+                .await
+                .unwrap();
+            let mut receipt =
+                Receipt::skipped(id, Outcome::Executed, BTreeSet::from([Cause::Direct]));
+            receipt.key = state.key;
+            receipt.output = if id == "app#prepare" {
+                cache::output_state(&graph.workspace.projects["app"], &graph.tasks[id].task)
+                    .unwrap()
+            } else {
+                receipt.key.clone()
+            };
+            receipts.insert(id.into(), receipt);
+        }
+        let (valid, invalid) = revalidate_bootstrap(&graph, receipts.clone(), &options, &cancel)
+            .await
+            .unwrap();
+        assert_eq!(valid.len(), 2);
+        assert!(invalid.is_empty());
+        std::fs::write(directory.path().join("middle"), "changed").unwrap();
+        let (valid, invalid) = revalidate_bootstrap(&graph, receipts.clone(), &options, &cancel)
+            .await
+            .unwrap();
+        assert!(valid.is_empty());
+        assert_eq!(invalid.len(), 2);
+        std::fs::write(directory.path().join("middle"), "original").unwrap();
+        let mut changed = graph.clone();
+        changed.tasks.get_mut("app#prepare").unwrap().task.command =
+            crate::config::Command::Argv(vec!["changed".into()]);
+        let (valid, invalid) = revalidate_bootstrap(&changed, receipts, &options, &cancel)
+            .await
+            .unwrap();
+        assert!(valid.is_empty());
+        assert_eq!(invalid.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn bootstrap_service_evidence_requires_current_semantic_identity() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("service-input"), "first").unwrap();
+        std::fs::write(
+            directory.path().join("taskflow.yml"),
+            r#"
+version: 1
+project: app
+tasks:
+  server:
+    command: [unused]
+    service: true
+    input: [service-input]
+    readiness: { type: tcp, address: '127.0.0.1:12345', timeout: '10s' }
+  install:
+    command: [unused]
+    install: true
+    input: []
+    dependsOn: [{ task: server, waitFor: ready }]
+"#,
+        )
+        .unwrap();
+        let graph = Graph::build(
+            crate::discover::Workspace::discover(directory.path())
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        let options = RunOptions::default();
+        let cancel = CancellationToken::new();
+        let mut receipts = BTreeMap::new();
+        for (id, outcome) in [
+            ("app#server", Outcome::Ready),
+            ("app#install", Outcome::Executed),
+        ] {
+            let identity = prepare_inputs(&graph, id, &receipts, &options, &cancel)
+                .await
+                .unwrap();
+            let mut receipt = Receipt::skipped(id, outcome, BTreeSet::from([Cause::Direct]));
+            receipt.output = identity.key.clone();
+            receipt.key = identity.key;
+            receipts.insert(id.into(), receipt);
+        }
+        let (retained, invalid) = revalidate_bootstrap(&graph, receipts.clone(), &options, &cancel)
+            .await
+            .unwrap();
+        assert_eq!(retained.len(), 2);
+        assert!(invalid.is_empty());
+        std::fs::write(directory.path().join("service-input"), "changed").unwrap();
+        let (retained, invalid) = revalidate_bootstrap(&graph, receipts, &options, &cancel)
+            .await
+            .unwrap();
+        assert!(retained.is_empty());
+        assert_eq!(
+            invalid,
+            BTreeSet::from(["app#server".into(), "app#install".into()])
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelled_setup_never_consumes_a_baseline_or_launches() {
+        for during_hash in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            std::fs::write(
+                directory.path().join("taskflow.yml"),
+                "version: 1\nproject: app\ntasks:\n  check:\n    command: [must-not-launch]\n    \
+                 input: [large]\n",
+            )
+            .unwrap();
+            // A cancelled no-probe task must stop after synchronous input work
+            // too. The receipt's removal marks the attempt's setup boundary.
+            File::create(directory.path().join("large"))
+                .unwrap()
+                .set_len(64 * 1024 * 1024)
+                .unwrap();
+            let graph = Graph::build(
+                crate::discover::Workspace::discover(directory.path())
+                    .await
+                    .unwrap(),
+            )
+            .unwrap();
+            let baseline = Receipt::skipped(
+                "app#check",
+                Outcome::Executed,
+                BTreeSet::from([Cause::Direct]),
+            );
+            persist(directory.path(), &baseline).unwrap();
+            let cancel = CancellationToken::new();
+            let watcher = if during_hash {
+                let stop = cancel.clone();
+                let receipt = receipt_path(directory.path(), "app#check");
+                Some(std::thread::spawn(move || {
+                    let deadline = Instant::now() + Duration::from_secs(10);
+                    while receipt.exists() {
+                        assert!(Instant::now() < deadline);
+                        std::thread::yield_now();
+                    }
+                    stop.cancel();
+                }))
+            } else {
+                cancel.cancel();
+                assert!(acquire_locks(directory.path(), "app#check", &[], &cancel)
+                    .await
+                    .unwrap_err()
+                    .is::<crate::process::Cancelled>());
+                assert!(!directory.path().join(".taskflow/locks").exists());
+                None
+            };
+            let error = run_task(
+                &graph,
+                "app#check",
+                BTreeSet::from([Cause::Direct]),
+                &BTreeMap::new(),
+                &RunOptions::default(),
+                cancel,
+            )
+            .await
+            .unwrap_err();
+            if let Some(watcher) = watcher {
+                watcher.join().unwrap();
+            }
+            assert!(error.is::<crate::process::Cancelled>(), "{error:#}");
+            assert!(!directory.path().join(".taskflow/runs").exists());
+            assert_eq!(
+                previous(directory.path(), "app#check").is_some(),
+                !during_hash
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn persisted_cache_reuse_survives_late_cancellation() {
+        for restore in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            std::fs::write(
+                root.path().join("taskflow.yml"),
+                "version: 1\nproject: app\ntasks:\n  check:\n    command: [must-not-run]\n    \
+                 input: []\n    output: [out]\n    cache: true\n    tools: {rustc: [rustc, \
+                 --version]}\n",
+            )
+            .unwrap();
+            std::fs::write(root.path().join("out"), "cached").unwrap();
+            let graph = Arc::new(
+                Graph::build(
+                    crate::discover::Workspace::discover(root.path())
+                        .await
+                        .unwrap(),
+                )
+                .unwrap(),
+            );
+            let options = RunOptions::default();
+            let identity = prepare_inputs(
+                &graph,
+                "app#check",
+                &BTreeMap::new(),
+                &options,
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+            let artifact = cache::Artifact::capture(
+                identity.key,
+                "app#check".into(),
+                &graph.workspace.projects["app"],
+                &graph.tasks["app#check"].task,
+            )
+            .unwrap();
+            cache::store(root.path(), &artifact).unwrap();
+            if restore {
+                std::fs::remove_file(root.path().join("out")).unwrap();
+            }
+            let cancel = CancellationToken::new();
+            let plan = Plan::create(&graph, &["check".into()], &[], false).unwrap();
+            let result = CANCEL_AFTER_PERSIST
+                .scope(
+                    cancel.clone(),
+                    run_plan(graph, plan, options, cancel.clone()),
+                )
+                .await
+                .unwrap();
+            assert!(
+                cancel.is_cancelled(),
+                "cancellation must occur after durable receipt publication"
+            );
+            assert!(result.success, "{result:?}");
+            assert_eq!(result.exit_code(), 0);
+            let receipt = &result.results["app#check"];
+            assert_eq!(
+                receipt.outcome,
+                if restore {
+                    Outcome::Restored
+                } else {
+                    Outcome::LocalCache
+                }
+            );
+            assert_eq!(
+                serde_json::to_value(receipt).unwrap(),
+                serde_json::to_value(previous(root.path(), "app#check").unwrap()).unwrap()
+            );
+            assert_eq!(
+                std::fs::read_to_string(root.path().join("out")).unwrap(),
+                "cached"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn publication_cancellation_replaces_success_exit_code() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(
+            directory.path().join("taskflow.yml"),
+            "version: 1\nproject: app\ntasks:\n  check:\n    command: [unused]\n    input: []\n",
+        )
+        .unwrap();
+        let graph = Graph::build(
+            crate::discover::Workspace::discover(directory.path())
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        let mut receipt = Receipt::skipped(
+            "app#check",
+            Outcome::Executed,
+            BTreeSet::from([Cause::Direct]),
+        );
+        // The command has already succeeded; cancellation arrives at publication.
+        receipt.exit_code = 0;
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        publish(
+            &graph,
+            "app#check",
+            &mut receipt,
+            &BTreeMap::new(),
+            None,
+            None,
+            &cancel,
+        )
+        .await
+        .unwrap();
+        assert_eq!(receipt.outcome, Outcome::Cancelled);
+        assert_eq!(receipt.exit_code, 130);
+        assert!(previous(directory.path(), "app#check").is_none());
+    }
+
+    #[tokio::test]
+    async fn remote_publication_cannot_retract_completed_receipts() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for phase in ["object", "entry", "lost-response"] {
+            let directory = tempfile::tempdir().unwrap();
+            std::fs::write(
+                directory.path().join("taskflow.yml"),
+                "version: 1\nproject: app\ntasks:\n  check:\n    command: [unused]\n    input: \
+                 []\n    output: []\n    cache: true\n    tools: {fixture: [unused]}\n",
+            )
+            .unwrap();
+            let graph = Graph::build(
+                crate::discover::Workspace::discover(directory.path())
+                    .await
+                    .unwrap(),
+            )
+            .unwrap();
+            let inputs = files::input_state(
+                &graph.workspace,
+                &graph.workspace.projects["app"],
+                &graph.tasks["app#check"].task,
+            )
+            .unwrap();
+            let mut receipt = Receipt::skipped(
+                "app#check",
+                Outcome::Executed,
+                BTreeSet::from([Cause::Direct]),
+            );
+            receipt.exit_code = 0;
+            receipt.key = files::digest(b"fixture");
+            receipt.output = receipt.key.clone();
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let remote = Remote::fixture(format!("http://{}", listener.local_addr().unwrap()));
+            let cancel = CancellationToken::new();
+            let stop = cancel.clone();
+            let root = directory.path().to_path_buf();
+            let server = tokio::spawn(async move {
+                for index in 0..if phase == "object" { 1 } else { 2 } {
+                    let (mut socket, _) = listener.accept().await.unwrap();
+                    let mut request = Vec::new();
+                    let end = loop {
+                        assert!(socket.read_buf(&mut request).await.unwrap() > 0);
+                        if let Some(end) = request.windows(4).position(|part| part == b"\r\n\r\n") {
+                            break end + 4;
+                        }
+                    };
+                    let headers = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+                    let length: usize = headers
+                        .lines()
+                        .find_map(|line| line.strip_prefix("content-length: "))
+                        .unwrap()
+                        .parse()
+                        .unwrap();
+                    while request.len() < end + length {
+                        assert!(socket.read_buf(&mut request).await.unwrap() > 0);
+                    }
+                    assert!(headers.contains(if index == 0 { "/objects/" } else { "/entries/" }));
+                    if index == 1 {
+                        assert!(previous(&root, "app#check").unwrap().success());
+                    }
+                    if phase == "object" || index == 1 {
+                        stop.cancel();
+                    }
+                    if phase != "lost-response" || index == 0 {
+                        let _ = socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
+                    }
+                }
+            });
+            publish(
+                &graph,
+                "app#check",
+                &mut receipt,
+                &inputs,
+                None,
+                Some(&remote),
+                &cancel,
+            )
+            .await
+            .unwrap();
+            server.await.unwrap();
+            let plan = Plan::create(&graph, &["check".into()], &[], false).unwrap();
+            let result = run_plan(
+                Arc::new(graph),
+                plan,
+                RunOptions {
+                    provided: BTreeMap::from([("app#check".into(), receipt.clone())]),
+                    ..Default::default()
+                },
+                cancel,
+            )
+            .await
+            .unwrap();
+            assert_eq!(result.success, phase != "object");
+            assert_eq!(result.exit_code(), if phase == "object" { 130 } else { 0 });
+            if phase == "object" {
+                assert_eq!(receipt.outcome, Outcome::Cancelled);
+                assert!(!cache::entry_path(directory.path(), &receipt.key).exists());
+                assert!(previous(directory.path(), "app#check").is_none());
+            } else {
+                assert_eq!(receipt.outcome, Outcome::Executed);
+                assert_eq!(receipt.exit_code, 0);
+                assert_eq!(
+                    previous(directory.path(), "app#check").unwrap().outcome,
+                    Outcome::Executed
+                );
+                assert!(cache::load(directory.path(), &receipt.key)
+                    .unwrap()
+                    .is_some());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn log_write_failure_awaits_both_streams_and_cleanup() {
+        for cleanup_fails in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("output.log");
+            std::fs::write(&path, "retained").unwrap();
+            let log = Arc::new(Mutex::new(OutputLog::new(
+                File::open(&path).unwrap(),
+                vec![],
+                false,
+                true,
+            )));
+            let stdout = tokio::spawn(stream_log(&b"output"[..], log, vec![]));
+            let sibling_finished = Arc::new(AtomicBool::new(false));
+            let sibling = sibling_finished.clone();
+            let stderr = tokio::spawn(async move {
+                tokio::task::yield_now().await;
+                sibling.store(true, Ordering::SeqCst);
+                Ok(())
+            });
+            let cleaned = AtomicBool::new(false);
+            let cleanup = async {
+                assert!(sibling_finished.load(Ordering::SeqCst));
+                tokio::task::yield_now().await;
+                cleaned.store(true, Ordering::SeqCst);
+                if cleanup_fails {
+                    Err(anyhow::Error::new(crate::docker::CleanupFailure))
+                } else {
+                    Ok(())
+                }
+            };
+            let error = finish_logs_and_container(stdout, stderr, cleanup)
+                .await
+                .unwrap_err();
+            assert!(cleaned.load(Ordering::SeqCst));
+            assert_eq!(error.is::<crate::docker::CleanupFailure>(), cleanup_fails);
+            assert_eq!(std::fs::read(&path).unwrap(), b"retained");
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_service_logs_stop_live_processes_and_await_cleanup() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("service.rs");
+        let binary = directory.path().join(if cfg!(windows) {
+            "service.exe"
+        } else {
+            "service"
+        });
+        std::fs::write(
+            &source,
+            r#"
+            fn main() {
+                let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+                std::fs::write("address", listener.local_addr().unwrap().to_string()).unwrap();
+                if std::env::args().nth(1).unwrap() == "stdout" { println!("live"); }
+                else { eprintln!("live"); }
+                loop { std::thread::sleep(std::time::Duration::from_secs(1)); }
+            }
+        "#,
+        )
+        .unwrap();
+        assert!(std::process::Command::new("rustc")
+            .arg(&source)
+            .arg("-o")
+            .arg(&binary)
+            .status()
+            .unwrap()
+            .success());
+        for stream in ["stdout", "stderr"] {
+            for cleanup_fails in [false, true] {
+                let path = directory.path().join("output.log");
+                std::fs::write(&path, "retained").unwrap();
+                let broken = Arc::new(Mutex::new(OutputLog::new(
+                    File::open(&path).unwrap(),
+                    vec![],
+                    false,
+                    true,
+                )));
+                let good = Arc::new(Mutex::new(OutputLog::new(
+                    File::create(directory.path().join("good.log")).unwrap(),
+                    vec![],
+                    false,
+                    true,
+                )));
+                let failed = CancellationToken::new();
+                // A successful stream EOF alone does not stop a service.
+                monitored_log(tokio::io::empty(), good.clone(), vec![], failed.clone())
+                    .await
+                    .unwrap();
+                assert!(!failed.is_cancelled());
+                let mut process = OwnedProcess::spawn(
+                    directory.path(),
+                    &crate::config::Command::Argv(vec![
+                        binary.to_str().unwrap().into(),
+                        stream.into(),
+                    ]),
+                    None,
+                    None,
+                )
+                .unwrap();
+                let stdout = tokio::spawn(monitored_log(
+                    process.child.stdout.take().unwrap(),
+                    if stream == "stdout" {
+                        broken.clone()
+                    } else {
+                        good.clone()
+                    },
+                    vec![],
+                    failed.clone(),
+                ));
+                let stderr = tokio::spawn(monitored_log(
+                    process.child.stderr.take().unwrap(),
+                    if stream == "stderr" {
+                        broken.clone()
+                    } else {
+                        good
+                    },
+                    vec![],
+                    failed.clone(),
+                ));
+                let cleaned = AtomicBool::new(false);
+                let cleanup = async {
+                    tokio::task::yield_now().await;
+                    cleaned.store(true, Ordering::SeqCst);
+                    if cleanup_fails {
+                        Err(anyhow::Error::new(crate::docker::CleanupFailure))
+                    } else {
+                        Ok(())
+                    }
+                };
+                let result = tokio::time::timeout(
+                    Duration::from_secs(10),
+                    finish_service(
+                        process,
+                        (stdout, stderr),
+                        broken,
+                        &CancellationToken::new(),
+                        &failed,
+                        None,
+                        cleanup,
+                    ),
+                )
+                .await;
+                let error = result.unwrap().unwrap_err();
+                assert_eq!(error.is::<crate::docker::CleanupFailure>(), cleanup_fails);
+                assert!(cleaned.load(Ordering::SeqCst));
+                let address = std::fs::read_to_string(directory.path().join("address")).unwrap();
+                assert!(
+                    std::net::TcpListener::bind(address).is_ok(),
+                    "service retained its listener"
+                );
+                assert_eq!(std::fs::read(&path).unwrap(), b"retained");
+            }
+        }
+    }
+}

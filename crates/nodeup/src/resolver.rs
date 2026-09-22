@@ -249,22 +249,19 @@ fn parse_selector_for_resolution(
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs,
-        time::{Duration, SystemTime, UNIX_EPOCH},
-    };
+    use std::{fs, time::Duration};
 
     use super::*;
     use crate::paths::NodeupPaths;
 
-    fn temp_paths(label: &str) -> NodeupPaths {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!("nodeup-resolver-{label}-{nonce}"));
+    fn temp_paths(label: &str) -> (tempfile::TempDir, NodeupPaths) {
+        let directory = tempfile::Builder::new()
+            .prefix(&format!("nodeup-resolver-{label}-"))
+            .tempdir()
+            .unwrap();
+        let root = directory.path();
 
-        NodeupPaths {
+        let paths = NodeupPaths {
             data_root: root.join("data"),
             cache_root: root.join("cache"),
             config_root: root.join("config"),
@@ -273,12 +270,15 @@ mod tests {
             release_index_cache_file: root.join("cache").join("release-index.json"),
             settings_file: root.join("config").join("settings.toml"),
             overrides_file: root.join("config").join("overrides.toml"),
-        }
+        };
+        (directory, paths)
     }
 
     #[test]
     fn resolution_prefers_explicit_selector() {
-        let paths = temp_paths("explicit");
+        // The owner removes only this fixture; deriving a cleanup ancestor from
+        // data_root previously deleted the shared system temporary directory.
+        let (_directory, paths) = temp_paths("explicit");
         paths.ensure_layout().unwrap();
 
         let store = Store::new(paths.clone());
@@ -307,7 +307,5 @@ mod tests {
             .unwrap();
 
         assert_eq!(resolved.runtime_id(), "v22.0.0");
-
-        let _ = fs::remove_dir_all(paths.data_root.parent().unwrap().parent().unwrap());
     }
 }

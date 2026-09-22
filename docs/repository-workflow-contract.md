@@ -73,6 +73,10 @@ The seven CLI release workflows call `release-linux-packages.yml` after GitHub R
 
 Run `node --test scripts/release/runmoor.test.mjs` for deterministic archive, identity, checksum, signature-verifier-double and workflow isolation checks. Cross-build with `node scripts/release/runmoor.mjs build --version 0.1.0 --revision <40-hex-commit> --ref <git-ref> --mode dry-run --output <temporary-directory>`, then its `checksums` and `verify` commands. These commands do not need credentials or signing tools. Repository-wide release fixtures that use Debian packaging and GNU tar run on Linux. Follow `docs/cmds-runmoor-foundation.md` for runtime verification and compatibility limits.
 
+## TaskFlow conformance
+
+`taskflow-conformance` and `taskflow-docker` use the centralized `changes` plan before runner allocation for TaskFlow, shared Rust, and workflow inputs, participate in `ci-result`, and remain read-only. Native conformance also tracks the Go module/tool pins used by its actionlint fixture. Native conformance covers macOS/Linux/Windows x64 and arm64, including real native inventories and generated-workflow actionlint. Docker/S3 runs on Linux x64/arm64 with immutable multi-architecture image digests and temporary fixture-only credentials. Existing development/build/test workflows are not migrated to TaskFlow.
+
 ## clibox native and npm distribution
 
 `clibox` is a selected Rust release target. Its executable Cargo manifest, Cargo.lock entry, private npm source manifest, executable, and generated packages must agree on the exact version. All five clibox crates have `publish = false`; its four internal companion versions do not participate in product bumps. The coordinator validates the exact source identity without waiting for main CI, then pushes `clibox@v<version>` without a Cargo registry token or crates.io publication and without waiting for npm. It does not publish npm packages itself.

@@ -97,13 +97,14 @@
 
 ### public-docs Rules
 
+- TaskFlow owns `/taskflow` and the `configuration`, `commands`, `cache`, and `ci` child routes. Keep source installation, unpublished status, adapter limits, and configuration/CI trust rules aligned with its engine contract.
 - `public-docs` must remain Rspress-based and use Cloudflare Pages static output unless its project contract documents a replacement.
 - `public-docs` production is `https://oss.delino.io`, served by the Cloudflare Pages `public-docs` project from `main`; build at the repository root with the repository's Node and pnpm versions and publish only `apps/public-docs/doc_build`.
 - `public-docs` is the sole production documentation publisher. It builds the `docs/runmoor`, `docs/nodeup`, `docs/binpm`, and `docs/async-commit-hook` content roots directly below `/runmoor`, `/nodeup`, `/binpm`, and `/async-commit-hook`; no package-local documentation workspaces or output directories are independently published.
 - Every assembled documentation page must expose the shared site selector for Delino OSS, Runmoor, Nodeup, binpm, and async-commit-hook. Production uses same-origin clean routes; on the documented fixed loopback development ports the selector targets each package's local root. It must expose `aria-expanded` and `aria-current`, support keyboard selection, Escape/outside-click close, and focus return.
 - Rspress routes, navigation, and sidebar in `apps/public-docs/rspress.config.ts` must stay aligned with `docs/apps-public-docs-foundation.md`.
 - `public-docs` must use clean URLs, write production output to `apps/public-docs/doc_build`, and validate stable route artifacts plus generated internal `.html` links through `pnpm --filter public-docs test`.
-- Current public-docs in-site top-level product page IDs are `devhud`, `cargo-mono`, `derun`, and `with-watch`.
+- Current public-docs in-site top-level product page IDs are `devhud`, `cargo-mono`, `derun`, `with-watch`, and `taskflow`.
 - The stable `/devhud` page documents public product availability and the coordinated all-channels GA rule without exposing release credentials, private workflow details, or deployment internals.
 - Nodeup, binpm, Runmoor, and async-commit-hook are exposed from `apps/public-docs/docs` through canonical same-origin subpaths `/nodeup`, `/binpm`, `/runmoor`, and `/async-commit-hook`. Their Markdown is owned directly by these content roots and must not be duplicated elsewhere.
 - Do not add legacy handoff pages, aliases, or redirects for the consolidated project subpaths. Operators decommission the former standalone Pages projects and DNS records only after the consolidated deployment, route, switcher, and installer checks pass.

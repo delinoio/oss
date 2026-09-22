@@ -115,6 +115,7 @@
 - Completion generation logs must include shell, command scope, and `generated|failed` outcome state.
 
 ## Build and Test
+- Resolver fixtures retain an owning `TempDir` through execution and cleanup. Cleanup must never walk above that owned directory into the shared temporary root; validate with a sibling canary under an isolated `TMPDIR` when changing fixture ownership.
 - Local validation: `cargo test -p nodeup`
 - Workspace baseline: `cargo test --workspace --all-targets`
 - Release contract checks should align with `release-nodeup` workflow expectations.

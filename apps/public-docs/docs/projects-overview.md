@@ -11,6 +11,7 @@ This page provides a high-level public catalog of projects in the Delino OSS mon
 - [`derun`](derun): Terminal-fidelity run execution and MCP bridge tool.
 - [`with-watch`](with-watch): Command rerun watcher for inferred or explicit filesystem inputs.
 - [`runmoor`](https://oss.delino.io/runmoor/): Stable manager for disposable Docker and Tart GitHub Actions runners on a personal computer.
+- [`TaskFlow`](taskflow): Source-distributed task engine with native workspace discovery, development sessions, caching, and CI test sharding.
 - [`async-commit-hook`](https://oss.delino.io/async-commit-hook/): Asynchronous checks against committed source for developers and coding agents.
 - `mpapp`: Expo React Native mobile app.
 - `public-docs`: Rspress public documentation app.

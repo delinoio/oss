@@ -222,6 +222,25 @@ function results(event, paths) {
   };
 }
 
+test("TaskFlow conformance follows the central plan and rejects incomplete results", () => {
+  const ids = ["taskflow-conformance", "taskflow-docker"];
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of ["crates/taskflow/src/runner.rs", "docs/crates-taskflow-conformance.md", "Cargo.lock", ".cargo/config.toml"]) {
+      for (const id of ids) assert.ok(selected(event, [path]).includes(id), `${path}: ${id}`);
+    }
+    for (const id of ids) assert.ok(!selected(event, ["cmds/runmoor/main.go"]).includes(id), id);
+    assert.ok(selected(event, ["go.mod"]).includes("taskflow-conformance"));
+    for (const id of ids) {
+      const needs = results(event, ["crates/taskflow/src/runner.rs"]);
+      assert.equal(validateResults(needs), true);
+      for (const result of ["failure", "cancelled", "skipped"]) {
+        needs[id].result = result;
+        assert.throws(() => validateResults(needs), new RegExp(id, "u"));
+      }
+    }
+  }
+});
+
 test("aggregate requires Linux package skips on PRs and success when selected on main or manually", () => {
   const id = "linux-packages";
   for (const path of ["Cargo.lock", ".github/workflows/CI.yml"]) {
