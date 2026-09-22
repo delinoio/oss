@@ -82,6 +82,33 @@ fn rate_limit_uses_shared_hashed_state_and_zero_wait_is_immediate() {
 }
 
 #[test]
+fn rate_limit_rejects_bursts_larger_than_exact_token_storage() {
+    let home = tempfile::tempdir().unwrap();
+    let output = command(
+        home.path(),
+        &[
+            "run",
+            "with-rate-limit",
+            "--name",
+            "shared.bucket",
+            "--limit",
+            "1",
+            "--period",
+            "1m",
+            "--burst",
+            "9007199254740993",
+            "--",
+            "sh",
+            "-c",
+            "exit 0",
+        ],
+    )
+    .output()
+    .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+}
+
+#[test]
 fn lock_fail_never_starts_a_second_workload() {
     let home = tempfile::tempdir().unwrap();
     let marker = home.path().join("lock-owner-ready");

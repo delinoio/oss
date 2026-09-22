@@ -31,6 +31,7 @@ use crate::{
 const POLL: Duration = Duration::from_millis(20);
 const CLEANUP_CONFIRMATION: Duration = Duration::from_secs(5);
 const STATE_VERSION: u8 = 1;
+const MAX_EXACT_TOKEN_COUNT: u64 = 1 << 53;
 
 #[derive(Subcommand)]
 pub enum Command {
@@ -89,7 +90,7 @@ pub struct RateLimit {
     limit: u64,
     #[arg(long, value_parser = parse_positive_duration)]
     period: Duration,
-    #[arg(long, default_value = "1", value_parser = parse_positive_u64)]
+    #[arg(long, default_value = "1", value_parser = parse_token_count)]
     burst: u64,
     #[command(flatten)]
     scope: ScopeOptions,
@@ -1705,6 +1706,14 @@ fn parse_positive_u64(value: &str) -> std::result::Result<u64, &'static str> {
         .ok()
         .filter(|value| *value > 0)
         .ok_or("Use a positive integer.")
+}
+
+fn parse_token_count(value: &str) -> std::result::Result<u64, &'static str> {
+    parse_positive_u64(value).and_then(|value| {
+        (value <= MAX_EXACT_TOKEN_COUNT)
+            .then_some(value)
+            .ok_or("Use a token burst no greater than 9007199254740992.")
+    })
 }
 
 fn parse_positive_u32(value: &str) -> std::result::Result<u32, &'static str> {

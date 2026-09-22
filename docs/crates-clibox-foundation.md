@@ -359,7 +359,7 @@ Every workload is prepared by the existing environment planner: assignments expa
 
 | Command | Contract |
 | --- | --- |
-| `run with-rate-limit` | Requires `--name`, `--limit`, and `--period`; optional `--burst`, scope, project identity, and admission wait timeout. It deducts one shared token immediately before spawning, does not refund on spawn/cancellation failure, and preserves bucket configuration. |
+| `run with-rate-limit` | Requires `--name`, `--limit`, and `--period`; optional `--burst` from 1 through 9007199254740992, scope, project identity, and admission wait timeout. It deducts one shared token immediately before spawning, does not refund on spawn/cancellation failure, and preserves bucket configuration. |
 | `run with-lock` | Requires `--name`; `--on-locked wait` is default, `skip` exits 0 without workload, and `fail` exits 75. `--wait-timeout` is valid only for `wait`. |
 | `run with-service URL` | Waits for headers-only HTTP readiness before the workload. `--service SERVICE ... -- WORKLOAD ...` owns the service; without it the endpoint is external and is never terminated. |
 | `run with-retry` | Retries eligible nonzero numeric child exits, defaulting to three total attempts, 1 s initial delay, factor 2, 30 s cap, and full jitter. It never replays stdin, retries spawn failures, or retries Unix signal termination. |

@@ -75,7 +75,7 @@ clibox run with-retry --max-attempts 5 --jitter none -- cargo fetch
 clibox run with-timeout --timeout 10m --idle-timeout 30s -- npm test
 ```
 
-Rate limits require `--name`, `--limit`, and `--period`; `--burst` defaults to one. A named local token bucket admits one workload per token, preserves its configuration, and does not refund a token after a failed spawn/cancellation. `--wait-timeout` bounds admission; `0` is immediate. Refill uses UTC accounting, never adds tokens on a backward clock movement, and caps forward refill at burst capacity.
+Rate limits require `--name`, `--limit`, and `--period`; `--burst` defaults to one and is at most `9007199254740992`. A named local token bucket admits one workload per token, preserves its configuration, and does not refund a token after a failed spawn/cancellation. `--wait-timeout` bounds admission; `0` is immediate. Refill uses UTC accounting, never adds tokens on a backward clock movement, and caps forward refill at burst capacity.
 
 Locks use the same name/scope rules. They wait by default; `--on-locked skip` returns 0 and `--on-locked fail` returns 75 without starting a workload. `--wait-timeout` is valid only for `wait`. Same-key nested locks are ordinary contention rather than reentrant bypasses.
 
