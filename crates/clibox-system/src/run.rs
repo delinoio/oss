@@ -11,7 +11,7 @@ use std::{
     io::{self, Read, Write},
     path::{Path, PathBuf},
     process::{Child, Command as ProcessCommand, ExitStatus, Stdio},
-    sync::mpsc,
+    sync::{mpsc, Arc},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -427,10 +427,11 @@ fn with_service(options: Service) -> Result<Outcome> {
         .clone()
         .map(environment::prepare)
         .transpose()?;
+    let client = service_http_client(options.url.scheme() == "https")?;
     let ready_deadline = deadline(start, Some(options.ready_timeout))?;
 
     // The bounded preflight deliberately happens before spawning either child.
-    match check_http(&options, ready_deadline) {
+    match check_http(&options, &client, ready_deadline) {
         Ok(()) if service.is_some() => {
             return runtime_failure(
                 "The endpoint is already ready; omit --service to use the existing server.",
@@ -450,7 +451,7 @@ fn with_service(options: Service) -> Result<Outcome> {
             }
         }
         Err(code) if code.retryable() => {
-            return wait_for_external_service(&options, &workload, ready_deadline);
+            return wait_for_external_service(&options, &client, &workload, ready_deadline);
         }
         Err(HttpProbeError::OverallTimeout) => return Ok(Outcome::Code(124)),
         Err(HttpProbeError::Cancelled) => return check_cancelled().and_then(|()| unreachable!()),
@@ -468,7 +469,7 @@ fn with_service(options: Service) -> Result<Outcome> {
             let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
             return runtime_failure("The managed service exited before it became ready.");
         }
-        match check_http(&options, ready_deadline) {
+        match check_http(&options, &client, ready_deadline) {
             Ok(()) => break,
             Err(code) if code.retryable() => {
                 // The service can exit while one bounded HTTP attempt is in
@@ -529,12 +530,13 @@ fn with_service(options: Service) -> Result<Outcome> {
 
 fn wait_for_external_service(
     options: &Service,
+    client: &reqwest::blocking::Client,
     workload: &environment::Plan,
     ready_deadline: Option<Instant>,
 ) -> Result<Outcome> {
     loop {
         check_cancelled()?;
-        match check_http(options, ready_deadline) {
+        match check_http(options, client, ready_deadline) {
             Ok(()) => {
                 return run_once(
                     workload,
@@ -663,6 +665,7 @@ fn timeout_with_idle(options: Timeout) -> Result<Outcome> {
 
 fn check_http(
     options: &Service,
+    client: &reqwest::blocking::Client,
     deadline: Option<Instant>,
 ) -> std::result::Result<(), HttpProbeError> {
     let remaining = deadline.map(|limit| limit.saturating_duration_since(Instant::now()));
@@ -677,10 +680,11 @@ fn check_http(
         HttpMethod::Head => reqwest::Method::HEAD,
     };
     let (sender, receiver) = mpsc::sync_channel(1);
+    let client = client.clone();
     let url = options.url.clone();
     let expected_status = options.status;
     thread::spawn(move || {
-        let result = http_attempt(url, method, expected_status, budget);
+        let result = http_attempt(client, url, method, expected_status, budget);
         let _ = sender.send(result);
     });
     let attempt_deadline = Instant::now()
@@ -709,29 +713,25 @@ fn check_http(
 }
 
 fn http_attempt(
+    client: reqwest::blocking::Client,
     url: reqwest::Url,
     method: reqwest::Method,
     expected_status: Option<u16>,
     budget: Duration,
 ) -> std::result::Result<(), HttpProbeError> {
-    let client = reqwest::blocking::Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .retry(reqwest::retry::never())
-        .referer(false)
-        .pool_max_idle_per_host(0)
+    let response = client
+        .request(method, url)
         .timeout(budget)
-        .build()
-        .map_err(|_| HttpProbeError::Terminal)?;
-    let response = client.request(method, url).send().map_err(|error| {
-        if error.is_timeout() {
-            HttpProbeError::AttemptTimeout
-        } else if error.is_connect() {
-            HttpProbeError::NotReady
-        } else {
-            HttpProbeError::Terminal
-        }
-    })?;
+        .send()
+        .map_err(|error| {
+            if error.is_timeout() {
+                HttpProbeError::AttemptTimeout
+            } else if error.is_connect() {
+                HttpProbeError::NotReady
+            } else {
+                HttpProbeError::Terminal
+            }
+        })?;
     let observed = response.status().as_u16();
     if expected_status
         .map(|expected| expected == observed)
@@ -740,6 +740,94 @@ fn http_attempt(
         Ok(())
     } else {
         Err(HttpProbeError::NotReady)
+    }
+}
+
+fn service_http_client(https: bool) -> Result<reqwest::blocking::Client> {
+    let tls = if https {
+        native_service_tls()?
+    } else {
+        tls_with_roots(rustls::RootCertStore::empty())?
+    };
+    reqwest::blocking::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .retry(reqwest::retry::never())
+        .referer(false)
+        .pool_max_idle_per_host(0)
+        .use_preconfigured_tls(tls)
+        .build()
+        .map_err(|_| {
+            Failure::new(
+                Code::IoFailed,
+                "HTTP readiness client initialization failed.",
+            )
+        })
+}
+
+fn native_service_tls() -> Result<rustls::ClientConfig> {
+    // rustls-native-certs currently honors these OpenSSL-style overrides on
+    // supported platforms. Service probes promise OS trust only, and run no
+    // child until this preflight completes, so scope the workaround to root
+    // loading and restore the caller's environment before any workload spawn.
+    // Remove it once the loader offers an explicit native-only API.
+    let _overrides = NativeRootOverrides::without_custom_ca();
+    let loaded = rustls_native_certs::load_native_certs();
+    let mut roots = rustls::RootCertStore::empty();
+    let (usable_roots, ignored_certificates) = roots.add_parsable_certificates(loaded.certs);
+    tracing::debug!(
+        operation = "run-with-service",
+        usable_roots,
+        ignored_certificates,
+        loader_errors = loaded.errors.len(),
+        "native_trust_loaded"
+    );
+    if roots.is_empty() {
+        return runtime_failure("No usable native trust roots are available for HTTP readiness.");
+    }
+    tls_with_roots(roots)
+}
+
+fn tls_with_roots(roots: rustls::RootCertStore) -> Result<rustls::ClientConfig> {
+    let mut tls = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .map_err(|_| Failure::new(Code::IoFailed, "HTTP readiness TLS initialization failed."))?
+    .with_root_certificates(roots)
+    .with_no_client_auth();
+    tls.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    Ok(tls)
+}
+
+struct NativeRootOverrides {
+    certificate_file: Option<OsString>,
+    certificate_directory: Option<OsString>,
+}
+
+impl NativeRootOverrides {
+    fn without_custom_ca() -> Self {
+        let certificate_file = env::var_os("SSL_CERT_FILE");
+        let certificate_directory = env::var_os("SSL_CERT_DIR");
+        std::env::remove_var("SSL_CERT_FILE");
+        std::env::remove_var("SSL_CERT_DIR");
+        Self {
+            certificate_file,
+            certificate_directory,
+        }
+    }
+}
+
+impl Drop for NativeRootOverrides {
+    fn drop(&mut self) {
+        match self.certificate_file.take() {
+            Some(value) => std::env::set_var("SSL_CERT_FILE", value),
+            None => std::env::remove_var("SSL_CERT_FILE"),
+        }
+        match self.certificate_directory.take() {
+            Some(value) => std::env::set_var("SSL_CERT_DIR", value),
+            None => std::env::remove_var("SSL_CERT_DIR"),
+        }
     }
 }
 

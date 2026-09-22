@@ -391,6 +391,63 @@ fn first_cancellation_honors_the_configured_cleanup_grace() {
 }
 
 #[test]
+fn service_probe_ignores_custom_ca_override_variables() {
+    let certificate = rcgen::generate_simple_self_signed(vec!["127.0.0.1".to_owned()]).unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let ca = home.path().join("custom-ca.pem");
+    let marker = home.path().join("custom-ca-workload");
+    let assignment = format!("MARKER={}", marker.display());
+    fs::write(&ca, certificate.cert.pem()).unwrap();
+    let config = rustls::ServerConfig::builder_with_provider(std::sync::Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .unwrap()
+    .with_no_client_auth()
+    .with_single_cert(
+        vec![certificate.cert.der().clone()],
+        rustls::pki_types::PrivatePkcs8KeyDer::from(certificate.signing_key.serialize_der()).into(),
+    )
+    .unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut stream = rustls::StreamOwned::new(
+            rustls::ServerConnection::new(std::sync::Arc::new(config)).unwrap(),
+            stream,
+        );
+        let _ = stream.read(&mut [0; 4096]);
+        let _ = stream.write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n");
+    });
+    let output = command(
+        home.path(),
+        &[
+            "run",
+            "with-service",
+            &format!("https://127.0.0.1:{port}/health"),
+            "--ready-timeout",
+            "1s",
+            &assignment,
+            "--",
+            "sh",
+            "-c",
+            ": > \"$MARKER\"",
+        ],
+    )
+    .env("SSL_CERT_FILE", &ca)
+    .env("SSL_CERT_DIR", home.path())
+    .output()
+    .unwrap();
+    assert!(!output.status.success());
+    assert!(!marker.exists());
+    server.join().unwrap();
+}
+
+#[test]
 fn external_service_is_observed_without_becoming_owned() {
     let home = tempfile::tempdir().unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
