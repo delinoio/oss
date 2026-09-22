@@ -21,6 +21,15 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ADAPTERS_DIR="$SCRIPT_DIR/adapters"
+CLIBOX_RUNNER="$SCRIPT_DIR/../../../../scripts/clibox.cjs"
+
+copy_result() {
+    if printf '%s\n' "$1" | node "$CLIBOX_RUNNER" clipboard copy; then
+        echo "$2 copied to clipboard!"
+    else
+        echo "(clipboard unavailable; use the output above; install repository dependencies with pnpm install)"
+    fi
+}
 
 # Default adapter
 IMAGE_ADAPTER="${IMAGE_ADAPTER:-0x0st}"
@@ -109,28 +118,11 @@ if [[ "$MARKDOWN_MODE" == "true" ]]; then
     echo "$MARKDOWN"
     echo ""
 
-    # Copy to clipboard (macOS)
-    if command -v pbcopy &> /dev/null; then
-        echo "$MARKDOWN" | pbcopy
-        echo "Markdown table copied to clipboard!"
-    elif command -v xclip &> /dev/null; then
-        echo "$MARKDOWN" | xclip -selection clipboard
-        echo "Markdown table copied to clipboard!"
-    else
-        echo "(clipboard copy not available - install pbcopy or xclip)"
-    fi
+    copy_result "$MARKDOWN" "Markdown table"
 else
     # Copy URLs to clipboard
     URLS="Before: $BEFORE_URL
 After: $AFTER_URL"
 
-    if command -v pbcopy &> /dev/null; then
-        echo "$URLS" | pbcopy
-        echo "URLs copied to clipboard!"
-    elif command -v xclip &> /dev/null; then
-        echo "$URLS" | xclip -selection clipboard
-        echo "URLs copied to clipboard!"
-    else
-        echo "(clipboard copy not available - install pbcopy or xclip)"
-    fi
+    copy_result "$URLS" "URLs"
 fi

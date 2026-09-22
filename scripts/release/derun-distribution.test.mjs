@@ -17,6 +17,15 @@ test('Derun Homebrew rendering requires and installs the Linux ARM64 release ass
   assert.match(formula, /license "Apache-2.0"/u);
 });
 
+test('Homebrew template replacement preserves URL metacharacters literally', () => {
+  const args = ['scripts/release/update-homebrew.sh', '--project', 'derun', '--version', '1.2.3', '--dry-run'];
+  const url = 'https://example.invalid/derun.tar.gz?one=1&two=$2|tail';
+  for (const target of ['darwin-amd64', 'darwin-arm64', 'linux-amd64', 'linux-arm64']) args.push(`--${target}-url`, url, `--${target}-sha256`, 'a'.repeat(64));
+  const formula = execFileSync('bash', args, { encoding: 'utf8', stdio: 'pipe' });
+  assert.equal(formula.split(url).length - 1, 4);
+  assert.doesNotMatch(formula, /__[A-Z_]+__/u);
+});
+
 test('Derun direct ARM64 installation checks the selected archive checksum', (t) => {
   const directory = mkdtempSync(path.join(tmpdir(), 'derun-install-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));

@@ -12,6 +12,8 @@ The root `clibox-prebuilt` dev dependency aliases the published `@delino/clibox@
 
 Compatible shell hashing, Base64, literal template replacement, timestamp formatting, and clipboard work use clibox. Preserve checksum record compatibility, private output permissions, and secret-free argv/logs. Public standalone installers, minimal Rust toolchain bootstraps, and provenance timestamps captured before tooling installation retain their existing tools. In-process Node data handling and signing, structured parsing, port binding checks, database health, nonempty-file readiness, and child lifecycle checks retain their existing stronger contracts.
 
+The shared checksum generator keeps sorted recursive paths, GNU filename escaping, and the existing two-space text marker; its clibox binary marker is normalized for existing release validators. Template values use literal replacement. Signing inputs pass through stdin, and shell umasks or platform file permissions remain authoritative. In DevHud store recovery, only the Apple row checks out `github.workflow_sha` under `.clibox-tooling` and prepares its pinned utility there; the selected historical release source and artifact identities remain unchanged.
+
 ### Validation workflow
 
 `.github/workflows/CI.yml` is a read-only validation workflow. It uses `contents: read` and `pull-requests: read`, does not consume repository secrets, and must not push tags, create or upload releases, submit stores, push OCI images, deploy documentation or infrastructure, promote updater state, or call any mutating release-controller operation. Release workflows and packaging inputs are tested as source and deterministic fixtures only.

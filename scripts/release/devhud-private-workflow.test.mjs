@@ -113,7 +113,7 @@ test("private workflow validates the combined Android App Bundle once", () => {
 test("private workflow inspects the packaged Android manifest before widget evidence", () => {
   const mobile = workflow.slice(workflow.indexOf("\n  mobile:"), workflow.indexOf("\n  oci:"));
   const download = "Download checksum-pinned bundletool";
-  const checksum = "sha256sum --check";
+  const checksum = 'clibox hash verify "$expected" --input="$jar" --quiet';
   const verification = "--bundletool-jar \"${{ steps.bundletool.outputs.jar }}\"";
   const evidence = "record --id android-google-play";
   assert.ok(mobile.includes(download) && mobile.includes(checksum));

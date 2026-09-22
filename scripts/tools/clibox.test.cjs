@@ -5,6 +5,7 @@ const { execFileSync, spawnSync } = require("node:child_process");
 const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = require("node:fs");
 const { tmpdir } = require("node:os");
 const path = require("node:path");
+const { createServer } = require("node:net");
 const test = require("node:test");
 const { resolveLauncher } = require("../clibox.cjs");
 
@@ -50,4 +51,19 @@ test("literal template values and native exit codes survive the repository launc
   assert.equal(failed.status, 1);
   assert.equal(failed.stdout, "");
   assert.equal(invoke(["time", "format", "2026-09-22T08:21:16Z", "--timezone", "UTC", "--format", "%Y-%m-%dT%H:%M:%SZ"], { encoding: "utf8" }), "2026-09-22T08:21:16Z\n");
+});
+
+test("development port conflicts retain binding checks and give portable clibox guidance", async (t) => {
+  const server = createServer();
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const port = String(server.address().port);
+  const result = spawnSync(process.execPath, [path.resolve(__dirname, "../run-rspress-port.mjs"), "fixture", "dev", port, "CLIBOX_TEST_PORT_OVERRIDE"], { encoding: "utf8", env: { ...process.env, CLIBOX_TEST_PORT_OVERRIDE: port } });
+  assert.equal(result.status, 1);
+  assert.ok(result.stderr.includes(`pnpm exec clibox port list ${port}`));
+  assert.ok(result.stderr.includes('clibox env run "CLIBOX_TEST_PORT_OVERRIDE=<free-port>"'));
+  assert.equal(server.listening, true);
 });

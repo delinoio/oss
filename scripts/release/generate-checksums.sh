@@ -55,6 +55,8 @@ if [ ! -d "$artifacts_dir" ]; then
 fi
 
 require_cosign="${REQUIRE_COSIGN:-1}"
+script_dir="$(cd "$(dirname "$0")" && pwd -P)"
+clibox=(node "$script_dir/../clibox.cjs")
 
 artifacts_dir="$(cd "$artifacts_dir" && pwd -P)"
 if [ -z "$sigstore_dir" ]; then
@@ -67,7 +69,8 @@ fi
 pushd "$artifacts_dir" >/dev/null
 
 artifacts=()
-while IFS= read -r artifact; do
+while IFS= read -r -d '' artifact; do
+  artifact="${artifact#./}"
   case "$artifact" in
     *$'\n'*|*$'\r'*)
       echo "[release.checksum] artifact names must not contain newlines" >&2
@@ -79,7 +82,7 @@ done < <(
   find . -type f \
     ! -name 'SHA256SUMS' \
     ! -name '*.sigstore.json' \
-    -print | sed 's#^\./##' | LC_ALL=C sort
+    -print0
 )
 
 # When Sigstore output is nested below the artifact directory, exclude it from
@@ -98,16 +101,23 @@ if [ "${#artifacts[@]}" -eq 0 ]; then
   exit 1
 fi
 
+sorted=()
+while IFS= read -r artifact; do
+  sorted+=("$artifact")
+done < <(printf '%s\n' "${artifacts[@]}" | LC_ALL=C sort)
+artifacts=("${sorted[@]}")
+
 : > SHA256SUMS
 for artifact in "${artifacts[@]}"; do
   if [ ! -f "$artifact" ]; then
     continue
   fi
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum -- "$artifact" >> SHA256SUMS
-  else
-    shasum -a 256 -- "$artifact" >> SHA256SUMS
-  fi
+  # clibox emits GNU binary records. Retain the existing text marker and
+  # relative spelling for release consumers while preserving GNU escaping.
+  # Prefix inputs so a literal "-" filename never selects stdin.
+  # Remove marker normalization only after all consumers accept binary records.
+  "${clibox[@]}" hash compute --input="./$artifact" --format checksum \
+    | "${clibox[@]}" text replace ' *./' '  ' --first >> SHA256SUMS
   echo "[release.checksum] checksum generated for $artifact" >&2
 done
 

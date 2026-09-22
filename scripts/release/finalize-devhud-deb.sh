@@ -9,6 +9,7 @@ fi
 
 input="$(cd "$(dirname "$1")" && pwd -P)/$(basename "$1")"
 script_directory="$(cd "$(dirname "$0")" && pwd -P)"
+clibox=(node "$script_directory/../clibox.cjs")
 output_directory="$(cd "$(dirname "$2")" && pwd -P)"
 output="$output_directory/$(basename "$2")"
 work="$(mktemp -d)"
@@ -23,8 +24,11 @@ fi
 host="/$host_relative"
 manifest="/etc/opt/chrome/native-messaging-hosts/io.delino.devhud.native_messaging.json"
 
-sed "s|@HOST@|$host|g; s|@MANIFEST@|$manifest|g" "$script_directory/linux/postinst.in" > "$work/package/DEBIAN/postinst"
-sed "s|@HOST@|$host|g; s|@MANIFEST@|$manifest|g; s|@RUNTIME_ROOT@|/run/user|g" "$script_directory/linux/prerm.in" > "$work/package/DEBIAN/prerm"
+"${clibox[@]}" text replace '@HOST@' "$host" --input="$script_directory/linux/postinst.in" \
+  | "${clibox[@]}" text replace '@MANIFEST@' "$manifest" > "$work/package/DEBIAN/postinst"
+"${clibox[@]}" text replace '@HOST@' "$host" --input="$script_directory/linux/prerm.in" \
+  | "${clibox[@]}" text replace '@MANIFEST@' "$manifest" \
+  | "${clibox[@]}" text replace '@RUNTIME_ROOT@' '/run/user' > "$work/package/DEBIAN/prerm"
 chmod 0755 "$work/package/DEBIAN/postinst" "$work/package/DEBIAN/prerm"
 if [ -n "${SOURCE_DATE_EPOCH:-}" ]; then find "$work/package" -print0 | xargs -0 touch -h -d "@$SOURCE_DATE_EPOCH"; fi
 dpkg-deb --root-owner-group --build "$work/package" "$output"
