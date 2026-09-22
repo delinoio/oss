@@ -1233,9 +1233,11 @@ impl OwnedChild {
         // group has no attached console to receive CTRL_BREAK. In that case
         // the fallback has already skipped graceful shutdown, so spend only
         // the bounded confirmation interval waiting for the Job to drain.
-        let graceful_wait = graceful_delivered
-            .then_some(kill_after)
-            .unwrap_or(CLEANUP_CONFIRMATION);
+        let graceful_wait = if graceful_delivered {
+            kill_after
+        } else {
+            CLEANUP_CONFIRMATION
+        };
         let graceful_deadline = Instant::now().checked_add(graceful_wait).ok_or_else(|| {
             Failure::new(Code::IoFailed, "Cleanup deadline cannot be represented.")
         })?;
