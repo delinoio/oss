@@ -228,6 +228,64 @@ fn timeout_terminates_owned_descendants() {
 }
 
 #[test]
+fn completed_workload_cleans_up_its_background_descendants() {
+    let home = tempfile::tempdir().unwrap();
+    let marker = home.path().join("completed-descendant-pid");
+    let assignment = format!("MARKER={}", marker.display());
+    let mut wrapper = command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--idle-timeout",
+            "30s",
+            "--kill-after",
+            "0",
+            &assignment,
+            "--",
+            "sh",
+            "-c",
+            "sleep 30 & echo $! > \"$MARKER\"",
+        ],
+    )
+    .stdout(Stdio::null())
+    .stderr(Stdio::null())
+    .spawn()
+    .unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    while wrapper.try_wait().unwrap().is_none() {
+        if std::time::Instant::now() >= deadline {
+            let _ = wrapper.kill();
+            let _ = wrapper.wait();
+            if let Ok(pid) = fs::read_to_string(&marker)
+                .and_then(|value| value.trim().parse::<i32>().map_err(std::io::Error::other))
+            {
+                unsafe {
+                    libc::kill(pid, libc::SIGKILL);
+                }
+            }
+            panic!("completed workload left a descendant supervising its output");
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(wrapper.wait().unwrap().success());
+    let pid = fs::read_to_string(marker)
+        .unwrap()
+        .trim()
+        .parse::<i32>()
+        .unwrap();
+    for _ in 0..50 {
+        if unsafe { libc::kill(pid, 0) } == -1
+            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+        {
+            return;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    panic!("completed workload left an owned descendant running");
+}
+
+#[test]
 fn external_service_is_observed_without_becoming_owned() {
     let home = tempfile::tempdir().unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();

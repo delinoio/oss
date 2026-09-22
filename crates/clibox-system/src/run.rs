@@ -683,6 +683,20 @@ fn run_once(
             }
         }
         if let Some(status) = child.try_wait()? {
+            // Reaping the direct child does not end ownership of its process
+            // group or Job Object. A background descendant can otherwise
+            // retain an inherited pipe or outlive the wrapper after its parent
+            // exits, so confirm bounded cleanup before returning this status.
+            if child.tree_running()? {
+                if !cleanup_or_log(&mut child, kill_after) {
+                    // Never join inherited pipes after unconfirmed cleanup: a
+                    // surviving descendant could hold one forever. Cleanup has
+                    // already sent graceful and forced signals within its
+                    // bounded deadlines, so preserve the direct child's status
+                    // rather than turn a completed workload into a hang.
+                    return Ok(Outcome::Child(status));
+                }
+            }
             child.join_output();
             return Ok(Outcome::Child(status));
         }
