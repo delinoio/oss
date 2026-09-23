@@ -70,9 +70,9 @@ fn dll_main(_hinstance: HINSTANCE, reason: u32) -> winsafe::SysResult<()> {
         }
         winnt::DLL_PROCESS_DETACH => {
             // SAFETY: FFI call to begin a Detours transaction for detaching
-            ck(unsafe { DetourTransactionBegin() })?;
+            ck_long(unsafe { DetourTransactionBegin() })?;
             // SAFETY: FFI call to update the current thread in the Detours transaction
-            ck(unsafe { DetourUpdateThread(GetCurrentThread().cast()) })?;
+            ck_long(unsafe { DetourUpdateThread(GetCurrentThread().cast()) })?;
 
             for d in DETOURS {
                 // SAFETY: detaching each detour within the active Detours transaction
@@ -80,7 +80,7 @@ fn dll_main(_hinstance: HINSTANCE, reason: u32) -> winsafe::SysResult<()> {
             }
 
             // SAFETY: FFI call to commit the Detours transaction
-            ck(unsafe { DetourTransactionCommit() })?;
+            ck_long(unsafe { DetourTransactionCommit() })?;
         }
         _ => {}
     }

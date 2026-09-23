@@ -20,6 +20,8 @@ On Windows, Detours requires an ANSI DLL path. The runner round-trips the materi
 
 Windows descendant hooks terminate and close a newly created suspended child when payload propagation or resumption fails inside the Detours callback; the original Win32 error remains available to the caller.
 
+Windows preload attachment and detachment check the returned Detours `LONG` status from each transaction operation. A failed attach prevents DLL initialization from reporting a complete trace.
+
 On Linux, a seccomp notification whose access cannot be recorded still resumes the target syscall. The supervisor retains the recording error and fails collection after the target exits, so callers cannot treat the partial trace as complete.
 
 At root-process exit, the seccomp supervisor cancels both listener acceptance and each active handler's notification wait. Handlers return their already collected accesses and recording errors without waiting for descendants that still hold the listener open.

@@ -8,7 +8,7 @@ use winapi::{
     shared::{
         minwindef::{BOOL, FALSE, MAX_PATH},
         ntdef::{HANDLE, PWSTR, UNICODE_STRING},
-        winerror::{NO_ERROR, S_OK},
+        winerror::S_OK,
     },
     um::{
         fileapi::GetFinalPathNameByHandleW,
@@ -33,7 +33,7 @@ pub fn ck(b: BOOL) -> winsafe::SysResult<()> {
 }
 
 pub const fn ck_long(val: c_long) -> winsafe::SysResult<()> {
-    if 0 == NO_ERROR {
+    if val == 0 {
         Ok(())
     } else {
         // SAFETY: creating an ERROR from the raw c_long value for the Windows error
@@ -159,7 +159,13 @@ mod tests {
         path::PathBuf,
     };
 
-    use super::get_path_name;
+    use super::{ck_long, get_path_name};
+
+    #[test]
+    fn detours_status_is_checked() {
+        assert!(ck_long(0).is_ok());
+        assert_eq!(ck_long(5).unwrap_err().raw(), 5);
+    }
 
     fn test_get_path_name(filename: &str) {
         let tmpdir = tempfile::tempdir().unwrap();
