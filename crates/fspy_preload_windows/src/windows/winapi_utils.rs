@@ -61,45 +61,34 @@ pub unsafe fn get_u16_str(ustring: &UNICODE_STRING) -> &U16Str {
 
 pub unsafe fn get_path_name(handle: HANDLE) -> winsafe::SysResult<SmallVec<u16, MAX_PATH>> {
     let mut path = SmallVec::<u16, MAX_PATH>::new();
-    // SAFETY: FFI call to GetFinalPathNameByHandleW to query the file path from a
-    // handle
-    let len = unsafe {
-        GetFinalPathNameByHandleW(
-            handle,
-            path.as_mut_ptr(),
-            path.capacity().try_into().unwrap(),
-            0, /* FILE_NAME_NORMALIZED */
-        )
-    };
-    if len == 0 {
-        return Err(winsafe::GetLastError());
-    }
-    let len = usize::try_from(len).unwrap();
-    if len <= path.capacity() {
-        // SAFETY: GetFinalPathNameByHandleW wrote `len` u16 characters into the buffer
-        unsafe { path.set_len(len) };
-    } else {
-        path.reserve_exact(len);
-        // SAFETY: FFI call to GetFinalPathNameByHandleW with larger buffer after first
-        // call indicated needed size
+    // The resolved name may grow between size queries. Retry a bounded number
+    // of times and let the caller classify a persistent race as incomplete.
+    for _ in 0..8 {
+        let capacity =
+            u32::try_from(path.capacity()).map_err(|_| co::ERROR::INSUFFICIENT_BUFFER)?;
+        // SAFETY: the SmallVec allocation is valid for `capacity` UTF-16 units.
         let len = unsafe {
             GetFinalPathNameByHandleW(
                 handle,
                 path.as_mut_ptr(),
-                path.capacity().try_into().unwrap(),
+                capacity,
                 0, /* FILE_NAME_NORMALIZED */
             )
         };
-        let len = usize::try_from(len).unwrap();
         if len == 0 {
             return Err(winsafe::GetLastError());
-        } else if len > path.capacity() {
-            unreachable!()
         }
-        // SAFETY: GetFinalPathNameByHandleW wrote `len` u16 characters into the buffer
-        unsafe { path.set_len(len) };
+        let len = len as usize;
+        if len < path.capacity() {
+            // SAFETY: a successful call wrote `len` UTF-16 units into the buffer.
+            unsafe { path.set_len(len) };
+            return Ok(path);
+        }
+        // On insufficient space, the return value includes the terminator.
+        // Reserve one more unit so an equal-size result cannot repeat forever.
+        path.reserve_exact(len + 1);
     }
-    Ok(path)
+    Err(co::ERROR::INSUFFICIENT_BUFFER)
 }
 
 pub const fn access_mask_to_mode(desired_access: ACCESS_MASK) -> AccessMode {

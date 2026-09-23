@@ -32,6 +32,7 @@ The low-level `NtCreateUserProcess` hook records the attempted image. A successf
 Windows preload attachment and detachment check the returned Detours `LONG` status from each transaction operation. A failed attach prevents DLL initialization from reporting a complete trace.
 
 Windows access classification treats deletion, file metadata and extended-attribute mutation, directory-child deletion, and security-owner/DACL mutation rights as writes. Combined read/write masks remain both inputs and outputs; maximum-allowed access is classified conservatively.
+Windows handle-to-path lookup retries boundedly when the required UTF-16 buffer grows between calls. A persistently changing path returns an error to the access recorder instead of panicking or reporting an unchecked path.
 
 On Linux, a seccomp notification whose access cannot be recorded still resumes the target syscall. The supervisor retains the recording error and fails collection after the target exits, so callers cannot treat the partial trace as complete.
 
