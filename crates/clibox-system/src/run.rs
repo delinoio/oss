@@ -677,7 +677,10 @@ fn with_service(options: Service) -> Result<Outcome> {
     // A successful probe can be observed while the service completion worker
     // is still handing off an exit that happened during the request. Give that
     // worker one bounded poll before the workload can create side effects.
-    sleep_cancellable(POLL)?;
+    if let Err(error) = sleep_cancellable(POLL) {
+        let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
+        return Err(error);
+    }
     if completion_or_cleanup(&mut service_child, options.workload.kill_after)?.is_some() {
         let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
         return runtime_failure("The managed service exited before the workload started.");
