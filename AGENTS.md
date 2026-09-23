@@ -36,7 +36,7 @@
 ### Monorepo Structure Map
 
 - `docs/`: Source of truth for project contracts and repository documentation.
-- `apps/`: User-facing apps (React Native and documentation web surfaces).
+- `apps/`: User-facing apps and documentation web surfaces.
 - `crates/`: Rust crates and Rust-based tooling.
 - `cmds/`: Go command tools for workflow orchestration.
 - `servers/`: Backend services, including the implemented DevHud API foundation.
@@ -65,8 +65,6 @@
 - `docs/project-nodeup.md`: Node.js version manager project index.
 - `docs/project-with-watch.md`: Command rerun watcher CLI project index.
 - `docs/project-derun.md`: Derun CLI project index.
-- `docs/project-ttl.md`: TTL compiler project index.
-- `docs/project-mpapp.md`: Expo mobile app project index.
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/packages-docs-site-switcher-contract.md`: Shared accessible documentation site selector package contract.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
@@ -77,7 +75,6 @@
 - `docs/crates-rustia-core-foundation.md`: Rustia core runtime LLM data contract.
 - `docs/crates-rustia-llm-foundation.md`: Rustia aisdk tool adapter contract.
 - `docs/crates-rustia-macros-foundation.md`: Rustia macros derive contract.
-- `docs/cmds-ttl-language-contract.md`: TTL language syntax/type/invalidation/code-generation contract.
 - `docs/apps-nodeup-docs-foundation.md`: Nodeup Rspress documentation app, route, validation, and Cloudflare Pages deployment contract.
 - `docs/apps-runmoor-docs-foundation.md`: Runmoor Rspress documentation app, route migration, fixed-port validation, and Cloudflare Pages deployment contract.
 
@@ -95,8 +92,6 @@ enum ProjectId {
   WithWatch = "with-watch",
   Derun = "derun",
   Runmoor = "runmoor",
-  Ttl = "ttl",
-  Mpapp = "mpapp",
   SerdeFeather = "serde-feather",
   Rustia = "rustia",
   PublicDocs = "public-docs",
@@ -115,8 +110,6 @@ enum ProjectId {
 - `pnport` -> `crates/pnport`, `crates/pnport-preload`, `packages/pnport`, `apps/public-docs/docs/pnport`
 - `runmoor` -> `cmds/runmoor`, `apps/public-docs/docs/runmoor`
 - `derun` -> `cmds/derun`
-- `ttl` -> `cmds/ttlc`
-- `mpapp` -> `apps/mpapp`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `rustia` -> `crates/rustia`, `crates/rustia-llm`, `crates/rustia-macros`
 - `public-docs` -> `apps/public-docs`, `packages/docs-site-switcher`
@@ -164,12 +157,6 @@ enum ProjectId {
 - Prefer Rspack-family build tools when possible, including Rsbuild and Rspress for app and documentation surfaces.
 - Static sites under `apps/` should use Rsbuild/Rspress-style toolchains and deploy to Cloudflare Pages by default. Existing documented exceptions remain valid until their project contract changes.
 - File handling should default to Cloudflare R2 object storage plus signed URLs for upload and download access unless a project contract documents another storage or access pattern.
-
-### TTL Command Contract
-
-- `cmds/ttlc` command identifiers are `build`, `check`, `explain`, and `run`.
-- `ttlc run` requires `--task` and accepts optional `--args <json>` with default `{}`.
-- `ttlc run` response payload includes `result`, `run_trace`, and root-task `cache_analysis`.
 
 ### binpm Cache Contract
 
@@ -301,7 +288,7 @@ enum RustiaComponent {
 
 - Apply this contract to all open/new GitHub issues.
 - Use issue titles in the format `<domain>: <description>`.
-- `<domain>` must use stable lowercase identifiers from project/domain contracts (for example: `ttl`, `nodeup`, `serde-feather`).
+- `<domain>` must use stable lowercase identifiers from project/domain contracts (for example: `nodeup`, `serde-feather`).
 - `<description>` should be concise, specific, and start with a lowercase verb phrase when possible.
 - Do not use bracket-style project prefixes like `[serde-feather]`.
 - Use the following Markdown section order for issue bodies:
@@ -319,7 +306,7 @@ enum RustiaComponent {
 - Apply this contract to newly created pull requests.
 - Pull request titles must use Conventional Commit-style format with a required scope: `<type>(<scope>): <description>`.
 - `<type>` must be an appropriate Conventional Commit type such as `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci`, `build`, `perf`, or `revert`.
-- `<scope>` must use a stable lowercase project, component, domain, or tooling identifier from repository contracts when one applies (for example: `ttl`, `nodeup`, `serde-feather`, `docs`, `ci`).
+- `<scope>` must use a stable lowercase project, component, domain, or tooling identifier from repository contracts when one applies (for example: `nodeup`, `serde-feather`, `docs`, `ci`).
 - `<description>` should be concise, specific, and start with a lowercase verb phrase when possible.
 - Do not create unscoped pull request titles or use bracket-style project prefixes like `[serde-feather]`.
 
@@ -361,8 +348,6 @@ Coverage expectations:
 - `rust-fmt`: runs `cargo fmt --all --check`.
 - `rust-clippy`: runs `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
 - `rust-test`: runs `cargo test --workspace --all-targets`.
-- `node-mpapp-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter mpapp test`.
-- `node-mpapp-lint`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter mpapp lint`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`, covering the root and all six project content sections.
 - `node-clibox-test`: runs `cargo test --locked -p clibox -p clibox-config -p clibox-system -p clibox-transform -p clibox-wait` for native utility/configuration/process/adapter behavior, native CLI consumer installation and launcher/distribution tests on Linux, macOS, and Windows, selected by shared CI planning and required by `CI Result`.
 - `node-pnport-test`: checks launcher and package contracts, version synchronization, immutable artifacts, installer rollback, and fail-closed release publication on affected PRs and main pushes.

@@ -110,7 +110,7 @@ test("async-commit-hook source and shared validation inputs select its complete 
       "scripts/check-proto-breaking.sh", "scripts/run-rsbuild-dev.mjs", "scripts/spawn-dev-server.mjs",
       "scripts/dev-environment/process.mjs",
     ]) assert.ok(selected(event, [path]).includes("async-commit-hook"), `${event}: ${path}`);
-    for (const path of ["cmds/runmoor/main.go", "apps/mpapp/App.tsx", "docs/project-with-watch.md"]) {
+    for (const path of ["cmds/runmoor/main.go", "apps/public-docs/docs/projects-overview.md", "docs/project-with-watch.md"]) {
       assert.ok(!selected(event, [path]).includes("async-commit-hook"), `${event}: ${path}`);
     }
   }
@@ -131,7 +131,7 @@ test("async-commit-hook failures, missing results and unauthorized skips fail th
 
 test("workspace, shared, runtime, and external contract inputs select their owners", () => {
   for (const [path, ids] of [
-    ["apps/mpapp/App.tsx", ["node-mpapp-test", "node-mpapp-lint"]],
+    ["apps/public-docs/docs/projects-overview.md", ["node-public-docs-test"]],
     ["scripts/install/binpm.sh", ["node-public-docs-test"]],
     ["scripts/install/nodeup.ps1", ["node-public-docs-test"]],
     ["scripts/install/async-commit-hook.sh", ["async-commit-hook", "node-public-docs-test"]],
@@ -141,8 +141,8 @@ test("workspace, shared, runtime, and external contract inputs select their owne
     ["packages/devhud-api-client/src/client.ts", ["devhud-frontend", "devhud-protocol", "devhud-admin", "devhud-api", "rust-test"]],
     ["apps/devhud/src-tauri/src/updater.rs", ["rust-fmt", "rust-clippy", "rust-test", "devhud-rust-conformance", "devhud-frontend"]],
     ["protos/devhud/v1/account.proto", ["devhud-protocol", "devhud-api", "devhud-frontend"]],
-    [".nvmrc", ["node-mpapp-test", "devhud-frontend", "devhud-api", "repository-environment"]],
-    ["pnpm-lock.yaml", ["node-mpapp-test", "node-public-docs-test", "devhud-admin", "devhud-api", "devhud-frontend"]],
+    [".nvmrc", ["node-public-docs-test", "devhud-frontend", "devhud-api", "repository-environment"]],
+    ["pnpm-lock.yaml", ["node-public-docs-test", "devhud-admin", "devhud-api", "devhud-frontend"]],
     [".cargo/config.toml", ["rust-fmt", "rust-clippy", "rust-test", "devhud-rust-conformance"]],
     ["crates/binpm/src/main.rs", ["rust-fmt", "rust-clippy", "rust-test"]],
     ["crates/cargo-mono/src/main.rs", ["rust-fmt", "rust-clippy", "rust-test"]],
@@ -184,14 +184,14 @@ function fixture(t) {
 test("comparison uses the PR merge-base and the complete multi-commit push range", (t) => {
   const f = fixture(t);
   f.git("switch", "-c", "feature");
-  f.write("apps/mpapp/first.ts", "first\n"); f.commit();
+  f.write("apps/public-docs/first.ts", "first\n"); f.commit();
   f.write("cmds/runmoor/second.go", "second\n"); const head = f.commit();
   f.git("switch", "main");
   f.write("unrelated-main.txt", "main\n"); const base = f.commit();
   const pr = changedFiles(Event.PullRequest, { pull_request: { base: { sha: base }, head: { sha: head } } }, base, f.cwd);
   assert.equal(pr.base, f.initial);
   assert.equal(pr.head, head);
-  assert.deepEqual(pr.paths, ["apps/mpapp/first.ts", "cmds/runmoor/second.go"]);
+  assert.deepEqual(pr.paths, ["apps/public-docs/first.ts", "cmds/runmoor/second.go"]);
   const push = changedFiles(Event.Push, { before: f.initial }, head, f.cwd);
   assert.deepEqual(push, pr);
   // A force push must compare tree endpoints, not their common ancestor.
@@ -200,14 +200,14 @@ test("comparison uses the PR merge-base and the complete multi-commit push range
 
 test("deleted and renamed paths retain both owners, including unusual filenames", (t) => {
   const f = fixture(t);
-  f.write("apps/mpapp/old name.ts", "original\n"); const base = f.commit();
+  f.write("apps/public-docs/old name.ts", "original\n"); const base = f.commit();
   mkdirSync(join(f.cwd, "apps/devhud"), { recursive: true });
-  renameSync(join(f.cwd, "apps/mpapp/old name.ts"), join(f.cwd, "apps/devhud/new\nname.ts"));
+  renameSync(join(f.cwd, "apps/public-docs/old name.ts"), join(f.cwd, "apps/devhud/new\nname.ts"));
   rmSync(join(f.cwd, "README.md")); const head = f.commit();
   const { paths } = changedFiles(Event.Push, { before: base }, head, f.cwd);
-  assert.deepEqual(paths, ["README.md", "apps/devhud/new\nname.ts", "apps/mpapp/old name.ts"]);
+  assert.deepEqual(paths, ["README.md", "apps/devhud/new\nname.ts", "apps/public-docs/old name.ts"]);
   const jobs = selected(Event.Push, paths);
-  assert.ok(jobs.includes("node-mpapp-test"));
+  assert.ok(jobs.includes("node-public-docs-test"));
   assert.ok(jobs.includes("devhud-desktop"));
 });
 
