@@ -179,6 +179,10 @@ impl Fd {
 }
 
 impl FromSyscallArg for Fd {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Linux syscall descriptors use the low 32 bits, including negative AT_FDCWD"
+    )]
     fn from_syscall_arg(arg: u64) -> io::Result<Self> {
         Ok(Self { fd: arg as RawFd })
     }
