@@ -1310,6 +1310,12 @@ fn run_once(
             }
         }
         if runtime::cancelled() {
+            if let Some(service) = monitored_service.as_deref_mut() {
+                // Cancellation invalidates both owned process trees. Request
+                // service termination before waiting for a stubborn workload's
+                // grace period so it cannot continue serving side effects.
+                request_termination_or_log(service);
+            }
             if cleanup_or_log(&mut child, kill_after) {
                 finish_cancelled_workload_output(&mut child)?;
             }
