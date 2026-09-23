@@ -87,13 +87,12 @@ pub(crate) static SPY_IMPL: LazyLock<GlobalSpy> = LazyLock::new(|| {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use std::os::unix::fs::PermissionsExt;
+    use std::{fs, os::unix::fs::PermissionsExt};
     #[cfg(target_os = "linux")]
-    use std::{fs, process::Stdio, time::Duration};
+    use std::{process::Stdio, time::Duration};
 
     #[cfg(target_os = "linux")]
     use tokio::io::AsyncReadExt;
-    #[cfg(target_os = "linux")]
     use tokio_util::sync::CancellationToken;
 
     use super::private_preload_dir;
@@ -208,6 +207,67 @@ int main(int argc, char **argv) {
             let termination = child.wait_handle.await.expect("wait for fixture");
             assert_eq!(termination.status.code(), Some(23));
             assert!(termination.path_accesses.is_ok());
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn preload_records_path_mutations_as_writes() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let source = directory.path().join("preload-mutate.c");
+        let executable = directory.path().join("preload-mutate");
+        let old = directory.path().join("old");
+        let new = directory.path().join("new");
+        let symbolic = directory.path().join("symbolic");
+        let created_dir = directory.path().join("created");
+        let hard = directory.path().join("hard");
+        fs::write(&old, b"input").expect("write old image");
+        fs::write(
+            &source,
+            r"#include <stdio.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+  if (argc != 6) return 2;
+  if (mkdir(argv[4], 0700)) return 3;
+  if (rename(argv[1], argv[2])) return 4;
+  if (symlink(argv[2], argv[3])) return 5;
+  if (link(argv[2], argv[5])) return 6;
+  if (unlink(argv[2])) return 7;
+  return 0;
+}
+",
+        )
+        .expect("write mutation fixture");
+        assert!(
+            std::process::Command::new("cc")
+                .arg(&source)
+                .arg("-o")
+                .arg(&executable)
+                .status()
+                .expect("compile mutation fixture")
+                .success()
+        );
+        let mut command = super::Command::new(&executable);
+        command.args([&old, &new, &symbolic, &created_dir, &hard]);
+        let child = command
+            .spawn(CancellationToken::new())
+            .await
+            .expect("spawn tracked fixture");
+        let termination = child.wait_handle.await.expect("wait for fixture");
+        assert!(termination.status.success(), "{:?}", termination.status);
+        let accesses = termination.path_accesses.expect("complete trace");
+        for expected in [&old, &new, &symbolic, &created_dir, &hard] {
+            assert!(
+                accesses.iter().any(|access| {
+                    access.mode.contains(super::AccessMode::WRITE)
+                        && access.path.strip_path_prefix(expected, |path| {
+                            path.is_ok_and(|remaining| remaining.as_os_str().is_empty())
+                        })
+                }),
+                "missing write for {}",
+                expected.display()
+            );
         }
     }
 

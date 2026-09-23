@@ -42,6 +42,7 @@ Windows NT file hooks treat null `OBJECT_ATTRIBUTES` as having no recordable pat
 On Linux, a seccomp notification whose access cannot be recorded still resumes the target syscall. The supervisor retains the recording error and fails collection after the target exits, so callers cannot treat the partial trace as complete.
 The seccomp `execve` and `execveat` handlers inspect bounded shebang chains and record each interpreter image the kernel reads without another syscall. Relative interpreter paths resolve against the target process's working directory. Inspection errors make the trace incomplete while the target syscall continues.
 The seccomp notification filter records pathname mutation families, including unlink, rename, directory creation/removal, links, node creation, truncation, permissions, ownership, and timestamp updates. Source and destination paths of rename and hard-link calls are both classified as writes; symlink targets are data, while the new link pathname is a write.
+The generic Unix preload records the matching libc pathname mutation families as writes before forwarding them. Two-path rename and hard-link operations record both names; symlink creation records only the link pathname, since its target is stored text. The macOS rename variants are included without changing pnport-mode interception.
 
 Linux preload selection recognizes only the host glibc loader for the supported x64 and arm64 targets. Foreign ELF interpreters, including musl loaders, use seccomp so the host-built preload is not injected into an incompatible process.
 
