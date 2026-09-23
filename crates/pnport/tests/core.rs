@@ -1470,6 +1470,73 @@ fn pnp_unaware_static_go_process_reads_virtual_dependencies() {
     assert!(!root.path().join("node_modules").exists());
 }
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn linux_rejects_a_compat_elf_at_the_descendant_exec_stop() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("compat.s");
+    fs::write(
+        &source,
+        ".section .text\n.globl _start\n_start:\nmovl $1, %eax\nxorl %ebx, %ebx\nint $0x80\n",
+    )
+    .unwrap();
+    let object = root.path().join("compat.o");
+    let compat = root.path().join("compat");
+    assert!(Command::new("as")
+        .args(["--32", "-o"])
+        .arg(&object)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    assert!(Command::new("ld")
+        .args(["-m", "elf_i386", "-o"])
+        .arg(&compat)
+        .arg(&object)
+        .status()
+        .unwrap()
+        .success());
+    // Hosts without IA32 compatibility cannot execute the negative control.
+    if !Command::new(&compat)
+        .status()
+        .is_ok_and(|status| status.code() == Some(0))
+    {
+        return;
+    }
+    let launcher_source = root.path().join("compat-launcher.c");
+    fs::write(
+        &launcher_source,
+        r#"
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc != 2) return 40;
+    char *args[] = {argv[1], 0};
+    execve(argv[1], args, 0);
+    return 41;
+}
+"#,
+    )
+    .unwrap();
+    let launcher = root.path().join("compat-launcher");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&launcher)
+        .arg(&launcher_source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&launcher)
+        .arg(&compat)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(125));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn linux_descendant_execve_enters_a_virtual_executable() {

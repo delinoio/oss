@@ -2156,6 +2156,18 @@ impl Trace<'_> {
                 }
             }
             if event == libc::PTRACE_EVENT_EXEC {
+                // The exec stop precedes the new image's first userspace
+                // instruction. Inspect the image the kernel actually loaded,
+                // including script interpreters and fd-based execs, before
+                // any mixed-ABI syscall can bypass this filter's trace list.
+                let image = PathBuf::from(format!("/proc/{pid}/exe"));
+                let static_image = is_static(&image)?;
+                tracing::debug!(
+                    action = "linux_exec_admission",
+                    pid,
+                    static_image,
+                    "Validated owned executable image"
+                );
                 let mut former = 0usize;
                 if unsafe { libc::ptrace(libc::PTRACE_GETEVENTMSG, pid, 0, &mut former) } != 0 {
                     return Err(injection_failed());
