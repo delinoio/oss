@@ -674,6 +674,10 @@ fn with_service(options: Service) -> Result<Outcome> {
         let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
         return runtime_failure("Could not forward managed service output.");
     }
+    // A successful probe can be observed while the service completion worker
+    // is still handing off an exit that happened during the request. Give that
+    // worker one bounded poll before the workload can create side effects.
+    sleep_cancellable(POLL)?;
     if completion_or_cleanup(&mut service_child, options.workload.kill_after)?.is_some() {
         let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
         return runtime_failure("The managed service exited before the workload started.");
@@ -691,12 +695,10 @@ fn with_service(options: Service) -> Result<Outcome> {
         }
     };
     let service_cleanup_confirmed = cleanup_or_log(&mut service_child, options.workload.kill_after);
-    if !service_cleanup_confirmed && matches!(outcome, Outcome::Child(status) if status.success()) {
+    if !service_cleanup_confirmed {
         return runtime_failure("Managed service cleanup could not be confirmed.");
     }
-    if service_cleanup_confirmed {
-        finish_managed_service_output(&mut service_child)?;
-    }
+    finish_managed_service_output(&mut service_child)?;
     Ok(outcome)
 }
 
@@ -1233,8 +1235,10 @@ fn run_once(
             }
             if limits_expired_at(&limits, last_activity, completion.observed_at) {
                 tracing::debug!(operation = "run", stage = "timeout", "run_cleanup");
-                let _ = cleanup_or_log(&mut child, kill_after);
-                return Ok(Outcome::Code(124));
+                if !cleanup_or_log(&mut child, kill_after) {
+                    return runtime_failure("Owned workload cleanup could not be confirmed.");
+                }
+                return finish_timed_out_workload_output(&mut child);
             }
             let status = completion.status;
             // Reaping the direct child does not end ownership of its process
@@ -1263,8 +1267,10 @@ fn run_once(
         }
         if limits_expired_at(&limits, last_activity, Instant::now()) {
             tracing::debug!(operation = "run", stage = "timeout", "run_cleanup");
-            let _ = cleanup_or_log(&mut child, kill_after);
-            return Ok(Outcome::Code(124));
+            if !cleanup_or_log(&mut child, kill_after) {
+                return runtime_failure("Owned workload cleanup could not be confirmed.");
+            }
+            return finish_timed_out_workload_output(&mut child);
         }
         thread::sleep(POLL);
     }
@@ -1286,6 +1292,22 @@ fn finish_workload_output(
             "Execution was cancelled after the workload completed.",
         )),
         OutputJoin::Failed => runtime_failure("Could not finish forwarding workload output."),
+    }
+}
+
+fn finish_timed_out_workload_output(child: &mut OwnedChild) -> Result<Outcome> {
+    match child.join_output_within(&Limits::default()) {
+        OutputJoin::Complete if child.output_failed() => {
+            runtime_failure("Could not forward workload output.")
+        }
+        OutputJoin::Complete => Ok(Outcome::Code(124)),
+        OutputJoin::Deadline | OutputJoin::Failed => {
+            runtime_failure("Could not finish forwarding workload output.")
+        }
+        OutputJoin::Cancelled => Err(Failure::new(
+            Code::Cancelled,
+            "Execution was cancelled while forwarding timed-out workload output.",
+        )),
     }
 }
 

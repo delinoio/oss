@@ -321,6 +321,34 @@ fn timeout_terminates_a_silent_workload() {
 }
 
 #[test]
+fn timeout_forwards_shutdown_output_before_returning() {
+    let home = tempfile::tempdir().unwrap();
+    let output = command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--timeout",
+            "50ms",
+            "--kill-after",
+            "100ms",
+            "--",
+            "sh",
+            "-c",
+            "trap 'printf timed-workload-shutdown >&2; exit 0' TERM; while :; do sleep 1; done",
+        ],
+    )
+    .output()
+    .unwrap();
+
+    assert_eq!(output.status.code(), Some(124), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("timed-workload-shutdown"),
+        "timed workload shutdown output was not forwarded: {output:?}"
+    );
+}
+
+#[test]
 fn idle_timeout_uses_the_output_read_time_before_completion() {
     let home = tempfile::tempdir().unwrap();
     let output = command(
@@ -741,8 +769,8 @@ fn nested_shell_wrapper_owns_its_descendants() {
     let marker = home.path().join("nested-shell-descendant-pid");
     let assignment = format!("MARKER={}", marker.display());
     let script = format!(
-        "\"{}\" run with-timeout --timeout 100ms --kill-after 0 -- sh -c 'sleep 30 & echo $! > \
-         \"$MARKER\"; wait'",
+        "exec \"{}\" run with-timeout --timeout 100ms --kill-after 0 -- sh -c 'sleep 30 & echo $! \
+         > \"$MARKER\"; wait'",
         env!("CARGO_BIN_EXE_clibox")
     );
     let output = command(
