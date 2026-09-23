@@ -498,6 +498,65 @@ int main(int argc, char **argv) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_proc_cwd_aliases_preserve_virtual_dependency_ownership() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("proc-cwd.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int main(void) {
+    if (chdir("node_modules/dep")) return 40;
+    errno = 0;
+    if (chmod("/proc/self/cwd/file.txt", 0600) != -1 || errno != EROFS) return 41;
+    char numeric[128];
+    snprintf(numeric, sizeof(numeric), "/proc/%d/cwd/file.txt", getpid());
+    errno = 0;
+    if (open(numeric, O_WRONLY) != -1 || errno != EROFS) return 42;
+    int fd = open("/proc/self/cwd/file.txt", O_RDONLY);
+    if (fd < 0) return 43;
+    char bytes[14] = {0};
+    if (read(fd, bytes, 13) != 13 || strcmp(bytes, "package bytes")) return 44;
+    close(fd);
+    char cwd[4096] = {0};
+    ssize_t length = readlink("/proc/self/cwd", cwd, sizeof(cwd) - 1);
+    if (length <= 0 || !strstr(cwd, "/node_modules/dep")) return 45;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("proc-cwd");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_nonleader_proc_fd_aliases_keep_dependency_ownership() {
     use std::process::Command;
     let root = fixture();

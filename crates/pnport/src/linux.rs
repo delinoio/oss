@@ -971,6 +971,37 @@ impl Trace<'_> {
         self.translate_view(&physical).map(Some)
     }
 
+    fn proc_cwd(&self, pid: i32, path: &Path) -> Option<(PathBuf, bool)> {
+        let (owner, remainder) = path.to_str()?.strip_prefix("/proc/")?.split_once('/')?;
+        let group = Self::group(pid);
+        let owner_group = match owner {
+            "self" | "thread-self" => group,
+            _ => Self::group(owner.parse::<i32>().ok()?),
+        };
+        if owner_group != group {
+            return None;
+        }
+        let remainder = if let Some(remainder) = remainder.strip_prefix("task/") {
+            let (task, path) = remainder.split_once('/')?;
+            if Self::group(task.parse::<i32>().ok()?) != group {
+                return None;
+            }
+            path
+        } else {
+            remainder
+        };
+        let (suffix, exact) = if remainder == "cwd" {
+            (None, true)
+        } else {
+            (Some(remainder.strip_prefix("cwd/")?), false)
+        };
+        let mut logical = self.cwd.get(&group)?.clone();
+        if let Some(suffix) = suffix {
+            logical.push(suffix);
+        }
+        Some((logical, exact))
+    }
+
     fn prepare_script_exec(
         &mut self,
         pid: i32,
@@ -1345,7 +1376,28 @@ impl Trace<'_> {
             }
             return Ok(false);
         }
-        let translation = match if in_root && original.is_absolute() {
+        let proc_cwd = (!in_root).then(|| self.proc_cwd(pid, &original)).flatten();
+        if let Some((logical, true)) = &proc_cwd {
+            if call == libc::SYS_readlinkat || call == SYS_READLINK {
+                let (output, capacity) = if call == libc::SYS_readlinkat {
+                    (argument(&regs, 2), argument(&regs, 3) as usize)
+                } else {
+                    (argument(&regs, 1), argument(&regs, 2) as usize)
+                };
+                self.pending.insert(
+                    pid,
+                    Pending::ReadLink {
+                        output,
+                        capacity,
+                        target: logical.clone(),
+                    },
+                );
+                return Ok(true);
+            }
+        }
+        let translation = match if let Some((logical, _)) = proc_cwd {
+            self.translate_view(&logical)
+        } else if in_root && original.is_absolute() {
             let base = self.base(pid, dirfd, Path::new("."))?;
             self.translate_view(
                 &base.join(original.strip_prefix("/").map_err(|_| injection_failed())?),
