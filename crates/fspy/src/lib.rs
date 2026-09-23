@@ -246,7 +246,7 @@ int main(void) {
         let output = directory.path().join("output");
         fs::write(
             &source,
-            r#"#include <fcntl.h>
+            r"#include <fcntl.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 int main(int argc, char **argv) {
@@ -256,7 +256,7 @@ int main(int argc, char **argv) {
   close(fd);
   return 0;
 }
-"#,
+",
         )
         .expect("write fixture");
         assert!(
