@@ -824,13 +824,17 @@ fn check_http(
     client: &reqwest::blocking::Client,
     deadline: Option<Instant>,
 ) -> std::result::Result<(), HttpProbeError> {
-    let remaining = deadline.map(|limit| limit.saturating_duration_since(Instant::now()));
+    let started = Instant::now();
+    let remaining = deadline.map(|limit| limit.saturating_duration_since(started));
     if remaining == Some(Duration::ZERO) {
         return Err(HttpProbeError::OverallTimeout);
     }
     let budget = remaining
         .map(|remaining| remaining.min(options.attempt_timeout))
         .unwrap_or(options.attempt_timeout);
+    let attempt_deadline = started
+        .checked_add(budget)
+        .ok_or(HttpProbeError::Terminal)?;
     let method = match options.method {
         HttpMethod::Get => reqwest::Method::GET,
         HttpMethod::Head => reqwest::Method::HEAD,
@@ -841,11 +845,11 @@ fn check_http(
     let expected_status = options.status;
     thread::spawn(move || {
         let result = http_attempt(client, url, method, expected_status, budget);
-        let _ = sender.send(result);
+        let _ = sender.send(HttpProbe {
+            result,
+            observed_at: Instant::now(),
+        });
     });
-    let attempt_deadline = Instant::now()
-        .checked_add(budget)
-        .ok_or(HttpProbeError::Terminal)?;
     loop {
         if runtime::cancelled() {
             return Err(HttpProbeError::Cancelled);
@@ -861,11 +865,32 @@ fn check_http(
             return Err(HttpProbeError::OverallTimeout);
         }
         match receiver.recv_timeout(POLL.min(until_attempt).min(until_overall)) {
-            Ok(result) => return result,
+            Ok(probe) => {
+                return bounded_probe_result(probe, attempt_deadline, deadline);
+            }
             Err(mpsc::RecvTimeoutError::Timeout) => (),
             Err(mpsc::RecvTimeoutError::Disconnected) => return Err(HttpProbeError::Terminal),
         }
     }
+}
+
+struct HttpProbe {
+    result: std::result::Result<(), HttpProbeError>,
+    observed_at: Instant,
+}
+
+fn bounded_probe_result(
+    probe: HttpProbe,
+    attempt_deadline: Instant,
+    overall_deadline: Option<Instant>,
+) -> std::result::Result<(), HttpProbeError> {
+    if overall_deadline.is_some_and(|deadline| probe.observed_at >= deadline) {
+        return Err(HttpProbeError::OverallTimeout);
+    }
+    if probe.observed_at >= attempt_deadline {
+        return Err(HttpProbeError::AttemptTimeout);
+    }
+    probe.result
 }
 
 fn http_attempt(
@@ -3548,6 +3573,49 @@ mod rate_limit_tests {
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
+
+    #[test]
+    fn readiness_rejects_a_success_observed_after_its_deadline() {
+        let start = Instant::now();
+        let attempt_deadline = start.checked_add(Duration::from_millis(10)).unwrap();
+        let observed_at = attempt_deadline
+            .checked_add(Duration::from_millis(1))
+            .unwrap();
+
+        assert!(matches!(
+            bounded_probe_result(
+                HttpProbe {
+                    result: Ok(()),
+                    observed_at,
+                },
+                attempt_deadline,
+                Some(attempt_deadline),
+            ),
+            Err(HttpProbeError::OverallTimeout)
+        ));
+    }
+
+    #[test]
+    fn readiness_rejects_an_attempt_observed_after_its_budget() {
+        let start = Instant::now();
+        let attempt_deadline = start.checked_add(Duration::from_millis(10)).unwrap();
+        let observed_at = attempt_deadline
+            .checked_add(Duration::from_millis(1))
+            .unwrap();
+        let overall_deadline = observed_at.checked_add(Duration::from_millis(10)).unwrap();
+
+        assert!(matches!(
+            bounded_probe_result(
+                HttpProbe {
+                    result: Ok(()),
+                    observed_at,
+                },
+                attempt_deadline,
+                Some(overall_deadline),
+            ),
+            Err(HttpProbeError::AttemptTimeout)
+        ));
+    }
 
     #[test]
     fn forced_cleanup_skips_the_grace_window() {
