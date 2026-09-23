@@ -20,7 +20,7 @@ Hydration builds immutable indexes of hard-linked locators and package-location 
 
 Dependency content and virtual directories are read-only. Project source/output writes are native. Read, stat, enumeration, links, realpath, directory-relative handles, watches, mmap, native loading and execution are conformance requirements. Detect physical node_modules conflicts before access, including conflicts created during execution. Do not delete conflicting user content. Ordinary misses return normal filesystem errors.
 
-Linux static syscall mediation translates pathname extended-attribute reads for virtual dependency entries; missing attributes keep native `ENODATA` results instead of reporting a missing virtual path.
+Linux static syscall mediation translates pathname extended-attribute and filesystem-stat reads for virtual dependency entries; missing attributes keep native `ENODATA` results instead of reporting a missing virtual path.
 
 Valid Linux `AT_EMPTY_PATH` operations target their file descriptor directly. Native file descriptors retain kernel behavior; tracked read-only dependency descriptors reject access-for-write, metadata mutations, and hard-link creation with `EROFS`.
 

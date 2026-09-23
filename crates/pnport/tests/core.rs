@@ -828,6 +828,60 @@ int main(void) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_static_filesystem_stats_translate_virtual_paths() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("statfs.c");
+    fs::write(
+        &source,
+        r#"
+#include <errno.h>
+#include <sys/statfs.h>
+#include <sys/statvfs.h>
+int main(void) {
+    const char *path = "node_modules/dep/file.txt";
+    struct statfs native;
+    if (statfs(path, &native)) return errno == ENOENT ? 21 : 22;
+    struct statvfs portable;
+    if (statvfs(path, &portable)) return 23;
+    return native.f_bsize > 0 && portable.f_bsize > 0 ? 0 : 24;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("statfs-fixture");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(
+        Command::new(&executable)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(21)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(!root.path().join("node_modules").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn pnp_unaware_static_go_process_reads_virtual_dependencies() {
     use std::process::Command;
     if Command::new("go").arg("version").output().is_err() {

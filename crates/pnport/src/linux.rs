@@ -145,6 +145,7 @@ fn traced_syscalls() -> Vec<i64> {
         libc::SYS_openat2,
         libc::SYS_newfstatat,
         libc::SYS_statx,
+        libc::SYS_statfs,
         libc::SYS_readlinkat,
         libc::SYS_faccessat,
         libc::SYS_faccessat2,
@@ -959,6 +960,7 @@ impl Trace<'_> {
             n if n == libc::SYS_symlinkat => (2, argument(&regs, 1) as i32, true),
             n if n == libc::SYS_execve
                 || n == libc::SYS_chdir
+                || n == libc::SYS_statfs
                 || n == libc::SYS_getxattr
                 || n == libc::SYS_lgetxattr
                 || n == libc::SYS_listxattr
