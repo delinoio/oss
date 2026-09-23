@@ -584,7 +584,7 @@ impl Trace<'_> {
         })
     }
 
-    fn proc_link(&self, pid: i32, path: &Path) -> Option<PathBuf> {
+    fn proc_descriptor(&self, pid: i32, path: &Path) -> Option<Translation> {
         let text = path.to_str()?;
         let fd = text
             .strip_prefix("/proc/self/fd/")
@@ -593,10 +593,7 @@ impl Trace<'_> {
             .or_else(|| text.strip_prefix(&format!("/proc/{pid}/fd/")))?
             .parse::<i32>()
             .ok()?;
-        self.fds
-            .get(&Self::group(pid))?
-            .get(&fd)
-            .map(|entry| entry.logical.clone())
+        self.fds.get(&Self::group(pid))?.get(&fd).cloned()
     }
 
     fn path_call(&mut self, pid: i32, mut regs: Registers) -> Result<bool> {
@@ -731,6 +728,7 @@ impl Trace<'_> {
             _ => return Ok(false),
         };
         let original = read_path(pid, argument(&regs, path_arg))?;
+        let is_open = call == libc::SYS_openat || call == libc::SYS_openat2 || call == SYS_OPEN;
         if original.as_os_str().is_empty()
             && (call == libc::SYS_newfstatat || call == libc::SYS_statx)
         {
@@ -752,8 +750,8 @@ impl Trace<'_> {
                 _ => {}
             }
         }
-        if call == libc::SYS_readlinkat || call == SYS_READLINK {
-            if let Some(target) = self.proc_link(pid, &original) {
+        if let Some(descriptor) = self.proc_descriptor(pid, &original) {
+            if call == libc::SYS_readlinkat || call == SYS_READLINK {
                 let (output, capacity) = if call == libc::SYS_readlinkat {
                     (argument(&regs, 2), argument(&regs, 3) as usize)
                 } else {
@@ -769,11 +767,22 @@ impl Trace<'_> {
                     Pending::ReadLink {
                         output,
                         capacity,
-                        target,
+                        target: descriptor.logical,
                     },
                 );
                 return Ok(true);
             }
+            if writing && descriptor.readonly {
+                self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
+                return Ok(true);
+            }
+            if is_open {
+                // The kernel follows /proc/self/fd to the materialized file.
+                // Retain the logical ownership on the newly opened descriptor.
+                self.pending.insert(pid, Pending::Open(descriptor));
+                return Ok(true);
+            }
+            return Ok(false);
         }
         let translation = match self.translate(pid, dirfd, argument(&regs, path_arg)) {
             Ok(value) => value,
@@ -787,7 +796,6 @@ impl Trace<'_> {
             self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
             return Ok(true);
         }
-        let is_open = call == libc::SYS_openat || call == libc::SYS_openat2 || call == SYS_OPEN;
         let second = if call == libc::SYS_renameat
             || call == libc::SYS_renameat2
             || call == libc::SYS_linkat

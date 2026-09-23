@@ -367,6 +367,15 @@ int main(int argc, char **argv) {
     void *mapped = mmap(NULL, 13, PROT_READ, MAP_PRIVATE, fd, 0);
     if (mapped == MAP_FAILED || memcmp(mapped, "package bytes", 13)) return 24;
     munmap(mapped, 13);
+    char fd_path[64];
+    snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d", fd);
+    errno = 0;
+    if (open(fd_path, O_RDWR) != -1 || errno != EROFS) return 37;
+    int reopened = open(fd_path, O_RDONLY);
+    if (reopened < 0) return 38;
+    errno = 0;
+    if (fchmod(reopened, 0600) != -1 || errno != EROFS) return 39;
+    close(reopened);
     close(fd);
     DIR *dir = opendir("node_modules/dep");
     if (!dir) return 25;
