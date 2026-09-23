@@ -45,11 +45,11 @@ try {
     const installEnv = { ...process.env, YARN_ENABLE_SCRIPTS: "0", npm_config_ignore_scripts: "true" };
     if (manager === "yarn") {
       writeFileSync(path.join(consumer, ".yarnrc.yml"), "nodeLinker: pnp\nenableScripts: false\n");
-      execFileSync("npm", ["exec", "--yes", "--package", "@yarnpkg/cli-dist@4.18.0", "--", "yarn", "install"], { cwd: consumer, env: installEnv, stdio: "pipe" });
+      npm(["exec", "--yes", "--package", "@yarnpkg/cli-dist@4.18.0", "--", "yarn", "install"], { cwd: consumer, env: installEnv });
       ensure(existsSync(path.join(consumer, ".pnp.cjs")) && !existsSync(path.join(consumer, "node_modules")), "Yarn PnP consumer generated physical node_modules");
       // Yarn's PnP loader resolves the launcher and its unplugged native binary.
-      const result = spawnSync("npm", ["exec", "--yes", "--package", "@yarnpkg/cli-dist@4.18.0", "--", "yarn", "pnport", "--version"], { cwd: consumer, env: { ...installEnv, YARN_ENABLE_NETWORK: "0", npm_config_offline: "true" }, encoding: "utf8" });
-      ensure(result.status === 0 && result.stdout.includes(`pnport ${metadata().version}`), "Installed Yarn PnP launcher failed");
+      const result = npm(["exec", "--yes", "--package", "@yarnpkg/cli-dist@4.18.0", "--", "yarn", "pnport", "--version"], { cwd: consumer, env: { ...installEnv, YARN_ENABLE_NETWORK: "0", npm_config_offline: "true" } });
+      ensure(result.includes(`pnport ${metadata().version}`), "Installed Yarn PnP launcher failed");
     } else {
       npm(["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: consumer, env: installEnv });
       const command = path.join(consumer, "node_modules", "@delino", "pnport", "bin", "pnport.cjs");
