@@ -1492,6 +1492,10 @@ fn linux_openat2_preserves_dirfd_resolution_constraints() {
 #include <sys/syscall.h>
 #include <unistd.h>
 int main(void) {
+    errno = 0;
+    if (syscall(SYS_openat2, AT_FDCWD, "node_modules/dep/file.txt", NULL, 0) != -1 || errno != EINVAL) return 38;
+    errno = 0;
+    if (syscall(SYS_openat2, AT_FDCWD, "node_modules/dep/file.txt", NULL, 8) != -1 || errno != EINVAL) return 39;
     int dir = open("node_modules/dep", O_PATH | O_DIRECTORY);
     if (dir < 0) return 40;
     struct open_how how = {.flags = O_RDONLY, .resolve = RESOLVE_BENEATH};

@@ -910,6 +910,11 @@ impl Trace<'_> {
                     != 0,
             ),
             n if n == libc::SYS_openat2 => {
+                if argument(&regs, 3) < OPEN_HOW_SIZE as u64 {
+                    // The kernel rejects an undersized open_how before it
+                    // needs to read the caller's buffer.
+                    return Ok(false);
+                }
                 let bytes = read_remote(pid, argument(&regs, 2), 8)?;
                 let flags = u64::from_ne_bytes(
                     bytes
@@ -1038,11 +1043,6 @@ impl Trace<'_> {
             _ => return Ok(false),
         };
         let openat2_resolve = if call == libc::SYS_openat2 {
-            if argument(&regs, 3) < OPEN_HOW_SIZE as u64 {
-                // The kernel rejects an undersized open_how without opening a
-                // path; leave its EINVAL result intact.
-                return Ok(false);
-            }
             let how = read_remote(pid, argument(&regs, 2), OPEN_HOW_SIZE)?;
             u64::from_ne_bytes(
                 how.get(16..OPEN_HOW_SIZE)

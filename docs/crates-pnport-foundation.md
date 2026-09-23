@@ -28,6 +28,8 @@ Virtual dependency entries expose matching symlink type and target-byte length t
 
 Relative `*at` operations validate the live descriptor as a directory before joining or normalizing paths, including `..`. Regular-file descriptors return `ENOTDIR` and invalid descriptors return `EBADF`, whether tracked or duplicated outside interception. Absolute paths continue to ignore the supplied directory descriptor. Native cwd state follows the live process handle after symlink retargeting or directory rename; only translated virtual cwd paths need saved logical identity.
 
+Linux `openat2` checks the caller-provided `open_how` size before reading the structure. Undersized calls retain the kernel's `EINVAL` result, including when the pointer is null; valid calls continue through virtual path translation and resolution-flag checks.
+
 `dlopen(NULL, flags)` delegates directly to the native loader's process/global symbol namespace. Named library paths continue through filesystem translation; the null form is not a path error.
 
 Inherit cwd, environment and stdio. Never capture child output; stdout remains suitable for language-server protocols. Preserve literal arguments and child status. Owned failures use 2 (arguments), 127 (not found), 126 (not executable), or 125 (initialization/runtime/restart). Structured stable codes disambiguate owned failures from child status. Signals use conventional signal-derived status.
