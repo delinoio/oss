@@ -19,6 +19,8 @@ pub enum Operation {
     SetText {
         target: Target,
         text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cell: Option<CellAddress>,
     },
     SetTextStyle {
         target: Target,
@@ -131,8 +133,40 @@ pub fn apply_patch(
     let mut next = doc.clone();
     for op in &patch.operations {
         match op {
-            Operation::SetText { target, text } => {
+            Operation::SetText { target, text, cell } => {
                 let n = target_mut(&mut next, target)?;
+                if let Some(address) = cell {
+                    if n.kind != NodeKind::Table {
+                        return error(
+                            ErrorCode::InvalidField,
+                            "/cell",
+                            "Cell addresses require a table",
+                        );
+                    }
+                    let grid = table_grid(n)?;
+                    let &(r, c) = grid
+                        .get(address.row)
+                        .and_then(|r| r.get(address.column))
+                        .ok_or_else(|| {
+                            Diagnostic::new(
+                                ErrorCode::InvalidReference,
+                                "/cell",
+                                "Cell lies outside table",
+                            )
+                        })?;
+                    if r != address.row
+                        || grid[r].iter().position(|p| *p == (r, c)) != Some(address.column)
+                    {
+                        return error(
+                            ErrorCode::InvalidReference,
+                            "/cell",
+                            "Address the origin of a merged cell",
+                        );
+                    }
+                    n.rows[r].cells[c].text = Some(text.clone());
+                    n.rows[r].cells[c].paragraphs.clear();
+                    continue;
+                }
                 if n.kind != NodeKind::Text {
                     return error(
                         ErrorCode::InvalidField,
@@ -167,6 +201,18 @@ pub fn apply_patch(
                 n.data = Some(data.clone());
             }
             Operation::SetImageAsset { target, asset_ref } => {
+                if !next.assets.contains_key(asset_ref)
+                    && asset_ref.starts_with("asset_")
+                    && asset_ref.len() == 70
+                    && asset_ref[6..].bytes().all(|b| b.is_ascii_hexdigit())
+                {
+                    next.assets.insert(
+                        asset_ref.clone(),
+                        AssetRef {
+                            handle: asset_ref.clone(),
+                        },
+                    );
+                }
                 let n = target_mut(&mut next, target)?;
                 if n.kind != NodeKind::Image {
                     return error(

@@ -22,8 +22,7 @@ tempfile = "3.25.0"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
 
-[target.'cfg(unix)'.dependencies]
-libc = "0.2.182"
+process-wrap = { version = "10.0.1", features = ["tokio1"] }
 
 [dev-dependencies]
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }

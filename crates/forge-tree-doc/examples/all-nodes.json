@@ -1,0 +1,343 @@
+{
+  "dsl_version": 1,
+  "kind": "presentation",
+  "unit": "pt",
+  "page": {
+    "width": 960,
+    "height": 540
+  },
+  "theme": {
+    "font_family": "Noto Sans KR",
+    "colors": {
+      "background": "#FFFFFF",
+      "foreground": "#172033",
+      "accent": "#2563EB"
+    },
+    "text_styles": {
+      "title": {
+        "font_size": 36,
+        "font_weight": 700,
+        "color_ref": "foreground"
+      },
+      "body": {
+        "font_size": 20,
+        "color_ref": "foreground"
+      }
+    }
+  },
+  "slides": [
+    {
+      "key": "overview",
+      "background": {
+        "color_ref": "background"
+      },
+      "content": {
+        "type": "column",
+        "key": "overview.content",
+        "padding": 40,
+        "gap": 24,
+        "children": [
+          {
+            "type": "text",
+            "key": "overview.title",
+            "style_ref": "title",
+            "text": "Delino Forge MCP"
+          },
+          {
+            "type": "row",
+            "height": "fill",
+            "gap": 32,
+            "children": [
+              {
+                "type": "column",
+                "width": "fill",
+                "gap": 16,
+                "children": [
+                  {
+                    "type": "text",
+                    "key": "overview.description",
+                    "style_ref": "body",
+                    "text": "Create and edit documents with structured instructions."
+                  },
+                  {
+                    "type": "list",
+                    "style_ref": "body",
+                    "marker": "bullet",
+                    "items": [
+                      "Typed document trees",
+                      "Validated changes",
+                      "Editable Office output"
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "shape",
+                "key": "overview.accent",
+                "width": 240,
+                "height": "fill",
+                "shape": "rounded_rect",
+                "fill": {
+                  "color_ref": "accent"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "details",
+      "content": {
+        "type": "canvas",
+        "key": "details.canvas",
+        "children": [
+          {
+            "type": "text",
+            "key": "details.title",
+            "frame": {
+              "x": 40,
+              "y": 25,
+              "width": 880,
+              "height": 55
+            },
+            "style_ref": "title",
+            "paragraphs": [
+              {
+                "runs": [
+                  {
+                    "text": "문서 요소 / "
+                  },
+                  {
+                    "text": "Native Office objects",
+                    "style": {
+                      "color": "#2563EB"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "image",
+            "key": "details.image",
+            "frame": {
+              "x": 40,
+              "y": 110,
+              "width": 180,
+              "height": 110
+            },
+            "asset_ref": "sample",
+            "fit": "contain",
+            "alt": "Two by one test image"
+          },
+          {
+            "type": "image",
+            "key": "details.cover",
+            "frame": {
+              "x": 40,
+              "y": 240,
+              "width": 180,
+              "height": 110
+            },
+            "asset_ref": "sample",
+            "fit": "cover"
+          },
+          {
+            "type": "table",
+            "key": "details.table",
+            "frame": {
+              "x": 250,
+              "y": 110,
+              "width": 310,
+              "height": 220
+            },
+            "style": {
+              "font_size": 14
+            },
+            "columns": [
+              {
+                "width": 100
+              },
+              {
+                "width": "fill"
+              },
+              {
+                "width": 90
+              }
+            ],
+            "rows": [
+              {
+                "cells": [
+                  {
+                    "text": "Merged header",
+                    "col_span": 3,
+                    "fill": {
+                      "color": "#DBEAFE"
+                    }
+                  }
+                ]
+              },
+              {
+                "cells": [
+                  {
+                    "text": "Vertical",
+                    "row_span": 2
+                  },
+                  {
+                    "paragraphs": [
+                      {
+                        "runs": [
+                          {
+                            "text": "Rich",
+                            "style": {
+                              "font_weight": 700
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "text": "12"
+                  }
+                ]
+              },
+              {
+                "cells": [
+                  {
+                    "text": "Value"
+                  },
+                  {
+                    "text": "24"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "chart",
+            "key": "details.chart",
+            "frame": {
+              "x": 590,
+              "y": 110,
+              "width": 330,
+              "height": 250
+            },
+            "orientation": "vertical",
+            "legend": "bottom",
+            "data_labels": "value",
+            "data": {
+              "categories": [
+                "Q1",
+                "Q2",
+                "Q3"
+              ],
+              "series": [
+                {
+                  "key": "actual",
+                  "name": "Actual",
+                  "values": [
+                    12,
+                    24,
+                    18
+                  ]
+                },
+                {
+                  "key": "target",
+                  "name": "Target",
+                  "values": [
+                    16,
+                    20,
+                    24
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "type": "shape",
+            "key": "details.start",
+            "frame": {
+              "x": 40,
+              "y": 400,
+              "width": 110,
+              "height": 55
+            },
+            "shape": "rect",
+            "fill": {
+              "color": "#2563EB"
+            }
+          },
+          {
+            "type": "shape",
+            "key": "details.middle",
+            "frame": {
+              "x": 300,
+              "y": 400,
+              "width": 110,
+              "height": 55
+            },
+            "shape": "rounded_rect",
+            "fill": {
+              "color": "#2563EB"
+            }
+          },
+          {
+            "type": "shape",
+            "key": "details.end",
+            "frame": {
+              "x": 560,
+              "y": 400,
+              "width": 110,
+              "height": 55
+            },
+            "shape": "ellipse",
+            "fill": {
+              "color": "#2563EB"
+            }
+          },
+          {
+            "type": "connector",
+            "key": "details.line",
+            "from": {
+              "target": {
+                "key": "details.start"
+              },
+              "anchor": "right"
+            },
+            "to": {
+              "target": {
+                "key": "details.middle"
+              },
+              "anchor": "left"
+            },
+            "connector_type": "straight"
+          },
+          {
+            "type": "connector",
+            "key": "details.elbow",
+            "from": {
+              "target": {
+                "key": "details.middle"
+              },
+              "anchor": "bottom"
+            },
+            "to": {
+              "target": {
+                "key": "details.end"
+              },
+              "anchor": "bottom"
+            },
+            "connector_type": "elbow"
+          }
+        ]
+      }
+    }
+  ],
+  "assets": {
+    "sample": {
+      "handle": "asset_TEST_REGISTER_FIRST"
+    }
+  }
+}

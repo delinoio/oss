@@ -63,9 +63,12 @@ fn rich(
         );
     }
     let valid_text = |s: &str| {
-        s.chars()
-            .all(|c| c == '\t' || c == '\n' || c == '\r' || c >= '\u{20}')
-            && s.len() <= 1024 * 1024
+        s.chars().all(|c| {
+            c == '\t'
+                || c == '\n'
+                || c == '\r'
+                || (c >= '\u{20}' && c != '\u{fffe}' && c != '\u{ffff}')
+        }) && s.len() <= 1024 * 1024
     };
     if text.as_ref().is_some_and(|t| !valid_text(t)) || paragraphs.len() > 10_000 {
         return error(ErrorCode::ResourceLimit, path, "Invalid or excessive text");
@@ -250,23 +253,23 @@ fn identity(
     ids: &mut HashSet<uuid::Uuid>,
     path: &str,
 ) -> Result<()> {
-    if let Some(k) = key {
-        if k.is_empty() || k.len() > 256 || !keys.insert(k.clone()) {
-            return error(
-                ErrorCode::DuplicateIdentity,
-                path,
-                "Keys must be nonempty and document-unique",
-            );
-        }
+    if let Some(k) = key
+        && (k.is_empty() || k.len() > 256 || !keys.insert(k.clone()))
+    {
+        return error(
+            ErrorCode::DuplicateIdentity,
+            path,
+            "Keys must be nonempty and document-unique",
+        );
     }
-    if let Some(id) = id {
-        if id.get_version_num() != 7 || !ids.insert(id) {
-            return error(
-                ErrorCode::DuplicateIdentity,
-                path,
-                "IDs must be unique UUID v7 values",
-            );
-        }
+    if let Some(id) = id
+        && (id.get_version_num() != 7 || !ids.insert(id))
+    {
+        return error(
+            ErrorCode::DuplicateIdentity,
+            path,
+            "IDs must be unique UUID v7 values",
+        );
     }
     Ok(())
 }
@@ -314,20 +317,19 @@ fn node(
             "Gap and padding must be finite and nonnegative",
         );
     }
-    if let Some(f) = n.frame {
-        if !f.x.is_finite()
+    if let Some(f) = n.frame
+        && (!f.x.is_finite()
             || !f.y.is_finite()
             || !positive(f.width)
             || !positive(f.height)
             || n.width.is_some()
-            || n.height.is_some()
-        {
-            return error(
-                ErrorCode::InvalidGeometry,
-                path,
-                "Frame requires finite position and positive size without width/height",
-            );
-        }
+            || n.height.is_some())
+    {
+        return error(
+            ErrorCode::InvalidGeometry,
+            path,
+            "Frame requires finite position and positive size without width/height",
+        );
     }
     if parent == Some(NodeKind::Canvas) && n.frame.is_none() && n.kind != NodeKind::Connector {
         return error(
@@ -366,7 +368,19 @@ fn node(
             "Text content is only allowed on text nodes",
         );
     }
-    if n.kind != NodeKind::List && !n.items.is_empty()
+    if n.kind != NodeKind::List && (!n.items.is_empty() || n.marker != Marker::default())
+        || n.kind != NodeKind::Image && (n.fit != ImageFit::default() || !n.alt.is_empty())
+        || n.kind != NodeKind::Shape && (n.shape != Shape::default() || n.fill != Color::default())
+        || n.kind != NodeKind::Chart
+            && (n.orientation != Orientation::default()
+                || n.legend != Legend::default()
+                || n.data_labels != DataLabels::default())
+        || n.kind != NodeKind::Connector && n.connector_type != ConnectorType::default()
+        || !matches!(n.kind, NodeKind::Text | NodeKind::List | NodeKind::Table)
+            && (n.style != TextStyle::default()
+                || n.style_ref.is_some()
+                || n.min_font_size.is_some()
+                || n.overflow != Overflow::default())
         || n.kind != NodeKind::Table && (!n.columns.is_empty() || !n.rows.is_empty())
         || n.kind != NodeKind::Chart && n.data.is_some()
         || n.kind != NodeKind::Image && n.asset_ref.is_some()
@@ -436,6 +450,9 @@ fn node(
             let Some(d) = &n.data else {
                 return error(ErrorCode::InvalidField, path, "Chart requires data");
             };
+            for text in d.categories.iter().chain(d.series.iter().map(|s| &s.name)) {
+                rich(&Some(text.clone()), &[], doc, path)?;
+            }
             let mut seen = HashSet::new();
             if d.categories.is_empty()
                 || d.categories.len() > 10_000

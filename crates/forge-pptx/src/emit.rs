@@ -167,6 +167,13 @@ pub(crate) fn image_info(data: &[u8]) -> Result<(u32, u32, &'static str)> {
             "Image dimensions exceed 64 million pixels",
         );
     }
+    let mut reader = image::ImageReader::new(Cursor::new(data))
+        .with_guessed_format()
+        .map_err(failure)?;
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(256 * 1024 * 1024);
+    reader.limits(limits);
+    reader.decode().map_err(failure)?;
     Ok((w, h, ext))
 }
 pub(crate) fn chart_parts(n: &Node) -> Result<(Vec<u8>, Vec<u8>)> {
@@ -187,21 +194,33 @@ pub(crate) fn chart_parts(n: &Node) -> Result<(Vec<u8>, Vec<u8>)> {
         },
     )
     .map_err(failure)?;
-    let doc = xml(chart.as_bytes())?;
-    if let Some(legend) = doc.descendants().find(|e| e.has_tag_name((C, "legend"))) {
-        let replacement = match n.legend {
-            Legend::Hidden => String::new(),
-            Legend::Bottom | Legend::Right => format!(
-                "<c:legend><c:legendPos val=\"{}\"/><c:overlay val=\"0\"/></c:legend>",
-                if n.legend == Legend::Bottom { "b" } else { "r" }
-            ),
-        };
+    // The upstream bar writer omits legends and uses signed axis identifiers.
+    // Normalize those two details until the writer emits conforming bar-chart
+    // defaults.
+    chart = chart
+        .replace("-2068027336", "100001")
+        .replace("-2113994440", "100002");
+    let native = xml(chart.as_bytes())?;
+    let replacement = match n.legend {
+        Legend::Hidden => String::new(),
+        Legend::Bottom | Legend::Right => format!(
+            "<c:legend><c:legendPos val=\"{}\"/><c:overlay val=\"0\"/></c:legend>",
+            if n.legend == Legend::Bottom { "b" } else { "r" }
+        ),
+    };
+    if let Some(legend) = native.descendants().find(|e| e.has_tag_name((C, "legend"))) {
         chart = String::from_utf8(replace_range(
             chart.as_bytes(),
             legend.range(),
             &replacement,
         ))
         .map_err(failure)?;
+    } else if !replacement.is_empty() {
+        let plot = native
+            .descendants()
+            .find(|e| e.has_tag_name((C, "plotArea")))
+            .ok_or_else(|| failure("plot area"))?;
+        chart.insert_str(plot.range().end, &replacement);
     }
     let doc = xml(chart.as_bytes())?;
     if n.data_labels == DataLabels::Value {
@@ -298,7 +317,7 @@ pub(crate) fn emit_node(
                     "image/jpeg"
                 },
             )?;
-            let rid = format!("rIdForge{}", id.simple());
+            let rid = format!("rIdForge{}{}", id.simple(), sha(bytes));
             if !relationships(parts, slide_part)?
                 .iter()
                 .any(|r| r.id == rid)
@@ -437,6 +456,11 @@ pub(crate) fn emit_node(
                 ap.0 > bp.0,
                 ap.1 > bp.1,
             ));
+            let s = s.replace(
+                "</p:spPr>",
+                "<a:ln w=\"19050\"><a:solidFill><a:srgbClr \
+                 val=\"172033\"/></a:solidFill><a:prstDash val=\"solid\"/></a:ln></p:spPr>",
+            );
             let anchor = |a: Anchor| match a {
                 Anchor::Top => 0,
                 Anchor::Left => 1,
@@ -464,6 +488,44 @@ pub(crate) fn emit_node(
                 "Node cannot be emitted as a leaf",
             );
         }
+    };
+    let fragment = if let Some(reference) = &n.placeholder_ref {
+        let relation = relationships(parts, slide_part)?
+            .into_iter()
+            .find(|r| r.kind.ends_with("/slideLayout") && !r.external)
+            .ok_or_else(|| failure("layout"))?;
+        let layout = resolve(slide_part, &relation.target)?;
+        let native = xml(parts.get(&layout).ok_or_else(|| failure("layout"))?)?;
+        let ph = native
+            .descendants()
+            .find(|p| p.has_tag_name((P, "ph")) && p.attribute("idx").unwrap_or("0") == reference)
+            .ok_or_else(|| {
+                Diagnostic::new(
+                    ErrorCode::InvalidReference,
+                    "/placeholder_ref",
+                    "Placeholder is unavailable in this slide layout",
+                )
+            })?;
+        if !matches!(n.kind, NodeKind::Text | NodeKind::Image | NodeKind::Shape) {
+            return error(
+                ErrorCode::UnsupportedEdit,
+                "/placeholder_ref",
+                "Placeholder binding requires text, image or shape",
+            );
+        }
+        let attrs = ph
+            .attributes()
+            .filter(|a| a.namespace().is_none())
+            .map(|a| format!(" {}=\"{}\"", a.name(), escape(a.value())))
+            .collect::<String>();
+        swap_descendant(
+            &fragment,
+            P,
+            "nvPr",
+            &format!("<p:nvPr xmlns:p=\"{P}\"><p:ph{attrs}/></p:nvPr>"),
+        )?
+    } else {
+        fragment
     };
     xml(fragment.as_bytes())?;
     Ok(fragment)
@@ -627,6 +689,7 @@ pub fn generate(
             .into_bytes(),
         );
     }
+    crate::font::embed(&mut parts)?;
     add_metadata(&mut parts, document_id, revision, doc, &bindings)?;
     validate_package(&parts)?;
     write(&parts)

@@ -1,6 +1,7 @@
 //! Native editable PPTX generation with package-preserving updates.
 #![forbid(unsafe_code)]
 mod emit;
+mod font;
 mod import;
 mod package;
 mod update;
@@ -70,4 +71,12 @@ pub(crate) fn add_metadata(
 /// Validate image format and dimensions before registering an asset.
 pub fn validate_image(bytes: &[u8]) -> Result<()> {
     emit::image_info(bytes).map(|_| ())
+}
+
+/// Prepare a disposable renderer input with the pinned default font. Managed
+/// and exported source parts remain untouched by this preview-only operation.
+pub fn preview_bytes(bytes: &[u8]) -> forge_tree_doc::Result<Vec<u8>> {
+    let mut parts = package::read(bytes)?;
+    font::embed(&mut parts)?;
+    package::write(&parts)
 }

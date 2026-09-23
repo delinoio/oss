@@ -149,16 +149,11 @@ pub fn escape(s: &str) -> String {
 }
 pub fn relation_path(part: &str) -> String {
     let (dir, name) = part.rsplit_once('/').unwrap_or(("", part));
-    format!(
-        "{}{}/{}",
-        if dir.is_empty() {
-            String::new()
-        } else {
-            format!("{dir}/")
-        },
-        "_rels",
-        format!("{name}.rels")
-    )
+    if dir.is_empty() {
+        format!("_rels/{name}.rels")
+    } else {
+        format!("{dir}/_rels/{name}.rels")
+    }
 }
 pub fn resolve(part: &str, target: &str) -> Result<String> {
     if target.contains('\\')

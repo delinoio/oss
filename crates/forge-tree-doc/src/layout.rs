@@ -24,6 +24,15 @@ impl Default for TextMeasurer {
     fn default() -> Self {
         let mut db = fontdb::Database::new();
         db.load_system_fonts();
+        // A system-installed namesake must not override the source-pinned default.
+        let duplicates: Vec<_> = db
+            .faces()
+            .filter(|f| f.families.iter().any(|(name, _)| name == "Noto Sans KR"))
+            .map(|f| f.id)
+            .collect();
+        for id in duplicates {
+            db.remove_face(id);
+        }
         db.load_font_data(FONT_BYTES.to_vec());
         Self {
             fonts: FontSystem::new_with_locale_and_db("en-US".into(), db),
@@ -231,13 +240,19 @@ impl Engine<'_> {
         if !self.unchanged.contains(&id) && matches!(n.kind, NodeKind::Text | NodeKind::List) {
             let style = self.doc.style(n);
             let base = style.font_size.unwrap_or(20.0);
+            let smallest = n
+                .paragraphs()
+                .iter()
+                .flat_map(|p| &p.runs)
+                .map(|r| r.style.font_size.unwrap_or(base))
+                .fold(base, f64::min);
             let width = f.width - if n.kind == NodeKind::List { 24.0 } else { 0.0 };
             loop {
                 let (w, h) = self.text.measure(&n.paragraphs(), &style, width, scale)?;
                 if h <= f.height + 0.01 && w <= width + 0.01 {
                     break;
                 }
-                let minimum = n.min_font_size.unwrap_or(base) / base;
+                let minimum = (n.min_font_size.unwrap_or(smallest) / smallest).min(1.0);
                 if n.overflow != Overflow::Shrink || scale <= minimum + 0.00001 {
                     let mut e = Diagnostic::new(
                         ErrorCode::TextOverflow,
@@ -403,14 +418,15 @@ pub fn layout_for_edit(doc: &Presentation, previous: Option<&Presentation>) -> R
     if let Some(previous) = previous {
         for slide in &doc.slides {
             slide.content.visit(&mut |n| {
-                if let Some(id) = n.id {
-                    if previous.find(&Target {
+                if let Some(id) = n.id
+                    && (n.frame.is_some() || n.kind == NodeKind::Canvas)
+                    && n.overflow != Overflow::Shrink
+                    && previous.find(&Target {
                         node_id: Some(id),
                         key: None,
                     }) == Some(n)
-                    {
-                        unchanged.insert(id);
-                    }
+                {
+                    unchanged.insert(id);
                 }
             });
         }

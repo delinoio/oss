@@ -45,11 +45,33 @@ fn change_geometry(bytes: &[u8], native_id: u32, new: &str) -> Result<Vec<u8>> {
             let replacement = format!("{} xmlns:a=\"{A}\"{}", &raw[..at], &raw[at..]);
             changes.push((a.range(), replacement));
         }
+    } else if let (None, Some(source)) = (target, source) {
+        let props = desc(shape, P, "spPr").ok_or_else(|| failure("shape geometry"))?;
+        let raw = &old.input_text()[props.range()];
+        let replacement = format!(
+            "<a:xfrm xmlns:a=\"{A}\">{}{}</a:xfrm>",
+            &new[desc(source, A, "off")
+                .ok_or_else(|| failure("offset"))?
+                .range()],
+            &new[desc(source, A, "ext")
+                .ok_or_else(|| failure("extent"))?
+                .range()]
+        );
+        if raw.ends_with("/>") {
+            let prefix = props.lookup_prefix(P).unwrap_or("p");
+            changes.push((
+                props.range().end - 2..props.range().end,
+                format!(">{replacement}</{prefix}:spPr>"),
+            ));
+        } else {
+            let at = props.range().start + raw.find('>').ok_or_else(|| failure("properties"))? + 1;
+            changes.push((at..at, replacement));
+        }
     } else {
         return error(
             ErrorCode::UnsupportedEdit,
             "",
-            "Geometry is inherited or not safely editable",
+            "Geometry cannot be represented safely",
         );
     }
     apply_edits(bytes, changes)
@@ -106,33 +128,53 @@ fn change_style(
     bytes: &[u8],
     native_id: u32,
     doc: &Presentation,
+    previous: &Node,
     n: &Node,
+    old_scale: f64,
     scale: f64,
 ) -> Result<Vec<u8>> {
     let old = xml(bytes)?;
     let shape = shape_element(&old, native_id).ok_or_else(|| failure("shape"))?;
     let body = desc(shape, P, "txBody").ok_or_else(|| failure("text"))?;
+    let before = doc.style(previous);
     let base = doc.style(n);
+    let model = n.paragraphs();
     let mut edits = Vec::new();
-    for run in body.descendants().filter(|r| r.has_tag_name((A, "r"))) {
-        if let Some(props) = run.children().find(|p| p.has_tag_name((A, "rPr"))) {
+    for (pi, paragraph) in body
+        .children()
+        .filter(|p| p.has_tag_name((A, "p")))
+        .enumerate()
+    {
+        for (ri, run) in paragraph
+            .children()
+            .filter(|r| {
+                r.has_tag_name((A, "r")) || r.has_tag_name((A, "fld")) || r.has_tag_name((A, "br"))
+            })
+            .enumerate()
+        {
             let mut style = base.clone();
-            if let Some(old) = desc(props, A, "hlinkClick") {
-                let _ = old;
+            if let Some(r) = model.get(pi).and_then(|p| p.runs.get(ri)) {
+                style.overlay(&r.style);
             }
-            // The node style explicitly overrides run properties for this operation.
-            style.overlay(&n.style);
-            for (name, value) in [
-                (
+            let props = run.children().find(|p| p.has_tag_name((A, "rPr")));
+            let mut attributes = Vec::new();
+            if before.font_size != base.font_size || old_scale != scale {
+                attributes.push((
                     "sz",
                     ((style.font_size.unwrap_or(20.0) * scale * 100.0).round() as u32).to_string(),
-                ),
-                (
+                ));
+            }
+            if before.font_weight != base.font_weight {
+                attributes.push((
                     "b",
                     u8::from(style.font_weight.unwrap_or(400) >= 600).to_string(),
-                ),
-                ("i", u8::from(style.italic.unwrap_or(false)).to_string()),
-                (
+                ));
+            }
+            if before.italic != base.italic {
+                attributes.push(("i", u8::from(style.italic.unwrap_or(false)).to_string()));
+            }
+            if before.underline != base.underline {
+                attributes.push((
                     "u",
                     if style.underline.unwrap_or(false) {
                         "sng"
@@ -140,21 +182,93 @@ fn change_style(
                         "none"
                     }
                     .into(),
-                ),
-            ] {
-                edits.push(attribute_edit(props, name, &value));
+                ));
             }
-        } else {
-            let pos = run
-                .children()
-                .find(|n| n.is_element())
-                .map(|n| n.range().start)
-                .unwrap_or(run.range().end - 6);
-            edits.push((
-                pos..pos,
-                emit::rpr(doc, &base, scale)
-                    .replace("<a:rPr ", &format!("<a:rPr xmlns:a=\"{A}\" ")),
-            ));
+            let mut children = Vec::new();
+            if before.font_family != base.font_family {
+                for tag in ["latin", "ea", "cs"] {
+                    children.push((
+                        tag,
+                        format!(
+                            "<a:{tag} xmlns:a=\"{A}\" typeface=\"{}\"/>",
+                            escape(style.font_family.as_deref().unwrap_or("Noto Sans KR"))
+                        ),
+                    ));
+                }
+            }
+            if before.color != base.color || before.color_ref != base.color_ref {
+                let color = doc.resolve_color(
+                    &Color {
+                        color: style.color.clone(),
+                        color_ref: style.color_ref.clone(),
+                    },
+                    "#172033",
+                );
+                children.push((
+                    "solidFill",
+                    format!(
+                        "<a:solidFill xmlns:a=\"{A}\"><a:srgbClr val=\"{}\"/></a:solidFill>",
+                        &color[1..]
+                    ),
+                ));
+            }
+            if let Some(props) = props {
+                for (name, value) in attributes {
+                    edits.push(attribute_edit(props, name, &value));
+                }
+                let mut additions = String::new();
+                for (tag, content) in children {
+                    if tag == "solidFill"
+                        && props.children().any(|c| {
+                            matches!(
+                                c.tag_name().name(),
+                                "gradFill" | "pattFill" | "blipFill" | "grpFill" | "noFill"
+                            )
+                        })
+                    {
+                        return error(
+                            ErrorCode::UnsupportedEdit,
+                            "/style",
+                            "Non-solid text fills require explicit text replacement",
+                        );
+                    }
+                    if let Some(child) = props.children().find(|c| c.has_tag_name((A, tag))) {
+                        edits.push((child.range(), content));
+                    } else {
+                        additions.push_str(&content);
+                    }
+                }
+                if !additions.is_empty() {
+                    let raw = &old.input_text()[props.range()];
+                    if raw.ends_with("/>") {
+                        let prefix = props.lookup_prefix(A).unwrap_or("a");
+                        let pos = props.range().end - 2;
+                        edits.push((
+                            pos..props.range().end,
+                            format!(">{additions}</{prefix}:rPr>"),
+                        ));
+                    } else {
+                        let pos = props.range().start
+                            + raw.rfind("</").ok_or_else(|| failure("properties"))?;
+                        edits.push((pos..pos, additions));
+                    }
+                }
+            } else if !attributes.is_empty() || !children.is_empty() {
+                let attributes = attributes
+                    .into_iter()
+                    .map(|(k, v)| format!(" {k}=\"{}\"", escape(&v)))
+                    .collect::<String>();
+                let children = children.into_iter().map(|(_, v)| v).collect::<String>();
+                let start = run.range().start
+                    + old.input_text()[run.range()]
+                        .find('>')
+                        .ok_or_else(|| failure("run"))?
+                    + 1;
+                edits.push((
+                    start..start,
+                    format!("<a:rPr xmlns:a=\"{A}\"{attributes}>{children}</a:rPr>"),
+                ));
+            }
         }
     }
     apply_edits(bytes, edits)
@@ -172,12 +286,113 @@ fn replace_image(bytes: &[u8], native_id: u32, new: &str) -> Result<Vec<u8>> {
         .find(|a| a.namespace() == Some(R) && a.name() == "embed")
         .ok_or_else(|| failure("embed"))?;
     let prefix = blip.lookup_prefix(R).ok_or_else(|| failure("namespace"))?;
-    apply_edits(
-        bytes,
-        vec![(attr.range(), format!("{prefix}:embed=\"{}\"", escape(rid)))],
-    )
+    let mut edits = vec![(attr.range(), format!("{prefix}:embed=\"{}\"", escape(rid)))];
+    let old_crop = desc(shape, A, "srcRect");
+    let new_crop = desc(fresh.root_element(), A, "srcRect");
+    let crop = new_crop
+        .map(|c| {
+            let raw = &new[c.range()];
+            raw.replacen("<a:srcRect", &format!("<a:srcRect xmlns:a=\"{A}\""), 1)
+        })
+        .unwrap_or_default();
+    if let Some(old_crop) = old_crop {
+        edits.push((old_crop.range(), crop));
+    } else if !crop.is_empty() {
+        edits.push((blip.range().end..blip.range().end, crop));
+    }
+    apply_edits(bytes, edits)
 }
-fn update_chart(parts: &mut Package, slide: &str, native_id: u32, n: &Node) -> Result<()> {
+fn change_table(
+    bytes: &[u8],
+    native_id: u32,
+    doc: &Presentation,
+    before: &Node,
+    after: &Node,
+) -> Result<Vec<u8>> {
+    if before.columns != after.columns
+        || before.style != after.style
+        || before.style_ref != after.style_ref
+    {
+        return error(
+            ErrorCode::UnsupportedEdit,
+            "/table",
+            "Replace the table node to change its column or base style definitions",
+        );
+    }
+    let old = xml(bytes)?;
+    let table = desc(
+        shape_element(&old, native_id).ok_or_else(|| failure("table"))?,
+        A,
+        "tbl",
+    )
+    .ok_or_else(|| failure("table"))?;
+    let native_rows: Vec<_> = table
+        .children()
+        .filter(|n| n.has_tag_name((A, "tr")))
+        .collect();
+    let grid = table_grid(before)?;
+    let mut edits = Vec::new();
+    for (r, row) in before.rows.iter().enumerate() {
+        let cells: Vec<_> = native_rows[r]
+            .children()
+            .filter(|n| n.has_tag_name((A, "tc")))
+            .collect();
+        for (c, previous) in row.cells.iter().enumerate() {
+            let next = &after.rows[r].cells[c];
+            if previous == next {
+                continue;
+            }
+            let mut scrubbed = next.clone();
+            scrubbed.text = previous.text.clone();
+            scrubbed.paragraphs = previous.paragraphs.clone();
+            if scrubbed != *previous {
+                return error(
+                    ErrorCode::UnsupportedEdit,
+                    "/cell",
+                    "Cell edits must preserve merges and native formatting",
+                );
+            }
+            let col = grid[r]
+                .iter()
+                .position(|p| *p == (r, c))
+                .ok_or_else(|| failure("cell"))?;
+            let body = desc(cells[col], A, "txBody").ok_or_else(|| failure("cell text"))?;
+            let paragraphs: Vec<_> = body
+                .children()
+                .filter(|n| n.has_tag_name((A, "p")))
+                .collect();
+            let mut style = doc.style(after);
+            style.overlay(&next.style);
+            let node = Node {
+                kind: NodeKind::Text,
+                text: next.text.clone(),
+                paragraphs: next.paragraphs.clone(),
+                style,
+                ..Default::default()
+            };
+            let first = paragraphs.first().ok_or_else(|| failure("paragraph"))?;
+            edits.push((
+                first.range(),
+                emit::paragraphs(doc, &node, 1.0)
+                    .replace("<a:p>", &format!("<a:p xmlns:a=\"{A}\">")),
+            ));
+            edits.extend(
+                paragraphs
+                    .iter()
+                    .skip(1)
+                    .map(|p| (p.range(), String::new())),
+            );
+        }
+    }
+    apply_edits(bytes, edits)
+}
+fn update_chart(
+    parts: &mut Package,
+    slide: &str,
+    native_id: u32,
+    previous: &Node,
+    n: &Node,
+) -> Result<()> {
     let doc = xml(&parts[slide])?;
     let shape = shape_element(&doc, native_id).ok_or_else(|| failure("chart"))?;
     let rid = desc(shape, C, "chart")
@@ -198,22 +413,47 @@ fn update_chart(parts: &mut Package, slide: &str, native_id: u32, n: &Node) -> R
         .children()
         .filter(|n| n.has_tag_name((C, "ser")))
         .collect();
-    if old_series.len() != new_series.len() {
-        return error(
-            ErrorCode::UnsupportedEdit,
-            "/data/series",
-            "Changing series count in an imported chart requires a new chart node",
-        );
-    }
     let mut edits = Vec::new();
-    for (old, new) in old_series.iter().zip(new_series) {
+    for (old, new) in old_series.iter().zip(&new_series) {
         for tag in ["tx", "cat", "val"] {
             let a = desc(*old, C, tag).ok_or_else(|| failure("series"))?;
-            let b = desc(new, C, tag).ok_or_else(|| failure("series"))?;
+            let b = desc(*new, C, tag).ok_or_else(|| failure("series"))?;
             let raw = std::str::from_utf8(&fresh[b.range()]).map_err(failure)?;
             let at = raw.find('>').ok_or_else(|| failure("xml"))?;
             let out = format!("{} xmlns:c=\"{C}\"{}", &raw[..at], &raw[at..]);
             edits.push((a.range(), out));
+        }
+    }
+    for old in old_series.iter().skip(new_series.len()) {
+        edits.push((old.range(), String::new()));
+    }
+    if new_series.len() > old_series.len() {
+        let at = old_series
+            .last()
+            .ok_or_else(|| failure("series"))?
+            .range()
+            .end;
+        let mut added = String::new();
+        for new in new_series.iter().skip(old_series.len()) {
+            let raw = std::str::from_utf8(&fresh[new.range()]).map_err(failure)?;
+            added.push_str(&raw.replacen(
+                "<c:ser>",
+                &format!("<c:ser xmlns:c=\"{C}\" xmlns:a=\"{A}\">"),
+                1,
+            ));
+        }
+        edits.push((at..at, added));
+    }
+    for f in old_bar.descendants().filter(|n| n.has_tag_name((C, "f"))) {
+        if !f
+            .text()
+            .is_some_and(|s| s.starts_with("Sheet1!$") || s.starts_with("'Sheet1'!$"))
+        {
+            return error(
+                ErrorCode::UnsupportedEdit,
+                "/data",
+                "Chart references a noncanonical workbook range",
+            );
         }
     }
     let workbook_rel = relationships(parts, &chart_path)?
@@ -232,12 +472,16 @@ fn update_chart(parts: &mut Package, slide: &str, native_id: u32, n: &Node) -> R
             .get(&workbook_path)
             .ok_or_else(|| failure("workbook"))?,
         &workbook,
+        previous
+            .data
+            .as_ref()
+            .ok_or_else(|| failure("chart data"))?,
     )?;
     parts.insert(workbook_path, updated_workbook);
     parts.insert(chart_path, apply_edits(&old, edits)?);
     Ok(())
 }
-fn update_workbook(old: &[u8], fresh: &[u8]) -> Result<Vec<u8>> {
+fn update_workbook(old: &[u8], fresh: &[u8], previous: &ChartData) -> Result<Vec<u8>> {
     let mut original = read(old)?;
     let generated = read(fresh)?;
     let sheets: Vec<_> = original
@@ -269,6 +513,59 @@ fn update_workbook(old: &[u8], fresh: &[u8]) -> Result<Vec<u8>> {
             ErrorCode::UnsupportedEdit,
             "",
             "Formula-bearing chart workbooks cannot be replaced safely",
+        );
+    }
+    let book = xml(original
+        .get("xl/workbook.xml")
+        .ok_or_else(|| failure("workbook"))?)?;
+    if desc(book.root_element(), ns, "sheet").and_then(|n| n.attribute("name")) != Some("Sheet1") {
+        return error(
+            ErrorCode::UnsupportedEdit,
+            "/data",
+            "Noncanonical workbook sheet names require a replacement chart",
+        );
+    }
+    for cell in old_data.descendants().filter(|n| n.has_tag_name((ns, "c"))) {
+        let reference = cell.attribute("r").ok_or_else(|| failure("cell"))?;
+        let letters = reference
+            .bytes()
+            .take_while(u8::is_ascii_uppercase)
+            .collect::<Vec<_>>();
+        let column = letters.iter().fold(0usize, |a, c| {
+            a.saturating_mul(26)
+                .saturating_add(usize::from(*c - b'A' + 1))
+        });
+        let row = reference
+            .get(letters.len()..)
+            .and_then(|r| r.parse::<usize>().ok())
+            .ok_or_else(|| failure("cell"))?;
+        if column == 0
+            || column > previous.series.len() + 1
+            || row == 0
+            || row > previous.categories.len() + 1
+            || cell
+                .attributes()
+                .any(|a| !matches!(a.name(), "r" | "s" | "t"))
+            || cell.children().filter(|n| n.is_element()).any(|n| {
+                n.tag_name().namespace() != Some(ns) || !matches!(n.tag_name().name(), "v" | "is")
+            })
+        {
+            return error(
+                ErrorCode::UnsupportedEdit,
+                "/data",
+                "Workbook contains data outside the editable chart range",
+            );
+        }
+    }
+    if old_data.children().filter(|n| n.is_element()).any(|n| {
+        !n.has_tag_name((ns, "row"))
+            || n.attributes()
+                .any(|a| a.name() != "r" && a.name() != "spans")
+    }) {
+        return error(
+            ErrorCode::UnsupportedEdit,
+            "/data",
+            "Workbook row extensions require a replacement chart",
         );
     }
     let strings = generated
@@ -324,7 +621,20 @@ fn update_workbook(old: &[u8], fresh: &[u8]) -> Result<Vec<u8>> {
         ));
     }
     let replacement = format!("<sheetData xmlns=\"{ns}\">{rows}</sheetData>");
-    let bytes = replace_range(&original[path], old_data.range(), &replacement);
+    let mut changes = vec![(old_data.range(), replacement)];
+    if let (Some(old_dimension), Some(new_dimension)) = (
+        desc(old_xml.root_element(), ns, "dimension"),
+        desc(new_xml.root_element(), ns, "dimension"),
+    ) {
+        changes.push(attribute_edit(
+            old_dimension,
+            "ref",
+            new_dimension
+                .attribute("ref")
+                .ok_or_else(|| failure("dimensions"))?,
+        ));
+    }
+    let bytes = apply_edits(&original[path], changes)?;
     original.insert(path.clone(), bytes);
     write(&original)
 }
@@ -420,8 +730,24 @@ pub fn update(
                     "Unsupported native content cannot be edited or moved",
                 );
             }
+            // Existing chart parts must only be changed by the selective editor below.
+            // Emission is used to obtain geometry, never to reserialize their package.
+            let mut scratch;
+            let destination = if old.is_some() && n.kind == NodeKind::Chart {
+                scratch = parts.clone();
+                &mut scratch
+            } else {
+                &mut parts
+            };
             let fragment = emit::emit_node(
-                &mut parts, path, n, after, &placement, assets, b.shape_id, &bindings,
+                destination,
+                path,
+                n,
+                after,
+                &placement,
+                assets,
+                b.shape_id,
+                &bindings,
             )?;
             if let Some(old) = old {
                 let mut current = parts[path].clone();
@@ -440,34 +766,35 @@ pub fn update(
                         n,
                         placement.nodes[&id].font_scale,
                     )?;
-                } else if old.style != n.style || old.style_ref != n.style_ref {
+                } else if n.kind != NodeKind::Table
+                    && (old.style != n.style
+                        || old.style_ref != n.style_ref
+                        || old_placement.nodes[&id].font_scale != placement.nodes[&id].font_scale)
+                {
                     current = change_style(
                         &current,
                         b.shape_id,
                         after,
+                        old,
                         n,
+                        old_placement.nodes[&id].font_scale,
                         placement.nodes[&id].font_scale,
                     )?;
                 }
                 if n.kind == NodeKind::Image && old.asset_ref != n.asset_ref {
                     current = replace_image(&current, b.shape_id, &fragment)?;
                 }
-                if moved {
+                if moved || n.kind == NodeKind::Image && old.asset_ref != n.asset_ref {
                     current = change_geometry(&current, b.shape_id, &fragment)?;
                 }
-                if n.kind == NodeKind::Table && old != *n {
-                    let x = xml(&current)?;
-                    let shape = shape_element(&x, b.shape_id).ok_or_else(|| failure("table"))?;
-                    let table = desc(shape, A, "tbl").ok_or_else(|| failure("table"))?;
-                    current = replace_range(
-                        &current,
-                        table.range(),
-                        &emit::table_xml(after, n, placement.nodes[&id].frame)?,
-                    );
+                if n.kind == NodeKind::Table
+                    && (old.rows != n.rows || old.style != n.style || old.style_ref != n.style_ref)
+                {
+                    current = change_table(&current, b.shape_id, after, old, n)?;
                 }
                 parts.insert(path.clone(), current);
                 if n.kind == NodeKind::Chart && old.data != n.data {
-                    update_chart(&mut parts, path, b.shape_id, n)?;
+                    update_chart(&mut parts, path, b.shape_id, old, n)?;
                 }
             }
         }
@@ -512,6 +839,18 @@ pub fn update(
                         && !n.has_tag_name((P, "grpSpPr"))
                 })
                 .collect();
+            if shapes.iter().any(|shape| {
+                !old_ids.iter().any(|id| {
+                    shape_element(&x, old_bindings[id].shape_id)
+                        .is_some_and(|known| known == *shape)
+                })
+            }) {
+                return error(
+                    ErrorCode::UnsupportedEdit,
+                    "/children",
+                    "Unbound native elements prevent safe drawing-order changes",
+                );
+            }
             let mut edits = Vec::new();
             if let Some(first) = shapes.first() {
                 edits.push((first.range(), text));

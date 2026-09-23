@@ -97,13 +97,16 @@ async fn main() {
             }
         });
     }
+    let is_mcp = matches!(cli.command, Command::Mcp);
     let result = execute(cli, cancel).await;
     match result {
         Ok(Some(value)) => println!("{}", value),
         Ok(None) => {}
         Err(error) => {
             tracing::error!(code=?error.code,stage="command","Forge command failed");
-            println!("{}", serde_json::json!({"error":error}));
+            if !is_mcp {
+                println!("{}", serde_json::json!({"error":error}));
+            }
             std::process::exit(if error.code == ErrorCode::Cancelled {
                 130
             } else {
@@ -120,6 +123,20 @@ async fn execute(cli: Cli, cancel: CancellationToken) -> Result<Option<serde_jso
     }
     let store = Store::new(cli.state_dir, cancel)?;
     let started = std::time::Instant::now();
+    let operation = match &cli.command {
+        Command::Schema => "schema",
+        Command::Capabilities => "capabilities",
+        Command::Asset { .. } => "asset.add",
+        Command::Create { .. } => "create",
+        Command::Open { .. } => "open",
+        Command::Inspect { .. } => "inspect",
+        Command::Apply { .. } => "apply",
+        Command::Export { .. } => "export",
+        Command::Preview { .. } => "preview",
+        Command::Close { .. } => "close",
+        Command::Mcp => "mcp",
+    };
+    tracing::info!(operation, stage = "start", "Forge command started");
     let value = match cli.command {
         Command::Mcp => {
             mcp::serve(store).await?;
@@ -168,6 +185,7 @@ async fn execute(cli: Cli, cancel: CancellationToken) -> Result<Option<serde_jso
         .map_err(|_| Diagnostic::new(ErrorCode::Io, "", "Worker failed"))??,
     };
     tracing::info!(
+        operation,
         stage = "command",
         elapsed_ms = started.elapsed().as_millis() as u64,
         "Forge command completed"

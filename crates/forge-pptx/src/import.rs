@@ -67,6 +67,43 @@ fn frame(n: roxmltree::Node<'_, '_>) -> Option<Frame> {
         height: number(ext, "cy")?,
     })
 }
+fn inherited_frame(parts: &Package, path: &str, item: roxmltree::Node<'_, '_>) -> Option<Frame> {
+    if let Some(value) = frame(item) {
+        return Some(value);
+    }
+    // A present transform that cannot be represented (rotation/flip) is not
+    // inherited.
+    if desc(item, A, "xfrm").is_some() || desc(item, P, "xfrm").is_some() {
+        return None;
+    }
+    let ph = desc(item, P, "ph")?;
+    let idx = ph.attribute("idx").unwrap_or("0");
+    let kind = ph.attribute("type").unwrap_or("obj");
+    let layout = relationships(parts, path)
+        .ok()?
+        .into_iter()
+        .find(|r| r.kind.ends_with("/slideLayout") && !r.external)?;
+    let layout_path = resolve(path, &layout.target).ok()?;
+    let layout_doc = xml(parts.get(&layout_path)?).ok()?;
+    let matched = layout_doc
+        .descendants()
+        .find(|n| n.has_tag_name((P, "ph")) && n.attribute("idx").unwrap_or("0") == idx)?;
+    let shape = matched.parent()?.parent()?.parent()?;
+    if let Some(value) = frame(shape) {
+        return Some(value);
+    }
+    let kind = matched.attribute("type").unwrap_or(kind);
+    let master = relationships(parts, &layout_path)
+        .ok()?
+        .into_iter()
+        .find(|r| r.kind.ends_with("/slideMaster") && !r.external)?;
+    let master_path = resolve(&layout_path, &master.target).ok()?;
+    let master_doc = xml(parts.get(&master_path)?).ok()?;
+    let matched = master_doc
+        .descendants()
+        .find(|n| n.has_tag_name((P, "ph")) && n.attribute("type").unwrap_or("obj") == kind)?;
+    frame(matched.parent()?.parent()?.parent()?)
+}
 fn text_style(n: roxmltree::Node<'_, '_>) -> TextStyle {
     let mut s = TextStyle::default();
     s.font_size = n
@@ -296,6 +333,33 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
             );
         }
         validate(&m.document, true)?;
+        if m.document_id.get_version_num() != 7 {
+            return Err(failure("document identity"));
+        }
+        let mut leaves = Vec::new();
+        for slide in &m.document.slides {
+            slide.content.visit(&mut |n| {
+                if !n.is_container() {
+                    leaves.push(n);
+                }
+            });
+        }
+        if leaves.len() != m.bindings.len()
+            || leaves
+                .iter()
+                .any(|n| n.id.is_none() || !m.bindings.contains_key(&n.id.unwrap()))
+        {
+            return Err(failure("metadata bindings"));
+        }
+        for n in leaves {
+            let binding = &m.bindings[&n.id.unwrap()];
+            let native = xml(parts
+                .get(&binding.part)
+                .ok_or_else(|| failure("binding part"))?)?;
+            if shape_element(&native, binding.shape_id).is_none() {
+                return Err(failure("binding shape"));
+            }
+        }
         let assets = assets_for_document(&parts, &m.document, &m.bindings)?;
         return Ok(Imported {
             document: m.document,
@@ -346,7 +410,7 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
                 id: Some(id),
                 key: Some(format!("slide-{}.shape-{native_id}", i + 1)),
                 kind: NodeKind::Opaque,
-                frame: Some(frame(item).unwrap_or(Frame {
+                frame: Some(inherited_frame(&parts, &path, item).unwrap_or(Frame {
                     x: 0.0,
                     y: 0.0,
                     width: 1.0,
@@ -355,10 +419,20 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
                 opaque_ref: Some(format!("{path}#{native_id}")),
                 ..Default::default()
             };
-            let parsed = if frame(item).is_none() {
+            let parsed = if inherited_frame(&parts, &path, item).is_none() {
                 false
             } else if item.has_tag_name((P, "sp")) {
-                if let Some(body) = desc(item, P, "txBody") {
+                let body = desc(item, P, "txBody");
+                let has_text = body.is_some_and(|b| {
+                    b.descendants().any(|n| {
+                        n.has_tag_name((A, "t")) && n.text().is_some_and(|s| !s.is_empty())
+                    })
+                });
+                let textbox = desc(item, P, "cNvSpPr")
+                    .is_some_and(|n| matches!(n.attribute("txBox"), Some("1" | "true")));
+                if let Some(body) =
+                    body.filter(|_| has_text || textbox || desc(item, P, "ph").is_some())
+                {
                     n.kind = NodeKind::Text;
                     n.paragraphs = paragraphs(body);
                     if n.paragraphs.is_empty() {
@@ -556,6 +630,10 @@ fn assets_for_document(
             .ok_or_else(|| failure("asset"))?
             .handle
             .clone();
+        if handle != format!("asset_{}", sha(bytes)) {
+            return Err(failure("asset checksum"));
+        }
+        crate::emit::image_info(bytes)?;
         assets.insert(handle, bytes.clone());
     }
     Ok(assets)

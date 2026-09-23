@@ -211,7 +211,7 @@ pub struct Column {
 fn one() -> usize {
     1
 }
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Cell {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -226,6 +226,24 @@ pub struct Cell {
     pub row_span: usize,
     #[serde(default = "one")]
     pub col_span: usize,
+}
+impl Default for Cell {
+    fn default() -> Self {
+        Self {
+            text: None,
+            paragraphs: Vec::new(),
+            style: TextStyle::default(),
+            fill: Color::default(),
+            row_span: 1,
+            col_span: 1,
+        }
+    }
+}
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CellAddress {
+    pub row: usize,
+    pub column: usize,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -464,10 +482,10 @@ impl Presentation {
             color: Some("#172033".into()),
             ..Default::default()
         };
-        if let Some(reference) = &node.style_ref {
-            if let Some(named) = self.theme.text_styles.get(reference) {
-                style.overlay(named);
-            }
+        if let Some(reference) = &node.style_ref
+            && let Some(named) = self.theme.text_styles.get(reference)
+        {
+            style.overlay(named);
         }
         style.overlay(&node.style);
         style

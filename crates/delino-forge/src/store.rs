@@ -40,6 +40,14 @@ pub struct Receipt {
     pub revision: u64,
     pub slides: usize,
     pub changed: bool,
+    pub diagnostics: Vec<Diagnostic>,
+    pub change_summary: ChangeSummary,
+}
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ChangeSummary {
+    Committed,
+    Unchanged,
 }
 fn receipt(s: &State, changed: bool) -> Receipt {
     Receipt {
@@ -47,6 +55,12 @@ fn receipt(s: &State, changed: bool) -> Receipt {
         revision: s.revision,
         slides: s.document.slides.len(),
         changed,
+        diagnostics: Vec::new(),
+        change_summary: if changed {
+            ChangeSummary::Committed
+        } else {
+            ChangeSummary::Unchanged
+        },
     }
 }
 pub fn limited_read(path: &Path, limit: usize) -> Result<Vec<u8>> {
@@ -119,7 +133,10 @@ fn atomic_file(path: &Path, bytes: &[u8], overwrite: bool) -> Result<()> {
 }
 impl Store {
     pub fn new(root: Option<PathBuf>, cancel: CancellationToken) -> Result<Self> {
-        let root = root.unwrap_or_else(default_root);
+        let root = match root {
+            Some(root) => root,
+            None => default_root()?,
+        };
         private_dir(&root)?;
         for sub in ["documents", "assets", "locks"] {
             private_dir(&root.join(sub))?;
@@ -188,14 +205,14 @@ impl Store {
     }
 
     fn check_source(&self, state: &State) -> Result<()> {
-        if let Some(source) = &state.source {
-            if sha(&limited_read(&source.path, forge_pptx::MAX_PACKAGE_BYTES)?) != source.digest {
-                return error(
-                    ErrorCode::SourceChanged,
-                    "",
-                    "Source file changed; reopen it before editing or exporting",
-                );
-            }
+        if let Some(source) = &state.source
+            && sha(&limited_read(&source.path, forge_pptx::MAX_PACKAGE_BYTES)?) != source.digest
+        {
+            return error(
+                ErrorCode::SourceChanged,
+                "",
+                "Source file changed; reopen it before editing or exporting",
+            );
         }
         Ok(())
     }
@@ -360,7 +377,9 @@ impl Store {
                 return serde_json::json!({"truncated":true});
             }
             *budget -= 1;
-            let mut v = serde_json::to_value(n).unwrap_or_default();
+            let mut shallow = n.clone();
+            shallow.children.clear();
+            let mut v = serde_json::to_value(shallow).unwrap_or_default();
             v["child_count"] = serde_json::json!(n.children.len());
             v["children"] = if depth == 0 {
                 serde_json::json!([])
@@ -457,7 +476,7 @@ impl Store {
         Ok(serde_json::json!({"document_id":id,"closed":true}))
     }
 }
-pub fn default_root() -> PathBuf {
+pub fn default_root() -> Result<PathBuf> {
     #[cfg(target_os = "windows")]
     let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
     #[cfg(target_os = "macos")]
@@ -467,5 +486,12 @@ pub fn default_root() -> PathBuf {
     let base = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".local/share")));
-    base.unwrap_or_else(std::env::temp_dir).join("delino-forge")
+    let base = base.filter(|p| p.is_absolute()).ok_or_else(|| {
+        Diagnostic::new(
+            ErrorCode::Io,
+            "",
+            "User data directory unavailable; specify --state-dir",
+        )
+    })?;
+    Ok(base.join("delino-forge"))
 }

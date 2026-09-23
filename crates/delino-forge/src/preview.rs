@@ -5,52 +5,28 @@ use std::{
 };
 
 use forge_tree_doc::*;
-use tokio::process::{Child, Command};
+use process_wrap::tokio::{CommandWrap, KillOnDrop};
+use tokio::process::Command;
 use uuid::Uuid;
 
 use crate::store::Store;
 
-async fn terminate(child: &mut Child) -> Result<()> {
-    if let Some(pid) = child.id() {
-        #[cfg(unix)]
-        {
-            // Preview children own a dedicated process group. Reap the group so
-            // LibreOffice helpers cannot outlive a cancelled preview request.
-            unsafe {
-                libc::kill(-(pid as i32), libc::SIGKILL);
-            }
-        }
-        #[cfg(windows)]
-        {
-            let mut kill = Command::new("taskkill.exe");
-            kill.env_clear();
-            for key in ["SystemRoot", "WINDIR", "PATH"] {
-                if let Some(v) = std::env::var_os(key) {
-                    kill.env(key, v);
-                }
-            }
-            let _ = kill
-                .args(["/PID", &pid.to_string(), "/T", "/F"])
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .await;
-        }
-    }
-    let _ = child.start_kill();
-    child.wait().await.map_err(io_error)?;
-    Ok(())
+async fn run(cmd: Command, store: &Store) -> Result<()> {
+    run_with_deadline(cmd, store, Duration::from_secs(120)).await
 }
-async fn run(mut cmd: Command, store: &Store) -> Result<()> {
+async fn run_with_deadline(mut cmd: Command, store: &Store, deadline: Duration) -> Result<()> {
     store.check_cancelled()?;
     cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .kill_on_drop(true);
+    let mut wrapped = CommandWrap::from(cmd);
+    wrapped.wrap(KillOnDrop);
     #[cfg(unix)]
-    cmd.process_group(0);
-    let mut child = cmd.spawn().map_err(|_| {
+    wrapped.wrap(process_wrap::tokio::ProcessGroup::leader());
+    #[cfg(windows)]
+    wrapped.wrap(process_wrap::tokio::JobObject);
+    let mut child = wrapped.spawn().map_err(|_| {
         Diagnostic::new(
             ErrorCode::RendererUnavailable,
             "",
@@ -60,10 +36,11 @@ async fn run(mut cmd: Command, store: &Store) -> Result<()> {
     let result = tokio::select! {
         status=child.wait()=>status.map_err(io_error).and_then(|status|if status.success(){Ok(())}else{error(ErrorCode::RendererFailed,"","Renderer returned a failure status")}),
         _=store.cancel.cancelled()=>error(ErrorCode::Cancelled,"","Preview cancelled"),
-        _=tokio::time::sleep(Duration::from_secs(120))=>error(ErrorCode::Timeout,"","Renderer exceeded its 120-second deadline"),
+        _=tokio::time::sleep(deadline)=>error(ErrorCode::Timeout,"","Renderer exceeded its 120-second deadline"),
     };
     if result.is_err() {
-        terminate(&mut child).await?;
+        let _ = child.start_kill();
+        child.wait().await.map_err(io_error)?;
     }
     result
 }
@@ -91,7 +68,23 @@ pub async fn preview(store: Store, id: Uuid, output: PathBuf) -> Result<serde_js
             "Preview output directory must not exist",
         );
     }
-    let bytes = store.snapshot_bytes(id)?;
+    let source = store.snapshot_bytes(id)?;
+    let imported = forge_pptx::import(&source)?;
+    let pixels =
+        imported.document.page.width * imported.document.page.height * (96.0 / 72.0_f64).powi(2);
+    if imported.document.slides.len() > 100
+        || pixels > 40_000_000.0
+        || pixels * imported.document.slides.len() as f64 > 250_000_000.0
+    {
+        return error(
+            ErrorCode::ResourceLimit,
+            "/page",
+            "Preview exceeds the raster size or page-count limit",
+        );
+    }
+    let revision = imported.revision;
+    let expected_pages = imported.document.slides.len();
+    let bytes = forge_pptx::preview_bytes(&source)?;
     let temp = tempfile::tempdir().map_err(io_error)?;
     let input = temp.path().join("document.pptx");
     std::fs::write(&input, bytes).map_err(io_error)?;
@@ -133,11 +126,11 @@ pub async fn preview(store: Store, id: Uuid, output: PathBuf) -> Result<serde_js
         }
     }
     artifacts.sort();
-    if artifacts.len() < 2 {
+    if artifacts.len() != expected_pages + 1 {
         return error(
             ErrorCode::RendererFailed,
             "",
-            "Renderer produced no slide images",
+            "Renderer page count does not match the document",
         );
     }
     let parent = output
@@ -166,6 +159,42 @@ pub async fn preview(store: Store, id: Uuid, output: PathBuf) -> Result<serde_js
         }
     }
     Ok(
-        serde_json::json!({"document_id":id,"renderer":"libreoffice+poppler","files":artifacts.iter().map(|(name,_)|output.join(name)).collect::<Vec<_>>()}),
+        serde_json::json!({"document_id":id,"revision":revision,"renderer":"libreoffice+poppler","files":artifacts.iter().map(|(name,_)|output.join(name)).collect::<Vec<_>>()}),
     )
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use tokio_util::sync::CancellationToken;
+
+    use super::*;
+    #[tokio::test]
+    async fn renderer_timeout_and_cancellation_reap_children() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::new(Some(temp.path().join("state")), CancellationToken::new()).unwrap();
+        for cancel in [false, true] {
+            let mut command = Command::new("sh");
+            command.args(["-c", "sleep 30 & wait"]);
+            let mut state = store.clone();
+            state.cancel = CancellationToken::new();
+            if cancel {
+                let token = state.cancel.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                    token.cancel();
+                });
+            }
+            let error = run_with_deadline(command, &state, Duration::from_millis(60))
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.code,
+                if cancel {
+                    ErrorCode::Cancelled
+                } else {
+                    ErrorCode::Timeout
+                }
+            );
+        }
+    }
 }

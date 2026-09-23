@@ -23,6 +23,7 @@ fn generates_and_reopens() {
         document_id: id,
         base_revision: 0,
         operations: vec![Operation::SetText {
+            cell: None,
             target,
             text: "Forge document tools".into(),
         }],

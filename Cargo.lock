@@ -2621,7 +2621,7 @@ dependencies = [
  "forge-pptx",
  "forge-tree-doc",
  "fs2",
- "libc",
+ "process-wrap",
  "rmcp",
  "schemars 1.2.1",
  "serde",
