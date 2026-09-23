@@ -10,10 +10,9 @@ use crate::{
 
 intercept!(stat(64): unsafe extern "C" fn(path: *const c_char, buf: *mut stat_struct) -> c_int);
 unsafe extern "C" fn stat(path: *const c_char, buf: *mut stat_struct) -> c_int {
-    // SAFETY: path is a valid C string pointer provided by the caller of the
-    // interposed function
-    unsafe {
-        handle_open(fspy_nostd::CStr::from_ptr(path.cast()), AccessMode::READ);
+    if !path.is_null() {
+        // SAFETY: the non-null pathname is valid for the intercepted call.
+        unsafe { handle_open(fspy_nostd::CStr::from_ptr(path.cast()), AccessMode::READ) };
     }
     // SAFETY: calling the original libc stat() with the same arguments forwarded
     // from the interposed function
@@ -23,10 +22,9 @@ unsafe extern "C" fn stat(path: *const c_char, buf: *mut stat_struct) -> c_int {
 intercept!(lstat(64): unsafe extern "C" fn(path: *const c_char, buf: *mut stat_struct) -> c_int);
 unsafe extern "C" fn lstat(path: *const c_char, buf: *mut stat_struct) -> c_int {
     // TODO: add accessmode ReadNoFollow
-    // SAFETY: path is a valid C string pointer provided by the caller of the
-    // interposed function
-    unsafe {
-        handle_open(fspy_nostd::CStr::from_ptr(path.cast()), AccessMode::READ);
+    if !path.is_null() {
+        // SAFETY: the non-null pathname is valid for the intercepted call.
+        unsafe { handle_open(fspy_nostd::CStr::from_ptr(path.cast()), AccessMode::READ) };
     }
     // SAFETY: calling the original libc lstat() with the same arguments forwarded
     // from the interposed function
@@ -40,10 +38,9 @@ unsafe extern "C" fn fstatat(
     buf: *mut stat_struct,
     flags: c_int,
 ) -> c_int {
-    // SAFETY: dirfd and pathname are valid arguments provided by the caller of the
-    // interposed function
-    unsafe {
-        handle_open(PathAt::borrow_raw(dirfd, pathname), AccessMode::READ);
+    if !pathname.is_null() {
+        // SAFETY: the non-null pathname and descriptor are caller-provided.
+        unsafe { handle_open(PathAt::borrow_raw(dirfd, pathname), AccessMode::READ) };
     }
     // SAFETY: calling the original libc fstatat() with the same arguments forwarded
     // from the interposed function

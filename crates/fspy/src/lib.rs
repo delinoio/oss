@@ -112,23 +112,30 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[tokio::test]
-    async fn null_open_paths_keep_native_efault() {
+    async fn null_preload_paths_keep_native_efault() {
         let directory = tempfile::tempdir().expect("create fixture directory");
-        let source = directory.path().join("null-open.c");
-        let executable = directory.path().join("null-open");
+        let source = directory.path().join("null-path.c");
+        let executable = directory.path().join("null-path");
         let input = directory.path().join("input");
         fs::write(&input, b"input").expect("write input");
         fs::write(
             &source,
             r"#include <errno.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 int main(int argc, char **argv) {
   if (argc != 2) return 2;
   volatile unsigned long zero = 0;
   const char *path = (const char *)zero;
+  struct stat st;
   if (open(path, O_RDONLY) != -1 || errno != EFAULT) return 3;
   if (openat(AT_FDCWD, path, O_RDONLY) != -1 || errno != EFAULT) return 4;
+  if (stat(path, &st) != -1 || errno != EFAULT) return 6;
+  if (lstat(path, &st) != -1 || errno != EFAULT) return 7;
+  if (fstatat(AT_FDCWD, path, &st, 0) != -1 || errno != EFAULT) return 8;
+  if (access(path, F_OK) != -1 || errno != EFAULT) return 9;
+  if (faccessat(AT_FDCWD, path, F_OK, 0) != -1 || errno != EFAULT) return 10;
   int fd = open(argv[1], O_RDONLY);
   if (fd < 0) return 5;
   close(fd);
@@ -153,7 +160,7 @@ int main(int argc, char **argv) {
             .await
             .expect("spawn fixture");
         let termination = child.wait_handle.await.expect("wait for fixture");
-        assert!(termination.status.success());
+        assert!(termination.status.success(), "{:?}", termination.status);
         assert!(termination.path_accesses.is_ok());
     }
 
