@@ -1390,7 +1390,9 @@ fn cancellation_forwards_shutdown_output_before_returning() {
 fn cancellation_during_completed_descendant_cleanup_overrides_child_success() {
     let home = tempfile::tempdir().unwrap();
     let ready = home.path().join("descendant-cleanup-ready");
+    let started = home.path().join("descendant-cleanup-started");
     let ready_assignment = format!("READY={}", ready.display());
+    let started_assignment = format!("STARTED={}", started.display());
     let mut wrapper = command(
         home.path(),
         &[
@@ -1401,10 +1403,13 @@ fn cancellation_during_completed_descendant_cleanup_overrides_child_success() {
             "--kill-after",
             "500ms",
             &ready_assignment,
+            &started_assignment,
             "--",
             "sh",
             "-c",
-            "sh -c 'trap \": > \\\"$READY\\\"\" TERM; while :; do sleep 1; done' &",
+            "sh -c 'trap \": > \\\"$READY\\\"\" TERM; : > \"$STARTED\"; while :; do sleep 1; \
+             done' & \\
+             while [ ! -f \"$STARTED\" ]; do sleep 0.01; done",
         ],
     )
     .stdout(Stdio::null())
