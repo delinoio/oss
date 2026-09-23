@@ -96,7 +96,10 @@ fn lock_fail_does_not_start_a_second_windows_workload() {
     )
     .spawn()
     .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
+    // Hosted Windows runners can take several seconds to cold-start
+    // PowerShell. Keep this fixture bounded while giving the first managed
+    // PowerShell process enough time to create its readiness marker.
+    let deadline = Instant::now() + Duration::from_secs(30);
     while !marker.is_file() {
         if owner.try_wait().unwrap().is_some() || Instant::now() >= deadline {
             let _ = owner.kill();
@@ -202,7 +205,7 @@ while ($true) {{
             // test verifies post-workload cleanup, so retain a bounded but
             // startup-tolerant readiness budget.
             "--ready-timeout",
-            "10s",
+            "30s",
             "--service",
             "powershell",
             "-NoProfile",
