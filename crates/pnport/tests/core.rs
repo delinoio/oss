@@ -696,6 +696,82 @@ int main(int argc, char **argv) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_rejects_threads_with_private_fd_or_cwd_contexts() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("private-thread-context.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <sched.h>
+#include <stdatomic.h>
+#include <stdlib.h>
+#include <unistd.h>
+static _Atomic int done;
+static int worker(void *value) {
+    int marker = open((const char *)value, O_CREAT | O_WRONLY, 0600);
+    if (marker >= 0) close(marker);
+    atomic_store(&done, marker >= 0 ? 1 : -1);
+    return marker >= 0 ? 0 : 22;
+}
+int main(int argc, char **argv) {
+    if (argc != 3) return 20;
+    void *stack = malloc(1024 * 1024);
+    if (!stack) return 21;
+    int shared = argv[2][0] == 'f' ? CLONE_FS : CLONE_FILES;
+    int flags = CLONE_VM | CLONE_SIGHAND | CLONE_THREAD | shared;
+    if (clone(worker, (char *)stack + 1024 * 1024, flags, argv[1]) < 0) return 23;
+    for (int attempt = 0; attempt < 1000 && !atomic_load(&done); ++attempt) usleep(1000);
+    return atomic_load(&done) == 1 ? 0 : 24;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("private-thread-context");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let marker = root.path().join("thread-marker");
+    for mode in ["files", "cwd"] {
+        assert_eq!(
+            Command::new(&executable)
+                .current_dir(root.path())
+                .arg(&marker)
+                .arg(mode)
+                .status()
+                .unwrap()
+                .code(),
+            Some(0),
+            "native mode={mode}"
+        );
+        fs::remove_file(&marker).unwrap();
+        let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .args(["run", "--"])
+            .arg(&executable)
+            .arg(&marker)
+            .arg(mode)
+            .output()
+            .unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(125),
+            "mode={mode} stderr={}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+        assert!(!marker.exists());
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_rejects_ancillary_descriptor_receives_before_fd_mutation() {
     use std::process::Command;
     let root = fixture();

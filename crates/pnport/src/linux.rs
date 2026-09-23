@@ -1574,6 +1574,19 @@ impl Trace<'_> {
             } else {
                 argument(&regs, 0)
             };
+            if call != libc::SYS_unshare
+                && flags & libc::CLONE_THREAD as u64 != 0
+                && flags & (libc::CLONE_FILES | libc::CLONE_FS) as u64
+                    != (libc::CLONE_FILES | libc::CLONE_FS) as u64
+            {
+                // A thread group has one FD and logical cwd map. A thread
+                // with either private kernel context would invalidate it.
+                deny_syscall(&mut regs);
+                set_registers(pid, &regs)?;
+                return Err(unsupported(
+                    "Linux threads with private descriptor or cwd contexts cannot be mediated.",
+                ));
+            }
             if flags & (libc::CLONE_FILES | libc::CLONE_FS) as u64 != 0
                 && (call == libc::SYS_unshare || flags & libc::CLONE_THREAD as u64 == 0)
             {
