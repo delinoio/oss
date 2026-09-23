@@ -13,7 +13,7 @@ use std::{
     process::{Child, Command as ProcessCommand, ExitStatus, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc,
+        mpsc, Arc, Mutex,
     },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -1378,19 +1378,76 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
     let (completion_tx, completions) = mpsc::sync_channel(1);
     #[cfg(unix)]
     let completion_terminal = foreground_terminal.clone();
-    thread::spawn(move || {
+    // Keep ownership available until the completion worker is known to have
+    // started. `thread::spawn` panics when the operating system refuses a
+    // new thread, which would leave an already-started child unsupervised.
+    let child = Arc::new(Mutex::new(Some(child)));
+    let completion_child = Arc::clone(&child);
+    let completion_thread = thread::Builder::new()
+        .name("clibox-child-completion".into())
+        .spawn(move || {
+            let child = completion_child
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take();
+            let completion = match child {
+                #[cfg(unix)]
+                Some(child) => wait_for_completion(child, completion_terminal),
+                #[cfg(not(unix))]
+                Some(mut child) => child
+                    .wait()
+                    .map(|status| Completion {
+                        status,
+                        observed_at: Instant::now(),
+                    })
+                    .map_err(|error| Failure::io(&error)),
+                None => runtime_failure("Could not transfer the owned child to its supervisor."),
+            };
+            let _ = completion_tx.send(completion);
+        });
+    if let Err(error) = completion_thread {
+        tracing::error!(
+            operation = "run",
+            pid,
+            stage = "completion_spawn_failed",
+            error = %error,
+            "run_child"
+        );
+        let mut child = child
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+            .ok_or_else(|| {
+                Failure::new(
+                    Code::IoFailed,
+                    "Could not recover the child after its supervisor failed to start.",
+                )
+            })?;
         #[cfg(unix)]
-        let completion = wait_for_completion(child, completion_terminal);
-        #[cfg(not(unix))]
-        let completion = child
-            .wait()
-            .map(|status| Completion {
-                status,
-                observed_at: Instant::now(),
-            })
-            .map_err(|error| Failure::io(&error));
-        let _ = completion_tx.send(completion);
-    });
+        {
+            let cleanup = match unix_ownership {
+                UnixOwnership::ProcessGroup => signal_process_group(pid, true),
+                UnixOwnership::DirectChild => signal_process(pid, true),
+            };
+            if let Err(cleanup_error) = cleanup {
+                cleanup_error.report("run");
+                let _ = child.kill();
+            }
+            let _ = child.wait();
+            if let Some(terminal) = &foreground_terminal {
+                terminal.restore();
+            }
+        }
+        #[cfg(windows)]
+        {
+            if let Err(cleanup_error) = job.signal(pid, true) {
+                cleanup_error.report("run");
+                let _ = child.kill();
+            }
+            let _ = child.wait();
+        }
+        return Err(Failure::io(&error));
+    }
     Ok(OwnedChild {
         pid,
         #[cfg(unix)]
