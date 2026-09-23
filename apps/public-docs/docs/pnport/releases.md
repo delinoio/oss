@@ -6,7 +6,7 @@
 
 A first release requires validated native execution and installation on macOS, Windows, and glibc Linux for x64 and arm64. Linux static child execution, filesystem and process conformance, complete native/package artifacts, and documentation are release gates. A passing development fixture on one host is not complete support evidence.
 
-When available, a release will use the `pnport@v<MAJOR.MINOR.PATCH>` identity. Its native and npm versions must match. Published GitHub archives will include checksums and signed verification material. The npm launcher will select an exact-version native package rather than download, compile, or fall back to another executable at runtime. Check [installation and availability](/pnport/installation) before using any distribution method.
+When available, a release will use the `pnport@v<MAJOR.MINOR.PATCH>` identity. Its native and npm versions must match. Published GitHub archives will include the executable and adjacent interception library, `SHA256SUMS`, and Sigstore bundles. Verify the signed checksum manifest against the release identity and exact source commit before comparing an archive's SHA-256 digest; a checksum downloaded next to an archive alone does not establish publisher identity. The npm launcher will select an exact-version native package rather than download, compile, or fall back to another executable at runtime. Check [installation and availability](/pnport/installation) before using any distribution method.
 
 ## Explicit updates and rollback
 

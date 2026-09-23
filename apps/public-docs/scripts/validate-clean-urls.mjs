@@ -418,7 +418,7 @@ function publicPathText(text, htmlFile) {
   return text;
 }
 // The terminal boundary must apply to every alternative, not just static assets.
-const allowedPublicPathPattern = `(?:${stableRoutePathPattern}|(?:assets|static)(?:[/\\\\][A-Za-z0-9._~-]+)*)`;
+const allowedPublicPathPattern = `(?:${stableRoutePathPattern}|pnport/install\\.(?:sh|ps1)|(?:assets|static)(?:[/\\\\][A-Za-z0-9._~-]+)*)`;
 const forbiddenPathContent = [
   new RegExp(`(?:^|[\\s("'\\x60>])/(?!${allowedPublicPathPattern}(?:\\.html)?(?:[?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
   /(?:^|[\s("'`>])(?:\.\.[\\/])+(?:[A-Za-z0-9._~-]+[\\/])+[^\s"'`<>]*/u,

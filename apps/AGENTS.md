@@ -181,4 +181,4 @@
 
 ### pnport Rules
 
-- Public pnport guides belong to `apps/public-docs/docs/pnport` at https://oss.delino.io/pnport. Follow `docs/apps-pnport-docs-foundation.md`; use the shared accessible navigation and consolidated fixed-port development/publishing pipeline. Keep compatibility/release evidence truthful and internal details in docs/.
+- Public pnport guides belong to `apps/public-docs/docs/pnport` at https://oss.delino.io/pnport. Follow `docs/apps-pnport-docs-foundation.md`; use the shared accessible navigation and consolidated fixed-port development/publishing pipeline. Mark all pnport guides unreleased until all six native gates and distribution publication complete. Keep compatibility/release evidence truthful and internal details in docs/.

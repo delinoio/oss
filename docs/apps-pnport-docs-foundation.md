@@ -12,7 +12,7 @@ Rspress, shared accessible navigation and Cloudflare Pages. Use pnpm dev:public-
 Developers, CI users and editor users; support through GitHub issues with no response SLA.
 
 ## Interfaces and Contracts
-Cover installation, commands, supported filesystem behavior, limitations, editor configuration, cache management, diagnostics, reproducible benchmarks and explicit version rollback. Explain unsupported protected executables, static Linux requirements, graph-change restart behavior, read-only dependencies and ordinary source writes. Do not claim arbitrary-tool or version-specific certification. CLI help/errors/README are English and consistent with the Rust/npm contracts. Explain six-target availability truthfully; no preview release or undocumented installation target.
+Cover installation, commands, supported filesystem behavior, limitations, editor configuration, cache management, diagnostics, reproducible benchmarks and explicit version rollback. Show future npm/Yarn, hosted direct-installer, and Homebrew commands only behind an explicit unreleased warning and a published-version check. Explain unsupported protected executables, static Linux requirements, graph-change restart behavior, read-only dependencies and ordinary source writes. Do not claim arbitrary-tool or version-specific certification. CLI help/errors/README are English and consistent with the Rust/npm contracts. Explain six-target availability truthfully; no preview release or undocumented installation target.
 
 The stable clean routes are `/pnport/`, `/pnport/installation`, `/pnport/getting-started`, `/pnport/commands`, `/pnport/filesystem-and-processes`, `/pnport/editors`, `/pnport/cache`, `/pnport/diagnostics`, `/pnport/benchmarks`, and `/pnport/releases`. The shared selector and Rspress sidebar expose the complete guide set. Installation guidance must never imply that a source-only development build is a published release.
 
@@ -26,7 +26,7 @@ Public guides describe user-facing contracts only. Internal architecture, repo-l
 Use the existing documentation build/validation logs. Document native diagnostic privacy and stderr/stdout separation without collecting user diagnostics.
 
 ## Build and Test
-Run pnpm test from apps/public-docs. Validate routes, required content, internal-content boundaries, selector accessibility and the production build. Remove generated dist output after verification. Documentation deployment uses only the existing consolidated publisher.
+Run pnpm test from apps/public-docs. Validate the ten routes, required content, internal-content boundaries, selector accessibility, explicit unreleased state and the production build. Remove generated dist output after verification. Documentation deployment uses only the existing consolidated publisher.
 
 ## Dependencies and Integrations
 Shared docs-site-switcher and existing Rspress build. Curate from the complete #958 contract; link to stable public interfaces and GitHub support.

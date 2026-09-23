@@ -1646,6 +1646,82 @@ jobs:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
 
+  node-pnport-test:
+    needs: changes
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['node-pnport-test'] }}
+    name: pnport package and release contracts
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-ci-node
+        id: ci-node
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verify source version, package metadata, and fail-closed publication
+        run: |
+          pnpm --filter @delino/pnport test
+          node --test scripts/release/project.test.mjs scripts/release/pnport-*.test.mjs
+          node packages/pnport/scripts/package.mjs main
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-node.outputs.cache-path }}
+          key: ${{ steps.ci-node.outputs.cache-key }}
+
+  pnport-native:
+    needs: changes
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['pnport-native'] }}
+    name: pnport native execution (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-15-intel, target: x86_64-apple-darwin }
+          - { runner: macos-14, target: aarch64-apple-darwin }
+          - { runner: windows-latest, target: x86_64-pc-windows-msvc }
+          - { runner: windows-11-arm, target: aarch64-pc-windows-msvc }
+          - { runner: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+          - { runner: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
+    env:
+      PNPORT_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-ci-node
+        id: ci-node
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-01-01
+          targets: ${{ matrix.target }}
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verify native runtime and installed package on this host
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --release -p pnport -p pnport-preload --target "$PNPORT_TARGET"
+          cargo test --locked -p pnport --target "$PNPORT_TARGET"
+          binary="target/$PNPORT_TARGET/release/pnport"
+          preload="target/$PNPORT_TARGET/release/libpnport_preload.so"
+          if [[ "$PNPORT_TARGET" == *windows* ]]; then binary="$binary.exe"; preload="target/$PNPORT_TARGET/release/pnport_preload.dll"; fi
+          if [[ "$PNPORT_TARGET" == *apple* ]]; then preload="target/$PNPORT_TARGET/release/libpnport_preload.dylib"; fi
+          pnpm --filter @delino/pnport test:package --target "$PNPORT_TARGET" --binary "$binary" --preload "$preload"
+          fixture="$RUNNER_TEMP/pnport-typescript"
+          pnpm --filter @delino/pnport test:typescript:prepare "$fixture"
+          pnpm --filter @delino/pnport test:typescript "$fixture" "$binary"
+          node packages/pnport/scripts/package.mjs binary --target "$PNPORT_TARGET" --binary "$binary" --preload "$preload"
+          node packages/pnport/scripts/install-smoke.mjs --target "$PNPORT_TARGET"
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-node.outputs.cache-path }}
+          key: ${{ steps.ci-node.outputs.cache-key }}
+
   ci-result:
     name: CI Result
     runs-on: ubuntu-latest
@@ -1664,6 +1740,8 @@ jobs:
       - node-mpapp-lint
       - node-public-docs-test
       - node-clibox-test
+      - node-pnport-test
+      - pnport-native
       - devhud-frontend
       - devhud-extension
       - devhud-rust-conformance

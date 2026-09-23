@@ -1,12 +1,15 @@
 {
   "name": "@delino/pnport",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "private": true,
   "description": "Native Yarn Plug'n'Play subprocess filesystem",
   "license": "MIT",
   "engines": { "node": ">=22" },
   "scripts": {
     "test": "node --test test/*.test.mjs",
+    "test:package": "node scripts/smoke.mjs",
+    "package:npm": "node scripts/package.mjs",
+    "publish:npm": "node scripts/publish.mjs",
     "test:typescript:prepare": "node scripts/typescript-conformance.mjs prepare",
     "test:typescript": "node scripts/typescript-conformance.mjs run"
   }

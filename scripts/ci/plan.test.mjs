@@ -17,7 +17,14 @@ test("PR never allocates native package jobs, including changes to CI itself", (
     assert.ok(jobs.includes("devhud-frontend"), path);
     for (const id of native) assert.ok(!jobs.includes(id), `${path}: ${id}`);
   }
-  assert.deepEqual(native, ["linux-packages", ...devhudNative]);
+  assert.deepEqual(native, ["linux-packages", "pnport-native", ...devhudNative]);
+});
+
+test("pnport installer changes select six-host native verification on main", () => {
+  for (const installer of ["scripts/install/pnport.sh", "scripts/install/pnport.ps1"]) {
+    assert.equal(planJobs(Event.Push, [installer]).jobs["pnport-native"], true, installer);
+    assert.equal(planJobs(Event.PullRequest, [installer]).jobs["pnport-native"], false, installer);
+  }
 });
 
 test("main selects the existing full native matrix only when affected; manual selects every job", () => {

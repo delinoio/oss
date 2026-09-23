@@ -42,6 +42,8 @@ const publicRoutePrefixes = new Set([...selectorDestinations, ...rootRoutes]);
 for (const [slug, routes] of Object.entries(projectRoutes)) {
   for (const route of routes) publicRoutePrefixes.add(publicRoute(slug, route));
 }
+publicRoutePrefixes.add("/pnport/install.sh");
+publicRoutePrefixes.add("/pnport/install.ps1");
 const failures = [];
 
 async function exists(filePath) {
@@ -177,6 +179,8 @@ const installerChecks = [
   ["binpm", "install.ps1", "scripts/install/binpm.ps1"],
   ["async-commit-hook", "install.sh", "scripts/install/async-commit-hook.sh"],
   ["async-commit-hook", "install.ps1", "scripts/install/async-commit-hook.ps1"],
+  ["pnport", "install.sh", "scripts/install/pnport.sh"],
+  ["pnport", "install.ps1", "scripts/install/pnport.ps1"],
 ];
 for (const [slug, filename, source] of installerChecks) {
   const generated = path.join(outputDirectory, slug, filename);
