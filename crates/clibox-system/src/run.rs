@@ -232,6 +232,8 @@ pub(crate) enum Outcome {
 }
 
 pub(crate) fn execute(command: Command, raw: &[OsString]) -> Result<Outcome> {
+    #[cfg(unix)]
+    runtime::configure_terminal_interrupt_acknowledgement(installed_launcher_parent());
     match command {
         Command::RateLimit(mut options) => {
             options.workload.restore_leading_separator(raw, false);
@@ -256,6 +258,17 @@ pub(crate) fn execute(command: Command, raw: &[OsString]) -> Result<Outcome> {
             with_timeout(options)
         }
     }
+}
+
+#[cfg(unix)]
+fn installed_launcher_parent() -> Option<libc::pid_t> {
+    let parent = unsafe { libc::getppid() };
+    let process_group = unsafe { libc::getpgrp() };
+    (parent > 0
+        && process_group > 0
+        && unsafe { libc::getpgid(parent) } == process_group
+        && supported_node_launcher(parent))
+    .then_some(parent)
 }
 
 impl Workload {

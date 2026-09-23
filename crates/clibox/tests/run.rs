@@ -43,6 +43,11 @@ fn terminal_command_with_stdio(
     args: &[&str],
     redirected_stdin: bool,
 ) -> (Command, fs::File) {
+    terminal_process_command(command(home, args), redirected_stdin)
+}
+
+#[cfg(target_os = "linux")]
+fn terminal_process_command(mut command: Command, redirected_stdin: bool) -> (Command, fs::File) {
     let mut master = -1;
     let mut slave = -1;
     assert_eq!(
@@ -59,7 +64,6 @@ fn terminal_command_with_stdio(
     );
     let master = unsafe { fs::File::from_raw_fd(master) };
     let slave = unsafe { fs::File::from_raw_fd(slave) };
-    let mut command = command(home, args);
     command
         .stdin(if redirected_stdin {
             Stdio::null()
@@ -594,6 +598,91 @@ fn foreground_completion_reaps_the_interrupt_relay_without_grace_delay() {
     assert!(
         started.elapsed() < Duration::from_secs(2),
         "interrupt relay completion waited for the default cleanup grace"
+    );
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn node_launcher_counts_terminal_service_startup_interrupt_once() {
+    let home = tempfile::tempdir().unwrap();
+    let service_started = home.path().join("node-launcher-service-started");
+    let service_marker = format!("SERVICE_STARTED={}", service_started.display());
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    drop(listener);
+    let launcher = home.path().join("launcher.cjs");
+    let clibox_launcher = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../packages/clibox/src/launcher.cjs")
+        .canonicalize()
+        .unwrap();
+    fs::write(
+        &launcher,
+        concat!(
+            "const { launch } = require(process.env.CLIBOX_LAUNCHER);\n",
+            "launch(process.env.CLIBOX_TEST_BINARY, process.argv.slice(2)).then(({ code }) => {\n",
+            "  process.exitCode = code ?? 1;\n",
+            "});\n",
+        ),
+    )
+    .unwrap();
+    let mut node = Command::new("node");
+    node.arg(&launcher)
+        .args([
+            "run",
+            "with-service",
+            &format!("http://{address}/health"),
+            "--interval",
+            "10ms",
+            "--kill-after",
+            "500ms",
+            "--service",
+            &service_marker,
+            "sh",
+            "-c",
+            "trap '' TERM; : > \"$SERVICE_STARTED\"; while :; do :; done",
+            "--",
+            "sh",
+            "-c",
+            "exit 0",
+        ])
+        .env("HOME", home.path())
+        .env("XDG_STATE_HOME", home.path().join("state"))
+        .env("CLIBOX_LAUNCHER", clibox_launcher)
+        .env("CLIBOX_TEST_BINARY", env!("CARGO_BIN_EXE_clibox"));
+    let (mut launcher, mut terminal) = terminal_process_command(node, false);
+    let mut launcher = launcher.spawn().unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let early_status = loop {
+        if service_started.is_file() {
+            break None;
+        }
+        if let Some(status) = launcher.try_wait().unwrap() {
+            break Some(status);
+        }
+        if std::time::Instant::now() >= deadline {
+            break None;
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
+    if !service_started.is_file() {
+        let status = early_status.unwrap_or_else(|| {
+            let _ = unsafe { libc::kill(-(launcher.id() as libc::pid_t), libc::SIGKILL) };
+            launcher.wait().unwrap()
+        });
+        panic!(
+            "managed service did not start through the Node launcher: {status:?}; terminal: {}",
+            read_terminal(terminal)
+        );
+    }
+
+    let interrupted_at = std::time::Instant::now();
+    terminal.write_all(&[3]).unwrap();
+    let status = launcher.wait().unwrap();
+
+    assert_eq!(status.code(), Some(130), "{status:?}");
+    assert!(
+        interrupted_at.elapsed() >= Duration::from_millis(350),
+        "one terminal Ctrl+C skipped the configured service cleanup grace"
     );
 }
 

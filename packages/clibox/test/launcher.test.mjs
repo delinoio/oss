@@ -11,6 +11,7 @@ import { packageRoot } from "../scripts/common.mjs";
 
 const { targets, Platform, Architecture, Libc, selectTarget } = platforms;
 const { Failure, resolveBinary, launch } = launcher;
+const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 function fixture(t) {
   const directory = realpathSync(mkdtempSync(path.join(tmpdir(), "clibox launcher ")));
@@ -111,7 +112,30 @@ test("Unix launchers continue forwarding SIGINT, SIGTERM and SIGHUP", async () =
   child.kill = (signal) => received.push(signal);
   const result = launch("clibox", [], { platform: Platform.Linux, parent, spawnChild: () => child });
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) parent.emit(signal);
-  assert.deepEqual(received, ["SIGINT", "SIGTERM", "SIGHUP"]);
+  await delay(20);
+  assert.deepEqual(received.sort(), ["SIGINT", "SIGTERM", "SIGHUP"].sort());
+  child.emit("exit", null, "SIGTERM");
+  assert.deepEqual(await result, { code: null, signal: "SIGTERM" });
+  assert.equal(parent.eventNames().length, 0);
+});
+
+test("Unix launchers do not forward a terminal SIGINT acknowledged by the native child", async () => {
+  const parent = new EventEmitter();
+  const child = new EventEmitter();
+  child.exitCode = null;
+  child.signalCode = null;
+  const received = [];
+  child.kill = (signal) => received.push(signal);
+  const result = launch("clibox", [], { platform: Platform.Linux, parent, spawnChild: () => child });
+
+  parent.emit("SIGINT");
+  parent.emit("SIGUSR2");
+  await delay(20);
+  assert.deepEqual(received, []);
+
+  parent.emit("SIGINT");
+  await delay(20);
+  assert.deepEqual(received, ["SIGINT"]);
   child.emit("exit", null, "SIGTERM");
   assert.deepEqual(await result, { code: null, signal: "SIGTERM" });
   assert.equal(parent.eventNames().length, 0);
@@ -127,7 +151,8 @@ test("Unix launchers forward SIGINT despite TTY stdin", async () => {
   child.kill = (signal) => received.push(signal);
   const result = launch("clibox", [], { platform: Platform.Linux, parent, spawnChild: () => child });
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) parent.emit(signal);
-  assert.deepEqual(received, ["SIGINT", "SIGTERM", "SIGHUP"]);
+  await delay(20);
+  assert.deepEqual(received.sort(), ["SIGINT", "SIGTERM", "SIGHUP"].sort());
   child.emit("exit", null, "SIGTERM");
   assert.deepEqual(await result, { code: null, signal: "SIGTERM" });
   assert.equal(parent.eventNames().length, 0);

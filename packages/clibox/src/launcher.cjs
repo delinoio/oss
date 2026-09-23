@@ -7,6 +7,8 @@ const path = require("node:path");
 const { Platform, selectTarget } = require("./platforms.cjs");
 
 const Failure = Object.freeze({ Unsupported: "unsupported-platform", Missing: "missing-binary", Version: "version-mismatch", Spawn: "spawn-failed" });
+const TerminalInterruptAcknowledgement = "SIGUSR2";
+const TerminalInterruptGraceMs = 10;
 class LauncherError extends Error {
   constructor(code, message) { super(message); this.code = code; }
 }
@@ -36,6 +38,11 @@ function resolveBinary(manifestPath = path.join(__dirname, "..", "package.json")
 
 function launch(binary, args, { spawnChild = spawn, parent = process, platform = process.platform } = {}) {
   return new Promise((resolve, reject) => {
+    let terminalInterruptAcknowledgements = 0;
+    const acknowledgeTerminalInterrupt = () => { terminalInterruptAcknowledgements += 1; };
+    // Install this before spawning the native child so a terminal interrupt in
+    // that narrow startup window cannot apply SIGUSR2's default disposition.
+    parent.on(TerminalInterruptAcknowledgement, acknowledgeTerminalInterrupt);
     const child = spawnChild(binary, args, { stdio: "inherit", shell: false });
     const signals = ["SIGINT", "SIGTERM", "SIGHUP", ...(platform === Platform.Windows ? ["SIGBREAK"] : [])];
     const handlers = signals.map((signal) => [signal, () => {
@@ -45,10 +52,27 @@ function launch(binary, args, { spawnChild = spawn, parent = process, platform =
       // always be forwarded: a supervisor can target this launcher's PID even
       // when stdin is attached to a foreground terminal.
       if (platform === Platform.Windows && (signal === "SIGINT" || signal === "SIGBREAK")) return;
+      if (signal === "SIGINT") {
+        // The native handler acknowledges a terminal-generated SIGINT. Give
+        // that signal a short event-loop turn before forwarding so the same
+        // Ctrl+C is counted once, while an explicit SIGINT to this launcher
+        // still reaches the native child.
+        setTimeout(() => {
+          if (terminalInterruptAcknowledgements > 0) {
+            terminalInterruptAcknowledgements -= 1;
+          } else if (child.exitCode === null && child.signalCode === null) {
+            child.kill(signal);
+          }
+        }, TerminalInterruptGraceMs);
+        return;
+      }
       if (child.exitCode === null && child.signalCode === null) child.kill(signal);
     }]);
     for (const [signal, handler] of handlers) parent.on(signal, handler);
-    const cleanup = () => { for (const [signal, handler] of handlers) parent.removeListener(signal, handler); };
+    const cleanup = () => {
+      parent.removeListener(TerminalInterruptAcknowledgement, acknowledgeTerminalInterrupt);
+      for (const [signal, handler] of handlers) parent.removeListener(signal, handler);
+    };
     child.once("error", () => {
       cleanup();
       reject(new LauncherError(Failure.Spawn, "Unable to start clibox. Check executable permissions and reinstall for this platform."));

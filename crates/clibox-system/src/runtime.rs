@@ -12,17 +12,23 @@ use crate::error::{Code, Failure, Result};
 
 static SIGNAL: AtomicI32 = AtomicI32::new(0);
 static CANCELLATION_GENERATION: AtomicUsize = AtomicUsize::new(0);
+#[cfg(unix)]
+static TERMINAL_INTERRUPT_ACK_PARENT: AtomicI32 = AtomicI32::new(0);
 pub const POLL: Duration = Duration::from_millis(20);
 
 pub fn install_signals() -> Result<()> {
     #[cfg(unix)]
     for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP, libc::SIGQUIT] {
-        // Only an atomic store runs in the signal handler. Blocking work stays in the
-        // command loop.
+        // Signal handlers only update atomics and, for a terminal SIGINT,
+        // acknowledge the installed launcher with async-signal-safe `kill`.
+        // Blocking work stays in the command loop.
         unsafe {
-            signal_hook::low_level::register(signal, move || {
+            signal_hook_registry::register_sigaction(signal, move |info| {
                 SIGNAL.store(signal, Ordering::SeqCst);
                 CANCELLATION_GENERATION.fetch_add(1, Ordering::SeqCst);
+                if signal == libc::SIGINT {
+                    acknowledge_terminal_interrupt(info);
+                }
             })
         }
         .map_err(|e| Failure::io(&e))?;
@@ -44,6 +50,25 @@ pub fn install_signals() -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(unix)]
+pub fn configure_terminal_interrupt_acknowledgement(parent: Option<libc::pid_t>) {
+    let parent = parent.filter(|parent| *parent > 0).unwrap_or_default();
+    TERMINAL_INTERRUPT_ACK_PARENT.store(parent, Ordering::SeqCst);
+}
+
+#[cfg(unix)]
+fn acknowledge_terminal_interrupt(info: &libc::siginfo_t) {
+    let parent = TERMINAL_INTERRUPT_ACK_PARENT.load(Ordering::SeqCst);
+    // Terminal-generated signals have no sending process. An explicit signal
+    // to the launcher has a sender PID and must keep its normal forwarding
+    // behavior.
+    if parent > 0 && unsafe { info.si_pid() } == 0 {
+        unsafe {
+            let _ = libc::kill(parent, libc::SIGUSR2);
+        }
+    }
 }
 
 pub fn cancelled() -> bool {
