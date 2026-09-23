@@ -41,9 +41,8 @@ impl ToAbsolutePath for HANDLE {
     ) -> winsafe::SysResult<R> {
         // SAFETY: get_path_name performs FFI call with this HANDLE to retrieve the file
         // path
-        let resolved = unsafe { get_path_name(self) }.ok();
-        let resolved = resolved.as_ref().map(|p| U16Str::from_slice(p));
-        f(resolved)
+        let resolved = unsafe { get_path_name(self) }?;
+        f(Some(U16Str::from_slice(&resolved)))
     }
 }
 
@@ -69,9 +68,7 @@ impl ToAbsolutePath for POBJECT_ATTRIBUTES {
             f(Some(fname_str))
         } else {
             // SAFETY: dereferencing POBJECT_ATTRIBUTES to read RootDirectory handle
-            let Ok(mut root_dir) = (unsafe { get_path_name((*self).RootDirectory) }) else {
-                return f(None);
-            };
+            let mut root_dir = unsafe { get_path_name((*self).RootDirectory) }?;
             // If filename is empty, just use root_dir directly
             if fname_str.is_empty() {
                 let root_dir_str = U16Str::from_slice(&root_dir);
