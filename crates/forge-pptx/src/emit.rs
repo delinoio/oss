@@ -194,6 +194,48 @@ pub(crate) fn chart_parts(n: &Node) -> Result<(Vec<u8>, Vec<u8>)> {
         },
     )
     .map_err(failure)?;
+    // pptx 0.1.0's category writer repeats B-column formulas for every series.
+    // Repair the references to match generate_category_xlsx until upstream fixes
+    // that writer; caches alone cannot prove an editable chart is correct.
+    let native = xml(chart.as_bytes())?;
+    let mut edits = Vec::new();
+    for (index, series) in native
+        .descendants()
+        .filter(|n| n.has_tag_name((C, "ser")))
+        .enumerate()
+    {
+        let mut column = index + 2;
+        let mut letters = Vec::new();
+        while column != 0 {
+            column -= 1;
+            letters.push((b'A' + (column % 26) as u8) as char);
+            column /= 26;
+        }
+        let column: String = letters.into_iter().rev().collect();
+        for (tag, formula) in [
+            ("tx", format!("Sheet1!${column}$1")),
+            (
+                "cat",
+                format!("Sheet1!$A$2:$A${}", data.categories.len() + 1),
+            ),
+            (
+                "val",
+                format!("Sheet1!${column}$2:${column}${}", data.categories.len() + 1),
+            ),
+        ] {
+            if let Some(f) = series
+                .children()
+                .find(|n| n.has_tag_name((C, tag)))
+                .and_then(|n| n.descendants().find(|n| n.has_tag_name((C, "f"))))
+            {
+                edits.push((f.range(), format!("<c:f>{formula}</c:f>")));
+            }
+        }
+    }
+    for (range, value) in edits.into_iter().rev() {
+        chart =
+            String::from_utf8(replace_range(chart.as_bytes(), range, &value)).map_err(failure)?;
+    }
     // The upstream bar writer omits legends and uses signed axis identifiers.
     // Normalize those two details until the writer emits conforming bar-chart
     // defaults.
@@ -318,18 +360,13 @@ pub(crate) fn emit_node(
                 },
             )?;
             let rid = format!("rIdForge{}{}", id.simple(), sha(bytes));
-            if !relationships(parts, slide_part)?
-                .iter()
-                .any(|r| r.id == rid)
-            {
-                add_relationship(
-                    parts,
-                    slide_part,
-                    &rid,
-                    &format!("{R}/image"),
-                    &format!("/{part}"),
-                )?;
-            }
+            ensure_relationship(
+                parts,
+                slide_part,
+                &rid,
+                &format!("{R}/image"),
+                &format!("/{part}"),
+            )?;
             let ratio = f64::from(w) / f64::from(h);
             let mut crop = String::new();
             if n.fit == ImageFit::Contain {
@@ -380,28 +417,21 @@ pub(crate) fn emit_node(
                 &workbook_path,
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )?;
-            if !parts.contains_key(&relation_path(&chart_path)) {
-                add_relationship(
-                    parts,
-                    &chart_path,
-                    "rIdWorkbook",
-                    &format!("{R}/package"),
-                    &format!("/{workbook_path}"),
-                )?;
-            }
+            ensure_relationship(
+                parts,
+                &chart_path,
+                "rIdWorkbook",
+                &format!("{R}/package"),
+                &format!("/{workbook_path}"),
+            )?;
             let rid = format!("rIdForge{}", id.simple());
-            if !relationships(parts, slide_part)?
-                .iter()
-                .any(|r| r.id == rid)
-            {
-                add_relationship(
-                    parts,
-                    slide_part,
-                    &rid,
-                    &format!("{R}/chart"),
-                    &format!("/{chart_path}"),
-                )?;
-            }
+            ensure_relationship(
+                parts,
+                slide_part,
+                &rid,
+                &format!("{R}/chart"),
+                &format!("/{chart_path}"),
+            )?;
             ns(ShapeTree::new_chart_graphic_frame_xml(
                 sid,
                 &name,
@@ -461,11 +491,23 @@ pub(crate) fn emit_node(
                 "<a:ln w=\"19050\"><a:solidFill><a:srgbClr \
                  val=\"172033\"/></a:solidFill><a:prstDash val=\"solid\"/></a:ln></p:spPr>",
             );
-            let anchor = |a: Anchor| match a {
-                Anchor::Top => 0,
-                Anchor::Left => 1,
-                Anchor::Bottom => 2,
-                Anchor::Right => 3,
+            let anchor = |e: &Endpoint| {
+                let cardinal = match e.anchor {
+                    Anchor::Top => 0,
+                    Anchor::Left => 1,
+                    Anchor::Bottom => 2,
+                    Anchor::Right => 3,
+                };
+                // DrawingML ellipse exposes eight connection sites; the cardinal
+                // sites are the even indices, unlike rectangle's four sites.
+                if doc
+                    .find(&e.target)
+                    .is_some_and(|n| n.kind == NodeKind::Shape && n.shape == Shape::Ellipse)
+                {
+                    cardinal * 2
+                } else {
+                    cardinal
+                }
             };
             swap_descendant(
                 &s,
@@ -475,9 +517,9 @@ pub(crate) fn emit_node(
                     "<p:cNvCxnSpPr xmlns:p=\"{P}\" xmlns:a=\"{A}\"><a:stCxn id=\"{}\" \
                      idx=\"{}\"/><a:endCxn id=\"{}\" idx=\"{}\"/></p:cNvCxnSpPr>",
                     a.shape_id,
-                    anchor(n.from.as_ref().unwrap().anchor),
+                    anchor(n.from.as_ref().unwrap()),
                     b.shape_id,
-                    anchor(n.to.as_ref().unwrap().anchor)
+                    anchor(n.to.as_ref().unwrap())
                 ),
             )?
         }

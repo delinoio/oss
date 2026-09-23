@@ -266,3 +266,45 @@ async fn official_mcp_client_exercises_actual_stdio_binary() {
     );
     client.cancel().await.unwrap();
 }
+
+#[test]
+fn simultaneous_writers_publish_only_one_revision() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = Store::new(Some(tmp.path().join("state")), CancellationToken::new()).unwrap();
+    let id = store.create(document()).unwrap().document_id;
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let mut handles = Vec::new();
+    for text in ["Writer one", "Writer two"] {
+        let store = store.clone();
+        let barrier = barrier.clone();
+        handles.push(std::thread::spawn(move || {
+            barrier.wait();
+            store.apply(patch(id, 0, text))
+        }));
+    }
+    let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+    assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
+    assert!(
+        results
+            .iter()
+            .filter_map(|r| r.as_ref().err())
+            .all(|e| matches!(e.code, ErrorCode::Busy | ErrorCode::RevisionConflict))
+    );
+    assert_eq!(store.inspect(id, None, 0).unwrap()["revision"], 1);
+    let abandoned = store
+        .root
+        .join("documents")
+        .join(id.to_string())
+        .join(".revision-interrupted");
+    std::fs::create_dir(&abandoned).unwrap();
+    std::fs::write(abandoned.join("document.pptx"), b"incomplete").unwrap();
+    let restarted = Store::new(Some(store.root.clone()), CancellationToken::new()).unwrap();
+    assert_eq!(restarted.inspect(id, None, 0).unwrap()["revision"], 1);
+}
+#[test]
+fn mcp_startup_failure_never_prints_cli_json_on_stdout() {
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    let result = cli(tmp.path(), &["mcp"]);
+    assert!(!result.status.success());
+    assert!(result.stdout.is_empty());
+}

@@ -37,6 +37,15 @@ fn change_geometry(bytes: &[u8], native_id: u32, new: &str) -> Result<Vec<u8>> {
         desc(fresh.root_element(), A, "xfrm").or_else(|| desc(fresh.root_element(), P, "xfrm"));
     let mut changes = Vec::new();
     if let (Some(target), Some(source)) = (target, source) {
+        for attr in ["flipH", "flipV"] {
+            if target.attribute(attr) != source.attribute(attr) {
+                changes.push(attribute_edit(
+                    target,
+                    attr,
+                    source.attribute(attr).unwrap_or("0"),
+                ));
+            }
+        }
         for tag in ["off", "ext"] {
             let a = desc(target, A, tag).ok_or_else(|| failure("transform"))?;
             let b = desc(source, A, tag).ok_or_else(|| failure("transform"))?;
@@ -112,7 +121,10 @@ fn attribute_edit(
     name: &str,
     value: &str,
 ) -> (std::ops::Range<usize>, String) {
-    if let Some(a) = n.attributes().find(|a| a.name() == name) {
+    if let Some(a) = n
+        .attributes()
+        .find(|a| a.namespace().is_none() && a.name() == name)
+    {
         (a.range(), format!("{name}=\"{}\"", escape(value)))
     } else {
         let text = n.document().input_text();
@@ -444,17 +456,24 @@ fn update_chart(
         }
         edits.push((at..at, added));
     }
-    for f in old_bar.descendants().filter(|n| n.has_tag_name((C, "f"))) {
-        if !f
-            .text()
-            .is_some_and(|s| s.starts_with("Sheet1!$") || s.starts_with("'Sheet1'!$"))
-        {
-            return error(
-                ErrorCode::UnsupportedEdit,
-                "/data",
-                "Chart references a noncanonical workbook range",
-            );
-        }
+    let (expected_previous, _) = emit::chart_parts(previous)?;
+    let expected_previous = xml(&expected_previous)?;
+    let expected_formulas: Vec<_> = expected_previous
+        .descendants()
+        .filter(|n| n.has_tag_name((C, "f")))
+        .map(|n| n.text().unwrap_or("").replace("'Sheet1'", "Sheet1"))
+        .collect();
+    let actual_formulas: Vec<_> = old_bar
+        .descendants()
+        .filter(|n| n.has_tag_name((C, "f")))
+        .map(|n| n.text().unwrap_or("").replace("'Sheet1'", "Sheet1"))
+        .collect();
+    if actual_formulas != expected_formulas {
+        return error(
+            ErrorCode::UnsupportedEdit,
+            "/data",
+            "Chart references a noncanonical workbook range",
+        );
     }
     let workbook_rel = relationships(parts, &chart_path)?
         .into_iter()
@@ -568,6 +587,15 @@ fn update_workbook(old: &[u8], fresh: &[u8], previous: &ChartData) -> Result<Vec
             "Workbook row extensions require a replacement chart",
         );
     }
+    if old_data.attributes().len() != 0
+        || old_data.descendants().any(|n| n.is_comment() || n.is_pi())
+    {
+        return error(
+            ErrorCode::UnsupportedEdit,
+            "/data",
+            "Workbook data extensions require explicit replacement",
+        );
+    }
     let strings = generated
         .get("xl/sharedStrings.xml")
         .map(|s| {
@@ -665,15 +693,24 @@ pub fn update(
     }
     let mut bindings = old_bindings.clone();
     for (slide, path) in after.slides.iter().zip(&paths) {
-        let mut next = bindings
-            .values()
-            .filter(|b| &b.part == path)
-            .map(|b| b.shape_id)
+        let native = xml(&parts[path])?;
+        let mut next = native
+            .descendants()
+            .filter(|n| n.has_tag_name((P, "cNvPr")))
+            .filter_map(|n| n.attribute("id").and_then(|v| v.parse::<u32>().ok()))
             .max()
-            .unwrap_or(1)
-            + 1;
+            .unwrap_or(1);
+        let mut needed = 0u32;
         slide.content.visit(&mut |n| {
             if !n.is_container() && !bindings.contains_key(&n.id.unwrap()) {
+                needed += 1;
+            }
+        });
+        next.checked_add(needed)
+            .ok_or_else(|| failure("shape identifiers exhausted"))?;
+        slide.content.visit(&mut |n| {
+            if !n.is_container() && !bindings.contains_key(&n.id.unwrap()) {
+                next += 1;
                 bindings.insert(
                     n.id.unwrap(),
                     Binding {
@@ -682,7 +719,6 @@ pub fn update(
                         parent_shape_id: None,
                     },
                 );
-                next += 1;
             }
         });
     }
@@ -781,7 +817,7 @@ pub fn update(
                         placement.nodes[&id].font_scale,
                     )?;
                 }
-                if n.kind == NodeKind::Image && old.asset_ref != n.asset_ref {
+                if n.kind == NodeKind::Image && (old.asset_ref != n.asset_ref || moved) {
                     current = replace_image(&current, b.shape_id, &fragment)?;
                 }
                 if moved || n.kind == NodeKind::Image && old.asset_ref != n.asset_ref {

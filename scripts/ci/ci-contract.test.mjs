@@ -26,7 +26,7 @@ const devhudTauri = JSON.parse(readFileSync(`${root}/apps/devhud/src-tauri/tauri
 
 const legacyJobs = [
   "go-quality", "go-test", "repository-environment", "rust-fmt", "rust-clippy", "rust-test",
-  "linux-packages", "node-public-docs-test", "node-clibox-test", "node-pnport-test", "pnport-native",
+  "forge-test", "forge-render", "linux-packages", "node-public-docs-test", "node-clibox-test", "node-pnport-test", "pnport-native",
 ];
 const devhudJobs = [
   "devhud-frontend", "devhud-extension", "devhud-rust-conformance", "devhud-security", "devhud-desktop",
@@ -410,4 +410,14 @@ test("local CI commands are documented by repository contracts", () => {
 
 test("native Go integration retains an explicit bounded package watchdog", () => {
   assert.equal(namedStep(workflow.jobs["go-test"], "Run go test").run, "go test -timeout=20m ./...");
+});
+
+
+test("Forge retains three-platform interoperability and mandatory Linux rendering", () => {
+  assert.deepEqual(workflow.jobs["forge-test"].strategy.matrix.os, ["ubuntu-latest", "macos-latest", "windows-latest"]);
+  const testCommands = workflow.jobs["forge-test"].steps.map(({ run }) => run ?? "").join("\n");
+  assert.match(testCommands, /cargo test -p forge-tree-doc -p forge-pptx -p delino-forge/u);
+  const renderCommands = workflow.jobs["forge-render"].steps.map(({ run }) => run ?? "").join("\n");
+  assert.match(renderCommands, /libreoffice-impress poppler-utils/u);
+  assert.match(renderCommands, /--test render -- --ignored/u);
 });

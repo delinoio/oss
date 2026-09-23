@@ -88,6 +88,15 @@ fn all_nodes_are_native_and_chart_workbook_matches() {
                     ],
                 },
             },
+            Operation::SetFrame {
+                target: key("details.cover"),
+                frame: Frame {
+                    x: 40.,
+                    y: 230.,
+                    width: 160.,
+                    height: 130.,
+                },
+            },
             Operation::SetImageAsset {
                 target: key("details.image"),
                 asset_ref: format!("asset_{}", sha(REPLACEMENT)),
@@ -119,6 +128,7 @@ fn all_nodes_are_native_and_chart_workbook_matches() {
     let chart_text = String::from_utf8(chart.1.clone()).unwrap();
     assert!(chart_text.contains("New A"));
     assert!(chart_text.contains(">99<"));
+    assert!(chart_text.contains("Sheet1!$C$2:$C$3"));
     let wb = parts.iter().find(|(p, _)| p.ends_with(".xlsx")).unwrap();
     let wb = read_package(wb.1).unwrap();
     let sheet = xml_part(&wb, "xl/worksheets/sheet1.xml");
@@ -265,4 +275,256 @@ fn stale_metadata_and_unsafe_packages_fail_closed() {
     assert!(read_package(&write_package(&parts).unwrap()).is_err());
     assert!(read_package(b"PK broken archive").is_err());
     assert!(validate_image(&PNG[..30]).is_err());
+}
+
+#[test]
+fn namespace_prefixes_and_unbound_extensions_survive_text_edits() {
+    let mut parts = read_package(EXTERNAL).unwrap();
+    let path = "ppt/slides/slide1.xml";
+    let slide = xml_part(&parts, path)
+        .replace("xmlns:p=", "xmlns:slide=")
+        .replace("<p:", "<slide:")
+        .replace("</p:", "</slide:")
+        .replace("xmlns:a=", "xmlns:draw=")
+        .replace("<a:", "<draw:")
+        .replace("</a:", "</draw:")
+        .replace(
+            "</slide:spTree>",
+            "<extra:opaque xmlns:extra=\"urn:forge-test\" keep=\"yes\"/></slide:spTree>",
+        );
+    parts.insert(path.into(), slide.into_bytes());
+    let source = write_package(&parts).unwrap();
+    let i = import(&source).unwrap();
+    let next = patch(
+        &i,
+        vec![Operation::SetText {
+            target: target(&i.document, NodeKind::Text),
+            text: "Prefixes preserved".into(),
+            cell: None,
+        }],
+    );
+    let edited = update(
+        &source,
+        &i.document,
+        &i.bindings,
+        &next,
+        &i.assets,
+        i.document_id,
+        1,
+    )
+    .unwrap();
+    let text = xml_part(&read_package(&edited).unwrap(), path);
+    assert!(text.contains("<extra:opaque"));
+    assert!(text.contains("Prefixes preserved"));
+    assert!(text.contains("xmlns:slide="));
+    let next = patch(
+        &i,
+        vec![Operation::InsertNode {
+            parent: key("slide-1.canvas"),
+            index: 0,
+            node: Box::new(Node {
+                kind: NodeKind::Shape,
+                frame: Some(Frame {
+                    x: 500.,
+                    y: 450.,
+                    width: 20.,
+                    height: 20.,
+                }),
+                ..Default::default()
+            }),
+        }],
+    );
+    assert_eq!(
+        update(
+            &source,
+            &i.document,
+            &i.bindings,
+            &next,
+            &i.assets,
+            i.document_id,
+            1
+        )
+        .unwrap_err()
+        .code,
+        ErrorCode::UnsupportedEdit
+    );
+}
+#[test]
+fn structure_and_placeholder_binding_preserve_groups_and_native_ids() {
+    let i = import(EXTERNAL).unwrap();
+    let next = patch(
+        &i,
+        vec![Operation::InsertNode {
+            parent: key("slide-1.canvas"),
+            index: 0,
+            node: Box::new(Node {
+                kind: NodeKind::Text,
+                key: Some("new-placeholder".into()),
+                placeholder_ref: Some("0".into()),
+                text: Some("New placeholder".into()),
+                frame: Some(Frame {
+                    x: 20.,
+                    y: 20.,
+                    width: 300.,
+                    height: 40.,
+                }),
+                ..Default::default()
+            }),
+        }],
+    );
+    let result = update(
+        EXTERNAL,
+        &i.document,
+        &i.bindings,
+        &next,
+        &i.assets,
+        i.document_id,
+        1,
+    )
+    .unwrap();
+    let imported = import(&result).unwrap();
+    let mut native_ids = std::collections::HashSet::new();
+    let package = read_package(&result).unwrap();
+    let text = xml_part(&package, "ppt/slides/slide1.xml");
+    let native = roxmltree::Document::parse(&text).unwrap();
+    for element in native
+        .descendants()
+        .filter(|n| n.tag_name().name() == "cNvPr")
+    {
+        assert!(native_ids.insert(element.attribute("id").unwrap()));
+    }
+    let next = patch(
+        &imported,
+        vec![
+            Operation::MoveNode {
+                target: key("new-placeholder"),
+                parent: key("slide-1.canvas"),
+                index: 2,
+            },
+            Operation::RemoveNode {
+                target: key("new-placeholder"),
+            },
+        ],
+    );
+    let result = update(
+        &result,
+        &imported.document,
+        &imported.bindings,
+        &next,
+        &i.assets,
+        i.document_id,
+        2,
+    )
+    .unwrap();
+    assert!(
+        import(&result)
+            .unwrap()
+            .document
+            .find(&key("new-placeholder"))
+            .is_none()
+    );
+}
+#[test]
+fn malformed_xml_and_zip_expansion_limits_are_rejected() {
+    use std::io::{Cursor, Write};
+
+    use zip::write::SimpleFileOptions;
+    for filename in ["../outside.xml", "/absolute.xml", "safe.xml"] {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file(filename, SimpleFileOptions::default())
+            .unwrap();
+        writer
+            .write_all(b"<!DOCTYPE x [<!ENTITY content 'x'>]><x>&content;</x>")
+            .unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+        assert!(read_package(&bytes).is_err());
+    }
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    writer
+        .start_file(
+            "bomb.bin",
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated),
+        )
+        .unwrap();
+    let chunk = vec![0u8; 1024 * 1024];
+    for _ in 0..65 {
+        writer.write_all(&chunk).unwrap();
+    }
+    let bytes = writer.finish().unwrap().into_inner();
+    assert_eq!(
+        read_package(&bytes).unwrap_err().code,
+        ErrorCode::ResourceLimit
+    );
+}
+
+#[test]
+fn horizontal_bars_and_series_resize_keep_cache_and_workbook_in_sync() {
+    let mut p: Presentation = parse(include_bytes!(
+        "../../forge-tree-doc/examples/all-nodes.json"
+    ))
+    .unwrap();
+    let mut chart = p.find(&key("details.chart")).unwrap().clone();
+    chart.orientation = Orientation::Horizontal;
+    chart.frame = Some(Frame {
+        x: 20.,
+        y: 20.,
+        width: 500.,
+        height: 350.,
+    });
+    p.assets.clear();
+    p.slides.truncate(1);
+    p.slides[0].content = Node {
+        kind: NodeKind::Canvas,
+        children: vec![chart],
+        ..Default::default()
+    };
+    p.assign_ids();
+    let bytes = generate(&p, &Assets::new(), Uuid::now_v7(), 0).unwrap();
+    let imported = import(&bytes).unwrap();
+    let mut data = p.find(&key("details.chart")).unwrap().data.clone().unwrap();
+    data.series.push(Series {
+        key: "extra".into(),
+        name: "Third series".into(),
+        values: vec![40., 50., 60.],
+    });
+    let next = patch(
+        &imported,
+        vec![Operation::SetChartData {
+            target: key("details.chart"),
+            data,
+        }],
+    );
+    let updated = update(
+        &bytes,
+        &p,
+        &imported.bindings,
+        &next,
+        &Assets::new(),
+        imported.document_id,
+        1,
+    )
+    .unwrap();
+    let parts = read_package(&updated).unwrap();
+    let chart = parts
+        .iter()
+        .find(|(name, _)| name.starts_with("ppt/charts/") && name.ends_with(".xml"))
+        .unwrap();
+    let text = std::str::from_utf8(chart.1).unwrap();
+    assert!(text.contains("<c:barDir val=\"bar\"/>"));
+    let native = roxmltree::Document::parse(text).unwrap();
+    assert!(text.contains("Sheet1!$D$2:$D$4"));
+    assert_eq!(
+        native
+            .descendants()
+            .filter(|n| n.tag_name().name() == "ser")
+            .count(),
+        3
+    );
+    let workbook = parts
+        .iter()
+        .find(|(name, _)| name.ends_with(".xlsx"))
+        .unwrap();
+    let workbook = read_package(workbook.1).unwrap();
+    assert!(xml_part(&workbook, "xl/worksheets/sheet1.xml").contains("Third series"));
 }

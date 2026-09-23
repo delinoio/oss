@@ -3725,7 +3725,6 @@ dependencies = [
  "forge-tree-doc",
  "image",
  "pptx",
- "quick-xml 0.41.0",
  "roxmltree 0.21.1",
  "serde",
  "serde_json",

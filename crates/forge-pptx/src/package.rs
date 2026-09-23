@@ -307,6 +307,29 @@ pub fn add_relationship(
     parts.insert(path, insert_before_close(&base, &child)?);
     Ok(())
 }
+pub fn ensure_relationship(
+    parts: &mut Package,
+    part: &str,
+    id: &str,
+    kind: &str,
+    target: &str,
+) -> Result<()> {
+    if let Some(existing) = relationships(parts, part)?.into_iter().find(|r| r.id == id) {
+        if existing.external
+            || existing.kind != kind
+            || resolve(part, &existing.target)? != resolve(part, target)?
+        {
+            return error(
+                ErrorCode::UnsupportedEdit,
+                "",
+                "A reserved relationship identifier belongs to different content",
+            );
+        }
+        Ok(())
+    } else {
+        add_relationship(parts, part, id, kind, target)
+    }
+}
 pub fn add_content_type(parts: &mut Package, path: &str, kind: &str) -> Result<()> {
     let bytes = parts
         .get("[Content_Types].xml")
@@ -349,6 +372,13 @@ pub fn validate_package(parts: &Package) -> Result<()> {
         };
         let mut seen = std::collections::HashSet::new();
         for r in relationships(parts, &owner)? {
+            if r.kind.contains("/digital-signature/") || r.kind.ends_with("/vbaProject") {
+                return error(
+                    ErrorCode::UnsupportedPackage,
+                    "",
+                    "Signed and macro-enabled packages are unsupported",
+                );
+            }
             if !seen.insert(r.id) {
                 return error(ErrorCode::InvalidPackage, "", "Duplicate relationship ID");
             }

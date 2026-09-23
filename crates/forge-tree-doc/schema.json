@@ -1,0 +1,1674 @@
+{
+  "patch": {
+    "$defs": {
+      "Align": {
+        "enum": [
+          "left",
+          "center",
+          "right",
+          "justify"
+        ],
+        "type": "string"
+      },
+      "Anchor": {
+        "enum": [
+          "top",
+          "right",
+          "bottom",
+          "left"
+        ],
+        "type": "string"
+      },
+      "Cell": {
+        "additionalProperties": false,
+        "properties": {
+          "col_span": {
+            "default": 1,
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fill": {
+            "$ref": "#/$defs/Color",
+            "default": {}
+          },
+          "paragraphs": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/Paragraph"
+            },
+            "type": "array"
+          },
+          "row_span": {
+            "default": 1,
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "style": {
+            "$ref": "#/$defs/TextStyle",
+            "default": {}
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "CellAddress": {
+        "additionalProperties": false,
+        "properties": {
+          "column": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "row": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "row",
+          "column"
+        ],
+        "type": "object"
+      },
+      "ChartData": {
+        "additionalProperties": false,
+        "properties": {
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/$defs/Series"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "categories",
+          "series"
+        ],
+        "type": "object"
+      },
+      "ChartType": {
+        "enum": [
+          "bar"
+        ],
+        "type": "string"
+      },
+      "Color": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "Column": {
+        "additionalProperties": false,
+        "properties": {
+          "width": {
+            "$ref": "#/$defs/Size"
+          }
+        },
+        "required": [
+          "width"
+        ],
+        "type": "object"
+      },
+      "ConnectorType": {
+        "enum": [
+          "straight",
+          "elbow"
+        ],
+        "type": "string"
+      },
+      "DataLabels": {
+        "enum": [
+          "hidden",
+          "value"
+        ],
+        "type": "string"
+      },
+      "Endpoint": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "$ref": "#/$defs/Anchor"
+          },
+          "target": {
+            "$ref": "#/$defs/Target"
+          }
+        },
+        "required": [
+          "target",
+          "anchor"
+        ],
+        "type": "object"
+      },
+      "Frame": {
+        "additionalProperties": false,
+        "properties": {
+          "height": {
+            "format": "double",
+            "type": "number"
+          },
+          "width": {
+            "format": "double",
+            "type": "number"
+          },
+          "x": {
+            "format": "double",
+            "type": "number"
+          },
+          "y": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
+        "type": "object"
+      },
+      "ImageFit": {
+        "enum": [
+          "contain",
+          "cover"
+        ],
+        "type": "string"
+      },
+      "Legend": {
+        "enum": [
+          "hidden",
+          "bottom",
+          "right"
+        ],
+        "type": "string"
+      },
+      "Marker": {
+        "enum": [
+          "bullet",
+          "number"
+        ],
+        "type": "string"
+      },
+      "Node": {
+        "additionalProperties": false,
+        "description": "Closed field vocabulary shared by node variants. Variant-specific field\nlegality is checked by validation in addition to serde's unknown-field\nrejection.",
+        "properties": {
+          "alt": {
+            "default": "",
+            "type": "string"
+          },
+          "asset_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chart_type": {
+            "$ref": "#/$defs/ChartType",
+            "default": "bar"
+          },
+          "children": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/Node"
+            },
+            "type": "array"
+          },
+          "columns": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/Column"
+            },
+            "type": "array"
+          },
+          "connector_type": {
+            "$ref": "#/$defs/ConnectorType",
+            "default": "straight"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ChartData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data_labels": {
+            "$ref": "#/$defs/DataLabels",
+            "default": "hidden"
+          },
+          "fill": {
+            "$ref": "#/$defs/Color",
+            "default": {}
+          },
+          "fit": {
+            "$ref": "#/$defs/ImageFit",
+            "default": "contain"
+          },
+          "frame": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Frame"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "from": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Endpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gap": {
+            "default": 0.0,
+            "format": "double",
+            "type": "number"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Size"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "legend": {
+            "$ref": "#/$defs/Legend",
+            "default": "hidden"
+          },
+          "marker": {
+            "$ref": "#/$defs/Marker",
+            "default": "bullet"
+          },
+          "min_font_size": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "opaque_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orientation": {
+            "$ref": "#/$defs/Orientation",
+            "default": "vertical"
+          },
+          "overflow": {
+            "$ref": "#/$defs/Overflow",
+            "default": "error"
+          },
+          "padding": {
+            "default": 0.0,
+            "format": "double",
+            "type": "number"
+          },
+          "paragraphs": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/Paragraph"
+            },
+            "type": "array"
+          },
+          "placeholder_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rows": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/TableRow"
+            },
+            "type": "array"
+          },
+          "shape": {
+            "$ref": "#/$defs/Shape",
+            "default": "rect"
+          },
+          "style": {
+            "$ref": "#/$defs/TextStyle",
+            "default": {}
+          },
+          "style_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Endpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "$ref": "#/$defs/NodeKind"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Size"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "NodeKind": {
+        "enum": [
+          "text",
+          "list",
+          "image",
+          "shape",
+          "table",
+          "chart",
+          "connector",
+          "row",
+          "column",
+          "canvas",
+          "opaque"
+        ],
+        "type": "string"
+      },
+      "Operation": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "cell": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CellAddress"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "op": {
+                "const": "set_text",
+                "type": "string"
+              },
+              "target": {
+                "$ref": "#/$defs/Target"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "op",
+              "target",
+              "text"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "op": {
+                "const": "set_text_style",
+                "type": "string"
+              },
+              "style": {
+                "$ref": "#/$defs/TextStyle"
+              },
+              "target": {
+                "$ref": "#/$defs/Target"
+              }
+            },
+            "required": [
+              "op",
+              "target",
+              "style"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "op": {
+                "const": "unset_text_style",
+                "type": "string"
+              },
+              "properties": {
+                "items": {
+                  "$ref": "#/$defs/StyleProperty"
+                },
+                "type": "array"
+              },
+              "target": {
+                "$ref": "#/$defs/Target"
+              }
+            },
+            "required": [
+              "op",
+              "target",
+              "properties"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "frame": {
+                "$ref": "#/$defs/Frame"
+              },
+              "op": {
+                "const": "set_frame",
+                "type": "string"
+              },
+              "target": {
+                "$ref": "#/$defs/Target"
+              }
+            },
+            "required": [
+              "op",
+              "target",
+              "frame"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "index": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "node": {
+                "$ref": "#/$defs/Node"
+              },
+              "op": {
+                "const": "insert_node",
+                "type": "string"
+              },
+              "parent": {
+                "$ref": "#/$defs/Target"
+              }
+            },
+            "required": [
+              "op",
+              "parent",
+              "index",
+              "node"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "op": {
+                "const": "remove_node",
+                "type": "string"
+              },
+              "target": {
+                "$ref": "#/$defs/Target"
+              }
+            },
+            "required": [
+              "op",
+              "target"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "index": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "op": {
+                "const": "move_node",
+                "type": "string"
+              },
+              "parent": {
+                "$ref": "#/$defs/Target"
+              },
+              "target": {
+                "$ref": "#/$defs/Target"
+              }
+            },
+            "required": [
+              "op",
+              "target",
+              "parent",
+              "index"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/ChartData"
+              },
+              "op": {
+                "const": "set_chart_data",
+                "type": "string"
+              },
+              "target": {
+                "$ref": "#/$defs/Target"
+              }
+            },
+            "required": [
+              "op",
+              "target",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "asset_ref": {
+                "type": "string"
+              },
+              "op": {
+                "const": "set_image_asset",
+                "type": "string"
+              },
+              "target": {
+                "$ref": "#/$defs/Target"
+              }
+            },
+            "required": [
+              "op",
+              "target",
+              "asset_ref"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "Orientation": {
+        "enum": [
+          "vertical",
+          "horizontal"
+        ],
+        "type": "string"
+      },
+      "Overflow": {
+        "enum": [
+          "error",
+          "shrink"
+        ],
+        "type": "string"
+      },
+      "Paragraph": {
+        "additionalProperties": false,
+        "properties": {
+          "align": {
+            "$ref": "#/$defs/Align",
+            "default": "left"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/$defs/Run"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "runs"
+        ],
+        "type": "object"
+      },
+      "PatchKind": {
+        "enum": [
+          "patch"
+        ],
+        "type": "string"
+      },
+      "Run": {
+        "additionalProperties": false,
+        "properties": {
+          "style": {
+            "$ref": "#/$defs/TextStyle",
+            "default": {}
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      },
+      "Series": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "values"
+        ],
+        "type": "object"
+      },
+      "Shape": {
+        "enum": [
+          "rect",
+          "rounded_rect",
+          "ellipse"
+        ],
+        "type": "string"
+      },
+      "Size": {
+        "anyOf": [
+          {
+            "format": "double",
+            "type": "number"
+          },
+          {
+            "$ref": "#/$defs/SizeMode"
+          }
+        ]
+      },
+      "SizeMode": {
+        "enum": [
+          "hug",
+          "fill"
+        ],
+        "type": "string"
+      },
+      "StyleProperty": {
+        "enum": [
+          "font_family",
+          "font_size",
+          "font_weight",
+          "color",
+          "color_ref",
+          "italic",
+          "underline"
+        ],
+        "type": "string"
+      },
+      "TableRow": {
+        "additionalProperties": false,
+        "properties": {
+          "cells": {
+            "items": {
+              "$ref": "#/$defs/Cell"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "cells"
+        ],
+        "type": "object"
+      },
+      "Target": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "node_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "TextStyle": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "font_family": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "font_size": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "font_weight": {
+            "format": "uint16",
+            "maximum": 65535,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "italic": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "base_revision": {
+        "format": "uint64",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "document_id": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "dsl_version": {
+        "format": "uint32",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "kind": {
+        "$ref": "#/$defs/PatchKind"
+      },
+      "operations": {
+        "items": {
+          "$ref": "#/$defs/Operation"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "dsl_version",
+      "kind",
+      "document_id",
+      "base_revision",
+      "operations"
+    ],
+    "title": "Patch",
+    "type": "object"
+  },
+  "presentation": {
+    "$defs": {
+      "Align": {
+        "enum": [
+          "left",
+          "center",
+          "right",
+          "justify"
+        ],
+        "type": "string"
+      },
+      "Anchor": {
+        "enum": [
+          "top",
+          "right",
+          "bottom",
+          "left"
+        ],
+        "type": "string"
+      },
+      "AssetRef": {
+        "additionalProperties": false,
+        "properties": {
+          "handle": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "handle"
+        ],
+        "type": "object"
+      },
+      "Cell": {
+        "additionalProperties": false,
+        "properties": {
+          "col_span": {
+            "default": 1,
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fill": {
+            "$ref": "#/$defs/Color",
+            "default": {}
+          },
+          "paragraphs": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/Paragraph"
+            },
+            "type": "array"
+          },
+          "row_span": {
+            "default": 1,
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "style": {
+            "$ref": "#/$defs/TextStyle",
+            "default": {}
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "ChartData": {
+        "additionalProperties": false,
+        "properties": {
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/$defs/Series"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "categories",
+          "series"
+        ],
+        "type": "object"
+      },
+      "ChartType": {
+        "enum": [
+          "bar"
+        ],
+        "type": "string"
+      },
+      "Color": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "Column": {
+        "additionalProperties": false,
+        "properties": {
+          "width": {
+            "$ref": "#/$defs/Size"
+          }
+        },
+        "required": [
+          "width"
+        ],
+        "type": "object"
+      },
+      "ConnectorType": {
+        "enum": [
+          "straight",
+          "elbow"
+        ],
+        "type": "string"
+      },
+      "DataLabels": {
+        "enum": [
+          "hidden",
+          "value"
+        ],
+        "type": "string"
+      },
+      "DocumentKind": {
+        "enum": [
+          "presentation"
+        ],
+        "type": "string"
+      },
+      "Endpoint": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "$ref": "#/$defs/Anchor"
+          },
+          "target": {
+            "$ref": "#/$defs/Target"
+          }
+        },
+        "required": [
+          "target",
+          "anchor"
+        ],
+        "type": "object"
+      },
+      "Frame": {
+        "additionalProperties": false,
+        "properties": {
+          "height": {
+            "format": "double",
+            "type": "number"
+          },
+          "width": {
+            "format": "double",
+            "type": "number"
+          },
+          "x": {
+            "format": "double",
+            "type": "number"
+          },
+          "y": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
+        "type": "object"
+      },
+      "ImageFit": {
+        "enum": [
+          "contain",
+          "cover"
+        ],
+        "type": "string"
+      },
+      "Legend": {
+        "enum": [
+          "hidden",
+          "bottom",
+          "right"
+        ],
+        "type": "string"
+      },
+      "Marker": {
+        "enum": [
+          "bullet",
+          "number"
+        ],
+        "type": "string"
+      },
+      "Node": {
+        "additionalProperties": false,
+        "description": "Closed field vocabulary shared by node variants. Variant-specific field\nlegality is checked by validation in addition to serde's unknown-field\nrejection.",
+        "properties": {
+          "alt": {
+            "default": "",
+            "type": "string"
+          },
+          "asset_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chart_type": {
+            "$ref": "#/$defs/ChartType",
+            "default": "bar"
+          },
+          "children": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/Node"
+            },
+            "type": "array"
+          },
+          "columns": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/Column"
+            },
+            "type": "array"
+          },
+          "connector_type": {
+            "$ref": "#/$defs/ConnectorType",
+            "default": "straight"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ChartData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data_labels": {
+            "$ref": "#/$defs/DataLabels",
+            "default": "hidden"
+          },
+          "fill": {
+            "$ref": "#/$defs/Color",
+            "default": {}
+          },
+          "fit": {
+            "$ref": "#/$defs/ImageFit",
+            "default": "contain"
+          },
+          "frame": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Frame"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "from": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Endpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gap": {
+            "default": 0.0,
+            "format": "double",
+            "type": "number"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Size"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "legend": {
+            "$ref": "#/$defs/Legend",
+            "default": "hidden"
+          },
+          "marker": {
+            "$ref": "#/$defs/Marker",
+            "default": "bullet"
+          },
+          "min_font_size": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "opaque_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orientation": {
+            "$ref": "#/$defs/Orientation",
+            "default": "vertical"
+          },
+          "overflow": {
+            "$ref": "#/$defs/Overflow",
+            "default": "error"
+          },
+          "padding": {
+            "default": 0.0,
+            "format": "double",
+            "type": "number"
+          },
+          "paragraphs": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/Paragraph"
+            },
+            "type": "array"
+          },
+          "placeholder_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rows": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/TableRow"
+            },
+            "type": "array"
+          },
+          "shape": {
+            "$ref": "#/$defs/Shape",
+            "default": "rect"
+          },
+          "style": {
+            "$ref": "#/$defs/TextStyle",
+            "default": {}
+          },
+          "style_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Endpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "$ref": "#/$defs/NodeKind"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Size"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "NodeKind": {
+        "enum": [
+          "text",
+          "list",
+          "image",
+          "shape",
+          "table",
+          "chart",
+          "connector",
+          "row",
+          "column",
+          "canvas",
+          "opaque"
+        ],
+        "type": "string"
+      },
+      "Orientation": {
+        "enum": [
+          "vertical",
+          "horizontal"
+        ],
+        "type": "string"
+      },
+      "Overflow": {
+        "enum": [
+          "error",
+          "shrink"
+        ],
+        "type": "string"
+      },
+      "Page": {
+        "additionalProperties": false,
+        "properties": {
+          "height": {
+            "format": "double",
+            "type": "number"
+          },
+          "width": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "width",
+          "height"
+        ],
+        "type": "object"
+      },
+      "Paragraph": {
+        "additionalProperties": false,
+        "properties": {
+          "align": {
+            "$ref": "#/$defs/Align",
+            "default": "left"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/$defs/Run"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "runs"
+        ],
+        "type": "object"
+      },
+      "Run": {
+        "additionalProperties": false,
+        "properties": {
+          "style": {
+            "$ref": "#/$defs/TextStyle",
+            "default": {}
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      },
+      "Series": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "values"
+        ],
+        "type": "object"
+      },
+      "Shape": {
+        "enum": [
+          "rect",
+          "rounded_rect",
+          "ellipse"
+        ],
+        "type": "string"
+      },
+      "Size": {
+        "anyOf": [
+          {
+            "format": "double",
+            "type": "number"
+          },
+          {
+            "$ref": "#/$defs/SizeMode"
+          }
+        ]
+      },
+      "SizeMode": {
+        "enum": [
+          "hug",
+          "fill"
+        ],
+        "type": "string"
+      },
+      "Slide": {
+        "additionalProperties": false,
+        "properties": {
+          "background": {
+            "$ref": "#/$defs/Color",
+            "default": {}
+          },
+          "content": {
+            "$ref": "#/$defs/Node"
+          },
+          "id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slide_layout_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "type": "object"
+      },
+      "TableRow": {
+        "additionalProperties": false,
+        "properties": {
+          "cells": {
+            "items": {
+              "$ref": "#/$defs/Cell"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "cells"
+        ],
+        "type": "object"
+      },
+      "Target": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "node_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "TextStyle": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "font_family": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "font_size": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "font_weight": {
+            "format": "uint16",
+            "maximum": 65535,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "italic": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "Theme": {
+        "additionalProperties": false,
+        "properties": {
+          "colors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "type": "object"
+          },
+          "font_family": {
+            "default": "Noto Sans KR",
+            "type": "string"
+          },
+          "text_styles": {
+            "additionalProperties": {
+              "$ref": "#/$defs/TextStyle"
+            },
+            "default": {},
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "Unit": {
+        "enum": [
+          "pt"
+        ],
+        "type": "string"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "assets": {
+        "additionalProperties": {
+          "$ref": "#/$defs/AssetRef"
+        },
+        "default": {},
+        "type": "object"
+      },
+      "dsl_version": {
+        "format": "uint32",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "kind": {
+        "$ref": "#/$defs/DocumentKind"
+      },
+      "page": {
+        "$ref": "#/$defs/Page",
+        "default": {
+          "height": 540.0,
+          "width": 960.0
+        }
+      },
+      "slides": {
+        "items": {
+          "$ref": "#/$defs/Slide"
+        },
+        "type": "array"
+      },
+      "theme": {
+        "$ref": "#/$defs/Theme",
+        "default": {
+          "colors": {},
+          "font_family": "Noto Sans KR",
+          "text_styles": {}
+        }
+      },
+      "unit": {
+        "$ref": "#/$defs/Unit",
+        "default": "pt"
+      }
+    },
+    "required": [
+      "dsl_version",
+      "kind",
+      "slides"
+    ],
+    "title": "Presentation",
+    "type": "object"
+  }
+}

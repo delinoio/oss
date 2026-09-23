@@ -332,6 +332,63 @@ jobs:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
 
+  forge-test:
+    needs: changes
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['forge-test'] }}
+    name: Forge PPTX (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-01-01
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: false
+      - name: Test DSL, native PPTX preservation, revisions and official MCP client
+        run: cargo test -p forge-tree-doc -p forge-pptx -p delino-forge
+      - name: Check Forge formatting and Clippy
+        run: |
+          cargo fmt --all --check
+          cargo clippy -p forge-tree-doc -p forge-pptx -p delino-forge --all-targets -- -D warnings
+
+  forge-render:
+    needs: changes
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['forge-render'] }}
+    name: Forge Linux rendering
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-01-01
+      - name: Install optional renderers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libreoffice-impress poppler-utils
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: false
+      - name: Render generated and edited external decks
+        env:
+          FORGE_RENDER_ARTIFACTS: ${{ runner.temp }}/forge-render
+        run: cargo test -p delino-forge --test render -- --ignored
+      - name: Retain render evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forge-linux-render
+          path: ${{ runner.temp }}/forge-render
+          if-no-files-found: error
+          retention-days: 7
+
   linux-packages:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['linux-packages'] }}
@@ -1669,6 +1726,8 @@ jobs:
       - rust-fmt
       - rust-clippy
       - rust-test
+      - forge-test
+      - forge-render
       - node-public-docs-test
       - node-clibox-test
       - node-pnport-test

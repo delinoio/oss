@@ -22,6 +22,9 @@ Create and edit Office documents through a typed, validated document tree withou
 - The DSL is versioned independently of the executable. Persistent identifiers are UUID v7.
 - Preview is optional; generation and editing do not require LibreOffice or Poppler. Preview results identify their renderer and are not Microsoft PowerPoint validation evidence.
 
+## Implementation Status
+PPTX v1 is implemented in the three private crates. See the Rust contract for supported preservation boundaries, schema/examples, local verification evidence and the pending hosted CI matrix. Local usage is documented in `crates/delino-forge/README.md`.
+
 ## Change Policy
 Update this index, the Rust foundation contract, examples/schema, and root/crates AGENTS rules with ownership or behavior changes. Release automation, public hosting, other formats, and remote MCP are outside the initial implementation.
 

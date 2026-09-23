@@ -60,12 +60,22 @@ fn frame(n: roxmltree::Node<'_, '_>) -> Option<Frame> {
     }
     let off = desc(x, A, "off")?;
     let ext = desc(x, A, "ext")?;
-    Some(Frame {
+    let frame = Frame {
         x: number(off, "x")?,
         y: number(off, "y")?,
         width: number(ext, "cx")?,
         height: number(ext, "cy")?,
-    })
+    };
+    if !frame.x.is_finite()
+        || !frame.y.is_finite()
+        || frame.width <= 0.0
+        || frame.height <= 0.0
+        || !frame.width.is_finite()
+        || !frame.height.is_finite()
+    {
+        return None;
+    }
+    Some(frame)
 }
 fn inherited_frame(parts: &Package, path: &str, item: roxmltree::Node<'_, '_>) -> Option<Frame> {
     if let Some(value) = frame(item) {
@@ -160,6 +170,43 @@ fn paragraphs(n: roxmltree::Node<'_, '_>) -> Vec<Paragraph> {
             Paragraph { align, runs }
         })
         .collect()
+}
+fn image_projection_matches(
+    item: roxmltree::Node<'_, '_>,
+    data: &[u8],
+    frame: Frame,
+    fit: ImageFit,
+) -> bool {
+    let Ok((width, height, _)) = crate::emit::image_info(data) else {
+        return false;
+    };
+    let ratio = f64::from(width) / f64::from(height);
+    let frame_ratio = frame.width / frame.height;
+    if fit == ImageFit::Contain {
+        return (ratio - frame_ratio).abs() < 0.002 * ratio;
+    }
+    let Some(crop) = desc(item, A, "srcRect") else {
+        return false;
+    };
+    let mut expected = [0., 0., 0., 0.];
+    if ratio > frame_ratio {
+        let v = ((1. - frame_ratio / ratio) * 50000.).round();
+        expected[0] = v;
+        expected[2] = v;
+    } else {
+        let v = ((1. - ratio / frame_ratio) * 50000.).round();
+        expected[1] = v;
+        expected[3] = v;
+    }
+    ["l", "t", "r", "b"]
+        .iter()
+        .zip(expected)
+        .all(|(name, value)| {
+            crop.attribute(*name)
+                .unwrap_or("0")
+                .parse::<f64>()
+                .is_ok_and(|actual| (actual - value).abs() <= 1.)
+        })
 }
 fn parse_table(n: roxmltree::Node<'_, '_>) -> Result<(Vec<Column>, Vec<TableRow>)> {
     let tbl = desc(n, A, "tbl").ok_or_else(|| failure("table"))?;
@@ -390,6 +437,16 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
     for (i, path) in slide_paths(&parts)?.into_iter().enumerate() {
         let x = xml(&parts[&path])?;
         let tree = desc(x.root_element(), P, "spTree").ok_or_else(|| failure("tree"))?;
+        let mut native_ids = std::collections::HashSet::new();
+        for native in tree.descendants().filter(|n| n.has_tag_name((P, "cNvPr"))) {
+            let id = native
+                .attribute("id")
+                .and_then(|v| v.parse::<u32>().ok())
+                .ok_or_else(|| failure("shape identity"))?;
+            if !native_ids.insert(id) {
+                return Err(failure("duplicate native identity"));
+            }
+        }
         let mut children = Vec::new();
         let mut seen = std::collections::HashSet::new();
         for item in tree.children().filter(|n| {
@@ -473,8 +530,12 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
                                 assets.insert(handle, data.clone());
                                 n.kind = NodeKind::Image;
                                 n.asset_ref = Some(key);
-                                n.fit = ImageFit::Contain;
-                                true
+                                n.fit = if desc(item, A, "srcRect").is_some() {
+                                    ImageFit::Cover
+                                } else {
+                                    ImageFit::Contain
+                                };
+                                image_projection_matches(item, data, n.frame.unwrap(), n.fit)
                             } else {
                                 false
                             }

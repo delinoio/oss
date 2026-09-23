@@ -331,6 +331,25 @@ fn node(
             "Frame requires finite position and positive size without width/height",
         );
     }
+    if n.kind == NodeKind::Canvas && (n.padding != 0.0 || n.gap != 0.0) {
+        return error(
+            ErrorCode::InvalidField,
+            path,
+            "Canvas uses explicit child coordinates; spacing belongs to rows and columns",
+        );
+    }
+    if n.kind == NodeKind::Connector
+        && (parent != Some(NodeKind::Canvas)
+            || n.frame.is_some()
+            || n.width.is_some()
+            || n.height.is_some())
+    {
+        return error(
+            ErrorCode::InvalidGeometry,
+            path,
+            "Connectors are canvas children with endpoint-derived geometry",
+        );
+    }
     if parent == Some(NodeKind::Canvas) && n.frame.is_none() && n.kind != NodeKind::Connector {
         return error(
             ErrorCode::InvalidGeometry,

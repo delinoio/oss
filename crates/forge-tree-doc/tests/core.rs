@@ -229,3 +229,10 @@ fn operation_move_cycle_and_unset_style() {
         ErrorCode::LayoutCycle
     );
 }
+
+#[test]
+fn committed_schema_matches_rust_contracts() {
+    let committed: serde_json::Value =
+        serde_json::from_slice(include_bytes!("../schema.json")).unwrap();
+    assert_eq!(schema(), committed);
+}
