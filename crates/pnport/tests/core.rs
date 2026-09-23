@@ -288,7 +288,7 @@ fn pnp_unaware_native_process_reads_virtual_dependencies() {
         .current_dir(root.path())
         .arg("--cache-dir")
         .arg(cache.path().join("cache"))
-        .args(["--log-level", "debug", "run", "--"])
+        .args(["run", "--"])
         .arg(&executable)
         .args(["", "literal;$() argument"])
         .output()
@@ -486,7 +486,7 @@ fn pnp_unaware_static_go_process_reads_virtual_dependencies() {
         .current_dir(root.path())
         .arg("--cache-dir")
         .arg(cache.path().join("cache"))
-        .args(["run", "--"])
+        .args(["--log-level", "debug", "run", "--"])
         .arg(&executable)
         .output()
         .unwrap();
@@ -622,6 +622,67 @@ int main(void) {
         String::from_utf8_lossy(&result.stderr)
     );
     assert_eq!(result.stdout, b"virtual-exec-ok\n");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_openat2_preserves_dirfd_resolution_constraints() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("openat2.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/openat2.h>
+#include <stdio.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(void) {
+    int dir = open("node_modules/dep", O_PATH | O_DIRECTORY);
+    if (dir < 0) return 40;
+    struct open_how how = {.flags = O_RDONLY, .resolve = RESOLVE_BENEATH};
+    int fd = syscall(SYS_openat2, dir, "file.txt", &how, sizeof(how));
+    if (fd < 0) return 41;
+    char bytes[14] = {0};
+    if (read(fd, bytes, 13) != 13) return 42;
+    close(fd);
+    errno = 0;
+    if (syscall(SYS_openat2, dir, "../file.txt", &how, sizeof(how)) != -1 || errno != EXDEV) return 43;
+    how.resolve = RESOLVE_IN_ROOT;
+    fd = syscall(SYS_openat2, dir, "/file.txt", &how, sizeof(how));
+    if (fd < 0) return 44;
+    close(fd);
+    puts("openat2-ok");
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("openat2");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["--log-level", "debug", "run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(result.stdout, b"openat2-ok\n");
+    assert!(!root.path().join("node_modules").exists());
 }
 
 #[cfg(target_os = "linux")]

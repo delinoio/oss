@@ -12,7 +12,7 @@ use std::{
     io::{Read, Seek, SeekFrom},
     mem,
     os::unix::{ffi::OsStrExt, process::CommandExt},
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::Command,
     time::{Duration, Instant},
 };
@@ -34,6 +34,10 @@ const SECCOMP_RET_TRACE: u32 = 0x7ff0_0000;
 const SECCOMP_RET_ALLOW: u32 = 0x7fff_0000;
 const SECCOMP_SET_MODE_FILTER: libc::c_uint = 1;
 const PATH_LIMIT: usize = 4096;
+// The fixed prefix and resolution bits from Linux's openat2 UAPI.
+const OPEN_HOW_SIZE: usize = 24;
+const RESOLVE_BENEATH: u64 = 0x08;
+const RESOLVE_IN_ROOT: u64 = 0x10;
 const TRACE_OPTIONS: usize = (libc::PTRACE_O_TRACESYSGOOD
     | libc::PTRACE_O_TRACEFORK
     | libc::PTRACE_O_TRACEVFORK
@@ -66,6 +70,19 @@ fn injection_failed() -> Error {
         Code::PnportInjectionFailed,
         "Linux syscall interception failed; the owned process tree was stopped.",
     )
+}
+
+fn escapes_beneath(path: &Path) -> bool {
+    let mut depth = 0usize;
+    for component in path.components() {
+        match component {
+            Component::Normal(_) => depth += 1,
+            Component::ParentDir if depth == 0 => return true,
+            Component::ParentDir => depth -= 1,
+            _ => {}
+        }
+    }
+    false
 }
 
 pub fn is_static(path: &Path) -> Result<bool> {
@@ -812,8 +829,32 @@ impl Trace<'_> {
             }
             _ => return Ok(false),
         };
+        let openat2_resolve = if call == libc::SYS_openat2 {
+            if argument(&regs, 3) < OPEN_HOW_SIZE as u64 {
+                // The kernel rejects an undersized open_how without opening a
+                // path; leave its EINVAL result intact.
+                return Ok(false);
+            }
+            let how = read_remote(pid, argument(&regs, 2), OPEN_HOW_SIZE)?;
+            u64::from_ne_bytes(
+                how.get(16..OPEN_HOW_SIZE)
+                    .ok_or_else(injection_failed)?
+                    .try_into()
+                    .map_err(|_| injection_failed())?,
+            )
+        } else {
+            0
+        };
         let original = read_path(pid, argument(&regs, path_arg))?;
         let is_open = call == libc::SYS_openat || call == libc::SYS_openat2 || call == SYS_OPEN;
+        let in_root = openat2_resolve & RESOLVE_IN_ROOT != 0;
+        if openat2_resolve & RESOLVE_BENEATH != 0
+            && (original.is_absolute() || escapes_beneath(&original))
+        {
+            // Keep the kernel's EXDEV result for paths that escape dirfd;
+            // normalizing these first would erase the attempted traversal.
+            return Ok(false);
+        }
         if original.as_os_str().is_empty()
             && (call == libc::SYS_newfstatat
                 || call == libc::SYS_statx
@@ -823,7 +864,7 @@ impl Trace<'_> {
             // Empty-path descriptor operations can target regular files.
             return Ok(false);
         }
-        if !original.is_absolute() && dirfd != libc::AT_FDCWD {
+        if (!original.is_absolute() || in_root) && dirfd != libc::AT_FDCWD {
             let descriptor = format!("/proc/{pid}/fd/{dirfd}");
             match fs::metadata(descriptor) {
                 Ok(metadata) if !metadata.is_dir() => {
@@ -837,7 +878,10 @@ impl Trace<'_> {
                 _ => {}
             }
         }
-        if let Some(descriptor) = self.proc_descriptor(pid, &original) {
+        if let Some(descriptor) = (!in_root)
+            .then(|| self.proc_descriptor(pid, &original))
+            .flatten()
+        {
             if call == libc::SYS_readlinkat || call == SYS_READLINK {
                 let (output, capacity) = if call == libc::SYS_readlinkat {
                     (argument(&regs, 2), argument(&regs, 3) as usize)
@@ -871,7 +915,13 @@ impl Trace<'_> {
             }
             return Ok(false);
         }
-        let translation = match self.translate(pid, dirfd, argument(&regs, path_arg)) {
+        let translation = match if in_root && original.is_absolute() {
+            let base = self.base(pid, dirfd, Path::new("."))?;
+            self.view
+                .translate(&base.join(original.strip_prefix("/").map_err(|_| injection_failed())?))
+        } else {
+            self.translate(pid, dirfd, argument(&regs, path_arg))
+        } {
             Ok(value) => value,
             Err(error) if error.code == Code::PnportResolutionFailed => {
                 self.force_error(pid, &mut regs, path_arg, libc::ENOENT)?;
@@ -932,7 +982,31 @@ impl Trace<'_> {
         } else {
             None
         };
-        let changed = original != translation.physical;
+        let changed = if openat2_resolve != 0 {
+            // openat2's resolve flags apply to the path relative to its real
+            // dirfd. Keep that spelling when it already names the translated
+            // file; a virtual target outside this root cannot be mediated
+            // while preserving the kernel's confinement contract.
+            let base = if dirfd == libc::AT_FDCWD {
+                fs::read_link(format!("/proc/{pid}/cwd"))
+            } else {
+                fs::read_link(format!("/proc/{pid}/fd/{dirfd}"))
+            }
+            .map_err(|_| injection_failed())?;
+            let relative = if in_root && original.is_absolute() {
+                original.strip_prefix("/").map_err(|_| injection_failed())?
+            } else {
+                original.as_path()
+            };
+            if pnport::graph::normalize(&base.join(relative)) != translation.physical {
+                return Err(unsupported(
+                    "Constrained openat2 resolution cannot preserve this virtual path.",
+                ));
+            }
+            false
+        } else {
+            original != translation.physical
+        };
         if changed {
             rewrite_path(pid, &mut regs, path_arg, &translation.physical)?;
         }
