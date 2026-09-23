@@ -11,7 +11,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 
 fn command(state_home: &std::path::Path, args: &[&str]) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_clibox"));
-    command.args(args).env("LOCALAPPDATA", state_home);
+    command.args(args).env("CLIBOX_TEST_STATE_ROOT", state_home);
     command
 }
 

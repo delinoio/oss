@@ -7,6 +7,9 @@ publish = false
 description = "Internal system commands for clibox"
 repository = "https://github.com/delinoio/oss"
 
+[features]
+test-support = []
+
 [dependencies]
 clap = { version = "4.5.32", features = ["derive"] }
 serde = { version = "1.0.228", features = ["derive"] }

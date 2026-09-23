@@ -2560,6 +2560,10 @@ impl StateKey {
 }
 
 fn state_root() -> Result<PathBuf> {
+    #[cfg(feature = "test-support")]
+    if let Some(path) = test_state_root(env::var_os("CLIBOX_TEST_STATE_ROOT"))? {
+        return Ok(path);
+    }
     #[cfg(target_os = "linux")]
     {
         if let Some(value) = env::var_os("XDG_STATE_HOME") {
@@ -2584,6 +2588,31 @@ fn state_root() -> Result<PathBuf> {
     {
         windows_local_app_data().map(|path| path.join("clibox").join("run"))
     }
+}
+
+#[cfg(feature = "test-support")]
+fn test_state_root(value: Option<OsString>) -> Result<Option<PathBuf>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let path = PathBuf::from(value);
+    if !path.is_absolute() {
+        return runtime_failure("CLIBOX_TEST_STATE_ROOT must be an absolute path.");
+    }
+    Ok(Some(path.join("clibox").join("run")))
+}
+
+#[cfg(all(test, feature = "test-support"))]
+#[test]
+fn test_state_root_requires_an_absolute_path() {
+    let temporary = std::env::temp_dir();
+    assert_eq!(
+        test_state_root(Some(temporary.clone().into()))
+            .expect("absolute test root")
+            .expect("provided test root"),
+        temporary.join("clibox").join("run")
+    );
+    assert!(test_state_root(Some("relative-test-root".into())).is_err());
 }
 
 #[cfg(windows)]
