@@ -16,6 +16,9 @@ impl RawExec {
         strs: *const *const libc::c_char,
         mut map_fn: impl FnMut(&BStr) -> T,
     ) -> Vec<T> {
+        if strs.is_null() {
+            return Vec::new();
+        }
         let mut count = 0usize;
         let mut cur_str = strs;
         // SAFETY: cur_str points into a valid null-terminated array of C
@@ -70,8 +73,9 @@ impl RawExec {
     ///
     /// # Safety
     ///
-    /// `prog` must point to a valid C string. `argv` and `envp` must each
-    /// point to a readable, null-terminated array of valid C string pointers.
+    /// `prog` must point to a valid C string. Non-null `argv` and `envp` must
+    /// each point to a readable, null-terminated array of valid C strings;
+    /// Linux also permits null arrays and treats them as empty.
     pub unsafe fn to_exec(self) -> Exec {
         // SAFETY: self.prog is a non-null pointer to a valid null-terminated C
         // string, as guaranteed by the libc exec calling convention.
@@ -80,12 +84,12 @@ impl RawExec {
             .as_bstr()
             .to_owned();
 
-        // SAFETY: self.argv is a valid null-terminated array of C string
-        // pointers, as guaranteed by the libc exec calling convention.
+        // SAFETY: a non-null argv is a valid null-terminated array of C string
+        // pointers, as required by the libc exec calling convention.
         let args = unsafe { Self::collect_c_str_array(self.argv, BStr::to_owned) };
 
-        // SAFETY: self.envp is a valid null-terminated array of C string
-        // pointers, as guaranteed by the libc exec calling convention.
+        // SAFETY: a non-null envp is a valid null-terminated array of C string
+        // pointers, as required by the libc exec calling convention.
         let envs = unsafe {
             Self::collect_c_str_array(self.envp, |env| {
                 env.iter().position(|b| *b == b'=').map_or_else(

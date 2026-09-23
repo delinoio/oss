@@ -175,7 +175,11 @@ impl Exec {
             if depth == MAX_SHEBANG_DEPTH {
                 return Err(nix::Error::ELOOP);
             }
-            self.args[0] = shebang.interpreter.clone();
+            if self.args.is_empty() {
+                self.args.push(shebang.interpreter.clone());
+            } else {
+                self.args[0] = shebang.interpreter.clone();
+            }
             let old_program = replace(&mut self.program, shebang.interpreter);
             self.args
                 .splice(1..1, shebang.arguments.into_iter().chain(once(old_program)));
@@ -309,6 +313,30 @@ mod tests {
             ]
         );
         assert_eq!(accessed, vec![outer, inner, "/bin/sh".into()]);
+    }
+
+    #[test]
+    fn resolves_shebang_with_empty_argv() {
+        let directory = tempfile::tempdir().expect("create temporary directory");
+        let script = directory.path().join("script");
+        fs::write(&script, "#!/bin/sh\n").expect("write script");
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).expect("chmod script");
+        let mut command = Exec {
+            program: script.as_os_str().as_bytes().into(),
+            args: vec![],
+            envs: vec![],
+        };
+        command
+            .resolve(|_, _| {}, ExecResolveConfig::search_path_disabled())
+            .expect("resolve script");
+        assert_eq!(command.program, "/bin/sh");
+        assert_eq!(
+            command.args,
+            vec![
+                BString::from("/bin/sh"),
+                script.as_os_str().as_bytes().into()
+            ]
+        );
     }
 
     #[test]

@@ -166,6 +166,53 @@ int main(int argc, char **argv) {
 
     #[cfg(target_os = "linux")]
     #[tokio::test]
+    async fn null_and_empty_exec_vectors_run_shebang() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let source = directory.path().join("exec-vectors.c");
+        let executable = directory.path().join("exec-vectors");
+        let script = directory.path().join("script");
+        fs::write(
+            &source,
+            r"#include <unistd.h>
+int main(int argc, char **argv) {
+  if (argc != 2 && argc != 3) return 2;
+  char *empty[] = {NULL};
+  execve(argv[1], argc == 2 ? NULL : empty, NULL);
+  return 3;
+}
+",
+        )
+        .expect("write fixture");
+        fs::write(&script, "#!/bin/sh\nexit 23\n").expect("write script");
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755))
+            .expect("make script executable");
+        assert!(
+            std::process::Command::new("cc")
+                .arg(&source)
+                .arg("-o")
+                .arg(&executable)
+                .status()
+                .expect("compile fixture")
+                .success()
+        );
+        for empty_array in [false, true] {
+            let mut command = super::Command::new(&executable);
+            command.arg(&script);
+            if empty_array {
+                command.arg("empty-array");
+            }
+            let child = command
+                .spawn(CancellationToken::new())
+                .await
+                .expect("spawn fixture");
+            let termination = child.wait_handle.await.expect("wait for fixture");
+            assert_eq!(termination.status.code(), Some(23));
+            assert!(termination.path_accesses.is_ok());
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
     async fn late_seccomp_filter_continues_after_root_trace_seals() {
         let directory = tempfile::tempdir().expect("create fixture directory");
         let static_source = directory.path().join("late-static.c");
