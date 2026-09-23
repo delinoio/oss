@@ -168,6 +168,7 @@ fn traced_syscalls() -> Vec<i64> {
         libc::SYS_fcntl,
         libc::SYS_recvmsg,
         libc::SYS_recvmmsg,
+        libc::SYS_pidfd_getfd,
         libc::SYS_unlinkat,
         libc::SYS_mkdirat,
         libc::SYS_renameat,
@@ -1600,6 +1601,15 @@ impl Trace<'_> {
             set_registers(pid, &regs)?;
             return Err(unsupported(
                 "This Linux filesystem interface cannot be mediated.",
+            ));
+        }
+        if call == libc::SYS_pidfd_getfd {
+            // This installs a descriptor without passing through open or dup.
+            // Reject it before the kernel can create an untracked cache handle.
+            deny_syscall(&mut regs);
+            set_registers(pid, &regs)?;
+            return Err(unsupported(
+                "Linux pidfd descriptor duplication cannot be mediated.",
             ));
         }
         if call == libc::SYS_recvmsg || call == libc::SYS_recvmmsg {

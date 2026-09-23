@@ -776,6 +776,58 @@ int main(int argc, char **argv) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_rejects_pidfd_descriptor_duplication_before_installation() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("pidfd-getfd.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(void) {
+    int dependency = open("node_modules/dep/file.txt", O_RDONLY);
+    if (dependency < 0) return 40;
+    int owner = syscall(SYS_pidfd_open, getpid(), 0);
+    if (owner < 0) return 41;
+    int copy = syscall(SYS_pidfd_getfd, owner, dependency, 0);
+    return copy < 0 ? 42 : 43;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("pidfd-getfd");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    if result.status.code() == Some(42)
+        && fs::read_to_string("/proc/self/status")
+            .unwrap()
+            .lines()
+            .any(|line| line.trim() == "Seccomp:\t2")
+    {
+        // Docker's existing ERRNO filter takes precedence over our TRACE
+        // action. The unconfined focused run exercises pnport's own denial.
+        return;
+    }
+    assert_eq!(result.status.code(), Some(125));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_rejects_ancillary_descriptor_receives_before_fd_mutation() {
     use std::process::Command;
     let root = fixture();
