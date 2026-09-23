@@ -23,7 +23,7 @@ Only `DEVHUD_LOCAL_MODE`, the optional non-secret `CARGO_HOME` and `RUSTUP_HOME`
 4. **User-owned credentials** belong to a developer or product user and remain in their owning local mechanism. This includes binpm registry tokens, DevHud GitHub PATs, DevHud BYO R2 credentials, and contributor-owned Logto users/applications. They must not enter the team development secret manager, synchronized DevHud settings, the API service environment unless explicitly part of the API's official development upload group, or repository files.
 5. **Production, deployment, release, and signing secrets** remain in their protected operator/workflow boundaries. Store credentials, platform signing identities, updater signing keys, registry/deployment credentials, production database/Logto/R2/Cloudflare credentials, and release tokens must never be migrated into the team development secret manager.
 
-The `apps/mpapp/.env.example` `EXPO_PUBLIC_*` values are public application configuration and remain package-local; they are not team development secrets. Generic dotenv support and contractually required `.env` Turbo inputs remain supported. Real `.env` files remain ignored.
+Generic dotenv support and contractually required `.env` Turbo inputs remain supported. Real `.env` files remain ignored.
 
 ## Stable commands
 

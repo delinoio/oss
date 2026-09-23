@@ -382,70 +382,6 @@ jobs:
             node scripts/release/linux-packages/smoke.mjs --fixture "$RUNNER_TEMP/package-fixture" --image "$image" --architecture "$TEST_ARCH"
           done
 
-  node-mpapp-test:
-    needs: changes
-    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['node-mpapp-test'] }}
-    name: Node mpapp test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node.js
-        id: ci-node
-        uses: ./.github/actions/setup-ci-node
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Run mpapp tests
-        env:
-          FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['node-mpapp-test'] }}
-          TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
-          TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
-        run: node scripts/ci/run-affected.mjs mpapp test
-
-      - name: Save pnpm cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
-        with:
-          path: ${{ steps.ci-node.outputs.cache-path }}
-          key: ${{ steps.ci-node.outputs.cache-key }}
-
-  node-mpapp-lint:
-    needs: changes
-    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['node-mpapp-lint'] }}
-    name: Node mpapp lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node.js
-        id: ci-node
-        uses: ./.github/actions/setup-ci-node
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Run mpapp lint
-        env:
-          FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['node-mpapp-lint'] }}
-          TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
-          TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
-        run: node scripts/ci/run-affected.mjs mpapp lint
-
-      - name: Save pnpm cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
-        with:
-          path: ${{ steps.ci-node.outputs.cache-path }}
-          key: ${{ steps.ci-node.outputs.cache-key }}
-
   node-public-docs-test:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['node-public-docs-test'] }}
@@ -1733,8 +1669,6 @@ jobs:
       - rust-fmt
       - rust-clippy
       - rust-test
-      - node-mpapp-test
-      - node-mpapp-lint
       - node-public-docs-test
       - node-clibox-test
       - node-pnport-test
