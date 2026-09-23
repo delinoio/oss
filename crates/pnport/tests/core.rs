@@ -1142,6 +1142,66 @@ int main(void) {
     assert!(!root.path().join("node_modules").exists());
 }
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn linux_x64_futimesat_rejects_virtual_dependency_mutation() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("futimesat.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/time.h>
+#include <unistd.h>
+int main(void) {
+    int dir = open("node_modules/dep", O_RDONLY | O_DIRECTORY);
+    if (dir < 0) return errno == ENOENT ? 40 : 41;
+    errno = 0;
+    if (futimesat(dir, "file.txt", NULL) != -1 || errno != EROFS) return 42;
+    int output = open("output.txt", O_CREAT | O_WRONLY, 0600);
+    if (output < 0) return 43;
+    close(output);
+    if (futimesat(AT_FDCWD, "output.txt", NULL)) return 44;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("futimesat");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(
+        Command::new(&executable)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(40)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(root.path().join("output.txt").exists());
+    assert!(!root.path().join("node_modules").exists());
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn pnp_unaware_static_go_process_reads_virtual_dependencies() {

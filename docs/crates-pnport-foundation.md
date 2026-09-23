@@ -22,6 +22,8 @@ Dependency content and virtual directories are read-only. Project source/output 
 
 Linux static syscall mediation translates pathname extended-attribute and filesystem-stat reads for virtual dependency entries; missing attributes keep native `ENODATA` results instead of reporting a missing virtual path.
 
+On x64 GNU Linux, the legacy descriptor-relative `futimesat` timestamp mutation follows the same virtual translation and read-only rejection as `utimensat`; native output paths retain kernel behavior.
+
 Valid Linux `AT_EMPTY_PATH` operations target their file descriptor directly. Native file descriptors retain kernel behavior; tracked read-only dependency descriptors reject access-for-write, metadata mutations, and hard-link creation with `EROFS`.
 
 Linux `recvmsg` and `recvmmsg` calls with an ancillary receive buffer fail before the kernel can install `SCM_RIGHTS` descriptors outside the thread group's tracked FD map. They report `PNPORT_UNSUPPORTED_OPERATION` and exit 125. Receives without an ancillary buffer retain native behavior.

@@ -67,6 +67,10 @@ const SYS_READLINK: i64 = -1;
 const SYS_DUP2: i64 = libc::SYS_dup2;
 #[cfg(target_arch = "aarch64")]
 const SYS_DUP2: i64 = -1;
+#[cfg(target_arch = "x86_64")]
+const SYS_FUTIMESAT: i64 = libc::SYS_futimesat;
+#[cfg(target_arch = "aarch64")]
+const SYS_FUTIMESAT: i64 = -1;
 
 fn unsupported(message: &'static str) -> Error {
     Error::new(Code::PnportUnsupportedOperation, message)
@@ -218,6 +222,7 @@ fn traced_syscalls() -> Vec<i64> {
         libc::SYS_utimes,
         libc::SYS_mknod,
         libc::SYS_dup2,
+        libc::SYS_futimesat,
     ]);
     calls
 }
@@ -1053,6 +1058,7 @@ impl Trace<'_> {
                 || n == SYS_FCHMODAT2
                 || n == libc::SYS_fchownat
                 || n == libc::SYS_utimensat
+                || n == SYS_FUTIMESAT
                 || n == libc::SYS_mknodat
                 || n == libc::SYS_linkat =>
             {
@@ -1062,6 +1068,7 @@ impl Trace<'_> {
                     || n == SYS_FCHMODAT2
                     || n == libc::SYS_fchownat
                     || n == libc::SYS_utimensat
+                    || n == SYS_FUTIMESAT
                     || n == libc::SYS_mknodat
                     || n == libc::SYS_linkat
                     || ((n == libc::SYS_faccessat || n == libc::SYS_faccessat2)
@@ -1666,7 +1673,7 @@ impl Trace<'_> {
             // flags retain the kernel's EINVAL result.
             return resume(pid, false, 0);
         }
-        if call == libc::SYS_utimensat && argument(&regs, 1) == 0 {
+        if (call == libc::SYS_utimensat || call == SYS_FUTIMESAT) && argument(&regs, 1) == 0 {
             let fd = argument(&regs, 0) as i32;
             if self
                 .fds
