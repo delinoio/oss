@@ -18,7 +18,7 @@ pnpm --filter public-docs preview
 `pnpm --filter public-docs dev` runs Rspress on fixed port `46302`. It checks the exact port before startup and exits on conflicts instead of automatically selecting another port.
 Production output is written to `doc_build` for Cloudflare Pages. This is one
 Rspress site: project Markdown is owned directly by
-`docs/runmoor`, `docs/nodeup`, `docs/binpm`, `docs/async-commit-hook`, and `docs/clibox`, so
+`docs/runmoor`, `docs/nodeup`, `docs/binpm`, `docs/async-commit-hook`, `docs/clibox`, and `docs/pnport`, so
 the build emits every root and project-subpath route in one pass. Installer
 entrypoints are copied from the canonical files in `scripts/install` before the
 build. Rspress clean URLs are enabled, so stable public routes do not use
@@ -45,16 +45,17 @@ and forbidden paths in HTML resources and CSS `url()` values.
 - `docs/projects-overview.md`: High-level public project catalog.
 - `docs/documentation-lifecycle.md`: Rules for updating internal and public docs together.
 - `docs/clibox/`: Twelve clibox user guides, including the complete command index.
+- `docs/pnport/`: Ten pnport guides, published before 0.1.0 with explicit unreleased status.
 - `docs/cargo-mono.md`: Public project guide for `cargo-mono`.
 - `docs/derun.md`: Public project guide for `derun`.
 - `docs/with-watch.md`: Public project guide for `with-watch`.
 - `docs/devhud/`: Stable DevHud installation, usage, privacy, security, support, administration, and release guidance routes.
 
 Cargo Mono, Derun, and With Watch remain in-site product documentation. Nodeup,
-binpm, Runmoor, async-commit-hook, and clibox are now first-class subdirectories of
+binpm, Runmoor, async-commit-hook, clibox, and pnport are first-class subdirectories of
 this app and publish at `https://oss.delino.io/nodeup/`,
 `https://oss.delino.io/binpm/`, `https://oss.delino.io/runmoor/`, and
 `https://oss.delino.io/async-commit-hook/`, and
-`https://oss.delino.io/clibox/`. The old standalone domains are not
+`https://oss.delino.io/clibox/`, and `https://oss.delino.io/pnport/`. Former standalone domains for migrated projects are not
 redirected by this repository; their Pages projects and DNS records are an
 operator decommissioning task after the consolidated publication is verified.

@@ -60,6 +60,8 @@
 - `docs/project-cargo-mono.md`: Cargo subcommand project index.
 - `docs/project-clibox.md`: clibox Rust CLI, npm distribution, and public documentation project index.
 - `docs/apps-clibox-docs-foundation.md`: clibox public guides and route/validation contract.
+- `docs/project-pnport.md`: pnport project index and unreleased 0.1.0 boundary.
+- `docs/apps-pnport-docs-foundation.md`: pnport public guide routes and availability contract.
 - `docs/project-nodeup.md`: Node.js version manager project index.
 - `docs/project-with-watch.md`: Command rerun watcher CLI project index.
 - `docs/project-derun.md`: Derun CLI project index.
@@ -358,10 +360,10 @@ Coverage expectations:
 - `go-test`: generates and validates the ignored administrator and ach UI bundles, then runs `go test ./...` on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
 - `rust-fmt`: runs `cargo fmt --all --check`.
 - `rust-clippy`: runs `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
-- `rust-test`: runs `cargo test --workspace --all-targets`.
+- `rust-test`: builds pnport and its injection companion with `cargo build --locked -p pnport -p pnport-preload`, then runs `cargo test --workspace --all-targets`.
 - `node-mpapp-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter mpapp test`.
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter mpapp lint`.
-- `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`, covering the root and all five project content sections.
+- `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`, covering the root and all six project content sections.
 - `node-clibox-test`: runs `cargo test --locked -p clibox -p clibox-config -p clibox-system -p clibox-transform -p clibox-wait` for native utility/configuration/process/adapter behavior, native CLI consumer installation and launcher/distribution tests on Linux, macOS, and Windows, selected by shared CI planning and required by `CI Result`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`.
 - `ci-contracts`: validates workflow syntax and the repository CI contract with the checked-in Go `actionlint` tool and Node fixtures.
@@ -384,7 +386,7 @@ Change-scoped execution rules:
 - PRs run affected validation, including OCI checks, but never allocate the two Linux CLI package, ten desktop, three iOS, or four Android package entries. Relevant main pushes run the complete existing native matrices. Manual dispatch runs every check and platform. There is no nightly CI schedule.
 - PR comparisons use the base/head merge-base; main comparisons use the exact `before..sha` trees, including all commits in the push. Missing or invalid comparisons fail. Deleted and renamed files select both affected owners.
 - Node workspace jobs use `scripts/ci/run-affected.mjs` to invoke the installed Turbo Node entry point directly with `turbo run <task> --affected --filter <workspace>` arguments, without a shell or package-manager shim, and with the planner's exact `TURBO_SCM_BASE` and `TURBO_SCM_HEAD`. External inputs and forced runs omit `--affected`; an otherwise empty affected set is a successful no-op.
-- Because `public-docs` builds five project content roots directly, changes under `apps/public-docs/docs/{async-commit-hook,binpm,nodeup,runmoor,clibox}` select and force `node-public-docs-test`.
+- Because `public-docs` builds six project content roots directly, changes under `apps/public-docs/docs/{async-commit-hook,binpm,nodeup,runmoor,clibox,pnport}` select and force `node-public-docs-test`.
 - Central path rules cover Go, Rust, every Node workspace, repository environment tooling, DevHud domains, packaging, public docs, and package/release/review workflows. Runmoor-only release scripts do not select DevHud native packaging; shared DevHud packaging inputs still do.
 - The PR frontend job runs the complete DevHud test command, including native-script fixtures, clean desktop/mobile frontend output validation, static mobile/widget contracts, and immutable CEF pins. Its aggregate `test` task is non-cacheable because it validates consecutive clean builds and external contract inputs.
 - Protocol generation and package-local frontend outputs are deterministic and cacheable; the ignored administrator and ach UI embeds, native package, mobile, smoke, signing, release, and deployment tasks remain non-cacheable.

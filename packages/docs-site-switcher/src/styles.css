@@ -124,6 +124,10 @@
     left: 12px;
     right: 12px;
     max-width: none;
+    max-height: calc(100vh - var(--rp-nav-height) - var(--rp-banner-height, 0px) - 20px);
+    max-height: calc(100dvh - var(--rp-nav-height) - var(--rp-banner-height, 0px) - 20px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 }
 

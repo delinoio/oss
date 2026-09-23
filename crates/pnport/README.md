@@ -27,7 +27,9 @@ pnport cache clean
 ```
 
 Global options are `--project`, `--cache-dir`, `--log-level` and `--color`.
-`--color=never` and `NO_COLOR` disable color. Diagnostics use stderr; child
+`--color=never` disables color; `NO_COLOR` disables it in the default `auto`
+mode, while explicit `--color=always` overrides `NO_COLOR`. `doctor --json`
+remains ANSI-free in every mode. Diagnostics use stderr; child
 streams are inherited. Debug output may include paths, but not file content,
 environment values, full argv or child output. Owned failures use stable
 `PNPORT_*` codes and exit 125, except missing commands (127), execution failures
@@ -40,11 +42,16 @@ tracing fails with `PNPORT_UNSUPPORTED_OPERATION` and exit 125. Ubuntu 22.04
 arm64 Docker execution passes the native fixtures and offline TypeScript suite;
 the arm64 host's amd64 emulation does not expose the tracing capability, so
 native x64 execution still needs validation. Windows has no Detours backend.
-Complete mutation, watch, recovery, job-control, and six-target release gates
+Current restrictions include incomplete macOS fork/exec/posix_spawnp
+propagation, mutation/handle/watch coverage, complete detached-descendant and
+abrupt-supervisor recovery, and terminal job-control certification. The macOS
+backend is also a development implementation. All six target release gates
 remain open.
 
 Before release, all six native targets must pass the complete filesystem,
 process, installation, privacy and recovery suite. Native/npm packages,
-installers, Homebrew, publication recovery, editor guidance and benchmarks must
-be completed and validated. No partial preview is permitted. Use
-[GitHub issues](https://github.com/delinoio/oss/issues) for support.
+installers, Homebrew, publication recovery and benchmark results remain open.
+The [public guides](https://oss.delino.io/pnport/) now describe editor setup
+without claiming editor-specific certification. No partial preview is
+permitted. Use [GitHub issues](https://github.com/delinoio/oss/issues) for
+support.

@@ -5,4 +5,5 @@ export const projectRoutes = {
   nodeup: ["/", "/installation", "/getting-started", "/commands", "/runtime-resolution", "/shims-and-package-managers", "/output", "/completions", "/releases", "/troubleshooting", "/reference"],
   binpm: ["/", "/installation", "/getting-started", "/commands", "/local-tooling", "/cache-and-verification", "/releases", "/troubleshooting", "/reference"],
   "async-commit-hook": ["/", "/install", "/start", "/configuration", "/validation", "/commands", "/agents", "/web", "/privacy", "/recovery", "/compatibility", "/symlinks", "/existing-hooks"],
+  pnport: ["/", "/installation", "/getting-started", "/commands", "/filesystem-and-processes", "/editors", "/cache", "/diagnostics", "/benchmarks", "/releases"],
 };
