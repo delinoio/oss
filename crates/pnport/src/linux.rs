@@ -554,6 +554,15 @@ fn rewind_syscall(regs: &mut Registers) -> Result<()> {
     regs.pc = regs.pc.checked_sub(4).ok_or_else(injection_failed)?;
     Ok(())
 }
+fn prepare_replayed_syscall(regs: &mut Registers) -> Result<()> {
+    let call = number(regs);
+    rewind_syscall(regs)?;
+    // x86-64 stores -ENOSYS in rax at a seccomp stop. After rewinding the
+    // instruction, userspace must put the original number back in rax;
+    // orig_rax alone is not the syscall instruction's input.
+    set_number(regs, call);
+    Ok(())
+}
 #[cfg(target_arch = "aarch64")]
 fn number(regs: &Registers) -> i64 {
     regs.regs[8] as i64
@@ -963,7 +972,7 @@ impl Trace<'_> {
             return Err(unsupported("Linux tracee scratch allocation failed."));
         }
         self.scratch.insert(pid, mapped as u64);
-        rewind_syscall(&mut original)?;
+        prepare_replayed_syscall(&mut original)?;
         set_registers(pid, &original)?;
         tracing::debug!(
             action = "linux_scratch_ready",
@@ -2473,4 +2482,23 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
     })();
     trace.stop_tree()?;
     outcome
+}
+
+#[cfg(all(test, target_arch = "x86_64"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scratch_replay_restores_x64_syscall_number() {
+        let mut regs: Registers = unsafe { mem::zeroed() };
+        regs.orig_rax = libc::SYS_execve as u64;
+        regs.rax = (-libc::ENOSYS as i64) as u64;
+        regs.rip = 0x1002;
+
+        prepare_replayed_syscall(&mut regs).unwrap();
+
+        assert_eq!(regs.rip, 0x1000);
+        assert_eq!(regs.orig_rax, libc::SYS_execve as u64);
+        assert_eq!(regs.rax, libc::SYS_execve as u64);
+    }
 }
