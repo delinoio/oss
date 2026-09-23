@@ -226,15 +226,11 @@ mod tests {
     fn update_modes_track_reads_and_writes() {
         for mode in [c"r+", c"w+", c"a+"] {
             // SAFETY: each mode is a valid static C string.
-            assert_eq!(
-                unsafe { ModeStr(mode.as_ptr()).to_access_mode() },
-                AccessMode::READ | AccessMode::WRITE
-            );
+            let access = unsafe { ModeStr(mode.as_ptr()).to_access_mode() };
+            assert_eq!(access, AccessMode::READ | AccessMode::WRITE);
         }
         // SAFETY: the mode is a valid static C string.
-        assert_eq!(
-            unsafe { ModeStr(c"r".as_ptr()).to_access_mode() },
-            AccessMode::READ
-        );
+        let access = unsafe { ModeStr(c"r".as_ptr()).to_access_mode() };
+        assert_eq!(access, AccessMode::READ);
     }
 }
