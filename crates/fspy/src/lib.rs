@@ -212,4 +212,48 @@ int main(int argc, char **argv) {
                 })
         }));
     }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn execl_accepts_more_than_stack_argument_capacity() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let source = directory.path().join("long-execl.c");
+        let executable = directory.path().join("long-execl");
+        let arguments = std::iter::repeat_n("\"x\"", 32)
+            .collect::<Vec<_>>()
+            .join(", ");
+        fs::write(
+            &source,
+            format!(
+                "#include <unistd.h>\nint main(void) {{ execl(\"/bin/echo\", \"echo\", \
+                 {arguments}, (char *)0); return 42; }}\n"
+            ),
+        )
+        .expect("write fixture");
+        assert!(
+            std::process::Command::new("cc")
+                .arg(&source)
+                .arg("-o")
+                .arg(&executable)
+                .status()
+                .expect("compile fixture")
+                .success()
+        );
+
+        let mut command = super::Command::new(&executable);
+        command.stdout(Stdio::piped());
+        let mut child = command
+            .spawn(CancellationToken::new())
+            .await
+            .expect("spawn tracked fixture");
+        let mut stdout = child.stdout.take().expect("capture exec output");
+        let termination = child.wait_handle.await.expect("wait for fixture");
+        assert!(termination.status.success());
+        let mut output = String::new();
+        stdout
+            .read_to_string(&mut output)
+            .await
+            .expect("read exec output");
+        assert_eq!(output.split_whitespace().count(), 32);
+    }
 }
