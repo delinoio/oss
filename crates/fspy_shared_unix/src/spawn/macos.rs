@@ -16,6 +16,10 @@ use crate::{
 pub struct PreExec(Infallible);
 impl PreExec {
     /// Runs pre-exec operations.
+    ///
+    /// # Errors
+    ///
+    /// This type is uninhabited, so the method can never return an error.
     pub const fn run(&self) -> nix::Result<()> {
         match self.0 {}
     }
@@ -33,6 +37,10 @@ fn admit_injection(program: &Path) -> nix::Result<()> {
 
 /// Configure the pnport supervisor's already-admitted macOS command with the
 /// forked fspy preload. The caller owns exit and input-watch supervision.
+///
+/// # Errors
+///
+/// Returns `ENOTSUP` when the executable is protected from dyld interposition.
 pub fn configure_pnport_command(
     command: &mut Command,
     program: &Path,
