@@ -173,6 +173,10 @@ fn traced_syscalls() -> Vec<i64> {
         libc::SYS_ftruncate,
         libc::SYS_fallocate,
         libc::SYS_truncate,
+        libc::SYS_getxattr,
+        libc::SYS_lgetxattr,
+        libc::SYS_listxattr,
+        libc::SYS_llistxattr,
         libc::SYS_setxattr,
         libc::SYS_lsetxattr,
         libc::SYS_removexattr,
@@ -926,7 +930,15 @@ impl Trace<'_> {
                 (1, argument(&regs, 0) as i32, writing)
             }
             n if n == libc::SYS_symlinkat => (2, argument(&regs, 1) as i32, true),
-            n if n == libc::SYS_execve || n == libc::SYS_chdir => (0, libc::AT_FDCWD, false),
+            n if n == libc::SYS_execve
+                || n == libc::SYS_chdir
+                || n == libc::SYS_getxattr
+                || n == libc::SYS_lgetxattr
+                || n == libc::SYS_listxattr
+                || n == libc::SYS_llistxattr =>
+            {
+                (0, libc::AT_FDCWD, false)
+            }
             n if n == libc::SYS_truncate
                 || n == libc::SYS_setxattr
                 || n == libc::SYS_lsetxattr
