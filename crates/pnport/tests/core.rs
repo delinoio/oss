@@ -1082,10 +1082,11 @@ fn linux_descendant_virtual_script_keeps_its_logical_argument() {
         &source,
         r#"
 #include <unistd.h>
-int main(void) {
+int main(int argc, char **argv) {
     char *args[] = {"node_modules/dep/script", "extra", 0};
-    char *env[] = {"PATH=/bin", 0};
-    execve(args[0], args, env);
+    char *env_with_path[] = {"PATH=/bin", 0};
+    char *env_without_path[] = {0};
+    execve(args[0], args, argc > 1 ? env_without_path : env_with_path);
     return 42;
 }
 "#,
@@ -1124,6 +1125,25 @@ int main(void) {
     let logical = root.path().join("cache.zip/node_modules/dep/script");
     assert_eq!(
         result.stdout,
+        format!("{}|package bytes|extra\n", logical.display()).as_bytes()
+    );
+    let without_path = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--"])
+        .arg(&launcher)
+        .arg("without-path")
+        .output()
+        .unwrap();
+    assert_eq!(
+        without_path.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&without_path.stderr)
+    );
+    assert_eq!(
+        without_path.stdout,
         format!("{}|package bytes|extra\n", logical.display()).as_bytes()
     );
     assert!(!root.path().join("node_modules").exists());

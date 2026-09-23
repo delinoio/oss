@@ -82,6 +82,10 @@ pub fn prepare_with_context(
                 })
                 .ok_or_else(invalid)?;
             interpreter_args.extend(words.iter().skip(1).map(OsString::from));
+            #[cfg(target_os = "linux")]
+            // glibc's execvp uses this default when PATH is absent from the
+            // executing environment; an empty PATH remains explicitly empty.
+            let search_path = search_path.or(Some(OsStr::new("/bin:/usr/bin")));
             find_on_path(name.as_ref(), search_path, cwd).ok_or_else(|| {
                 Error::new(
                     Code::PnportCommandNotFound,
