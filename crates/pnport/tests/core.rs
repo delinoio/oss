@@ -239,6 +239,34 @@ fn archive_traversal_and_unknown_ownership_are_preserved_or_rejected() {
     assert!(cache_root.path().join("cache/foreign/keep").exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn confined_dangling_archive_symlinks_remain_readable() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("links.zip");
+    let mut writer = zip::ZipWriter::new(fs::File::create(&path).unwrap());
+    let options = zip::write::SimpleFileOptions::default();
+    writer
+        .add_symlink("node_modules/dep/missing", "not-installed", options)
+        .unwrap();
+    writer
+        .add_symlink("node_modules/dep/indirect", "missing", options)
+        .unwrap();
+    writer.finish().unwrap();
+    let cache = Cache::open(root.path().join("cache")).unwrap();
+    let lease = cache.materialize(&path).unwrap();
+    for (name, target) in [("missing", "not-installed"), ("indirect", "missing")] {
+        let link = lease.content.join("node_modules/dep").join(name);
+        assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert_eq!(fs::read_link(&link).unwrap(), Path::new(target));
+        assert_eq!(
+            fs::read(&link).unwrap_err().kind(),
+            std::io::ErrorKind::NotFound
+        );
+    }
+    assert!(cache.materialize(&path).is_ok());
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn pnp_unaware_native_process_reads_virtual_dependencies() {

@@ -430,10 +430,7 @@ fn inventory(root: &Path) -> Result<BTreeMap<PathBuf, Item>> {
                 .to_path_buf();
             let meta = fs::symlink_metadata(&path).map_err(|_| cache_error())?;
             let item = if meta.file_type().is_symlink() {
-                let canonical = fs::canonicalize(&path).map_err(|_| archive_error())?;
-                if !canonical.starts_with(fs::canonicalize(root).map_err(|_| archive_error())?) {
-                    return Err(archive_error());
-                }
+                confined_link(root, &path)?;
                 Item::Symlink {
                     target: fs::read_link(&path).map_err(|_| cache_error())?,
                 }
@@ -470,6 +467,53 @@ fn inventory(root: &Path) -> Result<BTreeMap<PathBuf, Item>> {
     let mut items = BTreeMap::new();
     visit(root, root, &mut items)?;
     Ok(items)
+}
+
+fn confined_link(root: &Path, link: &Path) -> Result<()> {
+    let canonical_root = fs::canonicalize(root).map_err(|_| archive_error())?;
+    let relative = link.strip_prefix(root).map_err(|_| archive_error())?;
+    let mut target = canonical_root.join(relative);
+    for _ in 0..40 {
+        let mut current = canonical_root.clone();
+        let mut followed = false;
+        let components: Vec<_> = target
+            .strip_prefix(&canonical_root)
+            .map_err(|_| archive_error())?
+            .components()
+            .map(|component| component.as_os_str().to_os_string())
+            .collect();
+        for component in components {
+            current.push(component);
+            match fs::symlink_metadata(&current) {
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    let remainder = target
+                        .strip_prefix(&current)
+                        .map_err(|_| archive_error())?
+                        .to_path_buf();
+                    let destination = fs::read_link(&current).map_err(|_| archive_error())?;
+                    target = crate::graph::normalize(
+                        &current
+                            .parent()
+                            .ok_or_else(archive_error)?
+                            .join(destination)
+                            .join(remainder),
+                    );
+                    if !target.starts_with(&canonical_root) {
+                        return Err(archive_error());
+                    }
+                    followed = true;
+                    break;
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+                Err(_) => return Err(archive_error()),
+            }
+        }
+        if !followed {
+            return Ok(());
+        }
+    }
+    Err(archive_error())
 }
 fn safe_relative(name: &str) -> Result<PathBuf> {
     if name.is_empty()
@@ -617,6 +661,19 @@ pub fn path_identity(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_link_with_escaping_existing_prefix_is_rejected() {
+        let directory = tempfile::tempdir().unwrap();
+        let content = directory.path().join("content");
+        let outside = directory.path().join("outside");
+        fs::create_dir(&content).unwrap();
+        fs::create_dir(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, content.join("redirect")).unwrap();
+        std::os::unix::fs::symlink("redirect/missing", content.join("link")).unwrap();
+        assert!(confined_link(&content, &content.join("link")).is_err());
+    }
 
     fn archive_bytes(contents: &[u8]) -> Vec<u8> {
         let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
