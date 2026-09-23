@@ -23,6 +23,10 @@ const absent = async () => ({ status: 404 });
 
 for (const project of Object.values(Project)) for (const bump of Object.values(Bump)) {
   test(`${project} ${bump} changes only the selected version sources`, () => {
+    if (project === Project.Pnport && bump !== Bump.Minor) {
+      assert.throws(() => versionChanges(project, bump, read), /first public release requires a minor bump/u);
+      return;
+    }
     const plan = versionChanges(project, bump, read);
     assert.equal(plan.previous_version, readVersion(project, read));
     assert.equal(plan.version, bumpVersion(plan.previous_version, bump));
@@ -81,6 +85,9 @@ test("pnport first minor bump produces 0.1.0 with CLI, preload, npm, and lockste
   assert.equal(JSON.parse(plan.changes["packages/pnport/package.json"]).version, "0.1.0");
   assert.equal((plan.changes["Cargo.lock"].match(/name = "pnport(?:-preload)?"\nversion = "0\.1\.0"/gu) ?? []).length, 2);
   assert.equal(requiresCargoPublish(Project.Pnport), false);
+  for (const bump of [Bump.Patch, Bump.Major]) {
+    assert.throws(() => versionChanges(Project.Pnport, bump, read), /first public release requires a minor bump/u);
+  }
   for (const driftFile of ["packages/pnport/package.json", "crates/pnport-preload/Cargo.toml"]) {
     const drift = (file) => file === driftFile ? read(file).replace("0.0.0", "9.9.9") : read(file);
     assert.throws(() => versionChanges(Project.Pnport, Bump.Minor, drift), /versions disagree/u);
@@ -187,7 +194,7 @@ for (const project of Object.values(Project)) test(`${project} commit journals a
   assert.equal(second.revision, first.revision);
   assert.equal(second.version, first.version);
   if (project === Project.Pnport) await assert.rejects(prepareRelease({ ...options, expectedTree: "f".repeat(40) }), /resumed commit differs/u);
-  assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, Bump.Patch, "123"), /journal/u);
+  assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, Bump.Patch, "123"), project === Project.Pnport ? /first public release requires a minor bump/u : /journal/u);
   assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, Bump.Minor, "456"), /journal/u);
 });
 

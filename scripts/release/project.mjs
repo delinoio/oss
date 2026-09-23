@@ -131,6 +131,9 @@ export function readVersion(project, read = (file) => readFileSync(path.join(roo
 export function versionChanges(project, bump, read) {
   const { file, kind } = descriptor(project);
   const previous_version = readVersion(project, read);
+  if (project === Project.Pnport && previous_version === "0.0.0") {
+    requireValue(bump === Bump.Minor, "pnport first public release requires a minor bump to 0.1.0");
+  }
   const version = bumpVersion(previous_version, bump);
   const changes = { [file]: replaceVersion(read(file), project, kind, version).text };
   if (kind === Kind.Rust) {
