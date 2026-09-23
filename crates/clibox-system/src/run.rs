@@ -2796,6 +2796,7 @@ fn read_bucket(path: &Path, limit: u64, period: Duration, burst: u64, now: i64) 
         || bucket.limit == 0
         || bucket.period_ms == 0
         || bucket.burst == 0
+        || bucket.refill_utc_ms < 0
         || !bucket.tokens.is_finite()
         || !(0.0..=bucket.burst as f64).contains(&bucket.tokens)
     {
@@ -3592,7 +3593,7 @@ mod rate_limit_tests {
     use super::*;
 
     #[test]
-    fn overflowing_refill_baseline_fails_closed() {
+    fn negative_refill_baseline_fails_closed() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("bucket.json");
         let bucket = Bucket {
@@ -3601,7 +3602,7 @@ mod rate_limit_tests {
             period_ms: 1_000,
             burst: 1,
             tokens: 0.0,
-            refill_utc_ms: i64::MIN,
+            refill_utc_ms: -1,
         };
         let mut file = OpenOptions::new()
             .create_new(true)
