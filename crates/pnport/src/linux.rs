@@ -645,6 +645,7 @@ enum Pending {
 struct Trace<'a> {
     view: &'a mut View,
     tasks: HashSet<i32>,
+    groups: HashMap<i32, i32>,
     pending: HashMap<i32, Pending>,
     fds: HashMap<i32, HashMap<i32, Translation>>,
     cwd: HashMap<i32, PathBuf>,
@@ -652,6 +653,7 @@ struct Trace<'a> {
     active_markers: HashSet<PathBuf>,
     root: i32,
     root_result: Option<i32>,
+    root_exit_code: Option<i32>,
     root_exec: bool,
 }
 
@@ -1481,12 +1483,26 @@ impl Trace<'_> {
             tracing::trace!(action = "linux_exit", pid, status, "Owned child exited");
             self.tasks.remove(&pid);
             self.pending.remove(&pid);
+            let group = self.groups.remove(&pid).unwrap_or(pid);
             if pid == self.root {
-                self.root_result = Some(if libc::WIFEXITED(status) {
+                self.root_exit_code = Some(if libc::WIFEXITED(status) {
                     libc::WEXITSTATUS(status)
                 } else {
                     128 + libc::WTERMSIG(status)
                 });
+            }
+            if !self.groups.values().any(|tracked| *tracked == group) {
+                self.fds.remove(&group);
+                self.cwd.remove(&group);
+                if group == self.root {
+                    self.root_result = Some(self.root_exit_code.unwrap_or_else(|| {
+                        if libc::WIFEXITED(status) {
+                            libc::WEXITSTATUS(status)
+                        } else {
+                            128 + libc::WTERMSIG(status)
+                        }
+                    }));
+                }
             }
             return Ok(true);
         }
@@ -1528,6 +1544,7 @@ impl Trace<'_> {
                 self.tasks.insert(child);
                 let parent_group = Self::group(pid);
                 let child_group = Self::group(child);
+                self.groups.insert(child, child_group);
                 if child_group != parent_group {
                     if let Some(fds) = self.fds.get(&parent_group).cloned() {
                         self.fds.insert(child_group, fds);
@@ -1554,10 +1571,13 @@ impl Trace<'_> {
                     );
                     self.tasks.remove(&former);
                     self.pending.remove(&former);
+                    self.groups.remove(&former);
                 }
+                self.groups.insert(pid, Self::group(pid));
                 self.pending.remove(&pid);
                 if pid == self.root {
                     self.root_exec = true;
+                    self.root_exit_code = None;
                 }
                 let group = Self::group(pid);
                 if let Some(fds) = self.fds.get_mut(&group) {
@@ -1620,6 +1640,7 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
     let mut trace = Trace {
         view,
         tasks: HashSet::from([pid]),
+        groups: HashMap::from([(pid, pid)]),
         pending: HashMap::new(),
         fds: HashMap::new(),
         cwd: HashMap::new(),
@@ -1627,6 +1648,7 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
         active_markers: HashSet::new(),
         root: pid,
         root_result: None,
+        root_exit_code: None,
         root_exec: false,
     };
     let outcome = (|| {
