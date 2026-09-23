@@ -354,6 +354,7 @@ fn pnp_unaware_static_process_reads_virtual_dependencies() {
 #include <string.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
 #include <sys/inotify.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -395,6 +396,13 @@ int main(int argc, char **argv) {
     char target[4096];
     if (readlink("node_modules/dep", target, sizeof(target)) <= 0) return 28;
     errno = 0;
+    if (syscall(SYS_readlinkat, AT_FDCWD, "node_modules/dep", (char *)1, 16) != -1 || errno != EFAULT) return 46;
+    int ranged = open("node_modules/dep/file.txt", O_RDONLY);
+    if (ranged < 0 || syscall(SYS_close_range, ranged, ranged, 0) != 0) return 47;
+    int private_fd = memfd_create("pnport-range", 0);
+    if (private_fd < 0 || fchmod(private_fd, 0600) != 0) return 48;
+    close(private_fd);
+    errno = 0;
     if (open("node_modules/dep/file.txt", O_WRONLY) != -1 || errno != EROFS) return 29;
     errno = 0;
     if (unlink("node_modules/dep/file.txt") != -1 || errno != EROFS) return 35;
@@ -405,6 +413,20 @@ int main(int argc, char **argv) {
     if (fd < 0 || write(fd, "native", 6) != 6) return 30;
     close(fd);
     if (argc == 1) {
+        if (mkdir("native-old", 0700) || symlink("native-old", "native-link")) return 49;
+        fd = open("native-old/value", O_WRONLY | O_CREAT, 0600);
+        if (fd < 0 || write(fd, "old", 3) != 3) return 50;
+        close(fd);
+        int native = open("native-link", O_RDONLY | O_DIRECTORY);
+        if (native < 0 || rename("native-old", "native-moved") || mkdir("native-old", 0700)) return 51;
+        fd = open("native-old/value", O_WRONLY | O_CREAT, 0600);
+        if (fd < 0 || write(fd, "new", 3) != 3) return 52;
+        close(fd);
+        fd = openat(native, "value", O_RDONLY);
+        char native_bytes[4] = {0};
+        if (fd < 0 || read(fd, native_bytes, 3) != 3 || strcmp(native_bytes, "old")) return 53;
+        close(fd);
+        close(native);
         pid_t child = fork();
         if (child < 0) return 31;
         if (child == 0) {
@@ -683,6 +705,217 @@ int main(int argc, char **argv) {
         String::from_utf8_lossy(&result.stderr)
     );
     assert_eq!(result.stdout, b"thread-exec-ok\n");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_waits_for_workers_after_the_main_thread_exits() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("thread-exit.c");
+    fs::write(
+        &source,
+        r#"
+#include <pthread.h>
+#include <stdio.h>
+#include <unistd.h>
+static void *worker(void *path) {
+    usleep(150000);
+    FILE *file = fopen((char *)path, "w");
+    if (!file) _exit(42);
+    fputs("worker-finished", file);
+    fclose(file);
+    return 0;
+}
+int main(int argc, char **argv) {
+    if (argc != 2) return 40;
+    pthread_t thread;
+    if (pthread_create(&thread, 0, worker, argv[1])) return 41;
+    pthread_exit(0);
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("thread-exit");
+    assert!(Command::new("cc")
+        .args(["-static", "-pthread", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let marker = root.path().join("worker.txt");
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(&marker)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(fs::read(&marker).unwrap(), b"worker-finished");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_preserves_a_child_requested_sigstop_until_sigcont() {
+    use std::{
+        process::Command,
+        time::{Duration, Instant},
+    };
+    let root = fixture();
+    let source = root.path().join("stop.c");
+    fs::write(
+        &source,
+        r#"
+#include <signal.h>
+#include <stdio.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc != 2) return 40;
+    FILE *file = fopen(argv[1], "w");
+    if (!file) return 41;
+    fprintf(file, "%d", getpid());
+    fclose(file);
+    raise(SIGSTOP);
+    puts("resumed");
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("stop");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let marker = root.path().join("stopped.pid");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(&marker)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !marker.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let tracee: i32 = fs::read_to_string(&marker).unwrap().parse().unwrap();
+    std::thread::sleep(Duration::from_millis(150));
+    assert!(
+        child.try_wait().unwrap().is_none(),
+        "SIGSTOP was suppressed"
+    );
+    assert_eq!(unsafe { libc::kill(tracee, libc::SIGCONT) }, 0);
+    while child.try_wait().unwrap().is_none() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    if child.try_wait().unwrap().is_none() {
+        unsafe { libc::kill(tracee, libc::SIGKILL) };
+        child.kill().unwrap();
+        panic!("SIGCONT did not resume the traced child");
+    }
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, b"resumed\n");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_gracefully_resumes_an_unsupported_syscall_stop() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("unsupported.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <signal.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+static const char *marker;
+static void terminated(int signal) {
+    (void)signal;
+    int fd = open(marker, O_WRONLY | O_CREAT, 0600);
+    if (fd >= 0) { write(fd, "handled", 7); close(fd); }
+    _exit(0);
+}
+int main(int argc, char **argv) {
+    if (argc != 2) return 40;
+    marker = argv[1];
+    signal(SIGTERM, terminated);
+    syscall(SYS_close_range, 100, 100, 2);
+    return 41;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("unsupported");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let marker = root.path().join("terminated.txt");
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(&marker)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(125),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(fs::read(&marker).unwrap(), b"handled");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_reports_a_missing_elf_interpreter_as_command_not_found() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("missing-loader.c");
+    fs::write(&source, "int main(void) { return 0; }\n").unwrap();
+    let executable = root.path().join("missing-loader");
+    assert!(Command::new("cc")
+        .arg("-Wl,--dynamic-linker=/pnport-missing-loader.so")
+        .arg("-o")
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(127));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_COMMAND_NOT_FOUND"));
 }
 
 #[cfg(target_os = "linux")]

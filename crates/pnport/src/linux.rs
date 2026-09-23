@@ -493,6 +493,14 @@ fn number(regs: &Registers) -> i64 {
     regs.regs[8] as i64
 }
 #[cfg(target_arch = "x86_64")]
+fn deny_syscall(regs: &mut Registers) {
+    regs.orig_rax = u64::MAX;
+}
+#[cfg(target_arch = "aarch64")]
+fn deny_syscall(regs: &mut Registers) {
+    regs.regs[8] = u64::MAX;
+}
+#[cfg(target_arch = "x86_64")]
 fn argument(regs: &Registers, index: usize) -> u64 {
     [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9][index]
 }
@@ -592,6 +600,24 @@ fn write_remote(pid: i32, address: u64, bytes: &[u8]) -> Result<()> {
         return Err(injection_failed());
     }
     Ok(())
+}
+fn write_remote_or_fault(pid: i32, address: u64, bytes: &[u8]) -> Result<bool> {
+    let local = libc::iovec {
+        iov_base: bytes.as_ptr().cast_mut().cast(),
+        iov_len: bytes.len(),
+    };
+    let remote = libc::iovec {
+        iov_base: address as usize as *mut c_void,
+        iov_len: bytes.len(),
+    };
+    let count = unsafe { libc::process_vm_writev(pid, &local, 1, &remote, 1, 0) };
+    if count == bytes.len() as isize {
+        return Ok(true);
+    }
+    if count >= 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EFAULT) {
+        return Ok(false);
+    }
+    Err(injection_failed())
 }
 fn rewrite_path(pid: i32, regs: &mut Registers, index: usize, path: &Path) -> Result<()> {
     rewrite_path_slot(pid, regs, index, path, 0)
@@ -1196,6 +1222,8 @@ impl Trace<'_> {
                 | libc::SYS_io_uring_enter
                 | libc::SYS_io_uring_register
         ) {
+            deny_syscall(&mut regs);
+            set_registers(pid, &regs)?;
             return Err(unsupported(
                 "This Linux filesystem interface cannot be mediated.",
             ));
@@ -1203,6 +1231,8 @@ impl Trace<'_> {
         if call == libc::SYS_close_range {
             let flags = argument(&regs, 2) as u32;
             if flags & CLOSE_RANGE_UNSHARE != 0 {
+                deny_syscall(&mut regs);
+                set_registers(pid, &regs)?;
                 return Err(unsupported(
                     "Linux close_range with UNSHARE cannot preserve descriptor ownership.",
                 ));
@@ -1391,8 +1421,11 @@ impl Trace<'_> {
                     set_result(&mut regs, -(libc::EINVAL as i64));
                 } else {
                     let count = bytes.len().min(capacity);
-                    write_remote(pid, output, &bytes[..count])?;
-                    set_result(&mut regs, count as i64);
+                    if write_remote_or_fault(pid, output, &bytes[..count])? {
+                        set_result(&mut regs, count as i64);
+                    } else {
+                        set_result(&mut regs, -(libc::EFAULT as i64));
+                    }
                 }
                 set_registers(pid, &regs)?;
             }

@@ -15,8 +15,8 @@ used. pnport owns graph translation, immutable backing, injection failure policy
 and all local modifications. linux-target.rs is an unmodified reference for
 setting no-new-privs and installing a Linux seccomp filter. The Linux runtime in
 crates/pnport/src/linux.rs adapts that filter-installation mechanism and a
-selected filesystem syscall set. It uses SECCOMP_RET_TRACE with PTRACE_TRACEME
-on pnport-owned children, because pathname virtualization must replace syscall
+selected filesystem syscall set. It uses SECCOMP_RET_TRACE with PTRACE_SEIZE
+on pnport-owned stopped children, because pathname virtualization must replace syscall
 arguments before the kernel opens a path; fspy's USER_NOTIF listener and IPC
 protocol are not copied. The filter, syscall arguments, descriptor state,
 process lifecycle, PnP translation, and diagnostics are pnport-owned code.
