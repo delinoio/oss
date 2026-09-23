@@ -5,7 +5,7 @@ use super::getcwd;
 use crate::Error;
 
 #[test]
-#[expect(
+#[allow(
     clippy::disallowed_methods,
     reason = "std::env::current_dir is the reference implementation under test"
 )]

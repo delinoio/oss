@@ -1,4 +1,10 @@
-#![expect(
+// The upstream disallowed lint table is not enabled for this workspace.
+// These allowances can return to expectations if that table is adopted here.
+#![allow(
+    clippy::allow_attributes,
+    reason = "the upstream disallowed lint table is not enabled in this workspace"
+)]
+#![allow(
     clippy::disallowed_types,
     reason = "vt_path needs to use std path types internally"
 )]
@@ -31,7 +37,7 @@ pub use relative::{RelativePath, RelativePathBuf};
 /// Panics if `std::env::current_dir()` returns a non-absolute path, which
 /// should never happen in practice.
 pub fn current_dir() -> io::Result<AbsolutePathBuf> {
-    #[expect(
+    #[allow(
         clippy::disallowed_methods,
         reason = "std current_dir needed to get the current working directory as an absolute path"
     )]

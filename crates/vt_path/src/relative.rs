@@ -314,7 +314,7 @@ mod ts_impl {
 
     use super::RelativePathBuf;
 
-    #[expect(
+    #[allow(
         clippy::disallowed_types,
         reason = "ts_rs::TS trait requires returning std String"
     )]

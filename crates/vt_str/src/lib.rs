@@ -1,4 +1,11 @@
-#[expect(
+#![allow(
+    clippy::allow_attributes,
+    reason = "the upstream disallowed-types lint table is not enabled in this workspace"
+)]
+
+// The upstream disallowed-types lint table is not enabled for this workspace.
+// Keep these std-interop allowances scoped until that table is adopted here.
+#[allow(
     clippy::disallowed_types,
     reason = "vt_str defines Str using std types internally"
 )]
@@ -86,12 +93,12 @@ impl AsRef<str> for Str {
         self.0.as_ref()
     }
 }
-#[expect(
+#[allow(
     clippy::disallowed_types,
     reason = "vt_str provides Path interop via AsRef"
 )]
 impl AsRef<Path> for Str {
-    #[expect(clippy::disallowed_types, reason = "fn signature uses std Path")]
+    #[allow(clippy::disallowed_types, reason = "fn signature uses std Path")]
     fn as_ref(&self) -> &Path {
         self.0.as_ref()
     }
@@ -157,12 +164,12 @@ impl From<&str> for Str {
     }
 }
 
-#[expect(
+#[allow(
     clippy::disallowed_types,
     reason = "vt_str provides String conversion via From"
 )]
 impl From<String> for Str {
-    #[expect(clippy::disallowed_types, reason = "fn signature uses std String")]
+    #[allow(clippy::disallowed_types, reason = "fn signature uses std String")]
     fn from(value: String) -> Self {
         Self(value.into())
     }
@@ -197,7 +204,7 @@ mod ts_impl {
 
     use super::Str;
 
-    #[expect(
+    #[allow(
         clippy::disallowed_types,
         reason = "ts_rs::TS trait requires returning String"
     )]

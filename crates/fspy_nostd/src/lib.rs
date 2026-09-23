@@ -6,6 +6,10 @@
 //! README.md for the platform-specific guarantees.
 
 #![cfg_attr(not(test), no_std)]
+#![allow(
+    clippy::allow_attributes,
+    reason = "the upstream lint table is not enabled in this workspace"
+)]
 
 mod c_str;
 mod error;

@@ -69,7 +69,7 @@ impl Iterator for FatEnvs {
 /// caller must ensure that the argument and environment pointer arrays and
 /// their strings remain mapped, readable, and immutable and that no new image
 /// is executed.
-#[expect(
+#[allow(
     clippy::unnecessary_wraps,
     reason = "the return type deliberately matches Linux's fallible current() API"
 )]

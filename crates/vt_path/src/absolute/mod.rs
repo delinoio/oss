@@ -102,7 +102,7 @@ impl AbsolutePath {
     }
 
     #[cfg(feature = "absolute-redaction")]
-    #[expect(
+    #[allow(
         clippy::disallowed_types,
         clippy::disallowed_macros,
         reason = "try_redact returns std String and uses std format!"
