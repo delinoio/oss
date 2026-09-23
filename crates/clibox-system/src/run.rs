@@ -615,16 +615,25 @@ fn with_service(options: Service) -> Result<Outcome> {
     };
     loop {
         if service_child.output_failed() {
-            let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
-            return runtime_failure("Could not forward managed service output.");
+            return cleanup_managed_service(
+                &mut service_child,
+                options.workload.kill_after,
+                runtime_failure("Could not forward managed service output."),
+            );
         }
         if runtime::cancelled() {
-            let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
-            return check_cancelled().and_then(|()| unreachable!());
+            return cleanup_managed_service(
+                &mut service_child,
+                options.workload.kill_after,
+                check_cancelled().and_then(|()| unreachable!()),
+            );
         }
         if completion_or_cleanup(&mut service_child, options.workload.kill_after)?.is_some() {
-            let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
-            return runtime_failure("The managed service exited before it became ready.");
+            return cleanup_managed_service(
+                &mut service_child,
+                options.workload.kill_after,
+                runtime_failure("The managed service exited before it became ready."),
+            );
         }
         match check_http(&options, &client, ready_deadline) {
             Ok(()) => break,
@@ -634,36 +643,57 @@ fn with_service(options: Service) -> Result<Outcome> {
                 // coincident readiness deadline.
                 if completion_or_cleanup(&mut service_child, options.workload.kill_after)?.is_some()
                 {
-                    let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
-                    return runtime_failure("The managed service exited before it became ready.");
+                    return cleanup_managed_service(
+                        &mut service_child,
+                        options.workload.kill_after,
+                        runtime_failure("The managed service exited before it became ready."),
+                    );
                 }
                 if ready_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
-                    let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
-                    return Ok(Outcome::Code(124));
+                    return cleanup_managed_service(
+                        &mut service_child,
+                        options.workload.kill_after,
+                        Ok(Outcome::Code(124)),
+                    );
                 }
                 if let Err(error) =
                     sleep_cancellable(clip_to_deadline(options.interval, ready_deadline))
                 {
-                    let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
-                    return Err(error);
+                    return cleanup_managed_service(
+                        &mut service_child,
+                        options.workload.kill_after,
+                        Err(error),
+                    );
                 }
             }
             Err(HttpProbeError::OverallTimeout) => {
                 if completion_or_cleanup(&mut service_child, options.workload.kill_after)?.is_some()
                 {
-                    let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
-                    return runtime_failure("The managed service exited before it became ready.");
+                    return cleanup_managed_service(
+                        &mut service_child,
+                        options.workload.kill_after,
+                        runtime_failure("The managed service exited before it became ready."),
+                    );
                 }
-                let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
-                return Ok(Outcome::Code(124));
+                return cleanup_managed_service(
+                    &mut service_child,
+                    options.workload.kill_after,
+                    Ok(Outcome::Code(124)),
+                );
             }
             Err(HttpProbeError::Cancelled) => {
-                let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
-                return check_cancelled().and_then(|()| unreachable!());
+                return cleanup_managed_service(
+                    &mut service_child,
+                    options.workload.kill_after,
+                    check_cancelled().and_then(|()| unreachable!()),
+                );
             }
             Err(_) => {
-                let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
-                return runtime_failure("HTTP readiness check failed; check the endpoint.");
+                return cleanup_managed_service(
+                    &mut service_child,
+                    options.workload.kill_after,
+                    runtime_failure("HTTP readiness check failed; check the endpoint."),
+                );
             }
         }
     }
@@ -671,19 +701,28 @@ fn with_service(options: Service) -> Result<Outcome> {
     // successful readiness request is in flight. Recheck ownership before the
     // workload is allowed to create any side effects.
     if service_child.output_failed() {
-        let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
-        return runtime_failure("Could not forward managed service output.");
+        return cleanup_managed_service(
+            &mut service_child,
+            options.workload.kill_after,
+            runtime_failure("Could not forward managed service output."),
+        );
     }
     // A successful probe can be observed while the service completion worker
     // is still handing off an exit that happened during the request. Give that
     // worker one bounded poll before the workload can create side effects.
     if let Err(error) = sleep_cancellable(POLL) {
-        let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
-        return Err(error);
+        return cleanup_managed_service(
+            &mut service_child,
+            options.workload.kill_after,
+            Err(error),
+        );
     }
     if completion_or_cleanup(&mut service_child, options.workload.kill_after)?.is_some() {
-        let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
-        return runtime_failure("The managed service exited before the workload started.");
+        return cleanup_managed_service(
+            &mut service_child,
+            options.workload.kill_after,
+            runtime_failure("The managed service exited before the workload started."),
+        );
     }
     let outcome = match run_once(
         &workload,
@@ -693,16 +732,30 @@ fn with_service(options: Service) -> Result<Outcome> {
     ) {
         Ok(outcome) => outcome,
         Err(error) => {
-            let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
-            return Err(error);
+            return cleanup_managed_service(
+                &mut service_child,
+                options.workload.kill_after,
+                Err(error),
+            );
         }
     };
-    let service_cleanup_confirmed = cleanup_or_log(&mut service_child, options.workload.kill_after);
-    if !service_cleanup_confirmed {
+    if !cleanup_or_log(&mut service_child, options.workload.kill_after) {
         return runtime_failure("Managed service cleanup could not be confirmed.");
     }
     finish_managed_service_output(&mut service_child)?;
     Ok(outcome)
+}
+
+fn cleanup_managed_service(
+    service: &mut OwnedChild,
+    kill_after: Duration,
+    outcome: Result<Outcome>,
+) -> Result<Outcome> {
+    if cleanup_or_log(service, kill_after) {
+        outcome
+    } else {
+        runtime_failure("Managed service cleanup could not be confirmed.")
+    }
 }
 
 fn finish_managed_service_output(service: &mut OwnedChild) -> Result<()> {
