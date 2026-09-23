@@ -41,6 +41,19 @@ test("native release archive contains exactly one matched adjacent pair", () => 
   assert.equal(archive.get("libpnport_preload.dylib").bytes.toString(), "preload");
 });
 
+test("native install smoke executes the activated POSIX launcher", { skip: process.platform === "win32" }, (t) => {
+  const output = fixture(t);
+  const target = targets.find(({ os, cpu }) => os === process.platform && cpu === process.arch);
+  assert.ok(target, "Current host needs a pnport target");
+  const archives = path.join(output, "archives");
+  mkdirSync(archives);
+  const version = metadata().version;
+  writeFileSync(path.join(archives, `pnport-${target.suffix}.tar.gz`), nativeArchive(target, Buffer.from(`#!/bin/sh\nprintf 'pnport ${version}\\n'\n`), Buffer.from("companion")));
+  const result = spawnSync("node", ["packages/pnport/scripts/install-smoke.mjs", "--target", target.rust, "--directory", output], { cwd: root, encoding: "utf8" });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /"event":"pnport_install_smoke"/u);
+});
+
 test("npm publication confirms six native dependencies before launcher and fails before writing on conflict", async () => {
   assert.deepEqual(packageNames("0.1.0"), [...targets.map(({ name }) => `delino-${name.split("/")[1]}-0.1.0.tgz`), "delino-pnport-0.1.0.tgz"]);
   const artifacts = [...targets.map(({ name }) => ({ name, version: "0.1.0", integrity: name })), { name: "@delino/pnport", version: "0.1.0", integrity: "main" }];

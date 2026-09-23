@@ -31,14 +31,21 @@ try {
   assert.equal(result.status, 0, `Installer failed: ${result.stderr}`);
   const installed = path.join(install, ".pnport", "versions", version);
   ensure(existsSync(path.join(installed, target.binary)) && existsSync(path.join(installed, companion(target))), "Installed pair is incomplete");
-  const executable = spawnSync(path.join(installed, target.binary), ["--version"], { encoding: "utf8" });
+  const launcher = path.join(install, target.os === "win32" ? "pnport.cmd" : "pnport");
+  ensure(existsSync(launcher), "Installer did not activate the public launcher");
+  const invokeLauncher = () => target.os === "win32"
+    ? spawnSync("pwsh", ["-NoProfile", "-NonInteractive", "-Command", "& $env:PNPORT_SMOKE_LAUNCHER --version; exit $LASTEXITCODE"], { encoding: "utf8", env: { ...process.env, PNPORT_SMOKE_LAUNCHER: launcher } })
+    : spawnSync(launcher, ["--version"], { encoding: "utf8" });
+  const executable = invokeLauncher();
   assert.equal(executable.status, 0, executable.stderr);
   assert.equal(executable.stdout.trim(), `pnport ${version}`);
   writeFileSync(sums, `${"0".repeat(64)}  ${archive}\n`);
   const rejected = spawnSync(command[0], command[1], { encoding: "utf8" });
   assert.notEqual(rejected.status, 0, "Tampered checksum was accepted");
   assert.equal(readFileSync(path.join(installed, target.binary)).length > 0, true);
-  assert.equal(spawnSync(path.join(installed, target.binary), ["--version"], { encoding: "utf8" }).stdout.trim(), `pnport ${version}`);
+  const afterRejection = invokeLauncher();
+  assert.equal(afterRejection.status, 0, afterRejection.stderr);
+  assert.equal(afterRejection.stdout.trim(), `pnport ${version}`);
   event("install_smoke", { target: target.suffix, version, sha256: checksum });
 } finally {
   if (previousSums) writeFileSync(sums, previousSums); else rmSync(sums, { force: true });
