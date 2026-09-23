@@ -757,7 +757,7 @@ fn with_service(options: Service) -> Result<Outcome> {
     if !cleanup_or_log(&mut service_child, options.workload.kill_after) {
         return runtime_failure("Managed service cleanup could not be confirmed.");
     }
-    finish_managed_service_output(&mut service_child)?;
+    finish_managed_service_output(&mut service_child, None)?;
     Ok(outcome)
 }
 
@@ -767,14 +767,20 @@ fn cleanup_managed_service(
     outcome: Result<Outcome>,
 ) -> Result<Outcome> {
     if cleanup_or_log(service, kill_after) {
+        let ignored_cancellation_generation =
+            runtime::cancelled().then(runtime::cancellation_generation);
+        finish_managed_service_output(service, ignored_cancellation_generation)?;
         outcome
     } else {
         runtime_failure("Managed service cleanup could not be confirmed.")
     }
 }
 
-fn finish_managed_service_output(service: &mut OwnedChild) -> Result<()> {
-    match service.join_output_within(&Limits::default(), None) {
+fn finish_managed_service_output(
+    service: &mut OwnedChild,
+    ignored_cancellation_generation: Option<usize>,
+) -> Result<()> {
+    match service.join_output_within(&Limits::default(), ignored_cancellation_generation) {
         OutputJoin::Complete if service.output_failed() => {
             runtime_failure("Could not forward managed service output.")
         }

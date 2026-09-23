@@ -1441,6 +1441,69 @@ fn managed_service_forwards_shutdown_output_before_success() {
 }
 
 #[test]
+fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
+    let home = tempfile::tempdir().unwrap();
+    let workload_started = home.path().join("workload-started");
+    let workload_marker = format!("WORKLOAD_MARKER={}", workload_started.display());
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while std::time::Instant::now() < deadline {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    let mut request = [0u8; 1024];
+                    let _ = stream.read(&mut request);
+                    stream
+                        .write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n")
+                        .unwrap();
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => panic!("readiness fixture could not accept a request: {error}"),
+            }
+        }
+    });
+    let output = command(
+        home.path(),
+        &[
+            "run",
+            "with-service",
+            &format!("http://{address}/health"),
+            "--interval",
+            "10ms",
+            "--ready-timeout",
+            "50ms",
+            "--service",
+            "sh",
+            "-c",
+            "trap 'printf managed-service-readiness-timeout >&2; exit 0' TERM; while :; do sleep \
+             1; done",
+            "--",
+            &workload_marker,
+            "sh",
+            "-c",
+            ": > \"$WORKLOAD_MARKER\"",
+        ],
+    )
+    .output()
+    .unwrap();
+
+    assert_eq!(output.status.code(), Some(124), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("managed-service-readiness-timeout"),
+        "managed service shutdown output was not forwarded: {output:?}"
+    );
+    assert!(
+        !workload_started.exists(),
+        "workload started after readiness timed out: {output:?}"
+    );
+    server.join().unwrap();
+}
+
+#[test]
 fn managed_service_must_remain_alive_after_a_successful_probe() {
     let home = tempfile::tempdir().unwrap();
     let marker = home.path().join("workload-started");
