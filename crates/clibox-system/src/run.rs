@@ -1021,6 +1021,12 @@ fn run_once(
             return runtime_failure("The managed service exited before the workload completed.");
         }
         if let Some(completion) = workload_completion {
+            // A pipe reader can record its successful final read while the
+            // completion worker is being observed. Refresh the timestamp at
+            // this decision boundary so that read still resets idle time.
+            if let Some(activity) = &child.activity {
+                last_activity = activity.last_observed_at();
+            }
             if limits_expired_at(&limits, last_activity, completion.observed_at) {
                 tracing::debug!(operation = "run", stage = "timeout", "run_cleanup");
                 let _ = cleanup_or_log(&mut child, kill_after);
@@ -3416,6 +3422,26 @@ mod lifecycle_tests {
         activity.observe(latest);
 
         assert_eq!(activity.last_observed_at(), latest);
+    }
+
+    #[test]
+    fn completion_uses_output_activity_refreshed_at_its_decision_boundary() {
+        let start = Instant::now();
+        let completion = start.checked_add(Duration::from_millis(10)).unwrap();
+        let final_read = start.checked_add(Duration::from_millis(9)).unwrap();
+        let activity = Activity::at(start);
+        activity.observe(final_read);
+        let limits = Limits {
+            overall: None,
+            idle: Some(Duration::from_millis(5)),
+        };
+
+        assert!(limits_expired_at(&limits, start, completion));
+        assert!(!limits_expired_at(
+            &limits,
+            activity.last_observed_at(),
+            completion,
+        ));
     }
 }
 
