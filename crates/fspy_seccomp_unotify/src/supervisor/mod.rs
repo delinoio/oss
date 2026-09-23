@@ -28,7 +28,7 @@ use crate::{
 pub struct Supervisor<H> {
     payload: SeccompPayload,
     cancellation: CancellationToken,
-    handling_loop_task: JoinHandle<io::Result<Vec<H>>>,
+    handling_loop_task: Option<JoinHandle<io::Result<Vec<H>>>>,
 }
 
 impl<H> Supervisor<H> {
@@ -46,11 +46,24 @@ impl<H> Supervisor<H> {
     /// # Errors
     /// Returns an error if any of the spawned handler tasks failed with an I/O
     /// error.
-    pub async fn stop(self) -> io::Result<Vec<H>> {
+    pub async fn stop(mut self) -> io::Result<Vec<H>> {
         self.cancellation.cancel();
         self.handling_loop_task
+            .take()
+            .expect("supervisor loop already stopped")
             .await
             .expect("handling loop task panicked")
+    }
+}
+
+impl<H> Drop for Supervisor<H> {
+    fn drop(&mut self) {
+        self.cancellation.cancel();
+        if let Some(task) = self.handling_loop_task.take() {
+            // Dropping the join handle detaches the task. Abort also drops the
+            // owned temporary listener when spawn preparation fails.
+            task.abort();
+        }
     }
 }
 
@@ -146,6 +159,6 @@ pub fn supervise<H: SeccompNotifyHandler + Default + Send + 'static>() -> io::Re
     Ok(Supervisor {
         payload,
         cancellation,
-        handling_loop_task: tokio::spawn(handling_loop),
+        handling_loop_task: Some(tokio::spawn(handling_loop)),
     })
 }
