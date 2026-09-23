@@ -112,6 +112,81 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[tokio::test]
+    async fn late_seccomp_filter_continues_after_root_trace_seals() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let static_source = directory.path().join("late-static.c");
+        let static_executable = directory.path().join("late-static");
+        fs::write(
+            &static_source,
+            r#"#include <fcntl.h>
+#include <stdio.h>
+#include <unistd.h>
+int main(void) {
+  int fd = open("/dev/null", O_RDONLY);
+  puts(fd >= 0 ? "late-continued" : "late-blocked");
+  if (fd >= 0) close(fd);
+  return fd >= 0 ? 0 : 1;
+}
+"#,
+        )
+        .expect("write static fixture");
+        assert!(
+            std::process::Command::new("cc")
+                .arg("-static")
+                .arg(&static_source)
+                .arg("-o")
+                .arg(&static_executable)
+                .status()
+                .expect("compile static fixture")
+                .success()
+        );
+
+        let source = directory.path().join("late-parent.c");
+        let executable = directory.path().join("late-parent");
+        fs::write(
+            &source,
+            r"#include <unistd.h>
+int main(int argc, char **argv) {
+  if (argc != 2) return 2;
+  if (fork() == 0) {
+    usleep(500000);
+    execl(argv[1], argv[1], (char *)0);
+    return 42;
+  }
+  return 0;
+}
+",
+        )
+        .expect("write dynamic fixture");
+        assert!(
+            std::process::Command::new("cc")
+                .arg(&source)
+                .arg("-o")
+                .arg(&executable)
+                .status()
+                .expect("compile dynamic fixture")
+                .success()
+        );
+
+        let mut command = super::Command::new(&executable);
+        command.arg(&static_executable).stdout(Stdio::piped());
+        let mut child = command
+            .spawn(CancellationToken::new())
+            .await
+            .expect("spawn tracked fixture");
+        let mut stdout = child.stdout.take().expect("capture descendant output");
+        let termination = child.wait_handle.await.expect("wait for tracked root");
+        assert!(termination.status.success());
+        let mut output = String::new();
+        tokio::time::timeout(Duration::from_secs(5), stdout.read_to_string(&mut output))
+            .await
+            .expect("late static descendant did not finish")
+            .expect("read descendant output");
+        assert_eq!(output, "late-continued\n");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
     async fn filtered_descendant_continues_after_root_trace_seals() {
         let directory = tempfile::tempdir().expect("create fixture directory");
         let source = directory.path().join("survivor.c");

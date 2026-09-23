@@ -36,7 +36,7 @@ Linux preload selection recognizes only the host glibc loader for the supported 
 
 The Linux preload hooks the fixed-arity libc `statx` entry point. It does not interpose libc's generic variadic `syscall` entry point: extracting a fixed six arguments from lower-arity calls is undefined behavior. A direct `syscall(SYS_statx, ...)` in a dynamically linked process is outside the preload trace; callers needing that access must use the seccomp path.
 
-At root-process exit, the seccomp supervisor seals the trace and stops listener acceptance. Active handlers return their already collected accesses and recording errors without waiting for surviving descendants. Each existing notification listener continues to answer inherited-filter syscalls with `CONTINUE` until its final filtered task exits; those later accesses do not extend the sealed trace.
+At root-process exit, the seccomp supervisor seals the trace. Active handlers return their already collected accesses and recording errors without waiting for surviving descendants. Existing notification listeners and a detached socket acceptor answer inherited and later installed filters with `CONTINUE`; those later accesses do not extend the sealed trace. The acceptor stays owned until the supervisor process exits because the runner does not yet own a reliable descendant-liveness boundary.
 
 The Unix preload forwards an intercepted filesystem call after a path-resolution error and marks the shared channel incomplete first. The receiver rejects that channel at seal time instead of reporting a partial trace as complete.
 

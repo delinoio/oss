@@ -14,7 +14,7 @@ use listener::NotifyListener;
 use passfd::tokio::FdPassingExt;
 use seccompiler::{BpfProgram, SeccompAction, SeccompFilter};
 use tokio::{
-    net::UnixListener,
+    net::{UnixListener, UnixStream},
     task::{JoinHandle, JoinSet},
 };
 use tokio_util::sync::CancellationToken;
@@ -37,9 +37,9 @@ impl<H> Supervisor<H> {
         &self.payload
     }
 
-    /// Stops accepting notifications and returns the recorded handler state
-    /// without waiting for inherited listeners in surviving descendants.
-    /// Existing listeners continue forwarding syscalls after the trace seals.
+    /// Seals the trace and returns the recorded handler state without waiting
+    /// for surviving descendants. Existing and future inherited filters keep
+    /// receiving pass-through responses after the root process exits.
     ///
     /// # Panics
     /// Panics if the handling loop task has panicked.
@@ -115,14 +115,13 @@ pub fn supervise<H: SeccompNotifyHandler + Default + Send + 'static>() -> io::Re
         loop {
             let (incoming_stream, _) = tokio::select! {
                 biased;
-                () = loop_cancellation.cancelled() => break,
+                () = loop_cancellation.cancelled() => {
+                    spawn_pass_through_acceptor(notify_listener);
+                    break;
+                },
                 incoming = notify_listener.as_file().accept() => incoming?,
             };
-            let notify_fd = incoming_stream.recv_fd().await?;
-            // SAFETY: `recv_fd` returns a valid file descriptor received via
-            // Unix domain socket fd passing
-            let notify_fd = unsafe { OwnedFd::from_raw_fd(notify_fd) };
-            let mut listener = NotifyListener::try_from(notify_fd)?;
+            let mut listener = receive_listener(incoming_stream).await?;
 
             let mut handler = H::default();
             let mut resp_buf = alloc_seccomp_notif_resp();
@@ -173,6 +172,44 @@ pub fn supervise<H: SeccompNotifyHandler + Default + Send + 'static>() -> io::Re
         cancellation,
         handling_loop_task: Some(tokio::spawn(handling_loop)),
     })
+}
+
+fn spawn_pass_through_acceptor(socket: tempfile::NamedTempFile<UnixListener>) {
+    // A dynamic descendant can install its first seccomp filter long after
+    // the root trace is sealed. Retain the socket for this supervisor
+    // process's lifetime so late filters cannot be orphaned. Removing this
+    // requires reliable descendant-liveness ownership.
+    tokio::spawn(async move {
+        loop {
+            let (stream, _) = match socket.as_file().accept().await {
+                Ok(incoming) => incoming,
+                Err(error) => {
+                    warn!(%error, "Seccomp pass-through acceptance failed");
+                    break;
+                }
+            };
+            tokio::spawn(async move {
+                let listener = match receive_listener(stream).await {
+                    Ok(listener) => listener,
+                    Err(error) => {
+                        warn!(%error, "Seccomp pass-through connection failed");
+                        return;
+                    }
+                };
+                if let Err(error) = serve_pass_through(listener).await {
+                    warn!(%error, "Seccomp pass-through listener failed");
+                }
+            });
+        }
+    });
+}
+
+async fn receive_listener(stream: UnixStream) -> io::Result<NotifyListener> {
+    let notify_fd = stream.recv_fd().await?;
+    // SAFETY: `recv_fd` returns a valid file descriptor received via Unix
+    // domain socket fd passing.
+    let notify_fd = unsafe { OwnedFd::from_raw_fd(notify_fd) };
+    NotifyListener::try_from(notify_fd)
 }
 
 async fn serve_pass_through(mut listener: NotifyListener) -> io::Result<()> {
