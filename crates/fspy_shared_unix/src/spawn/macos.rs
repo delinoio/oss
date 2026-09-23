@@ -1,9 +1,9 @@
 use std::{
     convert::Infallible,
     ffi::OsStr,
+    fs,
     os::unix::ffi::{OsStrExt, OsStringExt},
-    path::{Path, absolute},
-    process::Command,
+    path::{Path, PathBuf, absolute},
 };
 
 use nix::errno::Errno;
@@ -26,16 +26,19 @@ impl PreExec {
     }
 }
 
-fn admit_injection(program: &Path) -> nix::Result<()> {
+fn admit_injection(program: &Path) -> nix::Result<PathBuf> {
     // The shared pnport admission inspects the canonical Mach-O slice,
     // signature, and hardened-runtime entitlements before either fspy or
     // pnport claims a complete interposed trace.
-    pnport_core::executable::validate(program).map_err(|error| match error.code {
+    let canonical = fs::canonicalize(program)
+        .map_err(|error| nix::Error::try_from(error).unwrap_or(nix::Error::UnknownErrno))?;
+    pnport_core::executable::validate(&canonical).map_err(|error| match error.code {
         Code::PnportCommandNotFound => Errno::ENOENT,
         Code::PnportCommandNotExecutable => Errno::EACCES,
         Code::PnportUnsupportedOperation => Errno::ENOTSUP,
         _ => Errno::EIO,
-    })
+    })?;
+    Ok(canonical)
 }
 
 /// Configure the pnport supervisor's already-admitted macOS command with the
@@ -46,14 +49,8 @@ fn admit_injection(program: &Path) -> nix::Result<()> {
 /// Returns `ENOTSUP` when the executable is protected from dyld interposition,
 /// `ENOENT` when it cannot be found, or `EACCES` when it is not executable or
 /// its signed image cannot be validated.
-pub fn configure_pnport_command(
-    command: &mut Command,
-    program: &Path,
-    preload: &Path,
-) -> nix::Result<()> {
-    admit_injection(program)?;
-    command.env("DYLD_INSERT_LIBRARIES", preload);
-    Ok(())
+pub fn admit_pnport_program(program: &Path) -> nix::Result<PathBuf> {
+    admit_injection(program)
 }
 
 pub fn handle_exec(
@@ -71,7 +68,10 @@ pub fn handle_exec(
     let program_path = Path::new(OsStr::from_bytes(&command.program));
     // Protected system executables cannot accept DYLD interposition. Running
     // them without a hook would claim a complete access trace.
-    admit_injection(program_path)?;
+    command.program = admit_injection(program_path)?
+        .into_os_string()
+        .into_vec()
+        .into();
 
     append_path_env(
         &mut command.envs,
@@ -126,7 +126,11 @@ mod tests {
                 .expect("compile fixture")
                 .success()
         );
-        assert_eq!(admit_injection(&executable), Ok(()));
+        let canonical = fs::canonicalize(&executable).expect("canonicalize fixture");
+        let alias = directory.path().join("tool-alias");
+        symlink(&executable, &alias).expect("create executable alias");
+        assert_eq!(admit_injection(&alias), Ok(canonical.clone()));
+        assert_eq!(admit_injection(&executable), Ok(canonical.clone()));
 
         assert!(
             Command::new("codesign")
@@ -163,6 +167,6 @@ mod tests {
                 .expect("sign injectable fixture")
                 .success()
         );
-        assert_eq!(admit_injection(&executable), Ok(()));
+        assert_eq!(admit_injection(&executable), Ok(canonical));
     }
 }

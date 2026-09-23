@@ -98,7 +98,17 @@ extern "C" fn signal_handler(signal: i32) {
 pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString]) -> Result<i32> {
     let prepared =
         pnport::executable::prepare(view, executable, args, std::env::var_os("PATH").as_deref())?;
-    let mut command = Command::new(&prepared.program);
+    #[cfg(target_os = "macos")]
+    let admitted_program = fspy_shared_unix::spawn::admit_pnport_program(&prepared.program)
+        .map_err(|_| {
+            Error::new(
+                Code::PnportUnsupportedOperation,
+                "The executable cannot accept macOS filesystem injection.",
+            )
+        })?;
+    #[cfg(not(target_os = "macos"))]
+    let admitted_program = prepared.program;
+    let mut command = Command::new(&admitted_program);
     command
         .args(&prepared.args)
         .env("PNPORT_SESSION", &view.session)
@@ -116,13 +126,7 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
         ));
     }
     #[cfg(target_os = "macos")]
-    fspy_shared_unix::spawn::configure_pnport_command(&mut command, &prepared.program, artifact)
-        .map_err(|_| {
-            Error::new(
-                Code::PnportUnsupportedOperation,
-                "The executable cannot accept macOS filesystem injection.",
-            )
-        })?;
+    command.env(variable, artifact);
     #[cfg(not(target_os = "macos"))]
     command.env(variable, artifact);
     #[cfg(unix)]

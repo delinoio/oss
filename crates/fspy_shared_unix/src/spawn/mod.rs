@@ -11,7 +11,7 @@ use std::{ffi::OsStr, os::unix::ffi::OsStrExt, path::Path};
 use fspy_shared::ipc::AccessMode;
 pub use os_specific::PreExec;
 #[cfg(target_os = "macos")]
-pub use os_specific::configure_pnport_command;
+pub use os_specific::admit_pnport_program;
 
 use crate::{
     exec::{Exec, ExecResolveConfig},
