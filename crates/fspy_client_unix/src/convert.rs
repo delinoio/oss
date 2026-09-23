@@ -197,11 +197,7 @@ impl ToAccessMode for AccessMode {
 pub struct OpenFlags(pub c_int);
 impl ToAccessMode for OpenFlags {
     unsafe fn to_access_mode(self) -> AccessMode {
-        match self.0 & libc::O_ACCMODE {
-            libc::O_RDWR => AccessMode::READ | AccessMode::WRITE,
-            libc::O_WRONLY => AccessMode::WRITE,
-            _ => AccessMode::READ,
-        }
+        fspy_shared_unix::open_mode::from_flags(self.0)
     }
 }
 

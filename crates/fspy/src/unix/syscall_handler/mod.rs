@@ -63,11 +63,7 @@ impl SyscallHandler {
             path = Cow::Owned(resolved_path);
         }
         self.arena.add(PathAccess {
-            mode: match flags & libc::O_ACCMODE {
-                libc::O_RDWR => AccessMode::READ | AccessMode::WRITE,
-                libc::O_WRONLY => AccessMode::WRITE,
-                _ => AccessMode::READ,
-            },
+            mode: fspy_shared_unix::open_mode::from_flags(flags),
             path: path.as_os_str().into(),
         });
         Ok(())
