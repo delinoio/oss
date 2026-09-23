@@ -346,6 +346,7 @@ fn pnp_unaware_static_process_reads_virtual_dependencies() {
     let cache = tempfile::tempdir().unwrap();
     let source = root.path().join("static.c");
     fs::write(&source, r#"
+#define _GNU_SOURCE
 #include <fcntl.h>
 #include <dirent.h>
 #include <errno.h>
@@ -386,6 +387,11 @@ int main(int argc, char **argv) {
     close(fd);
     closedir(dir);
     if (lstat("node_modules/dep", &info) || !S_ISLNK(info.st_mode)) return 27;
+    errno = 0;
+    if (open("node_modules/dep", O_RDONLY | O_NOFOLLOW) != -1 || errno != ELOOP) return 44;
+    int link_fd = open("node_modules/dep", O_PATH | O_NOFOLLOW);
+    if (link_fd < 0 || fstat(link_fd, &info) || !S_ISLNK(info.st_mode)) return 45;
+    close(link_fd);
     char target[4096];
     if (readlink("node_modules/dep", target, sizeof(target)) <= 0) return 28;
     errno = 0;

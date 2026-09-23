@@ -929,6 +929,57 @@ impl Trace<'_> {
             }
             Err(error) => return Err(error),
         };
+        if is_open && translation.virtual_link {
+            let flags = if call == libc::SYS_openat2 {
+                let how = read_remote(pid, argument(&regs, 2), 8)?;
+                u64::from_ne_bytes(
+                    how.get(..8)
+                        .ok_or_else(injection_failed)?
+                        .try_into()
+                        .map_err(|_| injection_failed())?,
+                ) as i32
+            } else if call == libc::SYS_openat {
+                argument(&regs, 2) as i32
+            } else {
+                argument(&regs, 1) as i32
+            };
+            if flags & libc::O_NOFOLLOW != 0 {
+                if flags & libc::O_PATH == 0 {
+                    self.force_error(pid, &mut regs, path_arg, libc::ELOOP)?;
+                    return Ok(true);
+                }
+                if openat2_resolve != 0 {
+                    return Err(unsupported(
+                        "Constrained openat2 cannot open a virtual link without following it.",
+                    ));
+                }
+                let logical = pnport::graph::normalize(&self.base(pid, dirfd, &original)?);
+                let parent = self
+                    .view
+                    .translate(logical.parent().ok_or_else(injection_failed)?)?;
+                let link = parent
+                    .physical
+                    .join(logical.file_name().ok_or_else(injection_failed)?);
+                if !fs::symlink_metadata(&link)
+                    .map_err(|_| injection_failed())?
+                    .file_type()
+                    .is_symlink()
+                {
+                    return Err(injection_failed());
+                }
+                rewrite_path(pid, &mut regs, path_arg, &link)?;
+                self.pending.insert(
+                    pid,
+                    Pending::Open(Translation {
+                        logical,
+                        physical: link,
+                        readonly: true,
+                        virtual_link: true,
+                    }),
+                );
+                return Ok(true);
+            }
+        }
         if writing && translation.readonly {
             self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
             return Ok(true);
