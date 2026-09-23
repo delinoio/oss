@@ -1137,14 +1137,7 @@ fn run_once(
                 return Err(error);
             }
         };
-        if service_completion.is_some_and(|service| {
-            service_exited_before_workload(
-                service.observed_at,
-                workload_completion
-                    .as_ref()
-                    .map(|workload| workload.observed_at),
-            )
-        }) {
+        if service_completion.is_some() {
             let service = monitored_service.expect("a completed service is monitored");
             let _ = cleanup_or_log(service, kill_after);
             let _ = cleanup_or_log(&mut child, kill_after);
@@ -1167,10 +1160,12 @@ fn run_once(
                 // arrived yet, confirm that its owned tree still exists
                 // before accepting the workload result.
                 let service_exited = match service.completion() {
-                    Ok(Some(service_completion)) => service_exited_before_workload(
-                        service_completion.observed_at,
-                        Some(completion.observed_at),
-                    ),
+                    // Dedicated waiters do not establish a reliable exit
+                    // order when both children have already completed. A
+                    // managed service must remain alive until the workload
+                    // completion is observed, so treat that ambiguity as a
+                    // service failure instead of reporting success.
+                    Ok(Some(_)) => true,
                     Ok(None) => match service.tree_running() {
                         Ok(running) => !running,
                         Err(error) => {
@@ -3603,10 +3598,6 @@ fn clip_to_deadline(duration: Duration, deadline: Option<Instant>) -> Duration {
         .unwrap_or(duration)
 }
 
-fn service_exited_before_workload(service: Instant, workload: Option<Instant>) -> bool {
-    workload.is_none_or(|workload| service < workload)
-}
-
 fn sleep_cancellable(duration: Duration) -> Result<()> {
     let end = Instant::now()
         .checked_add(duration)
@@ -3947,17 +3938,6 @@ mod lifecycle_tests {
             ),
             Duration::from_millis(1),
         );
-    }
-
-    #[test]
-    fn service_completion_requires_a_strictly_earlier_event() {
-        let start = Instant::now();
-        let later = start.checked_add(Duration::from_millis(1)).unwrap();
-
-        assert!(service_exited_before_workload(start, None));
-        assert!(service_exited_before_workload(start, Some(later)));
-        assert!(!service_exited_before_workload(later, Some(start)));
-        assert!(!service_exited_before_workload(start, Some(start)));
     }
 
     #[test]
