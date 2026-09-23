@@ -24,13 +24,6 @@ use crate::ipc::ChannelAccesses;
 use crate::{ChildTermination, Command, TrackedChild, arena::PathAccessArena, error::SpawnError};
 
 #[derive(Debug)]
-#[cfg_attr(
-    target_os = "macos",
-    expect(
-        clippy::struct_field_names,
-        reason = "each field names a distinct injected path"
-    )
-)]
 pub struct SpyImpl {
     #[cfg(not(target_env = "musl"))]
     preload_path: Box<IpcStr>,
