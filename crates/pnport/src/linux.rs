@@ -152,6 +152,9 @@ fn traced_syscalls() -> Vec<i64> {
         libc::SYS_chdir,
         libc::SYS_fchdir,
         libc::SYS_getcwd,
+        libc::SYS_clone,
+        libc::SYS_clone3,
+        libc::SYS_unshare,
         libc::SYS_close,
         libc::SYS_close_range,
         libc::SYS_dup,
@@ -1410,6 +1413,29 @@ impl Trace<'_> {
             return Err(unsupported(
                 "This Linux filesystem interface cannot be mediated.",
             ));
+        }
+        if call == libc::SYS_clone || call == libc::SYS_clone3 || call == libc::SYS_unshare {
+            let flags = if call == libc::SYS_clone3 {
+                if argument(&regs, 1) < mem::size_of::<u64>() as u64 {
+                    return resume(pid, false, 0);
+                }
+                let bytes = read_remote(pid, argument(&regs, 0), mem::size_of::<u64>())?;
+                u64::from_ne_bytes(bytes[..8].try_into().map_err(|_| injection_failed())?)
+            } else {
+                argument(&regs, 0)
+            };
+            if flags & libc::CLONE_FILES as u64 != 0
+                && (call == libc::SYS_unshare || flags & libc::CLONE_THREAD as u64 == 0)
+            {
+                // The tracker has one FD map per thread group. A shared or
+                // unshared table spanning that boundary cannot use this map.
+                deny_syscall(&mut regs);
+                set_registers(pid, &regs)?;
+                return Err(unsupported(
+                    "Linux shared descriptor tables across process groups cannot be mediated.",
+                ));
+            }
+            return resume(pid, false, 0);
         }
         if call == libc::SYS_close_range {
             let flags = argument(&regs, 2) as u32;

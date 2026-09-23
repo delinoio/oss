@@ -574,6 +574,67 @@ int main(void) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_rejects_cross_group_shared_fd_tables_before_clone() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("shared-files.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <sched.h>
+#include <signal.h>
+#include <sys/syscall.h>
+#include <sys/wait.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc != 2) return 20;
+    pid_t child = syscall(SYS_clone, CLONE_FILES | SIGCHLD, 0, 0, 0, 0);
+    if (child < 0) return 21;
+    if (child == 0) {
+        int marker = open(argv[1], O_CREAT | O_WRONLY, 0600);
+        if (marker >= 0) close(marker);
+        _exit(marker >= 0 ? 0 : 22);
+    }
+    int status = 0;
+    return waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : 23;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("shared-files");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let marker = root.path().join("cloned.txt");
+    assert_eq!(
+        Command::new(&executable)
+            .arg(&marker)
+            .status()
+            .unwrap()
+            .code(),
+        Some(0)
+    );
+    fs::remove_file(&marker).unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(&marker)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(125));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+    assert!(!marker.exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_static_xattr_reads_translate_virtual_paths() {
     use std::process::Command;
     let root = fixture();
