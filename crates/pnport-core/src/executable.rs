@@ -273,6 +273,44 @@ pub fn validate(path: &Path) -> Result<PathBuf> {
     }
     Ok(path)
 }
+
+#[cfg(target_os = "macos")]
+pub struct LaunchAdmission {
+    pub path: PathBuf,
+    device: u64,
+    inode: u64,
+}
+
+#[cfg(target_os = "macos")]
+impl LaunchAdmission {
+    pub fn new(path: &Path) -> Result<Self> {
+        use std::os::unix::fs::MetadataExt;
+
+        let path = validate(path)?;
+        let metadata = fs::metadata(&path).map_err(access_error)?;
+        Ok(Self {
+            path,
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        })
+    }
+
+    /// Recheck the selected image after preparing argv and environment, at
+    /// the last point before a pathname-based macOS exec or spawn call.
+    pub fn verify_at_launch(&self) -> Result<()> {
+        use std::os::unix::fs::MetadataExt;
+
+        if validate(&self.path)? != self.path {
+            return Err(invalid());
+        }
+        let metadata = fs::metadata(&self.path).map_err(access_error)?;
+        if metadata.dev() != self.device || metadata.ino() != self.inode {
+            return Err(invalid());
+        }
+        Ok(())
+    }
+}
+
 fn access_error(error: std::io::Error) -> Error {
     Error::new(
         if error.kind() == std::io::ErrorKind::NotFound {
@@ -381,6 +419,30 @@ mod tests {
         assert_eq!(
             validate(&alias).expect("admit alias"),
             fs::canonicalize(executable).expect("canonicalize fixture")
+        );
+    }
+
+    #[test]
+    fn launch_admission_rejects_a_replaced_image() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let source = directory.path().join("tool.c");
+        let executable = directory.path().join("tool");
+        let replacement = directory.path().join("replacement");
+        fs::write(&source, "int main(void) { return 0; }\n").expect("write fixture");
+        assert!(std::process::Command::new("cc")
+            .arg(&source)
+            .arg("-o")
+            .arg(&executable)
+            .status()
+            .expect("compile fixture")
+            .success());
+        let admission = LaunchAdmission::new(&executable).expect("admit executable");
+        fs::copy(&executable, &replacement).expect("copy valid replacement");
+        fs::rename(&replacement, &executable).expect("replace admitted inode");
+        assert!(validate(&executable).is_ok());
+        assert_eq!(
+            admission.verify_at_launch().unwrap_err().code,
+            Code::PnportCommandNotExecutable
         );
     }
 

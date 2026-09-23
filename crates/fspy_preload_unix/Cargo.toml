@@ -8,7 +8,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [features]
-pnport = ["dep:pnport-core", "dep:serde_json"]
+pnport = ["dep:pnport-core", "dep:serde_json", "dep:tempfile"]
 
 [target.'cfg(unix)'.dependencies]
 ctor = { workspace = true }
@@ -25,6 +25,7 @@ static_cell = { workspace = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 pnport-core = { path = "../pnport-core", optional = true }
 serde_json = { version = "1", optional = true }
+tempfile = { version = "3.25", optional = true }
 
 [lints]
 workspace = true

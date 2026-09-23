@@ -6,7 +6,7 @@ use std::{
 };
 
 use nix::errno::Errno;
-use pnport_core::diagnostic::Code;
+use pnport_core::{diagnostic::Code, executable::LaunchAdmission};
 
 use crate::{
     exec::{Exec, append_path_env, ensure_env},
@@ -45,8 +45,13 @@ fn admit_injection(program: &Path) -> nix::Result<PathBuf> {
 /// Returns `ENOTSUP` when the executable is protected from dyld interposition,
 /// `ENOENT` when it cannot be found, or `EACCES` when it is not executable or
 /// its signed image cannot be validated.
-pub fn admit_pnport_program(program: &Path) -> nix::Result<PathBuf> {
-    admit_injection(program)
+pub fn admit_pnport_program(program: &Path) -> nix::Result<LaunchAdmission> {
+    LaunchAdmission::new(program).map_err(|error| match error.code {
+        Code::PnportCommandNotFound => Errno::ENOENT,
+        Code::PnportCommandNotExecutable => Errno::EACCES,
+        Code::PnportUnsupportedOperation => Errno::ENOTSUP,
+        _ => Errno::EIO,
+    })
 }
 
 pub fn handle_exec(

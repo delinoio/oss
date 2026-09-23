@@ -32,6 +32,7 @@ use libc::{
 use pnport_core::{
     cache::Cache,
     diagnostic::Code,
+    executable::LaunchAdmission,
     graph::{Graph, Snapshot},
     view::{Translation, View},
 };
@@ -272,6 +273,17 @@ unsafe extern "C" fn initialize() {
             .ok()?;
         fs::create_dir_all(session.join("ready")).ok()?;
         fs::write(session.join("ready").join(getpid().to_string()), b"1").ok()?;
+        if let Some(token) = std::env::var_os("PNPORT_LAUNCH_TOKEN") {
+            let token = token.to_str()?;
+            if !token.starts_with("pnport-")
+                || !token
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            {
+                return None;
+            }
+            fs::remove_file(session.join("pending").join(token)).ok()?;
+        }
         Some(())
     })();
     if result.is_none() {
@@ -541,13 +553,40 @@ hook!(dup2, pnport_dup2, (fd:c_int,newfd:c_int) -> c_int, {
 });
 
 static INJECTION_ENV: OnceLock<Vec<CString>> = OnceLock::new();
-fn admitted_program(path: &Path) -> std::result::Result<CString, c_int> {
-    let canonical = pnport_core::executable::validate(path).map_err(|error| fail(error.code))?;
-    CString::new(canonical.as_os_str().as_bytes()).map_err(|_| EINVAL)
+fn admitted_program(path: &Path) -> std::result::Result<(CString, LaunchAdmission), c_int> {
+    let admission = LaunchAdmission::new(path).map_err(|error| fail(error.code))?;
+    let canonical = CString::new(admission.path.as_os_str().as_bytes()).map_err(|_| EINVAL)?;
+    Ok((canonical, admission))
 }
 struct ChildImage {
     path: CString,
+    admission: LaunchAdmission,
     script_argv: Option<Vec<CString>>,
+}
+
+fn launch_marker(env: &mut Vec<CString>) -> std::result::Result<PathBuf, c_int> {
+    let session = SESSION.get().ok_or(EIO)?;
+    let pending = session.join("pending");
+    fs::create_dir_all(&pending).map_err(|_| fail(Code::PnportInjectionFailed))?;
+    // Publish before the syscall. An image that drops DYLD injection cannot
+    // acknowledge this token, so the supervisor rejects its partial trace.
+    let marker = tempfile::Builder::new()
+        .prefix("pnport-")
+        .tempfile_in(&pending)
+        .map_err(|_| fail(Code::PnportInjectionFailed))?;
+    let token = marker
+        .path()
+        .file_name()
+        .and_then(OsStr::to_str)
+        .ok_or_else(|| fail(Code::PnportInjectionFailed))?;
+    let entry = CString::new(format!("PNPORT_LAUNCH_TOKEN={token}"))
+        .map_err(|_| fail(Code::PnportInjectionFailed))?;
+    let path = marker
+        .into_temp_path()
+        .keep()
+        .map_err(|_| fail(Code::PnportInjectionFailed))?;
+    env.push(entry);
+    Ok(path)
 }
 
 unsafe fn prepare_child_image(
@@ -596,7 +635,7 @@ unsafe fn prepare_child_image(
         },
     )
     .map_err(|error| fail(error.code))?;
-    let admitted = admitted_program(&prepared.program)?;
+    let (admitted, admission) = admitted_program(&prepared.program)?;
     // Native exec preserves the caller's argv[0]. The kernel replaces it for
     // a shebang script, so only the script case needs a rebuilt argv vector.
     let script_argv = if prepared.args.len() == user_args.len() {
@@ -611,6 +650,7 @@ unsafe fn prepare_child_image(
     };
     Ok(ChildImage {
         path: admitted,
+        admission,
         script_argv,
     })
 }
@@ -625,6 +665,7 @@ unsafe fn child_env(envp: *const *const c_char) -> std::result::Result<Vec<CStri
         if ![
             b"PNPORT_SESSION=".as_slice(),
             b"PNPORT_CACHE=",
+            b"PNPORT_LAUNCH_TOKEN=",
             b"DYLD_INSERT_LIBRARIES=",
             b"LD_PRELOAD=",
         ]
@@ -646,12 +687,18 @@ hook!(execve,pnport_execve,(path:*const c_char,argv:*const *const c_char,envp:*c
     let original=original!(execve,unsafe extern "C" fn(*const c_char,*const *const c_char,*const *const c_char)->c_int);
     let Some(_guard)=Guard::enter() else {return original(path,argv,envp);};
     if RUNTIME.get().is_none() {return original(path,argv,envp);}
-    let env=match child_env(envp) {Ok(env)=>env,Err(code)=>{errno(code);return -1;}};
+    let mut env=match child_env(envp) {Ok(env)=>env,Err(code)=>{errno(code);return -1;}};
     let image=match prepare_child_image(path,argv,&env) {Ok(image)=>image,Err(code)=>{errno(code);return -1;}};
+    let marker=match launch_marker(&mut env) {Ok(marker)=>marker,Err(code)=>{errno(code);return -1;}};
     let script_argv=image.script_argv.as_ref().map(|args| {let mut pointers:Vec<_>=args.iter().map(|arg|arg.as_ptr()).collect();pointers.push(ptr::null());pointers});
     let argv=script_argv.as_ref().map_or(argv,Vec::as_ptr);
     let mut pointers:Vec<_>=env.iter().map(|e|e.as_ptr()).collect();pointers.push(ptr::null());
-    original(image.path.as_ptr(),argv,pointers.as_ptr())
+    if let Err(error)=image.admission.verify_at_launch() {let _=fs::remove_file(&marker);errno(fail(error.code));return -1;}
+    let result=original(image.path.as_ptr(),argv,pointers.as_ptr());
+    let saved_errno=*__error();
+    let _=fs::remove_file(&marker);
+    errno(saved_errno);
+    result
 });
 hook!(posix_spawn,pnport_spawn,(pid:*mut pid_t,path:*const c_char,actions:*const posix_spawn_file_actions_t,attributes:*const posix_spawnattr_t,argv:*const *mut c_char,envp:*const *mut c_char)->c_int,{
     let original=original!(posix_spawn,unsafe extern "C" fn(*mut pid_t,*const c_char,*const posix_spawn_file_actions_t,*const posix_spawnattr_t,*const *mut c_char,*const *mut c_char)->c_int);
@@ -663,10 +710,14 @@ hook!(posix_spawn,pnport_spawn,(pid:*mut pid_t,path:*const c_char,actions:*const
     if !actions.is_null() && !path.is_null() && !Path::new(OsStr::from_bytes(CStr::from_ptr(path).to_bytes())).is_absolute() {
         return fail(Code::PnportUnsupportedOperation);
     }
-    let env=match child_env(envp.cast()) {Ok(env)=>env,Err(code)=>return code};
+    let mut env=match child_env(envp.cast()) {Ok(env)=>env,Err(code)=>return code};
     let image=match prepare_child_image(path,argv.cast(),&env) {Ok(image)=>image,Err(code)=>return code};
+    let marker=match launch_marker(&mut env) {Ok(marker)=>marker,Err(code)=>return code};
     let script_argv=image.script_argv.as_ref().map(|args| {let mut pointers:Vec<_>=args.iter().map(|arg|arg.as_ptr().cast_mut()).collect();pointers.push(ptr::null_mut());pointers});
     let argv=script_argv.as_ref().map_or(argv,Vec::as_ptr);
     let mut pointers:Vec<_>=env.iter().map(|e|e.as_ptr().cast_mut()).collect();pointers.push(ptr::null_mut());
-    original(pid,image.path.as_ptr(),actions,attributes,argv,pointers.as_ptr())
+    if let Err(error)=image.admission.verify_at_launch() {let _=fs::remove_file(&marker);return fail(error.code);}
+    let result=original(pid,image.path.as_ptr(),actions,attributes,argv,pointers.as_ptr());
+    if result!=0 {let _=fs::remove_file(&marker);}
+    result
 });

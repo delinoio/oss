@@ -3922,6 +3922,7 @@ dependencies = [
  "pnport-core",
  "serde_json",
  "static_cell",
+ "tempfile",
 ]
 
 [[package]]

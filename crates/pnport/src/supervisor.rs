@@ -89,6 +89,18 @@ fn runtime_failure(session: &Path) -> Result<Option<Error>> {
     )))
 }
 
+fn pending_launches(session: &Path) -> Result<bool> {
+    match fs::read_dir(session.join("pending")) {
+        Ok(mut entries) => entries
+            .next()
+            .transpose()
+            .map(|entry| entry.is_some())
+            .map_err(|_| injection_error()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(_) => Err(injection_error()),
+    }
+}
+
 static SIGNAL: AtomicI32 = AtomicI32::new(0);
 #[cfg(unix)]
 extern "C" fn signal_handler(signal: i32) {
@@ -99,20 +111,23 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
     let prepared =
         pnport::executable::prepare(view, executable, args, std::env::var_os("PATH").as_deref())?;
     #[cfg(target_os = "macos")]
-    let admitted_program = fspy_shared_unix::spawn::admit_pnport_program(&prepared.program)
-        .map_err(|_| {
+    let admission =
+        fspy_shared_unix::spawn::admit_pnport_program(&prepared.program).map_err(|_| {
             Error::new(
                 Code::PnportUnsupportedOperation,
                 "The executable cannot accept macOS filesystem injection.",
             )
         })?;
+    #[cfg(target_os = "macos")]
+    let admitted_program = &admission.path;
     #[cfg(not(target_os = "macos"))]
     let admitted_program = prepared.program;
-    let mut command = Command::new(&admitted_program);
+    let mut command = Command::new(admitted_program);
     command
         .args(&prepared.args)
         .env("PNPORT_SESSION", &view.session)
-        .env("PNPORT_CACHE", &view.cache.root);
+        .env("PNPORT_CACHE", &view.cache.root)
+        .env_remove("PNPORT_LAUNCH_TOKEN");
     let variable = if cfg!(target_os = "macos") {
         "DYLD_INSERT_LIBRARIES"
     } else {
@@ -140,6 +155,8 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
         }
     }
     tracing::debug!(action = "spawn", "Starting the owned process tree");
+    #[cfg(target_os = "macos")]
+    admission.verify_at_launch()?;
     let mut child = command.spawn().map_err(|e| {
         Error::new(
             if e.kind() == std::io::ErrorKind::NotFound {
@@ -153,6 +170,7 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
     let pid = child.id() as i32;
     let start = Instant::now();
     let mut status = None;
+    let mut root_exited_at = None;
     let mut watch = crate::input_watch::InputWatch::default();
     let mut active_markers = std::collections::HashSet::new();
     let starting = view.session.join("starting").join(pid.to_string());
@@ -192,14 +210,28 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
             );
         }
         if let Some(exit) = child.try_wait().map_err(|_| injection_error())? {
-            status = Some(exit);
-            tracing::debug!(action="child_exit", status=?exit, "Child exited");
+            if status.is_none() {
+                status = Some(exit);
+                root_exited_at = Some(Instant::now());
+                tracing::debug!(action="child_exit", status=?exit, "Child exited");
+            }
             if !ready.is_file() {
                 return Err(Error::new(
                     Code::PnportInjectionFailed,
                     "The executable did not initialize native interception; its result is not a \
                      virtualized run.",
                 ));
+            }
+            if pending_launches(&view.session)? {
+                if root_exited_at.is_some_and(|at| at.elapsed() > Duration::from_secs(5)) {
+                    return Err(Error::new(
+                        Code::PnportInjectionFailed,
+                        "A child executable did not acknowledge native injection; its trace is \
+                         incomplete.",
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(100));
+                continue;
             }
             return Ok(exit_code(exit));
         }
@@ -396,5 +428,14 @@ __attribute__((constructor)) static void start(void) {
             fs::read_dir(view.session.join("starting")).unwrap().count(),
             1
         );
+    }
+
+    #[test]
+    fn unacknowledged_descendant_prevents_a_complete_result() {
+        let (_root, mut view, executable) = fixture();
+        fs::create_dir(view.session.join("pending")).unwrap();
+        fs::write(view.session.join("pending/pnport-unacknowledged"), b"").unwrap();
+        let result = run(&mut view, &artifact().unwrap(), &executable, &[]);
+        assert_eq!(result.unwrap_err().code, Code::PnportInjectionFailed);
     }
 }
