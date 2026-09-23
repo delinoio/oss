@@ -576,6 +576,10 @@ fn wait_for_external_service(
     workload: &environment::Plan,
     ready_deadline: Option<Instant>,
 ) -> Result<Outcome> {
+    // The caller already performed a retryable preflight. Treat it as the
+    // first unsuccessful probe so external endpoints never receive an
+    // immediate duplicate request before their configured polling interval.
+    sleep_cancellable(clip_to_deadline(options.interval, ready_deadline))?;
     loop {
         check_cancelled()?;
         match check_http(options, client, ready_deadline) {

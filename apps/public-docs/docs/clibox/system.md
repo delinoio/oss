@@ -59,7 +59,7 @@ Both commands default to `--scope project`, which coordinates calls from the sam
 
 ### HTTP service readiness
 
-`with-service URL` waits for HTTP headers before starting the workload. It sends GET and accepts any 2xx status by default; use `--method head` or `--status CODE` for a specific probe. Polling defaults to every `250ms`, each attempt to `3s`, and the overall `--ready-timeout` to `30s`. `--ready-timeout 0` disables only the overall readiness deadline; intervals and individual attempts remain positive.
+`with-service URL` waits for HTTP headers before starting the workload. It sends GET and accepts any 2xx status by default; use `--method head` or `--status CODE` for a specific probe. Polling defaults to every `250ms`, each attempt to `3s`, and the overall `--ready-timeout` to `30s`. After every unsuccessful probe, including the initial external-service preflight, clibox waits one polling interval before checking again. `--ready-timeout 0` disables only the overall readiness deadline; intervals and individual attempts remain positive.
 
 Without `--service`, the URL is external: clibox observes it but never terminates it. With `--service KEY=VALUE ... SERVER ARG ... -- WORKLOAD ...`, clibox first confirms that the URL is not already ready, then starts and owns that service. The first standalone `--` after `--service` separates the service command from the workload; a standalone separator inside service arguments is unsupported. Managed-service output goes to stderr. If the service exits before the workload finishes, or readiness fails, clibox stops its owned work.
 
