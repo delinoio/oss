@@ -705,6 +705,70 @@ int main(int argc, char **argv) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_empty_path_descriptor_forms_preserve_native_and_readonly_behavior() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("empty-path.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/syscall.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int main(void) {
+    int dependency = open("node_modules/dep/file.txt", O_RDONLY);
+    if (dependency < 0) return 20;
+    int output = open("output", O_CREAT | O_RDWR, 0600);
+    if (output < 0) return 21;
+    if (syscall(SYS_faccessat2, output, "", R_OK, AT_EMPTY_PATH)) return 22;
+    if (fchownat(output, "", getuid(), getgid(), AT_EMPTY_PATH)) return 23;
+    if (utimensat(output, "", 0, AT_EMPTY_PATH)) return 24;
+    if (syscall(SYS_faccessat2, dependency, "", R_OK, AT_EMPTY_PATH)) return 25;
+    errno = 0;
+    if (syscall(SYS_faccessat2, dependency, "", W_OK, AT_EMPTY_PATH) != -1 || errno != EROFS) return 26;
+    errno = 0;
+    if (fchownat(dependency, "", getuid(), getgid(), AT_EMPTY_PATH) != -1 || errno != EROFS) return 27;
+    errno = 0;
+    if (utimensat(dependency, "", 0, AT_EMPTY_PATH) != -1 || errno != EROFS) return 28;
+    errno = 0;
+    if (linkat(dependency, "", AT_FDCWD, "linked-dependency", AT_EMPTY_PATH) != -1 || errno != EROFS) return 29;
+    errno = 0;
+    if (linkat(output, "", AT_FDCWD, "node_modules/dep/linked", AT_EMPTY_PATH) != -1 || errno != EROFS) return 30;
+    close(output);
+    close(dependency);
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("empty-path");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(!root.path().join("linked-dependency").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_static_xattr_reads_translate_virtual_paths() {
     use std::process::Command;
     let root = fixture();

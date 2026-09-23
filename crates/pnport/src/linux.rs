@@ -1045,21 +1045,72 @@ impl Trace<'_> {
             0
         };
         let original = read_path(pid, argument(&regs, path_arg))?;
-        if call == SYS_FCHMODAT2
-            && original.as_os_str().is_empty()
-            && argument(&regs, 3) as i32 & libc::AT_EMPTY_PATH != 0
-        {
-            let fd = argument(&regs, 0) as i32;
-            if self
-                .fds
-                .get(&Self::group(pid))
-                .and_then(|fds| fds.get(&fd))
-                .is_some_and(|entry| entry.readonly)
-            {
-                self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
-                return Ok(true);
+        if original.as_os_str().is_empty() {
+            let flags = match call {
+                n if n == libc::SYS_newfstatat
+                    || n == libc::SYS_faccessat2
+                    || n == libc::SYS_utimensat
+                    || n == SYS_FCHMODAT2 =>
+                {
+                    argument(&regs, 3)
+                }
+                n if n == libc::SYS_statx => argument(&regs, 2),
+                n if n == libc::SYS_fchownat
+                    || n == libc::SYS_execveat
+                    || n == libc::SYS_linkat =>
+                {
+                    argument(&regs, 4)
+                }
+                _ => 0,
+            };
+            if flags as i32 & libc::AT_EMPTY_PATH != 0 {
+                let readonly = self
+                    .fds
+                    .get(&Self::group(pid))
+                    .and_then(|fds| fds.get(&dirfd))
+                    .is_some_and(|entry| entry.readonly);
+                if writing && readonly {
+                    self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
+                    return Ok(true);
+                }
+                if call == libc::SYS_linkat {
+                    let target_fd = argument(&regs, 2) as i32;
+                    let target_arg = 3;
+                    let target = read_path(pid, argument(&regs, target_arg))?;
+                    if !target.is_absolute() && target_fd != libc::AT_FDCWD {
+                        match fs::metadata(format!("/proc/{pid}/fd/{target_fd}")) {
+                            Ok(metadata) if !metadata.is_dir() => {
+                                self.force_error(pid, &mut regs, target_arg, libc::ENOTDIR)?;
+                                return Ok(true);
+                            }
+                            Err(_) => {
+                                self.force_error(pid, &mut regs, target_arg, libc::EBADF)?;
+                                return Ok(true);
+                            }
+                            _ => {}
+                        }
+                    }
+                    let translated =
+                        match self.translate(pid, target_fd, argument(&regs, target_arg)) {
+                            Ok(value) => value,
+                            Err(error) if error.code == Code::PnportResolutionFailed => {
+                                self.force_error(pid, &mut regs, target_arg, libc::ENOENT)?;
+                                return Ok(true);
+                            }
+                            Err(error) => return Err(error),
+                        };
+                    if translated.readonly {
+                        self.force_error(pid, &mut regs, target_arg, libc::EROFS)?;
+                        return Ok(true);
+                    }
+                    if target != translated.physical {
+                        rewrite_path(pid, &mut regs, target_arg, &translated.physical)?;
+                    }
+                    self.pending.insert(pid, Pending::Ordinary);
+                    return Ok(true);
+                }
+                return Ok(false);
             }
-            return Ok(false);
         }
         let is_open = call == libc::SYS_openat || call == libc::SYS_openat2 || call == SYS_OPEN;
         let in_root = openat2_resolve & RESOLVE_IN_ROOT != 0;
@@ -1071,10 +1122,7 @@ impl Trace<'_> {
             return Ok(false);
         }
         if original.as_os_str().is_empty()
-            && (call == libc::SYS_newfstatat
-                || call == libc::SYS_statx
-                || call == libc::SYS_execveat
-                    && argument(&regs, 4) as i32 & libc::AT_EMPTY_PATH != 0)
+            && (call == libc::SYS_newfstatat || call == libc::SYS_statx)
         {
             // Empty-path descriptor operations can target regular files.
             return Ok(false);
