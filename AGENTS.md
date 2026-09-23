@@ -88,6 +88,7 @@ enum ProjectId {
   Binpm = "binpm",
   CargoMono = "cargo-mono",
   Clibox = "clibox",
+  Pnport = "pnport",
   Nodeup = "nodeup",
   WithWatch = "with-watch",
   Derun = "derun",
@@ -109,6 +110,7 @@ enum ProjectId {
 - `with-watch` -> `crates/with-watch`
 - `cargo-mono` -> `crates/cargo-mono`
 - `clibox` -> `crates/clibox`, `crates/clibox-config`, `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`, `packages/clibox`, `apps/public-docs/docs/clibox`
+- `pnport` -> `crates/pnport`, `crates/pnport-preload`, `packages/pnport`, `apps/public-docs/docs/pnport`
 - `runmoor` -> `cmds/runmoor`, `apps/public-docs/docs/runmoor`
 - `derun` -> `cmds/derun`
 - `ttl` -> `cmds/ttlc`
@@ -483,3 +485,10 @@ Release automation baseline:
 - `release-clibox.yml` runs native unit/process tests and validates all eight native targets and the full nine-package set before publication. Publish and verify platform packages before the main package; reuse only identical registry integrity on retries. Dry runs are secret-free and non-publishing.
 - `CLIBOX_NPM_PUBLISH_ENABLED=true` and an exact first-party Trusted Publisher on all nine packages are required for npm OIDC/provenance publication. Only the separately guarded npm `publish` and GitHub `publish-release` jobs receive `id-token: write`; the latter uses it solely for Sigstore signing. The npm job must explicitly install the pinned OIDC-capable npm version before validating support and publishing, independent of Node's bundled npm.
 - Keep `docs/project-clibox.md`, the clibox domain contracts, root/domain AGENTS rules, release versioning, CI selection/aggregation, and distribution fixtures synchronized.
+
+### pnport Contract
+
+- Issue #958 and docs/project-pnport.md define the complete pnport 0.1.0 contract. Keep all six native execution/installation gates; no partial preview release.
+- Use private explicit Cargo members, pnp exactly 0.12.12, the pinned fspy provenance and the root nightly toolchain. Never substitute protected executables or silently run without virtualization.
+- Keep dependency views read-only, graph/peer identity stable, cache ownership private, publication atomic and active leases protected. No runtime networking, telemetry, automatic eviction or self-update.
+- Native/npm versions and pnport@v<version> identity agree; skip Cargo registry credentials/publication. Complete-set execution/install verification precedes publication authority.

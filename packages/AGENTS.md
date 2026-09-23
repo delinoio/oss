@@ -48,3 +48,8 @@
 - Build both Linux musl targets with the pinned Rust toolchain's `rust-lld` and self-contained runtime objects. Keep native-host and Alpine consumer execution gates; adding C dependencies requires revisiting this toolchain contract.
 
 - clibox GNU npm and GitHub Release archives must contain the same verified AlmaLinux 9/glibc 2.34 binaries. Its separately guarded GitHub publisher validates the complete nine-tarball input, exact tag/commit and source version, preserves immutable assets and reuses verified signatures before stable APT/DNF publication. The npm enable flag gates only npm. Neither publisher may query crates.io or require Cargo registry publication. Include all five clibox crate directories in package test inputs and native CI selection.
+
+### pnport Rules
+
+- Private `packages/pnport` generates @delino/pnport and six exact-version native packages with preferUnplugged. Follow `docs/packages-pnport-distribution-contract.md`; no install hooks, runtime downloads, compilation or unrelated PATH fallback. All six execution/install gates precede publication.
+- pnport native TypeScript conformance pins Yarn and the official compiler in its fixture and lockfile. Keep networked preparation separate from execution, disable Turbo caching for both conformance commands, and record the actual OS/architecture and compiler digest. The corrected official `typescript` package exposes `tsc`; never silently substitute it for an older `native-preview` package's `tsgo` command or rewrite its signature.

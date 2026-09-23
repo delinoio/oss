@@ -1,0 +1,4 @@
+.pnp.*
+.yarn/
+packages/*/lib/
+**/*.tsbuildinfo

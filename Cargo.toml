@@ -11,6 +11,8 @@ members = [
     "crates/clibox-transform",
     "crates/clibox-wait",
     "crates/nodeup",
+    "crates/pnport",
+    "crates/pnport-preload",
     "crates/with-watch",
     "crates/serde-feather",
     "crates/serde-feather-macros",

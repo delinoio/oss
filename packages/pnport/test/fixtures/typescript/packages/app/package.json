@@ -1,0 +1,11 @@
+{
+  "name": "@fixture/app",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@fixture/core": "workspace:*",
+    "@fixture/scoped": "file:../../fixture-packages/scoped",
+    "@types/node": "22.15.30",
+    "alias": "file:../../fixture-packages/scoped"
+  }
+}
