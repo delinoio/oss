@@ -1522,21 +1522,8 @@ fn run_once(
                     // completion is observed, so treat that ambiguity as a
                     // service failure instead of reporting success.
                     Ok(Some(_)) => true,
-                    Ok(None) => match service.exit_observed_without_reaping() {
-                        // `kill(-pgid, 0)` reports an unreaped zombie group
-                        // leader as present. Query its direct child state
-                        // first so a delayed completion worker cannot turn a
-                        // service exit into a successful workload result.
-                        Ok(true) => true,
-                        Ok(false) => match service.tree_running() {
-                            Ok(running) => !running,
-                            Err(error) => {
-                                cleanup_after_managed_service_failure(
-                                    &mut child, service, kill_after,
-                                );
-                                return Err(error);
-                            }
-                        },
+                    Ok(None) => match service.exit_before_workload_completion() {
+                        Ok(exited) => exited,
                         Err(error) => {
                             cleanup_after_managed_service_failure(&mut child, service, kill_after);
                             return Err(error);
@@ -2394,6 +2381,19 @@ impl OwnedChild {
     #[cfg(unix)]
     fn exit_observed_without_reaping(&self) -> Result<bool> {
         child_exit_observed_without_reaping(self.pid)
+    }
+
+    fn exit_before_workload_completion(&mut self) -> Result<bool> {
+        #[cfg(unix)]
+        {
+            // `kill(-pgid, 0)` reports an unreaped zombie group leader as
+            // present. Query its direct child state first so a delayed
+            // completion worker cannot turn a service exit into success.
+            if self.exit_observed_without_reaping()? {
+                return Ok(true);
+            }
+        }
+        self.tree_running().map(|running| !running)
     }
 
     #[cfg(unix)]
