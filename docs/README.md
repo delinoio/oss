@@ -67,10 +67,6 @@ Each project must have one project index document and one or more domain contrac
 - `docs/project-derun.md`
 - `docs/cmds-derun-foundation.md`
 
-### mpapp
-- `docs/project-mpapp.md`
-- `docs/apps-mpapp-foundation.md`
-
 ### public-docs
 - `docs/project-public-docs.md`
 - `docs/apps-public-docs-foundation.md` (single `oss.delino.io` publisher, six project subpaths, site selector, and stable `/devhud` section)
@@ -86,11 +82,6 @@ Each project must have one project index document and one or more domain contrac
 - `docs/crates-rustia-core-foundation.md`
 - `docs/crates-rustia-llm-foundation.md`
 - `docs/crates-rustia-macros-foundation.md`
-
-### ttl
-- `docs/project-ttl.md`
-- `docs/cmds-ttl-foundation.md`
-- `docs/cmds-ttl-language-contract.md`
 
 ### devhud
 The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS/Android system-webview hosts, production WidgetKit/AppWidgetProvider Deck widgets with backup-excluded coordinated iOS state and trusted Android configuration entry, synchronized Settings boundary, direct-client GitHub.com provider/setup and RealQA issue submission, desktop RealQA capture/editor/encrypted drafts/direct uploads, least-privilege Chrome context picker, authenticated Native Messaging broker, administrator SPA, and Admin API are implemented; other product-result surfaces and the remaining DevHUD domains are planned.

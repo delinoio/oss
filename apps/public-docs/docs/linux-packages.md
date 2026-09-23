@@ -8,7 +8,7 @@ Packages support x86-64 and ARM64 on Ubuntu 22.04, 24.04 and 26.04 LTS; Debian 1
 
 **Native packages are not published yet.** The commands below apply after each CLI’s first native package release. `binpm`, `cargo-mono`, `nodeup`, `with-watch`, `derun`, `runmoor` and `clibox` will all use stable. Preview is reserved and currently has no CLI packages. Package versions use the original CLI version followed by `-1`. Older releases published before native package support are unavailable through these repositories.
 
-Arch Linux, Alpine Linux, DevHud and TTL are outside this repository's support scope.
+These APT and DNF repositories do not support Arch Linux or Alpine Linux and do not distribute DevHud.
 
 ## Verify the repository key
 

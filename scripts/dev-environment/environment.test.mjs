@@ -1521,7 +1521,6 @@ test("repository policy is immutable, orchestration-only, and free of first-part
   assert.match(prepare, /CI/u);
   assert.match(prepare, /prepare:app/u);
   await assert.rejects(readFile(resolve(repositoryRoot, "scripts/setup/env-vars.sh"), "utf8"), /ENOENT/u);
-  await stat(resolve(repositoryRoot, "apps/mpapp/.env.example"));
   await stat(resolve(repositoryRoot, ".agents/skills"));
 });
 

@@ -86,7 +86,7 @@ test("clibox input changes select its aggregated consumer checks and force exter
       assert.equal(plan.jobs[id], true, file);
       assert.equal(plan.forced[id], !file.startsWith("packages/clibox/"), file);
     }
-    assert.equal(planJobs(event, ["apps/mpapp/src/unrelated.ts"]).jobs[id], false);
+    assert.equal(planJobs(event, ["apps/public-docs/docs/projects-overview.md"]).jobs[id], false);
   }
   const turbo = JSON.parse(source("packages/clibox/turbo.json"));
   assert.equal(turbo.tasks["test:package"].cache, false);

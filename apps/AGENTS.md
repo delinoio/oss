@@ -10,14 +10,13 @@
 - Prefer Rspack-family build tools for app build pipelines when they fit the runtime and deployment target.
 - Documentation development uses `pnpm dev:public-docs` and the consolidated fixed loopback port `46302`; package-local project docs are no longer separate workspaces. The wrapper must prevent CLI address overrides, forward termination signals to its child server, wait for it to exit, and fail with actionable conflict guidance instead of remapping the port.
 - DevHud frontend and administrator development use fixed ports `46305` and `46306`. Their package wrappers receive only the validated `DEVHUD_LOGTO_ISSUER` from the administrator configuration path, reject every other team-injected name, and never pass configuration through the root Turbo process. The frontend reduces that issuer to its origin for the exact development CSP required by pinned CEF. In team mode both launch issuers must match the private preflight comparison pin; in OSS mode they must exactly match the API wrapper's package-local value so Bootstrap and both browser policies agree. Follow `docs/repository-environment-contract.md`.
-- DevHud GitHub PATs and BYO R2 credentials remain in app-owned secure storage, never in the team development secret manager. `apps/mpapp/.env.example` public `EXPO_PUBLIC_*` configuration also remains package-local.
+- DevHud GitHub PATs and BYO R2 credentials remain in app-owned secure storage, never in the team development secret manager.
 - App file upload/download flows should default to Cloudflare R2 plus signed URLs unless the app contract documents a different storage or access pattern.
 - If a form has a single critical input, that input must receive focus when the form is shown.
 - Dialog UIs must support closing with the `Esc` key.
 
 ### Scope in This Domain
 
-- `apps/mpapp`: Expo React Native mobile app.
 - `apps/public-docs`: Rspress static public documentation app, including the `docs/binpm`, `docs/nodeup`, `docs/runmoor`, `docs/async-commit-hook`, `docs/clibox`, and `docs/pnport` content roots.
 - `apps/devhud`: implemented deterministic bilingual React/TypeScript shell, complete guest/Logto identity, synchronized Settings and opt-in diagnostics boundaries, direct-client GitHub.com provider/setup and issue submission, desktop RealQA capture/editor/encrypted drafts/direct official and BYO R2 uploads, populated Deck surface, desktop Native Messaging integration, target-isolated Rust/Tauri desktop CEF plus iOS/Android system-webview hosts, and production WidgetKit/AppWidgetProvider Deck widgets; other populated product surfaces remain planned.
 - `apps/devhud-chrome-extension`: implemented deterministic bilingual Chrome Manifest V3 DevHud context-picker extension.
@@ -70,11 +69,6 @@
 - Preserve the shell's localized skip link, 44px minimum targets, 320px/dynamic-text/zoom overflow resistance, reduced-motion and increased-contrast behavior, non-color-only interaction states, and clearance between floating UI and fixed navigation. Shared dialogs and sheets trap focus, close with Escape, and restore their current mounted opener unless focus intentionally transfers to another action; More must remain unavailable while a screen-owned modal confirmation is open. Responsive changes must not remount the identity/service, URL-mapping draft, Deck polling, synchronized appearance/shortcut, or desktop RealQA controller boundaries.
 - Desktop shortcut configuration is device-local and uses only the documented six closed action enums and structured modifier/key values. `right-primary` is physical right Command on macOS and physical right Control on Windows/X11; an additional unconfigured primary-family modifier must suppress the chord without being persisted, bridged, synchronized, or diagnosed. The DevHud-owned macOS backend is a passive CoreGraphics event tap: it consumes only physical virtual-key codes and pressed state, immediately discards unknown input, returns native events unchanged, and performs no keyboard-layout or display-text translation. `rdev` is restricted to Windows and Linux dependency closures. Never collect, persist, bridge, log, or diagnose unrelated/raw keyboard events. Native listener failures retry with capped backoff, reset adapter and matcher pressed state before replacement input, reconcile every supported side-specific macOS modifier before recognized ordinary replacement input, preserve staged and last-valid settings bindings, and expose only stable failure classifications; localized macOS Accessibility/Input Monitoring plus Linux X11/XWayland guidance must remain available.
 - Initialize and localize the native tray before the frontend can invoke tray commands. The command palette traps focus, restores its trigger on Escape and normal completion, and preserves focus for a destination surface's sole critical input. Native external links use only the documented closed allowlist and confirm opener success with a bounded background wait; timeout or opener failures must return an error and emit structured diagnostics.
-
-### mpapp Rules
-
-- `mpapp` must remain Expo-based unless a documented architecture decision changes it.
-- Bluetooth capabilities and permissions must be explicitly documented in `docs/apps-mpapp-foundation.md`.
 
 
 ### binpm-docs Rules

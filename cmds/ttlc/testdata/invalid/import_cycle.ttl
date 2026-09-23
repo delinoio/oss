@@ -1,7 +1,0 @@
-package cycle
-
-import "./import_cycle.ttl"
-
-task func Loop() Vc[string] {
-    return vc("unreachable")
-}

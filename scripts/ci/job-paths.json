@@ -72,7 +72,6 @@
       "apps/AGENTS.md",
       "apps/devhud-admin/**",
       "apps/devhud/**",
-      "apps/mpapp/.env.example",
       "apps/public-docs/**",
       "docs/README.md",
       "docs/apps-devhud-admin-contract.md",
@@ -161,36 +160,6 @@
       "rust-toolchain",
       "rust-toolchain.toml",
       "turbo.json"
-    ]
-  },
-  "node-mpapp-test": {
-    "paths": [
-      ".npmrc",
-      ".nvmrc",
-      "apps/mpapp/**",
-      "package.json",
-      "pnpm-lock.yaml",
-      "pnpm-workspace.yaml",
-      "turbo.json"
-    ],
-    "workspace": "mpapp",
-    "workspacePaths": [
-      "apps/mpapp/**"
-    ]
-  },
-  "node-mpapp-lint": {
-    "paths": [
-      ".npmrc",
-      ".nvmrc",
-      "apps/mpapp/**",
-      "package.json",
-      "pnpm-lock.yaml",
-      "pnpm-workspace.yaml",
-      "turbo.json"
-    ],
-    "workspace": "mpapp",
-    "workspacePaths": [
-      "apps/mpapp/**"
     ]
   },
   "node-public-docs-test": {
