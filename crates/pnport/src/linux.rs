@@ -3,7 +3,8 @@
 //! The filter follows fspy's pinned Linux seccomp approach. Virtualization
 //! needs to replace pathname arguments, so selected calls use
 //! `SECCOMP_RET_TRACE` and a tracer owned by the launching supervisor. The
-//! tracee opts in with `PTRACE_TRACEME`; pnport never attaches to other tasks.
+//! The helper stops itself before the supervisor seizes that owned child;
+//! pnport never attaches to unrelated tasks.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -335,11 +336,6 @@ fn record_helper_code(code: Code) {
 }
 
 fn helper_setup() -> std::io::Result<()> {
-    unsafe {
-        if libc::ptrace(libc::PTRACE_TRACEME, 0, 0, 0) != 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-    }
     install_filter()?;
     unsafe {
         libc::raise(libc::SIGSTOP);
@@ -356,7 +352,10 @@ pub fn probe() -> Result<()> {
     let pid = child.id() as i32;
     let mediated = (|| -> Result<()> {
         let mut status = 0;
-        if unsafe { libc::waitpid(pid, &mut status, 0) } != pid || !libc::WIFSTOPPED(status) {
+        if unsafe { libc::waitpid(pid, &mut status, libc::WUNTRACED) } != pid
+            || !libc::WIFSTOPPED(status)
+            || libc::WSTOPSIG(status) != libc::SIGSTOP
+        {
             tracing::debug!(
                 action = "linux_probe",
                 stage = "initial_stop",
@@ -365,7 +364,7 @@ pub fn probe() -> Result<()> {
             );
             return Err(injection_failed());
         }
-        if unsafe { libc::ptrace(libc::PTRACE_SETOPTIONS, pid, 0, TRACE_OPTIONS) } != 0 {
+        if unsafe { libc::ptrace(libc::PTRACE_SEIZE, pid, 0, TRACE_OPTIONS) } != 0 {
             tracing::debug!(
                 action = "linux_probe",
                 stage = "options",
@@ -373,12 +372,27 @@ pub fn probe() -> Result<()> {
             );
             return Err(injection_failed());
         }
-        resume(pid, false, 0)?;
-        if unsafe { libc::waitpid(pid, &mut status, 0) } != pid
-            || !libc::WIFSTOPPED(status)
-            || libc::WSTOPSIG(status) != libc::SIGTRAP
-            || status >> 16 != libc::PTRACE_EVENT_SECCOMP
-        {
+        if unsafe { libc::kill(pid, libc::SIGCONT) } != 0 {
+            return Err(injection_failed());
+        }
+        let mut seccomp_stop = false;
+        for _ in 0..8 {
+            if unsafe { libc::waitpid(pid, &mut status, WAIT_ALL) } != pid
+                || !libc::WIFSTOPPED(status)
+            {
+                break;
+            }
+            if status >> 16 == libc::PTRACE_EVENT_SECCOMP {
+                seccomp_stop = true;
+                break;
+            }
+            if status >> 16 == libc::PTRACE_EVENT_STOP || libc::WSTOPSIG(status) == libc::SIGCONT {
+                resume(pid, false, 0)?;
+                continue;
+            }
+            break;
+        }
+        if !seccomp_stop {
             tracing::debug!(
                 action = "linux_probe",
                 stage = "seccomp_stop",
@@ -645,6 +659,7 @@ enum Pending {
 struct Trace<'a> {
     view: &'a mut View,
     tasks: HashSet<i32>,
+    startup_stops: HashSet<i32>,
     groups: HashMap<i32, i32>,
     pending: HashMap<i32, Pending>,
     fds: HashMap<i32, HashMap<i32, Translation>>,
@@ -1367,7 +1382,10 @@ impl Trace<'_> {
                 output,
                 capacity,
                 target,
-            } if returned >= 0 => {
+            } if returned >= 0 || returned == -(libc::EINVAL as i64) => {
+                // The materialized target is a real directory, so the
+                // kernel's EINVAL means it is not itself a symlink. Preserve
+                // other errors such as EFAULT from the caller's output.
                 let bytes = target.as_os_str().as_bytes();
                 if capacity == 0 {
                     set_result(&mut regs, -(libc::EINVAL as i64));
@@ -1427,12 +1445,16 @@ impl Trace<'_> {
     }
 
     fn stop_tree(&mut self) -> Result<()> {
+        let termination_signal = match super::supervisor::handled_signal() {
+            libc::SIGINT | libc::SIGHUP | libc::SIGTERM => super::supervisor::handled_signal(),
+            _ => libc::SIGTERM,
+        };
         for pid in &self.tasks {
             unsafe {
-                libc::kill(*pid, libc::SIGTERM);
+                libc::kill(*pid, termination_signal);
                 // A traced task can be parked at the stop that caused the
                 // failure. SIGTERM is only delivered after it is resumed.
-                libc::ptrace(libc::PTRACE_CONT, *pid, 0, 0);
+                libc::ptrace(libc::PTRACE_CONT, *pid, 0, termination_signal);
             }
         }
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -1528,6 +1550,11 @@ impl Trace<'_> {
                 event,
                 "Owned child trace event"
             );
+            if event == libc::PTRACE_EVENT_STOP {
+                self.startup_stops.remove(&pid);
+                resume(pid, self.pending.contains_key(&pid), 0)?;
+                return Ok(true);
+            }
             if event == libc::PTRACE_EVENT_SECCOMP {
                 self.enter(pid)?;
                 return Ok(true);
@@ -1542,6 +1569,7 @@ impl Trace<'_> {
                 }
                 let child = created as i32;
                 self.tasks.insert(child);
+                self.startup_stops.insert(child);
                 let parent_group = Self::group(pid);
                 let child_group = Self::group(child);
                 self.groups.insert(child, child_group);
@@ -1587,13 +1615,19 @@ impl Trace<'_> {
             resume(pid, false, 0)?;
             return Ok(true);
         }
-        // Initial stops from auto-attached children are ptrace protocol, not
-        // signals requested by the child command.
-        resume(
-            pid,
-            self.pending.contains_key(&pid),
-            if signal == libc::SIGSTOP { 0 } else { signal },
-        )?;
+        if status >> 16 == libc::PTRACE_EVENT_STOP {
+            if self.startup_stops.remove(&pid) {
+                resume(pid, self.pending.contains_key(&pid), 0)?;
+            } else {
+                // SEIZE + LISTEN preserves a real job-control stop until
+                // SIGCONT, including a child-requested SIGSTOP.
+                if unsafe { libc::ptrace(libc::PTRACE_LISTEN, pid, 0, 0) } != 0 {
+                    return Err(injection_failed());
+                }
+            }
+            return Ok(true);
+        }
+        resume(pid, self.pending.contains_key(&pid), signal)?;
         Ok(true)
     }
 }
@@ -1623,14 +1657,17 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
     let child = command.spawn().map_err(|_| injection_failed())?;
     let pid = child.id() as i32;
     let mut status = 0;
-    if unsafe { libc::waitpid(pid, &mut status, 0) } != pid || !libc::WIFSTOPPED(status) {
+    if unsafe { libc::waitpid(pid, &mut status, libc::WUNTRACED) } != pid
+        || !libc::WIFSTOPPED(status)
+        || libc::WSTOPSIG(status) != libc::SIGSTOP
+    {
         unsafe {
             libc::kill(pid, libc::SIGKILL);
             libc::waitpid(pid, &mut status, 0);
         }
         return Err(injection_failed());
     }
-    if unsafe { libc::ptrace(libc::PTRACE_SETOPTIONS, pid, 0, TRACE_OPTIONS) } != 0 {
+    if unsafe { libc::ptrace(libc::PTRACE_SEIZE, pid, 0, TRACE_OPTIONS) } != 0 {
         unsafe {
             libc::kill(pid, libc::SIGKILL);
             libc::waitpid(pid, &mut status, 0);
@@ -1640,6 +1677,7 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
     let mut trace = Trace {
         view,
         tasks: HashSet::from([pid]),
+        startup_stops: HashSet::from([pid]),
         groups: HashMap::from([(pid, pid)]),
         pending: HashMap::new(),
         fds: HashMap::new(),
@@ -1652,7 +1690,9 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
         root_exec: false,
     };
     let outcome = (|| {
-        resume(pid, false, 0)?;
+        if unsafe { libc::kill(pid, libc::SIGCONT) } != 0 {
+            return Err(injection_failed());
+        }
         let mut next_check = Instant::now();
         loop {
             let signal = super::supervisor::handled_signal();
