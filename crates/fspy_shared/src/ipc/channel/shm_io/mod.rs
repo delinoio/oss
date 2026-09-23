@@ -161,6 +161,21 @@ mod tests {
     }
 
     #[test]
+    fn unrecorded_action_rejects_an_otherwise_complete_trace() {
+        let shm = MockedShm::alloc(1024);
+        // SAFETY: `MockedShm::alloc` provides a valid, properly-sized,
+        // zero-initialized allocation.
+        let writer = unsafe { ShmWriter::new(shm.clone(), S) }.unwrap();
+        assert!(writer.try_write_frame(b"recorded"));
+        writer.mark_incomplete();
+        assert!(writer.is_closed());
+        // SAFETY: the region remains valid and is accessed only through the
+        // channel protocol.
+        let result = unsafe { ShmReader::seal(shm, S) };
+        assert!(matches!(result, Err(SealError::Closed)));
+    }
+
+    #[test]
     fn zero_sized_frames_are_rejected() {
         let shm = MockedShm::alloc(1024);
         // SAFETY: see `single_thread_basic`.

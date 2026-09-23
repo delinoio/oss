@@ -93,6 +93,13 @@ impl<'a> Client<'a> {
         });
     }
 
+    /// Reports an intercepted action that will proceed without a record.
+    pub fn mark_incomplete(&self) {
+        if let Some(sender) = &self.ipc_sender {
+            sender.mark_incomplete();
+        }
+    }
+
     /// Resolves and reports an exec before forwarding its transformed
     /// arguments.
     ///

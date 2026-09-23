@@ -18,6 +18,8 @@ The generic fspy runner creates a random, user-private preload directory for eac
 
 On Linux, a seccomp notification whose access cannot be recorded still resumes the target syscall. The supervisor retains the recording error and fails collection after the target exits, so callers cannot treat the partial trace as complete.
 
+The Unix preload forwards an intercepted filesystem call after a path-resolution error and marks the shared channel incomplete first. The receiver rejects that channel at seal time instead of reporting a partial trace as complete.
+
 ## Maintenance and validation
 
 For an update, select an exact upstream commit, compare all imported trees and external Git revisions, update licenses and provenance, then reapply and review every local change. Verify the locked Cargo graph, formatting, Clippy and root `cargo test`. Build the macOS pnport-mode fspy preload before pnport fixture and TypeScript tests. Run Linux and Windows build checks on their native CI hosts. Inspect npm/native package inventories, ABI marker, installed license notices and the six-host release gate. No GitHub repository fork, crates.io publication or pnport release is part of this source fork.

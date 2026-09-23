@@ -221,6 +221,11 @@ pub struct Sender {
 }
 
 impl Sender {
+    /// Fails a future seal when an intercepted action cannot be recorded.
+    pub fn mark_incomplete(&self) {
+        self.writer.mark_incomplete();
+    }
+
     /// Serializes one record into a committed frame.
     ///
     /// A claim the channel refuses is skipped, because that is all a sender

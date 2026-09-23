@@ -74,6 +74,12 @@ impl<M: AsRawSlice> ShmWriter<M> {
         self.mapped.claims().load(Ordering::Relaxed) & CLOSED != 0
     }
 
+    /// Marks the trace incomplete before an unrecorded filesystem action
+    /// proceeds. The receiver then rejects the channel when sealing it.
+    pub fn mark_incomplete(&self) {
+        self.mapped.claims().fetch_or(CLOSED, Ordering::Relaxed);
+    }
+
     /// Claims a frame of exactly `frame_size` bytes. Wait-free: two
     /// `fetch_add`s, no retry loop (rule 1).
     ///
