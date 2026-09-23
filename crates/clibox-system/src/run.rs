@@ -1235,10 +1235,10 @@ fn run_once(
             }
             if limits_expired_at(&limits, last_activity, completion.observed_at) {
                 tracing::debug!(operation = "run", stage = "timeout", "run_cleanup");
-                if !cleanup_or_log(&mut child, kill_after) {
-                    return runtime_failure("Owned workload cleanup could not be confirmed.");
+                if cleanup_or_log(&mut child, kill_after) {
+                    return finish_timed_out_workload_output(&mut child);
                 }
-                return finish_timed_out_workload_output(&mut child);
+                return Ok(Outcome::Code(124));
             }
             let status = completion.status;
             // Reaping the direct child does not end ownership of its process
@@ -1267,10 +1267,10 @@ fn run_once(
         }
         if limits_expired_at(&limits, last_activity, Instant::now()) {
             tracing::debug!(operation = "run", stage = "timeout", "run_cleanup");
-            if !cleanup_or_log(&mut child, kill_after) {
-                return runtime_failure("Owned workload cleanup could not be confirmed.");
+            if cleanup_or_log(&mut child, kill_after) {
+                return finish_timed_out_workload_output(&mut child);
             }
-            return finish_timed_out_workload_output(&mut child);
+            return Ok(Outcome::Code(124));
         }
         thread::sleep(POLL);
     }
