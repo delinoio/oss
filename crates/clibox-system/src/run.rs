@@ -1853,6 +1853,13 @@ impl OwnedChild {
             "run_cleanup"
         );
         if graceful_delivered {
+            // A zero grace interval still gives the delivered signal one
+            // scheduling opportunity. Recheck before SIGKILL because macOS
+            // retains the unreaped group leader while the live descendants
+            // have already exited.
+            if !self.tree_running()? {
+                return Ok(());
+            }
             self.signal(true)?;
         }
         let confirmation = Instant::now()
@@ -2538,14 +2545,6 @@ fn linux_process_group_member(stat: &str, group: u32) -> Result<bool> {
 
 #[cfg(target_os = "macos")]
 fn completed_process_group_running(group: u32) -> Result<bool> {
-    unsafe extern "C" {
-        fn proc_listpgrppids(
-            pgrpid: libc::pid_t,
-            buffer: *mut libc::pid_t,
-            buffersize: libc::c_int,
-        ) -> libc::c_int;
-    }
-
     const INITIAL_GROUP_MEMBERS: usize = 64;
     const MAXIMUM_GROUP_MEMBERS: usize = 4096;
 
@@ -2559,7 +2558,9 @@ fn completed_process_group_running(group: u32) -> Result<bool> {
                 Failure::new(Code::IoFailed, "Process-group member list is too large.")
             })?;
         // proc_listpgrppids returns a PID count, rather than a byte count.
-        let count = unsafe { proc_listpgrppids(group as libc::pid_t, members.as_mut_ptr(), bytes) };
+        let count = unsafe {
+            libc::proc_listpgrppids(group as libc::pid_t, members.as_mut_ptr().cast(), bytes)
+        };
         if count < 0 {
             return Err(Failure::io(&io::Error::last_os_error()));
         }
@@ -2576,10 +2577,43 @@ fn completed_process_group_running(group: u32) -> Result<bool> {
             members.resize((members.len() * 2).min(MAXIMUM_GROUP_MEMBERS), 0);
             continue;
         }
-        return Ok(members[..count]
-            .iter()
-            .any(|member| *member > 0 && *member as u32 != group));
+        for member in &members[..count] {
+            if *member > 0 && macos_process_group_member_running(*member, group)? {
+                return Ok(true);
+            }
+        }
+        return Ok(false);
     }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_process_group_member_running(pid: libc::pid_t, group: u32) -> Result<bool> {
+    // proc_listpgrppids includes zombie processes. Recheck both membership
+    // and status before treating a listed PID as a live cleanup target.
+    let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::zeroed();
+    let bytes = libc::c_int::try_from(std::mem::size_of::<libc::proc_bsdinfo>())
+        .map_err(|_| Failure::new(Code::IoFailed, "Could not inspect the owned process group."))?;
+    let observed = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            bytes,
+        )
+    };
+    if observed == 0 {
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() == Some(libc::ESRCH) {
+            return Ok(false);
+        }
+        return Err(Failure::io(&error));
+    }
+    if observed != bytes {
+        return runtime_failure("Could not inspect the owned process group.");
+    }
+    let info = unsafe { info.assume_init() };
+    Ok(info.pbi_pgid == group && info.pbi_status != libc::SZOMB)
 }
 
 #[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
