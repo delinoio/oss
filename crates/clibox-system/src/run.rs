@@ -703,7 +703,7 @@ fn with_service(options: Service) -> Result<Outcome> {
 }
 
 fn finish_managed_service_output(service: &mut OwnedChild) -> Result<()> {
-    match service.join_output_within(&Limits::default()) {
+    match service.join_output_within(&Limits::default(), None) {
         OutputJoin::Complete if service.output_failed() => {
             runtime_failure("Could not forward managed service output.")
         }
@@ -1158,7 +1158,9 @@ fn run_once(
             }
         }
         if runtime::cancelled() {
-            let _ = cleanup_or_log(&mut child, kill_after);
+            if cleanup_or_log(&mut child, kill_after) {
+                finish_cancelled_workload_output(&mut child)?;
+            }
             return Err(Failure::new(
                 Code::Cancelled,
                 "Execution was cancelled; owned children were asked to stop.",
@@ -1281,7 +1283,7 @@ fn finish_workload_output(
     limits: &Limits,
     status: ExitStatus,
 ) -> Result<Outcome> {
-    match child.join_output_within(limits) {
+    match child.join_output_within(limits, None) {
         OutputJoin::Complete if child.output_failed() => {
             runtime_failure("Could not forward workload output.")
         }
@@ -1296,7 +1298,7 @@ fn finish_workload_output(
 }
 
 fn finish_timed_out_workload_output(child: &mut OwnedChild) -> Result<Outcome> {
-    match child.join_output_within(&Limits::default()) {
+    match child.join_output_within(&Limits::default(), None) {
         OutputJoin::Complete if child.output_failed() => {
             runtime_failure("Could not forward workload output.")
         }
@@ -1308,6 +1310,19 @@ fn finish_timed_out_workload_output(child: &mut OwnedChild) -> Result<Outcome> {
             Code::Cancelled,
             "Execution was cancelled while forwarding timed-out workload output.",
         )),
+    }
+}
+
+fn finish_cancelled_workload_output(child: &mut OwnedChild) -> Result<()> {
+    let cancellation_generation = runtime::cancellation_generation();
+    match child.join_output_within(&Limits::default(), Some(cancellation_generation)) {
+        OutputJoin::Complete if child.output_failed() => {
+            runtime_failure("Could not forward workload output.")
+        }
+        OutputJoin::Complete | OutputJoin::Cancelled => Ok(()),
+        OutputJoin::Deadline | OutputJoin::Failed => {
+            runtime_failure("Could not finish forwarding workload output.")
+        }
     }
 }
 
@@ -1853,7 +1868,11 @@ impl OwnedChild {
         ))
     }
 
-    fn join_output_within(&mut self, limits: &Limits) -> OutputJoin {
+    fn join_output_within(
+        &mut self,
+        limits: &Limits,
+        ignored_cancellation_generation: Option<usize>,
+    ) -> OutputJoin {
         let now = Instant::now();
         let fallback_deadline = now.checked_add(CLEANUP_CONFIRMATION).unwrap_or(now);
         loop {
@@ -1868,7 +1887,10 @@ impl OwnedChild {
                     OutputJoin::Failed
                 };
             }
-            if runtime::cancelled() {
+            if ignored_cancellation_generation
+                .is_none_or(|generation| runtime::cancellation_generation() != generation)
+                && runtime::cancelled()
+            {
                 return OutputJoin::Cancelled;
             }
             let deadline = output_deadline(limits, self.activity.as_ref(), fallback_deadline);

@@ -1119,6 +1119,52 @@ fn first_cancellation_honors_the_configured_cleanup_grace() {
 }
 
 #[test]
+fn cancellation_forwards_shutdown_output_before_returning() {
+    let home = tempfile::tempdir().unwrap();
+    let ready = home.path().join("cancellation-output-ready");
+    let ready_assignment = format!("READY={}", ready.display());
+    let mut wrapper = command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--idle-timeout",
+            "30s",
+            "--kill-after",
+            "500ms",
+            &ready_assignment,
+            "--",
+            "sh",
+            "-c",
+            ": > \"$READY\"; trap 'printf cancellation-shutdown >&2; exit 0' TERM; while :; do :; \
+             done",
+        ],
+    )
+    .stdout(Stdio::null())
+    .stderr(Stdio::piped())
+    .spawn()
+    .unwrap();
+    let ready_deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !ready.is_file() {
+        if wrapper.try_wait().unwrap().is_some() || std::time::Instant::now() >= ready_deadline {
+            let _ = wrapper.kill();
+            let _ = wrapper.wait();
+            panic!("workload did not become ready for cancellation");
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    assert_eq!(unsafe { libc::kill(wrapper.id() as i32, libc::SIGINT) }, 0);
+    let output = wrapper.wait_with_output().unwrap();
+
+    assert_eq!(output.status.code(), Some(130), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("cancellation-shutdown"),
+        "cancellation shutdown output was not forwarded: {output:?}"
+    );
+}
+
+#[test]
 fn cancellation_during_completed_descendant_cleanup_overrides_child_success() {
     let home = tempfile::tempdir().unwrap();
     let ready = home.path().join("descendant-cleanup-ready");
