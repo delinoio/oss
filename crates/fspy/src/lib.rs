@@ -271,6 +271,70 @@ int main(int argc, char **argv) {
         }
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn preload_records_symbolic_link_reads() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let source = directory.path().join("preload-readlink.c");
+        let executable = directory.path().join("preload-readlink");
+        let direct = directory.path().join("direct-link");
+        let relative = directory.path().join("relative-link");
+        let relative_from_fd = directory
+            .path()
+            .canonicalize()
+            .expect("resolve descriptor base")
+            .join("relative-link");
+        std::os::unix::fs::symlink("direct-target", &direct).expect("create direct link");
+        std::os::unix::fs::symlink("relative-target", &relative).expect("create relative link");
+        fs::write(
+            &source,
+            r#"#include <fcntl.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+  if (argc != 3) return 2;
+  char output[256];
+  if (readlink(argv[1], output, sizeof(output)) < 0) return 3;
+  int fd = open(argv[2], O_RDONLY);
+  if (fd < 0) return 4;
+  if (readlinkat(fd, "relative-link", output, sizeof(output)) < 0) return 5;
+  close(fd);
+  return 0;
+}
+"#,
+        )
+        .expect("write link fixture");
+        assert!(
+            std::process::Command::new("cc")
+                .arg(&source)
+                .arg("-o")
+                .arg(&executable)
+                .status()
+                .expect("compile link fixture")
+                .success()
+        );
+        let mut command = super::Command::new(&executable);
+        command.args([&direct, directory.path()]);
+        let child = command
+            .spawn(CancellationToken::new())
+            .await
+            .expect("spawn tracked fixture");
+        let termination = child.wait_handle.await.expect("wait for fixture");
+        assert!(termination.status.success(), "{:?}", termination.status);
+        let accesses = termination.path_accesses.expect("complete trace");
+        for expected in [&direct, &relative_from_fd] {
+            assert!(
+                accesses.iter().any(|access| {
+                    access.mode.contains(super::AccessMode::READ)
+                        && access.path.strip_path_prefix(expected, |path| {
+                            path.is_ok_and(|remaining| remaining.as_os_str().is_empty())
+                        })
+                }),
+                "missing link read for {}",
+                expected.display()
+            );
+        }
+    }
+
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn late_seccomp_filter_continues_after_root_trace_seals() {
