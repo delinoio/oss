@@ -3171,7 +3171,9 @@ fn read_linux_identity(path: &Path, valid: fn(&str) -> bool) -> Result<Option<Ve
 
 #[cfg(any(target_os = "linux", test))]
 fn valid_machine_id(value: &str) -> bool {
-    value.len() == 32 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+    value.len() == 32
+        && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+        && value.bytes().any(|byte| byte != b'0')
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -4526,6 +4528,11 @@ mod rate_limit_tests {
             read_linux_identity(&boot, valid_uuid).unwrap(),
             Some(b"01234567-89ab-cdef-0123-456789abcdef".to_vec())
         );
+    }
+
+    #[test]
+    fn linux_machine_identity_rejects_the_all_zero_sentinel() {
+        assert!(!valid_machine_id("00000000000000000000000000000000"));
     }
 }
 
