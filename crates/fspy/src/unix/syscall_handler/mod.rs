@@ -4,7 +4,6 @@ mod open;
 mod stat;
 
 use std::{
-    borrow::Cow,
     ffi::{OsStr, c_int},
     io,
     os::unix::ffi::OsStrExt,
@@ -41,6 +40,29 @@ impl SyscallHandler {
         self.arena
     }
 
+    fn resolve_path(
+        &mut self,
+        caller: Caller,
+        dir_fd: Fd,
+        path_ptr: CStrPtr,
+    ) -> io::Result<Option<PathBuf>> {
+        let Some(path_len) = path_ptr.read(caller, &mut self.path_read_buf)? else {
+            // Ignore paths that are too long to fit in PATH_MAX
+            return Ok(None);
+        };
+        let path = Path::new(OsStr::from_bytes(&self.path_read_buf[..path_len]));
+        let path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            let mut resolved_path = PathBuf::from(dir_fd.get_path(caller)?);
+            if !nix::NixPath::is_empty(path) {
+                resolved_path.push(path);
+            }
+            resolved_path
+        };
+        Ok(Some(path))
+    }
+
     fn handle_open(
         &mut self,
         caller: Caller,
@@ -48,20 +70,9 @@ impl SyscallHandler {
         path_ptr: CStrPtr,
         flags: c_int,
     ) -> io::Result<()> {
-        let Some(path_len) = path_ptr.read(caller, &mut self.path_read_buf)? else {
-            // Ignore paths that are too long to fit in PATH_MAX
+        let Some(path) = self.resolve_path(caller, dir_fd, path_ptr)? else {
             return Ok(());
         };
-        let mut path = Cow::Borrowed(Path::new(OsStr::from_bytes(
-            &self.path_read_buf[..path_len],
-        )));
-        if !path.is_absolute() {
-            let mut resolved_path = PathBuf::from(dir_fd.get_path(caller)?);
-            if !nix::NixPath::is_empty(path.as_ref()) {
-                resolved_path.push(&path);
-            }
-            path = Cow::Owned(resolved_path);
-        }
         self.arena.add(PathAccess {
             mode: fspy_shared_unix::open_mode::from_flags(flags),
             path: path.as_os_str().into(),

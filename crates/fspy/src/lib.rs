@@ -290,6 +290,51 @@ int main(int argc, char **argv) {
 
     #[cfg(target_os = "linux")]
     #[tokio::test]
+    async fn seccomp_exec_records_script_interpreter() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let source = directory.path().join("launcher.c");
+        let executable = directory.path().join("launcher");
+        let interpreter = directory.path().join("interpreter");
+        let script = directory.path().join("script");
+        fs::write(
+            &source,
+            "#include <unistd.h>\nint main(int argc, char **argv) { if (argc != 2) return 2; \
+             execl(argv[1], argv[1], (char *)0); return 127; }\n",
+        )
+        .expect("write launcher");
+        assert!(
+            std::process::Command::new("cc")
+                .arg("-static")
+                .arg(&source)
+                .arg("-o")
+                .arg(&executable)
+                .status()
+                .expect("compile launcher")
+                .success()
+        );
+        std::os::unix::fs::symlink("/bin/sh", &interpreter).expect("link interpreter");
+        fs::write(&script, "#!interpreter\nexit 0\n").expect("write script");
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755))
+            .expect("make script executable");
+
+        let mut command = super::Command::new(&executable);
+        command.arg("script").current_dir(directory.path());
+        let child = command
+            .spawn(CancellationToken::new())
+            .await
+            .expect("spawn tracked launcher");
+        let termination = child.wait_handle.await.expect("wait for launcher");
+        assert!(termination.status.success());
+        let accesses = termination.path_accesses.expect("complete trace");
+        assert!(accesses.iter().any(|access| {
+            access.path.strip_path_prefix(&interpreter, |path| {
+                path.is_ok_and(|remaining| remaining.as_os_str().is_empty())
+            })
+        }));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
     async fn path_search_exec_runs_plain_text_through_tracked_shell() {
         let directory = tempfile::tempdir().expect("create fixture directory");
         let source = directory.path().join("shell-fallback.c");

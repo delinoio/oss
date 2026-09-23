@@ -35,6 +35,7 @@ Windows access classification treats deletion, file metadata and extended-attrib
 Windows handle-to-path lookup retries boundedly when the required UTF-16 buffer grows between calls. A persistently changing path returns an error to the access recorder instead of panicking or reporting an unchecked path.
 
 On Linux, a seccomp notification whose access cannot be recorded still resumes the target syscall. The supervisor retains the recording error and fails collection after the target exits, so callers cannot treat the partial trace as complete.
+The seccomp `execve` and `execveat` handlers inspect bounded shebang chains and record each interpreter image the kernel reads without another syscall. Relative interpreter paths resolve against the target process's working directory. Inspection errors make the trace incomplete while the target syscall continues.
 
 Linux preload selection recognizes only the host glibc loader for the supported x64 and arm64 targets. Foreign ELF interpreters, including musl loaders, use seccomp so the host-built preload is not injected into an incompatible process.
 

@@ -32,6 +32,11 @@ impl Default for ParseShebangOptions {
     }
 }
 
+/// Reads and parses the kernel-sized prefix of a possible script image.
+///
+/// # Errors
+///
+/// Returns an inspection error or `ENOEXEC` for a malformed interpreter line.
 pub fn parse_shebang(
     mut peek_executable: impl FnMut(&Path, &mut [u8]) -> nix::Result<usize>,
     path: &Path,

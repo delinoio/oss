@@ -12,7 +12,7 @@ use std::{
 use bstr::{BStr, BString, ByteSlice};
 use fspy_shared::ipc::AccessMode;
 use nix::unistd::{AccessFlags, access};
-use shebang::{ParseShebangOptions, parse_shebang};
+pub use shebang::{ParseShebangOptions, parse_shebang};
 
 use crate::open_exec::open_executable;
 
