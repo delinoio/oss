@@ -440,8 +440,9 @@ mod windows_state_tests {
         let lock = open_lock(&state.join("admission.lock")).expect("state lock");
 
         unprotect_dacl(&lock);
+        drop(lock);
 
-        assert!(ensure_windows_private_dacl(&lock).is_err());
+        assert!(open_lock(&state.join("admission.lock")).is_err());
     }
 }
 
@@ -2415,7 +2416,7 @@ fn ensure_private_dir(path: &Path) -> Result<()> {
             // A state directory is created only after its handle proves it is
             // not a reparse substitute owned by another account. Restrict its
             // DACL before creating lock or bucket files beneath it.
-            restrict_windows_state_directory(&directory)?;
+            restrict_windows_state_dacl(&directory, true)?;
         }
         ensure_windows_private_dacl(&directory)?;
         Ok(())
@@ -2441,31 +2442,60 @@ fn ensure_private_dir(path: &Path) -> Result<()> {
     }
 }
 
+#[cfg(windows)]
+fn open_windows_state_lock(path: &Path) -> Result<(File, bool)> {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    use windows_sys::Win32::{
+        Foundation::{GENERIC_READ, GENERIC_WRITE},
+        Storage::FileSystem::{FILE_FLAG_OPEN_REPARSE_POINT, READ_CONTROL, WRITE_DAC},
+    };
+
+    let open = |create_new| {
+        let mut options = OpenOptions::new();
+        options.read(true).write(true);
+        if create_new {
+            options.create_new(true);
+        }
+        options
+            .access_mode(GENERIC_READ | GENERIC_WRITE | READ_CONTROL | WRITE_DAC)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(path)
+    };
+    match open(false) {
+        Ok(file) => Ok((file, false)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => match open(true) {
+            Ok(file) => Ok((file, true)),
+            // Another same-user invocation can create the lock after the
+            // first open reports NotFound. Reopen it as existing state so its
+            // DACL is verified rather than silently rewritten.
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => open(false)
+                .map(|file| (file, false))
+                .map_err(|error| Failure::io(&error)),
+            Err(error) => Err(Failure::io(&error)),
+        },
+        Err(error) => Err(Failure::io(&error)),
+    }
+}
+
 fn open_lock(path: &Path) -> Result<File> {
     #[cfg(unix)]
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 
     #[cfg(target_os = "macos")]
     let existed = path.try_exists().map_err(|error| Failure::io(&error))?;
-    let mut options = OpenOptions::new();
-    options.create(true).read(true).write(true);
-    #[cfg(unix)]
-    {
-        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
-    }
     #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-
-        use windows_sys::Win32::{
-            Foundation::{GENERIC_READ, GENERIC_WRITE},
-            Storage::FileSystem::{FILE_FLAG_OPEN_REPARSE_POINT, READ_CONTROL},
-        };
-        options
-            .access_mode(GENERIC_READ | GENERIC_WRITE | READ_CONTROL)
-            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
-    }
-    let file = options.open(path).map_err(|error| Failure::io(&error))?;
+    let (file, created) = open_windows_state_lock(path)?;
+    #[cfg(not(windows))]
+    let file = {
+        let mut options = OpenOptions::new();
+        options.create(true).read(true).write(true);
+        #[cfg(unix)]
+        {
+            options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+        }
+        options.open(path).map_err(|error| Failure::io(&error))?
+    };
     #[cfg(target_os = "macos")]
     if !existed {
         clear_macos_acl(path)?;
@@ -2488,6 +2518,13 @@ fn open_lock(path: &Path) -> Result<File> {
     #[cfg(windows)]
     {
         ensure_windows_state_object(&file, false)?;
+        if created {
+            // A new child inherits the directory ACE, but that does not make
+            // its descriptor protected. Install a direct DACL before it can
+            // become accepted coordination state; existing state still fails
+            // closed instead of being silently repaired.
+            restrict_windows_state_dacl(&file, false)?;
+        }
         ensure_windows_private_dacl(&file)?;
     }
     Ok(file)
@@ -2651,10 +2688,10 @@ fn write_bucket(path: &Path, bucket: &Bucket) -> Result<()> {
 
             use windows_sys::Win32::{
                 Foundation::GENERIC_WRITE,
-                Storage::FileSystem::{FILE_FLAG_OPEN_REPARSE_POINT, READ_CONTROL},
+                Storage::FileSystem::{FILE_FLAG_OPEN_REPARSE_POINT, READ_CONTROL, WRITE_DAC},
             };
             options
-                .access_mode(GENERIC_WRITE | READ_CONTROL)
+                .access_mode(GENERIC_WRITE | READ_CONTROL | WRITE_DAC)
                 .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
         }
         let mut file = options
@@ -2665,6 +2702,7 @@ fn write_bucket(path: &Path, bucket: &Bucket) -> Result<()> {
         #[cfg(windows)]
         {
             ensure_windows_state_object(&file, false)?;
+            restrict_windows_state_dacl(&file, false)?;
             ensure_windows_private_dacl(&file)?;
         }
         file.write_all(&bytes)
@@ -2874,7 +2912,7 @@ fn ensure_windows_state_object(file: &File, directory: bool) -> Result<()> {
 }
 
 #[cfg(windows)]
-fn restrict_windows_state_directory(file: &File) -> Result<()> {
+fn restrict_windows_state_dacl(file: &File, directory: bool) -> Result<()> {
     use std::os::windows::io::AsRawHandle;
 
     use windows_sys::Win32::{
@@ -2901,20 +2939,16 @@ fn restrict_windows_state_directory(file: &File) -> Result<()> {
         + unsafe { GetLengthSid(user) as usize };
     let mut bytes = vec![0u8; size];
     let acl = bytes.as_mut_ptr().cast::<ACL>();
+    let inheritance = if directory {
+        CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE
+    } else {
+        0
+    };
     if unsafe { InitializeAcl(acl, size as u32, ACL_REVISION) } == 0
-        || unsafe {
-            AddAccessAllowedAceEx(
-                acl,
-                ACL_REVISION,
-                CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE,
-                FILE_ALL_ACCESS,
-                user,
-            )
-        } == 0
+        || unsafe { AddAccessAllowedAceEx(acl, ACL_REVISION, inheritance, FILE_ALL_ACCESS, user) }
+            == 0
     {
-        return runtime_failure(
-            "Execution state directory access controls could not be initialized.",
-        );
+        return runtime_failure("Execution state access controls could not be initialized.");
     }
     if unsafe {
         SetSecurityInfo(
@@ -2928,9 +2962,7 @@ fn restrict_windows_state_directory(file: &File) -> Result<()> {
         )
     } != ERROR_SUCCESS
     {
-        return runtime_failure(
-            "Execution state directory access controls could not be restricted.",
-        );
+        return runtime_failure("Execution state access controls could not be restricted.");
     }
     Ok(())
 }
