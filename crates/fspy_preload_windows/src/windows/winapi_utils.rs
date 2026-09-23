@@ -13,8 +13,9 @@ use winapi::{
     um::{
         fileapi::GetFinalPathNameByHandleW,
         winnt::{
-            ACCESS_MASK, FILE_APPEND_DATA, FILE_READ_DATA, FILE_WRITE_DATA, GENERIC_READ,
-            GENERIC_WRITE,
+            ACCESS_MASK, ACCESS_SYSTEM_SECURITY, DELETE, FILE_APPEND_DATA, FILE_DELETE_CHILD,
+            FILE_READ_DATA, FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA, FILE_WRITE_EA, GENERIC_ALL,
+            GENERIC_READ, GENERIC_WRITE, MAXIMUM_ALLOWED, WRITE_DAC, WRITE_OWNER,
         },
     },
 };
@@ -102,8 +103,22 @@ pub unsafe fn get_path_name(handle: HANDLE) -> winsafe::SysResult<SmallVec<u16, 
 }
 
 pub const fn access_mask_to_mode(desired_access: ACCESS_MASK) -> AccessMode {
-    let has_write = (desired_access & (FILE_WRITE_DATA | FILE_APPEND_DATA | GENERIC_WRITE)) != 0;
-    let has_read = (desired_access & (FILE_READ_DATA | GENERIC_READ)) != 0;
+    let has_write = (desired_access
+        & (FILE_WRITE_DATA
+            | FILE_APPEND_DATA
+            | FILE_WRITE_EA
+            | FILE_WRITE_ATTRIBUTES
+            | FILE_DELETE_CHILD
+            | DELETE
+            | WRITE_DAC
+            | WRITE_OWNER
+            | ACCESS_SYSTEM_SECURITY
+            | GENERIC_WRITE
+            | GENERIC_ALL
+            | MAXIMUM_ALLOWED))
+        != 0;
+    let has_read =
+        (desired_access & (FILE_READ_DATA | GENERIC_READ | GENERIC_ALL | MAXIMUM_ALLOWED)) != 0;
     if has_write {
         if has_read {
             AccessMode::READ.union(AccessMode::WRITE)
@@ -159,7 +174,33 @@ mod tests {
         path::PathBuf,
     };
 
-    use super::{ck_long, get_path_name};
+    use super::{access_mask_to_mode, ck_long, get_path_name};
+
+    #[test]
+    fn mutation_only_rights_are_writes() {
+        use winapi::um::winnt::{
+            DELETE, FILE_DELETE_CHILD, FILE_READ_DATA, FILE_WRITE_ATTRIBUTES, FILE_WRITE_EA,
+            WRITE_DAC, WRITE_OWNER,
+        };
+
+        for right in [
+            DELETE,
+            FILE_DELETE_CHILD,
+            FILE_WRITE_ATTRIBUTES,
+            FILE_WRITE_EA,
+            WRITE_DAC,
+            WRITE_OWNER,
+        ] {
+            assert_eq!(
+                access_mask_to_mode(right),
+                fspy_shared::ipc::AccessMode::WRITE
+            );
+            assert_eq!(
+                access_mask_to_mode(right | FILE_READ_DATA),
+                fspy_shared::ipc::AccessMode::READ.union(fspy_shared::ipc::AccessMode::WRITE)
+            );
+        }
+    }
 
     #[test]
     fn detours_status_is_checked() {

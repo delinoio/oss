@@ -22,6 +22,8 @@ Windows descendant hooks terminate and close a newly created suspended child whe
 
 Windows preload attachment and detachment check the returned Detours `LONG` status from each transaction operation. A failed attach prevents DLL initialization from reporting a complete trace.
 
+Windows access classification treats deletion, file metadata and extended-attribute mutation, directory-child deletion, and security-owner/DACL mutation rights as writes. Combined read/write masks remain both inputs and outputs; maximum-allowed access is classified conservatively.
+
 On Linux, a seccomp notification whose access cannot be recorded still resumes the target syscall. The supervisor retains the recording error and fails collection after the target exits, so callers cannot treat the partial trace as complete.
 
 At root-process exit, the seccomp supervisor cancels both listener acceptance and each active handler's notification wait. Handlers return their already collected accesses and recording errors without waiting for descendants that still hold the listener open.
