@@ -23,6 +23,17 @@ pub fn prepare(
     args: &[OsString],
     search_path: Option<&OsStr>,
 ) -> Result<Prepared> {
+    let cwd = std::env::current_dir().map_err(|_| invalid())?;
+    prepare_with_context(view, path, args, search_path, &cwd)
+}
+
+pub fn prepare_with_context(
+    view: &mut View,
+    path: &Path,
+    args: &[OsString],
+    search_path: Option<&OsStr>,
+    cwd: &Path,
+) -> Result<Prepared> {
     let mut path = path.to_owned();
     let mut args = args.to_vec();
     for _ in 0..8 {
@@ -71,7 +82,12 @@ pub fn prepare(
                 })
                 .ok_or_else(invalid)?;
             interpreter_args.extend(words.iter().skip(1).map(OsString::from));
-            find_interpreter(name.as_ref(), search_path)?
+            find_on_path(name.as_ref(), search_path, cwd).ok_or_else(|| {
+                Error::new(
+                    Code::PnportCommandNotFound,
+                    "The requested interpreter is not executable on PATH.",
+                )
+            })?
         } else {
             if !Path::new(interpreter).is_absolute() {
                 return Err(invalid());

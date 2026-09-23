@@ -667,6 +667,82 @@ int main(void) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_descendant_virtual_script_keeps_its_logical_argument() {
+    use std::process::Command;
+    let root = fixture();
+    let cache = tempfile::tempdir().unwrap();
+    let mut archive = zip::ZipWriter::new(fs::File::create(root.path().join("cache.zip")).unwrap());
+    archive
+        .start_file(
+            "node_modules/dep/script",
+            zip::write::SimpleFileOptions::default().unix_permissions(0o755),
+        )
+        .unwrap();
+    archive
+        .write_all(b"#!/usr/bin/env -S sh\nIFS= read -r value < \"${0%/*}/file.txt\"\nprintf '%s|%s|%s\\n' \"$0\" \"$value\" \"$1\"\n")
+        .unwrap();
+    archive
+        .start_file(
+            "node_modules/dep/file.txt",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+    archive.write_all(b"package bytes").unwrap();
+    archive.finish().unwrap();
+    let source = root.path().join("script-launcher.c");
+    fs::write(
+        &source,
+        r#"
+#include <unistd.h>
+int main(void) {
+    char *args[] = {"node_modules/dep/script", "extra", 0};
+    char *env[] = {"PATH=/bin", 0};
+    execve(args[0], args, env);
+    return 42;
+}
+"#,
+    )
+    .unwrap();
+    let launcher = root.path().join("script-launcher");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&launcher)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(
+        Command::new(&launcher)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(42)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--"])
+        .arg(&launcher)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let logical = root.path().join("cache.zip/node_modules/dep/script");
+    assert_eq!(
+        result.stdout,
+        format!("{}|package bytes|extra\n", logical.display()).as_bytes()
+    );
+    assert!(!root.path().join("node_modules").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_nonleader_thread_exec_reaps_the_owned_tree() {
     use std::process::Command;
     let root = fixture();

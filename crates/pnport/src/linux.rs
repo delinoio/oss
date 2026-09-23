@@ -8,7 +8,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    ffi::{CString, OsStr},
+    ffi::{CString, OsStr, OsString},
     fs::{self, File},
     io::{Read, Seek, SeekFrom},
     mem,
@@ -35,6 +35,7 @@ const SECCOMP_RET_TRACE: u32 = 0x7ff0_0000;
 const SECCOMP_RET_ALLOW: u32 = 0x7fff_0000;
 const SECCOMP_SET_MODE_FILTER: libc::c_uint = 1;
 const PATH_LIMIT: usize = 4096;
+const EXEC_VECTOR_LIMIT: usize = 256;
 // The fixed prefix and resolution bits from Linux's openat2 UAPI.
 const OPEN_HOW_SIZE: usize = 24;
 const RESOLVE_BENEATH: u64 = 0x08;
@@ -590,6 +591,56 @@ fn read_path(pid: i32, address: u64) -> Result<PathBuf> {
         "A child pathname exceeded the Linux path limit.",
     ))
 }
+
+fn read_pointer_vector(pid: i32, address: u64) -> Result<Vec<u64>> {
+    if address == 0 {
+        return Ok(Vec::new());
+    }
+    let mut values = Vec::new();
+    for index in 0..EXEC_VECTOR_LIMIT {
+        let bytes = read_remote(pid, address + (index * mem::size_of::<u64>()) as u64, 8)?;
+        let pointer = u64::from_ne_bytes(
+            bytes
+                .get(..8)
+                .ok_or_else(injection_failed)?
+                .try_into()
+                .unwrap(),
+        );
+        if pointer == 0 {
+            return Ok(values);
+        }
+        values.push(pointer);
+    }
+    Err(unsupported(
+        "A child exec argument vector exceeded the supported bound.",
+    ))
+}
+
+fn child_search_path(pid: i32, envp: u64) -> Result<Option<OsString>> {
+    if envp == 0 {
+        return Ok(None);
+    }
+    for index in 0..EXEC_VECTOR_LIMIT {
+        let bytes = read_remote(pid, envp + (index * mem::size_of::<u64>()) as u64, 8)?;
+        let pointer = u64::from_ne_bytes(
+            bytes
+                .get(..8)
+                .ok_or_else(injection_failed)?
+                .try_into()
+                .unwrap(),
+        );
+        if pointer == 0 {
+            return Ok(None);
+        }
+        if read_remote(pid, pointer, 5)?.get(..5) == Some(b"PATH=") {
+            let value = read_path(pid, pointer)?;
+            return Ok(Some(OsString::from(OsStr::from_bytes(
+                &value.as_os_str().as_bytes()[5..],
+            ))));
+        }
+    }
+    Ok(None)
+}
 fn write_remote(pid: i32, address: u64, bytes: &[u8]) -> Result<()> {
     let local = libc::iovec {
         iov_base: bytes.as_ptr().cast_mut().cast(),
@@ -644,6 +695,45 @@ fn rewrite_path_slot(
         & !15;
     write_remote(pid, address, bytes.as_bytes_with_nul())?;
     set_argument(regs, index, address);
+    set_registers(pid, regs)
+}
+
+fn rewrite_exec_arguments(
+    pid: i32,
+    regs: &mut Registers,
+    argv_arg: usize,
+    path_address: u64,
+    prefixes: &[OsString],
+    original: &[u64],
+) -> Result<()> {
+    let mut cursor = path_address;
+    let mut pointers = vec![path_address];
+    for prefix in prefixes {
+        let bytes = CString::new(prefix.as_os_str().as_bytes()).map_err(|_| injection_failed())?;
+        cursor = cursor
+            .checked_sub(bytes.as_bytes_with_nul().len() as u64 + 16)
+            .ok_or_else(injection_failed)?
+            & !15;
+        write_remote(pid, cursor, bytes.as_bytes_with_nul())?;
+        pointers.push(cursor);
+    }
+    pointers.extend(original.iter().skip(1).copied());
+    pointers.push(0);
+    let raw: Vec<u8> = pointers
+        .iter()
+        .flat_map(|pointer| pointer.to_ne_bytes())
+        .collect();
+    if raw.len() > PATH_LIMIT {
+        return Err(unsupported(
+            "A child exec argument vector exceeded the supported bound.",
+        ));
+    }
+    cursor = cursor
+        .checked_sub(raw.len() as u64 + 16)
+        .ok_or_else(injection_failed)?
+        & !15;
+    write_remote(pid, cursor, &raw)?;
+    set_argument(regs, argv_arg, cursor);
     set_registers(pid, regs)
 }
 
@@ -1022,6 +1112,41 @@ impl Trace<'_> {
             }
             Err(error) => return Err(error),
         };
+        if (call == libc::SYS_execve || call == libc::SYS_execveat)
+            && translation.logical != translation.physical
+        {
+            let mut magic = [0u8; 2];
+            if File::open(&translation.physical)
+                .and_then(|mut file| file.read_exact(&mut magic))
+                .is_ok()
+                && magic == *b"#!"
+            {
+                let argv_arg = if call == libc::SYS_execve { 1 } else { 2 };
+                let envp_arg = if call == libc::SYS_execve { 2 } else { 3 };
+                let original_argv = read_pointer_vector(pid, argument(&regs, argv_arg))?;
+                let search_path = child_search_path(pid, argument(&regs, envp_arg))?;
+                let cwd = self.base(pid, libc::AT_FDCWD, Path::new("."))?;
+                let prepared = pnport::executable::prepare_with_context(
+                    self.view,
+                    &translation.logical,
+                    &[],
+                    search_path.as_deref(),
+                    &cwd,
+                )?;
+                rewrite_path(pid, &mut regs, path_arg, &prepared.program)?;
+                let path_address = argument(&regs, path_arg);
+                rewrite_exec_arguments(
+                    pid,
+                    &mut regs,
+                    argv_arg,
+                    path_address,
+                    &prepared.args,
+                    &original_argv,
+                )?;
+                self.pending.insert(pid, Pending::Ordinary);
+                return Ok(true);
+            }
+        }
         if is_open && translation.virtual_link {
             let flags = if call == libc::SYS_openat2 {
                 let how = read_remote(pid, argument(&regs, 2), 8)?;
