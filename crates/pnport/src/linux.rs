@@ -51,7 +51,7 @@ const SYS_FCHMODAT2: i64 = 452;
 // known read-only filesystem requests may reach a managed dependency FD.
 const FS_IOC_GETFLAGS: u64 = 0x8008_6601;
 const FS_IOC_FSGETXATTR: u64 = 0x801c_581f;
-const FIONREAD: u64 = libc::FIONREAD as u64;
+const FIONREAD: u64 = libc::FIONREAD;
 const TRACE_OPTIONS: usize = (libc::PTRACE_O_TRACESYSGOOD
     | libc::PTRACE_O_TRACEFORK
     | libc::PTRACE_O_TRACEVFORK
