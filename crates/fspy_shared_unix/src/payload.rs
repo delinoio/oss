@@ -25,13 +25,6 @@ pub struct Payload<'a> {
     pub preload_path: &'a IpcStr,
 
     #[cfg(target_os = "linux")]
-    #[cfg_attr(
-        not(target_env = "musl"),
-        expect(
-            clippy::struct_field_names,
-            reason = "descriptive field name for clarity"
-        )
-    )]
     pub seccomp_payload: fspy_seccomp_unotify::payload::SeccompPayload,
 }
 
