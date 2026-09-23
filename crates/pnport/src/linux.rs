@@ -677,7 +677,14 @@ impl Trace<'_> {
                 .cloned()
                 .unwrap_or_else(|| fs::read_link(format!("/proc/{pid}/cwd")).unwrap_or_default())
         } else if let Some(entry) = self.fds.get(&group).and_then(|fds| fds.get(&dirfd)) {
-            entry.logical.clone()
+            // A native directory descriptor survives rename and symlink
+            // retargeting. Only materialized virtual paths need the saved
+            // logical identity for relative lookup.
+            if entry.logical != entry.physical {
+                entry.logical.clone()
+            } else {
+                fs::read_link(format!("/proc/{pid}/fd/{dirfd}")).map_err(|_| injection_failed())?
+            }
         } else {
             fs::read_link(format!("/proc/{pid}/fd/{dirfd}")).map_err(|_| injection_failed())?
         };
@@ -1234,7 +1241,7 @@ impl Trace<'_> {
                 .fds
                 .get(&group)
                 .and_then(|fds| fds.get(&fd))
-                .map(|entry| entry.logical.clone())
+                .and_then(|entry| (entry.logical != entry.physical).then(|| entry.logical.clone()))
                 .or_else(|| fs::read_link(format!("/proc/{pid}/fd/{fd}")).ok());
             if let Some(path) = path {
                 Pending::ChangeDirectory(path)
