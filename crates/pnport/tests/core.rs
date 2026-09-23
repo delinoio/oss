@@ -626,6 +626,61 @@ int main(void) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_forwards_child_sigtrap() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("trap.c");
+    fs::write(
+        &source,
+        r#"
+#include <signal.h>
+#include <stdio.h>
+#include <string.h>
+static volatile sig_atomic_t handled = 0;
+static void on_trap(int signal) { (void)signal; handled = 1; }
+int main(int argc, char **argv) {
+    if (argc == 1 || strcmp(argv[1], "default")) signal(SIGTRAP, on_trap);
+    raise(SIGTRAP);
+    if (!handled) return 51;
+    puts("trap-handled");
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("trap");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let handled = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        handled.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&handled.stderr)
+    );
+    assert_eq!(handled.stdout, b"trap-handled\n");
+    let default = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg("default")
+        .output()
+        .unwrap();
+    assert_eq!(default.status.code(), Some(128 + libc::SIGTRAP));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_doctor_rejects_an_incompatible_companion_architecture() {
     use std::process::Command;
     let root = fixture();

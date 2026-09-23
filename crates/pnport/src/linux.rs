@@ -1241,6 +1241,12 @@ impl Trace<'_> {
         }
         if signal == libc::SIGTRAP {
             let event = status >> 16;
+            if event == 0 {
+                // A trap raised by the tracee is a child signal, not a ptrace
+                // protocol event. Forward it to its handler or default action.
+                resume(pid, false, libc::SIGTRAP)?;
+                return Ok(true);
+            }
             tracing::trace!(
                 action = "linux_event",
                 pid,
