@@ -566,8 +566,12 @@ fn with_service(options: Service) -> Result<Outcome> {
         .clone()
         .map(environment::prepare)
         .transpose()?;
-    let client = service_http_client(options.url.scheme() == "https")?;
     let ready_deadline = deadline(start, Some(options.ready_timeout))?;
+    let client = match service_http_client(options.url.scheme() == "https", ready_deadline) {
+        Ok(client) => client,
+        Err(error) if error.code == Code::TerminationTimeout => return Ok(Outcome::Code(124)),
+        Err(error) => return Err(error),
+    };
 
     // The bounded preflight deliberately happens before spawning either child.
     match check_http(&options, &client, ready_deadline) {
@@ -1094,9 +1098,12 @@ fn contains_permission_denied(error: &(dyn std::error::Error + 'static)) -> bool
     error.source().is_some_and(contains_permission_denied)
 }
 
-fn service_http_client(https: bool) -> Result<reqwest::blocking::Client> {
+fn service_http_client(
+    https: bool,
+    readiness_deadline: Option<Instant>,
+) -> Result<reqwest::blocking::Client> {
     let tls = if https {
-        native_service_tls()?
+        native_service_tls(readiness_deadline)?
     } else {
         tls_with_roots(rustls::RootCertStore::empty())?
     };
@@ -1116,12 +1123,16 @@ fn service_http_client(https: bool) -> Result<reqwest::blocking::Client> {
         })
 }
 
-fn native_service_tls() -> Result<rustls::ClientConfig> {
+fn native_service_tls(readiness_deadline: Option<Instant>) -> Result<rustls::ClientConfig> {
+    wait_for_readiness_initialization(readiness_deadline, native_service_tls_blocking)?
+}
+
+fn native_service_tls_blocking() -> Result<rustls::ClientConfig> {
     // rustls-native-certs currently honors these OpenSSL-style overrides on
-    // supported platforms. Service probes promise OS trust only, and run no
-    // child until this preflight completes, so scope the workaround to root
-    // loading and restore the caller's environment before any workload spawn.
-    // Remove it once the loader offers an explicit native-only API.
+    // supported platforms. Service probes promise OS trust only, so scope the
+    // workaround to root loading. An unfinished worker never permits a child
+    // spawn, and process exit ends it after cancellation or readiness timeout.
+    // Remove this workaround once the loader offers an explicit native-only API.
     let _overrides = NativeRootOverrides::without_custom_ca();
     let loaded = rustls_native_certs::load_native_certs();
     let mut roots = rustls::RootCertStore::empty();
@@ -1137,6 +1148,56 @@ fn native_service_tls() -> Result<rustls::ClientConfig> {
         return runtime_failure("No usable native trust roots are available for HTTP readiness.");
     }
     tls_with_roots(roots)
+}
+
+fn wait_for_readiness_initialization<T: Send + 'static>(
+    readiness_deadline: Option<Instant>,
+    initialize: impl FnOnce() -> T + Send + 'static,
+) -> Result<T> {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    thread::Builder::new()
+        .name("clibox-native-trust".into())
+        .spawn(move || {
+            let _ = sender.send(initialize());
+        })
+        .map_err(|error| {
+            tracing::debug!(
+                operation = "run-with-service",
+                error_kind = ?error.kind(),
+                stage = "native_trust_worker_spawn_failed",
+                "run_readiness"
+            );
+            Failure::new(
+                Code::IoFailed,
+                "HTTP readiness trust initialization failed.",
+            )
+        })?;
+    loop {
+        check_cancelled()?;
+        match receiver.try_recv() {
+            Ok(initialized) => return Ok(initialized),
+            Err(mpsc::TryRecvError::Disconnected) => {
+                return runtime_failure("HTTP readiness trust initialization failed.");
+            }
+            Err(mpsc::TryRecvError::Empty) => (),
+        }
+        let wait = readiness_deadline
+            .map(|deadline| deadline.saturating_duration_since(Instant::now()))
+            .unwrap_or(POLL);
+        if wait.is_zero() {
+            return Err(Failure::new(
+                Code::TerminationTimeout,
+                "HTTP readiness trust initialization exceeded the readiness timeout.",
+            ));
+        }
+        match receiver.recv_timeout(POLL.min(wait)) {
+            Ok(initialized) => return Ok(initialized),
+            Err(mpsc::RecvTimeoutError::Timeout) => (),
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return runtime_failure("HTTP readiness trust initialization failed.");
+            }
+        }
+    }
 }
 
 fn tls_with_roots(roots: rustls::RootCertStore) -> Result<rustls::ClientConfig> {
@@ -4556,6 +4617,22 @@ mod lifecycle_tests {
 
         assert!(matches!(outcome, ManagedServiceWait::Exited));
         assert_eq!(checks, 2);
+    }
+
+    #[test]
+    fn native_trust_initialization_stops_waiting_at_the_readiness_deadline() {
+        let (release, blocked_loader) = mpsc::sync_channel(0);
+        let deadline = Instant::now()
+            .checked_add(Duration::from_millis(1))
+            .unwrap();
+
+        let error = wait_for_readiness_initialization(Some(deadline), move || {
+            let _ = blocked_loader.recv();
+        })
+        .unwrap_err();
+
+        assert_eq!(error.code, Code::TerminationTimeout);
+        release.send(()).unwrap();
     }
 
     #[test]
