@@ -19,7 +19,10 @@ use pnport::{
 
 pub fn platform() -> Result<()> {
     if !cfg!(all(
-        any(target_os = "macos", target_os = "linux"),
+        any(
+            target_os = "macos",
+            all(target_os = "linux", target_env = "gnu")
+        ),
         any(target_arch = "x86_64", target_arch = "aarch64")
     )) {
         return Err(Error::new(
