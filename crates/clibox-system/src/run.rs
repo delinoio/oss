@@ -1854,6 +1854,8 @@ impl OwnedChild {
     }
 
     fn join_output_within(&mut self, limits: &Limits) -> OutputJoin {
+        let now = Instant::now();
+        let fallback_deadline = now.checked_add(CLEANUP_CONFIRMATION).unwrap_or(now);
         loop {
             if self
                 .output_threads
@@ -1869,28 +1871,13 @@ impl OwnedChild {
             if runtime::cancelled() {
                 return OutputJoin::Cancelled;
             }
-            let deadline = self.output_deadline(limits);
+            let deadline = output_deadline(limits, self.activity.as_ref(), fallback_deadline);
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 return OutputJoin::Deadline;
             }
             thread::sleep(POLL.min(remaining));
         }
-    }
-
-    fn output_deadline(&self, limits: &Limits) -> Instant {
-        let now = Instant::now();
-        let idle = self.activity.as_ref().and_then(|activity| {
-            limits
-                .idle
-                .and_then(|duration| activity.last_observed_at().checked_add(duration))
-        });
-        limits
-            .overall
-            .into_iter()
-            .chain(idle)
-            .min()
-            .unwrap_or_else(|| now.checked_add(CLEANUP_CONFIRMATION).unwrap_or(now))
     }
 
     fn join_output(&mut self) -> bool {
@@ -1927,6 +1914,24 @@ impl OwnedChild {
     fn tree_running(&self) -> Result<bool> {
         self.job.is_running()
     }
+}
+
+fn output_deadline(
+    limits: &Limits,
+    activity: Option<&Activity>,
+    fallback_deadline: Instant,
+) -> Instant {
+    let idle = activity.and_then(|activity| {
+        limits
+            .idle
+            .and_then(|duration| activity.last_observed_at().checked_add(duration))
+    });
+    limits
+        .overall
+        .into_iter()
+        .chain(idle)
+        .min()
+        .unwrap_or(fallback_deadline)
 }
 
 enum OutputJoin {
@@ -4226,6 +4231,17 @@ mod lifecycle_tests {
             activity.last_observed_at(),
             completion,
         ));
+    }
+
+    #[test]
+    fn output_join_uses_one_fixed_default_deadline() {
+        let start = Instant::now();
+        let fallback_deadline = start.checked_add(CLEANUP_CONFIRMATION).unwrap();
+
+        assert_eq!(
+            output_deadline(&Limits::default(), None, fallback_deadline),
+            fallback_deadline
+        );
     }
 }
 
