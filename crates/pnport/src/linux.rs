@@ -1662,6 +1662,18 @@ impl Trace<'_> {
                 self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
                 return Ok(true);
             }
+            if call == libc::SYS_chdir {
+                let logical = if descriptor.logical == descriptor.physical {
+                    None
+                } else if exact_fd {
+                    Some(descriptor.logical)
+                } else {
+                    // A suffix can contain relative components or virtual links.
+                    Some(self.translate_view(&descriptor.logical)?.logical)
+                };
+                self.pending.insert(pid, Pending::ChangeDirectory(logical));
+                return Ok(true);
+            }
             if is_open {
                 // The kernel follows /proc/self/fd to the materialized file.
                 // Retain the logical ownership on the newly opened descriptor.

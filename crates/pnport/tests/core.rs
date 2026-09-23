@@ -693,6 +693,89 @@ int main(void) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_chdir_through_descriptor_alias_updates_logical_cwd() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("proc-fd-chdir.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc != 2) return 40;
+    int native = open(".", O_RDONLY | O_DIRECTORY);
+    int virtual = open("node_modules/dep", O_RDONLY | O_DIRECTORY);
+    if (native < 0 || virtual < 0) return 41;
+    char alias[128];
+    snprintf(alias, sizeof(alias), "/proc/self/fd/%d", virtual);
+    if (chdir(alias)) return 42;
+    char cwd[4096];
+    if (!getcwd(cwd, sizeof(cwd))) return 43;
+    char expected[4096];
+    snprintf(expected, sizeof(expected), "%s/cache.zip/node_modules/dep", argv[1]);
+    if (strcmp(cwd, expected)) {
+        fprintf(stderr, "cwd mismatch: got=%s expected=%s\n", cwd, expected);
+        return 44;
+    }
+    int file = open("file.txt", O_RDONLY);
+    if (file < 0) return 45;
+    char bytes[14] = {0};
+    if (read(file, bytes, 13) != 13 || strcmp(bytes, "package bytes")) return 46;
+    snprintf(alias, sizeof(alias), "/proc/self/fd/%d", file);
+    errno = 0;
+    if (chdir(alias) != -1 || errno != ENOTDIR) return 47;
+    if (!getcwd(cwd, sizeof(cwd)) || strcmp(cwd, expected)) return 48;
+    snprintf(alias, sizeof(alias), "/dev/fd/%d", native);
+    if (chdir(alias)) return 49;
+    if (!getcwd(cwd, sizeof(cwd)) || strcmp(cwd, argv[1])) return 50;
+    int output = open("output.txt", O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (output < 0 || write(output, "ok", 2) != 2) return 51;
+    close(output);
+    close(file);
+    close(virtual);
+    close(native);
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("proc-fd-chdir");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let direct = Command::new(&executable)
+        .current_dir(root.path())
+        .arg(root.path())
+        .output()
+        .unwrap();
+    assert_eq!(direct.status.code(), Some(41));
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(root.path())
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(fs::read(root.path().join("output.txt")).unwrap(), b"ok");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_nonleader_proc_fd_aliases_keep_dependency_ownership() {
     use std::process::Command;
     let root = fixture();
