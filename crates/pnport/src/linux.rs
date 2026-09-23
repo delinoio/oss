@@ -849,16 +849,33 @@ impl Trace<'_> {
 
     fn proc_descriptor(&self, pid: i32, path: &Path) -> Option<(Translation, bool)> {
         let text = path.to_str()?;
-        let remainder = text
-            .strip_prefix("/proc/self/fd/")
-            .or_else(|| text.strip_prefix("/proc/thread-self/fd/"))
-            .or_else(|| text.strip_prefix("/dev/fd/"))
-            .or_else(|| text.strip_prefix(&format!("/proc/{pid}/fd/")))?;
+        let group = Self::group(pid);
+        let remainder = if let Some(remainder) = text.strip_prefix("/dev/fd/") {
+            remainder
+        } else {
+            let (owner, remainder) = text.strip_prefix("/proc/")?.split_once('/')?;
+            let owner_group = match owner {
+                "self" | "thread-self" => group,
+                _ => Self::group(owner.parse::<i32>().ok()?),
+            };
+            if owner_group != group {
+                return None;
+            }
+            if let Some(remainder) = remainder.strip_prefix("fd/") {
+                remainder
+            } else {
+                let (task, remainder) = remainder.strip_prefix("task/")?.split_once("/fd/")?;
+                if Self::group(task.parse::<i32>().ok()?) != group {
+                    return None;
+                }
+                remainder
+            }
+        };
         let (number, suffix) = remainder
             .split_once('/')
             .map_or((remainder, None), |(number, suffix)| (number, Some(suffix)));
         let fd = number.parse::<i32>().ok()?;
-        let mut entry = self.fds.get(&Self::group(pid))?.get(&fd)?.clone();
+        let mut entry = self.fds.get(&group)?.get(&fd)?.clone();
         if let Some(suffix) = suffix {
             entry.logical.push(suffix);
             entry.physical.push(suffix);

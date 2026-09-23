@@ -494,6 +494,86 @@ int main(int argc, char **argv) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_nonleader_proc_fd_aliases_keep_dependency_ownership() {
+    use std::process::Command;
+    let root = fixture();
+    let cache = tempfile::tempdir().unwrap();
+    let source = root.path().join("proc-alias.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+static int check(const char *path) {
+    errno = 0;
+    int writable = open(path, O_WRONLY);
+    if (writable >= 0) close(writable);
+    if (writable != -1 || errno != EROFS) return 1;
+    int readable = open(path, O_RDONLY);
+    if (readable < 0) return 2;
+    char bytes[14] = {0};
+    int count = read(readable, bytes, 13);
+    close(readable);
+    return count == 13 && !strcmp(bytes, "package bytes") ? 0 : 3;
+}
+static void *worker(void *arg) {
+    int fd = (int)(intptr_t)arg;
+    char path[128];
+    snprintf(path, sizeof(path), "/proc/%d/fd/%d/file.txt", getpid(), fd);
+    if (check(path)) return (void *)(intptr_t)21;
+    snprintf(path, sizeof(path), "/proc/%d/task/%ld/fd/%d/file.txt", getpid(), syscall(SYS_gettid), fd);
+    if (check(path)) return (void *)(intptr_t)22;
+    snprintf(path, sizeof(path), "/proc/self/task/%ld/fd/%d/file.txt", syscall(SYS_gettid), fd);
+    if (check(path)) return (void *)(intptr_t)23;
+    return 0;
+}
+int main(void) {
+    int fd = open("node_modules/dep", O_RDONLY | O_DIRECTORY);
+    if (fd < 0) return 20;
+    pthread_t thread;
+    if (pthread_create(&thread, 0, worker, (void *)(intptr_t)fd)) return 24;
+    void *result;
+    if (pthread_join(thread, &result)) return 25;
+    close(fd);
+    return (int)(intptr_t)result;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("proc-alias");
+    assert!(Command::new("cc")
+        .args(["-static", "-pthread", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(!root.path().join("node_modules").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_static_xattr_reads_translate_virtual_paths() {
     use std::process::Command;
     let root = fixture();
