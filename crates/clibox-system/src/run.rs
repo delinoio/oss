@@ -660,6 +660,17 @@ fn with_service(options: Service) -> Result<Outcome> {
             }
         }
     }
+    // The managed service can exit or lose its output consumer while the
+    // successful readiness request is in flight. Recheck ownership before the
+    // workload is allowed to create any side effects.
+    if service_child.output_failed() {
+        let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
+        return runtime_failure("Could not forward managed service output.");
+    }
+    if completion_or_cleanup(&mut service_child, options.workload.kill_after)?.is_some() {
+        let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
+        return runtime_failure("The managed service exited before the workload started.");
+    }
     let outcome = match run_once(
         &workload,
         options.workload.kill_after,

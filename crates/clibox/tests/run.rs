@@ -959,6 +959,62 @@ fn managed_service_waits_after_an_unready_preflight() {
 }
 
 #[test]
+fn managed_service_must_remain_alive_after_a_successful_probe() {
+    let home = tempfile::tempdir().unwrap();
+    let marker = home.path().join("workload-started");
+    let marker_assignment = format!("WORKLOAD_MARKER={}", marker.display());
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        for (index, status) in ["503 Service Unavailable", "204 No Content"]
+            .into_iter()
+            .enumerate()
+        {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 1024];
+            let _ = stream.read(&mut request);
+            if index == 1 {
+                // Keep the successful request in flight until the managed
+                // service has exited after the loop's pre-probe check.
+                thread::sleep(Duration::from_millis(1_100));
+            }
+            stream
+                .write_all(format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\n\r\n").as_bytes())
+                .unwrap();
+        }
+    });
+    let output = command(
+        home.path(),
+        &[
+            "run",
+            "with-service",
+            &format!("http://{address}/health"),
+            "--interval",
+            "10ms",
+            "--ready-timeout",
+            "3s",
+            "--service",
+            "sh",
+            "-c",
+            "sleep 1",
+            "--",
+            &marker_assignment,
+            "sh",
+            "-c",
+            "echo started > \"$WORKLOAD_MARKER\"",
+        ],
+    )
+    .output()
+    .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        !marker.exists(),
+        "workload started after its managed service exited: {output:?}"
+    );
+    server.join().unwrap();
+}
+
+#[test]
 fn managed_service_does_not_start_after_the_preflight_exhausts_its_deadline() {
     let home = tempfile::tempdir().unwrap();
     let marker = home.path().join("managed-service-started");
