@@ -651,7 +651,8 @@ fn with_service(options: Service) -> Result<Outcome> {
                 check_cancelled().and_then(|()| unreachable!()),
             );
         }
-        if completion_or_cleanup(&mut service_child, options.workload.kill_after)?.is_some() {
+        if service_completion_or_cleanup(&mut service_child, options.workload.kill_after)?.is_some()
+        {
             return cleanup_managed_service(
                 &mut service_child,
                 options.workload.kill_after,
@@ -664,7 +665,8 @@ fn with_service(options: Service) -> Result<Outcome> {
                 // The service can exit while one bounded HTTP attempt is in
                 // progress. Prefer that owned-process failure to reporting a
                 // coincident readiness deadline.
-                if completion_or_cleanup(&mut service_child, options.workload.kill_after)?.is_some()
+                if service_completion_or_cleanup(&mut service_child, options.workload.kill_after)?
+                    .is_some()
                 {
                     return cleanup_managed_service(
                         &mut service_child,
@@ -701,7 +703,8 @@ fn with_service(options: Service) -> Result<Outcome> {
                 }
             }
             Err(HttpProbeError::OverallTimeout) => {
-                if completion_or_cleanup(&mut service_child, options.workload.kill_after)?.is_some()
+                if service_completion_or_cleanup(&mut service_child, options.workload.kill_after)?
+                    .is_some()
                 {
                     return cleanup_managed_service(
                         &mut service_child,
@@ -751,7 +754,7 @@ fn with_service(options: Service) -> Result<Outcome> {
             Err(error),
         );
     }
-    if completion_or_cleanup(&mut service_child, options.workload.kill_after)?.is_some() {
+    if service_completion_or_cleanup(&mut service_child, options.workload.kill_after)?.is_some() {
         return cleanup_managed_service(
             &mut service_child,
             options.workload.kill_after,
@@ -1670,16 +1673,13 @@ fn cleanup_or_log_with_cancellation(
     }
 }
 
-fn completion_or_cleanup(
-    child: &mut OwnedChild,
+fn service_completion_or_cleanup(
+    service: &mut OwnedChild,
     kill_after: Duration,
 ) -> Result<Option<Completion>> {
-    match child.completion() {
+    match service.completion() {
         Ok(completion) => Ok(completion),
-        Err(error) => {
-            let _ = cleanup_or_log(child, kill_after);
-            Err(error)
-        }
+        Err(error) => cleanup_managed_service(service, kill_after, Err(error)).map(|_| None),
     }
 }
 
@@ -5517,6 +5517,44 @@ mod lifecycle_tests {
         };
         assert_eq!(error.code, Code::IoFailed);
         assert!(child.cleanup(Duration::from_millis(20), None).is_ok());
+        assert_eq!(unsafe { libc::kill(pid as libc::pid_t, 0) }, -1);
+        assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::ESRCH));
+        let _ = process.wait();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn completion_failure_finalizes_managed_service_output() {
+        let mut process = ProcessCommand::new("sh")
+            .args(["-c", "trap 'exit 0' TERM; while :; do :; done"])
+            .spawn()
+            .unwrap();
+        let pid = process.id();
+        let (sender, completions) = mpsc::sync_channel(1);
+        let output = thread::spawn(|| {});
+        let mut service = OwnedChild {
+            pid,
+            unix_ownership: UnixOwnership::DirectChild,
+            reaped: false,
+            foreground_terminal: None,
+            completions,
+            completion: None,
+            completion_observation_failed: false,
+            activity: None,
+            output_failure: None,
+            output_threads: vec![output],
+        };
+        sender
+            .send(runtime_failure("The completion worker failed."))
+            .unwrap();
+
+        let error = match service_completion_or_cleanup(&mut service, Duration::from_millis(20)) {
+            Ok(_) => panic!("the injected completion failure must be observed"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.code, Code::IoFailed);
+        assert!(service.output_threads.is_empty());
         assert_eq!(unsafe { libc::kill(pid as libc::pid_t, 0) }, -1);
         assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::ESRCH));
         let _ = process.wait();
