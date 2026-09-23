@@ -207,12 +207,34 @@ impl ToAccessMode for ModeStr {
         // SAFETY: self.0 is a non-null pointer to a valid null-terminated C
         // string, as guaranteed by the libc calling convention.
         let mode_str = unsafe { CStr::from_ptr(self.0) }.to_bytes().as_bstr();
-        let has_read = mode_str.contains(&b'r');
-        let has_write = mode_str.contains(&b'w') || mode_str.contains(&b'a');
+        let update = mode_str.contains(&b'+');
+        let has_read = mode_str.contains(&b'r') || update;
+        let has_write = mode_str.contains(&b'w') || mode_str.contains(&b'a') || update;
         match (has_read, has_write) {
             (false, true) => AccessMode::WRITE,
             (true, true) => AccessMode::READ | AccessMode::WRITE,
             _ => AccessMode::READ,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_modes_track_reads_and_writes() {
+        for mode in [c"r+", c"w+", c"a+"] {
+            // SAFETY: each mode is a valid static C string.
+            assert_eq!(
+                unsafe { ModeStr(mode.as_ptr()).to_access_mode() },
+                AccessMode::READ | AccessMode::WRITE
+            );
+        }
+        // SAFETY: the mode is a valid static C string.
+        assert_eq!(
+            unsafe { ModeStr(c"r".as_ptr()).to_access_mode() },
+            AccessMode::READ
+        );
     }
 }
