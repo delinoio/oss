@@ -9,7 +9,7 @@ Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph withou
 ## Domain Ownership Map
 - Rust: `crates/pnport` and `crates/pnport-preload`, the private native CLI and filesystem/runtime implementation.
 - Packages: `packages/pnport`, the private source of the npm launcher and six native optional packages.
-- Apps: `apps/public-docs/docs/pnport`, the consolidated public guide sources for `https://oss.delino.io/pnport`. They build into the public-docs tree before a pnport distribution and visibly mark 0.1.0 as unreleased.
+- Apps: `apps/public-docs/docs/pnport`, the consolidated public guides at `https://oss.delino.io/pnport`, explicitly marked unreleased until the six-target gate passes.
 
 ## Domain Contract Documents
 - [Rust foundation](crates-pnport-foundation.md)
@@ -24,10 +24,11 @@ Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph withou
 - Private local content-addressed cache storage replaces the default remote R2 storage because native filesystem backing must remain offline and user-local. SHA-256 identities, rather than UUIDs, identify immutable content; execution identities use UUID v7.
 - No runtime networking, service, account, telemetry, feature flags, installer lifecycle scripts, automatic updates, or public Rust/JavaScript API.
 - Native/npm versions agree; release identity is pnport@v<MAJOR.MINOR.PATCH>. Preserve 0.1.x command and diagnostic compatibility. Native artifacts, installers, Homebrew, npm, conformance and documentation must pass all six targets before publication.
+- The unpublished source version is `0.0.0` in both Cargo packages, their lock entries, and the npm source. Release Project rejects patch or major bumps from this source; the required first minor bump produces `0.1.0`. Release Project must validate a disposable version candidate on all six native hosts before creating its version commit or tag. No pnport release uses crates.io or Cargo registry credentials.
 - Unsupported interception fails closed. Never substitute a protected executable, elevate privileges, silently run without virtualization, or claim universal executable compatibility.
 - The complete requirements remain normative even when a development build has incomplete platform capabilities. Readiness must describe evidence truthfully and block publication until every gate passes.
 
-The current source provides a tested development foundation and public guides, not a releasable implementation. [The Rust evidence section](crates-pnport-foundation.md#current-implementation-evidence-and-remaining-gates) records the remaining acceptance work. The public route does not establish distribution availability or completion of issue #958.
+The distribution tooling and public documentation are configured but no release has been published. [The Rust evidence section](crates-pnport-foundation.md#current-implementation-evidence-and-remaining-gates) records the remaining runtime acceptance work. The current pre-commit gate is expected to fail until those capabilities pass on every target; it must not be described as a completed issue or a releasable 0.1.0 implementation.
 
 ## Change Policy
 Update this index, the relevant domain contracts and AGENTS files together. Record implemented behavior and outstanding release gates separately; do not narrow #958 by omission.
