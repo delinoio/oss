@@ -126,7 +126,12 @@ impl View {
     ) -> Result<Translation> {
         let (physical, managed) = match VPath::from(&logical).map_err(|_| cache_error())? {
             VPath::Native(path) => {
-                let managed = self.graph.managed(&path);
+                // Materialized bytes remain read-only even if a child reaches
+                // their private backing path through /proc/self/fd or a saved
+                // absolute pathname instead of the logical ZIP location.
+                let managed = self.graph.managed(&path)
+                    || path.starts_with(&self.cache.root)
+                    || path.starts_with(self.session.join("views"));
                 (path, managed)
             }
             VPath::Virtual(info) => (normalize(&info.physical_base_path()), true),

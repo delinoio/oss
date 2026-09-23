@@ -27,7 +27,7 @@ Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph withou
 - Unsupported interception fails closed. Never substitute a protected executable, elevate privileges, silently run without virtualization, or claim universal executable compatibility.
 - The complete requirements remain normative even when a development build has incomplete platform capabilities. Readiness must describe evidence truthfully and block publication until every gate passes.
 
-The current source change provides a tested development foundation. [The Rust evidence section](crates-pnport-foundation.md#current-implementation-evidence-and-remaining-gates) records the remaining acceptance work. It must not be described as a completed issue or a releasable 0.1.0 implementation.
+The current development implementation includes a Linux owned-child syscall backend for dynamic and static ELF children. Ubuntu 22.04 arm64 Docker execution passes native C, static Go, and official TypeScript inline/split fixtures. The arm64 host's amd64 container emulation cannot perform the required child tracing; native x64 evidence remains open. [The Rust evidence section](crates-pnport-foundation.md#current-implementation-evidence-and-remaining-gates) records the remaining acceptance work. This is not a completed issue or a releasable 0.1.0 implementation.
 
 ## Change Policy
 Update this index, the relevant domain contracts and AGENTS files together. Record implemented behavior and outstanding release gates separately; do not narrow #958 by omission.

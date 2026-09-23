@@ -270,7 +270,7 @@ fn confined_dangling_archive_symlinks_remain_readable() {
     assert!(cache.materialize(&path).is_ok());
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn pnp_unaware_native_process_reads_virtual_dependencies() {
     use std::process::Command;
@@ -336,6 +336,367 @@ fn pnp_unaware_native_process_reads_virtual_dependencies() {
         String::from_utf8_lossy(&result.stderr)
     );
     assert_eq!(result.stdout, b"protocol-output\nprotocol-output\n");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn pnp_unaware_static_process_reads_virtual_dependencies() {
+    use std::process::Command;
+    let root = fixture();
+    let cache = tempfile::tempdir().unwrap();
+    let source = root.path().join("static.c");
+    fs::write(&source, r#"
+#include <fcntl.h>
+#include <dirent.h>
+#include <errno.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <sys/mman.h>
+#include <sys/inotify.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    struct stat info;
+    if (stat("node_modules/dep/file.txt", &info) || info.st_size != 13) return 21;
+    int fd = open("node_modules/dep/file.txt", O_RDONLY);
+    if (fd < 0) return 22;
+    char bytes[32] = {0};
+    if (read(fd, bytes, 13) != 13 || strcmp(bytes, "package bytes")) return 23;
+    void *mapped = mmap(NULL, 13, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (mapped == MAP_FAILED || memcmp(mapped, "package bytes", 13)) return 24;
+    munmap(mapped, 13);
+    close(fd);
+    DIR *dir = opendir("node_modules/dep");
+    if (!dir) return 25;
+    fd = openat(dirfd(dir), "file.txt", O_RDONLY);
+    if (fd < 0 || fstat(fd, &info) || info.st_size != 13) return 26;
+    errno = 0;
+    if (fchmod(fd, 0600) != -1 || errno != EROFS) return 34;
+    close(fd);
+    closedir(dir);
+    if (lstat("node_modules/dep", &info) || !S_ISLNK(info.st_mode)) return 27;
+    char target[4096];
+    if (readlink("node_modules/dep", target, sizeof(target)) <= 0) return 28;
+    errno = 0;
+    if (open("node_modules/dep/file.txt", O_WRONLY) != -1 || errno != EROFS) return 29;
+    errno = 0;
+    if (unlink("node_modules/dep/file.txt") != -1 || errno != EROFS) return 35;
+    int watcher = inotify_init1(IN_CLOEXEC);
+    if (watcher < 0 || inotify_add_watch(watcher, "node_modules/dep/file.txt", IN_MODIFY) < 0) return 36;
+    close(watcher);
+    fd = open("output.txt", O_WRONLY | O_CREAT, 0600);
+    if (fd < 0 || write(fd, "native", 6) != 6) return 30;
+    close(fd);
+    if (argc == 1) {
+        pid_t child = fork();
+        if (child < 0) return 31;
+        if (child == 0) {
+            char *child_argv[] = {argv[0], "child", NULL};
+            char *child_env[] = {NULL};
+            execve(argv[0], child_argv, child_env);
+            _exit(32);
+        }
+        int status = 0;
+        if (waitpid(child, &status, 0) != child || !WIFEXITED(status) || WEXITSTATUS(status)) return 33;
+    }
+    puts("static-ok");
+    return 0;
+}
+
+"#).unwrap();
+    let executable = root.path().join("static-fixture");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(
+        Command::new(&executable)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(21)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["--log-level", "debug", "run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(result.stdout, b"static-ok\nstatic-ok\n");
+    assert_eq!(fs::read(root.path().join("output.txt")).unwrap(), b"native");
+    assert!(!root.path().join("node_modules").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn pnp_unaware_static_go_process_reads_virtual_dependencies() {
+    use std::process::Command;
+    if Command::new("go").arg("version").output().is_err() {
+        eprintln!("Go is unavailable; the pinned Linux Docker gate runs this fixture");
+        return;
+    }
+    let root = fixture();
+    let cache = tempfile::tempdir().unwrap();
+    let executable = root.path().join("static-go-fixture");
+    assert!(Command::new("go")
+        .env("CGO_ENABLED", "0")
+        .env("GO111MODULE", "off")
+        .args(["build", "-o"])
+        .arg(&executable)
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/static-go/main.go"
+        ))
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(
+        Command::new(&executable)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(21)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(result.stdout, b"static-go-ok\nstatic-go-ok\n");
+    assert_eq!(fs::read(root.path().join("output-go.txt")).unwrap(), b"go");
+    assert!(!root.path().join("node_modules").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_descendant_execve_enters_a_virtual_executable() {
+    use std::process::Command;
+    let root = fixture();
+    let cache = tempfile::tempdir().unwrap();
+    let worker_source = root.path().join("worker.c");
+    fs::write(
+        &worker_source,
+        "#include <stdio.h>\nint main(void) { puts(\"virtual-exec-ok\"); return 0; }\n",
+    )
+    .unwrap();
+    let worker = root.path().join("worker");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&worker)
+        .arg(&worker_source)
+        .status()
+        .unwrap()
+        .success());
+    let archive_path = root.path().join("cache.zip");
+    let mut archive = zip::ZipWriter::new(fs::File::create(&archive_path).unwrap());
+    archive
+        .start_file(
+            "node_modules/dep/worker",
+            zip::write::SimpleFileOptions::default().unix_permissions(0o755),
+        )
+        .unwrap();
+    archive.write_all(&fs::read(&worker).unwrap()).unwrap();
+    archive.finish().unwrap();
+    let launcher_source = root.path().join("launcher.c");
+    fs::write(
+        &launcher_source,
+        r#"
+#include <unistd.h>
+int main(void) {
+    char *args[] = {"node_modules/dep/worker", 0};
+    char *env[] = {0};
+    execve(args[0], args, env);
+    return 42;
+}
+
+"#,
+    )
+    .unwrap();
+    let launcher = root.path().join("launcher");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&launcher)
+        .arg(&launcher_source)
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(
+        Command::new(&launcher)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(42)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--"])
+        .arg(&launcher)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(result.stdout, b"virtual-exec-ok\n");
+    assert!(!root.path().join("node_modules").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_doctor_rejects_an_incompatible_companion_architecture() {
+    use std::process::Command;
+    let root = fixture();
+    let native = Path::new(env!("CARGO_BIN_EXE_pnport"));
+    let executable = root.path().join("pnport");
+    fs::copy(native, &executable).unwrap();
+    let companion = native.parent().unwrap().join("libpnport_preload.so");
+    let mut bytes = fs::read(companion).unwrap();
+    let other = if cfg!(target_arch = "aarch64") {
+        62u16
+    } else {
+        183u16
+    };
+    bytes[18..20].copy_from_slice(&other.to_le_bytes());
+    fs::write(root.path().join("libpnport_preload.so"), bytes).unwrap();
+    let result = Command::new(executable)
+        .current_dir(root.path())
+        .args(["doctor", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(125));
+    let report: Value = serde_json::from_slice(&result.stdout).unwrap();
+    let injection = report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["id"] == "injection")
+        .unwrap();
+    assert_eq!(injection["status"], "fail");
+    assert_eq!(injection["code"], "PNPORT_INJECTION_FAILED");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_graph_conflict_and_injection_failures_reap_detached_descendants() {
+    use std::{
+        process::{Command, Stdio},
+        thread,
+        time::{Duration, Instant},
+    };
+    for mode in ["graph", "conflict", "failure", "cancel"] {
+        let root = fixture();
+        let cache = tempfile::tempdir().unwrap();
+        let executable = root.path().join("tree-fixture");
+        assert!(Command::new("cc")
+            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/linux-tree.c"))
+            .arg("-o")
+            .arg(&executable)
+            .status()
+            .unwrap()
+            .success());
+        let mut command = Command::new(env!("CARGO_BIN_EXE_pnport"));
+        command
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(cache.path().join("cache"))
+            .args(["run", "--"])
+            .arg(&executable)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        if mode == "failure" {
+            command.arg("failure");
+        }
+        let mut process = command.spawn().unwrap();
+        let marker = root.path().join("detached.pid");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while fs::read_to_string(&marker)
+            .ok()
+            .and_then(|value| value.trim().parse::<i32>().ok())
+            .is_none()
+            && Instant::now() < deadline
+        {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(marker.exists(), "{mode} did not start a descendant");
+        let child: i32 = fs::read_to_string(marker).unwrap().trim().parse().unwrap();
+        match mode {
+            "graph" => fs::write(root.path().join(".pnp.cjs"), "changed").unwrap(),
+            "conflict" => fs::create_dir(root.path().join("node_modules")).unwrap(),
+            "failure" => {}
+            "cancel" => {
+                assert_eq!(unsafe { libc::kill(process.id() as i32, libc::SIGINT) }, 0);
+            }
+            _ => unreachable!(),
+        }
+        let deadline = Instant::now() + Duration::from_secs(7);
+        while process.try_wait().unwrap().is_none() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        if process.try_wait().unwrap().is_none() {
+            process.kill().unwrap();
+        }
+        let output = process.wait_with_output().unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(if mode == "cancel" { 130 } else { 125 }),
+            "{mode}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if mode != "cancel" {
+            let code = if mode == "graph" {
+                "PNPORT_GRAPH_CHANGED"
+            } else if mode == "conflict" {
+                "PNPORT_FILESYSTEM_CONFLICT"
+            } else {
+                "PNPORT_INJECTION_FAILED"
+            };
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains(code),
+                "{mode}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while unsafe { libc::kill(child, 0) } == 0 && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(
+            unsafe { libc::kill(child, 0) },
+            -1,
+            "{mode} left a descendant alive"
+        );
+    }
 }
 
 #[test]

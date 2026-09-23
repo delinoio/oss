@@ -44,7 +44,7 @@ if (mode === "prepare") {
 } else {
   const prepared = JSON.parse(readFileSync(join(directory, "prepared.json"), "utf8"));
   assert.deepEqual(prepared, { yarn, compiler, platform: process.platform, arch: process.arch });
-  assert.equal(process.platform, "darwin", "Native macOS execution is required.");
+  assert(["darwin", "linux"].includes(process.platform), "Native macOS or glibc Linux execution is required.");
   const binary = realpathSync(suppliedBinary ?? join(repository, "target/debug/pnport"));
   const samples = [];
   for (const format of formats) {
@@ -54,14 +54,29 @@ if (mode === "prepare") {
     const cache = join(directory, `pnport-cache-${format}`);
     const run = (...args) => execute(binary, ["--cache-dir", cache, "run", "--", ...args], root);
     const unplugged = join(root, ".yarn/unplugged");
-    const platformPackage = readdirSync(unplugged).find((name) => name.startsWith(`@typescript-typescript-darwin-${process.arch}-`));
+    const platformPackage = readdirSync(unplugged).find((name) => name.startsWith(`@typescript-typescript-${process.platform}-${process.arch}-`));
     assert(platformPackage);
-    const native = join(unplugged, platformPackage, "node_modules/@typescript", `typescript-darwin-${process.arch}`, "lib/tsc");
+    const native = join(unplugged, platformPackage, "node_modules/@typescript", `typescript-${process.platform}-${process.arch}`, "lib/tsc");
     const originalDigest = sha256(native);
-    successful(execute("/usr/bin/codesign", ["--verify", "--strict", native], root));
-    const signature = successful(execute("/usr/bin/codesign", ["-d", "--entitlements", ":-", native], root));
-    for (const entitlement of ["allow-dyld-environment-variables", "disable-library-validation"]) {
-      assert.match(signature.stdout + signature.stderr, new RegExp(`<key>com\\.apple\\.security\\.cs\\.${entitlement}</key>\\s*<true\\s*/>`));
+    if (process.platform === "darwin") {
+      successful(execute("/usr/bin/codesign", ["--verify", "--strict", native], root));
+      const signature = successful(execute("/usr/bin/codesign", ["-d", "--entitlements", ":-", native], root));
+      for (const entitlement of ["allow-dyld-environment-variables", "disable-library-validation"]) {
+        assert.match(signature.stdout + signature.stderr, new RegExp(`<key>com\\.apple\\.security\\.cs\\.${entitlement}</key>\\s*<true\\s*/>`));
+      }
+    } else {
+      const image = readFileSync(native);
+      assert.equal(image.subarray(0, 4).toString("hex"), "7f454c46");
+      assert.equal(image[4], 2, "The compiler must be a 64-bit ELF executable.");
+      assert.equal(image.readUInt16LE(18), process.arch === "arm64" ? 183 : 62);
+      const offset = Number(image.readBigUInt64LE(32));
+      const stride = image.readUInt16LE(54);
+      const count = image.readUInt16LE(56);
+      assert(count > 0 && stride >= 56 && offset + count * stride <= image.length);
+      for (let index = 0; index < count; index++) {
+        assert.notEqual(image.readUInt32LE(offset + index * stride), 3,
+          "Linux conformance must exercise the static syscall backend.");
+      }
     }
     for (const workspace of ["core", "app"]) {
       rmSync(join(root, "packages", workspace, "lib"), { recursive: true, force: true });
@@ -96,7 +111,9 @@ if (mode === "prepare") {
     successful(execute(binary, ["--cache-dir", cache, "cache", "clean"], root));
     samples.push({ format, coldMs, warmMs, nativeSha256: originalDigest });
   }
-  const osVersion = successful(execute("/usr/bin/sw_vers", ["-productVersion"], directory)).stdout.trim();
+  const osVersion = process.platform === "darwin"
+    ? successful(execute("/usr/bin/sw_vers", ["-productVersion"], directory)).stdout.trim()
+    : readFileSync("/etc/os-release", "utf8").match(/^PRETTY_NAME="?([^"\n]+)"?/m)?.[1];
   const evidence = { event: "pnport_typescript_conformance", compiler, yarn, platform: process.platform, arch: process.arch, osVersion, pnportSha256: sha256(binary), samples };
   writeFileSync(join(directory, "typescript-evidence.json"), JSON.stringify(evidence, null, 2));
   console.log(JSON.stringify(evidence));

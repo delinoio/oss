@@ -15,6 +15,8 @@ use pnport::{
 use serde::Serialize;
 
 mod input_watch;
+#[cfg(target_os = "linux")]
+mod linux;
 mod supervisor;
 
 #[derive(Parser)]
@@ -179,7 +181,8 @@ fn execute(cli: &Cli) -> Result<i32> {
             }
         }
         Action::Doctor { json } => {
-            let checks = vec![
+            #[allow(unused_mut, reason = "Linux adds a syscall capability check")]
+            let mut checks = vec![
                 check(
                     "project",
                     load_graph(cli, &cwd).and_then(|graph| graph.check_conflicts()),
@@ -202,6 +205,12 @@ fn execute(cli: &Cli) -> Result<i32> {
                     "Private cache access is available.",
                 ),
             ];
+            #[cfg(target_os = "linux")]
+            checks.push(check(
+                "linux-syscall",
+                linux::probe(),
+                "Owned-child seccomp syscall interception is available.",
+            ));
             let ready = checks
                 .iter()
                 .all(|check| matches!(check.status, Status::Pass));
@@ -329,6 +338,8 @@ fn resolve_command(view: &mut View, cwd: &Path, command: &OsString) -> Result<Pa
 }
 
 fn main() {
+    #[cfg(target_os = "linux")]
+    linux::dispatch_helper();
     let cli = Cli::parse();
     let json = matches!(cli.command, Action::Doctor { json: true });
     let ansi = !json
