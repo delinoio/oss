@@ -385,6 +385,10 @@ int main(int argc, char **argv) {
     if (fd < 0 || fstat(fd, &info) || info.st_size != 13) return 26;
     errno = 0;
     if (fchmod(fd, 0600) != -1 || errno != EROFS) return 34;
+    errno = 0;
+    if (syscall(452, dirfd(dir), "file.txt", 0600, 0) != -1 || errno != EROFS) return 56;
+    errno = 0;
+    if (syscall(452, fd, "", 0600, AT_EMPTY_PATH) != -1 || errno != EROFS) return 57;
     close(fd);
     snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d/file.txt", dirfd(dir));
     errno = 0;

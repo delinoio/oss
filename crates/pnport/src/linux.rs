@@ -40,6 +40,8 @@ const OPEN_HOW_SIZE: usize = 24;
 const RESOLVE_BENEATH: u64 = 0x08;
 const RESOLVE_IN_ROOT: u64 = 0x10;
 const CLOSE_RANGE_UNSHARE: u32 = 2;
+// Linux UAPI assigns this number on both supported 64-bit architectures.
+const SYS_FCHMODAT2: i64 = 452;
 const TRACE_OPTIONS: usize = (libc::PTRACE_O_TRACESYSGOOD
     | libc::PTRACE_O_TRACEFORK
     | libc::PTRACE_O_TRACEVFORK
@@ -162,6 +164,7 @@ fn traced_syscalls() -> Vec<i64> {
         libc::SYS_symlinkat,
         libc::SYS_mknodat,
         libc::SYS_fchmodat,
+        SYS_FCHMODAT2,
         libc::SYS_fchownat,
         libc::SYS_utimensat,
         libc::SYS_fchmod,
@@ -814,6 +817,7 @@ impl Trace<'_> {
                 || n == libc::SYS_unlinkat
                 || n == libc::SYS_mkdirat
                 || n == libc::SYS_fchmodat
+                || n == SYS_FCHMODAT2
                 || n == libc::SYS_fchownat
                 || n == libc::SYS_utimensat
                 || n == libc::SYS_mknodat
@@ -822,6 +826,7 @@ impl Trace<'_> {
                 let writing = n == libc::SYS_unlinkat
                     || n == libc::SYS_mkdirat
                     || n == libc::SYS_fchmodat
+                    || n == SYS_FCHMODAT2
                     || n == libc::SYS_fchownat
                     || n == libc::SYS_utimensat
                     || n == libc::SYS_mknodat
@@ -918,6 +923,22 @@ impl Trace<'_> {
             0
         };
         let original = read_path(pid, argument(&regs, path_arg))?;
+        if call == SYS_FCHMODAT2
+            && original.as_os_str().is_empty()
+            && argument(&regs, 3) as i32 & libc::AT_EMPTY_PATH != 0
+        {
+            let fd = argument(&regs, 0) as i32;
+            if self
+                .fds
+                .get(&Self::group(pid))
+                .and_then(|fds| fds.get(&fd))
+                .is_some_and(|entry| entry.readonly)
+            {
+                self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
+                return Ok(true);
+            }
+            return Ok(false);
+        }
         let is_open = call == libc::SYS_openat || call == libc::SYS_openat2 || call == SYS_OPEN;
         let in_root = openat2_resolve & RESOLVE_IN_ROOT != 0;
         if openat2_resolve & RESOLVE_BENEATH != 0
