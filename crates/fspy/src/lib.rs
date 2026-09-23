@@ -15,7 +15,7 @@ mod os_impl;
 mod arena;
 mod command;
 
-use std::{env::temp_dir, fs::create_dir, io, process::ExitStatus, sync::LazyLock};
+use std::{io, process::ExitStatus, sync::LazyLock};
 
 pub use command::Command;
 pub use error::TrackingIncomplete;
@@ -23,6 +23,7 @@ pub use fspy_shared::ipc::{AccessMode, PathAccess};
 use futures_util::future::BoxFuture;
 pub use os_impl::PathAccessIterable;
 use os_impl::SpyImpl;
+use tempfile::TempDir;
 use tokio::process::{ChildStderr, ChildStdin, ChildStdout};
 
 /// The result of a tracked child process upon its termination.
@@ -60,8 +61,45 @@ pub struct TrackedChild {
     pub process_handle: std::os::windows::io::OwnedHandle,
 }
 
-pub(crate) static SPY_IMPL: LazyLock<SpyImpl> = LazyLock::new(|| {
-    let tmp_dir = temp_dir().join("fspy");
-    let _ = create_dir(&tmp_dir);
-    SpyImpl::init_in(&tmp_dir).expect("Failed to initialize global spy")
+pub(crate) struct GlobalSpy {
+    pub(crate) spy: SpyImpl,
+    // The random 0700 directory must outlive every process using its preload.
+    _dir: TempDir,
+}
+
+fn private_preload_dir() -> io::Result<TempDir> {
+    let parent = std::fs::canonicalize(std::env::temp_dir())?;
+    let mut builder = tempfile::Builder::new();
+    builder.prefix("fspy-");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        builder.permissions(std::fs::Permissions::from_mode(0o700));
+    }
+    builder.tempdir_in(parent)
+}
+
+pub(crate) static SPY_IMPL: LazyLock<GlobalSpy> = LazyLock::new(|| {
+    let dir = private_preload_dir().expect("Failed to create private preload directory");
+    let spy = SpyImpl::init_in(dir.path()).expect("Failed to initialize global spy");
+    GlobalSpy { spy, _dir: dir }
 });
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::private_preload_dir;
+
+    #[test]
+    fn preload_directory_is_private() {
+        let dir = private_preload_dir().expect("create private preload directory");
+        let mode = dir
+            .path()
+            .metadata()
+            .expect("inspect directory")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o700);
+    }
+}

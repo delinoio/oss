@@ -188,7 +188,7 @@ impl Command {
         cancellation_token: CancellationToken,
     ) -> Result<TrackedChild, SpawnError> {
         self.resolve_program()?;
-        SPY_IMPL.spawn(self, cancellation_token).await
+        SPY_IMPL.spy.spawn(self, cancellation_token).await
     }
 
     /// Resolve program name to full path using `PATH` and cwd.

@@ -10,6 +10,9 @@ rust-version.workspace = true
 materialized_artifact_macros = { workspace = true }
 tempfile = { workspace = true }
 
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
 [lints]
 workspace = true
 

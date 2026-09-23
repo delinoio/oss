@@ -12,8 +12,8 @@
 //! directory. The hash (computed at macro-expansion time by [`artifact!`])
 //! gives three properties without any coordination between processes:
 //!
-//! - **No repeated writes.** [`Materialize::at`] returns the existing path if
-//!   the file is already there; repeated calls and re-runs skip I/O.
+//! - **No repeated writes.** [`Materialize::at`] verifies an existing file's
+//!   bytes before reusing it; repeated calls and re-runs skip writes.
 //! - **Correctness.** Two binaries with different embedded content produce
 //!   different filenames, so a stale file from an older build is never mistaken
 //!   for the current one.
@@ -23,7 +23,7 @@
 
 use std::{
     fs,
-    io::{self, Write},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -106,10 +106,10 @@ impl Materialize<'_> {
     /// Materialize the artifact in `dir` under a content-addressed filename,
     /// writing it if missing. On Unix, newly created files get `0o755` when
     /// [`Materialize::executable`] was called and `0o644` otherwise, and an
-    /// existing file's mode is reconciled if it drifted.
+    /// existing regular file's bytes are verified before its mode is
+    /// reconciled. Symbolic links and mismatched files are rejected.
     ///
-    /// Returns the final path. If the target already exists and its mode
-    /// already matches, no I/O beyond the stat is performed.
+    /// Returns the final path. Existing files are read before reuse.
     ///
     /// # Preconditions
     ///
@@ -130,30 +130,8 @@ impl Materialize<'_> {
         #[cfg(unix)]
         let want_mode: u32 = if self.executable { 0o755 } else { 0o644 };
 
-        // Fast path: one stat tells us both whether the file exists and,
-        // on Unix, what its permission bits are. The content is assumed
-        // correct because the hash is in the filename, so there is nothing
-        // else to verify.
-        match fs::metadata(&path) {
-            #[cfg(unix)]
-            Ok(meta) => {
-                use std::os::unix::fs::PermissionsExt;
-                // Reconcile a drifted mode (e.g. someone chmod'd it away)
-                // but skip the syscall when it already matches.
-                if meta.permissions().mode() & 0o777 != want_mode {
-                    fs::set_permissions(&path, fs::Permissions::from_mode(want_mode))?;
-                }
-                return Ok(path);
-            }
-            // On non-Unix there is no mode to reconcile; existence alone is
-            // enough to declare success.
-            #[cfg(not(unix))]
-            Ok(_) => return Ok(path),
-            // Not found: fall through to the create-and-rename path.
-            Err(err) if err.kind() == io::ErrorKind::NotFound => {}
-            // Any other stat failure (permission denied, I/O error, etc.)
-            // propagates — we can't reason about what's on disk.
-            Err(err) => return Err(err),
+        if self.verified_existing(&path)? {
+            return Ok(path);
         }
 
         // Slow path: write to a unique temp file in the same directory, then
@@ -179,13 +157,59 @@ impl Materialize<'_> {
         // already exists — so two racing processes can't clobber each other
         // mid-write, and the loser sees the error below.
         if let Err(err) = tmp.persist_noclobber(&path) {
-            // If another process won the race and the destination now exists,
-            // treat that as success; `err.file` drops here, cleaning up our
-            // temp. Otherwise propagate the original error.
-            if !fs::exists(&path)? {
+            // A concurrent winner is reusable only when its bytes match the
+            // embedded artifact. `err.file` drops here, removing our temp.
+            if !self.verified_existing(&path)? {
                 return Err(err.error);
             }
         }
         Ok(path)
+    }
+
+    fn verified_existing(&self, path: &Path) -> io::Result<bool> {
+        let metadata = match fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        if !metadata.file_type().is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "materialized artifact is not a regular file",
+            ));
+        }
+
+        let mut options = fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NOFOLLOW);
+        }
+        let mut file = options.open(path)?;
+        if !file.metadata()?.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "materialized artifact changed type while opening",
+            ));
+        }
+        let mut actual = Vec::with_capacity(self.artifact.content.len());
+        file.read_to_end(&mut actual)?;
+        if actual != self.artifact.content {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "materialized artifact contents do not match embedded bytes",
+            ));
+        }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let want_mode = if self.executable { 0o755 } else { 0o644 };
+            if file.metadata()?.permissions().mode() & 0o777 != want_mode {
+                file.set_permissions(fs::Permissions::from_mode(want_mode))?;
+            }
+        }
+        Ok(true)
     }
 }
