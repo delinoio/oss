@@ -37,11 +37,10 @@ pub fn parse_shebang(
     path: &Path,
     options: ParseShebangOptions,
 ) -> Result<Option<Shebang>, nix::Error> {
-    // https://lwn.net/Articles/779997/
-    // > The array used to hold the shebang line is defined to be 128 bytes in
-    // > length
-    // TODO: check linux/macOS' kernel source
-    const PEEK_SIZE: usize = 128;
+    // Linux uses BINPRM_BUF_SIZE bytes when resolving a script interpreter.
+    // Keep the existing Darwin limit until its kernel parsing contract is
+    // verified independently.
+    const PEEK_SIZE: usize = if cfg!(target_os = "linux") { 256 } else { 128 };
 
     let mut buf = [0u8; PEEK_SIZE];
 
@@ -51,14 +50,28 @@ pub fn parse_shebang(
         return Ok(None);
     };
 
-    let Some(buf) = buf.split(|ch| matches!(*ch, b'\n')).next() else {
-        // https://github.com/torvalds/linux/blob/5723cc3450bccf7f98f227b9723b5c9f6b3af1c5/fs/binfmt_script.c#L59-L80
+    let terminated = buf.iter().any(|ch| matches!(*ch, b'\n' | 0));
+    let Some(buf) = buf.split(|ch| matches!(*ch, b'\n' | 0)).next() else {
         return Err(nix::Error::ENOEXEC);
     };
+    // A full Linux binprm buffer may truncate an optional argument, but the
+    // interpreter path must have a delimiter within the inspected bytes.
+    if cfg!(target_os = "linux") && total_read_size == PEEK_SIZE && !terminated {
+        let interpreter = buf
+            .iter()
+            .skip_while(|ch| is_whitespace(**ch))
+            .take_while(|ch| !is_whitespace(**ch));
+        if interpreter.count() == buf.iter().skip_while(|ch| is_whitespace(**ch)).count() {
+            return Err(nix::Error::ENOEXEC);
+        }
+    }
     let buf = buf.trim_ascii();
     let Some(interpreter) = buf.split(|ch| is_whitespace(*ch)).next() else {
         return Ok(None);
     };
+    if interpreter.is_empty() {
+        return Err(nix::Error::ENOEXEC);
+    }
     let arguments_buf = buf[interpreter.len()..].trim_ascii_start().as_bstr();
 
     let arguments: Vec<BString> = if options.split_arguments {
@@ -83,6 +96,49 @@ pub fn parse_shebang(
         interpreter: interpreter.as_bstr().to_owned(),
         arguments,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(bytes: &[u8]) -> nix::Result<Option<Shebang>> {
+        parse_shebang(
+            |_, buf| {
+                let len = bytes.len().min(buf.len());
+                buf[..len].copy_from_slice(&bytes[..len]);
+                Ok(len)
+            },
+            Path::new("/script"),
+            ParseShebangOptions::default(),
+        )
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_interpreter_can_extend_past_old_128_byte_peek() {
+        let interpreter = format!("/{}", "a".repeat(160));
+        let script = format!("#!{interpreter} argument\n");
+        let shebang = parse(script.as_bytes()).unwrap().unwrap();
+        assert_eq!(shebang.interpreter.as_slice(), interpreter.as_bytes());
+        assert_eq!(shebang.arguments[0].as_slice(), b"argument");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_rejects_interpreter_path_truncated_at_buffer_boundary() {
+        let script = format!("#!{}\n", "a".repeat(255));
+        assert_eq!(parse(script.as_bytes()).unwrap_err(), nix::Error::ENOEXEC);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_allows_optional_argument_truncated_at_buffer_boundary() {
+        let script = format!("#!/bin/sh {}", "a".repeat(300));
+        let shebang = parse(script.as_bytes()).unwrap().unwrap();
+        assert_eq!(shebang.interpreter.as_slice(), b"/bin/sh");
+        assert_eq!(shebang.arguments[0].len(), 256 - b"#!/bin/sh ".len());
+    }
 }
 
 // #[derive(Debug)]
