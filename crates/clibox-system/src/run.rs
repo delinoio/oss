@@ -2822,8 +2822,14 @@ fn spawn_foreground_interrupt_relay(child_group: libc::pid_t) -> Result<libc::pi
             let mut action: libc::sigaction = std::mem::zeroed();
             action.sa_sigaction = forward_foreground_interrupt as *const () as libc::sighandler_t;
             action.sa_flags = libc::SA_RESTART;
+            let mut terminate: libc::sigaction = std::mem::zeroed();
+            terminate.sa_sigaction = libc::SIG_DFL;
             let ready = libc::setpgid(0, child_group) == 0
                 && FOREGROUND_INTERRUPT_RELAY_SUPERVISOR > 0
+                && libc::sigemptyset(&mut terminate.sa_mask) == 0
+                && libc::sigaction(libc::SIGTERM, &terminate, std::ptr::null_mut()) == 0
+                && libc::sigaction(libc::SIGHUP, &terminate, std::ptr::null_mut()) == 0
+                && libc::sigaction(libc::SIGQUIT, &terminate, std::ptr::null_mut()) == 0
                 && libc::sigemptyset(&mut action.sa_mask) == 0
                 && libc::sigaction(libc::SIGINT, &action, std::ptr::null_mut()) == 0
                 && libc::write(readiness[1], [1u8].as_ptr().cast(), 1) == 1;

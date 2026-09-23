@@ -518,6 +518,33 @@ fn terminal_interrupt_cancels_a_foreground_workload_and_its_wrapper() {
 
 #[test]
 #[cfg(target_os = "linux")]
+fn foreground_completion_reaps_the_interrupt_relay_without_grace_delay() {
+    let home = tempfile::tempdir().unwrap();
+    let (mut wrapper, _terminal) = terminal_command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--timeout",
+            "30s",
+            "--",
+            "sh",
+            "-c",
+            "exit 0",
+        ],
+    );
+    let started = std::time::Instant::now();
+    let status = wrapper.spawn().unwrap().wait().unwrap();
+
+    assert!(status.success());
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "interrupt relay completion waited for the default cleanup grace"
+    );
+}
+
+#[test]
+#[cfg(target_os = "linux")]
 fn interactive_output_forwarding_survives_tostop() {
     let home = tempfile::tempdir().unwrap();
     let (mut wrapper, terminal) = terminal_command(
