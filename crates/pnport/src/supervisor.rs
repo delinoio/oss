@@ -53,6 +53,33 @@ fn injection_error() -> Error {
     )
 }
 
+fn runtime_failure(session: &Path) -> Result<Option<Error>> {
+    let recorded = match fs::read(session.join("failure")) {
+        Ok(recorded) => recorded,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(injection_error()),
+    };
+    let code = [
+        Code::PnportManifestMissing,
+        Code::PnportManifestInvalid,
+        Code::PnportFilesystemConflict,
+        Code::PnportUnsupportedOperation,
+        Code::PnportInjectionFailed,
+        Code::PnportArchiveCorrupt,
+        Code::PnportCacheFailed,
+        Code::PnportGraphChanged,
+        Code::PnportCleanupFailed,
+        Code::PnportCommandNotExecutable,
+    ]
+    .into_iter()
+    .find(|code| code.as_str().as_bytes() == recorded)
+    .unwrap_or(Code::PnportInjectionFailed);
+    Ok(Some(Error::new(
+        code,
+        "Native filesystem interception reported a runtime failure; the process tree has been stopped.",
+    )))
+}
+
 static SIGNAL: AtomicI32 = AtomicI32::new(0);
 #[cfg(unix)]
 extern "C" fn signal_handler(signal: i32) {
@@ -117,11 +144,8 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
             watch.register(input)?;
         }
         view.graph.check_conflicts()?;
-        if view.session.join("failure").exists() {
-            return Err(Error::new(
-                Code::PnportInjectionFailed,
-                "Native filesystem interception failed; the process tree has been stopped.",
-            ));
+        if let Some(error) = runtime_failure(&view.session)? {
+            return Err(error);
         }
         if let Ok(entries) = fs::read_dir(view.session.join("active")) {
             for entry in entries {
@@ -199,6 +223,31 @@ fn exit_code(status: ExitStatus) -> i32 {
     #[cfg(not(unix))]
     {
         status.code().unwrap_or(125)
+    }
+}
+
+#[cfg(test)]
+mod failure_tests {
+    use super::*;
+
+    #[test]
+    fn recorded_runtime_code_is_reported_and_invalid_marker_fails_closed() {
+        let session = tempfile::tempdir().unwrap();
+        assert!(runtime_failure(session.path()).unwrap().is_none());
+        fs::write(
+            session.path().join("failure"),
+            Code::PnportArchiveCorrupt.as_str(),
+        )
+        .unwrap();
+        assert_eq!(
+            runtime_failure(session.path()).unwrap().unwrap().code,
+            Code::PnportArchiveCorrupt
+        );
+        fs::write(session.path().join("failure"), b"unexpected").unwrap();
+        assert_eq!(
+            runtime_failure(session.path()).unwrap().unwrap().code,
+            Code::PnportInjectionFailed
+        );
     }
 }
 
