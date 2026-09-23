@@ -4,12 +4,11 @@
 use std::os::fd::AsRawFd;
 #[cfg(unix)]
 use std::os::fd::FromRawFd;
-#[cfg(target_os = "linux")]
-use std::os::unix::process::CommandExt;
 use std::{
     fs,
     io::{Read, Write},
     net::TcpListener,
+    os::unix::process::CommandExt,
     process::{Command, Stdio},
     thread,
     time::Duration,
@@ -184,6 +183,61 @@ fn rate_limit_uses_shared_hashed_state_and_zero_wait_is_immediate() {
                 .to_string_lossy()
                 .contains("shared.bucket"));
         }
+    }
+}
+
+#[test]
+fn restrictive_umask_keeps_new_lock_state_usable() {
+    let home = tempfile::tempdir().unwrap();
+    for _ in 0..2 {
+        let mut invocation = command(
+            home.path(),
+            &[
+                "run",
+                "with-lock",
+                "--name",
+                "restrictive-umask",
+                "--",
+                "sh",
+                "-c",
+                "exit 0",
+            ],
+        );
+        unsafe {
+            invocation.pre_exec(|| {
+                libc::umask(0o777);
+                Ok(())
+            });
+        }
+        assert!(invocation.output().unwrap().status.success());
+    }
+    for _ in 0..2 {
+        let mut invocation = command(
+            home.path(),
+            &[
+                "run",
+                "with-rate-limit",
+                "--name",
+                "restrictive-umask-rate",
+                "--limit",
+                "2",
+                "--period",
+                "1m",
+                "--burst",
+                "2",
+                "--",
+                "sh",
+                "-c",
+                "exit 0",
+            ],
+        );
+        unsafe {
+            invocation.pre_exec(|| {
+                libc::umask(0o777);
+                Ok(())
+            });
+        }
+        assert!(invocation.output().unwrap().status.success());
     }
 }
 

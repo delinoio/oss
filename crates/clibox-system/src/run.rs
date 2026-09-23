@@ -3799,19 +3799,14 @@ fn wide(value: &str) -> Vec<u16> {
 
 fn ensure_private_dir(path: &Path) -> Result<()> {
     #[cfg(unix)]
-    ensure_private_state_ancestors(path)?;
+    {
+        ensure_private_state_ancestors(path)?;
+        ensure_private_unix_directories(path)?;
+    }
+    #[cfg(not(unix))]
     let existed = path.try_exists().map_err(|error| Failure::io(&error))?;
+    #[cfg(not(unix))]
     fs::create_dir_all(path).map_err(|error| Failure::io(&error))?;
-    #[cfg(unix)]
-    if !existed {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o700))
-            .map_err(|error| Failure::io(&error))?;
-    }
-    #[cfg(target_os = "macos")]
-    if !existed {
-        clear_macos_acl(path)?;
-    }
     #[cfg(windows)]
     {
         let directory = open_state_directory(path)?;
@@ -3844,6 +3839,36 @@ fn ensure_private_dir(path: &Path) -> Result<()> {
         ensure_private_macos_acl(path)?;
         Ok(())
     }
+}
+
+#[cfg(unix)]
+fn ensure_private_unix_directories(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut directories = path.ancestors().collect::<Vec<_>>();
+    directories.reverse();
+    for directory in directories {
+        match fs::symlink_metadata(directory) {
+            Ok(_) => continue,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => (),
+            Err(error) => return Err(Failure::io(&error)),
+        }
+        match fs::create_dir(directory) {
+            Ok(()) => {
+                // `create_dir` observes the caller's umask. Apply the
+                // required mode before creating a child so a restrictive
+                // umask cannot make the state root inaccessible midway
+                // through construction.
+                fs::set_permissions(directory, fs::Permissions::from_mode(0o700))
+                    .map_err(|error| Failure::io(&error))?;
+                #[cfg(target_os = "macos")]
+                clear_macos_acl(directory)?;
+            }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => (),
+            Err(error) => return Err(Failure::io(&error)),
+        }
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -3951,24 +3976,22 @@ fn open_windows_state_lock(path: &Path) -> Result<(File, bool)> {
 
 fn open_lock(path: &Path) -> Result<File> {
     #[cfg(unix)]
-    use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
-    #[cfg(target_os = "macos")]
-    let existed = path.try_exists().map_err(|error| Failure::io(&error))?;
     #[cfg(windows)]
     let (file, created) = open_windows_state_lock(path)?;
-    #[cfg(not(windows))]
-    let file = {
-        let mut options = OpenOptions::new();
-        options.create(true).read(true).write(true);
-        #[cfg(unix)]
-        {
-            options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
-        }
-        options.open(path).map_err(|error| Failure::io(&error))?
-    };
+    #[cfg(unix)]
+    let (file, created) = open_unix_state_lock(path)?;
+    #[cfg(unix)]
+    if created {
+        // `OpenOptionsExt::mode` is subject to the caller's umask. Restore
+        // the owner-only mode through the opened descriptor before accepting
+        // this newly created state file for future invocations.
+        file.set_permissions(fs::Permissions::from_mode(0o600))
+            .map_err(|error| Failure::io(&error))?;
+    }
     #[cfg(target_os = "macos")]
-    if !existed {
+    if created {
         clear_macos_acl(path)?;
     }
     let metadata = file.metadata().map_err(|error| Failure::io(&error))?;
@@ -3999,6 +4022,34 @@ fn open_lock(path: &Path) -> Result<File> {
         ensure_windows_private_dacl(&file)?;
     }
     Ok(file)
+}
+
+#[cfg(unix)]
+fn open_unix_state_lock(path: &Path) -> Result<(File, bool)> {
+    let open = |create_new| {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let mut options = OpenOptions::new();
+        options
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_NOFOLLOW);
+        if create_new {
+            options.create_new(true).mode(0o600);
+        }
+        options.open(path)
+    };
+    match open(false) {
+        Ok(file) => Ok((file, false)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => match open(true) {
+            Ok(file) => Ok((file, true)),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => open(false)
+                .map(|file| (file, false))
+                .map_err(|error| Failure::io(&error)),
+            Err(error) => Err(Failure::io(&error)),
+        },
+        Err(error) => Err(Failure::io(&error)),
+    }
 }
 
 fn try_acquire(path: &Path) -> Result<Option<File>> {
@@ -4170,6 +4221,16 @@ fn write_bucket(path: &Path, bucket: &Bucket) -> Result<()> {
         let mut file = options
             .open(&temporary)
             .map_err(|error| Failure::io(&error))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            // A restrictive umask applies to `OpenOptionsExt::mode`, so make
+            // the temporary state file owner-readable and writable through
+            // its descriptor before it can be atomically published.
+            file.set_permissions(fs::Permissions::from_mode(0o600))
+                .map_err(|error| Failure::io(&error))?;
+        }
         #[cfg(target_os = "macos")]
         clear_macos_acl(&temporary)?;
         #[cfg(windows)]
