@@ -762,7 +762,7 @@ enum Pending {
     Close(i32),
     CloseRange(u32, u32),
     Dup(i32),
-    ChangeDirectory(PathBuf),
+    ChangeDirectory(Option<PathBuf>),
     LinkMetadata {
         output: u64,
         target_len: usize,
@@ -1319,8 +1319,12 @@ impl Trace<'_> {
         if is_open {
             self.pending.insert(pid, Pending::Open(translation));
         } else if call == libc::SYS_chdir {
-            self.pending
-                .insert(pid, Pending::ChangeDirectory(translation.logical));
+            self.pending.insert(
+                pid,
+                Pending::ChangeDirectory(
+                    (translation.logical != translation.physical).then_some(translation.logical),
+                ),
+            );
         } else if call == libc::SYS_newfstatat || call == libc::SYS_statx || call == SYS_LSTAT {
             let nofollow = call == libc::SYS_newfstatat
                 && argument(&regs, 3) as i32 & libc::AT_SYMLINK_NOFOLLOW != 0
@@ -1508,17 +1512,12 @@ impl Trace<'_> {
             Pending::Close(argument(&regs, 0) as i32)
         } else if call == libc::SYS_fchdir {
             let fd = argument(&regs, 0) as i32;
-            let path = self
+            let logical = self
                 .fds
                 .get(&group)
                 .and_then(|fds| fds.get(&fd))
-                .and_then(|entry| (entry.logical != entry.physical).then(|| entry.logical.clone()))
-                .or_else(|| fs::read_link(format!("/proc/{pid}/fd/{fd}")).ok());
-            if let Some(path) = path {
-                Pending::ChangeDirectory(path)
-            } else {
-                return resume(pid, false, 0);
-            }
+                .and_then(|entry| (entry.logical != entry.physical).then(|| entry.logical.clone()));
+            Pending::ChangeDirectory(logical)
         } else if call == libc::SYS_dup
             || call == libc::SYS_dup3
             || call == SYS_DUP2
@@ -1579,7 +1578,11 @@ impl Trace<'_> {
                 }
             }
             Pending::ChangeDirectory(logical) if returned == 0 => {
-                self.cwd.insert(group, logical);
+                if let Some(logical) = logical {
+                    self.cwd.insert(group, logical);
+                } else {
+                    self.cwd.remove(&group);
+                }
             }
             Pending::LinkMetadata {
                 output,

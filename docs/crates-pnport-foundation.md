@@ -24,7 +24,7 @@ Linux static syscall mediation translates pathname extended-attribute reads for 
 
 Virtual dependency entries expose matching symlink type and target-byte length through `lstat` and `fstatat(..., AT_SYMLINK_NOFOLLOW)`, including directory-relative handles. Following `fstatat` calls expose the target directory; ordinary files and missing paths keep native metadata/error behavior.
 
-Relative `*at` operations validate the live descriptor as a directory before joining or normalizing paths, including `..`. Regular-file descriptors return `ENOTDIR` and invalid descriptors return `EBADF`, whether tracked or duplicated outside interception. Absolute paths continue to ignore the supplied directory descriptor.
+Relative `*at` operations validate the live descriptor as a directory before joining or normalizing paths, including `..`. Regular-file descriptors return `ENOTDIR` and invalid descriptors return `EBADF`, whether tracked or duplicated outside interception. Absolute paths continue to ignore the supplied directory descriptor. Native cwd state follows the live process handle after symlink retargeting or directory rename; only translated virtual cwd paths need saved logical identity.
 
 `dlopen(NULL, flags)` delegates directly to the native loader's process/global symbol namespace. Named library paths continue through filesystem translation; the null form is not a path error.
 

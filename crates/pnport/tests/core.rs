@@ -635,6 +635,76 @@ int main(int argc, char **argv) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_native_cwd_uses_live_directory_after_symlink_and_rename() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("native-cwd.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+static int check(const char *directory, const char *expected) {
+    char cwd[4096];
+    if (!getcwd(cwd, sizeof(cwd))) return 1;
+    if (strcmp(cwd, directory)) return 2;
+    int fd = open("value", O_RDONLY);
+    if (fd < 0) return 3;
+    char bytes[4] = {0};
+    int count = read(fd, bytes, 3);
+    close(fd);
+    return count == 3 && !strcmp(bytes, expected) ? 0 : 4;
+}
+int main(int argc, char **argv) {
+    if (argc != 2) return 20;
+    char old[4096], moved[4096];
+    snprintf(old, sizeof(old), "%s/old", argv[1]);
+    snprintf(moved, sizeof(moved), "%s/moved", argv[1]);
+    if (mkdir("old", 0700) || mkdir("new", 0700) || symlink("old", "alias")) return 21;
+    int fd = open("old/value", O_CREAT | O_WRONLY, 0600);
+    if (fd < 0 || write(fd, "old", 3) != 3) return 22;
+    close(fd);
+    fd = open("new/value", O_CREAT | O_WRONLY, 0600);
+    if (fd < 0 || write(fd, "new", 3) != 3) return 23;
+    close(fd);
+    if (chdir("alias") || unlink("../alias") || symlink("new", "../alias")) return 24;
+    if (check(old, "old")) return 25;
+    if (rename(old, moved)) return 26;
+    if (check(moved, "old")) return 27;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("native-cwd");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(root.path())
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_static_xattr_reads_translate_virtual_paths() {
     use std::process::Command;
     let root = fixture();
