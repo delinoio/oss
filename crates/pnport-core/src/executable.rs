@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     diagnostic::{Code, Error, Result},
-    view::View,
+    view::{Translation, View},
 };
 
 /// A resolved execution keeps script arguments in the logical PnP namespace.
@@ -23,10 +23,21 @@ pub fn prepare(
     args: &[OsString],
     search_path: Option<&OsStr>,
 ) -> Result<Prepared> {
+    prepare_with_translation(path, args, search_path, |path| view.translate(path))
+}
+
+/// Resolve a native image while allowing an interposer to release its runtime
+/// lock before filesystem and signature inspection call back into libc hooks.
+pub fn prepare_with_translation(
+    path: &Path,
+    args: &[OsString],
+    search_path: Option<&OsStr>,
+    mut translate: impl FnMut(&Path) -> Result<Translation>,
+) -> Result<Prepared> {
     let mut path = path.to_owned();
     let mut args = args.to_vec();
     for _ in 0..8 {
-        let translation = view.translate(&path)?;
+        let translation = translate(&path)?;
         let mut prefix = Vec::new();
         fs::File::open(&translation.physical)
             .map_err(access_error)?

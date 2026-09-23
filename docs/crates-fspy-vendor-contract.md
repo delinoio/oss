@@ -14,6 +14,8 @@ The fork joins the root Cargo workspace, uses its pinned nightly and dependency 
 
 Both macOS fspy and pnport command admission use `pnport-core` to validate the selected Mach-O slice, offline signature, and hardened-runtime entitlements before injection. The supervisor and pnport descendant `execve`/`posix_spawn` hooks launch the canonical path returned by admission, so a mutable path alias is not resolved a second time at launch. A signed image without the required DYLD-environment and disabled-library-validation entitlements is rejected before spawn.
 
+pnport descendant `execve` and `posix_spawn` hooks resolve bounded shebang chains through the same virtual view as the supervisor. Script arguments retain the logical script pathname while the final native interpreter receives injection admission; protected interpreters fail explicitly. Environment-based shebang interpreter selection reads the child's supplied `PATH`.
+
 The generic fspy runner creates a random, user-private preload directory for each process instead of using a fixed shared temporary path. The directory remains owned for the runner's lifetime. `materialized_artifact` checks the bytes of any pre-existing regular artifact without following Unix symlinks before returning its path; a collision with different bytes fails initialization.
 
 The generic fspy runner records every executable candidate examined during PATH resolution, including absent candidates before the selected program. These reads join the Unix and Windows access results so a new earlier PATH match invalidates a cached trace. Relative selected paths are bound to the lookup process's working directory before launch.

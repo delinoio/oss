@@ -9,9 +9,9 @@
 use std::{
     cell::Cell,
     collections::HashMap,
-    ffi::{CStr, CString, OsStr},
+    ffi::{CStr, CString, OsStr, OsString},
     fs,
-    os::unix::ffi::OsStrExt,
+    os::unix::ffi::{OsStrExt, OsStringExt},
     path::{Path, PathBuf},
     ptr,
     sync::{
@@ -545,6 +545,75 @@ fn admitted_program(path: &Path) -> std::result::Result<CString, c_int> {
     let canonical = pnport_core::executable::validate(path).map_err(|error| fail(error.code))?;
     CString::new(canonical.as_os_str().as_bytes()).map_err(|_| EINVAL)
 }
+struct ChildImage {
+    path: CString,
+    script_argv: Option<Vec<CString>>,
+}
+
+unsafe fn prepare_child_image(
+    path: *const c_char,
+    argv: *const *const c_char,
+    env: &[CString],
+) -> std::result::Result<ChildImage, c_int> {
+    if argv.is_null() {
+        return Err(EFAULT);
+    }
+    let mut original_args = Vec::new();
+    let mut index = 0;
+    while !(*argv.add(index)).is_null() {
+        original_args.push(OsString::from_vec(
+            CStr::from_ptr(*argv.add(index)).to_bytes().to_vec(),
+        ));
+        index += 1;
+    }
+    let user_args = original_args.get(1..).unwrap_or_default();
+    let search_path = env.iter().find_map(|entry| {
+        entry
+            .to_bytes()
+            .strip_prefix(b"PATH=")
+            .map(OsStr::from_bytes)
+    });
+    let runtime = RUNTIME.get().ok_or(EIO)?;
+    let logical = {
+        let runtime = runtime.lock().map_err(|_| EIO)?;
+        path_from(path, AT_FDCWD, &runtime)?
+    };
+    let prepared = pnport_core::executable::prepare_with_translation(
+        &logical,
+        user_args,
+        search_path,
+        |path| {
+            runtime
+                .lock()
+                .map_err(|_| {
+                    pnport_core::diagnostic::Error::new(
+                        Code::PnportInjectionFailed,
+                        "The native interception state is unavailable.",
+                    )
+                })?
+                .view
+                .translate(path)
+        },
+    )
+    .map_err(|error| fail(error.code))?;
+    let admitted = admitted_program(&prepared.program)?;
+    // Native exec preserves the caller's argv[0]. The kernel replaces it for
+    // a shebang script, so only the script case needs a rebuilt argv vector.
+    let script_argv = if prepared.args.len() == user_args.len() {
+        None
+    } else {
+        let mut rewritten_args = Vec::with_capacity(prepared.args.len() + 1);
+        rewritten_args.push(admitted.clone());
+        for argument in prepared.args {
+            rewritten_args.push(CString::new(argument.into_vec()).map_err(|_| EINVAL)?);
+        }
+        Some(rewritten_args)
+    };
+    Ok(ChildImage {
+        path: admitted,
+        script_argv,
+    })
+}
 unsafe fn child_env(envp: *const *const c_char) -> std::result::Result<Vec<CString>, c_int> {
     if envp.is_null() {
         return Err(EFAULT);
@@ -577,19 +646,21 @@ hook!(execve,pnport_execve,(path:*const c_char,argv:*const *const c_char,envp:*c
     let original=original!(execve,unsafe extern "C" fn(*const c_char,*const *const c_char,*const *const c_char)->c_int);
     let Some(_guard)=Guard::enter() else {return original(path,argv,envp);};
     if RUNTIME.get().is_none() {return original(path,argv,envp);}
-    let (_path,translation)=translated!(path,AT_FDCWD,false,-1);
-    let path=match admitted_program(&translation.physical) {Ok(path)=>path,Err(code)=>{errno(code);return -1;}};
     let env=match child_env(envp) {Ok(env)=>env,Err(code)=>{errno(code);return -1;}};
+    let image=match prepare_child_image(path,argv,&env) {Ok(image)=>image,Err(code)=>{errno(code);return -1;}};
+    let script_argv=image.script_argv.as_ref().map(|args| {let mut pointers:Vec<_>=args.iter().map(|arg|arg.as_ptr()).collect();pointers.push(ptr::null());pointers});
+    let argv=script_argv.as_ref().map_or(argv,Vec::as_ptr);
     let mut pointers:Vec<_>=env.iter().map(|e|e.as_ptr()).collect();pointers.push(ptr::null());
-    original(path.as_ptr(),argv,pointers.as_ptr())
+    original(image.path.as_ptr(),argv,pointers.as_ptr())
 });
 hook!(posix_spawn,pnport_spawn,(pid:*mut pid_t,path:*const c_char,actions:*const posix_spawn_file_actions_t,attributes:*const posix_spawnattr_t,argv:*const *mut c_char,envp:*const *mut c_char)->c_int,{
     let original=original!(posix_spawn,unsafe extern "C" fn(*mut pid_t,*const c_char,*const posix_spawn_file_actions_t,*const posix_spawnattr_t,*const *mut c_char,*const *mut c_char)->c_int);
     let Some(_guard)=Guard::enter() else {return original(pid,path,actions,attributes,argv,envp);};
     if RUNTIME.get().is_none() {return original(pid,path,actions,attributes,argv,envp);}
-    let (_path,translation)=match translate(path,AT_FDCWD,false) {Ok(value)=>value,Err(code)=>return code};
-    let path=match admitted_program(&translation.physical) {Ok(path)=>path,Err(code)=>return code};
     let env=match child_env(envp.cast()) {Ok(env)=>env,Err(code)=>return code};
+    let image=match prepare_child_image(path,argv.cast(),&env) {Ok(image)=>image,Err(code)=>return code};
+    let script_argv=image.script_argv.as_ref().map(|args| {let mut pointers:Vec<_>=args.iter().map(|arg|arg.as_ptr().cast_mut()).collect();pointers.push(ptr::null_mut());pointers});
+    let argv=script_argv.as_ref().map_or(argv,Vec::as_ptr);
     let mut pointers:Vec<_>=env.iter().map(|e|e.as_ptr().cast_mut()).collect();pointers.push(ptr::null_mut());
-    original(pid,path.as_ptr(),actions,attributes,argv,pointers.as_ptr())
+    original(pid,image.path.as_ptr(),actions,attributes,argv,pointers.as_ptr())
 });
