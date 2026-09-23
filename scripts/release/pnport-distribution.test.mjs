@@ -58,6 +58,31 @@ test("npm publication confirms six native dependencies before launcher and fails
   assert.equal(writes.length, 7);
 });
 
+test("an older pnport retry cannot downgrade the Homebrew tap", (t) => {
+  const directory = fixture(t);
+  const remote = path.join(directory, "tap.git");
+  const checkout = path.join(directory, "tap");
+  execFileSync("git", ["init", "--bare", "--initial-branch=main", remote], { stdio: "pipe" });
+  execFileSync("git", ["clone", remote, checkout], { stdio: "pipe" });
+  execFileSync("git", ["config", "user.name", "Fixture"], { cwd: checkout });
+  execFileSync("git", ["config", "user.email", "fixture@example.invalid"], { cwd: checkout });
+  mkdirSync(path.join(checkout, "Formula"));
+  const current = 'class Pnport < Formula\n  version "0.2.0"\nend\n';
+  writeFileSync(path.join(checkout, "Formula/pnport.rb"), current);
+  execFileSync("git", ["add", "Formula/pnport.rb"], { cwd: checkout });
+  execFileSync("git", ["commit", "-m", "newer pnport release"], { cwd: checkout, stdio: "pipe" });
+  execFileSync("git", ["push", "origin", "HEAD:main"], { cwd: checkout, stdio: "pipe" });
+  const args = ["scripts/release/update-homebrew.sh", "--project", "pnport", "--version", "0.1.0", "--tap-repo", "fixture/pnport-tap"];
+  for (const platform of ["darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64"]) {
+    args.push(`--${platform}-url`, `https://example.invalid/pnport-${platform}.tar.gz`, `--${platform}-sha256`, "a".repeat(64));
+  }
+  const env = { ...process.env, GH_TOKEN: "fixture", GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "url.file://" + remote + ".insteadOf", GIT_CONFIG_VALUE_0: "https://github.com/fixture/pnport-tap.git" };
+  const result = spawnSync("bash", args, { cwd: root, env, encoding: "utf8" });
+  assert.notEqual(result.status, 0, "older release unexpectedly updated the tap");
+  assert.match(result.stderr, /refusing pnport Homebrew downgrade from 0\.2\.0 to 0\.1\.0/u);
+  assert.equal(execFileSync("git", ["show", "main:Formula/pnport.rb"], { cwd: remote, encoding: "utf8" }), current);
+});
+
 test("signed GitHub release resumes an identical partial draft and rejects conflicting bytes", async () => {
   const plan = { project: "pnport", version: "0.1.0", revision, tag: "pnport@v0.1.0" };
   const files = new Map([["pnport-darwin-arm64.tar.gz", Buffer.from("native archive")]]);

@@ -153,6 +153,10 @@ destination_path=""
 
 case "$project" in
   binpm|nodeup|with-watch|derun|pnport)
+    if [ "$project" = "pnport" ] && [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+      log "pnport requires an exact stable version"
+      exit 1
+    fi
     if [ -z "$darwin_amd64_url" ] || [ -z "$darwin_amd64_sha256" ] || [ -z "$darwin_arm64_url" ] || [ -z "$darwin_arm64_sha256" ] || [ -z "$linux_amd64_url" ] || [ -z "$linux_amd64_sha256" ]; then
       log "$project requires --darwin-amd64-url, --darwin-amd64-sha256, --darwin-arm64-url, --darwin-arm64-sha256, --linux-amd64-url, and --linux-amd64-sha256"
       exit 1
@@ -242,8 +246,19 @@ fi
 mkdir -p "$(dirname -- "$destination_path")"
 if [ "$project" = "pnport" ] && [ -f "$destination_path" ]; then
   existing_version="$(sed -nE 's/^  version "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' "$destination_path")"
-  if [[ ! "$existing_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  if [[ ! "$existing_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
     log "existing pnport formula has no single exact version"
+    exit 1
+  fi
+  if node -e '
+    const [requested, existing] = process.argv.slice(1).map((value) => value.split(".").map(BigInt));
+    for (let index = 0; index < 3; index++) {
+      if (requested[index] < existing[index]) process.exit(0);
+      if (requested[index] > existing[index]) process.exit(1);
+    }
+    process.exit(1);
+  ' "$version" "$existing_version"; then
+    log "refusing pnport Homebrew downgrade from $existing_version to $version"
     exit 1
   fi
   if [ "$existing_version" = "$version" ] && ! cmp -s "$rendered_file" "$destination_path"; then
