@@ -254,7 +254,28 @@ pub fn dispatch_helper() {
     args.next();
     match args.next().as_deref() {
         Some(value) if value == OsStr::new(PROBE_ARG) => {
-            let status = helper_setup().map(|_| 0).unwrap_or(125);
+            let status = helper_setup()
+                .and_then(|_| {
+                    let path = b"/pnport-probe-must-be-rewritten\0";
+                    let fd = unsafe {
+                        libc::syscall(
+                            libc::SYS_openat,
+                            libc::AT_FDCWD,
+                            path.as_ptr().cast::<libc::c_char>(),
+                            libc::O_RDONLY,
+                            0,
+                        )
+                    };
+                    if fd < 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    // _exit closes this probe descriptor without another
+                    // filtered syscall stop that the capability check needs
+                    // to mediate.
+                    Ok(())
+                })
+                .map(|_| 0)
+                .unwrap_or(125);
             unsafe { libc::_exit(status) }
         }
         Some(value) if value == OsStr::new(LAUNCH_ARG) => {
@@ -303,27 +324,91 @@ pub fn probe() -> Result<()> {
         .spawn()
         .map_err(|_| injection_failed())?;
     let pid = child.id() as i32;
-    let mut status = 0;
-    unsafe {
-        if libc::waitpid(pid, &mut status, 0) != pid || !libc::WIFSTOPPED(status) {
-            libc::kill(pid, libc::SIGKILL);
-            libc::waitpid(pid, &mut status, 0);
-            return Err(unsupported(
-                "Linux seccomp or child tracing is unavailable.",
-            ));
+    let mediated = (|| -> Result<()> {
+        let mut status = 0;
+        if unsafe { libc::waitpid(pid, &mut status, 0) } != pid || !libc::WIFSTOPPED(status) {
+            tracing::debug!(
+                action = "linux_probe",
+                stage = "initial_stop",
+                status,
+                "Probe stop unavailable"
+            );
+            return Err(injection_failed());
         }
-        if libc::ptrace(libc::PTRACE_SETOPTIONS, pid, 0, TRACE_OPTIONS) != 0
-            || libc::ptrace(libc::PTRACE_CONT, pid, 0, 0) != 0
+        if unsafe { libc::ptrace(libc::PTRACE_SETOPTIONS, pid, 0, TRACE_OPTIONS) } != 0 {
+            tracing::debug!(
+                action = "linux_probe",
+                stage = "options",
+                "Probe trace options unavailable"
+            );
+            return Err(injection_failed());
+        }
+        resume(pid, false, 0)?;
+        if unsafe { libc::waitpid(pid, &mut status, 0) } != pid
+            || !libc::WIFSTOPPED(status)
+            || libc::WSTOPSIG(status) != libc::SIGTRAP
+            || status >> 16 != libc::PTRACE_EVENT_SECCOMP
         {
-            libc::kill(pid, libc::SIGKILL);
-            let _ = child.wait();
-            return Err(unsupported("Linux child tracing is unavailable."));
+            tracing::debug!(
+                action = "linux_probe",
+                stage = "seccomp_stop",
+                status,
+                "Probe trace event unavailable"
+            );
+            return Err(injection_failed());
         }
-    }
-    let result = child.wait().map_err(|_| injection_failed())?;
-    if !result.success() {
+        let mut regs = registers(pid)?;
+        if number(&regs) != libc::SYS_openat
+            || read_path(pid, argument(&regs, 1))? != Path::new("/pnport-probe-must-be-rewritten")
+        {
+            tracing::debug!(
+                action = "linux_probe",
+                stage = "pathname",
+                call = number(&regs),
+                "Probe pathname did not match"
+            );
+            return Err(injection_failed());
+        }
+        rewrite_path(pid, &mut regs, 1, Path::new("/dev/null"))?;
+        resume(pid, true, 0)?;
+        if unsafe { libc::waitpid(pid, &mut status, 0) } != pid
+            || !libc::WIFSTOPPED(status)
+            || libc::WSTOPSIG(status) != (libc::SIGTRAP | 0x80)
+            || result(&registers(pid)?) < 0
+        {
+            tracing::debug!(
+                action = "linux_probe",
+                stage = "syscall_exit",
+                status,
+                "Probe syscall did not open the rewritten path"
+            );
+            return Err(injection_failed());
+        }
+        resume(pid, false, 0)
+    })();
+    if let Err(error) = mediated {
+        tracing::debug!(
+            action = "linux_probe",
+            stage = "mediation",
+            code = error.code.as_str(),
+            "Probe mediation failed"
+        );
+        unsafe { libc::kill(pid, libc::SIGKILL) };
+        let _ = child.wait();
         return Err(unsupported(
-            "Linux seccomp syscall interception is unavailable.",
+            "Linux seccomp pathname mediation is unavailable.",
+        ));
+    }
+    let status = child.wait().map_err(|_| injection_failed())?;
+    if !status.success() {
+        tracing::debug!(
+            action = "linux_probe",
+            stage = "child_exit",
+            ?status,
+            "Probe helper did not complete"
+        );
+        return Err(unsupported(
+            "Linux seccomp pathname mediation is unavailable.",
         ));
     }
     Ok(())

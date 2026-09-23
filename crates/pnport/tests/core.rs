@@ -681,6 +681,33 @@ int main(int argc, char **argv) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_doctor_probes_a_mediated_pathname_syscall() {
+    use std::process::Command;
+    let root = fixture();
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["doctor", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let report: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(report["ready"], true);
+    let syscall = report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["id"] == "linux-syscall")
+        .unwrap();
+    assert_eq!(syscall["status"], "pass");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_doctor_rejects_an_incompatible_companion_architecture() {
     use std::process::Command;
     let root = fixture();
