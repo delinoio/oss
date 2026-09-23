@@ -110,7 +110,7 @@ jobs:
           pnpm --filter @delino/pnport test:package --target "$PNPORT_TARGET" --binary "$binary" --preload "$preload"
           fixture="$RUNNER_TEMP/pnport-typescript"
           pnpm --filter @delino/pnport test:typescript:prepare "$fixture"
-          pnpm --filter @delino/pnport test:typescript "$fixture" "$PWD/$binary"
+          pnpm --filter @delino/pnport test:typescript "$fixture" "$binary"
           node packages/pnport/scripts/package.mjs binary --target "$PNPORT_TARGET" --binary "$binary" --preload "$preload"
           node packages/pnport/scripts/install-smoke.mjs --target "$PNPORT_TARGET"
           node packages/pnport/scripts/evidence.mjs record --target "$PNPORT_TARGET" --base "$PNPORT_REVISION" --tree "$PNPORT_TREE" --revision "$PNPORT_REVISION"

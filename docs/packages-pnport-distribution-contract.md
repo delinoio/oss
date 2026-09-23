@@ -36,7 +36,7 @@ The private source workspace, built-in-only launcher, platform registry and mani
 
 The committed `test/fixtures/typescript` fixture and Yarn-generated lockfile pin Yarn 4.18.0, `typescript@7.1.0-dev.20260812.1`, and `@types/node@22.15.30`. This official compiler includes Microsoft's macOS injection-entitlement fix. Its command is `tsc`; the older `@typescript/native-preview` package's `tsgo` command is not automatically replaced. Compiler binaries and signatures are never modified.
 
-Run from the repository root on a native macOS host:
+Run from the repository root on each supported native host. The same fixture and exact official compiler version run on all six OS/architecture targets; macOS additionally verifies the unchanged compiler signature and injection entitlements:
 
 ```sh
 cargo build -p pnport -p pnport-preload
@@ -47,7 +47,7 @@ pnpm --filter @delino/pnport test:typescript "$work/fixture"
 
 Preparation alone may access npm and install dependencies. It requires a new destination, disables lifecycle scripts, uses an immutable lockfile, and generates inline/split PnP projects sharing an external Yarn cache. Execution invokes only prepared files and pnport; it never calls npm/Yarn, installs, downloads, or repairs dependencies. Both package-owned tasks disable Turbo caching. The optional final argument supplies an already-built pnport executable.
 
-The suite verifies Microsoft's unchanged signed compiler, the required entitlements, ZIP-backed Node types, an unplugged native package, workspace references, scoped and alias dependencies, declaration/JavaScript outputs, unchanged incremental outputs, `--noEmit`, direct native invocation, and TS2322 with exit 1. After a successful reference build, a direct compiler invocation without pnport must fail specifically with TS2688 for missing Node types. Neither format creates a project-root node_modules directory. `typescript-evidence.json` records the actual host OS/architecture, compiler and pnport SHA-256 digests, and cold/warm build durations without imposing a performance threshold. Timings are fixture observations, not the complete filesystem/memory/disk benchmark gate.
+The suite verifies the official compiler payload on each host and, on macOS, its unchanged signature and required entitlements. It also checks ZIP-backed Node types, an unplugged native package, workspace references, scoped and alias dependencies, declaration/JavaScript outputs, unchanged incremental outputs, `--noEmit`, direct native invocation, and TS2322 with exit 1. After a successful reference build, a direct compiler invocation without pnport must fail specifically with TS2688 for missing Node types. Neither format creates a project-root node_modules directory. `typescript-evidence.json` records the actual host OS/architecture, compiler and pnport SHA-256 digests, and cold/warm build durations without imposing a performance threshold. Timings are fixture observations, not the complete filesystem/memory/disk benchmark gate.
 
 This passed on macOS 26.6.2 arm64. It does not establish macOS 13, x64, peer-variant TypeScript, all process propagation, or installed pnport npm/archive conformance. Those release gates remain open.
 

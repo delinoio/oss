@@ -1659,7 +1659,7 @@ jobs:
       - name: Verify source version, package metadata, and fail-closed publication
         run: |
           pnpm --filter @delino/pnport test
-          node --test scripts/release/pnport-*.test.mjs
+          node --test scripts/release/project.test.mjs scripts/release/pnport-*.test.mjs
           node packages/pnport/scripts/package.mjs main
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -1709,7 +1709,7 @@ jobs:
           pnpm --filter @delino/pnport test:package --target "$PNPORT_TARGET" --binary "$binary" --preload "$preload"
           fixture="$RUNNER_TEMP/pnport-typescript"
           pnpm --filter @delino/pnport test:typescript:prepare "$fixture"
-          pnpm --filter @delino/pnport test:typescript "$fixture" "$PWD/$binary"
+          pnpm --filter @delino/pnport test:typescript "$fixture" "$binary"
           node packages/pnport/scripts/package.mjs binary --target "$PNPORT_TARGET" --binary "$binary" --preload "$preload"
           node packages/pnport/scripts/install-smoke.mjs --target "$PNPORT_TARGET"
       - name: Save pnpm cache after successful main validation

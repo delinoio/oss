@@ -6,6 +6,8 @@ import { dirname, delimiter, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
 import { createHash } from "node:crypto";
+import { version as osVersion } from "node:os";
+import { npm } from "./common.mjs";
 
 const repository = fileURLToPath(new URL("../../../", import.meta.url));
 const fixture = fileURLToPath(new URL("../test/fixtures/typescript/", import.meta.url));
@@ -36,7 +38,7 @@ if (mode === "prepare") {
     const root = join(directory, format);
     cpSync(fixture, root, { recursive: true, filter: (path) => !path.split(/[\\/]/).some((part) => [".yarn", "lib"].includes(part)) && !/\.pnp\.|\.tsbuildinfo$/.test(path) });
     writeFileSync(join(root, ".yarnrc.yml"), `nodeLinker: pnp\nenableScripts: false\nenableGlobalCache: false\npnpEnableInlining: ${format === "inline"}\ncacheFolder: ${JSON.stringify(join(directory, "external-cache"))}\n`);
-    successful(execute("npm", ["exec", "--yes", "--package", `@yarnpkg/cli-dist@${yarn}`, "--", "yarn", "install", "--immutable"], root));
+    npm(["exec", "--yes", "--package", `@yarnpkg/cli-dist@${yarn}`, "--", "yarn", "install", "--immutable"], { cwd: root, env });
     assert(!existsSync(join(root, "node_modules")));
   }
   writeFileSync(join(directory, "prepared.json"), JSON.stringify({ yarn, compiler, platform: process.platform, arch: process.arch }, null, 2));
@@ -44,8 +46,8 @@ if (mode === "prepare") {
 } else {
   const prepared = JSON.parse(readFileSync(join(directory, "prepared.json"), "utf8"));
   assert.deepEqual(prepared, { yarn, compiler, platform: process.platform, arch: process.arch });
-  assert.equal(process.platform, "darwin", "Native macOS execution is required.");
-  const binary = realpathSync(suppliedBinary ?? join(repository, "target/debug/pnport"));
+  assert(["darwin", "win32", "linux"].includes(process.platform) && ["x64", "arm64"].includes(process.arch), "Unsupported native conformance host.");
+  const binary = realpathSync(suppliedBinary ? resolve(repository, suppliedBinary) : join(repository, "target/debug/pnport"));
   const samples = [];
   for (const format of formats) {
     const root = join(directory, format);
@@ -54,14 +56,18 @@ if (mode === "prepare") {
     const cache = join(directory, `pnport-cache-${format}`);
     const run = (...args) => execute(binary, ["--cache-dir", cache, "run", "--", ...args], root);
     const unplugged = join(root, ".yarn/unplugged");
-    const platformPackage = readdirSync(unplugged).find((name) => name.startsWith(`@typescript-typescript-darwin-${process.arch}-`));
+    const platform = `${process.platform}-${process.arch}`;
+    const platformPackage = readdirSync(unplugged).find((name) => name.startsWith(`@typescript-typescript-${platform}-`));
     assert(platformPackage);
-    const native = join(unplugged, platformPackage, "node_modules/@typescript", `typescript-darwin-${process.arch}`, "lib/tsc");
+    const native = join(unplugged, platformPackage, "node_modules/@typescript", `typescript-${platform}`, process.platform === "win32" ? "lib/tsc.exe" : "lib/tsc");
+    assert(existsSync(native), "The official native TypeScript compiler is missing.");
     const originalDigest = sha256(native);
-    successful(execute("/usr/bin/codesign", ["--verify", "--strict", native], root));
-    const signature = successful(execute("/usr/bin/codesign", ["-d", "--entitlements", ":-", native], root));
-    for (const entitlement of ["allow-dyld-environment-variables", "disable-library-validation"]) {
-      assert.match(signature.stdout + signature.stderr, new RegExp(`<key>com\\.apple\\.security\\.cs\\.${entitlement}</key>\\s*<true\\s*/>`));
+    if (process.platform === "darwin") {
+      successful(execute("/usr/bin/codesign", ["--verify", "--strict", native], root));
+      const signature = successful(execute("/usr/bin/codesign", ["-d", "--entitlements", ":-", native], root));
+      for (const entitlement of ["allow-dyld-environment-variables", "disable-library-validation"]) {
+        assert.match(signature.stdout + signature.stderr, new RegExp(`<key>com\\.apple\\.security\\.cs\\.${entitlement}</key>\\s*<true\\s*/>`));
+      }
     }
     for (const workspace of ["core", "app"]) {
       rmSync(join(root, "packages", workspace, "lib"), { recursive: true, force: true });
@@ -96,8 +102,8 @@ if (mode === "prepare") {
     successful(execute(binary, ["--cache-dir", cache, "cache", "clean"], root));
     samples.push({ format, coldMs, warmMs, nativeSha256: originalDigest });
   }
-  const osVersion = successful(execute("/usr/bin/sw_vers", ["-productVersion"], directory)).stdout.trim();
-  const evidence = { event: "pnport_typescript_conformance", compiler, yarn, platform: process.platform, arch: process.arch, osVersion, pnportSha256: sha256(binary), samples };
+  const hostVersion = process.platform === "darwin" ? successful(execute("/usr/bin/sw_vers", ["-productVersion"], directory)).stdout.trim() : osVersion();
+  const evidence = { event: "pnport_typescript_conformance", compiler, yarn, platform: process.platform, arch: process.arch, osVersion: hostVersion, pnportSha256: sha256(binary), samples };
   writeFileSync(join(directory, "typescript-evidence.json"), JSON.stringify(evidence, null, 2));
   console.log(JSON.stringify(evidence));
 }
