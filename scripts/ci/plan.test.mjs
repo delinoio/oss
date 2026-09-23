@@ -17,7 +17,7 @@ test("PR never allocates native package jobs, including changes to CI itself", (
     assert.ok(jobs.includes("devhud-frontend"), path);
     for (const id of native) assert.ok(!jobs.includes(id), `${path}: ${id}`);
   }
-  assert.deepEqual(native, ["linux-packages", ...devhudNative]);
+  assert.deepEqual(native, ["linux-packages", "pnport-native", ...devhudNative]);
 });
 
 test("main selects the existing full native matrix only when affected; manual selects every job", () => {

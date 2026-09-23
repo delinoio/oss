@@ -18,7 +18,7 @@
 ### Scope in This Domain
 
 - `apps/mpapp`: Expo React Native mobile app.
-- `apps/public-docs`: Rspress static public documentation app, including the `docs/binpm`, `docs/nodeup`, `docs/runmoor`, `docs/async-commit-hook`, and `docs/clibox` content roots.
+- `apps/public-docs`: Rspress static public documentation app, including the `docs/binpm`, `docs/nodeup`, `docs/runmoor`, `docs/async-commit-hook`, `docs/clibox`, and `docs/pnport` content roots.
 - `apps/devhud`: implemented deterministic bilingual React/TypeScript shell, complete guest/Logto identity, synchronized Settings and opt-in diagnostics boundaries, direct-client GitHub.com provider/setup and issue submission, desktop RealQA capture/editor/encrypted drafts/direct official and BYO R2 uploads, populated Deck surface, desktop Native Messaging integration, target-isolated Rust/Tauri desktop CEF plus iOS/Android system-webview hosts, and production WidgetKit/AppWidgetProvider Deck widgets; other populated product surfaces remain planned.
 - `apps/devhud-chrome-extension`: implemented deterministic bilingual Chrome Manifest V3 DevHud context-picker extension.
 - `apps/devhud-admin`: implemented React/TypeScript Rsbuild administrator SPA embedded at `/admin`; it is the sole producer and validator of the ignored production administrator `dist`.
@@ -100,14 +100,14 @@
 
 - `public-docs` must remain Rspress-based and use Cloudflare Pages static output unless its project contract documents a replacement.
 - `public-docs` production is `https://oss.delino.io`, served by the Cloudflare Pages `public-docs` project from `main`; build at the repository root with the repository's Node and pnpm versions and publish only `apps/public-docs/doc_build`.
-- `public-docs` is the sole production documentation publisher. It builds the `docs/runmoor`, `docs/nodeup`, `docs/binpm`, `docs/async-commit-hook`, and `docs/clibox` content roots directly below `/runmoor`, `/nodeup`, `/binpm`, `/async-commit-hook`, and `/clibox`; no package-local documentation workspaces or output directories are independently published.
-- Every assembled documentation page must expose the shared site selector for Delino OSS, Runmoor, Nodeup, binpm, async-commit-hook, and clibox. Production and the consolidated development server at port `46302` use the same clean relative destinations; never remap project links to retired per-project ports. It must expose `aria-expanded` and `aria-current`, support keyboard selection, Escape/outside-click close, and focus return.
+- `public-docs` is the sole production documentation publisher. It builds the `docs/runmoor`, `docs/nodeup`, `docs/binpm`, `docs/async-commit-hook`, `docs/clibox`, and `docs/pnport` content roots directly below `/runmoor`, `/nodeup`, `/binpm`, `/async-commit-hook`, `/clibox`, and `/pnport`; no package-local documentation workspaces or output directories are independently published.
+- Every assembled documentation page must expose the shared site selector for Delino OSS, Runmoor, Nodeup, binpm, async-commit-hook, clibox, and pnport. Production and the consolidated development server at port `46302` use the same clean relative destinations; never remap project links to retired per-project ports. It must expose `aria-expanded` and `aria-current`, support keyboard selection, Escape/outside-click close, and focus return.
 - Rspress routes, navigation, and sidebar in `apps/public-docs/rspress.config.ts` must stay aligned with `docs/apps-public-docs-foundation.md`.
 - Public route exemptions in shared validators must come from one explicit project-route catalog; allow complete stable routes only, never arbitrary descendants of a project prefix.
 - `public-docs` must use clean URLs, write production output to `apps/public-docs/doc_build`, and validate stable route artifacts plus generated internal `.html` links through `pnpm --filter public-docs test`.
 - Current public-docs in-site top-level product page IDs are `devhud`, `cargo-mono`, `derun`, and `with-watch`.
 - The stable `/devhud` page documents public product availability and the coordinated all-channels GA rule without exposing release credentials, private workflow details, or deployment internals.
-- Nodeup, binpm, Runmoor, async-commit-hook, and clibox are exposed from `apps/public-docs/docs` through canonical same-origin subpaths `/nodeup`, `/binpm`, `/runmoor`, `/async-commit-hook`, and `/clibox`. Their Markdown is owned directly by these content roots and must not be duplicated elsewhere.
+- Nodeup, binpm, Runmoor, async-commit-hook, clibox, and pnport are exposed from `apps/public-docs/docs` through canonical same-origin subpaths `/nodeup`, `/binpm`, `/runmoor`, `/async-commit-hook`, `/clibox`, and `/pnport`. Their Markdown is owned directly by these content roots and must not be duplicated elsewhere.
 - Do not add legacy handoff pages, aliases, or redirects for the consolidated project subpaths. Operators decommission the former standalone Pages projects and DNS records only after the consolidated deployment, route, switcher, and installer checks pass.
 - `public-docs` must curate repository contracts into public guidance and must not document repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 - When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
@@ -181,4 +181,4 @@
 
 ### pnport Rules
 
-- Public pnport guides belong to `apps/public-docs/docs/pnport` at https://oss.delino.io/pnport. Follow `docs/apps-pnport-docs-foundation.md`; use the shared accessible navigation and consolidated fixed-port development/publishing pipeline. Keep compatibility/release evidence truthful and internal details in docs/.
+- Public pnport guides belong to `apps/public-docs/docs/pnport` at https://oss.delino.io/pnport. Follow `docs/apps-pnport-docs-foundation.md`; use the shared accessible navigation and consolidated fixed-port development/publishing pipeline. Mark all pnport guides unreleased until all six native gates and distribution publication complete. Keep compatibility/release evidence truthful and internal details in docs/.

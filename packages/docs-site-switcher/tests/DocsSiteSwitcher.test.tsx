@@ -37,6 +37,7 @@ describe("DocsSiteSwitcher", () => {
       "binpm",
       "async-commit-hook",
       "clibox",
+      "pnport",
     ]);
     expect(menu.getAttribute("id")).toBe(trigger.getAttribute("aria-controls"));
     expect(items[1]?.getAttribute("aria-current")).toBe("page");
@@ -47,6 +48,7 @@ describe("DocsSiteSwitcher", () => {
       "/binpm/",
       "/async-commit-hook/",
       "/clibox/",
+      "/pnport/",
     ]);
   });
 
@@ -120,6 +122,13 @@ describe("DocsSiteSwitcher", () => {
     (pathname) => expect(getDocumentationSiteForPathname(pathname)).toBe(DocumentationSiteId.PublicDocs),
   );
 
+  it.each(["/pnport", "/pnport/", "/pnport/diagnostics/"])(
+    "selects pnport for %s",
+    (pathname) => {
+      expect(getDocumentationSiteForPathname(pathname)).toBe(DocumentationSiteId.Pnport);
+    },
+  );
+
   it("retains same-origin destinations on the consolidated development server", () => {
     expect(window.location.port).toBe("46302");
     renderSwitcher(DocumentationSiteId.Clibox);
@@ -131,11 +140,11 @@ describe("DocsSiteSwitcher", () => {
     }
   });
 
-  it("reaches clibox at the end and restores its trigger on Escape", () => {
-    renderSwitcher(DocumentationSiteId.Clibox);
-    const trigger = screen.getByRole("button", { name: "clibox" });
+  it("reaches pnport at the end and restores its trigger on Escape", () => {
+    renderSwitcher(DocumentationSiteId.Pnport);
+    const trigger = screen.getByRole("button", { name: "pnport" });
     fireEvent.keyDown(trigger, { key: "ArrowUp" });
-    const item = screen.getByRole("menuitem", { name: "clibox" });
+    const item = screen.getByRole("menuitem", { name: "pnport" });
     expect(document.activeElement).toBe(item);
     fireEvent.keyDown(item, { key: "Home" });
     expect(document.activeElement).toBe(screen.getAllByRole("menuitem")[0]);

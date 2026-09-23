@@ -5,14 +5,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { Bump, Project, Kind, bumpVersion, readVersion, versionChanges, sourceMetadata, git, prepareRelease, validateCommit, preflightVersion, pushReleaseTag, tagRevision } from "./project.mjs";
+import { Bump, Project, Kind, bumpVersion, readVersion, versionChanges, sourceMetadata, git, prepareRelease, validateCommit, preflightVersion, pushReleaseTag, tagRevision, requiresCargoPublish } from "./project.mjs";
+import { applyCandidate } from "./pnport-candidate.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const achFiles = [
   "cmds/async-commit-hook/internal/core/model.go", "apps/async-commit-hook/package.json",
   "packages/async-commit-hook-api-client/package.json", "packaging/async-commit-hook/release-metadata.json",
 ];
-const files = ["Cargo.lock", "packages/clibox/package.json", ...["binpm", "cargo-mono", "nodeup", "with-watch", "clibox"].map((name) => `crates/${name}/Cargo.toml`), "cmds/derun/internal/version/version.go", "cmds/runmoor/internal/runmoor/types.go", ...achFiles];
+const files = ["Cargo.lock", "packages/clibox/package.json", "packages/pnport/package.json", ...["binpm", "cargo-mono", "nodeup", "with-watch", "clibox", "pnport", "pnport-preload"].map((name) => `crates/${name}/Cargo.toml`), "cmds/derun/internal/version/version.go", "cmds/runmoor/internal/runmoor/types.go", ...achFiles];
 const sources = Object.fromEntries(files.map((file) => [file, readFileSync(path.join(root, file), "utf8")]));
 const read = (file) => sources[file];
 const bot = { name: "delino-release-bot[bot]", email: "123+delino-release-bot[bot]@users.noreply.github.com" };
@@ -27,7 +28,7 @@ for (const project of Object.values(Project)) for (const bump of Object.values(B
     assert.equal(plan.version, bumpVersion(plan.previous_version, bump));
     const updated = { ...sources, ...plan.changes };
     for (const candidate of Object.values(Project)) assert.equal(readVersion(candidate, (file) => updated[file]), candidate === project ? plan.version : readVersion(candidate, read));
-    assert.equal(Object.keys(plan.changes).length, project === Project.AsyncCommitHook ? 4 : project === Project.Clibox ? 3 : plan.kind === Kind.Rust ? 2 : 1);
+    assert.equal(Object.keys(plan.changes).length, project === Project.AsyncCommitHook || project === Project.Pnport ? 4 : project === Project.Clibox ? 3 : plan.kind === Kind.Rust ? 2 : 1);
     if (project === Project.AsyncCommitHook) {
       assert.equal(plan.kind, Kind.Go);
       assert.equal(plan.tag, `async-commit-hook@v${plan.version}`);
@@ -38,7 +39,7 @@ for (const project of Object.values(Project)) for (const bump of Object.values(B
       const before = sources["Cargo.lock"].split("[[package]]");
       const after = updated["Cargo.lock"].split("[[package]]");
       assert.equal(before.length, after.length);
-      assert.equal(before.filter((section, i) => section !== after[i]).length, 1);
+      assert.equal(before.filter((section, i) => section !== after[i]).length, project === Project.Pnport ? 2 : 1);
     }
   });
 }
@@ -70,6 +71,20 @@ test("clibox releases synchronize Cargo and npm and reject npm drift before vers
   const drift = (file) => file === "packages/clibox/package.json" ? read(file).replace(`"version": "${plan.previous_version}"`, '"version": "99.0.0"') : read(file);
   assert.throws(() => versionChanges(Project.Clibox, Bump.Patch, drift), /versions disagree/u);
   assert.throws(() => sourceMetadata({ project: Project.Clibox, event: "push", ref: `refs/tags/clibox@v${plan.previous_version}` }, drift), /versions disagree/u);
+});
+
+test("pnport first minor bump produces 0.1.0 with CLI, preload, npm, and lockstep versions", () => {
+  const plan = versionChanges(Project.Pnport, Bump.Minor, read);
+  assert.equal(plan.previous_version, "0.0.0");
+  assert.equal(plan.version, "0.1.0");
+  assert.deepEqual(Object.keys(plan.changes).sort(), ["Cargo.lock", "crates/pnport/Cargo.toml", "crates/pnport-preload/Cargo.toml", "packages/pnport/package.json"].sort());
+  assert.equal(JSON.parse(plan.changes["packages/pnport/package.json"]).version, "0.1.0");
+  assert.equal((plan.changes["Cargo.lock"].match(/name = "pnport(?:-preload)?"\nversion = "0\.1\.0"/gu) ?? []).length, 2);
+  assert.equal(requiresCargoPublish(Project.Pnport), false);
+  for (const driftFile of ["packages/pnport/package.json", "crates/pnport-preload/Cargo.toml"]) {
+    const drift = (file) => file === driftFile ? read(file).replace("0.0.0", "9.9.9") : read(file);
+    assert.throws(() => versionChanges(Project.Pnport, Bump.Minor, drift), /versions disagree/u);
+  }
 });
 
 for (const file of achFiles) test(`async-commit-hook rejects drift and missing, duplicate or malformed versions in ${file}`, () => {
@@ -153,6 +168,12 @@ test("async-commit-hook version drift fails before preflight or version writes",
 for (const project of Object.values(Project)) test(`${project} commit journals and resumes the same run after main advances`, async (t) => {
   const fixtureState = fixture(t);
   const options = { directory: fixtureState.directory, project, bump: Bump.Minor, runId: "123", ...bot };
+  if (project === Project.Pnport) {
+    const candidate = applyCandidate({ directory: fixtureState.directory, bump: Bump.Minor, runId: "123", mode: "new", base: fixtureState.initial });
+    options.expectedBase = candidate.base;
+    options.expectedTree = candidate.tree;
+    git(fixtureState.directory, ["reset", "--hard", "HEAD"]);
+  }
   const first = await prepareRelease(options);
   assert.equal(first.resumed, false);
   assert.equal(git(fixtureState.remote, ["rev-parse", "refs/heads/main"]), first.revision);
@@ -165,8 +186,18 @@ for (const project of Object.values(Project)) test(`${project} commit journals a
   assert.equal(second.resumed, true);
   assert.equal(second.revision, first.revision);
   assert.equal(second.version, first.version);
+  if (project === Project.Pnport) await assert.rejects(prepareRelease({ ...options, expectedTree: "f".repeat(40) }), /resumed commit differs/u);
   assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, Bump.Patch, "123"), /journal/u);
   assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, Bump.Minor, "456"), /journal/u);
+});
+
+test("pnport refuses an unverified or mismatched candidate before any version write", async (t) => {
+  const state = fixture(t);
+  const options = { directory: state.directory, project: Project.Pnport, bump: Bump.Minor, runId: "456", ...bot };
+  await assert.rejects(prepareRelease(options), /complete pre-commit evidence/u);
+  await assert.rejects(prepareRelease({ ...options, expectedBase: state.initial, expectedTree: "f".repeat(40) }), /differs from the six-target candidate/u);
+  assert.equal(git(state.remote, ["rev-parse", "refs/heads/main"]), state.initial);
+  assert.equal(git(state.remote, ["tag", "--list"]), "");
 });
 
 test("A concurrent main push fails without rewriting remote history", async (t) => {

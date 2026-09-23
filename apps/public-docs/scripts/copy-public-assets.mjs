@@ -12,6 +12,8 @@ const assets = [
   ["scripts/install/binpm.ps1", "binpm/install.ps1"],
   ["scripts/install/async-commit-hook.sh", "async-commit-hook/install.sh"],
   ["scripts/install/async-commit-hook.ps1", "async-commit-hook/install.ps1"],
+  ["scripts/install/pnport.sh", "pnport/install.sh"],
+  ["scripts/install/pnport.ps1", "pnport/install.ps1"],
 ];
 
 for (const [source, destination] of assets) {

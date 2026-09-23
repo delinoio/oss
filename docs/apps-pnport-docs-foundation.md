@@ -3,7 +3,7 @@
 ## Scope
 `apps/public-docs/docs/pnport` owns English guides at https://oss.delino.io/pnport, using the existing consolidated documentation app and publisher.
 
-The content/navigation implementation is still planned; this document establishes its contract before runtime work. No pnport public route or distribution availability is claimed by the current development source.
+The `/pnport` route and seven child guides are implemented in the consolidated site. Every page must identify the product as unreleased until the complete release gate passes. Published documentation before that event does not imply installable artifacts.
 
 ## Runtime and Language
 Rspress, shared accessible navigation and Cloudflare Pages. Use pnpm dev:public-docs on fixed loopback port 46302. No standalone app, publisher or port.
@@ -24,7 +24,7 @@ Public guides describe user-facing contracts only. Internal architecture, repo-l
 Use the existing documentation build/validation logs. Document native diagnostic privacy and stderr/stdout separation without collecting user diagnostics.
 
 ## Build and Test
-Run pnpm test from apps/public-docs. Validate routes, required content, internal-content boundaries, selector accessibility and the production build. Remove generated dist output after verification. Documentation deployment uses only the existing consolidated publisher.
+Run pnpm test from apps/public-docs. Validate the eight routes, required content, internal-content boundaries, selector accessibility, explicit unreleased state and the production build. Remove generated dist output after verification. Documentation deployment uses only the existing consolidated publisher.
 
 ## Dependencies and Integrations
 Shared docs-site-switcher and existing Rspress build. Curate from the complete #958 contract; link to stable public interfaces and GitHub support.

@@ -9,7 +9,7 @@
 
 - `packages/devhud-api-client`: implemented generated TypeScript DevHud API client, Connect Query bindings, and safe handwritten wire helpers.
 
-- `packages/docs-site-switcher`: shared accessible documentation site selector used by the consolidated Public Docs root and all five project content sections. Follow `docs/packages-docs-site-switcher-contract.md`; keep its fixed site registry, enum IDs, keyboard behavior, focus management, and active-route semantics synchronized across consumers.
+- `packages/docs-site-switcher`: shared accessible documentation site selector used by the consolidated Public Docs root and all six project content sections. Follow `docs/packages-docs-site-switcher-contract.md`; keep its fixed site registry, enum IDs, keyboard behavior, focus management, and active-route semantics synchronized across consumers.
 
 ### DevHud Rules
 
@@ -51,4 +51,5 @@
 ### pnport Rules
 
 - Private `packages/pnport` generates @delino/pnport and six exact-version native packages with preferUnplugged. Follow `docs/packages-pnport-distribution-contract.md`; no install hooks, runtime downloads, compilation or unrelated PATH fallback. All six execution/install gates precede publication.
+- Package each native executable with the adjacent interception library from the same build. Verify exact inventories, executable mode, source revision, versions, checksums and existing remote integrity before publishing six optional packages ahead of the launcher. Keep generated `dist` untracked and remove it from final worktrees.
 - pnport native TypeScript conformance pins Yarn and the official compiler in its fixture and lockfile. Keep networked preparation separate from execution, disable Turbo caching for both conformance commands, and record the actual OS/architecture and compiler digest. The corrected official `typescript` package exposes `tsc`; never silently substitute it for an older `native-preview` package's `tsgo` command or rewrite its signature.

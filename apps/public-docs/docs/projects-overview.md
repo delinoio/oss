@@ -13,6 +13,7 @@ This page provides a high-level public catalog of projects in the Delino OSS mon
 - [`runmoor`](https://oss.delino.io/runmoor/): Stable manager for disposable Docker and Tart GitHub Actions runners on a personal computer.
 - [`async-commit-hook`](https://oss.delino.io/async-commit-hook/): Asynchronous checks against committed source for developers and coding agents.
 - [`clibox`](https://oss.delino.io/clibox/): Cross-platform command-line utilities for environments, ports, clipboard, transformations, readiness, and configuration.
+- [`pnport`](https://oss.delino.io/pnport/): Unreleased Yarn 4 Plug'n'Play subprocess compatibility tool; packages are not available yet.
 - `mpapp`: Expo React Native mobile app.
 - `public-docs`: Rspress public documentation app.
 
@@ -20,4 +21,4 @@ This page provides a high-level public catalog of projects in the Delino OSS mon
 
 Authoritative implementation contracts are maintained in the repository's internal project documents.
 Use this public catalog for orientation, and use internal project docs for precise engineering and operational details.
-Project subpaths are the canonical entry points for Nodeup, binpm, Runmoor, async-commit-hook, and clibox public guidance.
+Project subpaths are the canonical entry points for Nodeup, binpm, Runmoor, async-commit-hook, clibox, and pnport public guidance.

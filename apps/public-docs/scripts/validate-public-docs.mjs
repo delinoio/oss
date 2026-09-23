@@ -10,14 +10,14 @@ const retiredOrigins = [
   "https://ach.delino.io",
 ];
 
-const selectorDestinations = ["/", "/runmoor/", "/nodeup/", "/binpm/", "/async-commit-hook/", "/clibox/"];
-const projectSecuritySlugs = new Set(["runmoor", "async-commit-hook"]);
+const selectorDestinations = ["/", "/runmoor/", "/nodeup/", "/binpm/", "/async-commit-hook/", "/clibox/", "/pnport/"];
+const projectSecuritySlugs = new Set(["runmoor", "async-commit-hook", "pnport"]);
 const forbiddenProjectContent = [
   /(?:GH_TOKEN|DEVHUD_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)|Authorization:\s*Bearer)/iu,
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/iu,
   /BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY/iu,
   /(?:\/Users\/|\/home\/[a-z]|\.infisical)/iu,
-  /(?:apps|cmds|servers|protos)\/(?:runmoor|async-commit-hook|devhud)(?:\/|\b)/iu,
+  /(?:apps|cmds|servers|protos|crates|packages)\/(?:runmoor|async-commit-hook|devhud|pnport)(?:\/|\b)/iu,
 ];
 const rootRoutes = [
   "/",
@@ -95,7 +95,7 @@ for (const [slug, routes] of Object.entries(projectRoutes)) {
         failures.push(`${publicRoute(slug, route)} is missing selector destination ${destination}`);
       }
     }
-    if (slug === "clibox") {
+    if (slug === "clibox" || slug === "pnport") {
       const sidebar = contents.match(/<aside\b[^>]*class="[^"]*rp-doc-layout__sidebar[^"]*"[^>]*>[\s\S]*?<\/aside>/iu)?.[0] ?? "";
       const menuItems = [...contents.matchAll(/<a\b[^>]*role="menuitem"[^>]*>/giu)].map(([tag]) => tag);
       for (const destination of selectorDestinations) {
@@ -104,7 +104,7 @@ for (const [slug, routes] of Object.entries(projectRoutes)) {
         }
       }
       const activeItems = menuItems.filter((tag) => tag.includes('aria-current="page"'));
-      if (activeItems.length !== 1 || !activeItems[0].includes('href="/clibox/"')) {
+      if (activeItems.length !== 1 || !activeItems[0].includes(`href="/${slug}/"`)) {
         failures.push(`${publicRoute(slug, route)} has an incorrect selected site`);
       }
       for (const child of routes) {
