@@ -381,6 +381,38 @@ mod windows_state_tests {
     }
 }
 
+#[cfg(all(test, target_os = "macos"))]
+mod macos_state_tests {
+    use super::*;
+
+    #[test]
+    fn newly_created_state_objects_have_empty_extended_acls() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let state = temporary.path().join("state");
+        ensure_private_dir(&state).expect("private state directory");
+        ensure_private_macos_acl(&state).expect("state directory ACL");
+
+        let lock_path = state.join("admission.lock");
+        let _lock = open_lock(&lock_path).expect("state lock");
+        ensure_private_macos_acl(&lock_path).expect("state lock ACL");
+
+        let bucket_path = state.join("admission.json");
+        write_bucket(
+            &bucket_path,
+            &Bucket {
+                version: STATE_VERSION,
+                limit: 1,
+                period_ms: 1,
+                burst: 1,
+                tokens: 1.0,
+                refill_utc_ms: 0,
+            },
+        )
+        .expect("state bucket");
+        ensure_private_macos_acl(&bucket_path).expect("state bucket ACL");
+    }
+}
+
 fn rate_limit(options: RateLimit) -> Result<Outcome> {
     let plan = environment::prepare(options.workload.args)?;
     let key = StateKey::new(Namespace::Rate, &options.name, &options.scope)?;
@@ -2183,6 +2215,10 @@ fn ensure_private_dir(path: &Path) -> Result<()> {
         fs::set_permissions(path, fs::Permissions::from_mode(0o700))
             .map_err(|error| Failure::io(&error))?;
     }
+    #[cfg(target_os = "macos")]
+    if !existed {
+        clear_macos_acl(path)?;
+    }
     #[cfg(windows)]
     {
         let directory = open_state_directory(path)?;
@@ -2211,6 +2247,8 @@ fn ensure_private_dir(path: &Path) -> Result<()> {
                 );
             }
         }
+        #[cfg(target_os = "macos")]
+        ensure_private_macos_acl(path)?;
         Ok(())
     }
 }
@@ -2219,6 +2257,7 @@ fn open_lock(path: &Path) -> Result<File> {
     #[cfg(unix)]
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 
+    let existed = path.try_exists().map_err(|error| Failure::io(&error))?;
     let mut options = OpenOptions::new();
     options.create(true).read(true).write(true);
     #[cfg(unix)]
@@ -2238,6 +2277,10 @@ fn open_lock(path: &Path) -> Result<File> {
             .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
     }
     let file = options.open(path).map_err(|error| Failure::io(&error))?;
+    #[cfg(target_os = "macos")]
+    if !existed {
+        clear_macos_acl(path)?;
+    }
     let metadata = file.metadata().map_err(|error| Failure::io(&error))?;
     if !metadata.is_file() {
         return runtime_failure("Execution state lock is not a regular file.");
@@ -2251,6 +2294,8 @@ fn open_lock(path: &Path) -> Result<File> {
             "Execution state lock permissions, links, or ownership are unsafe.",
         );
     }
+    #[cfg(target_os = "macos")]
+    ensure_private_macos_acl(path)?;
     #[cfg(windows)]
     {
         ensure_windows_state_object(&file, false)?;
@@ -2319,6 +2364,8 @@ fn read_bucket(path: &Path, limit: u64, period: Duration, burst: u64, now: i64) 
         Ok(mut file) => {
             let metadata = file.metadata().map_err(|error| Failure::io(&error))?;
             ensure_safe_state_metadata(&metadata)?;
+            #[cfg(target_os = "macos")]
+            ensure_private_macos_acl(path)?;
             if metadata.len() > MAX_BUCKET_STATE_BYTES {
                 return runtime_failure("Execution rate-limit state is malformed or unsupported.");
             }
@@ -2423,6 +2470,8 @@ fn write_bucket(path: &Path, bucket: &Bucket) -> Result<()> {
         let mut file = options
             .open(&temporary)
             .map_err(|error| Failure::io(&error))?;
+        #[cfg(target_os = "macos")]
+        clear_macos_acl(&temporary)?;
         #[cfg(windows)]
         {
             ensure_windows_state_object(&file, false)?;
@@ -2502,6 +2551,99 @@ fn owned_by_effective_user(metadata: &fs::Metadata) -> bool {
     use std::os::unix::fs::MetadataExt;
 
     metadata.uid() == unsafe { libc::geteuid() }
+}
+
+#[cfg(target_os = "macos")]
+const MACOS_ACL_TYPE_EXTENDED: i32 = 0x100;
+#[cfg(target_os = "macos")]
+const MACOS_ACL_FIRST_ENTRY: i32 = 0;
+
+#[cfg(target_os = "macos")]
+type MacosAcl = *mut std::ffi::c_void;
+
+#[cfg(target_os = "macos")]
+unsafe extern "C" {
+    fn acl_free(object: MacosAcl) -> i32;
+    fn acl_get_entry(acl: MacosAcl, entry_id: i32, entry: *mut MacosAcl) -> i32;
+    fn acl_get_file(path: *const libc::c_char, acl_type: i32) -> MacosAcl;
+    fn acl_init(count: libc::c_int) -> MacosAcl;
+    fn acl_set_file(path: *const libc::c_char, acl_type: i32, acl: MacosAcl) -> i32;
+}
+
+#[cfg(target_os = "macos")]
+struct MacosAclGuard(MacosAcl);
+
+#[cfg(target_os = "macos")]
+impl Drop for MacosAclGuard {
+    fn drop(&mut self) {
+        unsafe {
+            acl_free(self.0);
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_acl_path(path: &Path) -> Result<std::ffi::CString> {
+    use std::os::unix::ffi::OsStrExt;
+
+    std::ffi::CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| Failure::new(Code::IoFailed, "Execution state path is invalid."))
+}
+
+#[cfg(target_os = "macos")]
+fn clear_macos_acl(path: &Path) -> Result<()> {
+    let Some(current) = macos_acl(path)? else {
+        return Ok(());
+    };
+    if !macos_acl_has_entry(&current)? {
+        return Ok(());
+    }
+
+    let path = macos_acl_path(path)?;
+    let acl = unsafe { acl_init(0) };
+    if acl.is_null() {
+        return Err(Failure::io(&io::Error::last_os_error()));
+    }
+    let acl = MacosAclGuard(acl);
+    if unsafe { acl_set_file(path.as_ptr(), MACOS_ACL_TYPE_EXTENDED, acl.0) } != 0 {
+        return Err(Failure::io(&io::Error::last_os_error()));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn ensure_private_macos_acl(path: &Path) -> Result<()> {
+    let Some(acl) = macos_acl(path)? else {
+        return Ok(());
+    };
+    if macos_acl_has_entry(&acl)? {
+        return runtime_failure("Execution state access controls are unsafe.");
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn macos_acl(path: &Path) -> Result<Option<MacosAclGuard>> {
+    let path = macos_acl_path(path)?;
+    let acl = unsafe { acl_get_file(path.as_ptr(), MACOS_ACL_TYPE_EXTENDED) };
+    if acl.is_null() {
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() == Some(libc::ENOENT) {
+            return Ok(None);
+        }
+        return Err(Failure::io(&error));
+    }
+    Ok(Some(MacosAclGuard(acl)))
+}
+
+#[cfg(target_os = "macos")]
+fn macos_acl_has_entry(acl: &MacosAclGuard) -> Result<bool> {
+    let mut entry = std::ptr::null_mut();
+    match unsafe { acl_get_entry(acl.0, MACOS_ACL_FIRST_ENTRY, &mut entry) } {
+        0 => Ok(true),
+        1 => Ok(false),
+        _ => Err(Failure::io(&io::Error::last_os_error())),
+    }
 }
 
 #[cfg(windows)]
