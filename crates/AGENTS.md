@@ -192,3 +192,11 @@
 - clibox GNU release builds use the shared pinned AlmaLinux 9/glibc 2.34 boundary for npm and stable APT/DNF distribution; preserve the existing musl targets and optional user-installed desktop tools.
 
 - The isolated Windows Ctrl+C test helper must explicitly clear inherited Ctrl+C-ignore state before spawning clibox, including under Git Bash release jobs. Keep this normalization confined to the test-owned process and include helper stdout/stderr on failure; production signal behavior is unchanged.
+
+### pnport Rules
+
+- Private pnport runtime belongs to `crates/pnport` and its matched native injection artifact to `crates/pnport-preload`; follow `docs/crates-pnport-foundation.md` and the complete requirements. Keep exact pnp/fspy pins, data-only graph loading, fail-closed interception, read-only dependency views, private leased cache and all six native conformance gates. No crates.io publication.
+
+- pnport macOS interpreter admission preserves logical script paths, verifies signed native images offline, and permits hardened images only with both DYLD-environment and disabled-library-validation entitlements. Never rewrite compiler binaries or signatures; native TypeScript fixtures pin the verified official release explicitly.
+- pnport cache extraction must use a private snapshot verified against the destination archive digest. Rechecking only the mutable source after extraction cannot prove which bytes were published; retain rewrite-and-restore regression coverage.
+- pnport preload constructor entry and completed readiness are distinct acknowledgements. Supported cache lock waits after entry must not trigger the missing-injection deadline; a child result without readiness remains a failure.

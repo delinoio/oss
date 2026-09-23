@@ -1,0 +1,9 @@
+{
+  "name": "@fixture/core",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    "types": "./lib/index.d.ts",
+    "default": "./lib/index.js"
+  }
+}

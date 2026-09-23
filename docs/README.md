@@ -119,3 +119,10 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - [Release and recovery](cmds-async-commit-hook-release-contract.md)
 
 - `apps-async-commit-hook-docs-foundation.md`: Rspress public documentation owned at `apps/public-docs/docs/async-commit-hook`, published below `/async-commit-hook`, with installer routes, the `/docs` migration route, and validation contract.
+
+### pnport
+- [Project index](project-pnport.md)
+- [Rust foundation](crates-pnport-foundation.md)
+- [Complete issue #958 requirements](crates-pnport-requirements.md)
+- [npm/native distribution](packages-pnport-distribution-contract.md)
+- [Public documentation](apps-pnport-docs-foundation.md)
