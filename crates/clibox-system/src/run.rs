@@ -857,13 +857,24 @@ fn check_http(
     let client = client.clone();
     let url = options.url.clone();
     let expected_status = options.status;
-    thread::spawn(move || {
-        let result = http_attempt(client, url, method, expected_status, budget);
-        let _ = sender.send(HttpProbe {
-            result,
-            observed_at: Instant::now(),
-        });
-    });
+    thread::Builder::new()
+        .name("clibox-readiness-probe".into())
+        .spawn(move || {
+            let result = http_attempt(client, url, method, expected_status, budget);
+            let _ = sender.send(HttpProbe {
+                result,
+                observed_at: Instant::now(),
+            });
+        })
+        .map_err(|error| {
+            tracing::debug!(
+                operation = "run-with-service",
+                error_kind = ?error.kind(),
+                stage = "readiness_worker_spawn_failed",
+                "run_readiness"
+            );
+            HttpProbeError::Terminal
+        })?;
     loop {
         if runtime::cancelled() {
             return Err(HttpProbeError::Cancelled);
