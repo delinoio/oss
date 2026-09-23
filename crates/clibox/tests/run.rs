@@ -1445,11 +1445,38 @@ fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
     let home = tempfile::tempdir().unwrap();
     let workload_started = home.path().join("workload-started");
     let workload_marker = format!("WORKLOAD_MARKER={}", workload_started.display());
+    let service_started = home.path().join("managed-service-started");
+    let service_marker = format!("SERVICE_STARTED={}", service_started.display());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
     let server = thread::spawn(move || {
         let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        let (mut stream, _) = loop {
+            match listener.accept() {
+                Ok(stream) => break stream,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "readiness preflight did not arrive"
+                    );
+                    thread::sleep(Duration::from_millis(1));
+                }
+                Err(error) => panic!("readiness fixture could not accept a request: {error}"),
+            }
+        };
+        let mut request = [0u8; 1024];
+        let _ = stream.read(&mut request);
+        stream
+            .write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n")
+            .unwrap();
+        while !service_started.exists() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "managed service did not install its shutdown trap"
+            );
+            thread::sleep(Duration::from_millis(1));
+        }
         while std::time::Instant::now() < deadline {
             match listener.accept() {
                 Ok((mut stream, _)) => {
@@ -1475,12 +1502,13 @@ fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
             "--interval",
             "10ms",
             "--ready-timeout",
-            "50ms",
+            "300ms",
             "--service",
+            &service_marker,
             "sh",
             "-c",
-            "trap 'printf managed-service-readiness-timeout >&2; exit 0' TERM; while :; do sleep \
-             1; done",
+            "trap 'printf managed-service-readiness-timeout >&2; exit 0' TERM; : > \
+             \"$SERVICE_STARTED\"; while :; do sleep 1; done",
             "--",
             &workload_marker,
             "sh",
