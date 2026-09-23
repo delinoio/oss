@@ -4,8 +4,12 @@ use fspy_shared::ipc::{AccessMode, IpcPath, PathAccess};
 use ntapi::{
     ntioapi::{
         FILE_CREATE, FILE_INFORMATION_CLASS, FILE_OPEN_IF, FILE_OVERWRITE, FILE_OVERWRITE_IF,
-        FILE_SUPERSEDE, NtQueryDirectoryFile, NtQueryFullAttributesFile, NtQueryInformationByName,
-        PFILE_BASIC_INFORMATION, PFILE_NETWORK_OPEN_INFORMATION, PIO_APC_ROUTINE, PIO_STATUS_BLOCK,
+        FILE_SUPERSEDE, FileLinkInformation, FileLinkInformationBypassAccessCheck,
+        FileLinkInformationEx, FileLinkInformationExBypassAccessCheck, FileRenameInformation,
+        FileRenameInformationBypassAccessCheck, FileRenameInformationEx,
+        FileRenameInformationExBypassAccessCheck, NtQueryDirectoryFile, NtQueryFullAttributesFile,
+        NtQueryInformationByName, NtSetInformationFile, PFILE_BASIC_INFORMATION,
+        PFILE_NETWORK_OPEN_INFORMATION, PIO_APC_ROUTINE, PIO_STATUS_BLOCK,
     },
     ntpsapi::{
         NtCreateUserProcess, PPS_ATTRIBUTE_LIST, PPS_CREATE_INFO, PS_ATTRIBUTE,
@@ -631,6 +635,86 @@ static DETOUR_NT_QUERY_DIRECTORY_FILE_EX: Detour<NtQueryDirectoryFileExFn> =
         })
     };
 
+fn changes_destination_name(class: FILE_INFORMATION_CLASS) -> bool {
+    matches!(
+        class,
+        FileRenameInformation
+            | FileRenameInformationBypassAccessCheck
+            | FileRenameInformationEx
+            | FileRenameInformationExBypassAccessCheck
+            | FileLinkInformation
+            | FileLinkInformationBypassAccessCheck
+            | FileLinkInformationEx
+            | FileLinkInformationExBypassAccessCheck
+    )
+}
+
+static DETOUR_NT_SET_INFORMATION_FILE: Detour<
+    unsafe extern "system" fn(
+        file_handle: HANDLE,
+        io_status_block: PIO_STATUS_BLOCK,
+        file_information: PVOID,
+        length: ULONG,
+        file_information_class: FILE_INFORMATION_CLASS,
+    ) -> NTSTATUS,
+> =
+    // SAFETY: initializing Detour with the real NtSetInformationFile pointer.
+    unsafe {
+        Detour::new(c"NtSetInformationFile", NtSetInformationFile, {
+            unsafe extern "system" fn new_fn(
+                file_handle: HANDLE,
+                io_status_block: PIO_STATUS_BLOCK,
+                file_information: PVOID,
+                length: ULONG,
+                file_information_class: FILE_INFORMATION_CLASS,
+            ) -> NTSTATUS {
+                // SAFETY: forward all caller-owned arguments unchanged.
+                let status = unsafe {
+                    (DETOUR_NT_SET_INFORMATION_FILE.real())(
+                        file_handle,
+                        io_status_block,
+                        file_information,
+                        length,
+                        file_information_class,
+                    )
+                };
+                if NT_SUCCESS(status) && changes_destination_name(file_information_class) {
+                    // The destination may be relative to an opaque root handle in
+                    // FILE_RENAME_INFORMATION. Until that structure is resolved,
+                    // a successful rename or link cannot be reported as complete.
+                    // SAFETY: the DLL client was initialized before detours.
+                    unsafe { global_client() }.mark_incomplete();
+                }
+                status
+            }
+            new_fn
+        })
+    };
+
+#[cfg(test)]
+mod set_information_tests {
+    use super::*;
+
+    #[test]
+    fn rename_and_link_classes_require_destination_tracking() {
+        for class in [
+            FileRenameInformation,
+            FileRenameInformationBypassAccessCheck,
+            FileRenameInformationEx,
+            FileRenameInformationExBypassAccessCheck,
+            FileLinkInformation,
+            FileLinkInformationBypassAccessCheck,
+            FileLinkInformationEx,
+            FileLinkInformationExBypassAccessCheck,
+        ] {
+            assert!(changes_destination_name(class));
+        }
+        assert!(!changes_destination_name(
+            ntapi::ntioapi::FilePositionInformation
+        ));
+    }
+}
+
 pub const DETOURS: &[DetourAny] = &[
     DETOUR_NT_CREATE_USER_PROCESS.as_any(),
     DETOUR_NT_CREATE_FILE.as_any(),
@@ -641,4 +725,5 @@ pub const DETOURS: &[DetourAny] = &[
     DETOUR_NT_QUERY_INFORMATION_BY_NAME.as_any(),
     DETOUR_NT_QUERY_DIRECTORY_FILE.as_any(),
     DETOUR_NT_QUERY_DIRECTORY_FILE_EX.as_any(),
+    DETOUR_NT_SET_INFORMATION_FILE.as_any(),
 ];
