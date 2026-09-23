@@ -2820,6 +2820,23 @@ fn signal_process_group(pid: u32, force: bool) -> Result<()> {
     if result == -1 {
         let error = io::Error::last_os_error();
         if error.raw_os_error() != Some(libc::ESRCH) {
+            if error.raw_os_error() == Some(libc::EPERM) && !completed_process_group_running(pid)? {
+                // macOS can report EPERM while an unreaped group leader is
+                // the last listed member, even after every live descendant
+                // accepted the preceding graceful signal. Recheck liveness
+                // before failing cleanup; remove this narrow fallback if
+                // Darwin gives zombie-only groups the usual ESRCH result.
+                return Ok(());
+            }
+            tracing::error!(
+                operation = "run",
+                pid,
+                force,
+                error_kind = ?error.kind(),
+                raw_os_error = ?error.raw_os_error(),
+                stage = "group_signal_failed",
+                "run_cleanup"
+            );
             return Err(Failure::io(&error));
         }
     }
@@ -2955,7 +2972,16 @@ fn completed_process_group_running(group: u32) -> Result<bool> {
             libc::proc_listpgrppids(group as libc::pid_t, members.as_mut_ptr().cast(), bytes)
         };
         if count < 0 {
-            return Err(Failure::io(&io::Error::last_os_error()));
+            let error = io::Error::last_os_error();
+            tracing::error!(
+                operation = "run",
+                group,
+                error_kind = ?error.kind(),
+                raw_os_error = ?error.raw_os_error(),
+                stage = "group_list_failed",
+                "run_cleanup"
+            );
+            return Err(Failure::io(&error));
         }
         let count = usize::try_from(count).map_err(|_| {
             Failure::new(Code::IoFailed, "Could not inspect the owned process group.")
@@ -2971,7 +2997,14 @@ fn completed_process_group_running(group: u32) -> Result<bool> {
             continue;
         }
         for member in &members[..count] {
-            if *member > 0 && macos_process_group_member_running(*member, group)? {
+            // The direct child is deliberately retained as a zombie while
+            // cleanup owns its process group. macOS can deny proc_pidinfo for
+            // that unreaped group leader, but it cannot be a live descendant
+            // that still needs a signal.
+            if *member > 0
+                && *member != group as libc::pid_t
+                && macos_process_group_member_running(*member, group)?
+            {
                 return Ok(true);
             }
         }
@@ -3000,6 +3033,15 @@ fn macos_process_group_member_running(pid: libc::pid_t, group: u32) -> Result<bo
         if error.raw_os_error() == Some(libc::ESRCH) {
             return Ok(false);
         }
+        tracing::error!(
+            operation = "run",
+            pid,
+            group,
+            error_kind = ?error.kind(),
+            raw_os_error = ?error.raw_os_error(),
+            stage = "group_member_inspection_failed",
+            "run_cleanup"
+        );
         return Err(Failure::io(&error));
     }
     if observed != bytes {
