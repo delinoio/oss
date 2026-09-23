@@ -104,6 +104,8 @@ Package entrypoints retain logical script paths while native execution uses phys
 
 On Linux, a translated `/usr/bin/env` shebang with no `PATH` in the child's replacement environment uses glibc's `/bin:/usr/bin` default. An explicitly empty `PATH` remains empty. This default applies to descendant shebang interpreter selection, not pnport's bare-command lookup.
 
+Linux `execveat` with `AT_EMPTY_PATH` keeps native descriptor execution for ELF files and prepares tracked virtual script descriptors through the same logical-path shebang path as pathname execution. The interpreter receives the virtual script path rather than a `/dev/fd` cache reference.
+
 Missing explicit executables and missing absolute shebang interpreters report `PNPORT_COMMAND_NOT_FOUND` with exit 127; permission and format failures remain exit 126. Bare-command and env-interpreter PATH lookup skip non-executable candidates before selection. An executable that cannot accept injection still fails admission explicitly; that failure never selects a different executable from a later PATH directory.
 
 On macOS 26.6.2 arm64, the official `@typescript/native-preview@7.0.0-dev.20260707.2` and `typescript@7.0.2` binaries lack those entitlements. Upstream fspy at `3aac49e31fba6905bb0b3d0e29d7755493241e9c` recorded only two launch-related paths and neither the TypeScript source nor tsconfig; installed Vite+ 0.3.3 replayed a successful cached result after introducing TS2322. Microsoft fixed the signing inputs in [typescript-go #4868](https://github.com/microsoft/typescript-go/pull/4868), and [vite-task #587](https://github.com/voidzero-dev/vite-task/issues/587#issuecomment-5264778400) records the verified official version `typescript@7.1.0-dev.20260812.1`.

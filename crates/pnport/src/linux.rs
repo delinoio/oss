@@ -895,6 +895,57 @@ impl Trace<'_> {
         Some((entry, suffix.is_none()))
     }
 
+    fn prepare_script_exec(
+        &mut self,
+        pid: i32,
+        regs: &mut Registers,
+        translation: &Translation,
+        path_arg: usize,
+        argv_arg: usize,
+        envp_arg: usize,
+        empty_path: bool,
+    ) -> Result<bool> {
+        if translation.logical == translation.physical {
+            return Ok(false);
+        }
+        let mut magic = [0u8; 2];
+        if File::open(&translation.physical)
+            .and_then(|mut file| file.read_exact(&mut magic))
+            .is_err()
+            || magic != *b"#!"
+        {
+            return Ok(false);
+        }
+        let original_argv = read_pointer_vector(pid, argument(regs, argv_arg))?;
+        let search_path = child_search_path(pid, argument(regs, envp_arg))?;
+        let cwd = self.base(pid, libc::AT_FDCWD, Path::new("."))?;
+        let prepared = pnport::executable::prepare_with_context(
+            self.view,
+            &translation.logical,
+            &[],
+            search_path.as_deref(),
+            &cwd,
+        )?;
+        if empty_path {
+            // The replacement names an interpreter directly; the descriptor
+            // no longer selects the executable after this rewrite.
+            set_argument(regs, 0, libc::AT_FDCWD as u64);
+            set_argument(regs, 4, 0);
+        }
+        rewrite_path(pid, regs, path_arg, &prepared.program)?;
+        let path_address = argument(regs, path_arg);
+        rewrite_exec_arguments(
+            pid,
+            regs,
+            argv_arg,
+            path_address,
+            &prepared.args,
+            &original_argv,
+        )?;
+        self.pending.insert(pid, Pending::Ordinary);
+        Ok(true)
+    }
+
     fn path_call(&mut self, pid: i32, mut regs: Registers) -> Result<bool> {
         let call = number(&regs);
         let (path_arg, dirfd, writing) = match call {
@@ -1073,6 +1124,26 @@ impl Trace<'_> {
                 _ => 0,
             };
             if flags as i32 & libc::AT_EMPTY_PATH != 0 {
+                if call == libc::SYS_execveat {
+                    let translation = self
+                        .fds
+                        .get(&Self::group(pid))
+                        .and_then(|fds| fds.get(&dirfd))
+                        .cloned();
+                    if let Some(translation) = translation {
+                        if self.prepare_script_exec(
+                            pid,
+                            &mut regs,
+                            &translation,
+                            path_arg,
+                            2,
+                            3,
+                            true,
+                        )? {
+                            return Ok(true);
+                        }
+                    }
+                }
                 let readonly = self
                     .fds
                     .get(&Self::group(pid))
@@ -1201,38 +1272,18 @@ impl Trace<'_> {
             }
             Err(error) => return Err(error),
         };
-        if (call == libc::SYS_execve || call == libc::SYS_execveat)
-            && translation.logical != translation.physical
-        {
-            let mut magic = [0u8; 2];
-            if File::open(&translation.physical)
-                .and_then(|mut file| file.read_exact(&mut magic))
-                .is_ok()
-                && magic == *b"#!"
-            {
-                let argv_arg = if call == libc::SYS_execve { 1 } else { 2 };
-                let envp_arg = if call == libc::SYS_execve { 2 } else { 3 };
-                let original_argv = read_pointer_vector(pid, argument(&regs, argv_arg))?;
-                let search_path = child_search_path(pid, argument(&regs, envp_arg))?;
-                let cwd = self.base(pid, libc::AT_FDCWD, Path::new("."))?;
-                let prepared = pnport::executable::prepare_with_context(
-                    self.view,
-                    &translation.logical,
-                    &[],
-                    search_path.as_deref(),
-                    &cwd,
-                )?;
-                rewrite_path(pid, &mut regs, path_arg, &prepared.program)?;
-                let path_address = argument(&regs, path_arg);
-                rewrite_exec_arguments(
-                    pid,
-                    &mut regs,
-                    argv_arg,
-                    path_address,
-                    &prepared.args,
-                    &original_argv,
-                )?;
-                self.pending.insert(pid, Pending::Ordinary);
+        if call == libc::SYS_execve || call == libc::SYS_execveat {
+            let argv_arg = if call == libc::SYS_execve { 1 } else { 2 };
+            let envp_arg = if call == libc::SYS_execve { 2 } else { 3 };
+            if self.prepare_script_exec(
+                pid,
+                &mut regs,
+                &translation,
+                path_arg,
+                argv_arg,
+                envp_arg,
+                false,
+            )? {
                 return Ok(true);
             }
         }

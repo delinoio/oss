@@ -1142,12 +1142,21 @@ fn linux_descendant_virtual_script_keeps_its_logical_argument() {
     fs::write(
         &source,
         r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 int main(int argc, char **argv) {
     char *args[] = {"node_modules/dep/script", "extra", 0};
     char *env_with_path[] = {"PATH=/bin", 0};
     char *env_without_path[] = {0};
-    execve(args[0], args, argc > 1 ? env_without_path : env_with_path);
+    if (argc > 1 && argv[1][0] == 'f') {
+        int fd = open(args[0], O_RDONLY);
+        if (fd < 0) return 43;
+        syscall(SYS_execveat, fd, "", args, env_with_path, AT_EMPTY_PATH);
+    } else {
+        execve(args[0], args, argc > 1 ? env_without_path : env_with_path);
+    }
     return 42;
 }
 "#,
@@ -1205,6 +1214,34 @@ int main(int argc, char **argv) {
     );
     assert_eq!(
         without_path.stdout,
+        format!("{}|package bytes|extra\n", logical.display()).as_bytes()
+    );
+    assert_eq!(
+        Command::new(&launcher)
+            .current_dir(root.path())
+            .arg("fd")
+            .status()
+            .unwrap()
+            .code(),
+        Some(43)
+    );
+    let by_fd = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--"])
+        .arg(&launcher)
+        .arg("fd")
+        .output()
+        .unwrap();
+    assert_eq!(
+        by_fd.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&by_fd.stderr)
+    );
+    assert_eq!(
+        by_fd.stdout,
         format!("{}|package bytes|extra\n", logical.display()).as_bytes()
     );
     assert!(!root.path().join("node_modules").exists());
