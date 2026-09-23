@@ -215,6 +215,76 @@ int main(int argc, char **argv) {
 
     #[cfg(target_os = "linux")]
     #[tokio::test]
+    async fn path_search_exec_runs_plain_text_through_tracked_shell() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let source = directory.path().join("shell-fallback.c");
+        let executable = directory.path().join("shell-fallback");
+        let script = directory.path().join("plain");
+        let script_input = directory.path().join("plain.data");
+        fs::write(
+            &source,
+            r#"#include <string.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+  if (argc != 2) return 2;
+  if (strcmp(argv[1], "execvp") == 0) {
+    char *args[] = {"plain", "proof", 0};
+    execvp("plain", args);
+  } else {
+    execlp("plain", "plain", "proof", (char *)0);
+  }
+  return 42;
+}
+"#,
+        )
+        .expect("write fixture");
+        fs::write(
+            &script,
+            "IFS= read -r value < \"$0.data\"\nprintf 'fallback:%s:%s\\n' \"$1\" \"$value\"\n",
+        )
+        .expect("write plain text script");
+        fs::write(&script_input, "tracked\n").expect("write script input");
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755))
+            .expect("make script executable");
+        assert!(
+            std::process::Command::new("cc")
+                .arg(&source)
+                .arg("-o")
+                .arg(&executable)
+                .status()
+                .expect("compile fixture")
+                .success()
+        );
+
+        for method in ["execvp", "execlp"] {
+            let mut command = super::Command::new(&executable);
+            command.arg(method).env("PATH", directory.path());
+            command.stdout(Stdio::piped());
+            let mut child = command
+                .spawn(CancellationToken::new())
+                .await
+                .expect("spawn tracked fixture");
+            let mut stdout = child.stdout.take().expect("capture script output");
+            let termination = child.wait_handle.await.expect("wait for fixture");
+            assert!(termination.status.success(), "{method} failed");
+            let mut output = String::new();
+            stdout
+                .read_to_string(&mut output)
+                .await
+                .expect("read script output");
+            assert_eq!(output, "fallback:proof:tracked\n", "{method} output");
+            let accesses = termination.path_accesses.expect("complete trace");
+            assert!(accesses.iter().any(|access| {
+                access.mode.contains(super::AccessMode::READ)
+                    && access.path.strip_path_prefix(&script_input, |path| {
+                        path.is_ok_and(|remaining| remaining.as_os_str().is_empty())
+                    })
+            }));
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
     async fn execl_accepts_more_than_stack_argument_capacity() {
         let directory = tempfile::tempdir().expect("create fixture directory");
         let source = directory.path().join("long-execl.c");

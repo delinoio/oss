@@ -18,6 +18,8 @@ The generic fspy runner creates a random, user-private preload directory for eac
 
 The generic fspy runner records every executable candidate examined during PATH resolution, including absent candidates before the selected program. These reads join the Unix and Windows access results so a new earlier PATH match invalidates a cached trace. Relative selected paths are bound to the lookup process's working directory before launch.
 
+The Unix preload preserves the `execvp` family shell fallback for executable text without a shebang. It prepares `/bin/sh` as a tracked child image and carries the script path as the shell argument. If the shell cannot admit injection, execution fails explicitly rather than yielding a complete trace for an untracked child.
+
 On Windows, Detours requires an ANSI DLL path. The runner round-trips the materialized path through the active ANSI code page, then tries the same file's short path if the original loses characters. If neither path round-trips exactly, initialization fails before spawning a child.
 
 Windows descendant hooks terminate and close a newly created suspended child when payload propagation or resumption fails inside the Detours callback; the original Win32 error remains available to the caller.

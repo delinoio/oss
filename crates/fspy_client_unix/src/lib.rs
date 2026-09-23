@@ -11,6 +11,7 @@ pub mod raw_exec;
 use std::{ffi::OsStr, fmt::Debug, os::unix::ffi::OsStrExt as _, path::Path};
 
 use allocator_api2::alloc::Allocator;
+use bstr::BString;
 use convert::{ToAbsolutePath, ToAccessMode};
 use fspy_shared::ipc::{PathAccess, channel::Sender};
 use fspy_shared_unix::{
@@ -123,9 +124,32 @@ impl<'a> Client<'a> {
         // SAFETY: raw_exec contains valid pointers to C strings and
         // null-terminated arrays, as provided by the caller.
         let mut exec = unsafe { raw_exec.to_exec() };
-        let pre_exec = handle_exec(&mut exec, config, &self.encoded_payload, |mode, path| {
+        let shell_fallback = config.search_path.is_some();
+        let pre_exec = match handle_exec(&mut exec, config, &self.encoded_payload, |mode, path| {
             self.send(mode, path);
-        })?;
+        }) {
+            Ok(pre_exec) => pre_exec,
+            Err(nix::errno::Errno::ENOEXEC) if shell_fallback => {
+                // The p-suffixed exec family runs an executable text file
+                // through /bin/sh after ENOEXEC. Prepare that shell as a new
+                // tracked exec so its preload and environment survive even
+                // when the caller supplied a custom envp.
+                let script = std::mem::replace(&mut exec.program, BString::from("/bin/sh"));
+                if exec.args.is_empty() {
+                    exec.args.push(BString::from("/bin/sh"));
+                } else {
+                    exec.args[0] = BString::from("/bin/sh");
+                }
+                exec.args.insert(1, script);
+                handle_exec(
+                    &mut exec,
+                    ExecResolveConfig::search_path_disabled(),
+                    &self.encoded_payload,
+                    |mode, path| self.send(mode, path),
+                )?
+            }
+            Err(error) => return Err(error),
+        };
         RawExec::from_exec(exec, allocator, |raw_command| f(raw_command, pre_exec))
     }
 
