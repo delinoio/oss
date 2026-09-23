@@ -532,15 +532,15 @@ fn with_service(options: Service) -> Result<Outcome> {
         Err(_) => return runtime_failure("HTTP readiness preflight failed; check the endpoint."),
     }
 
+    // A retryable preflight is the first unsuccessful probe. Do not create
+    // side effects before its configured cadence and readiness deadline allow
+    // the managed service to start.
+    sleep_cancellable(clip_to_deadline(options.interval, ready_deadline))?;
+    if ready_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+        return Ok(Outcome::Code(124));
+    }
     let service_plan = service.expect("service is checked above");
     let mut service_child = spawn(&service_plan, OutputMode::Service)?;
-    // The retryable preflight is the first unsuccessful probe. Keep the
-    // configured cadence before the managed service's first post-start probe,
-    // just as external service observation does.
-    if let Err(error) = sleep_cancellable(clip_to_deadline(options.interval, ready_deadline)) {
-        let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
-        return Err(error);
-    }
     loop {
         if runtime::cancelled() {
             let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);

@@ -928,6 +928,52 @@ fn managed_service_waits_after_an_unready_preflight() {
 }
 
 #[test]
+fn managed_service_does_not_start_after_the_preflight_exhausts_its_deadline() {
+    let home = tempfile::tempdir().unwrap();
+    let marker = home.path().join("managed-service-started");
+    let service_marker = format!("SERVICE_MARKER={}", marker.display());
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0u8; 1024];
+        let _ = stream.read(&mut request);
+        stream
+            .write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n")
+            .unwrap();
+    });
+    let output = command(
+        home.path(),
+        &[
+            "run",
+            "with-service",
+            &format!("http://{address}/health"),
+            "--interval",
+            "200ms",
+            "--ready-timeout",
+            "20ms",
+            "--service",
+            &service_marker,
+            "sh",
+            "-c",
+            "echo started > \"$SERVICE_MARKER\"; sleep 30",
+            "--",
+            "sh",
+            "-c",
+            "exit 0",
+        ],
+    )
+    .output()
+    .unwrap();
+    assert_eq!(output.status.code(), Some(124), "{output:?}");
+    assert!(
+        !marker.exists(),
+        "managed service started after readiness deadline: {output:?}"
+    );
+    server.join().unwrap();
+}
+
+#[test]
 fn external_service_waits_for_delayed_readiness() {
     let home = tempfile::tempdir().unwrap();
     let reservation = TcpListener::bind("127.0.0.1:0").unwrap();
