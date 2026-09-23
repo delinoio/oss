@@ -1,0 +1,562 @@
+use std::collections::BTreeMap;
+
+use forge_tree_doc::*;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use crate::{Assets, Metadata, package::*};
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Binding {
+    pub part: String,
+    pub shape_id: u32,
+    pub parent_shape_id: Option<u32>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemplateLayout {
+    pub reference: String,
+    pub name: String,
+    pub placeholders: Vec<String>,
+}
+#[derive(Debug, Clone)]
+pub struct Imported {
+    pub document: Presentation,
+    pub bindings: BTreeMap<Uuid, Binding>,
+    pub assets: Assets,
+    pub layouts: Vec<TemplateLayout>,
+    pub document_id: Uuid,
+    pub revision: u64,
+}
+pub(crate) fn desc<'a, 'b>(
+    n: roxmltree::Node<'a, 'b>,
+    ns: &str,
+    tag: &str,
+) -> Option<roxmltree::Node<'a, 'b>> {
+    n.descendants().find(|n| n.has_tag_name((ns, tag)))
+}
+pub(crate) fn shape_id(n: roxmltree::Node<'_, '_>) -> Option<u32> {
+    desc(n, P, "cNvPr")?.attribute("id")?.parse().ok()
+}
+pub(crate) fn shape_element<'a, 'b>(
+    doc: &'a roxmltree::Document<'b>,
+    id: u32,
+) -> Option<roxmltree::Node<'a, 'b>> {
+    doc.descendants()
+        .find(|n| {
+            n.has_tag_name((P, "cNvPr"))
+                && n.attribute("id").and_then(|s| s.parse::<u32>().ok()) == Some(id)
+        })
+        .and_then(|n| n.parent()?.parent())
+}
+fn number(n: roxmltree::Node<'_, '_>, a: &str) -> Option<f64> {
+    n.attribute(a)?.parse::<f64>().ok().map(|n| n / 12700.0)
+}
+fn frame(n: roxmltree::Node<'_, '_>) -> Option<Frame> {
+    let x = desc(n, A, "xfrm").or_else(|| desc(n, P, "xfrm"))?;
+    if x.attribute("rot").is_some_and(|r| r != "0")
+        || x.attribute("flipH") == Some("1")
+        || x.attribute("flipV") == Some("1")
+    {
+        return None;
+    }
+    let off = desc(x, A, "off")?;
+    let ext = desc(x, A, "ext")?;
+    Some(Frame {
+        x: number(off, "x")?,
+        y: number(off, "y")?,
+        width: number(ext, "cx")?,
+        height: number(ext, "cy")?,
+    })
+}
+fn text_style(n: roxmltree::Node<'_, '_>) -> TextStyle {
+    let mut s = TextStyle::default();
+    s.font_size = n
+        .attribute("sz")
+        .and_then(|v| v.parse::<f64>().ok())
+        .map(|v| v / 100.0);
+    s.font_weight = n
+        .attribute("b")
+        .map(|b| if b == "1" || b == "true" { 700 } else { 400 });
+    s.italic = n.attribute("i").map(|b| b == "1" || b == "true");
+    s.underline = n.attribute("u").map(|v| v != "none");
+    s.font_family = desc(n, A, "latin")
+        .and_then(|n| n.attribute("typeface"))
+        .filter(|s| !s.starts_with('+'))
+        .map(str::to_owned);
+    s.color = desc(n, A, "srgbClr")
+        .and_then(|n| n.attribute("val"))
+        .map(|s| format!("#{s}"));
+    s
+}
+fn paragraphs(n: roxmltree::Node<'_, '_>) -> Vec<Paragraph> {
+    n.children()
+        .filter(|n| n.has_tag_name((A, "p")))
+        .map(|p| {
+            let align = match p
+                .children()
+                .find(|n| n.has_tag_name((A, "pPr")))
+                .and_then(|n| n.attribute("algn"))
+            {
+                Some("ctr") => Align::Center,
+                Some("r") => Align::Right,
+                Some("just") => Align::Justify,
+                _ => Align::Left,
+            };
+            let runs = p
+                .children()
+                .filter(|n| {
+                    n.has_tag_name((A, "r"))
+                        || n.has_tag_name((A, "fld"))
+                        || n.has_tag_name((A, "br"))
+                })
+                .map(|r| Run {
+                    text: if r.has_tag_name((A, "br")) {
+                        "\n".into()
+                    } else {
+                        r.descendants()
+                            .filter(|n| n.has_tag_name((A, "t")))
+                            .filter_map(|n| n.text())
+                            .collect()
+                    },
+                    style: desc(r, A, "rPr").map(text_style).unwrap_or_default(),
+                })
+                .collect();
+            Paragraph { align, runs }
+        })
+        .collect()
+}
+fn parse_table(n: roxmltree::Node<'_, '_>) -> Result<(Vec<Column>, Vec<TableRow>)> {
+    let tbl = desc(n, A, "tbl").ok_or_else(|| failure("table"))?;
+    let columns = desc(tbl, A, "tblGrid")
+        .ok_or_else(|| failure("grid"))?
+        .children()
+        .filter(|n| n.has_tag_name((A, "gridCol")))
+        .map(|n| {
+            Ok(Column {
+                width: Size::Points(number(n, "w").ok_or_else(|| failure("width"))?),
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let rows = tbl
+        .children()
+        .filter(|n| n.has_tag_name((A, "tr")))
+        .map(|r| TableRow {
+            cells: r
+                .children()
+                .filter(|n| n.has_tag_name((A, "tc")))
+                .filter(|n| {
+                    !matches!(n.attribute("hMerge"), Some("1" | "true"))
+                        && !matches!(n.attribute("vMerge"), Some("1" | "true"))
+                })
+                .map(|c| Cell {
+                    text: None,
+                    paragraphs: desc(c, A, "txBody").map(paragraphs).unwrap_or_default(),
+                    style: TextStyle::default(),
+                    fill: Color {
+                        color: desc(c, A, "tcPr")
+                            .and_then(|n| desc(n, A, "srgbClr"))
+                            .and_then(|n| n.attribute("val"))
+                            .map(|s| format!("#{s}")),
+                        color_ref: None,
+                    },
+                    row_span: c
+                        .attribute("rowSpan")
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(1),
+                    col_span: c
+                        .attribute("gridSpan")
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(1),
+                })
+                .collect(),
+        })
+        .collect();
+    Ok((columns, rows))
+}
+fn parse_chart(
+    parts: &Package,
+    part: &str,
+    n: roxmltree::Node<'_, '_>,
+) -> Result<(ChartData, Orientation, Legend, DataLabels)> {
+    let rid = desc(n, C, "chart")
+        .and_then(|n| n.attribute((R, "id")))
+        .ok_or_else(|| failure("chart"))?;
+    let path = related(parts, part, rid)?;
+    let doc = xml(parts.get(&path).ok_or_else(|| failure("chart"))?)?;
+    let bars: Vec<_> = doc
+        .descendants()
+        .filter(|n| n.has_tag_name((C, "barChart")))
+        .collect();
+    if bars.len() != 1 {
+        return error(
+            ErrorCode::UnsupportedEdit,
+            "",
+            "Only a single native bar chart is editable",
+        );
+    }
+    let bar = bars[0];
+    let mut data = ChartData::default();
+    for (i, s) in bar
+        .children()
+        .filter(|n| n.has_tag_name((C, "ser")))
+        .enumerate()
+    {
+        let cat = desc(s, C, "cat").ok_or_else(|| failure("category"))?;
+        let labels: Vec<String> = cat
+            .descendants()
+            .filter(|n| n.has_tag_name((C, "pt")))
+            .map(|p| desc(p, C, "v").and_then(|v| v.text()).unwrap_or("").into())
+            .collect();
+        if i == 0 {
+            data.categories = labels;
+        } else if data.categories != labels {
+            return error(
+                ErrorCode::UnsupportedEdit,
+                "",
+                "Series use different category domains",
+            );
+        }
+        let val = desc(s, C, "val").ok_or_else(|| failure("values"))?;
+        let values = val
+            .descendants()
+            .filter(|n| n.has_tag_name((C, "pt")))
+            .map(|p| {
+                desc(p, C, "v")
+                    .and_then(|v| v.text())
+                    .and_then(|v| v.parse().ok())
+                    .ok_or_else(|| failure("value"))
+            })
+            .collect::<Result<Vec<f64>>>()?;
+        let name = desc(s, C, "tx")
+            .and_then(|n| desc(n, C, "v"))
+            .and_then(|n| n.text())
+            .unwrap_or("Series")
+            .into();
+        data.series.push(Series {
+            key: format!("series-{i}"),
+            name,
+            values,
+        });
+    }
+    let orientation = if desc(bar, C, "barDir").and_then(|n| n.attribute("val")) == Some("bar") {
+        Orientation::Horizontal
+    } else {
+        Orientation::Vertical
+    };
+    let legend = match desc(doc.root_element(), C, "legendPos").and_then(|n| n.attribute("val")) {
+        Some("b") => Legend::Bottom,
+        Some(_) => Legend::Right,
+        None => Legend::Hidden,
+    };
+    let labels = if desc(bar, C, "showVal").and_then(|n| n.attribute("val")) == Some("1") {
+        DataLabels::Value
+    } else {
+        DataLabels::Hidden
+    };
+    Ok((data, orientation, legend, labels))
+}
+pub(crate) fn slide_paths(parts: &Package) -> Result<Vec<String>> {
+    let main = main_part(parts)?;
+    let doc = xml(parts.get(&main).ok_or_else(|| failure("main"))?)?;
+    if doc.root_element().tag_name().namespace() != Some(P) {
+        return error(
+            ErrorCode::UnsupportedPackage,
+            "",
+            "Only Transitional PresentationML is supported",
+        );
+    }
+    doc.descendants()
+        .filter(|n| n.has_tag_name((P, "sldId")))
+        .map(|n| {
+            related(
+                parts,
+                &main,
+                n.attribute((R, "id")).ok_or_else(|| failure("slide id"))?,
+            )
+        })
+        .collect()
+}
+pub fn import(bytes: &[u8]) -> Result<Imported> {
+    let parts = read(bytes)?;
+    validate_package(&parts)?;
+    let layouts = template_layouts(&parts)?;
+    if let Some(meta) = parts.get(META) {
+        let x = xml(meta)?;
+        let text = x.root_element().text().ok_or_else(|| failure("metadata"))?;
+        let m: Metadata = serde_json::from_str(text).map_err(failure)?;
+        let hashes: BTreeMap<_, _> = parts
+            .iter()
+            .filter(|(n, _)| n.as_str() != META)
+            .map(|(n, b)| (n.clone(), sha(b)))
+            .collect();
+        if m.version != 1 || m.hashes != hashes {
+            return error(
+                ErrorCode::StaleMetadata,
+                "",
+                "Package changed outside Forge; explicitly reimport without Forge metadata",
+            );
+        }
+        validate(&m.document, true)?;
+        let assets = assets_for_document(&parts, &m.document, &m.bindings)?;
+        return Ok(Imported {
+            document: m.document,
+            bindings: m.bindings,
+            assets,
+            layouts,
+            document_id: m.document_id,
+            revision: m.revision,
+        });
+    }
+    let main = main_part(&parts)?;
+    let x = xml(&parts[&main])?;
+    let sz = desc(x.root_element(), P, "sldSz").ok_or_else(|| failure("size"))?;
+    let mut document = Presentation {
+        dsl_version: 1,
+        kind: DocumentKind::Presentation,
+        unit: Unit::Pt,
+        page: Page {
+            width: number(sz, "cx").ok_or_else(|| failure("width"))?,
+            height: number(sz, "cy").ok_or_else(|| failure("height"))?,
+        },
+        theme: Theme::default(),
+        assets: BTreeMap::new(),
+        slides: Vec::new(),
+    };
+    let mut bindings = BTreeMap::new();
+    let mut assets = Assets::new();
+    for (i, path) in slide_paths(&parts)?.into_iter().enumerate() {
+        let x = xml(&parts[&path])?;
+        let tree = desc(x.root_element(), P, "spTree").ok_or_else(|| failure("tree"))?;
+        let mut children = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for item in tree.children().filter(|n| {
+            n.is_element() && !n.has_tag_name((P, "nvGrpSpPr")) && !n.has_tag_name((P, "grpSpPr"))
+        }) {
+            let Some(native_id) = shape_id(item) else {
+                continue;
+            };
+            if !seen.insert(native_id) {
+                return error(
+                    ErrorCode::InvalidPackage,
+                    "",
+                    "Duplicate native shape identifier",
+                );
+            }
+            let id = Uuid::now_v7();
+            let mut n = Node {
+                id: Some(id),
+                key: Some(format!("slide-{}.shape-{native_id}", i + 1)),
+                kind: NodeKind::Opaque,
+                frame: Some(frame(item).unwrap_or(Frame {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1.0,
+                    height: 1.0,
+                })),
+                opaque_ref: Some(format!("{path}#{native_id}")),
+                ..Default::default()
+            };
+            let parsed = if frame(item).is_none() {
+                false
+            } else if item.has_tag_name((P, "sp")) {
+                if let Some(body) = desc(item, P, "txBody") {
+                    n.kind = NodeKind::Text;
+                    n.paragraphs = paragraphs(body);
+                    if n.paragraphs.is_empty() {
+                        n.text = Some(String::new());
+                    }
+                    true
+                } else if let Some(preset) =
+                    desc(item, A, "prstGeom").and_then(|n| n.attribute("prst"))
+                {
+                    n.shape = match preset {
+                        "rect" => Shape::Rect,
+                        "roundRect" => Shape::RoundedRect,
+                        "ellipse" => Shape::Ellipse,
+                        _ => Shape::Rect,
+                    };
+                    if matches!(preset, "rect" | "roundRect" | "ellipse") {
+                        n.kind = NodeKind::Shape;
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            } else if item.has_tag_name((P, "pic")) {
+                if let Some(rid) = desc(item, A, "blip").and_then(|n| n.attribute((R, "embed"))) {
+                    if let Ok(media) = related(&parts, &path, rid) {
+                        if let Some(data) = parts.get(&media) {
+                            if crate::emit::image_info(data).is_ok() {
+                                let handle = format!("asset_{}", sha(data));
+                                let key = format!("image-{id}");
+                                document.assets.insert(
+                                    key.clone(),
+                                    AssetRef {
+                                        handle: handle.clone(),
+                                    },
+                                );
+                                assets.insert(handle, data.clone());
+                                n.kind = NodeKind::Image;
+                                n.asset_ref = Some(key);
+                                n.fit = ImageFit::Contain;
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            } else if desc(item, A, "tbl").is_some() {
+                if let Ok((columns, rows)) = parse_table(item) {
+                    n.kind = NodeKind::Table;
+                    n.columns = columns;
+                    n.rows = rows;
+                    table_grid(&n).is_ok()
+                } else {
+                    false
+                }
+            } else if desc(item, C, "chart").is_some() {
+                if let Ok((data, orientation, legend, data_labels)) =
+                    parse_chart(&parts, &path, item)
+                {
+                    n.kind = NodeKind::Chart;
+                    n.data = Some(data);
+                    n.orientation = orientation;
+                    n.legend = legend;
+                    n.data_labels = data_labels;
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            if parsed {
+                n.opaque_ref = None;
+            } else {
+                n = Node {
+                    id: n.id,
+                    key: n.key,
+                    kind: NodeKind::Opaque,
+                    frame: n.frame,
+                    opaque_ref: n.opaque_ref,
+                    ..Default::default()
+                };
+            }
+            if let Some(ph) = desc(item, P, "ph") {
+                n.placeholder_ref = Some(ph.attribute("idx").unwrap_or("0").into());
+            }
+            bindings.insert(
+                id,
+                Binding {
+                    part: path.clone(),
+                    shape_id: native_id,
+                    parent_shape_id: None,
+                },
+            );
+            children.push(n);
+        }
+        let layout_ref = relationships(&parts, &path)?
+            .into_iter()
+            .find(|r| r.kind.ends_with("/slideLayout") && !r.external)
+            .map(|r| resolve(&path, &r.target))
+            .transpose()?;
+        let background = desc(x.root_element(), P, "bgPr")
+            .and_then(|n| desc(n, A, "srgbClr"))
+            .and_then(|n| n.attribute("val"))
+            .map(|s| format!("#{s}"));
+        document.slides.push(Slide {
+            id: Some(Uuid::now_v7()),
+            key: Some(format!("slide-{}", i + 1)),
+            background: Color {
+                color: background,
+                color_ref: None,
+            },
+            slide_layout_ref: layout_ref,
+            content: Node {
+                kind: NodeKind::Canvas,
+                id: Some(Uuid::now_v7()),
+                key: Some(format!("slide-{}.canvas", i + 1)),
+                children,
+                ..Default::default()
+            },
+        });
+    }
+    validate(&document, true)?;
+    Ok(Imported {
+        document,
+        bindings,
+        assets,
+        layouts,
+        document_id: Uuid::now_v7(),
+        revision: 0,
+    })
+}
+fn template_layouts(parts: &Package) -> Result<Vec<TemplateLayout>> {
+    let mut layouts = Vec::new();
+    for (path, bytes) in parts
+        .iter()
+        .filter(|(p, _)| p.starts_with("ppt/slideLayouts/") && p.ends_with(".xml"))
+    {
+        let doc = xml(bytes)?;
+        if !doc.root_element().has_tag_name((P, "sldLayout")) {
+            continue;
+        }
+        let name = desc(doc.root_element(), P, "cSld")
+            .and_then(|n| n.attribute("name"))
+            .unwrap_or("")
+            .into();
+        let placeholders = doc
+            .descendants()
+            .filter(|n| n.has_tag_name((P, "ph")))
+            .map(|n| n.attribute("idx").unwrap_or("0").into())
+            .collect();
+        layouts.push(TemplateLayout {
+            reference: path.clone(),
+            name,
+            placeholders,
+        });
+    }
+    Ok(layouts)
+}
+fn assets_for_document(
+    parts: &Package,
+    document: &Presentation,
+    bindings: &BTreeMap<Uuid, Binding>,
+) -> Result<Assets> {
+    let mut assets = Assets::new();
+    for (bid, b) in bindings {
+        let Some(n) = document.find(&Target {
+            node_id: Some(*bid),
+            key: None,
+        }) else {
+            return Err(failure("binding"));
+        };
+        if n.kind != NodeKind::Image {
+            continue;
+        }
+        let doc = xml(parts.get(&b.part).ok_or_else(|| failure("slide"))?)?;
+        let shape = shape_element(&doc, b.shape_id).ok_or_else(|| failure("shape"))?;
+        let rid = desc(shape, A, "blip")
+            .and_then(|n| n.attribute((R, "embed")))
+            .ok_or_else(|| failure("image"))?;
+        let path = related(parts, &b.part, rid)?;
+        let bytes = parts.get(&path).ok_or_else(|| failure("media"))?;
+        let handle = n
+            .asset_ref
+            .as_ref()
+            .and_then(|key| document.assets.get(key))
+            .ok_or_else(|| failure("asset"))?
+            .handle
+            .clone();
+        assets.insert(handle, bytes.clone());
+    }
+    Ok(assets)
+}
