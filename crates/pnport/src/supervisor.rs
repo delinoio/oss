@@ -93,6 +93,7 @@ pub(crate) fn runtime_failure(session: &Path) -> Result<Option<Error>> {
         Code::PnportCacheFailed,
         Code::PnportGraphChanged,
         Code::PnportCleanupFailed,
+        Code::PnportCommandNotFound,
         Code::PnportCommandNotExecutable,
     ]
     .into_iter()

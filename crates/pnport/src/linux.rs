@@ -304,20 +304,31 @@ pub fn dispatch_helper() {
                 unsafe { libc::_exit(125) }
             };
             let error = Command::new(program).args(args).exec();
-            let _ = error;
-            record_helper_failure();
-            unsafe { libc::_exit(125) }
+            let code = if error.kind() == std::io::ErrorKind::NotFound {
+                Code::PnportCommandNotFound
+            } else {
+                Code::PnportCommandNotExecutable
+            };
+            record_helper_code(code);
+            unsafe {
+                libc::_exit(if code == Code::PnportCommandNotFound {
+                    127
+                } else {
+                    126
+                })
+            }
         }
         _ => {}
     }
 }
 
 fn record_helper_failure() {
+    record_helper_code(Code::PnportInjectionFailed);
+}
+
+fn record_helper_code(code: Code) {
     if let Some(session) = std::env::var_os("PNPORT_SESSION") {
-        let _ = fs::write(
-            PathBuf::from(session).join("failure"),
-            Code::PnportInjectionFailed.as_str(),
-        );
+        let _ = fs::write(PathBuf::from(session).join("failure"), code.as_str());
     }
 }
 
