@@ -1500,7 +1500,7 @@ impl Trace<'_> {
             if event == 0 {
                 // A trap raised by the tracee is a child signal, not a ptrace
                 // protocol event. Forward it to its handler or default action.
-                resume(pid, false, libc::SIGTRAP)?;
+                resume(pid, self.pending.contains_key(&pid), libc::SIGTRAP)?;
                 return Ok(true);
             }
             tracing::trace!(
@@ -1566,7 +1566,11 @@ impl Trace<'_> {
         }
         // Initial stops from auto-attached children are ptrace protocol, not
         // signals requested by the child command.
-        resume(pid, false, if signal == libc::SIGSTOP { 0 } else { signal })?;
+        resume(
+            pid,
+            self.pending.contains_key(&pid),
+            if signal == libc::SIGSTOP { 0 } else { signal },
+        )?;
         Ok(true)
     }
 }
