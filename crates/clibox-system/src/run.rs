@@ -1260,8 +1260,8 @@ fn run_once(
                 // work without an owned handle for the surviving descendant.
                 return runtime_failure("Owned workload cleanup could not be confirmed.");
             }
-            if descendants_running {
-                return finish_workload_output(&mut child, &Limits::default(), status);
+            if descendants_running && limits_expired_at(&limits, last_activity, Instant::now()) {
+                return finish_timed_out_workload_output(&mut child);
             }
             return finish_workload_output(&mut child, &limits, status);
         }

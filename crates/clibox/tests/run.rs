@@ -1017,6 +1017,30 @@ fn completed_workload_cleans_up_its_background_descendants() {
 }
 
 #[test]
+fn completed_workload_descendant_cleanup_respects_the_overall_timeout() {
+    let home = tempfile::tempdir().unwrap();
+    let output = command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--timeout",
+            "100ms",
+            "--kill-after",
+            "250ms",
+            "--",
+            "sh",
+            "-c",
+            "sh -c 'trap \"\" TERM; while :; do sleep 1; done' &",
+        ],
+    )
+    .output()
+    .unwrap();
+
+    assert_eq!(output.status.code(), Some(124), "{output:?}");
+}
+
+#[test]
 fn wrappers_preserve_a_leading_literal_workload_separator() {
     use std::os::unix::fs::PermissionsExt;
 
