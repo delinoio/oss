@@ -6,7 +6,6 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { Bump, Project, Kind, bumpVersion, readVersion, versionChanges, sourceMetadata, git, prepareRelease, validateCommit, preflightVersion, pushReleaseTag, tagRevision, requiresCargoPublish } from "./project.mjs";
-import { applyCandidate } from "./pnport-candidate.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const achFiles = [
@@ -175,12 +174,6 @@ test("async-commit-hook version drift fails before preflight or version writes",
 for (const project of Object.values(Project)) test(`${project} commit journals and resumes the same run after main advances`, async (t) => {
   const fixtureState = fixture(t);
   const options = { directory: fixtureState.directory, project, bump: Bump.Minor, runId: "123", ...bot };
-  if (project === Project.Pnport) {
-    const candidate = applyCandidate({ directory: fixtureState.directory, bump: Bump.Minor, runId: "123", mode: "new", base: fixtureState.initial });
-    options.expectedBase = candidate.base;
-    options.expectedTree = candidate.tree;
-    git(fixtureState.directory, ["reset", "--hard", "HEAD"]);
-  }
   const first = await prepareRelease(options);
   assert.equal(first.resumed, false);
   assert.equal(git(fixtureState.remote, ["rev-parse", "refs/heads/main"]), first.revision);
@@ -193,18 +186,8 @@ for (const project of Object.values(Project)) test(`${project} commit journals a
   assert.equal(second.resumed, true);
   assert.equal(second.revision, first.revision);
   assert.equal(second.version, first.version);
-  if (project === Project.Pnport) await assert.rejects(prepareRelease({ ...options, expectedTree: "f".repeat(40) }), /resumed commit differs/u);
   assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, Bump.Patch, "123"), project === Project.Pnport ? /first public release requires a minor bump/u : /journal/u);
   assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, Bump.Minor, "456"), /journal/u);
-});
-
-test("pnport refuses an unverified or mismatched candidate before any version write", async (t) => {
-  const state = fixture(t);
-  const options = { directory: state.directory, project: Project.Pnport, bump: Bump.Minor, runId: "456", ...bot };
-  await assert.rejects(prepareRelease(options), /complete pre-commit evidence/u);
-  await assert.rejects(prepareRelease({ ...options, expectedBase: state.initial, expectedTree: "f".repeat(40) }), /differs from the six-target candidate/u);
-  assert.equal(git(state.remote, ["rev-parse", "refs/heads/main"]), state.initial);
-  assert.equal(git(state.remote, ["tag", "--list"]), "");
 });
 
 test("A concurrent main push fails without rewriting remote history", async (t) => {
@@ -250,9 +233,9 @@ test("Preflight rejects existing releases, tags and uncertain API results", asyn
   assert.equal(await tagRevision(identity.tag, async (route) => ({ status: 200, body: { object: { type: route.includes("/git/tags/") ? "commit" : "tag", sha: revision } } })), revision);
 });
 
-for (const project of [Project.Binpm, Project.AsyncCommitHook]) test(`${project} tag-push interruption recovers only the same tag and commit`, async (t) => {
+for (const project of [Project.Binpm, Project.Pnport, Project.AsyncCommitHook]) test(`${project} tag-push interruption recovers only the same tag and commit`, async (t) => {
   const state = fixture(t);
-  const plan = await prepareRelease({ directory: state.directory, project, bump: Bump.Patch, runId: "22", ...bot });
+  const plan = await prepareRelease({ directory: state.directory, project, bump: project === Project.Pnport ? Bump.Minor : Bump.Patch, runId: "22", ...bot });
   const request = async () => {
     const sha = git(state.remote, ["for-each-ref", "--format=%(objectname)", `refs/tags/${plan.tag}`]);
     return sha ? { status: 200, body: { object: { type: "commit", sha } } } : { status: 404 };

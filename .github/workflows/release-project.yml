@@ -29,154 +29,8 @@ env:
   RELEASE_BUMP: ${{ inputs.bump }}
 
 jobs:
-  pnport-source:
-    if: inputs.project == 'pnport' && github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-22.04
-    outputs:
-      mode: ${{ steps.candidate.outputs.mode }}
-      base: ${{ steps.candidate.outputs.base }}
-      tree: ${{ steps.candidate.outputs.tree }}
-      version: ${{ steps.candidate.outputs.version }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: main
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-node@v6
-        with:
-          node-version-file: .nvmrc
-      - name: Resolve and stage the exact temporary version candidate
-        id: candidate
-        run: node scripts/release/pnport-candidate.mjs source
-
-  pnport-native:
-    if: inputs.project == 'pnport'
-    needs: pnport-source
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { runner: macos-15-intel, target: x86_64-apple-darwin, suffix: darwin-x64 }
-          - { runner: macos-14, target: aarch64-apple-darwin, suffix: darwin-arm64 }
-          - { runner: windows-latest, target: x86_64-pc-windows-msvc, suffix: win32-x64-msvc }
-          - { runner: windows-11-arm, target: aarch64-pc-windows-msvc, suffix: win32-arm64-msvc }
-          - { runner: ubuntu-22.04, target: x86_64-unknown-linux-gnu, suffix: linux-x64-gnu }
-          - { runner: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, suffix: linux-arm64-gnu }
-    env:
-      RELEASE_CANDIDATE_MODE: ${{ needs.pnport-source.outputs.mode }}
-      RELEASE_CANDIDATE_BASE: ${{ needs.pnport-source.outputs.base }}
-      RELEASE_CANDIDATE_TREE: ${{ needs.pnport-source.outputs.tree }}
-      PNPORT_TARGET: ${{ matrix.target }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.pnport-source.outputs.base }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-node@v6
-        with:
-          node-version-file: .nvmrc
-          architecture: ${{ startsWith(matrix.target, 'aarch64-') && 'arm64' || 'x64' }}
-      - uses: pnpm/action-setup@v5
-        with:
-          version: 10.26.2
-      - uses: dtolnay/rust-toolchain@v1
-        with:
-          toolchain: nightly-2026-01-01
-          targets: ${{ matrix.target }}
-      - name: Materialize and verify the tested candidate tree
-        run: node scripts/release/pnport-candidate.mjs "$RELEASE_CANDIDATE_MODE"
-        shell: bash
-      - name: Install locked workspace without lifecycle scripts
-        run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Build both native components and run native tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo build --locked --release -p pnport -p pnport-preload --target "$PNPORT_TARGET"
-          cargo test --locked -p pnport --target "$PNPORT_TARGET"
-      - name: Verify installed npm/Yarn packages and native TypeScript execution
-        shell: bash
-        run: |
-          set -euo pipefail
-          binary="target/$PNPORT_TARGET/release/pnport"
-          preload="target/$PNPORT_TARGET/release/libpnport_preload.so"
-          if [[ "$PNPORT_TARGET" == *windows* ]]; then binary="$binary.exe"; preload="target/$PNPORT_TARGET/release/pnport_preload.dll"; fi
-          if [[ "$PNPORT_TARGET" == *apple* ]]; then preload="target/$PNPORT_TARGET/release/libpnport_preload.dylib"; fi
-          pnpm --filter @delino/pnport test:package --target "$PNPORT_TARGET" --binary "$binary" --preload "$preload"
-          fixture="$RUNNER_TEMP/pnport-typescript"
-          pnpm --filter @delino/pnport test:typescript:prepare "$fixture"
-          pnpm --filter @delino/pnport test:typescript "$fixture" "$binary"
-          node packages/pnport/scripts/package.mjs binary --target "$PNPORT_TARGET" --binary "$binary" --preload "$preload"
-          node packages/pnport/scripts/install-smoke.mjs --target "$PNPORT_TARGET"
-          node packages/pnport/scripts/evidence.mjs record --target "$PNPORT_TARGET" --base "$RELEASE_CANDIDATE_BASE" --tree "$RELEASE_CANDIDATE_TREE" --revision "$RELEASE_CANDIDATE_BASE"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: pnport-native-${{ matrix.suffix }}
-          path: packages/pnport/dist/
-          if-no-files-found: error
-          retention-days: 30
-
-  pnport-complete:
-    if: always() && (inputs.project != 'pnport' || (needs.pnport-source.result == 'success' && needs.pnport-native.result == 'success'))
-    needs: [pnport-source, pnport-native]
-    runs-on: ubuntu-22.04
-    outputs:
-      base: ${{ steps.gate.outputs.base }}
-      tree: ${{ steps.gate.outputs.tree }}
-    steps:
-      - uses: actions/checkout@v6
-        if: inputs.project == 'pnport'
-        with:
-          ref: ${{ needs.pnport-source.outputs.base }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-node@v6
-        if: inputs.project == 'pnport'
-        with:
-          node-version-file: .nvmrc
-      - uses: pnpm/action-setup@v5
-        if: inputs.project == 'pnport'
-        with:
-          version: 10.26.2
-      - name: Install locked tooling for complete candidate inspection
-        if: inputs.project == 'pnport'
-        run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Materialize the same candidate for complete-set inspection
-        if: inputs.project == 'pnport'
-        env:
-          RELEASE_CANDIDATE_BASE: ${{ needs.pnport-source.outputs.base }}
-          RELEASE_CANDIDATE_TREE: ${{ needs.pnport-source.outputs.tree }}
-        run: node scripts/release/pnport-candidate.mjs '${{ needs.pnport-source.outputs.mode }}'
-      - uses: actions/download-artifact@v8
-        if: inputs.project == 'pnport'
-        with:
-          pattern: pnport-native-*
-          path: packages/pnport/dist/native
-      - name: Validate all six source-bound packages before any release write
-        if: inputs.project == 'pnport'
-        env:
-          PNPORT_BASE: ${{ needs.pnport-source.outputs.base }}
-          PNPORT_TREE: ${{ needs.pnport-source.outputs.tree }}
-        run: |
-          node packages/pnport/scripts/evidence.mjs assemble --input packages/pnport/dist/native --base "$PNPORT_BASE" --tree "$PNPORT_TREE" --revision "$PNPORT_BASE"
-          node packages/pnport/scripts/publish.mjs
-          node packages/pnport/scripts/github-release.mjs
-          node packages/pnport/scripts/homebrew.mjs
-      - name: Pass the verified candidate identity to version preparation
-        id: gate
-        env:
-          PNPORT_BASE: ${{ needs.pnport-source.outputs.base }}
-          PNPORT_TREE: ${{ needs.pnport-source.outputs.tree }}
-        run: |
-          echo "base=$PNPORT_BASE" >> "$GITHUB_OUTPUT"
-          echo "tree=$PNPORT_TREE" >> "$GITHUB_OUTPUT"
-
   prepare:
-    if: github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main' && needs.pnport-complete.result == 'success'
-    needs: pnport-complete
+    if: github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -228,8 +82,6 @@ jobs:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
           RELEASE_BOT_NAME: ${{ steps.identity.outputs.name }}
           RELEASE_BOT_EMAIL: ${{ steps.identity.outputs.email }}
-          RELEASE_CANDIDATE_BASE: ${{ needs.pnport-complete.outputs.base }}
-          RELEASE_CANDIDATE_TREE: ${{ needs.pnport-complete.outputs.tree }}
         run: node scripts/release/project.mjs prepare
 
   registry:
@@ -296,7 +148,7 @@ jobs:
 
   summary:
     if: always()
-    needs: [pnport-source, pnport-native, pnport-complete, prepare, registry, tag]
+    needs: [prepare, registry, tag]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -315,7 +167,7 @@ jobs:
             '| Phase | Result |', '| --- | --- |',
             ...Object.entries(jobs).map(([name, job]) => `| ${name} | ${job.result} |`), '',
           ];
-          const failed = Object.entries(jobs).filter(([name, job]) => job.result !== 'success' && !(process.env.RELEASE_PROJECT !== 'pnport' && name.startsWith('pnport-'))).map(([name]) => name);
+          const failed = Object.entries(jobs).filter(([, job]) => job.result !== 'success').map(([name]) => name);
           if (failed.length) lines.push(`Incomplete phases: ${failed.join(', ')}. Fix the failed phase, then rerun this release run to reuse any recorded version.`);
           else if (process.env.RELEASE_PROJECT === 'async-commit-hook') lines.push(
             'Version and tag preparation is complete. Signing, GitHub Release, and Homebrew require a separate manual run of [Release async-commit-hook](https://github.com/delinoio/oss/actions/workflows/release-async-commit-hook.yml). Consolidated Public Docs deploys automatically through Cloudflare Pages from main.',
