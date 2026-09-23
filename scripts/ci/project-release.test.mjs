@@ -184,14 +184,14 @@ test("clibox, pnport and async-commit-hook reach source validation and tagging w
   assert.match(prepare.run, /requiresCargoPublish\(plan.project\)/u);
   const preflight = prepare.run.split("<<'JS'\n")[1].split("\nJS")[0];
   const environment = { CLIENT_ID: "fixture-id", PRIVATE_KEY: "fixture-key", RELEASE_BUMP: Bump.Patch };
-  const runPreflight = (project) => execFileSync(process.execPath, ["--input-type=module"], {
+  const runPreflight = (project, bump = Bump.Patch) => execFileSync(process.execPath, ["--input-type=module"], {
     cwd: new URL("../../", import.meta.url),
     input: preflight,
-    env: { ...environment, RELEASE_PROJECT: project },
+    env: { ...environment, RELEASE_PROJECT: project, RELEASE_BUMP: bump },
     stdio: "pipe",
   });
   assert.doesNotThrow(() => runPreflight(Project.Clibox));
-  assert.doesNotThrow(() => runPreflight(Project.Pnport));
+  assert.doesNotThrow(() => runPreflight(Project.Pnport, Bump.Minor));
   assert.doesNotThrow(() => runPreflight(Project.AsyncCommitHook));
   assert.throws(() => runPreflight(Project.Binpm), /CARGO_REGISTRY_TOKEN is required/u);
   const registry = workflow.jobs.registry;
