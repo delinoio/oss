@@ -1450,14 +1450,30 @@ fn run_once(
             }
         }
         if runtime::cancelled() {
+            let cancellation_generation = runtime::cancellation_generation();
             if let Some(service) = monitored_service.as_deref_mut() {
                 // Cancellation invalidates both owned process trees. Request
                 // service termination before waiting for a stubborn workload's
                 // grace period so it cannot continue serving side effects.
                 request_termination_or_log(service);
             }
-            if cleanup_or_log(&mut child, kill_after) {
+            if cleanup_or_log_with_cancellation(
+                &mut child,
+                kill_after,
+                Some(cancellation_generation),
+            ) {
                 finish_cancelled_workload_output(&mut child)?;
+            }
+            if let Some(service) = monitored_service.as_deref_mut() {
+                // Both owned trees belong to the same cancellation. A second
+                // interrupt must skip remaining grace for the service too,
+                // rather than becoming its new cleanup baseline after the
+                // workload has already been forced.
+                let _ = cleanup_or_log_with_cancellation(
+                    service,
+                    kill_after,
+                    Some(cancellation_generation),
+                );
             }
             return Err(Failure::new(
                 Code::Cancelled,
@@ -1623,7 +1639,16 @@ fn finish_cancelled_workload_output(child: &mut OwnedChild) -> Result<()> {
 }
 
 fn cleanup_or_log(child: &mut OwnedChild, kill_after: Duration) -> bool {
-    let initial_cancellation = runtime::cancelled().then(runtime::cancellation_generation);
+    cleanup_or_log_with_cancellation(child, kill_after, None)
+}
+
+fn cleanup_or_log_with_cancellation(
+    child: &mut OwnedChild,
+    kill_after: Duration,
+    initial_cancellation: Option<usize>,
+) -> bool {
+    let initial_cancellation = initial_cancellation
+        .or_else(|| runtime::cancelled().then(runtime::cancellation_generation));
     match child.cleanup(kill_after, initial_cancellation) {
         Ok(()) => true,
         Err(error) => {

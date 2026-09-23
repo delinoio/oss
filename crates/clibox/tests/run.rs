@@ -1873,6 +1873,76 @@ fn managed_service_cancellation_stops_service_before_workload_cleanup_finishes()
 }
 
 #[test]
+fn second_cancellation_forces_both_managed_service_trees() {
+    let home = tempfile::tempdir().unwrap();
+    let service_started = home.path().join("second-cancellation-service-started");
+    let workload_started = home.path().join("second-cancellation-workload-started");
+    let service_marker = format!("SERVICE_STARTED={}", service_started.display());
+    let workload_marker = format!("WORKLOAD_STARTED={}", workload_started.display());
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        for status in ["503 Service Unavailable", "204 No Content"] {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 1024];
+            let _ = stream.read(&mut request);
+            stream
+                .write_all(format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\n\r\n").as_bytes())
+                .unwrap();
+        }
+    });
+    let mut wrapper = command(
+        home.path(),
+        &[
+            "run",
+            "with-service",
+            &format!("http://{address}/health"),
+            "--interval",
+            "10ms",
+            "--kill-after",
+            "2s",
+            "--service",
+            &service_marker,
+            "sh",
+            "-c",
+            ": > \"$SERVICE_STARTED\"; trap '' TERM; while :; do :; done",
+            "--",
+            &workload_marker,
+            "sh",
+            "-c",
+            ": > \"$WORKLOAD_STARTED\"; trap '' TERM; while :; do :; done",
+        ],
+    )
+    .stdout(Stdio::null())
+    .stderr(Stdio::null())
+    .spawn()
+    .unwrap();
+    let started_deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while (!service_started.is_file() || !workload_started.is_file())
+        && std::time::Instant::now() < started_deadline
+    {
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        service_started.is_file() && workload_started.is_file(),
+        "managed service and workload did not start before cancellation"
+    );
+
+    assert_eq!(unsafe { libc::kill(wrapper.id() as i32, libc::SIGINT) }, 0);
+    thread::sleep(Duration::from_millis(100));
+    let forced_at = std::time::Instant::now();
+    assert_eq!(unsafe { libc::kill(wrapper.id() as i32, libc::SIGINT) }, 0);
+    let status = wrapper.wait().unwrap();
+
+    assert_eq!(status.code(), Some(130), "{status:?}");
+    assert!(
+        forced_at.elapsed() < Duration::from_secs(1),
+        "second cancellation waited for a new managed-service grace interval"
+    );
+    server.join().unwrap();
+}
+
+#[test]
 fn managed_service_does_not_start_after_the_preflight_exhausts_its_deadline() {
     let home = tempfile::tempdir().unwrap();
     let marker = home.path().join("managed-service-started");
