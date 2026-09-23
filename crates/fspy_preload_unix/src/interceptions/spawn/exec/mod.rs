@@ -44,14 +44,15 @@ fn handle_exec(
             RawExec { prog, argv, envp },
             allocator,
             |raw_command, pre_exec| {
-                if let Some(pre_exec) = pre_exec {
+                if let Some(pre_exec) = pre_exec.as_ref() {
                     pre_exec.run()?;
                 }
-                Ok(execve::original()(
-                    raw_command.prog,
-                    raw_command.argv,
-                    raw_command.envp,
-                ))
+                let result =
+                    execve::original()(raw_command.prog, raw_command.argv, raw_command.envp);
+                // A Linux image can be named through an inspected descriptor.
+                // Keep it alive until the kernel has attempted execve.
+                drop(pre_exec);
+                Ok(result)
             },
         )
     };

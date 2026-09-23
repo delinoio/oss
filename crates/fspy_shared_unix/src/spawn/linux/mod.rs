@@ -1,5 +1,6 @@
 #[cfg(not(target_env = "musl"))]
 use std::os::fd::AsRawFd;
+use std::os::fd::OwnedFd;
 #[cfg(not(target_env = "musl"))]
 use std::{ffi::OsStr, os::unix::ffi::OsStrExt as _, path::Path};
 
@@ -48,7 +49,18 @@ fn admit_preload(fd: &std::os::fd::OwnedFd) -> nix::Result<()> {
     Ok(())
 }
 
-pub struct PreExec(SeccompPayload);
+pub struct PreExec {
+    filter: Option<SeccompPayload>,
+    // Keep the inspected inode open through execve/posix_spawn. The kernel
+    // resolves /proc/self/fd/N before CLOEXEC closes the descriptor.
+    _image: Option<OwnedFd>,
+}
+
+#[cfg(not(target_env = "musl"))]
+fn bind_open_image(command: &mut Exec, executable_fd: &OwnedFd) {
+    command.program = format!("/proc/self/fd/{}", executable_fd.as_raw_fd()).into();
+}
+
 impl PreExec {
     /// Installs the seccomp unotify filter for the current process.
     ///
@@ -56,7 +68,10 @@ impl PreExec {
     ///
     /// Returns an error if the seccomp filter installation fails.
     pub fn run(&self) -> nix::Result<()> {
-        install_target(&self.0)
+        if let Some(filter) = &self.filter {
+            install_target(filter)?;
+        }
+        Ok(())
     }
 }
 
@@ -74,7 +89,11 @@ pub fn handle_exec(
         let executable_mmap = unsafe { Mmap::map(&executable_fd) }.map_err(|io_error| {
             nix::Error::try_from(io_error).unwrap_or(nix::Error::UnknownErrno)
         })?;
-        if elf::is_dynamically_linked_to_libc(executable_mmap)? {
+        let preload = elf::is_dynamically_linked_to_libc(executable_mmap)?;
+        // The path may be atomically replaced after classification. Execute
+        // the already opened inode instead of resolving its name again.
+        bind_open_image(command, &executable_fd);
+        if preload {
             // Append (don't overwrite) so a user-provided LD_PRELOAD keeps
             // working. fspy's shim goes last so user preloads that
             // short-circuit a libc call stay invisible to fspy — what the
@@ -89,25 +108,66 @@ pub fn handle_exec(
                 PAYLOAD_ENV_NAME,
                 encoded_payload.encoded_string,
             )?;
-            return Ok(None);
+            return Ok(Some(PreExec {
+                filter: None,
+                _image: Some(executable_fd),
+            }));
         }
+        command
+            .envs
+            .retain(|(name, _)| name != LD_PRELOAD && name != PAYLOAD_ENV_NAME);
+        Ok(Some(PreExec {
+            filter: Some(encoded_payload.payload.seccomp_payload.clone()),
+            _image: Some(executable_fd),
+        }))
     }
 
-    command
-        .envs
-        .retain(|(name, _)| name != LD_PRELOAD && name != PAYLOAD_ENV_NAME);
-    Ok(Some(PreExec(
-        encoded_payload.payload.seccomp_payload.clone(),
-    )))
+    #[cfg(target_env = "musl")]
+    {
+        command
+            .envs
+            .retain(|(name, _)| name != LD_PRELOAD && name != PAYLOAD_ENV_NAME);
+        Ok(Some(PreExec {
+            filter: Some(encoded_payload.payload.seccomp_payload.clone()),
+            _image: None,
+        }))
+    }
 }
 
 #[cfg(all(test, not(target_env = "musl")))]
 mod tests {
-    use std::{fs, os::unix::fs::PermissionsExt};
+    use std::{
+        fs,
+        os::unix::{ffi::OsStrExt, fs::PermissionsExt},
+        process::Command,
+    };
 
     use nix::errno::Errno;
 
-    use super::{admit_preload, open_executable};
+    use super::{admit_preload, bind_open_image, open_executable};
+
+    #[test]
+    fn bound_image_survives_path_replacement() {
+        let directory = tempfile::tempdir().expect("create temporary directory");
+        let path = directory.path().join("image");
+        let replacement = directory.path().join("replacement");
+        fs::copy("/bin/true", &path).expect("copy admitted image");
+        fs::copy("/bin/false", &replacement).expect("copy replacement image");
+        let fd = open_executable(&path).expect("open admitted image");
+        let mut command = crate::exec::Exec {
+            program: path.as_os_str().as_bytes().into(),
+            args: vec![],
+            envs: vec![],
+        };
+        bind_open_image(&mut command, &fd);
+        fs::rename(&replacement, &path).expect("replace executable path");
+        assert!(
+            Command::new(std::ffi::OsStr::from_bytes(&command.program))
+                .status()
+                .expect("run bound image")
+                .success()
+        );
+    }
 
     #[test]
     fn set_id_images_cannot_use_preload_tracking() {
