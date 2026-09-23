@@ -1202,7 +1202,24 @@ fn linux_descendant_execve_enters_a_virtual_executable() {
     let worker_source = root.path().join("worker.c");
     fs::write(
         &worker_source,
-        "#include <stdio.h>\nint main(void) { puts(\"virtual-exec-ok\"); return 0; }\n",
+        r#"
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int main(void) {
+    int fd = open("/proc/self/exe", O_RDONLY);
+    if (fd < 0) return 30;
+    errno = 0;
+    if (fchmod(fd, 0600) != -1 || errno != EROFS) return 31;
+    errno = 0;
+    if (fchmodat(AT_FDCWD, "/proc/self/exe", 0600, 0) != -1 || errno != EROFS) return 32;
+    close(fd);
+    puts("virtual-exec-ok");
+    return 0;
+}
+"#,
     )
     .unwrap();
     let worker = root.path().join("worker");

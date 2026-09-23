@@ -918,6 +918,39 @@ impl Trace<'_> {
         Some((entry, suffix.is_none()))
     }
 
+    fn proc_executable(&mut self, pid: i32, path: &Path) -> Result<Option<Translation>> {
+        let Some(text) = path.to_str() else {
+            return Ok(None);
+        };
+        let Some((owner, remainder)) = text.strip_prefix("/proc/").and_then(|p| p.split_once('/'))
+        else {
+            return Ok(None);
+        };
+        let group = Self::group(pid);
+        let owner_group = match owner {
+            "self" | "thread-self" => group,
+            _ => owner
+                .parse::<i32>()
+                .ok()
+                .map(Self::group)
+                .unwrap_or_default(),
+        };
+        if owner_group != group {
+            return Ok(None);
+        }
+        let own_executable = remainder == "exe"
+            || remainder
+                .strip_prefix("task/")
+                .and_then(|task| task.strip_suffix("/exe"))
+                .and_then(|task| task.parse::<i32>().ok())
+                .is_some_and(|task| Self::group(task) == group);
+        if !own_executable {
+            return Ok(None);
+        }
+        let physical = fs::read_link(format!("/proc/{pid}/exe")).map_err(|_| injection_failed())?;
+        self.view.translate(&physical).map(Some)
+    }
+
     fn prepare_script_exec(
         &mut self,
         pid: i32,
@@ -1241,6 +1274,17 @@ impl Trace<'_> {
                 }
                 _ => {}
             }
+        }
+        if let Some(executable) = self.proc_executable(pid, &original)? {
+            if writing && executable.readonly {
+                self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
+                return Ok(true);
+            }
+            if is_open {
+                self.pending.insert(pid, Pending::Open(executable));
+                return Ok(true);
+            }
+            return Ok(false);
         }
         if let Some((descriptor, exact_fd)) = (!in_root)
             .then(|| self.proc_descriptor(pid, &original))
