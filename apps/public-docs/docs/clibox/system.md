@@ -47,7 +47,7 @@ clibox run with-retry --max-attempts 5 --jitter none -- pnpm install
 clibox run with-timeout --timeout 10m --idle-timeout 30s -- pnpm test
 ```
 
-All wrappers support `--kill-after DURATION`, which defaults to `5s`. On timeout, cancellation, or a managed-service failure, clibox asks owned work to stop, waits for that grace period, then forces termination if necessary. A later cancellation skips remaining grace. Durations use nonnegative integer `ms`, `s`, `m`, or `h` values. Child exit statuses remain meaningful; see [Output and cancellation](/clibox/output#execution-wrapper-statuses).
+All wrappers support `--kill-after DURATION`, which defaults to `5s`. On timeout, cancellation, or a managed-service failure, clibox asks owned work to stop, waits for that grace period, then forces termination if necessary. A cancellation observed before workload startup prevents that workload from starting; a later cancellation skips remaining grace. Durations use nonnegative integer `ms`, `s`, `m`, or `h` values. Child exit statuses remain meaningful; see [Output and cancellation](/clibox/output#execution-wrapper-statuses).
 
 ### Rate limits and locks
 

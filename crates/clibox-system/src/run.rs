@@ -963,6 +963,10 @@ fn run_once(
     {
         return Ok(Outcome::Code(124));
     }
+    // Admission can publish rate-limit state or release a coordination lock
+    // immediately before this boundary. Recheck cancellation before the
+    // workload gains an opportunity to perform side effects.
+    check_cancelled()?;
     let output_mode = if limits.idle.is_some() {
         OutputMode::WorkloadPiped
     } else {
