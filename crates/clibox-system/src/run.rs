@@ -5110,7 +5110,7 @@ mod lifecycle_tests {
     #[cfg(unix)]
     #[test]
     fn completion_failure_still_terminates_the_owned_direct_child() {
-        let process = ProcessCommand::new("sh")
+        let mut process = ProcessCommand::new("sh")
             .args(["-c", "trap 'exit 0' TERM; while :; do :; done"])
             .spawn()
             .unwrap();
@@ -5140,6 +5140,7 @@ mod lifecycle_tests {
         assert!(child.cleanup(Duration::from_millis(20), None).is_ok());
         assert_eq!(unsafe { libc::kill(pid as libc::pid_t, 0) }, -1);
         assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::ESRCH));
+        let _ = process.wait();
     }
 
     #[test]
