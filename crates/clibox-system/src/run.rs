@@ -1522,8 +1522,21 @@ fn run_once(
                     // completion is observed, so treat that ambiguity as a
                     // service failure instead of reporting success.
                     Ok(Some(_)) => true,
-                    Ok(None) => match service.tree_running() {
-                        Ok(running) => !running,
+                    Ok(None) => match service.exit_observed_without_reaping() {
+                        // `kill(-pgid, 0)` reports an unreaped zombie group
+                        // leader as present. Query its direct child state
+                        // first so a delayed completion worker cannot turn a
+                        // service exit into a successful workload result.
+                        Ok(true) => true,
+                        Ok(false) => match service.tree_running() {
+                            Ok(running) => !running,
+                            Err(error) => {
+                                cleanup_after_managed_service_failure(
+                                    &mut child, service, kill_after,
+                                );
+                                return Err(error);
+                            }
+                        },
                         Err(error) => {
                             cleanup_after_managed_service_failure(&mut child, service, kill_after);
                             return Err(error);
@@ -2283,6 +2296,11 @@ impl OwnedChild {
     }
 
     #[cfg(unix)]
+    fn exit_observed_without_reaping(&self) -> Result<bool> {
+        child_exit_observed_without_reaping(self.pid)
+    }
+
+    #[cfg(unix)]
     fn reap_completed_child(&mut self) -> Result<()> {
         if self.reaped || self.completion.is_none() {
             return Ok(());
@@ -2405,6 +2423,30 @@ fn wait_for_completion(
             });
         }
         return runtime_failure("Owned child reported an unsupported process state.");
+    }
+}
+
+#[cfg(unix)]
+fn child_exit_observed_without_reaping(pid: u32) -> Result<bool> {
+    loop {
+        let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::zeroed();
+        let observed = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                pid as libc::id_t,
+                info.as_mut_ptr(),
+                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+            )
+        };
+        if observed == 0 {
+            let info = unsafe { info.assume_init() };
+            return Ok(unsafe { info.si_pid() } == pid as libc::pid_t);
+        }
+        let error = io::Error::last_os_error();
+        if error.kind() == io::ErrorKind::Interrupted {
+            continue;
+        }
+        return Err(Failure::io(&error));
     }
 }
 
@@ -4843,6 +4885,30 @@ mod lifecycle_tests {
 
         assert!(matches!(outcome, ManagedServiceWait::Exited));
         assert_eq!(checks, 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn observes_an_exited_child_without_consuming_its_status() {
+        let mut child = ProcessCommand::new("sh")
+            .args(["-c", "exit 0"])
+            .spawn()
+            .unwrap();
+        let observed = (0..50).any(|_| {
+            if child_exit_observed_without_reaping(child.id()).unwrap() {
+                true
+            } else {
+                thread::sleep(Duration::from_millis(1));
+                false
+            }
+        });
+        if !observed {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("did not observe child exit without reaping it");
+        }
+
+        assert!(child.wait().unwrap().success());
     }
 
     #[test]
