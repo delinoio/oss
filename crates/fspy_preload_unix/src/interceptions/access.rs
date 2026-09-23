@@ -14,7 +14,7 @@ unsafe extern "C" fn access(pathname: *const c_char, mode: c_int) -> c_int {
             handle_open(
                 fspy_nostd::CStr::from_ptr(pathname.cast()),
                 AccessMode::READ,
-            )
+            );
         };
     }
     // SAFETY: calling the original libc access() with the same arguments forwarded

@@ -22,7 +22,7 @@ unsafe extern "C" fn scandir(
             handle_open(
                 fspy_nostd::CStr::from_ptr(dirname.cast()),
                 AccessMode::READ_DIR,
-            )
+            );
         };
     }
     // SAFETY: calling the original libc scandir() with the same arguments forwarded
@@ -52,7 +52,7 @@ mod macos_only {
                 handle_open(
                     fspy_nostd::CStr::from_ptr(dirname.cast()),
                     AccessMode::READ_DIR,
-                )
+                );
             };
         }
         // SAFETY: calling the original libc scandir_b() with the same arguments
@@ -109,7 +109,7 @@ unsafe extern "C" fn opendir(dir_name: *const c_char) -> *mut DIR {
             handle_open(
                 fspy_nostd::CStr::from_ptr(dir_name.cast()),
                 AccessMode::READ_DIR,
-            )
+            );
         };
     }
     // SAFETY: calling the original libc opendir() with the same arguments forwarded
