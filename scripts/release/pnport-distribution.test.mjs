@@ -157,3 +157,42 @@ test("POSIX installer verifies the complete archive before changing the active v
   assert.match(rejected.stderr, /checksum mismatch/u);
   assert.equal(execFileSync(path.join(install, "pnport"), ["--version"], { encoding: "utf8" }).trim(), "pnport 0.0.0");
 });
+
+test("POSIX latest search scans all release pages and selects the highest pnport version", (t) => {
+  const target = selectTarget();
+  if (!target || target.os === "win32") return t.skip("POSIX host required");
+  const temporary = fixture(t);
+  const mockBin = path.join(temporary, "mock-bin");
+  const pages = path.join(temporary, "pages");
+  const requestLog = path.join(temporary, "curl-requests.txt");
+  mkdirSync(mockBin);
+  mkdirSync(pages);
+  writeFileSync(path.join(pages, "1.json"), JSON.stringify(Array.from({ length: 100 }, (_, index) => ({ tag_name: `other@v${index}.0.0` })), null, 2));
+  writeFileSync(path.join(pages, "2.json"), JSON.stringify([{ tag_name: "pnport@v0.1.0" }], null, 2));
+  writeFileSync(path.join(pages, "3.json"), JSON.stringify([{ tag_name: "pnport@v0.2.0" }], null, 2));
+  writeFileSync(path.join(pages, "4.json"), "[]\n");
+  const curl = path.join(mockBin, "curl");
+  writeFileSync(curl, `#!/bin/sh
+set -eu
+url=
+for value do case "$value" in https://*) url="$value" ;; esac; done
+printf '%s\\n' "$url" >> "$PNPORT_CURL_LOG"
+case "$url" in
+  *page=1) cat "$PNPORT_CURL_PAGES/1.json" ;;
+  *page=2) cat "$PNPORT_CURL_PAGES/2.json" ;;
+  *page=3) cat "$PNPORT_CURL_PAGES/3.json" ;;
+  *page=4) cat "$PNPORT_CURL_PAGES/4.json" ;;
+  *) exit 22 ;;
+esac
+`);
+  chmodSync(curl, 0o755);
+  const result = spawnSync("bash", [path.join(root, "scripts/install/pnport.sh"), "--install-dir", path.join(temporary, "install")], {
+    encoding: "utf8",
+    env: { ...process.env, PATH: `${mockBin}${path.delimiter}${process.env.PATH}`, PNPORT_CURL_LOG: requestLog, PNPORT_CURL_PAGES: pages },
+  });
+  assert.equal(result.status, 22, result.stderr);
+  const requests = readFileSync(requestLog, "utf8").trim().split("\n");
+  assert.deepEqual(requests.slice(0, 4).map((url) => new URL(url).searchParams.get("page")), ["1", "2", "3", "4"]);
+  assert.equal(requests.length, 5);
+  assert.match(requests[4], /\/releases\/download\/pnport@v0\.2\.0\/pnport-/u);
+});

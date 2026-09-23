@@ -7,10 +7,20 @@ param(
 $ErrorActionPreference = "Stop"
 if ($Version -eq "latest") {
   if ($SourceDir) { throw "[install.pnport] SourceDir requires an exact version" }
-  $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/delinoio/oss/releases?per_page=100"
-  $release = $releases | Where-Object { $_.tag_name -match '^pnport@v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' } | Sort-Object { [version]($_.tag_name.Substring(8)) } -Descending | Select-Object -First 1
-  if (-not $release) { throw "[install.pnport] no published pnport version" }
-  $Version = $release.tag_name.Substring(8)
+  $versions = @()
+  $page = 1
+  while ($true) {
+    $batch = Invoke-RestMethod -Uri "https://api.github.com/repos/delinoio/oss/releases?per_page=100&page=$page"
+    if ($null -eq $batch -or $batch.Count -eq 0) { break }
+    foreach ($release in $batch) {
+      if ($release.tag_name -cmatch '^pnport@v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+        $versions += $release.tag_name.Substring(8)
+      }
+    }
+    $page += 1
+  }
+  if ($versions.Count -eq 0) { throw "[install.pnport] no published pnport version" }
+  $Version = $versions | Sort-Object { [version]$_ } -Descending | Select-Object -First 1
 }
 if ($Version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { throw "[install.pnport] exact stable version required" }
 if (-not $InstallDir) { throw "[install.pnport] install directory required" }

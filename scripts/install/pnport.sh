@@ -28,10 +28,18 @@ done
 
 if [ "$version" = latest ]; then
   [ -z "$source_dir" ] || { echo '[install.pnport] --source-dir requires an exact version' >&2; exit 2; }
-  version=$(curl -fsSL 'https://api.github.com/repos/delinoio/oss/releases?per_page=100' \
-    | awk -F '"' '/"tag_name"/ {print $4}' \
-    | sed -nE 's/^pnport@v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' \
-    | awk -F . 'NF == 3 && (best == "" || $1 > major || ($1 == major && $2 > minor) || ($1 == major && $2 == minor && $3 > patch)) { major=$1; minor=$2; patch=$3; best=$0 } END { print best }')
+  versions=""
+  page=1
+  while :; do
+    releases=$(curl -fsSL "https://api.github.com/repos/delinoio/oss/releases?per_page=100&page=$page")
+    tags=$(printf '%s\n' "$releases" | awk -F '"' '/"tag_name"/ {print $4}')
+    [ -n "$tags" ] || break
+    matches=$(printf '%s\n' "$tags" | sed -nE 's/^pnport@v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p')
+    if [ -n "$matches" ]; then versions="${versions}${versions:+$'\n'}${matches}"; fi
+    page=$((page + 1))
+  done
+  [ -n "$versions" ] || { echo '[install.pnport] no published pnport version' >&2; exit 1; }
+  version=$(printf '%s\n' "$versions" | awk -F . 'NF == 3 && (best == "" || $1 > major || ($1 == major && $2 > minor) || ($1 == major && $2 == minor && $3 > patch)) { major=$1; minor=$2; patch=$3; best=$0 } END { print best }')
 fi
 [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo '[install.pnport] exact stable version required' >&2; exit 2; }
 [ -n "$install_dir" ] || { echo '[install.pnport] install directory required' >&2; exit 2; }
