@@ -2691,6 +2691,8 @@ fn wide(value: &str) -> Vec<u16> {
 }
 
 fn ensure_private_dir(path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    ensure_private_state_ancestors(path)?;
     let existed = path.try_exists().map_err(|error| Failure::io(&error))?;
     fs::create_dir_all(path).map_err(|error| Failure::io(&error))?;
     #[cfg(unix)]
@@ -2735,6 +2737,47 @@ fn ensure_private_dir(path: &Path) -> Result<()> {
         ensure_private_macos_acl(path)?;
         Ok(())
     }
+}
+
+#[cfg(unix)]
+fn ensure_private_state_ancestors(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    if !path.is_absolute() {
+        return runtime_failure("Execution state directory must be an absolute path.");
+    }
+
+    let mut ancestors = path.ancestors().collect::<Vec<_>>();
+    ancestors.reverse();
+    let mut parent_mode = None;
+    for ancestor in ancestors {
+        let metadata = match fs::symlink_metadata(ancestor) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                if parent_mode.is_some_and(|mode| mode & 0o022 != 0) {
+                    return runtime_failure(
+                        "Execution state directory permissions or ownership are unsafe.",
+                    );
+                }
+                break;
+            }
+            Err(error) => return Err(Failure::io(&error)),
+        };
+        if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
+            return runtime_failure("Execution state directory is not a safe directory.");
+        }
+        if let Some(parent_mode) = parent_mode {
+            let parent_is_private = parent_mode & 0o022 == 0;
+            let parent_is_sticky = parent_mode & 0o1000 != 0;
+            if !parent_is_private && !(parent_is_sticky && owned_by_effective_user(&metadata)) {
+                return runtime_failure(
+                    "Execution state directory permissions or ownership are unsafe.",
+                );
+            }
+        }
+        parent_mode = Some(metadata.permissions().mode());
+    }
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -3978,6 +4021,20 @@ mod lifecycle_tests {
 #[cfg(test)]
 mod state_key_tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn state_directory_rejects_a_writable_ancestor() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temporary = tempfile::tempdir().unwrap();
+        let unsafe_ancestor = temporary.path().join("unsafe");
+        fs::create_dir(&unsafe_ancestor).unwrap();
+        fs::set_permissions(&unsafe_ancestor, fs::Permissions::from_mode(0o777)).unwrap();
+
+        let error = ensure_private_dir(&unsafe_ancestor.join("state")).unwrap_err();
+        assert_eq!(error.code, Code::IoFailed);
+    }
 
     #[test]
     fn machine_identity_namespaces_coordination_keys() {
