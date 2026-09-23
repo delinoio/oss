@@ -335,6 +335,62 @@ int main(int argc, char **argv) {
         }
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn preload_records_working_directory_alias() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let source = directory.path().join("preload-chdir.c");
+        let executable = directory.path().join("preload-chdir");
+        let actual = directory.path().join("actual");
+        let alias = directory.path().join("alias");
+        fs::create_dir(&actual).expect("create target directory");
+        fs::write(actual.join("input"), b"input").expect("write input");
+        std::os::unix::fs::symlink(&actual, &alias).expect("create directory alias");
+        fs::write(
+            &source,
+            r#"#include <fcntl.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+  if (argc != 2) return 2;
+  if (chdir(argv[1])) return 3;
+  int input = open("input", O_RDONLY);
+  if (input < 0) return 4;
+  close(input);
+  int directory = open(argv[1], O_RDONLY);
+  if (directory < 0) return 5;
+  if (fchdir(directory)) return 6;
+  close(directory);
+  return 0;
+}
+"#,
+        )
+        .expect("write chdir fixture");
+        assert!(
+            std::process::Command::new("cc")
+                .arg(&source)
+                .arg("-o")
+                .arg(&executable)
+                .status()
+                .expect("compile chdir fixture")
+                .success()
+        );
+        let mut command = super::Command::new(&executable);
+        command.arg(&alias);
+        let child = command
+            .spawn(CancellationToken::new())
+            .await
+            .expect("spawn tracked fixture");
+        let termination = child.wait_handle.await.expect("wait for fixture");
+        assert!(termination.status.success(), "{:?}", termination.status);
+        let accesses = termination.path_accesses.expect("complete trace");
+        assert!(accesses.iter().any(|access| {
+            access.mode.contains(super::AccessMode::READ)
+                && access.path.strip_path_prefix(&alias, |path| {
+                    path.is_ok_and(|remaining| remaining.as_os_str().is_empty())
+                })
+        }));
+    }
+
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn late_seccomp_filter_continues_after_root_trace_seals() {
@@ -571,6 +627,64 @@ int main(int argc, char **argv) {
                 expected.display()
             );
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn seccomp_records_working_directory_alias() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let source = directory.path().join("static-chdir.c");
+        let executable = directory.path().join("static-chdir");
+        let actual = directory.path().join("actual");
+        let alias = directory.path().join("alias");
+        fs::create_dir(&actual).expect("create target directory");
+        fs::write(actual.join("input"), b"input").expect("write input");
+        std::os::unix::fs::symlink(&actual, &alias).expect("create directory alias");
+        fs::write(
+            &source,
+            r#"#include <fcntl.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+  if (argc != 3) return 2;
+  if (syscall(SYS_chdir, argv[1])) return 3;
+  int input = syscall(SYS_openat, AT_FDCWD, "input", O_RDONLY);
+  if (input < 0) return 4;
+  close(input);
+  int directory = syscall(SYS_openat, AT_FDCWD, argv[2], O_RDONLY);
+  if (directory < 0) return 5;
+  if (syscall(SYS_fchdir, directory)) return 6;
+  close(directory);
+  return 0;
+}
+"#,
+        )
+        .expect("write chdir fixture");
+        assert!(
+            std::process::Command::new("cc")
+                .arg("-static")
+                .arg(&source)
+                .arg("-o")
+                .arg(&executable)
+                .status()
+                .expect("compile static chdir fixture")
+                .success()
+        );
+        let mut command = super::Command::new(&executable);
+        command.args([&alias, &actual]);
+        let child = command
+            .spawn(CancellationToken::new())
+            .await
+            .expect("spawn tracked fixture");
+        let termination = child.wait_handle.await.expect("wait for fixture");
+        assert!(termination.status.success(), "{:?}", termination.status);
+        let accesses = termination.path_accesses.expect("complete trace");
+        assert!(accesses.iter().any(|access| {
+            access.mode.contains(super::AccessMode::READ)
+                && access.path.strip_path_prefix(&alias, |path| {
+                    path.is_ok_and(|remaining| remaining.as_os_str().is_empty())
+                })
+        }));
     }
 
     #[cfg(target_os = "linux")]

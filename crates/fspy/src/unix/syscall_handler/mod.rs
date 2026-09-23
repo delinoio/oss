@@ -1,3 +1,4 @@
+mod cwd;
 mod execve;
 mod getdents;
 mod mutate;
@@ -98,6 +99,9 @@ impl_handler!(
     #[cfg(target_arch = "x86_64")] creat,
     openat,
     openat2,
+
+    chdir,
+    fchdir,
 
     #[cfg(target_arch = "x86_64")] unlink,
     unlinkat,

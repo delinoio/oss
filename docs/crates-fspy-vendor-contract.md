@@ -44,6 +44,7 @@ The seccomp `execve` and `execveat` handlers inspect bounded shebang chains and 
 The seccomp notification filter records pathname mutation families, including unlink, rename, directory creation/removal, links, node creation, truncation, permissions, ownership, and timestamp updates. Source and destination paths of rename and hard-link calls are both classified as writes; symlink targets are data, while the new link pathname is a write.
 The generic Unix preload records the matching libc pathname mutation families as writes before forwarding them. Two-path rename and hard-link operations record both names; symlink creation records only the link pathname, since its target is stored text. The macOS rename variants are included without changing pnport-mode interception.
 Generic Unix `readlink` and `readlinkat` record the link pathname as a read before forwarding the call, including paths relative to a directory descriptor. They preserve the caller's buffer and native return value.
+The generic Unix preload and Linux seccomp backend record `chdir` pathnames and `fchdir` descriptors as reads before the working directory changes. In particular, a symlink used for `chdir` remains a dependency even when subsequent relative paths resolve beneath its physical target.
 
 Linux preload selection recognizes only the host glibc loader for the supported x64 and arm64 targets. Foreign ELF interpreters, including musl loaders, use seccomp so the host-built preload is not injected into an incompatible process.
 
