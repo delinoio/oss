@@ -2394,6 +2394,7 @@ fn acquire(path: &Path, deadline: Option<Instant>) -> Result<File> {
 }
 
 #[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct Bucket {
     version: u8,
     limit: u64,
@@ -3295,6 +3296,30 @@ mod rate_limit_tests {
 
         let error = match read_bucket(&path, 1, Duration::from_secs(1), 1, 0) {
             Ok(_) => panic!("oversized state must be rejected"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.code, Code::IoFailed);
+    }
+
+    #[test]
+    fn unknown_bucket_fields_fail_closed() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("bucket.json");
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(&path)
+            .unwrap();
+        file.write_all(
+            br#"{"version":1,"limit":1,"period_ms":1000,"burst":1,"tokens":1.0,"refill_utc_ms":0,"unexpected":true}"#,
+        )
+        .unwrap();
+        drop(file);
+
+        let error = match read_bucket(&path, 1, Duration::from_secs(1), 1, 0) {
+            Ok(_) => panic!("state with unknown fields must be rejected"),
             Err(error) => error,
         };
 
