@@ -2515,6 +2515,15 @@ fn completed_process_group_running(group: u32) -> Result<bool> {
         let stat = match fs::read_to_string(entry.path().join("stat")) {
             Ok(stat) => stat,
             Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+                // hidepid can deny unrelated process details. getpgid still
+                // lets us fail closed if the inaccessible PID belongs to the
+                // owned group, without rejecting unrelated entries.
+                if linux_process_group_matches(candidate, group)? {
+                    return Ok(true);
+                }
+                continue;
+            }
             Err(error) => return Err(Failure::io(&error)),
         };
         if linux_process_group_member(&stat, group)? {
@@ -2522,6 +2531,19 @@ fn completed_process_group_running(group: u32) -> Result<bool> {
         }
     }
     Ok(false)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_process_group_matches(pid: u32, group: u32) -> Result<bool> {
+    let observed = unsafe { libc::getpgid(pid as libc::pid_t) };
+    if observed == -1 {
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() == Some(libc::ESRCH) {
+            return Ok(false);
+        }
+        return Err(Failure::io(&error));
+    }
+    Ok(observed as u32 == group)
 }
 
 #[cfg(target_os = "linux")]
