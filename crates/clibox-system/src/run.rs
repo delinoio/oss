@@ -1299,8 +1299,7 @@ fn run_once(
         }
         if let Some(service) = monitored_service.as_deref_mut() {
             if service.output_failed() {
-                let _ = cleanup_or_log(service, kill_after);
-                let _ = cleanup_or_log(&mut child, kill_after);
+                cleanup_after_managed_service_failure(&mut child, service, kill_after);
                 return runtime_failure("Could not forward managed service output.");
             }
         }
@@ -1317,8 +1316,7 @@ fn run_once(
             Some(service) => match service.completion() {
                 Ok(completion) => completion,
                 Err(error) => {
-                    let _ = cleanup_or_log(service, kill_after);
-                    let _ = cleanup_or_log(&mut child, kill_after);
+                    cleanup_after_managed_service_failure(&mut child, service, kill_after);
                     return Err(error);
                 }
             },
@@ -1333,8 +1331,7 @@ fn run_once(
         };
         if service_completion.is_some() {
             let service = monitored_service.expect("a completed service is monitored");
-            let _ = cleanup_or_log(service, kill_after);
-            let _ = cleanup_or_log(&mut child, kill_after);
+            cleanup_after_managed_service_failure(&mut child, service, kill_after);
             return runtime_failure("The managed service exited before the workload completed.");
         }
         if let Some(completion) = workload_completion {
@@ -1363,20 +1360,17 @@ fn run_once(
                     Ok(None) => match service.tree_running() {
                         Ok(running) => !running,
                         Err(error) => {
-                            let _ = cleanup_or_log(service, kill_after);
-                            let _ = cleanup_or_log(&mut child, kill_after);
+                            cleanup_after_managed_service_failure(&mut child, service, kill_after);
                             return Err(error);
                         }
                     },
                     Err(error) => {
-                        let _ = cleanup_or_log(service, kill_after);
-                        let _ = cleanup_or_log(&mut child, kill_after);
+                        cleanup_after_managed_service_failure(&mut child, service, kill_after);
                         return Err(error);
                     }
                 };
                 if service_exited {
-                    let _ = cleanup_or_log(service, kill_after);
-                    let _ = cleanup_or_log(&mut child, kill_after);
+                    cleanup_after_managed_service_failure(&mut child, service, kill_after);
                     return runtime_failure(
                         "The managed service exited before the workload completed.",
                     );
@@ -1505,6 +1499,25 @@ fn cleanup_run_once_children(
     let _ = cleanup_or_log(workload, kill_after);
     if let Some(service) = monitored_service.as_deref_mut() {
         let _ = cleanup_or_log(service, kill_after);
+    }
+}
+
+fn cleanup_after_managed_service_failure(
+    workload: &mut OwnedChild,
+    service: &mut OwnedChild,
+    kill_after: Duration,
+) {
+    // A failed service invalidates a running workload immediately. Request
+    // workload termination before any service grace/confirmation wait so it
+    // cannot keep performing side effects while service cleanup is bounded.
+    request_termination_or_log(workload);
+    let _ = cleanup_or_log(service, kill_after);
+    let _ = cleanup_or_log(workload, kill_after);
+}
+
+fn request_termination_or_log(child: &mut OwnedChild) {
+    if let Err(error) = child.request_graceful_termination() {
+        error.report("run");
     }
 }
 
@@ -1956,6 +1969,20 @@ impl OwnedChild {
             }
         }
         Ok(self.completion.clone())
+    }
+
+    fn request_graceful_termination(&mut self) -> Result<()> {
+        if !self.tree_running()? {
+            return Ok(());
+        }
+        tracing::debug!(
+            operation = "run",
+            pid = self.pid,
+            stage = "service_failed_workload_stop",
+            "run_cleanup"
+        );
+        self.signal(false)?;
+        Ok(())
     }
 
     fn cleanup(&mut self, kill_after: Duration, initial_cancellation: Option<usize>) -> Result<()> {
