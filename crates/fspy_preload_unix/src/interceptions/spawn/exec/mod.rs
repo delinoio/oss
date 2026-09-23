@@ -243,13 +243,24 @@ mod linux_only {
         pathname: *const libc::c_char,
         argv: *const *mut libc::c_char,
         envp: *const *mut libc::c_char,
-        flags: c_int, // TODO: conform to semantics of flags
+        flags: c_int,
     ) -> libc::c_int {
         #[expect(
             clippy::no_effect_underscore_binding,
             reason = "suppresses unused warning on *::original"
         )]
         let _unused = execveat::original;
+        if flags != 0 {
+            // Resolving to a pathname and forwarding through execve would
+            // discard AT_EMPTY_PATH and AT_SYMLINK_NOFOLLOW. Preserve the
+            // kernel operation and prevent this run from yielding a complete
+            // trace when these semantics cannot be interposed safely.
+            global_client()
+                .expect("execveat called before client initialization")
+                .mark_incomplete();
+            // SAFETY: original arguments and flags are forwarded unchanged.
+            return unsafe { execveat::original()(dirfd, pathname, argv, envp, flags) };
+        }
         let arena = fspy_nostd_alloc::pooled_bump();
 
         // SAFETY: dirfd and pathname are valid arguments from the interposed execveat
