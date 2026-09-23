@@ -35,6 +35,9 @@ const SECCOMP_RET_TRACE: u32 = 0x7ff0_0000;
 const SECCOMP_RET_ALLOW: u32 = 0x7fff_0000;
 const SECCOMP_SET_MODE_FILTER: libc::c_uint = 1;
 const PATH_LIMIT: usize = 4096;
+// One private tracee mapping holds two pathname slots and the bounded exec
+// vector. It is recreated after every exec, which discards the old mapping.
+const SCRATCH_SIZE: usize = 8 * 1024 * 1024;
 // Linux execve(2) caps argv+envp storage at 3/4 of _STK_LIM (8 MiB).
 const EXEC_BYTES_LIMIT: usize = 6 * 1024 * 1024;
 // The fixed prefix and resolution bits from Linux's openat2 UAPI.
@@ -440,7 +443,9 @@ pub fn probe() -> Result<()> {
             );
             return Err(injection_failed());
         }
-        rewrite_path(pid, &mut regs, 1, Path::new("/dev/null"))?;
+        // The probe is our own helper with a known ordinary stack. Arbitrary
+        // tracees receive a dedicated mapping before path rewriting.
+        rewrite_probe_path(pid, &mut regs, 1, Path::new("/dev/null"))?;
         resume(pid, true, 0)?;
         if unsafe { libc::waitpid(pid, &mut status, 0) } != pid
             || !libc::WIFSTOPPED(status)
@@ -514,6 +519,40 @@ fn set_registers(pid: i32, value: &Registers) -> Result<()> {
 #[cfg(target_arch = "x86_64")]
 fn number(regs: &Registers) -> i64 {
     regs.orig_rax as i64
+}
+#[cfg(target_arch = "x86_64")]
+fn set_number(regs: &mut Registers, value: i64) {
+    regs.orig_rax = value as u64;
+    regs.rax = value as u64;
+}
+#[cfg(target_arch = "aarch64")]
+fn set_number(regs: &mut Registers, value: i64) {
+    regs.regs[8] = value as u64;
+}
+#[cfg(target_arch = "aarch64")]
+fn set_active_syscall(pid: i32, value: i64) -> Result<()> {
+    // arm64 keeps the active syscall number outside NT_PRSTATUS. Changing x8
+    // alone does not replace the syscall already stopped by seccomp.
+    const NT_ARM_SYSTEM_CALL: usize = 0x404;
+    let mut number = value as i32;
+    let mut iov = libc::iovec {
+        iov_base: (&mut number as *mut i32).cast(),
+        iov_len: mem::size_of::<i32>(),
+    };
+    if unsafe { libc::ptrace(libc::PTRACE_SETREGSET, pid, NT_ARM_SYSTEM_CALL, &mut iov) } != 0 {
+        return Err(injection_failed());
+    }
+    Ok(())
+}
+#[cfg(target_arch = "x86_64")]
+fn rewind_syscall(regs: &mut Registers) -> Result<()> {
+    regs.rip = regs.rip.checked_sub(2).ok_or_else(injection_failed)?;
+    Ok(())
+}
+#[cfg(target_arch = "aarch64")]
+fn rewind_syscall(regs: &mut Registers) -> Result<()> {
+    regs.pc = regs.pc.checked_sub(4).ok_or_else(injection_failed)?;
+    Ok(())
 }
 #[cfg(target_arch = "aarch64")]
 fn number(regs: &Registers) -> i64 {
@@ -723,23 +762,22 @@ fn write_remote_or_fault(pid: i32, address: u64, bytes: &[u8]) -> Result<bool> {
     }
     Err(injection_failed())
 }
-fn rewrite_path(pid: i32, regs: &mut Registers, index: usize, path: &Path) -> Result<()> {
-    rewrite_path_slot(pid, regs, index, path, 0)
+fn rewrite_probe_path(pid: i32, regs: &mut Registers, index: usize, path: &Path) -> Result<()> {
+    write_path_at(pid, regs, index, path, 0, stack_pointer(regs))
 }
-fn rewrite_path_slot(
+fn write_path_at(
     pid: i32,
     regs: &mut Registers,
     index: usize,
     path: &Path,
     slot: usize,
+    top: u64,
 ) -> Result<()> {
     let bytes = CString::new(path.as_os_str().as_bytes()).map_err(|_| injection_failed())?;
     if bytes.as_bytes_with_nul().len() > PATH_LIMIT {
         return Err(injection_failed());
     }
-    // The unused space immediately below the stopped thread's stack pointer
-    // lasts until this syscall exits. Keep clear of the x86-64 red zone.
-    let address = stack_pointer(regs)
+    let address = top
         .checked_sub(bytes.as_bytes_with_nul().len() as u64 + 256 + (slot * PATH_LIMIT) as u64)
         .ok_or_else(injection_failed)?
         & !15;
@@ -755,6 +793,7 @@ fn rewrite_exec_arguments(
     path_address: u64,
     prefixes: &[OsString],
     original: &[u64],
+    scratch_base: u64,
 ) -> Result<()> {
     let mut cursor = path_address;
     let mut pointers = vec![path_address];
@@ -764,6 +803,11 @@ fn rewrite_exec_arguments(
             .checked_sub(bytes.as_bytes_with_nul().len() as u64 + 16)
             .ok_or_else(injection_failed)?
             & !15;
+        if cursor < scratch_base {
+            return Err(unsupported(
+                "A child exec vector exceeded its scratch mapping.",
+            ));
+        }
         write_remote(pid, cursor, bytes.as_bytes_with_nul())?;
         pointers.push(cursor);
     }
@@ -782,6 +826,11 @@ fn rewrite_exec_arguments(
         .checked_sub(raw.len() as u64 + 16)
         .ok_or_else(injection_failed)?
         & !15;
+    if cursor < scratch_base {
+        return Err(unsupported(
+            "A child exec vector exceeded its scratch mapping.",
+        ));
+    }
     write_remote(pid, cursor, &raw)?;
     set_argument(regs, argv_arg, cursor);
     set_registers(pid, regs)
@@ -833,6 +882,8 @@ struct Trace<'a> {
     pending: HashMap<i32, Pending>,
     fds: HashMap<i32, HashMap<i32, Translation>>,
     cwd: HashMap<i32, PathBuf>,
+    scratch: HashMap<i32, u64>,
+    scratch_pending: HashMap<i32, Registers>,
     watch: InputWatch,
     active_markers: HashSet<PathBuf>,
     root: i32,
@@ -842,6 +893,86 @@ struct Trace<'a> {
 }
 
 impl Trace<'_> {
+    fn scratch_base(&self, pid: i32) -> Result<u64> {
+        self.scratch.get(&pid).copied().ok_or_else(injection_failed)
+    }
+
+    fn rewrite_path(
+        &self,
+        pid: i32,
+        regs: &mut Registers,
+        index: usize,
+        path: &Path,
+    ) -> Result<()> {
+        self.rewrite_path_slot(pid, regs, index, path, 0)
+    }
+
+    fn rewrite_path_slot(
+        &self,
+        pid: i32,
+        regs: &mut Registers,
+        index: usize,
+        path: &Path,
+        slot: usize,
+    ) -> Result<()> {
+        let top = self
+            .scratch_base(pid)?
+            .checked_add(SCRATCH_SIZE as u64)
+            .ok_or_else(injection_failed)?;
+        write_path_at(pid, regs, index, path, slot, top)
+    }
+
+    fn start_scratch(&mut self, pid: i32) -> Result<()> {
+        let original = registers(pid)?;
+        let mut mapped = original;
+        set_number(&mut mapped, libc::SYS_mmap);
+        for (index, value) in [
+            0,
+            SCRATCH_SIZE as u64,
+            (libc::PROT_READ | libc::PROT_WRITE) as u64,
+            (libc::MAP_PRIVATE | libc::MAP_ANONYMOUS) as u64,
+            u64::MAX,
+            0,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            set_argument(&mut mapped, index, value);
+        }
+        set_registers(pid, &mapped)?;
+        #[cfg(target_arch = "aarch64")]
+        set_active_syscall(pid, libc::SYS_mmap)?;
+        self.scratch_pending.insert(pid, original);
+        tracing::debug!(
+            action = "linux_scratch_alloc",
+            pid,
+            "Allocating owned tracee scratch"
+        );
+        resume(pid, true, 0)
+    }
+
+    fn finish_scratch(&mut self, pid: i32, mut original: Registers) -> Result<()> {
+        let mapped = result(&registers(pid)?);
+        tracing::debug!(
+            action = "linux_scratch_result",
+            pid,
+            mapped,
+            "Tracee mmap result"
+        );
+        if mapped <= 0 || mapped as u64 % 4096 != 0 {
+            return Err(unsupported("Linux tracee scratch allocation failed."));
+        }
+        self.scratch.insert(pid, mapped as u64);
+        rewind_syscall(&mut original)?;
+        set_registers(pid, &original)?;
+        tracing::debug!(
+            action = "linux_scratch_ready",
+            pid,
+            "Owned tracee scratch is ready"
+        );
+        resume(pid, false, 0)
+    }
+
     fn group(pid: i32) -> i32 {
         fs::read_to_string(format!("/proc/{pid}/status"))
             .ok()
@@ -1044,7 +1175,7 @@ impl Trace<'_> {
             set_argument(regs, 0, libc::AT_FDCWD as u64);
             set_argument(regs, 4, 0);
         }
-        rewrite_path(pid, regs, path_arg, &prepared.program)?;
+        self.rewrite_path(pid, regs, path_arg, &prepared.program)?;
         let path_address = argument(regs, path_arg);
         rewrite_exec_arguments(
             pid,
@@ -1053,6 +1184,7 @@ impl Trace<'_> {
             path_address,
             &prepared.args,
             &original_argv,
+            self.scratch_base(pid)?,
         )?;
         self.pending.insert(pid, Pending::Ordinary);
         Ok(true)
@@ -1297,7 +1429,7 @@ impl Trace<'_> {
                         return Ok(true);
                     }
                     if target != translated.physical {
-                        rewrite_path(pid, &mut regs, target_arg, &translated.physical)?;
+                        self.rewrite_path(pid, &mut regs, target_arg, &translated.physical)?;
                     }
                     self.pending.insert(pid, Pending::Ordinary);
                     return Ok(true);
@@ -1460,7 +1592,7 @@ impl Trace<'_> {
                 {
                     return Err(injection_failed());
                 }
-                rewrite_path(pid, &mut regs, path_arg, &link)?;
+                self.rewrite_path(pid, &mut regs, path_arg, &link)?;
                 self.pending.insert(
                     pid,
                     Pending::Open(Translation {
@@ -1552,11 +1684,11 @@ impl Trace<'_> {
             original != translation.physical
         };
         if changed {
-            rewrite_path(pid, &mut regs, path_arg, &translation.physical)?;
+            self.rewrite_path(pid, &mut regs, path_arg, &translation.physical)?;
         }
         if let Some((other_arg, other, translated)) = second_translation {
             if other != translated.physical {
-                rewrite_path_slot(pid, &mut regs, other_arg, &translated.physical, 1)?;
+                self.rewrite_path_slot(pid, &mut regs, other_arg, &translated.physical, 1)?;
             }
         }
         if is_open {
@@ -1633,7 +1765,7 @@ impl Trace<'_> {
         // Every path operation, including O_CREAT, rename, and symlink, must
         // fail in the kernel before its reported errno is replaced below.
         let denied = Path::new("/dev/null/pnport-denied");
-        rewrite_path(pid, regs, index, denied)?;
+        self.rewrite_path(pid, regs, index, denied)?;
         self.pending.insert(pid, Pending::ForcedError(errno));
         Ok(())
     }
@@ -1857,6 +1989,9 @@ impl Trace<'_> {
     }
 
     fn exit(&mut self, pid: i32) -> Result<()> {
+        if let Some(original) = self.scratch_pending.remove(&pid) {
+            return self.finish_scratch(pid, original);
+        }
         let Some(action) = self.pending.remove(&pid) else {
             return resume(pid, false, 0);
         };
@@ -2078,6 +2213,8 @@ impl Trace<'_> {
             tracing::trace!(action = "linux_exit", pid, status, "Owned child exited");
             self.tasks.remove(&pid);
             self.pending.remove(&pid);
+            self.scratch.remove(&pid);
+            self.scratch_pending.remove(&pid);
             let group = self.groups.remove(&pid).unwrap_or(pid);
             if pid == self.root {
                 self.root_exit_code = Some(if libc::WIFEXITED(status) {
@@ -2114,7 +2251,11 @@ impl Trace<'_> {
             if event == 0 {
                 // A trap raised by the tracee is a child signal, not a ptrace
                 // protocol event. Forward it to its handler or default action.
-                resume(pid, self.pending.contains_key(&pid), libc::SIGTRAP)?;
+                resume(
+                    pid,
+                    self.pending.contains_key(&pid) || self.scratch_pending.contains_key(&pid),
+                    libc::SIGTRAP,
+                )?;
                 return Ok(true);
             }
             tracing::trace!(
@@ -2125,11 +2266,19 @@ impl Trace<'_> {
             );
             if event == libc::PTRACE_EVENT_STOP {
                 self.startup_stops.remove(&pid);
-                resume(pid, self.pending.contains_key(&pid), 0)?;
+                resume(
+                    pid,
+                    self.pending.contains_key(&pid) || self.scratch_pending.contains_key(&pid),
+                    0,
+                )?;
                 return Ok(true);
             }
             if event == libc::PTRACE_EVENT_SECCOMP {
-                self.enter(pid)?;
+                if self.scratch.contains_key(&pid) {
+                    self.enter(pid)?;
+                } else {
+                    self.start_scratch(pid)?;
+                }
                 return Ok(true);
             }
             if matches!(event, x if x == libc::PTRACE_EVENT_FORK
@@ -2184,10 +2333,14 @@ impl Trace<'_> {
                     );
                     self.tasks.remove(&former);
                     self.pending.remove(&former);
+                    self.scratch.remove(&former);
+                    self.scratch_pending.remove(&former);
                     self.groups.remove(&former);
                 }
                 self.groups.insert(pid, Self::group(pid));
                 self.pending.remove(&pid);
+                self.scratch.remove(&pid);
+                self.scratch_pending.remove(&pid);
                 if pid == self.root {
                     self.root_exec = true;
                     self.root_exit_code = None;
@@ -2202,7 +2355,11 @@ impl Trace<'_> {
         }
         if status >> 16 == libc::PTRACE_EVENT_STOP {
             if self.startup_stops.remove(&pid) {
-                resume(pid, self.pending.contains_key(&pid), 0)?;
+                resume(
+                    pid,
+                    self.pending.contains_key(&pid) || self.scratch_pending.contains_key(&pid),
+                    0,
+                )?;
             } else {
                 // SEIZE + LISTEN preserves a real job-control stop until
                 // SIGCONT, including a child-requested SIGSTOP.
@@ -2212,7 +2369,11 @@ impl Trace<'_> {
             }
             return Ok(true);
         }
-        resume(pid, self.pending.contains_key(&pid), signal)?;
+        resume(
+            pid,
+            self.pending.contains_key(&pid) || self.scratch_pending.contains_key(&pid),
+            signal,
+        )?;
         Ok(true)
     }
 }
@@ -2267,6 +2428,8 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
         pending: HashMap::new(),
         fds: HashMap::new(),
         cwd: HashMap::new(),
+        scratch: HashMap::new(),
+        scratch_pending: HashMap::new(),
         watch: InputWatch::default(),
         active_markers: HashSet::new(),
         root: pid,

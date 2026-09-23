@@ -340,6 +340,81 @@ fn pnp_unaware_native_process_reads_virtual_dependencies() {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_rewrites_paths_from_a_guard_adjacent_stack() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("guard-stack.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <unistd.h>
+extern long tiny_stack_open(const char *path, void *stack);
+int main(void) {
+    char *pages = mmap(0, 8192, PROT_READ | PROT_WRITE,
+                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (pages == MAP_FAILED || mprotect(pages, 4096, PROT_NONE)) return 40;
+    long fd = tiny_stack_open("node_modules/dep/file.txt", pages + 4096 + 128);
+    if (fd < 0) return 41;
+    char bytes[14] = {0};
+    if (read(fd, bytes, 13) != 13 || strcmp(bytes, "package bytes")) return 42;
+    close(fd);
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let assembly = root.path().join("guard-stack.S");
+    fs::write(
+        &assembly,
+        if cfg!(target_arch = "aarch64") {
+            ".text\n.global tiny_stack_open\ntiny_stack_open:\nmov x9, sp\nmov sp, x1\nmov x1, \
+             x0\nmov x0, #-100\nmov x2, #0\nmov x8, #56\nsvc #0\nmov sp, x9\nret\n"
+        } else {
+            ".text\n.global tiny_stack_open\ntiny_stack_open:\npush %r12\nmov %rsp, %r12\nmov \
+             %rsi, %rsp\nmov %rdi, %rsi\nmov $-100, %rdi\nxor %rdx, %rdx\nxor %r10, %r10\nmov \
+             $257, %rax\nsyscall\nmov %r12, %rsp\npop %r12\nret\n.section \
+             .note.GNU-stack,\"\",@progbits\n"
+        },
+    )
+    .unwrap();
+    let executable = root.path().join("guard-stack");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .arg(&assembly)
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(
+        Command::new(&executable)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(41)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn pnp_unaware_static_process_reads_virtual_dependencies() {
     use std::process::Command;
     let root = fixture();
