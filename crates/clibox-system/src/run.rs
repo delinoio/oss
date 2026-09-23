@@ -604,6 +604,9 @@ fn with_service(options: Service) -> Result<Outcome> {
     if ready_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
         return Ok(Outcome::Code(124));
     }
+    // The final sleep poll can finish just before a cancellation arrives.
+    // Recheck at the side-effect boundary before starting the managed service.
+    check_cancelled()?;
     let service_plan = service.expect("service is checked above");
     let mut service_child = spawn(&service_plan, OutputMode::Service)?;
     loop {
