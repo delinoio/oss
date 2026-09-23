@@ -773,6 +773,116 @@ int main(void) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_reuses_scratch_after_threads_and_vfork_spawns() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("scratch-reuse.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <pthread.h>
+#include <spawn.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
+extern char **environ;
+static int probe(void) {
+    int fd = open("node_modules/dep/file.txt", O_RDONLY);
+    if (fd < 0) return 1;
+    close(fd);
+    return 0;
+}
+static size_t vm_size_kb(void) {
+    FILE *status = fopen("/proc/self/status", "r");
+    if (!status) return 0;
+    char line[256];
+    size_t size = 0;
+    while (fgets(line, sizeof(line), status)) {
+        if (sscanf(line, "VmSize: %zu kB", &size) == 1) break;
+    }
+    fclose(status);
+    return size;
+}
+static void *worker(void *unused) {
+    (void)unused;
+    return (void *)(intptr_t)probe();
+}
+static int thread_once(void) {
+    pthread_t thread;
+    void *result = 0;
+    if (pthread_create(&thread, 0, worker, 0) || pthread_join(thread, &result)) return 1;
+    return (int)(intptr_t)result;
+}
+static int spawn_once(char *path) {
+    pid_t child;
+    char *args[] = {path, "child", 0};
+    if (posix_spawn(&child, path, 0, 0, args, environ)) return 1;
+    int status = 0;
+    return waitpid(child, &status, 0) != child || !WIFEXITED(status) || WEXITSTATUS(status);
+}
+int main(int argc, char **argv) {
+    if (argc > 1) return probe();
+    if (probe()) return 20;
+    if (thread_once()) return 21;
+    size_t before = vm_size_kb();
+    if (!before) return 22;
+    for (int i = 0; i < 48; ++i) if (thread_once()) return 23;
+    size_t after = vm_size_kb();
+    if (after > before + 32768) {
+        fprintf(stderr, "thread scratch VmSize grew from %zu to %zu kB\n", before, after);
+        return 24;
+    }
+    if (spawn_once(argv[0])) return 25;
+    before = vm_size_kb();
+    if (!before) return 26;
+    for (int i = 0; i < 48; ++i) if (spawn_once(argv[0])) return 27;
+    after = vm_size_kb();
+    if (after > before + 32768) {
+        fprintf(stderr, "spawn scratch VmSize grew from %zu to %zu kB\n", before, after);
+        return 28;
+    }
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("scratch-reuse");
+    assert!(Command::new("cc")
+        .args(["-static", "-pthread", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    assert_ne!(
+        Command::new(&executable)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(0)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(!root.path().join("node_modules").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_rejects_cross_group_shared_fd_tables_before_clone() {
     use std::process::Command;
     let root = fixture();
