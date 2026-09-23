@@ -1,4 +1,9 @@
-use std::thread;
+use std::{
+    ffi::{CStr, OsStr},
+    os::unix::ffi::OsStrExt,
+    path::Path,
+    thread,
+};
 
 use fspy_shared_unix::exec::ExecResolveConfig;
 use libc::{c_char, c_int};
@@ -43,6 +48,23 @@ unsafe fn handle_posix_spawn(
 
     let client = global_client()
         .expect("posix_spawn(p) unexpectedly called before client initialized in ctor");
+
+    // POSIX file actions are opaque and may change the child's cwd before
+    // image lookup. Preserve the caller's relative pathname in that case;
+    // parent-side resolution could launch a different image. A successful
+    // spawn has no guaranteed child injection, so seal its trace incomplete.
+    if !file_actions.is_null()
+        && !file.is_null()
+        // SAFETY: `file` is the valid null-terminated pathname supplied to spawn.
+        && !Path::new(OsStr::from_bytes(unsafe { CStr::from_ptr(file) }.to_bytes())).is_absolute()
+    {
+        // SAFETY: all arguments are the original valid spawn arguments.
+        let ret = unsafe { original(pid, file, file_actions, attrp, argv, envp) };
+        if ret == 0 {
+            client.mark_incomplete();
+        }
+        return ret;
+    }
 
     // SAFETY: file, argv, and envp are valid pointers forwarded from the interposed
     // posix_spawn(p) function

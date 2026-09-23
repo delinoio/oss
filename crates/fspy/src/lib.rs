@@ -335,6 +335,60 @@ int main(int argc, char **argv) {
 
     #[cfg(target_os = "linux")]
     #[tokio::test]
+    async fn spawn_chdir_action_preserves_relative_program() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let source = directory.path().join("launcher.c");
+        let executable = directory.path().join("launcher");
+        let child_dir = directory.path().join("child-dir");
+        fs::create_dir(&child_dir).expect("create child directory");
+        let child = child_dir.join("child");
+        fs::write(&child, "#!/bin/sh\nexit 0\n").expect("write child");
+        fs::set_permissions(&child, fs::Permissions::from_mode(0o755))
+            .expect("make child executable");
+        fs::write(
+            &source,
+            r#"#define _GNU_SOURCE
+#include <spawn.h>
+#include <sys/wait.h>
+extern char **environ;
+int main(int argc, char **argv) {
+  if (argc != 2) return 2;
+  posix_spawn_file_actions_t actions;
+  if (posix_spawn_file_actions_init(&actions)) return 3;
+  if (posix_spawn_file_actions_addchdir_np(&actions, argv[1])) return 4;
+  pid_t child;
+  char *args[] = {"./child", 0};
+  if (posix_spawn(&child, "./child", &actions, 0, args, environ)) return 5;
+  int status;
+  if (waitpid(child, &status, 0) != child) return 6;
+  return WIFEXITED(status) ? WEXITSTATUS(status) : 7;
+}
+"#,
+        )
+        .expect("write launcher");
+        assert!(
+            std::process::Command::new("cc")
+                .arg(&source)
+                .arg("-o")
+                .arg(&executable)
+                .status()
+                .expect("compile launcher")
+                .success()
+        );
+
+        let mut command = super::Command::new(&executable);
+        command.arg(&child_dir).current_dir(directory.path());
+        let spawned = command
+            .spawn(CancellationToken::new())
+            .await
+            .expect("spawn tracked launcher");
+        let termination = spawned.wait_handle.await.expect("wait for launcher");
+        assert!(termination.status.success());
+        assert!(termination.path_accesses.is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
     async fn path_search_exec_runs_plain_text_through_tracked_shell() {
         let directory = tempfile::tempdir().expect("create fixture directory");
         let source = directory.path().join("shell-fallback.c");
