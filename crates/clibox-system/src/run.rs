@@ -3709,6 +3709,12 @@ fn ensure_private_state_ancestors(path: &Path) -> Result<()> {
                     "Execution state directory permissions or ownership are unsafe.",
                 );
             }
+            // A safe link alone is insufficient: a foreign owner of an
+            // ancestor of its target could replace that target between later
+            // pathname operations. Validate the canonical target chain using
+            // the same ownership and permission rules before following it.
+            let resolved = fs::canonicalize(ancestor).map_err(|error| Failure::io(&error))?;
+            ensure_private_state_ancestors(&resolved)?;
             fs::metadata(ancestor).map_err(|error| Failure::io(&error))?
         } else {
             link_metadata
