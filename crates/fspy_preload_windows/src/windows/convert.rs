@@ -51,6 +51,9 @@ impl ToAbsolutePath for POBJECT_ATTRIBUTES {
         self,
         f: F,
     ) -> winsafe::SysResult<R> {
+        if self.is_null() {
+            return f(None);
+        }
         // SAFETY: dereferencing POBJECT_ATTRIBUTES to read ObjectName field from
         // Windows API struct
         let fname_str = unsafe { (*self).ObjectName.as_ref() }.map_or_else(
@@ -82,6 +85,27 @@ impl ToAbsolutePath for POBJECT_ATTRIBUTES {
             let fname_cstring = U16CString::from_ustr_truncate(fname_str);
             let abs_path = combine_paths(root_dir_cstr, fname_cstring.as_ucstr())?;
             f(Some(abs_path.to_u16_str()))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use winapi::shared::ntdef::POBJECT_ATTRIBUTES;
+
+    use super::ToAbsolutePath;
+
+    #[test]
+    fn null_object_attributes_have_no_recordable_path() {
+        let attributes: POBJECT_ATTRIBUTES = std::ptr::null_mut();
+        // SAFETY: the implementation handles null before dereferencing it.
+        unsafe {
+            attributes
+                .to_absolute_path(|path| {
+                    assert!(path.is_none());
+                    Ok(())
+                })
+                .expect("skip null object attributes");
         }
     }
 }
