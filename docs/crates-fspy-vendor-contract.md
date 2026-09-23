@@ -26,6 +26,8 @@ Windows access classification treats deletion, file metadata and extended-attrib
 
 On Linux, a seccomp notification whose access cannot be recorded still resumes the target syscall. The supervisor retains the recording error and fails collection after the target exits, so callers cannot treat the partial trace as complete.
 
+Linux preload selection recognizes only the host glibc loader for the supported x64 and arm64 targets. Foreign ELF interpreters, including musl loaders, use seccomp so the host-built preload is not injected into an incompatible process.
+
 The Linux preload hooks the fixed-arity libc `statx` entry point. It does not interpose libc's generic variadic `syscall` entry point: extracting a fixed six arguments from lower-arity calls is undefined behavior. A direct `syscall(SYS_statx, ...)` in a dynamically linked process is outside the preload trace; callers needing that access must use the seccomp path.
 
 At root-process exit, the seccomp supervisor seals the trace and stops listener acceptance. Active handlers return their already collected accesses and recording errors without waiting for surviving descendants. Each existing notification listener continues to answer inherited-filter syscalls with `CONTINUE` until its final filtered task exits; those later accesses do not extend the sealed trace.

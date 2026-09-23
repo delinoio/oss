@@ -20,8 +20,19 @@ pub fn is_dynamically_linked_to_libc(executable: impl AsRef<[u8]>) -> nix::Resul
     let Some(interp_filename) = Path::new(OsStr::from_bytes(interp)).file_name() else {
         return Ok(false);
     };
-    let interp_filename = interp_filename.as_bytes();
-    Ok(interp_filename.starts_with(b"ld-") || interp_filename.starts_with(b"ld."))
+    Ok(is_host_libc_loader(interp_filename.as_bytes()))
+}
+
+fn is_host_libc_loader(filename: &[u8]) -> bool {
+    // The preload is built against this host's glibc ABI. A foreign loader
+    // (notably ld-musl-*) must use seccomp instead of loading that library.
+    #[cfg(target_arch = "x86_64")]
+    const HOST_LOADER: &[u8] = b"ld-linux-x86-64.so.2";
+    #[cfg(target_arch = "aarch64")]
+    const HOST_LOADER: &[u8] = b"ld-linux-aarch64.so.1";
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    const HOST_LOADER: &[u8] = b"";
+    filename == HOST_LOADER
 }
 
 fn get_interp(executable: &[u8]) -> nix::Result<Option<&BStr>> {
@@ -62,5 +73,12 @@ mod tests {
         assert!(
             !is_dynamically_linked_to_libc(read(OsStr::from_bytes(ld_so_path)).unwrap()).unwrap()
         );
+    }
+
+    #[test]
+    fn foreign_libc_loaders_do_not_receive_the_host_preload() {
+        assert!(!is_host_libc_loader(b"ld-musl-x86_64.so.1"));
+        assert!(!is_host_libc_loader(b"ld-musl-aarch64.so.1"));
+        assert!(!is_host_libc_loader(b"ld-linux-other.so.2"));
     }
 }
