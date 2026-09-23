@@ -2786,7 +2786,7 @@ fn ensure_private_state_ancestors(path: &Path) -> Result<()> {
     ancestors.reverse();
     let mut parent_mode = None;
     for ancestor in ancestors {
-        let metadata = match fs::symlink_metadata(ancestor) {
+        let link_metadata = match fs::symlink_metadata(ancestor) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 if parent_mode.is_some_and(|mode| mode & 0o022 != 0) {
@@ -2797,6 +2797,16 @@ fn ensure_private_state_ancestors(path: &Path) -> Result<()> {
                 break;
             }
             Err(error) => return Err(Failure::io(&error)),
+        };
+        let metadata = if link_metadata.file_type().is_symlink() {
+            if !owned_by_effective_user(&link_metadata) && !owned_by_root(&link_metadata) {
+                return runtime_failure(
+                    "Execution state directory permissions or ownership are unsafe.",
+                );
+            }
+            fs::metadata(ancestor).map_err(|error| Failure::io(&error))?
+        } else {
+            link_metadata
         };
         if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
             return runtime_failure("Execution state directory is not a safe directory.");
@@ -3153,6 +3163,13 @@ fn owned_by_effective_user(metadata: &fs::Metadata) -> bool {
     use std::os::unix::fs::MetadataExt;
 
     metadata.uid() == unsafe { libc::geteuid() }
+}
+
+#[cfg(unix)]
+fn owned_by_root(metadata: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+
+    metadata.uid() == 0
 }
 
 #[cfg(target_os = "macos")]
@@ -4054,6 +4071,22 @@ mod state_key_tests {
 
         let error = ensure_private_dir(&unsafe_ancestor.join("state")).unwrap_err();
         assert_eq!(error.code, Code::IoFailed);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn state_directory_accepts_a_trusted_symlinked_ancestor() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+
+        let temporary = tempfile::tempdir().unwrap();
+        let target = temporary.path().join("target");
+        fs::create_dir(&target).unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o700)).unwrap();
+        let link = temporary.path().join("state-home");
+        symlink(&target, &link).unwrap();
+
+        ensure_private_dir(&link.join("state")).unwrap();
+        assert!(target.join("state").is_dir());
     }
 
     #[test]
