@@ -19,7 +19,7 @@
 | `--project <path>` | Select a project directory or `.pnp.cjs` without changing cwd. Otherwise search upward from cwd. |
 | `--cache-dir <path>` | Override the standard private per-user cache location. |
 | `--log-level <level>` | Choose `error`, `warn`, `info`, `debug`, or `trace`. Default: `error`. |
-| `--color <mode>` | Choose `auto`, `always`, or `never`. `NO_COLOR` also disables color. |
+| `--color <mode>` | Choose `auto`, `always`, or `never`. In `auto`, ANSI color requires terminal stderr and no `NO_COLOR` variable. Explicit `always` overrides `NO_COLOR`; `never` disables color. `doctor --json` is ANSI-free in every mode. |
 
 Global options precede the subcommand in the examples here. Cache commands do not require an active PnP project. `cache prune` and `cache clean` preserve entries whose active use or ownership cannot safely be ruled out; see [cache management](/pnport/cache).
 

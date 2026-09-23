@@ -26,7 +26,9 @@ pnport cache clean
 ```
 
 Global options are `--project`, `--cache-dir`, `--log-level` and `--color`.
-`--color=never` and `NO_COLOR` disable color. Diagnostics use stderr; child
+`--color=never` disables color; `NO_COLOR` disables it in the default `auto`
+mode, while explicit `--color=always` overrides `NO_COLOR`. `doctor --json`
+remains ANSI-free in every mode. Diagnostics use stderr; child
 streams are inherited. Debug output may include paths, but not file content,
 environment values, full argv or child output. Owned failures use stable
 `PNPORT_*` codes and exit 125, except missing commands (127), execution failures
