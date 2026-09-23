@@ -1361,6 +1361,29 @@ impl Trace<'_> {
         };
         let original = read_path(pid, argument(&regs, path_arg))?;
         if original.as_os_str().is_empty() {
+            if call == libc::SYS_readlinkat {
+                // Empty-path readlinkat targets an O_PATH symlink descriptor,
+                // not a directory relative to that descriptor.
+                if let Some(link) = self
+                    .fds
+                    .get(&Self::group(pid))
+                    .and_then(|fds| fds.get(&dirfd))
+                    .filter(|entry| entry.virtual_link)
+                    .map(|entry| entry.logical.clone())
+                {
+                    let target = self.translate_view(&link)?.logical;
+                    self.pending.insert(
+                        pid,
+                        Pending::ReadLink {
+                            output: argument(&regs, 2),
+                            capacity: argument(&regs, 3) as usize,
+                            target,
+                        },
+                    );
+                    return Ok(true);
+                }
+                return Ok(false);
+            }
             let flags = match call {
                 n if n == libc::SYS_newfstatat
                     || n == libc::SYS_faccessat2

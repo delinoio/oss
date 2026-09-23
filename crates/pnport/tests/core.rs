@@ -483,9 +483,17 @@ int main(int argc, char **argv) {
     if (open("node_modules/dep", O_RDONLY | O_NOFOLLOW) != -1 || errno != ELOOP) return 44;
     int link_fd = open("node_modules/dep", O_PATH | O_NOFOLLOW);
     if (link_fd < 0 || fstat(link_fd, &info) || !S_ISLNK(info.st_mode)) return 45;
+    char target[4096], fd_target[4096];
+    ssize_t target_len = readlink("node_modules/dep", target, sizeof(target));
+    if (target_len <= 0) return 28;
+    ssize_t fd_len = readlinkat(link_fd, "", fd_target, sizeof(fd_target));
+    if (fd_len != target_len || memcmp(fd_target, target, target_len)) {
+        fprintf(stderr, "empty readlinkat length=%zd path length=%zd errno=%d\n", fd_len, target_len, errno);
+        return 62;
+    }
+    errno = 0;
+    if (syscall(SYS_readlinkat, link_fd, "", (char *)1, 16) != -1 || errno != EFAULT) return 63;
     close(link_fd);
-    char target[4096];
-    if (readlink("node_modules/dep", target, sizeof(target)) <= 0) return 28;
     errno = 0;
     if (syscall(SYS_readlinkat, AT_FDCWD, "node_modules/dep", (char *)1, 16) != -1 || errno != EFAULT) return 46;
     int ranged = open("node_modules/dep/file.txt", O_RDONLY);
@@ -506,6 +514,11 @@ int main(int argc, char **argv) {
     close(fd);
     if (argc == 1) {
         if (mkdir("native-old", 0700) || symlink("native-old", "native-link")) return 49;
+        link_fd = open("native-link", O_PATH | O_NOFOLLOW);
+        if (link_fd < 0) return 64;
+        ssize_t native_len = readlinkat(link_fd, "", target, sizeof(target));
+        if (native_len != 10 || memcmp(target, "native-old", 10)) return 65;
+        close(link_fd);
         fd = open("native-old/value", O_WRONLY | O_CREAT, 0600);
         if (fd < 0 || write(fd, "old", 3) != 3) return 50;
         close(fd);
