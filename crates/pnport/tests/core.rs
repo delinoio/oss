@@ -1194,6 +1194,60 @@ int main(void) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_rejects_mutating_ioctls_on_dependency_descriptors() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("managed-ioctl.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/fs.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+int main(void) {
+    int fd = open("node_modules/dep/file.txt", O_RDONLY);
+    if (fd < 0) return 40;
+    unsigned long flags = 0;
+    errno = 0;
+    if (ioctl(fd, FS_IOC_GETFLAGS, &flags) < 0 && errno == EROFS) return 41;
+    errno = 0;
+    if (ioctl(fd, FS_IOC_SETFLAGS, &flags) != -1 || errno != EROFS) return 42;
+    struct fsxattr attrs = {0};
+    errno = 0;
+    if (ioctl(fd, FS_IOC_FSSETXATTR, &attrs) != -1 || errno != EROFS) return 43;
+    close(fd);
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("managed-ioctl");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_static_xattr_reads_translate_virtual_paths() {
     use std::process::Command;
     let root = fixture();

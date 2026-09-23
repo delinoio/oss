@@ -44,6 +44,11 @@ const RESOLVE_IN_ROOT: u64 = 0x10;
 const CLOSE_RANGE_UNSHARE: u32 = 2;
 // Linux UAPI assigns this number on both supported 64-bit architectures.
 const SYS_FCHMODAT2: i64 = 452;
+// 64-bit Linux UAPI encodings from include/uapi/linux/fs.h. Only these
+// known read-only filesystem requests may reach a managed dependency FD.
+const FS_IOC_GETFLAGS: u64 = 0x8008_6601;
+const FS_IOC_FSGETXATTR: u64 = 0x801c_581f;
+const FIONREAD: u64 = libc::FIONREAD as u64;
 const TRACE_OPTIONS: usize = (libc::PTRACE_O_TRACESYSGOOD
     | libc::PTRACE_O_TRACEFORK
     | libc::PTRACE_O_TRACEVFORK
@@ -166,6 +171,7 @@ fn traced_syscalls() -> Vec<i64> {
         libc::SYS_dup,
         libc::SYS_dup3,
         libc::SYS_fcntl,
+        libc::SYS_ioctl,
         libc::SYS_recvmsg,
         libc::SYS_recvmmsg,
         libc::SYS_pidfd_getfd,
@@ -1775,6 +1781,24 @@ impl Trace<'_> {
             return resume(pid, true, 0);
         }
         let group = Self::group(pid);
+        if call == libc::SYS_ioctl {
+            if self
+                .fds
+                .get(&group)
+                .and_then(|fds| fds.get(&(argument(&regs, 0) as i32)))
+                .is_some_and(|entry| entry.readonly)
+            {
+                let request = argument(&regs, 1);
+                if matches!(request, FS_IOC_GETFLAGS | FS_IOC_FSGETXATTR | FIONREAD) {
+                    return resume(pid, false, 0);
+                }
+                set_argument(&mut regs, 0, u64::MAX);
+                set_registers(pid, &regs)?;
+                self.pending.insert(pid, Pending::ForcedError(libc::EROFS));
+                return resume(pid, true, 0);
+            }
+            return resume(pid, false, 0);
+        }
         if matches!(
             call,
             libc::SYS_fchmod
