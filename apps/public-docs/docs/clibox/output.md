@@ -30,6 +30,8 @@ Configuration input/output and nesting limits are documented in [Configuration c
 
 External services observed by `run with-service` are never terminated. A managed service, retry attempt, or timeout-owned workload is stopped on a wrapper timeout, cancellation, or failure. A second cancellation skips any remaining cleanup grace. Wrapper diagnostics remain on stderr and omit names, commands, environment values, URLs, credentials, response data, and paths.
 
+When installed through npm on Unix, clibox forwards SIGINT, SIGTERM, and SIGHUP to the native command, including signals sent directly to the launcher process.
+
 Warnings/errors use structured stderr diagnostics. Set `RUST_LOG=debug` for more detail. Stdout remains dedicated to results or the delegated child's output. Color is used only on a TTY and respects `NO_COLOR`. Clibox-authored diagnostics omit clipboard text, environment values, transformation input, patterns, replacements, digests, complete argv, full URLs and paths; a child program still controls its own inherited output.
 
 For port permission errors, inspect the returned partial results and use the appropriate user/session permissions; clibox does not elevate privileges. Clipboard access needs a reachable desktop session, its normal display authorization and the listed installed tools. A busy Windows clipboard or a Wayland compositor without the required capability produces an actionable failure. Open failures may indicate missing applications, URI associations, Linux xdg-utils or desktop access. Errors after dispatch do not guarantee that nothing opened.

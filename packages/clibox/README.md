@@ -108,7 +108,7 @@ Rate and lock names use case-sensitive ASCII `[A-Za-z0-9._-]` up to 128 characte
 
 `with-retry` defaults to three attempts, a 1 s delay, factor 2, 30 s cap, and full jitter. It retries nonzero numeric exits by default, or only repeated `--retry-exit-code` values; it does not replay stdin or retry spawn failures/Unix signal termination. `with-timeout` needs a positive total or idle limit. Any stdout/stderr bytes reset idle time and are forwarded promptly, but interactive TTY identity is not guaranteed.
 
-Natural child status is retained. Admission/readiness/overall/idle timeout exits 124; invalid arguments exit 2; wrapper failure exits 1; Ctrl+C/Ctrl+Break exits 130; Unix SIGTERM exits 143. Cleanup requests graceful termination, waits the configured grace, then forces owned process-tree termination and waits up to five seconds for confirmation. Diagnostics remain redacted stderr output; the Node launcher does no parsing, state access, network request, or shell execution.
+Natural child status is retained. Admission/readiness/overall/idle timeout exits 124; invalid arguments exit 2; wrapper failure exits 1; Ctrl+C/Ctrl+Break exits 130; Unix SIGTERM exits 143. Cleanup requests graceful termination, waits the configured grace, then forces owned process-tree termination and waits up to five seconds for confirmation. On Unix, the npm launcher forwards SIGINT, SIGTERM, and SIGHUP to the native command, including PID-targeted signals. Diagnostics remain redacted stderr output; the Node launcher does no parsing, state access, network request, or shell execution.
 
 ### Inspect and terminate port owners
 

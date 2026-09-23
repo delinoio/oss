@@ -87,7 +87,7 @@ Names are case-sensitive ASCII letters, digits, dots, underscores, or hyphens, u
 
 `with-retry` defaults to three attempts, 1 s delay, factor 2, 30 s cap, and full jitter. It retries nonzero numeric exits (or only repeated `--retry-exit-code` values), never replays consumed stdin, and does not retry spawn errors or Unix signal termination. `with-timeout` requires a positive total or idle limit; any stdout/stderr bytes reset idle timing and are forwarded promptly, though TTY identity is not guaranteed. Every wrapper has `--kill-after DURATION` (default `5s`); it requests graceful owned-tree termination, then forces after the grace period and waits up to five seconds for confirmation.
 
-Natural child status and Unix signal identity are preserved. Wrapper timeouts return 124, invalid arguments return 2, other wrapper failures return 1, Ctrl+C/Ctrl+Break returns 130, and Unix SIGTERM returns 143. Diagnostics are redacted stderr logs and never include wrapper names, argv, paths, URLs, environment values, credentials, or HTTP content.
+Natural child status and Unix signal identity are preserved. Wrapper timeouts return 124, invalid arguments return 2, other wrapper failures return 1, Ctrl+C/Ctrl+Break returns 130, and Unix SIGTERM returns 143. On Unix, the npm launcher forwards SIGINT, SIGTERM, and SIGHUP to the native command, including PID-targeted signals. Diagnostics are redacted stderr logs and never include wrapper names, argv, paths, URLs, environment values, credentials, or HTTP content.
 
 ### Inspect and terminate port owners
 

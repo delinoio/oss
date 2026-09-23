@@ -34,19 +34,17 @@ function resolveBinary(manifestPath = path.join(__dirname, "..", "package.json")
   return binary;
 }
 
-function launch(binary, args, { spawnChild = spawn, parent = process, platform = process.platform, terminalInput = parent.stdin?.isTTY === true } = {}) {
+function launch(binary, args, { spawnChild = spawn, parent = process, platform = process.platform } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawnChild(binary, args, { stdio: "inherit", shell: false });
     const signals = ["SIGINT", "SIGTERM", "SIGHUP", ...(platform === Platform.Windows ? ["SIGBREAK"] : [])];
     const handlers = signals.map((signal) => [signal, () => {
       // Windows broadcasts console Ctrl+C/Break to both processes. Node's kill
       // API forcibly terminates Windows children, so forwarding would race the
-      // native handler's cleanup and numeric exit status. A foreground Unix
-      // terminal broadcasts SIGINT to the native child's process group too;
-      // SIGTERM and SIGHUP can instead target only this launcher and must keep
-      // their explicit forwarding semantics.
+      // native handler's cleanup and numeric exit status. Unix signals must
+      // always be forwarded: a supervisor can target this launcher's PID even
+      // when stdin is attached to a foreground terminal.
       if (platform === Platform.Windows && (signal === "SIGINT" || signal === "SIGBREAK")) return;
-      if (platform !== Platform.Windows && terminalInput && signal === "SIGINT") return;
       if (child.exitCode === null && child.signalCode === null) child.kill(signal);
     }]);
     for (const [signal, handler] of handlers) parent.on(signal, handler);
