@@ -1668,14 +1668,14 @@ impl Activity {
             .as_nanos();
         let elapsed = u64::try_from(elapsed).unwrap_or(u64::MAX);
         self.latest_elapsed_nanos
-            .fetch_max(elapsed, std::sync::atomic::Ordering::Relaxed);
+            .fetch_max(elapsed, std::sync::atomic::Ordering::Release);
     }
 
     fn last_observed_at(&self) -> Instant {
         self.started_at
             .checked_add(Duration::from_nanos(
                 self.latest_elapsed_nanos
-                    .load(std::sync::atomic::Ordering::Relaxed),
+                    .load(std::sync::atomic::Ordering::Acquire),
             ))
             .unwrap_or_else(Instant::now)
     }
