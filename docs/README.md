@@ -14,7 +14,7 @@ Each project must have one project index document and one or more domain contrac
 - Do not arbitrarily omit, delete, or simplify requested or source-backed content during documentation edits unless the user explicitly asks for that outcome.
 - If documentation content, scope, or intent is ambiguous, ask the user before deciding what to remove, merge, or reinterpret.
 - If a documentation change affects repository or domain policy boundaries, update or create the relevant `AGENTS.md` file in the same change when needed.
-- `docs/` remains the internal source of truth for contracts, architecture notes, repo-local paths, and implementation details. Public documentation is owned and built by `apps/public-docs`; the project content roots are `apps/public-docs/docs/{runmoor,nodeup,binpm,async-commit-hook,clibox}`. Those pages must curate from these contracts without documenting repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
+- `docs/` remains the internal source of truth for contracts, architecture notes, repo-local paths, and implementation details. Public documentation is owned and built by `apps/public-docs`; the project content roots are `apps/public-docs/docs/{runmoor,nodeup,binpm,async-commit-hook,clibox,pnport}`. Those pages must curate from these contracts without documenting repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 
 ## Naming Rules
 - Project index docs: `docs/project-<project-id>.md`
@@ -73,7 +73,7 @@ Each project must have one project index document and one or more domain contrac
 
 ### public-docs
 - `docs/project-public-docs.md`
-- `docs/apps-public-docs-foundation.md` (single `oss.delino.io` publisher, five project subpaths, site selector, and stable `/devhud` section)
+- `docs/apps-public-docs-foundation.md` (single `oss.delino.io` publisher, six project subpaths, site selector, and stable `/devhud` section)
 - `docs/packages-docs-site-switcher-contract.md` (shared accessible documentation site selector package and fixed site registry)
 
 ### serde-feather
@@ -125,4 +125,4 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - [Rust foundation](crates-pnport-foundation.md)
 - [Complete issue #958 requirements](crates-pnport-requirements.md)
 - [npm/native distribution](packages-pnport-distribution-contract.md)
-- [Public documentation](apps-pnport-docs-foundation.md)
+- [Public documentation](apps-pnport-docs-foundation.md) (ten guides under `/pnport`, with 0.1.0 marked unreleased)

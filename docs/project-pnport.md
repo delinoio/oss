@@ -9,7 +9,7 @@ Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph withou
 ## Domain Ownership Map
 - Rust: `crates/pnport` and `crates/pnport-preload`, the private native CLI and filesystem/runtime implementation.
 - Packages: `packages/pnport`, the private source of the npm launcher and six native optional packages.
-- Apps (planned content): `apps/public-docs/docs/pnport`, the consolidated public guides at `https://oss.delino.io/pnport`.
+- Apps: `apps/public-docs/docs/pnport`, the consolidated public guide sources for `https://oss.delino.io/pnport`. They build into the public-docs tree before a pnport distribution and visibly mark 0.1.0 as unreleased.
 
 ## Domain Contract Documents
 - [Rust foundation](crates-pnport-foundation.md)
@@ -27,7 +27,7 @@ Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph withou
 - Unsupported interception fails closed. Never substitute a protected executable, elevate privileges, silently run without virtualization, or claim universal executable compatibility.
 - The complete requirements remain normative even when a development build has incomplete platform capabilities. Readiness must describe evidence truthfully and block publication until every gate passes.
 
-The current source change provides a tested development foundation. [The Rust evidence section](crates-pnport-foundation.md#current-implementation-evidence-and-remaining-gates) records the remaining acceptance work. It must not be described as a completed issue or a releasable 0.1.0 implementation.
+The current source provides a tested development foundation and public guides, not a releasable implementation. [The Rust evidence section](crates-pnport-foundation.md#current-implementation-evidence-and-remaining-gates) records the remaining acceptance work. The public route does not establish distribution availability or completion of issue #958.
 
 ## Change Policy
 Update this index, the relevant domain contracts and AGENTS files together. Record implemented behavior and outstanding release gates separately; do not narrow #958 by omission.

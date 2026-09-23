@@ -18,7 +18,7 @@
 ### Scope in This Domain
 
 - `apps/mpapp`: Expo React Native mobile app.
-- `apps/public-docs`: Rspress static public documentation app, including the `docs/binpm`, `docs/nodeup`, `docs/runmoor`, `docs/async-commit-hook`, and `docs/clibox` content roots.
+- `apps/public-docs`: Rspress static public documentation app, including the `docs/binpm`, `docs/nodeup`, `docs/runmoor`, `docs/async-commit-hook`, `docs/clibox`, and `docs/pnport` content roots.
 - `apps/devhud`: implemented deterministic bilingual React/TypeScript shell, complete guest/Logto identity, synchronized Settings and opt-in diagnostics boundaries, direct-client GitHub.com provider/setup and issue submission, desktop RealQA capture/editor/encrypted drafts/direct official and BYO R2 uploads, populated Deck surface, desktop Native Messaging integration, target-isolated Rust/Tauri desktop CEF plus iOS/Android system-webview hosts, and production WidgetKit/AppWidgetProvider Deck widgets; other populated product surfaces remain planned.
 - `apps/devhud-chrome-extension`: implemented deterministic bilingual Chrome Manifest V3 DevHud context-picker extension.
 - `apps/devhud-admin`: implemented React/TypeScript Rsbuild administrator SPA embedded at `/admin`; it is the sole producer and validator of the ignored production administrator `dist`.
@@ -107,7 +107,7 @@
 - `public-docs` must use clean URLs, write production output to `apps/public-docs/doc_build`, and validate stable route artifacts plus generated internal `.html` links through `pnpm --filter public-docs test`.
 - Current public-docs in-site top-level product page IDs are `devhud`, `cargo-mono`, `derun`, and `with-watch`.
 - The stable `/devhud` page documents public product availability and the coordinated all-channels GA rule without exposing release credentials, private workflow details, or deployment internals.
-- Nodeup, binpm, Runmoor, async-commit-hook, and clibox are exposed from `apps/public-docs/docs` through canonical same-origin subpaths `/nodeup`, `/binpm`, `/runmoor`, `/async-commit-hook`, and `/clibox`. Their Markdown is owned directly by these content roots and must not be duplicated elsewhere.
+- Nodeup, binpm, Runmoor, async-commit-hook, clibox, and pnport are exposed from `apps/public-docs/docs` through canonical same-origin subpaths `/nodeup`, `/binpm`, `/runmoor`, `/async-commit-hook`, `/clibox`, and `/pnport`. Their Markdown is owned directly by these content roots and must not be duplicated elsewhere. pnport's guides must retain the unreleased 0.1.0 availability notice until a complete distribution is verified.
 - Do not add legacy handoff pages, aliases, or redirects for the consolidated project subpaths. Operators decommission the former standalone Pages projects and DNS records only after the consolidated deployment, route, switcher, and installer checks pass.
 - `public-docs` must curate repository contracts into public guidance and must not document repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 - When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
@@ -174,7 +174,7 @@
 - Follow `docs/repository-linux-packages-contract.md`. The shared public `/linux-packages` route owns APT/DNF setup and key verification; standalone CLI installation pages retain product-specific guidance.
 - Public package documentation includes the exact public fingerprint, supported systems, stable/preview registration, installation/update/removal, and explicit Runmoor service ownership. Keep R2, signing secrets, CI and recovery internals in `docs/`.
 - Only the shared package registration page may show its exact contracted `/etc/apt`, `/etc/yum.repos.d` and `/usr/share/keyrings` installation paths; never broaden unrelated public filesystem-path exceptions.
-- The canonical public-docs production origin is `https://oss.delino.io`; shared Linux package guidance is `https://oss.delino.io/linux-packages`. Consolidated project documentation uses the same origin with `/runmoor`, `/nodeup`, `/binpm`, `/async-commit-hook`, and `/clibox` prefixes.
+- The canonical public-docs production origin is `https://oss.delino.io`; shared Linux package guidance is `https://oss.delino.io/linux-packages`. Consolidated project documentation uses the same origin with `/runmoor`, `/nodeup`, `/binpm`, `/async-commit-hook`, `/clibox`, and `/pnport` prefixes.
 - Public native-package registration examples must spell out the complete repository configuration with a quoted heredoc, preserving APT Signed-By and both DNF signature checks. Do not bootstrap trust by installing an unverified configuration file downloaded from package storage.
 
 - Native package documentation must distinguish implemented release integration from published availability. No native packages have been published yet; mark every CLI package-manager example as unavailable until its own public installation verification completes. Runmoor and clibox use stable.
