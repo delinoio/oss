@@ -115,7 +115,7 @@ pub fn to_usize(value: impl Into<u64>) -> usize {
         assert!(
             size_of::<usize>() == size_of::<u64>(),
             "requires a 64-bit target"
-        )
+        );
     };
     value.into() as usize
 }
