@@ -24,6 +24,8 @@ Linux static syscall mediation translates pathname extended-attribute and filesy
 
 Valid Linux `AT_EMPTY_PATH` operations target their file descriptor directly. Native file descriptors retain kernel behavior; tracked read-only dependency descriptors reject access-for-write, metadata mutations, and hard-link creation with `EROFS`.
 
+Linux `recvmsg` and `recvmmsg` calls with an ancillary receive buffer fail before the kernel can install `SCM_RIGHTS` descriptors outside the thread group's tracked FD map. They report `PNPORT_UNSUPPORTED_OPERATION` and exit 125. Receives without an ancillary buffer retain native behavior.
+
 Virtual dependency entries expose matching symlink type and target-byte length through `lstat` and `fstatat(..., AT_SYMLINK_NOFOLLOW)`, including directory-relative handles. Following `fstatat` calls expose the target directory; ordinary files and missing paths keep native metadata/error behavior.
 
 Relative `*at` operations validate the live descriptor as a directory before joining or normalizing paths, including `..`. Regular-file descriptors return `ENOTDIR` and invalid descriptors return `EBADF`, whether tracked or duplicated outside interception. Absolute paths continue to ignore the supplied directory descriptor. Native cwd state follows the live process handle after symlink retargeting or directory rename; only translated virtual cwd paths need saved logical identity.

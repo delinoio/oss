@@ -162,6 +162,8 @@ fn traced_syscalls() -> Vec<i64> {
         libc::SYS_dup,
         libc::SYS_dup3,
         libc::SYS_fcntl,
+        libc::SYS_recvmsg,
+        libc::SYS_recvmmsg,
         libc::SYS_unlinkat,
         libc::SYS_mkdirat,
         libc::SYS_renameat,
@@ -579,6 +581,27 @@ fn read_remote(pid: i32, address: u64, max: usize) -> Result<Vec<u8>> {
     output.truncate(count as usize);
     Ok(output)
 }
+
+fn receives_ancillary_data(pid: i32, message: u64) -> Result<bool> {
+    if message == 0 {
+        // Leave a null pointer to the kernel's ordinary EFAULT handling.
+        return Ok(false);
+    }
+    let bytes = read_remote(pid, message, mem::size_of::<libc::msghdr>())?;
+    if bytes.len() != mem::size_of::<libc::msghdr>() {
+        return Err(injection_failed());
+    }
+    let mut header = unsafe { mem::zeroed::<libc::msghdr>() };
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            bytes.as_ptr(),
+            (&mut header as *mut libc::msghdr).cast(),
+            bytes.len(),
+        );
+    }
+    Ok(!header.msg_control.is_null() && header.msg_controllen > 0)
+}
+
 fn read_path(pid: i32, address: u64) -> Result<PathBuf> {
     if address == 0 {
         return Err(injection_failed());
@@ -1525,6 +1548,32 @@ impl Trace<'_> {
             return Err(unsupported(
                 "This Linux filesystem interface cannot be mediated.",
             ));
+        }
+        if call == libc::SYS_recvmsg || call == libc::SYS_recvmmsg {
+            let messages = argument(&regs, 1);
+            let count = if call == libc::SYS_recvmsg {
+                1
+            } else {
+                // Linux caps recvmmsg's vlen at UIO_MAXIOV.
+                (argument(&regs, 2) as usize).min(1024)
+            };
+            let stride = mem::size_of::<libc::mmsghdr>() as u64;
+            for index in 0..count {
+                let address = messages
+                    .checked_add((index as u64) * stride)
+                    .ok_or_else(injection_failed)?;
+                if receives_ancillary_data(pid, address)? {
+                    // An SCM_RIGHTS receive would install a new descriptor
+                    // outside the group's ownership map. Stop before the
+                    // kernel can create it, including for another thread.
+                    deny_syscall(&mut regs);
+                    set_registers(pid, &regs)?;
+                    return Err(unsupported(
+                        "Linux ancillary descriptor reception cannot be mediated.",
+                    ));
+                }
+            }
+            return resume(pid, false, 0);
         }
         if call == libc::SYS_clone || call == libc::SYS_clone3 || call == libc::SYS_unshare {
             let flags = if call == libc::SYS_clone3 {

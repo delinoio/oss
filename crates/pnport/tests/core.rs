@@ -696,6 +696,131 @@ int main(int argc, char **argv) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_rejects_ancillary_descriptor_receives_before_fd_mutation() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("received-fd.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc != 3) return 39;
+    if (argv[2][0] == 'p') {
+        int plain[2];
+        if (socketpair(AF_UNIX, SOCK_DGRAM, 0, plain)) return 48;
+        char byte = 'p';
+        if (send(plain[0], &byte, 1, 0) != 1) return 49;
+        char received_byte;
+        struct iovec data = {.iov_base = &received_byte, .iov_len = 1};
+        struct msghdr message = {.msg_iov = &data, .msg_iovlen = 1};
+        if (recvmsg(plain[1], &message, 0) != 1 || received_byte != 'p') return 50;
+        int marker = open(argv[1], O_CREAT | O_WRONLY, 0600);
+        if (marker < 0) return 51;
+        close(marker);
+        return 0;
+    }
+    int fd = open("node_modules/dep/file.txt", O_RDONLY);
+    if (fd < 0) return 40;
+    int sockets[2];
+    if (socketpair(AF_UNIX, SOCK_DGRAM, 0, sockets)) return 41;
+    char byte = 'x';
+    struct iovec sent_data = {.iov_base = &byte, .iov_len = 1};
+    union { struct cmsghdr align; char bytes[CMSG_SPACE(sizeof(int))]; } sent_control = {0};
+    struct msghdr sent = {.msg_iov = &sent_data, .msg_iovlen = 1,
+        .msg_control = sent_control.bytes, .msg_controllen = sizeof(sent_control.bytes)};
+    struct cmsghdr *control = CMSG_FIRSTHDR(&sent);
+    control->cmsg_level = SOL_SOCKET;
+    control->cmsg_type = SCM_RIGHTS;
+    control->cmsg_len = CMSG_LEN(sizeof(int));
+    memcpy(CMSG_DATA(control), &fd, sizeof(fd));
+    if (sendmsg(sockets[0], &sent, 0) != 1) return 42;
+    char received_byte;
+    struct iovec received_data = {.iov_base = &received_byte, .iov_len = 1};
+    union { struct cmsghdr align; char bytes[CMSG_SPACE(sizeof(int))]; } received_control = {0};
+    struct msghdr received = {.msg_iov = &received_data, .msg_iovlen = 1,
+        .msg_control = received_control.bytes, .msg_controllen = sizeof(received_control.bytes)};
+    if (argv[2][0] == 'm') {
+        struct mmsghdr batch = {.msg_hdr = received};
+        if (recvmmsg(sockets[1], &batch, 1, 0, 0) != 1) return 43;
+        received = batch.msg_hdr;
+    } else if (recvmsg(sockets[1], &received, 0) != 1) {
+        return 44;
+    }
+    control = CMSG_FIRSTHDR(&received);
+    if (!control || control->cmsg_type != SCM_RIGHTS) return 45;
+    int transferred;
+    memcpy(&transferred, CMSG_DATA(control), sizeof(transferred));
+    if (fchmod(transferred, 0600)) return 46;
+    int marker = open(argv[1], O_CREAT | O_WRONLY, 0600);
+    if (marker < 0) return 47;
+    close(marker);
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("received-fd");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let marker = root.path().join("received-fd-marker");
+    assert_eq!(
+        Command::new(&executable)
+            .arg(&marker)
+            .arg("recvmsg")
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(40)
+    );
+    for mode in ["recvmsg", "mmsg"] {
+        let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .args(["run", "--"])
+            .arg(&executable)
+            .arg(&marker)
+            .arg(mode)
+            .output()
+            .unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(125),
+            "mode={mode} stderr={}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+        assert!(!marker.exists());
+    }
+    let plain = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(&marker)
+        .arg("plain")
+        .output()
+        .unwrap();
+    assert_eq!(
+        plain.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&plain.stderr)
+    );
+    assert!(marker.exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_native_cwd_uses_live_directory_after_symlink_and_rename() {
     use std::process::Command;
     let root = fixture();
