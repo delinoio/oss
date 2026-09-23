@@ -1745,20 +1745,29 @@ fn nested_wrapper_state() -> bool {
         return true;
     }
 
-    // The installed launcher is a supported intermediate process: the outer
-    // wrapper creates its group for Node, and the inner native wrapper shares
-    // that group. Verify the complete parent/grandparent relationship rather
-    // than trusting launcher arguments or environment values, which workloads
-    // can control.
-    if process_group != parent || unsafe { libc::getpgid(parent) } != parent {
-        return false;
+    // An installed Node launcher is an intermediate process: the outer
+    // wrapper creates a group for it, and every nested wrapper under that
+    // launcher must share the group. More launchers may be introduced by
+    // further supported wrappers, so walk the contiguous ancestor segment in
+    // that group until reaching its owning native wrapper. This is structural
+    // process state, rather than launcher arguments or environment values
+    // that workloads can control. Keep the walk bounded to fail closed if the
+    // process hierarchy changes while it is being examined.
+    const MAX_LAUNCHER_ANCESTORS: usize = 64;
+    let mut ancestor = parent;
+    for _ in 0..MAX_LAUNCHER_ANCESTORS {
+        if ancestor <= 0 {
+            return false;
+        }
+        if unsafe { libc::getpgid(ancestor) } != process_group {
+            return executable_matches(ancestor, &current);
+        }
+        let Some(next) = parent_process(ancestor) else {
+            return false;
+        };
+        ancestor = next;
     }
-    let Some(grandparent) = parent_process(parent) else {
-        return false;
-    };
-    grandparent > 0
-        && unsafe { libc::getpgid(grandparent) } != process_group
-        && executable_matches(grandparent, &current)
+    false
 }
 
 #[cfg(unix)]
