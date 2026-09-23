@@ -186,30 +186,6 @@ pub fn interruptible_until<T: Send + 'static>(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn interruptible_work_stops_waiting_at_its_deadline() {
-        let (release, blocked_work) = mpsc::sync_channel(0);
-        let deadline = Instant::now()
-            .checked_add(Duration::from_millis(1))
-            .unwrap();
-
-        let error = match interruptible_until(Some(deadline), move || {
-            let _ = blocked_work.recv();
-            Ok(())
-        }) {
-            Ok(()) => panic!("blocked work must not outlive its deadline"),
-            Err(error) => error,
-        };
-
-        assert_eq!(error.code, Code::TerminationTimeout);
-        release.send(()).unwrap();
-    }
-}
-
 pub fn read_bounded(mut reader: impl Read, limit: usize) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     reader
@@ -275,5 +251,29 @@ pub fn wait_child(child: &mut Child, kill_on_cancel: bool) -> Result<ExitStatus>
             return Ok(status);
         }
         std::thread::sleep(POLL);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn interruptible_work_stops_waiting_at_its_deadline() {
+        let (release, blocked_work) = mpsc::sync_channel(0);
+        let deadline = Instant::now()
+            .checked_add(Duration::from_millis(1))
+            .unwrap();
+
+        let error = match interruptible_until(Some(deadline), move || {
+            let _ = blocked_work.recv();
+            Ok(())
+        }) {
+            Ok(()) => panic!("blocked work must not outlive its deadline"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.code, Code::TerminationTimeout);
+        release.send(()).unwrap();
     }
 }
