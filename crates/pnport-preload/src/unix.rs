@@ -31,7 +31,10 @@ impl Guard {
         if !TLS_READY.load(Ordering::Acquire) {
             return None;
         }
-        INSIDE.with(|inside| (!inside.replace(true)).then_some(Self))
+        // `then_some(Self)` eagerly creates and drops a guard on recursive
+        // entry. Its Drop would clear the outer guard and let cache I/O
+        // re-enter the runtime mutex while translation still holds it.
+        INSIDE.with(|inside| (!inside.replace(true)).then(|| Self))
     }
 }
 impl Drop for Guard {
