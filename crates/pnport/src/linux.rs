@@ -1813,7 +1813,9 @@ impl Trace<'_> {
                             bytes.len(),
                         );
                     }
-                    info.stx_mode = (info.stx_mode & !(libc::S_IFMT as u16)) | libc::S_IFLNK as u16;
+                    info.stx_mode = (info.stx_mode & !((libc::S_IFMT | 0o7777) as u16))
+                        | libc::S_IFLNK as u16
+                        | 0o777;
                     info.stx_size = target_len as u64;
                     let raw = unsafe {
                         std::slice::from_raw_parts(
@@ -1835,7 +1837,8 @@ impl Trace<'_> {
                             bytes.len(),
                         );
                     }
-                    info.st_mode = (info.st_mode & !libc::S_IFMT) | libc::S_IFLNK;
+                    info.st_mode =
+                        (info.st_mode & !(libc::S_IFMT | 0o7777)) | libc::S_IFLNK | 0o777;
                     info.st_size = target_len as i64;
                     let raw = unsafe {
                         std::slice::from_raw_parts(

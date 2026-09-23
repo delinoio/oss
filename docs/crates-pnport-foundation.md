@@ -32,6 +32,8 @@ Opening a same-group `/proc/.../exe` alias retains the active executable's manag
 
 Virtual dependency entries expose matching symlink type and target-byte length through `lstat` and `fstatat(..., AT_SYMLINK_NOFOLLOW)`, including directory-relative handles. Following `fstatat` calls expose the target directory; ordinary files and missing paths keep native metadata/error behavior.
 
+Linux virtual-link `lstat`, non-following `fstatat`, and `statx` results synthesize the ordinary symlink mode `0777` alongside the symlink type and target length; the backing target's permission and special bits do not leak into link metadata.
+
 Relative `*at` operations validate the live descriptor as a directory before joining or normalizing paths, including `..`. Regular-file descriptors return `ENOTDIR` and invalid descriptors return `EBADF`, whether tracked or duplicated outside interception. Absolute paths continue to ignore the supplied directory descriptor. Native cwd state follows the live process handle after symlink retargeting or directory rename; only translated virtual cwd paths need saved logical identity.
 
 The Linux supervisor keys logical cwd and tracked descriptor state by thread group. Cross-group `CLONE_FS` and `CLONE_FILES` sharing, plus `unshare` of either context, fail before the syscall with `PNPORT_UNSUPPORTED_OPERATION` and exit 125; within-group threads continue to share the tracked state.

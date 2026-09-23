@@ -399,7 +399,11 @@ int main(int argc, char **argv) {
     if (fd < 0 || fchmod(fd, 0600) != -1 || errno != EROFS) return 55;
     close(fd);
     closedir(dir);
-    if (lstat("node_modules/dep", &info) || !S_ISLNK(info.st_mode)) return 27;
+    if (lstat("node_modules/dep", &info) || !S_ISLNK(info.st_mode) || (info.st_mode & 07777) != 0777) return 27;
+    if (fstatat(AT_FDCWD, "node_modules/dep", &info, AT_SYMLINK_NOFOLLOW) || (info.st_mode & 07777) != 0777) return 60;
+    struct statx link_info;
+    if (syscall(SYS_statx, AT_FDCWD, "node_modules/dep", AT_SYMLINK_NOFOLLOW, STATX_MODE, &link_info) ||
+        (link_info.stx_mode & 07777) != 0777) return 61;
     errno = 0;
     if (open("node_modules/dep", O_RDONLY | O_NOFOLLOW) != -1 || errno != ELOOP) return 44;
     int link_fd = open("node_modules/dep", O_PATH | O_NOFOLLOW);
