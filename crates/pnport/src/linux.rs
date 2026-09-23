@@ -38,6 +38,7 @@ const PATH_LIMIT: usize = 4096;
 const OPEN_HOW_SIZE: usize = 24;
 const RESOLVE_BENEATH: u64 = 0x08;
 const RESOLVE_IN_ROOT: u64 = 0x10;
+const CLOSE_RANGE_UNSHARE: u32 = 2;
 const TRACE_OPTIONS: usize = (libc::PTRACE_O_TRACESYSGOOD
     | libc::PTRACE_O_TRACEFORK
     | libc::PTRACE_O_TRACEVFORK
@@ -148,6 +149,7 @@ fn traced_syscalls() -> Vec<i64> {
         libc::SYS_fchdir,
         libc::SYS_getcwd,
         libc::SYS_close,
+        libc::SYS_close_range,
         libc::SYS_dup,
         libc::SYS_dup3,
         libc::SYS_fcntl,
@@ -618,6 +620,7 @@ fn resume(pid: i32, syscall_exit: bool, signal: i32) -> Result<()> {
 enum Pending {
     Open(Translation),
     Close(i32),
+    CloseRange(u32, u32),
     Dup(i32),
     ChangeDirectory(PathBuf),
     LinkMetadata {
@@ -1173,6 +1176,25 @@ impl Trace<'_> {
                 "This Linux filesystem interface cannot be mediated.",
             ));
         }
+        if call == libc::SYS_close_range {
+            let flags = argument(&regs, 2) as u32;
+            if flags & CLOSE_RANGE_UNSHARE != 0 {
+                return Err(unsupported(
+                    "Linux close_range with UNSHARE cannot preserve descriptor ownership.",
+                ));
+            }
+            if flags == 0 {
+                self.pending.insert(
+                    pid,
+                    Pending::CloseRange(argument(&regs, 0) as u32, argument(&regs, 1) as u32),
+                );
+                return resume(pid, true, 0);
+            }
+            // CLOEXEC leaves the table intact until the exec event, where
+            // we reconcile surviving descriptors against /proc. Invalid
+            // flags retain the kernel's EINVAL result.
+            return resume(pid, false, 0);
+        }
         if self.path_call(pid, regs).inspect_err(|error| {
             tracing::debug!(
                 action = "linux_path_failure",
@@ -1263,6 +1285,12 @@ impl Trace<'_> {
             }
             Pending::Close(fd) if returned == 0 => {
                 self.fds.entry(group).or_default().remove(&fd);
+            }
+            Pending::CloseRange(first, last) if returned == 0 => {
+                self.fds
+                    .entry(group)
+                    .or_default()
+                    .retain(|fd, _| (*fd as u32) < first || (*fd as u32) > last);
             }
             Pending::Dup(fd) if returned >= 0 => {
                 let entry = self.fds.entry(group).or_default();
