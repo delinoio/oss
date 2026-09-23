@@ -962,6 +962,9 @@ fn check_http(
         if runtime::cancelled() {
             return Err(HttpProbeError::Cancelled);
         }
+        if let Some(result) = queued_probe_result(&receiver, attempt_deadline, deadline) {
+            return result;
+        }
         let until_attempt = attempt_deadline.saturating_duration_since(Instant::now());
         if until_attempt.is_zero() {
             return Err(HttpProbeError::AttemptTimeout);
@@ -979,6 +982,22 @@ fn check_http(
             Err(mpsc::RecvTimeoutError::Timeout) => (),
             Err(mpsc::RecvTimeoutError::Disconnected) => return Err(HttpProbeError::Terminal),
         }
+    }
+}
+
+fn queued_probe_result(
+    receiver: &mpsc::Receiver<HttpProbe>,
+    attempt_deadline: Instant,
+    overall_deadline: Option<Instant>,
+) -> Option<std::result::Result<(), HttpProbeError>> {
+    match receiver.try_recv() {
+        Ok(probe) => Some(bounded_probe_result(
+            probe,
+            attempt_deadline,
+            overall_deadline,
+        )),
+        Err(mpsc::TryRecvError::Empty) => None,
+        Err(mpsc::TryRecvError::Disconnected) => Some(Err(HttpProbeError::Terminal)),
     }
 }
 
@@ -4451,6 +4470,26 @@ mod lifecycle_tests {
                 Some(overall_deadline),
             ),
             Err(HttpProbeError::AttemptTimeout)
+        ));
+    }
+
+    #[test]
+    fn readiness_uses_a_queued_success_observed_before_its_deadline() {
+        let observed_at = Instant::now();
+        let deadline = observed_at.checked_add(Duration::from_millis(1)).unwrap();
+        let (sender, receiver) = mpsc::sync_channel(1);
+        sender
+            .send(HttpProbe {
+                result: Ok(()),
+                observed_at,
+            })
+            .unwrap();
+
+        thread::sleep(Duration::from_millis(2));
+
+        assert!(matches!(
+            queued_probe_result(&receiver, deadline, Some(deadline)),
+            Some(Ok(()))
         ));
     }
 
