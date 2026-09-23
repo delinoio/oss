@@ -19,7 +19,7 @@
 
 - Destinations are fixed same-origin paths and must not be constructed from user input.
 - The menu is server-rendered for stable current-site semantics but remains hidden until opened.
-- Focus-visible states and a reduced-motion fallback are required. Mobile layouts must keep every destination reachable without horizontal overflow.
+- Focus-visible states and a reduced-motion fallback are required. Mobile layouts must keep every destination reachable without horizontal overflow; the fixed menu is height-bounded and scrollable on short viewports.
 
 ## Build and Test
 
