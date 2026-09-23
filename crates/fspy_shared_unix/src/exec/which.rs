@@ -11,17 +11,19 @@ fn concat<R>(s: &[&BStr], callback: impl FnOnce(&BStr) -> R) -> R {
             let bytes: &[u8] = s.as_ref();
             let src_ptr = bytes.as_ptr();
             let dst_ptr = buf[pos..next_pos].as_mut_ptr().cast::<u8>();
-            // SAFETY: `src_ptr` and `dst_ptr` are derived from valid slices of known lengths,
-            // they do not overlap (src is from the input slice, dst is from the stack-allocated buffer),
-            // and `s.len()` bytes are within bounds for both.
+            // SAFETY: `src_ptr` and `dst_ptr` are derived from valid slices of known
+            // lengths, they do not overlap (src is from the input slice, dst is
+            // from the stack-allocated buffer), and `s.len()` bytes are within
+            // bounds for both.
             unsafe {
                 std::ptr::copy_nonoverlapping(src_ptr, dst_ptr, s.len());
             }
             pos = next_pos;
         }
         debug_assert_eq!(pos, buf.len());
-        // SAFETY: `buf.as_ptr()` points to a valid allocation of `buf.len()` bytes that was
-        // fully initialized by the copy loop above (verified by the debug_assert).
+        // SAFETY: `buf.as_ptr()` points to a valid allocation of `buf.len()` bytes that
+        // was fully initialized by the copy loop above (verified by the
+        // debug_assert).
         let bytes = unsafe { std::slice::from_raw_parts(buf.as_ptr().cast::<u8>(), buf.len()) };
         callback(bytes.as_bstr())
     })
@@ -34,9 +36,11 @@ const NAME_MAX: usize = 255;
 /// Referenced musl Implementation: <https://github.com/kraj/musl/blob/1b06420abdf46f7d06ab4067e7c51b8b63731852/src/process/execvp.c#L5>
 ///
 /// Difference from musl:
-/// - Instead of actually calling execve, use `access_executable` to check if the file is executable, and call `callback` with the found executable.
+/// - Instead of actually calling execve, use `access_executable` to check if
+///   the file is executable, and call `callback` with the found executable.
 /// - The path limit (`PATH_MAX`) is not checked.
-/// - PATH is passed as parameter instead of using the real environment variable.
+/// - PATH is passed as parameter instead of using the real environment
+///   variable.
 pub fn which<R>(
     file: &BStr,
     path: &BStr,
@@ -94,7 +98,10 @@ mod tests {
 
     #[test]
     fn test_concat() {
-        let s = concat(&["a".into(), "bc".into(), "".into(), "e".into()], BStr::to_owned);
+        let s = concat(
+            &["a".into(), "bc".into(), "".into(), "e".into()],
+            BStr::to_owned,
+        );
         assert_eq!(s, "abce");
     }
 

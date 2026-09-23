@@ -22,8 +22,9 @@ use wincode::{
 ///
 /// On Windows, tracked paths are NT Object Manager paths (`\??` prefix),
 /// whose raw data is not meaningful for direct consumption. The only way
-/// to use the path is through [`strip_path_prefix`](IpcPath::strip_path_prefix),
-/// which normalizes platform differences and extracts a workspace-relative path.
+/// to use the path is through
+/// [`strip_path_prefix`](IpcPath::strip_path_prefix), which normalizes platform
+/// differences and extracts a workspace-relative path.
 #[derive(TransparentWrapper, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct IpcPath {

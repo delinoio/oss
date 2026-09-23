@@ -31,11 +31,19 @@ pub fn artifact() -> Result<PathBuf> {
         .ok()
         .and_then(|p| p.parent().map(Path::to_owned))
         .ok_or_else(injection_error)?;
-    let artifact = directory.join(if cfg!(target_os = "macos") {
+    let packaged = directory.join(if cfg!(target_os = "macos") {
         "libpnport_preload.dylib"
     } else {
         "libpnport_preload.so"
     });
+    // Development uses the fork's crate name; release packaging keeps the
+    // stable pnport companion filename checked by the existing installer.
+    let development = directory.join("libfspy_preload_unix.dylib");
+    let artifact = if cfg!(target_os = "macos") && development.is_file() {
+        development
+    } else {
+        packaged
+    };
     let bytes = fs::read(&artifact).map_err(|_| injection_error())?;
     if !bytes
         .windows(35)
@@ -107,6 +115,15 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
              without another interception library.",
         ));
     }
+    #[cfg(target_os = "macos")]
+    fspy_shared_unix::spawn::configure_pnport_command(&mut command, &prepared.program, artifact)
+        .map_err(|_| {
+            Error::new(
+                Code::PnportUnsupportedOperation,
+                "The executable cannot accept macOS filesystem injection.",
+            )
+        })?;
+    #[cfg(not(target_os = "macos"))]
     command.env(variable, artifact);
     #[cfg(unix)]
     {

@@ -116,7 +116,11 @@ impl<'a, U: CStrUnit> CStr<'a, Thin, U> {
     /// valid for the lifetime of the returned view.
     #[must_use]
     pub const unsafe fn from_non_null(ptr: NonNull<U>) -> Self {
-        Self { ptr, repr: Thin { _private: () }, lifetime: PhantomData }
+        Self {
+            ptr,
+            repr: Thin { _private: () },
+            lifetime: PhantomData,
+        }
     }
 
     /// Creates a thin C string view from a code-unit pointer without finding
@@ -138,7 +142,10 @@ impl<'a, U: CStrUnit> CStr<'a, Thin, U> {
     #[inline]
     #[must_use]
     pub const fn units(self) -> Units<'a, U> {
-        Units { ptr: self.ptr, lifetime: PhantomData }
+        Units {
+            ptr: self.ptr,
+            lifetime: PhantomData,
+        }
     }
 
     /// Counts through the terminating NUL and returns a length-retaining view.
@@ -200,7 +207,11 @@ impl<'a, U: CStrUnit> CStr<'a, Fat, U> {
     /// string.
     #[must_use]
     pub const fn as_thin(self) -> CStr<'a, Thin, U> {
-        CStr { ptr: self.ptr, repr: Thin { _private: () }, lifetime: PhantomData }
+        CStr {
+            ptr: self.ptr,
+            repr: Thin { _private: () },
+            lifetime: PhantomData,
+        }
     }
 
     /// Returns the string's code units without the terminating NUL.
@@ -240,7 +251,10 @@ mod tests {
         assert_eq!(size_of::<CStr<'_, Thin>>(), size_of::<*const u8>());
         assert_eq!(size_of::<CStr<'_, Fat>>(), size_of::<(*const u8, usize)>());
         assert_eq!(size_of::<WideCStr<'_, Thin>>(), size_of::<*const u16>());
-        assert_eq!(size_of::<WideCStr<'_, Fat>>(), size_of::<(*const u16, usize)>());
+        assert_eq!(
+            size_of::<WideCStr<'_, Fat>>(),
+            size_of::<(*const u16, usize)>()
+        );
         assert_eq!(fat.len_with_nul(), 4);
         assert_eq!(fat.as_units(), b"abc");
         assert_eq!(fat.as_units_with_nul(), b"abc\0");

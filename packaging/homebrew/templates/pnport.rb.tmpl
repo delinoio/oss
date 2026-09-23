@@ -28,6 +28,8 @@ class Pnport < Formula
 
   def install
     bin.install "pnport"
+    prefix.install "LICENSE"
+    prefix.install "LICENSE.fspy"
     if OS.mac?
       bin.install "libpnport_preload.dylib"
     else

@@ -15,8 +15,8 @@
 //! - **No repeated writes.** [`Materialize::at`] returns the existing path if
 //!   the file is already there; repeated calls and re-runs skip I/O.
 //! - **Correctness.** Two binaries with different embedded content produce
-//!   different filenames, so a stale file from an older build is never
-//!   mistaken for the current one.
+//!   different filenames, so a stale file from an older build is never mistaken
+//!   for the current one.
 //! - **Coexistence.** Multiple versions of a materialized artifact (e.g. from
 //!   different builds of the host program on the same machine) share `dir`
 //!   without overwriting each other.
@@ -49,12 +49,16 @@ impl Artifact {
     #[doc(hidden)]
     #[must_use]
     pub const fn __new(name: &'static str, content: &'static [u8], hash: &'static str) -> Self {
-        Self { name, content, hash }
+        Self {
+            name,
+            content,
+            hash,
+        }
     }
 
-    /// Start a fluent materialize chain. Supply optional [`Materialize::suffix`]
-    /// / [`Materialize::executable`] knobs, then terminate with
-    /// [`Materialize::at`].
+    /// Start a fluent materialize chain. Supply optional
+    /// [`Materialize::suffix`] / [`Materialize::executable`] knobs, then
+    /// terminate with [`Materialize::at`].
     pub const fn materialize(&self) -> Materialize<'static> {
         Materialize {
             artifact: *self,
@@ -118,8 +122,10 @@ impl Materialize<'_> {
     /// fails and the destination still doesn't exist.
     pub fn at(self, dir: impl AsRef<Path>) -> io::Result<PathBuf> {
         let dir = dir.as_ref();
-        let path =
-            dir.join(format!("{}_{}{}", self.artifact.name, self.artifact.hash, self.suffix));
+        let path = dir.join(format!(
+            "{}_{}{}",
+            self.artifact.name, self.artifact.hash, self.suffix
+        ));
 
         #[cfg(unix)]
         let want_mode: u32 = if self.executable { 0o755 } else { 0o644 };

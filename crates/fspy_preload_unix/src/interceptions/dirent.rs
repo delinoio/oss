@@ -16,9 +16,16 @@ unsafe extern "C" fn scandir(
     select: *const c_void,
     compar: *const c_void,
 ) -> c_int {
-    // SAFETY: dirname is a valid C string pointer provided by the caller of the interposed function
-    unsafe { handle_open(fspy_nostd::CStr::from_ptr(dirname.cast()), AccessMode::READ_DIR) }
-    // SAFETY: calling the original libc scandir() with the same arguments forwarded from the interposed function
+    // SAFETY: dirname is a valid C string pointer provided by the caller of the
+    // interposed function
+    unsafe {
+        handle_open(
+            fspy_nostd::CStr::from_ptr(dirname.cast()),
+            AccessMode::READ_DIR,
+        )
+    }
+    // SAFETY: calling the original libc scandir() with the same arguments forwarded
+    // from the interposed function
     unsafe { scandir::original()(dirname, namelist, select, compar) }
 }
 
@@ -38,9 +45,16 @@ mod macos_only {
         select: *const c_void,
         compar: *const c_void,
     ) -> c_int {
-        // SAFETY: dirname is a valid C string pointer provided by the caller of the interposed function
-        unsafe { handle_open(fspy_nostd::CStr::from_ptr(dirname.cast()), AccessMode::READ_DIR) };
-        // SAFETY: calling the original libc scandir_b() with the same arguments forwarded from the interposed function
+        // SAFETY: dirname is a valid C string pointer provided by the caller of the
+        // interposed function
+        unsafe {
+            handle_open(
+                fspy_nostd::CStr::from_ptr(dirname.cast()),
+                AccessMode::READ_DIR,
+            )
+        };
+        // SAFETY: calling the original libc scandir_b() with the same arguments
+        // forwarded from the interposed function
         unsafe { scandir_b::original()(dirname, namelist, select, compar) }
     }
 
@@ -51,9 +65,11 @@ mod macos_only {
         buf_len: usize,
         basep: *mut i64,
     ) -> isize {
-        // SAFETY: fd is a valid file descriptor provided by the caller of __getdirentries64
+        // SAFETY: fd is a valid file descriptor provided by the caller of
+        // __getdirentries64
         unsafe { handle_open(BorrowedFd::borrow_raw(fd), AccessMode::READ_DIR) };
-        // SAFETY: calling the original libc __getdirentries64() with the same arguments forwarded from the interposed function
+        // SAFETY: calling the original libc __getdirentries64() with the same arguments
+        // forwarded from the interposed function
         unsafe { __getdirentries64::original()(fd, buf, buf_len, basep) }
     }
 }
@@ -65,24 +81,35 @@ unsafe extern "C" fn getdirentries(
     nbytes: c_int,
     basep: *mut c_long,
 ) -> c_int {
-    // SAFETY: fd is a valid file descriptor provided by the caller of the interposed function
+    // SAFETY: fd is a valid file descriptor provided by the caller of the
+    // interposed function
     unsafe { handle_open(BorrowedFd::borrow_raw(fd), AccessMode::READ_DIR) };
-    // SAFETY: calling the original libc getdirentries() with the same arguments forwarded from the interposed function
+    // SAFETY: calling the original libc getdirentries() with the same arguments
+    // forwarded from the interposed function
     unsafe { getdirentries::original()(fd, buf, nbytes, basep) }
 }
 
 intercept!(fdopendir(64): unsafe extern "C" fn (fd: c_int) -> *mut DIR);
 unsafe extern "C" fn fdopendir(fd: c_int) -> *mut DIR {
-    // SAFETY: fd is a valid file descriptor provided by the caller of the interposed function
+    // SAFETY: fd is a valid file descriptor provided by the caller of the
+    // interposed function
     unsafe { handle_open(BorrowedFd::borrow_raw(fd), AccessMode::READ_DIR) };
-    // SAFETY: calling the original libc fdopendir() with the same arguments forwarded from the interposed function
+    // SAFETY: calling the original libc fdopendir() with the same arguments
+    // forwarded from the interposed function
     unsafe { fdopendir::original()(fd) }
 }
 
 intercept!(opendir(64): unsafe extern "C" fn (*const c_char) -> *mut DIR);
 unsafe extern "C" fn opendir(dir_name: *const c_char) -> *mut DIR {
-    // SAFETY: dir_name is a valid C string pointer provided by the caller of the interposed function
-    unsafe { handle_open(fspy_nostd::CStr::from_ptr(dir_name.cast()), AccessMode::READ_DIR) };
-    // SAFETY: calling the original libc opendir() with the same arguments forwarded from the interposed function
+    // SAFETY: dir_name is a valid C string pointer provided by the caller of the
+    // interposed function
+    unsafe {
+        handle_open(
+            fspy_nostd::CStr::from_ptr(dir_name.cast()),
+            AccessMode::READ_DIR,
+        )
+    };
+    // SAFETY: calling the original libc opendir() with the same arguments forwarded
+    // from the interposed function
     unsafe { opendir::original()(dir_name) }
 }

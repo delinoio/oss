@@ -20,8 +20,8 @@ use fspy_nostd::{
 /// the kernel does all the bookkeeping. A signal or a `fork()` can never
 /// catch it holding a lock or a half-written structure, because there is
 /// nothing to hold. The mapping calls and the page-size read come from
-/// [`fspy_nostd::mm`] and [`fspy_nostd::param`], which carry the same guarantee (see
-/// their docs).
+/// [`fspy_nostd::mm`] and [`fspy_nostd::param`], which carry the same guarantee
+/// (see their docs).
 ///
 /// # What it accepts
 ///
@@ -72,7 +72,10 @@ unsafe impl Allocator for MmapAllocator {
         // `checked_next_multiple_of` is total: `None` on overflow (already
         // impossible — `Layout` caps sizes at `isize::MAX`) or a zero page
         // size, with no power-of-two assumption to uphold.
-        let size = layout.size().checked_next_multiple_of(page).ok_or(AllocError)?;
+        let size = layout
+            .size()
+            .checked_next_multiple_of(page)
+            .ok_or(AllocError)?;
         // SAFETY: a fresh anonymous private mapping at no particular
         // address has no memory-safety preconditions.
         let ptr = unsafe {
@@ -103,7 +106,9 @@ unsafe impl Allocator for MmapAllocator {
         // dangling pointers can arrive here. Rounding cannot fail for a
         // layout that fits a block we mapped; leaking the region is the
         // safe response if it somehow did.
-        let Some(size) = layout.size().checked_next_multiple_of(page_size()) else { return };
+        let Some(size) = layout.size().checked_next_multiple_of(page_size()) else {
+            return;
+        };
         // SAFETY: caller contract — `ptr` was returned by `allocate` with a
         // fitting layout and the block is no longer in use. Failure is
         // impossible for a region we own.
@@ -122,13 +127,17 @@ mod tests {
             let block = MmapAllocator.allocate(layout).unwrap();
             assert!(block.len() >= size, "size {size}");
             assert_eq!(block.len() % page_size(), 0);
-            assert_eq!(block.cast::<u8>().as_ptr().addr() % align, 0, "align {align}");
+            assert_eq!(
+                block.cast::<u8>().as_ptr().addr() % align,
+                0,
+                "align {align}"
+            );
             for i in 0..block.len() {
                 // SAFETY: fresh exclusive block of `block.len()` bytes.
                 assert_eq!(unsafe { block.cast::<u8>().as_ptr().add(i).read() }, 0);
             }
             // SAFETY: fresh exclusive block of at least `size` bytes.
-            unsafe { block.cast::<u8>().as_ptr().write_bytes(0x5A, size) };
+            unsafe { block.cast::<u8>().as_ptr().write_bytes(0x5a, size) };
             // SAFETY: allocated above; the layout fits the block.
             unsafe { MmapAllocator.deallocate(block.cast(), layout) };
         }

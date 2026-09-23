@@ -65,7 +65,9 @@ impl SpyImpl {
         // SAFETY: we just pushed a NUL byte, so the slice is NUL-terminated
         let ansi_dll_path_with_nul =
             unsafe { CStr::from_bytes_with_nul_unchecked(ansi_dll_path.as_slice()) };
-        Ok(Self { ansi_dll_path_with_nul: ansi_dll_path_with_nul.into() })
+        Ok(Self {
+            ansi_dll_path_with_nul: ansi_dll_path_with_nul.into(),
+        })
     }
 
     pub(crate) fn spawn(
@@ -104,7 +106,9 @@ impl SpyImpl {
             // SAFETY: the child owns this handle and is not waited on during this borrow.
             let process = unsafe { BorrowedHandle::borrow_raw(child.raw_handle().unwrap()) };
             let process_handle = process.try_clone_to_owned().map_err(SpawnError::OsSpawn)?;
-            let raw_process = process_handle.as_raw_handle().cast::<winapi::ctypes::c_void>();
+            let raw_process = process_handle
+                .as_raw_handle()
+                .cast::<winapi::ctypes::c_void>();
             let mut dll_paths = ansi_dll_path_with_nul.as_ptr().cast::<c_char>();
             // SAFETY: raw_process is a valid handle to the suspended child process,
             // dll_paths points to a valid null-terminated ANSI string.
@@ -128,7 +132,8 @@ impl SpyImpl {
             }
 
             // Resume using the process handle, without the nightly main-thread handle API.
-            // SAFETY: raw_process is a valid child process handle with PROCESS_SUSPEND_RESUME access.
+            // SAFETY: raw_process is a valid child process handle with
+            // PROCESS_SUSPEND_RESUME access.
             let status = unsafe { NtResumeProcess(raw_process) };
             if !NT_SUCCESS(status) {
                 // SAFETY: RtlNtStatusToDosError accepts any NTSTATUS value. Native APIs
@@ -152,8 +157,9 @@ impl SpyImpl {
             stdout: child.stdout.take(),
             stderr: child.stderr.take(),
             process_handle,
-            // Keep polling for the child to exit in the background even if `wait_handle` is not awaited,
-            // because we need to stop the supervisor and close the channel as soon as the child exits.
+            // Keep polling for the child to exit in the background even if `wait_handle` is not
+            // awaited, because we need to stop the supervisor and close the channel as
+            // soon as the child exits.
             wait_handle: tokio::spawn(async move {
                 let status = tokio::select! {
                     status = child.wait() => status?,
@@ -163,11 +169,15 @@ impl SpyImpl {
                     }
                 };
                 // Close the ipc channel after the child has exited.
-                // We are not interested in path accesses from descendants after the main child has exited.
+                // We are not interested in path accesses from descendants after the main child
+                // has exited.
                 let path_accesses = ChannelAccesses::try_from(receiver)
                     .map(|ipc_accesses| PathAccessIterable { ipc_accesses });
 
-                io::Result::Ok(ChildTermination { status, path_accesses })
+                io::Result::Ok(ChildTermination {
+                    status,
+                    path_accesses,
+                })
             })
             .map(|f| f?) // flatten JoinError and io::Result
             .boxed(),

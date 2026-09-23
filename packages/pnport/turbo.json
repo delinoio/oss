@@ -2,7 +2,7 @@
   "extends": ["//"],
   "tasks": {
     "test": {
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/crates/pnport/**", "$TURBO_ROOT$/crates/pnport-preload/**", "$TURBO_ROOT$/Cargo.toml", "$TURBO_ROOT$/Cargo.lock", "$TURBO_ROOT$/rust-toolchain"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/crates/pnport/**", "$TURBO_ROOT$/crates/pnport-core/**", "$TURBO_ROOT$/crates/pnport-preload/**", "$TURBO_ROOT$/crates/fspy*/**", "$TURBO_ROOT$/crates/materialized_artifact*/**", "$TURBO_ROOT$/crates/vt_path/**", "$TURBO_ROOT$/crates/vt_str/**", "$TURBO_ROOT$/Cargo.toml", "$TURBO_ROOT$/Cargo.lock", "$TURBO_ROOT$/rust-toolchain"],
       "outputs": []
     },
     "test:typescript:prepare": { "cache": false },

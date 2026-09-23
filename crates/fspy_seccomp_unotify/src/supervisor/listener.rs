@@ -21,7 +21,10 @@ impl TryFrom<OwnedFd> for NotifyListener {
     type Error = io::Error;
 
     fn try_from(value: OwnedFd) -> Result<Self, Self::Error> {
-        Ok(Self { async_fd: AsyncFd::new(value)?, notif_buf: alloc_seccomp_notif() })
+        Ok(Self {
+            async_fd: AsyncFd::new(value)?,
+            notif_buf: alloc_seccomp_notif(),
+        })
     }
 }
 impl AsFd for NotifyListener {
@@ -33,11 +36,13 @@ impl AsFd for NotifyListener {
 const SECCOMP_IOCTL_NOTIF_SEND: libc::Ioctl = 3_222_806_785u64 as libc::Ioctl;
 
 impl NotifyListener {
-    /// Sends a `SECCOMP_USER_NOTIF_FLAG_CONTINUE` response for the given request ID.
+    /// Sends a `SECCOMP_USER_NOTIF_FLAG_CONTINUE` response for the given
+    /// request ID.
     ///
     /// # Errors
     /// Returns an error if the ioctl call fails, except for `ENOENT` which is
-    /// silently ignored (indicates the target process's syscall was interrupted).
+    /// silently ignored (indicates the target process's syscall was
+    /// interrupted).
     pub fn send_continue(
         &self,
         req_id: u64,
@@ -53,7 +58,11 @@ impl NotifyListener {
         // SAFETY: `resp` is a valid mutable pointer to a zeroed and populated
         // `seccomp_notif_resp` buffer, and the fd is a valid seccomp notify fd
         let ret = unsafe {
-            libc::ioctl(self.async_fd.as_raw_fd(), SECCOMP_IOCTL_NOTIF_SEND, &raw mut *resp)
+            libc::ioctl(
+                self.async_fd.as_raw_fd(),
+                SECCOMP_IOCTL_NOTIF_SEND,
+                &raw mut *resp,
+            )
         };
         if ret < 0 {
             let err = nix::Error::last();
@@ -66,10 +75,12 @@ impl NotifyListener {
         Ok(())
     }
 
-    /// Waits for and returns the next seccomp notification, or `None` if the fd is closed.
+    /// Waits for and returns the next seccomp notification, or `None` if the fd
+    /// is closed.
     ///
     /// # Errors
-    /// Returns an error if waiting on or reading from the notification fd fails.
+    /// Returns an error if waiting on or reading from the notification fd
+    /// fails.
     pub async fn next(&mut self) -> io::Result<Option<&seccomp_notif>> {
         loop {
             let mut ready_guard = self.async_fd.readable().await?;
@@ -82,7 +93,8 @@ impl NotifyListener {
             if !ready.is_readable() {
                 continue;
             }
-            // TODO: check why this call solves the issue that `is_read_closed || is_write_closed` is never true.
+            // TODO: check why this call solves the issue that `is_read_closed ||
+            // is_write_closed` is never true.
             ready_guard.clear_ready();
 
             match notif_recv(ready_guard.get_inner().as_fd(), &mut self.notif_buf) {

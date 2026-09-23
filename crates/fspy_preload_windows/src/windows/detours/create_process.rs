@@ -57,7 +57,8 @@ static DETOUR_CREATE_PROCESS_W: Detour<
         LPPROCESS_INFORMATION,
     ) -> i32,
 > =
-    // SAFETY: initializing Detour with the real CreateProcessW function pointer and our replacement
+    // SAFETY: initializing Detour with the real CreateProcessW function pointer and our
+    // replacement
     unsafe {
         Detour::new(c"CreateProcessW", CreateProcessW, {
             unsafe extern "system" fn new_fn(
@@ -84,7 +85,8 @@ static DETOUR_CREATE_PROCESS_W: Detour<
                     lp_startup_info: LPSTARTUPINFOW,
                     lp_process_information: LPPROCESS_INFORMATION,
                 ) -> BOOL {
-                    // SAFETY: calling original CreateProcessW with CREATE_SUSPENDED to inject DLL before resume
+                    // SAFETY: calling original CreateProcessW with CREATE_SUSPENDED to inject DLL
+                    // before resume
                     let ret = unsafe {
                         (DETOUR_CREATE_PROCESS_W.real())(
                             lp_application_name,
@@ -103,7 +105,8 @@ static DETOUR_CREATE_PROCESS_W: Detour<
                         return 0;
                     }
 
-                    // SAFETY: copying payload to child process and dereferencing lp_process_information
+                    // SAFETY: copying payload to child process and dereferencing
+                    // lp_process_information
                     let ret = unsafe {
                         global_client().prepare_child_process((*lp_process_information).hProcess)
                     };
@@ -143,7 +146,8 @@ static DETOUR_CREATE_PROCESS_W: Detour<
                 // SAFETY: accessing the global client initialized during DLL_PROCESS_ATTACH
                 let client = unsafe { global_client() };
 
-                // SAFETY: calling DetourCreateProcessWithDllExW to create process with our DLL injected
+                // SAFETY: calling DetourCreateProcessWithDllExW to create process with our DLL
+                // injected
                 unsafe {
                     DetourCreateProcessWithDllExW(
                         lp_application_name,
@@ -179,7 +183,8 @@ static DETOUR_CREATE_PROCESS_A: Detour<
         LPPROCESS_INFORMATION,
     ) -> i32,
 > =
-    // SAFETY: initializing Detour with the real CreateProcessA function pointer and our replacement
+    // SAFETY: initializing Detour with the real CreateProcessA function pointer and our
+    // replacement
     unsafe {
         Detour::new(c"CreateProcessA", CreateProcessA, {
             unsafe extern "system" fn new_fn(
@@ -206,7 +211,8 @@ static DETOUR_CREATE_PROCESS_A: Detour<
                     lp_startup_info: LPSTARTUPINFOA,
                     lp_process_information: LPPROCESS_INFORMATION,
                 ) -> BOOL {
-                    // SAFETY: calling original CreateProcessA with CREATE_SUSPENDED to inject DLL before resume
+                    // SAFETY: calling original CreateProcessA with CREATE_SUSPENDED to inject DLL
+                    // before resume
                     let ret = unsafe {
                         (DETOUR_CREATE_PROCESS_A.real())(
                             lp_application_name,
@@ -225,7 +231,8 @@ static DETOUR_CREATE_PROCESS_A: Detour<
                         return 0;
                     }
 
-                    // SAFETY: copying payload to child process and dereferencing lp_process_information
+                    // SAFETY: copying payload to child process and dereferencing
+                    // lp_process_information
                     let ret = unsafe {
                         global_client().prepare_child_process((*lp_process_information).hProcess)
                     };
@@ -264,7 +271,8 @@ static DETOUR_CREATE_PROCESS_A: Detour<
                 // SAFETY: accessing the global client initialized during DLL_PROCESS_ATTACH
                 let client = unsafe { global_client() };
 
-                // SAFETY: calling DetourCreateProcessWithDllExA to create process with our DLL injected
+                // SAFETY: calling DetourCreateProcessWithDllExA to create process with our DLL
+                // injected
                 unsafe {
                     DetourCreateProcessWithDllExA(
                         lp_application_name,
@@ -285,5 +293,7 @@ static DETOUR_CREATE_PROCESS_A: Detour<
             new_fn
         })
     };
-pub const DETOURS: &[DetourAny] =
-    &[DETOUR_CREATE_PROCESS_W.as_any(), DETOUR_CREATE_PROCESS_A.as_any()];
+pub const DETOURS: &[DetourAny] = &[
+    DETOUR_CREATE_PROCESS_W.as_any(),
+    DETOUR_CREATE_PROCESS_A.as_any(),
+];

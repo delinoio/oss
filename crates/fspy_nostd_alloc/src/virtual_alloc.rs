@@ -46,7 +46,10 @@ unsafe impl Allocator for VirtualAllocator {
         }
         // `checked_next_multiple_of` is total: `None` on overflow, which is
         // already impossible — `Layout` caps sizes at `isize::MAX`.
-        let size = layout.size().checked_next_multiple_of(PAGE_SIZE).ok_or(AllocError)?;
+        let size = layout
+            .size()
+            .checked_next_multiple_of(PAGE_SIZE)
+            .ok_or(AllocError)?;
         let address = virtual_alloc(
             size,
             AllocationType::RESERVE | AllocationType::COMMIT,
@@ -81,13 +84,17 @@ mod tests {
             let block = VirtualAllocator.allocate(layout).unwrap();
             assert!(block.len() >= size, "size {size}");
             assert_eq!(block.len() % PAGE_SIZE, 0);
-            assert_eq!(block.cast::<u8>().as_ptr().addr() % align, 0, "align {align}");
+            assert_eq!(
+                block.cast::<u8>().as_ptr().addr() % align,
+                0,
+                "align {align}"
+            );
             for i in 0..block.len() {
                 // SAFETY: fresh exclusive block of `block.len()` bytes.
                 assert_eq!(unsafe { block.cast::<u8>().as_ptr().add(i).read() }, 0);
             }
             // SAFETY: fresh exclusive block of at least `size` bytes.
-            unsafe { block.cast::<u8>().as_ptr().write_bytes(0x5A, size) };
+            unsafe { block.cast::<u8>().as_ptr().write_bytes(0x5a, size) };
             // SAFETY: allocated above; the layout fits the block.
             unsafe { VirtualAllocator.deallocate(block.cast(), layout) };
         }

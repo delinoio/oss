@@ -155,11 +155,13 @@ impl AbsolutePath {
     ///
     /// If `base` is not a prefix of `self`, returns [`None`].
     ///
-    /// If the stripped path is not a valid `RelativePath`. Returns an error with the reason and the stripped path.
+    /// If the stripped path is not a valid `RelativePath`. Returns an error
+    /// with the reason and the stripped path.
     ///
     /// # Errors
     ///
-    /// Returns an error if the stripped path contains invalid UTF-8 or other path data issues.
+    /// Returns an error if the stripped path contains invalid UTF-8 or other
+    /// path data issues.
     pub fn strip_prefix<P: AsRef<Self>>(
         &self,
         base: P,
@@ -175,9 +177,10 @@ impl AbsolutePath {
             Err(FromPathError::NonRelative) => {
                 unreachable!("stripped path should always be relative")
             }
-            Err(FromPathError::InvalidPathData(invalid_path_data_error)) => {
-                Err(StripPrefixError { stripped_path, invalid_path_data_error })
-            }
+            Err(FromPathError::InvalidPathData(invalid_path_data_error)) => Err(StripPrefixError {
+                stripped_path,
+                invalid_path_data_error,
+            }),
         }
     }
 
@@ -196,10 +199,12 @@ impl AbsolutePath {
         Some(unsafe { Self::assume_absolute(parent_path) })
     }
 
-    /// Creates an owned [`AbsolutePathBuf`] like `self` but with the extension added.
+    /// Creates an owned [`AbsolutePathBuf`] like `self` but with the extension
+    /// added.
     pub fn with_extension<S: AsRef<OsStr>>(&self, extension: S) -> AbsolutePathBuf {
         let path = self.0.with_extension(extension);
-        // SAFETY: Changing the extension of an absolute path preserves its absoluteness.
+        // SAFETY: Changing the extension of an absolute path preserves its
+        // absoluteness.
         unsafe { AbsolutePathBuf::assume_absolute(path) }
     }
 
@@ -227,7 +232,8 @@ impl AbsolutePath {
     }
 }
 
-/// An Error returned from [`AbsolutePath::strip_prefix`] if the stripped path is not a valid `RelativePath`
+/// An Error returned from [`AbsolutePath::strip_prefix`] if the stripped path
+/// is not a valid `RelativePath`
 #[derive(thiserror::Error, Debug)]
 pub struct StripPrefixError<'a> {
     pub stripped_path: &'a Path,
@@ -286,13 +292,15 @@ impl AbsolutePathBuf {
 
     #[must_use]
     pub fn as_absolute_path(&self) -> &AbsolutePath {
-        // SAFETY: self is an AbsolutePathBuf, so its inner PathBuf is guaranteed absolute.
+        // SAFETY: self is an AbsolutePathBuf, so its inner PathBuf is guaranteed
+        // absolute.
         unsafe { AbsolutePath::assume_absolute(self.0.as_path()) }
     }
 
     /// Extends `self` with `path`.
     ///
-    /// `path` replaces `self` only when `path` is absolute. Either way, the resulting `self` is always absolute.
+    /// `path` replaces `self` only when `path` is absolute. Either way, the
+    /// resulting `self` is always absolute.
     pub fn push<P: AsRef<Path>>(&mut self, path: P) {
         self.0.push(path.as_ref());
     }
@@ -376,9 +384,12 @@ mod tests {
         }))
         .unwrap();
 
-        let prefix =
-            AbsolutePath::new(Path::new(if cfg!(windows) { "C:\\Users\\" } else { "/home//" }))
-                .unwrap();
+        let prefix = AbsolutePath::new(Path::new(if cfg!(windows) {
+            "C:\\Users\\"
+        } else {
+            "/home//"
+        }))
+        .unwrap();
 
         let rel_path = abs_path.strip_prefix(prefix).unwrap().unwrap();
         assert_eq!(rel_path.as_str(), "foo/bar");
@@ -423,13 +434,13 @@ mod tests {
         use assert2::assert;
 
         let mut abs_path = b"/home/".to_vec();
-        abs_path.push(0xC0);
+        abs_path.push(0xc0);
         let abs_path = AbsolutePath::new(Path::new(OsStr::from_bytes(&abs_path))).unwrap();
 
         let prefix = AbsolutePath::new(Path::new("/home")).unwrap();
         assert!(let Err(err) = abs_path.strip_prefix(prefix));
 
-        assert_eq!(err.stripped_path.as_os_str().as_bytes(), &[0xC0]);
+        assert_eq!(err.stripped_path.as_os_str().as_bytes(), &[0xc0]);
         assert!(let InvalidPathDataError::NonUtf8 = err.invalid_path_data_error);
     }
 
@@ -438,9 +449,15 @@ mod tests {
     fn with_extension() {
         let abs_path = AbsolutePath::new(Path::new("/home/foo/bar")).unwrap();
         let abs_path_with_extension = abs_path.with_extension("txt");
-        assert_eq!(abs_path_with_extension.as_path().as_os_str(), "/home/foo/bar.txt");
+        assert_eq!(
+            abs_path_with_extension.as_path().as_os_str(),
+            "/home/foo/bar.txt"
+        );
         let abs_path_with_extension = abs_path.with_extension("txt").with_extension("tgz");
-        assert_eq!(abs_path_with_extension.as_path().as_os_str(), "/home/foo/bar.tgz");
+        assert_eq!(
+            abs_path_with_extension.as_path().as_os_str(),
+            "/home/foo/bar.tgz"
+        );
         // abs_path is not changed
         assert_eq!(abs_path.as_path().as_os_str(), "/home/foo/bar");
     }
@@ -449,9 +466,15 @@ mod tests {
     fn with_extension() {
         let abs_path = AbsolutePath::new(Path::new("C:\\home\\foo\\bar")).unwrap();
         let abs_path_with_extension = abs_path.with_extension("txt");
-        assert_eq!(abs_path_with_extension.as_path().as_os_str(), "C:\\home\\foo\\bar.txt");
+        assert_eq!(
+            abs_path_with_extension.as_path().as_os_str(),
+            "C:\\home\\foo\\bar.txt"
+        );
         let abs_path_with_extension = abs_path.with_extension("txt").with_extension("tgz");
-        assert_eq!(abs_path_with_extension.as_path().as_os_str(), "C:\\home\\foo\\bar.tgz");
+        assert_eq!(
+            abs_path_with_extension.as_path().as_os_str(),
+            "C:\\home\\foo\\bar.tgz"
+        );
         // abs_path is not changed
         assert_eq!(abs_path.as_path().as_os_str(), "C:\\home\\foo\\bar");
     }

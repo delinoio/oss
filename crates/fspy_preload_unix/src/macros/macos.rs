@@ -10,13 +10,25 @@ macro_rules! intercept {
             #[used]
             #[unsafe(link_section = "__DATA,__interpose")]
             static mut _INTERPOSE_ENTRY: $crate::macros::InterposeEntry =
-                $crate::macros::InterposeEntry { _new: $name as _, _old: $crate::libc::$name as _ };
+                $crate::macros::InterposeEntry {
+                    _new: $name as _,
+                    _old: $crate::libc::$name as _,
+                };
         };
 
         mod $name {
-            // macro-generated: imports may or may not be used depending on expansion context
-            #[expect(clippy::allow_attributes, reason = "macro-generated: imports may or may not be used depending on expansion context")]
-            #[allow(unused_imports, reason = "macro-generated: imports may or may not be used depending on expansion context")]
+            // macro-generated: imports may or may not be used depending on expansion
+            // context
+            #[expect(
+                clippy::allow_attributes,
+                reason = "macro-generated: imports may or may not be used depending on expansion \
+                          context"
+            )]
+            #[allow(
+                unused_imports,
+                reason = "macro-generated: imports may or may not be used depending on expansion \
+                          context"
+            )]
             use super::*;
             pub fn original() -> $fn_sig {
                 $crate::libc::$name

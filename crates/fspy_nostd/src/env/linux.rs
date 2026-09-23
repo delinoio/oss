@@ -85,13 +85,17 @@ impl Current {
     /// Returns a fresh iterator over the process arguments.
     #[must_use]
     pub const fn args(&self) -> FatArgs {
-        FatArgs { inner: RangeIter::new(self.args) }
+        FatArgs {
+            inner: RangeIter::new(self.args),
+        }
     }
 
     /// Returns a fresh iterator over the process environment.
     #[must_use]
     pub const fn envs(&self) -> FatEnvs {
-        FatEnvs { inner: RangeIter::new(self.envs) }
+        FatEnvs {
+            inner: RangeIter::new(self.envs),
+        }
     }
 }
 
@@ -202,10 +206,15 @@ fn parse_bounds(stat: &[u8]) -> Result<Bounds> {
     // `comm` (field 2) may itself contain spaces, newlines, and `)`. The
     // kernel-added delimiter is the last `)` because every later field is
     // numeric except for the one-byte process state.
-    let comm_end = stat.iter().rposition(|byte| *byte == b')').ok_or(Error::INVAL)?;
+    let comm_end = stat
+        .iter()
+        .rposition(|byte| *byte == b')')
+        .ok_or(Error::INVAL)?;
     let (_, comm_and_fields) = stat.split_at_checked(comm_end).ok_or(Error::INVAL)?;
     let (_, fields) = comm_and_fields.split_first().ok_or(Error::INVAL)?;
-    let mut fields = fields.split(u8::is_ascii_whitespace).filter(|field| !field.is_empty());
+    let mut fields = fields
+        .split(u8::is_ascii_whitespace)
+        .filter(|field| !field.is_empty());
 
     // With field 3 at index zero, arg_start (field 48) is index 45, followed
     // by arg_end, env_start, and env_end.
@@ -239,7 +248,10 @@ mod tests {
     fn iterates_argument_and_environment_ranges() {
         static ARGS: &[u8] = b"program\0--flag\0";
         static ENVS: &[u8] = b"FIRST=one\0INVALID\0EMPTY=\0LAST=a=b\0";
-        let current = Current { args: ARGS, envs: ENVS };
+        let current = Current {
+            args: ARGS,
+            envs: ENVS,
+        };
 
         let mut args = current.args();
         assert_eq!(args.next().unwrap().as_units(), b"program");
@@ -336,16 +348,30 @@ mod tests {
         let current = unsafe { current().unwrap() };
 
         let argv_zero = current.args().next().unwrap();
-        assert_eq!(argv_zero.as_units(), std::env::args_os().next().unwrap().as_encoded_bytes());
+        assert_eq!(
+            argv_zero.as_units(),
+            std::env::args_os().next().unwrap().as_encoded_bytes()
+        );
 
-        let path = current.envs().find(|(name, _)| name.as_bytes() == b"PATH").unwrap().1.unwrap();
-        assert_eq!(path.as_units(), std::env::var_os("PATH").unwrap().as_encoded_bytes());
+        let path = current
+            .envs()
+            .find(|(name, _)| name.as_bytes() == b"PATH")
+            .unwrap()
+            .1
+            .unwrap();
+        assert_eq!(
+            path.as_units(),
+            std::env::var_os("PATH").unwrap().as_encoded_bytes()
+        );
     }
 
     #[test]
     fn rejects_an_unterminated_range() {
         static ARGS: &[u8] = b"program";
-        let current = Current { args: ARGS, envs: &[] };
+        let current = Current {
+            args: ARGS,
+            envs: &[],
+        };
         assert!(current.args().next().is_none());
     }
 }

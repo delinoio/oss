@@ -29,7 +29,10 @@ pub struct SyscallHandler {
 
 impl Default for SyscallHandler {
     fn default() -> Self {
-        Self { arena: PathAccessArena::default(), path_read_buf: [0; PATH_MAX] }
+        Self {
+            arena: PathAccessArena::default(),
+            path_read_buf: [0; PATH_MAX],
+        }
     }
 }
 
@@ -49,7 +52,9 @@ impl SyscallHandler {
             // Ignore paths that are too long to fit in PATH_MAX
             return Ok(());
         };
-        let mut path = Cow::Borrowed(Path::new(OsStr::from_bytes(&self.path_read_buf[..path_len])));
+        let mut path = Cow::Borrowed(Path::new(OsStr::from_bytes(
+            &self.path_read_buf[..path_len],
+        )));
         if !path.is_absolute() {
             let mut resolved_path = PathBuf::from(dir_fd.get_path(caller)?);
             if !nix::NixPath::is_empty(path.as_ref()) {

@@ -1,4 +1,7 @@
-#[expect(clippy::disallowed_types, reason = "vt_str defines Str using std types internally")]
+#[expect(
+    clippy::disallowed_types,
+    reason = "vt_str defines Str using std types internally"
+)]
 use std::{
     borrow::Borrow,
     ffi::OsStr,
@@ -36,7 +39,11 @@ impl Diff for Str {
     type Repr = Option<Self>;
 
     fn diff(&self, other: &Self) -> Self::Repr {
-        if self == other { None } else { Some(other.clone()) }
+        if self == other {
+            None
+        } else {
+            Some(other.clone())
+        }
     }
 
     fn apply(&mut self, diff: &Self::Repr) {
@@ -79,7 +86,10 @@ impl AsRef<str> for Str {
         self.0.as_ref()
     }
 }
-#[expect(clippy::disallowed_types, reason = "vt_str provides Path interop via AsRef")]
+#[expect(
+    clippy::disallowed_types,
+    reason = "vt_str provides Path interop via AsRef"
+)]
 impl AsRef<Path> for Str {
     #[expect(clippy::disallowed_types, reason = "fn signature uses std Path")]
     fn as_ref(&self) -> &Path {
@@ -115,7 +125,8 @@ impl Debug for Str {
     }
 }
 
-// SAFETY: Delegates to `str`'s SchemaWrite impl, preserving its size/write invariants.
+// SAFETY: Delegates to `str`'s SchemaWrite impl, preserving its size/write
+// invariants.
 unsafe impl<C: Config> SchemaWrite<C> for Str {
     type Src = Self;
 
@@ -128,7 +139,8 @@ unsafe impl<C: Config> SchemaWrite<C> for Str {
     }
 }
 
-// SAFETY: Delegates to `&str`'s SchemaRead impl and wraps the result; dst is initialized on Ok.
+// SAFETY: Delegates to `&str`'s SchemaRead impl and wraps the result; dst is
+// initialized on Ok.
 unsafe impl<'de, C: Config> SchemaRead<'de, C> for Str {
     type Dst = Self;
 
@@ -145,7 +157,10 @@ impl From<&str> for Str {
     }
 }
 
-#[expect(clippy::disallowed_types, reason = "vt_str provides String conversion via From")]
+#[expect(
+    clippy::disallowed_types,
+    reason = "vt_str provides String conversion via From"
+)]
 impl From<String> for Str {
     #[expect(clippy::disallowed_types, reason = "fn signature uses std String")]
     fn from(value: String) -> Self {
@@ -182,7 +197,10 @@ mod ts_impl {
 
     use super::Str;
 
-    #[expect(clippy::disallowed_types, reason = "ts_rs::TS trait requires returning String")]
+    #[expect(
+        clippy::disallowed_types,
+        reason = "ts_rs::TS trait requires returning String"
+    )]
     impl TS for Str {
         type OptionInnerType = Self;
         type WithoutGenerics = Self;

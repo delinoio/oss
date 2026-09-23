@@ -9,10 +9,9 @@ mod os_specific;
 use std::{ffi::OsStr, os::unix::ffi::OsStrExt, path::Path};
 
 use fspy_shared::ipc::AccessMode;
-#[doc(hidden)]
-#[cfg(target_os = "macos")]
-pub use os_specific::COREUTILS_FUNCTIONS as COREUTILS_FUNCTIONS_FOR_TEST;
 pub use os_specific::PreExec;
+#[cfg(target_os = "macos")]
+pub use os_specific::configure_pnport_command;
 
 use crate::{
     exec::{Exec, ExecResolveConfig},
@@ -27,13 +26,16 @@ use crate::{
 /// # Errors
 ///
 /// Returns an error if:
-/// - Program resolution fails (see [`Exec::resolve`] error variants, such as `ENOENT` (file not found) or `EACCES` (permission denied))
-/// - Environment variable operations fail (e.g., `ensure_env` may return `EINVAL` if an existing value conflicts)
+/// - Program resolution fails (see [`Exec::resolve`] error variants, such as
+///   `ENOENT` (file not found) or `EACCES` (permission denied))
+/// - Environment variable operations fail (e.g., `ensure_env` may return
+///   `EINVAL` if an existing value conflicts)
 /// - Platform-specific errors from `os_specific::handle_exec`
 ///
 /// # Panics
 ///
-/// Panics if the current working directory cannot be determined when converting a relative path to absolute.
+/// Panics if the current working directory cannot be determined when converting
+/// a relative path to absolute.
 pub fn handle_exec(
     command: &mut Exec,
     config: ExecResolveConfig,
@@ -50,7 +52,10 @@ pub fn handle_exec(
     };
 
     command.resolve(&mut on_path_access, config)?;
-    on_path_access(AccessMode::READ, Path::new(OsStr::from_bytes(&command.program)));
+    on_path_access(
+        AccessMode::READ,
+        Path::new(OsStr::from_bytes(&command.program)),
+    );
 
     os_specific::handle_exec(command, encoded_payload)
 }

@@ -1,4 +1,7 @@
-#![expect(clippy::disallowed_types, reason = "vt_path needs to use std path types internally")]
+#![expect(
+    clippy::disallowed_types,
+    reason = "vt_path needs to use std path types internally"
+)]
 
 pub mod absolute;
 pub mod relative;
@@ -18,25 +21,28 @@ pub use relative::{RelativePath, RelativePathBuf};
 ///
 /// # Errors
 ///
-/// Returns an error if the current directory cannot be determined, which can occur if:
+/// Returns an error if the current directory cannot be determined, which can
+/// occur if:
 /// - The current directory has been removed
 /// - The current directory is not accessible
 ///
 /// # Panics
 ///
-/// Panics if `std::env::current_dir()` returns a non-absolute path, which should never happen in practice.
+/// Panics if `std::env::current_dir()` returns a non-absolute path, which
+/// should never happen in practice.
 pub fn current_dir() -> io::Result<AbsolutePathBuf> {
     #[expect(
         clippy::disallowed_methods,
         reason = "std current_dir needed to get the current working directory as an absolute path"
     )]
     let cwd = std::env::current_dir()?;
-    // `std::env::current_dir` should always return a absolute path but its documentation doesn't guarantee that.
-    // Do a runtime check just in case.
+    // `std::env::current_dir` should always return a absolute path but its
+    // documentation doesn't guarantee that. Do a runtime check just in case.
     Ok(AbsolutePathBuf::new(cwd).unwrap())
 }
 
-/// Strips `base` from `path`, after normalizing Windows path namespace prefixes.
+/// Strips `base` from `path`, after normalizing Windows path namespace
+/// prefixes.
 ///
 /// On Windows, the `\\?\`, `\\.\`, and `\??\` prefixes are ignored before
 /// matching. On other platforms this is equivalent to [`Path::strip_prefix`].
@@ -93,22 +99,32 @@ mod tests {
 
     #[test]
     fn strip_path_prefix_strips_base() {
-        let path =
-            OsStr::new(if cfg!(windows) { r"C:\repo\pkg\file.txt" } else { "/repo/pkg/file.txt" });
+        let path = OsStr::new(if cfg!(windows) {
+            r"C:\repo\pkg\file.txt"
+        } else {
+            "/repo/pkg/file.txt"
+        });
         let base = OsStr::new(if cfg!(windows) { r"C:\repo" } else { "/repo" });
 
         let stripped = strip_path_prefix(path, base).unwrap();
 
         assert_eq!(
             stripped,
-            Path::new(if cfg!(windows) { r"pkg\file.txt" } else { "pkg/file.txt" })
+            Path::new(if cfg!(windows) {
+                r"pkg\file.txt"
+            } else {
+                "pkg/file.txt"
+            })
         );
     }
 
     #[test]
     fn strip_path_prefix_reports_mismatch() {
-        let path =
-            OsStr::new(if cfg!(windows) { r"C:\repo\pkg\file.txt" } else { "/repo/pkg/file.txt" });
+        let path = OsStr::new(if cfg!(windows) {
+            r"C:\repo\pkg\file.txt"
+        } else {
+            "/repo/pkg/file.txt"
+        });
         let base = OsStr::new(if cfg!(windows) { r"C:\other" } else { "/other" });
 
         assert!(strip_path_prefix(path, base).is_err());

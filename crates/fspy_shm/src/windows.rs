@@ -23,7 +23,9 @@ use windows_sys::Win32::{
     System::{IO::DeviceIoControl, Ioctl::FSCTL_SET_SPARSE},
 };
 
-const SHARE_ALL: FileShare = FileShare::READ.union(FileShare::WRITE).union(FileShare::DELETE);
+const SHARE_ALL: FileShare = FileShare::READ
+    .union(FileShare::WRITE)
+    .union(FileShare::DELETE);
 
 /// Opened shared memory that is not mapped yet.
 ///
@@ -249,7 +251,10 @@ impl ShmHandle {
     }
 }
 
-#[expect(clippy::len_without_is_empty, reason = "shared-memory mappings are always non-empty")]
+#[expect(
+    clippy::len_without_is_empty,
+    reason = "shared-memory mappings are always non-empty"
+)]
 impl Mapping {
     /// Returns the mapped length in bytes.
     #[must_use]

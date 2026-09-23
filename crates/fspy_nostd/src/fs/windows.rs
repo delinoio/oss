@@ -66,7 +66,10 @@ pub enum CreationDisposition {
 /// # Errors
 ///
 /// Returns the error reported by `CreateFileW`.
-#[expect(clippy::needless_pass_by_value, reason = "CStr is a borrowed value type")]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "CStr is a borrowed value type"
+)]
 pub fn create_file<R>(
     path: WideCStr<'_, R>,
     access: FileAccess,

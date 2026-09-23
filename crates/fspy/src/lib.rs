@@ -47,13 +47,15 @@ pub struct TrackedChild {
     /// has been captured.
     pub stderr: Option<ChildStderr>,
 
-    /// The future that resolves to exit status and path accesses when the process exits.
+    /// The future that resolves to exit status and path accesses when the
+    /// process exits.
     pub wait_handle: BoxFuture<'static, io::Result<ChildTermination>>,
 
-    /// A duplicated process handle of the child, captured before the tokio `Child`
-    /// is moved into the background wait task. This is an independently owned handle
-    /// (via `DuplicateHandle`) so it remains valid even after tokio closes its copy.
-    /// Callers can use this to assign the process to a Win32 Job Object.
+    /// A duplicated process handle of the child, captured before the tokio
+    /// `Child` is moved into the background wait task. This is an
+    /// independently owned handle (via `DuplicateHandle`) so it remains
+    /// valid even after tokio closes its copy. Callers can use this to
+    /// assign the process to a Win32 Job Object.
     #[cfg(windows)]
     pub process_handle: std::os::windows::io::OwnedHandle,
 }

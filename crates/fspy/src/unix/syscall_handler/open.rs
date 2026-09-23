@@ -25,11 +25,18 @@ impl SyscallHandler {
     pub(super) fn openat2(
         &mut self,
         caller: Caller,
-        // open_how is a pointer to struct `open_how`, but we only care about flags here, so use `Ptr<u64>`
+        // open_how is a pointer to struct `open_how`, but we only care about flags here, so use
+        // `Ptr<u64>`
         (dir_fd, path, open_how): (Fd, CStrPtr, Ptr<u64>),
     ) -> io::Result<()> {
-        // SAFETY: open_how is a valid pointer to struct `open_how` in the target process, which has `flags` as the first field of type `u64`
+        // SAFETY: open_how is a valid pointer to struct `open_how` in the target
+        // process, which has `flags` as the first field of type `u64`
         let flags = unsafe { open_how.read(caller) }?;
-        self.handle_open(caller, dir_fd, path, c_int::try_from(flags).unwrap_or(libc::O_RDWR))
+        self.handle_open(
+            caller,
+            dir_fd,
+            path,
+            c_int::try_from(flags).unwrap_or(libc::O_RDWR),
+        )
     }
 }

@@ -27,7 +27,9 @@ impl Debug for AccessMode {
                 bitflags::parser::to_writer(&self.0, f)
             }
         }
-        f.debug_tuple("AccessMode").field(&InternalAccessMode(*self)).finish()
+        f.debug_tuple("AccessMode")
+            .field(&InternalAccessMode(*self))
+            .finish()
     }
 }
 
@@ -40,10 +42,16 @@ pub struct PathAccess<'a> {
 
 impl<'a> PathAccess<'a> {
     pub fn read(path: impl Into<&'a IpcPath>) -> Self {
-        Self { mode: AccessMode::READ, path: path.into() }
+        Self {
+            mode: AccessMode::READ,
+            path: path.into(),
+        }
     }
 
     pub fn read_dir(path: impl Into<&'a IpcPath>) -> Self {
-        Self { mode: AccessMode::READ_DIR, path: path.into() }
+        Self {
+            mode: AccessMode::READ_DIR,
+            path: path.into(),
+        }
     }
 }

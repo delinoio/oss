@@ -68,7 +68,10 @@ impl<'a> Client<'a> {
         // stderr corrupts whatever that process is printing.
         let ipc_sender = encoded_payload.payload.ipc_channel_conf.sender(allocator);
 
-        Self { encoded_payload, ipc_sender }
+        Self {
+            encoded_payload,
+            ipc_sender,
+        }
     }
 
     fn send(&self, mode: fspy_shared::ipc::AccessMode, path: &Path) {
@@ -84,10 +87,14 @@ impl<'a> Client<'a> {
         }
         // The interception proceeds whether or not the record could be
         // sent — a preload library can never panic its host process.
-        ipc_sender.send(&PathAccess { mode, path: path.into() });
+        ipc_sender.send(&PathAccess {
+            mode,
+            path: path.into(),
+        });
     }
 
-    /// Resolves and reports an exec before forwarding its transformed arguments.
+    /// Resolves and reports an exec before forwarding its transformed
+    /// arguments.
     ///
     /// # Safety
     ///

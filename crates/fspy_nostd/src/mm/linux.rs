@@ -64,8 +64,15 @@ pub(super) unsafe fn mprotect(
     protection: MprotectFlags,
 ) -> Result<()> {
     // SAFETY: the caller upholds the mapped-region contract.
-    unsafe { syscalls::syscall!(syscalls::Sysno::mprotect, address, length, protection.bits()) }
-        .map_err(Error::from)?;
+    unsafe {
+        syscalls::syscall!(
+            syscalls::Sysno::mprotect,
+            address,
+            length,
+            protection.bits()
+        )
+    }
+    .map_err(Error::from)?;
     Ok(())
 }
 

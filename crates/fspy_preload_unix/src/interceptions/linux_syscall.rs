@@ -10,18 +10,19 @@ use crate::{
 intercept!(syscall(64): unsafe extern "C" fn(c_long, args: ...) -> c_long);
 unsafe extern "C" fn syscall(syscall_no: c_long, mut args: ...) -> c_long {
     // https://github.com/bminor/glibc/blob/efc8642051e6c4fe5165e8986c1338ba2c180de6/sysdeps/unix/sysv/linux/syscall.c#L23
-    // SAFETY: extracting variadic arguments matching the syscall ABI; the caller passes at least 6 c_long arguments
-    let a0 = unsafe { args.next_arg::<c_long>() };
+    // SAFETY: extracting variadic arguments matching the syscall ABI; the caller
+    // passes at least 6 c_long arguments
+    let a0 = unsafe { args.arg::<c_long>() };
     // SAFETY: extracting variadic arguments matching the syscall ABI
-    let a1 = unsafe { args.next_arg::<c_long>() };
+    let a1 = unsafe { args.arg::<c_long>() };
     // SAFETY: extracting variadic arguments matching the syscall ABI
-    let a2 = unsafe { args.next_arg::<c_long>() };
+    let a2 = unsafe { args.arg::<c_long>() };
     // SAFETY: extracting variadic arguments matching the syscall ABI
-    let a3 = unsafe { args.next_arg::<c_long>() };
+    let a3 = unsafe { args.arg::<c_long>() };
     // SAFETY: extracting variadic arguments matching the syscall ABI
-    let a4 = unsafe { args.next_arg::<c_long>() };
+    let a4 = unsafe { args.arg::<c_long>() };
     // SAFETY: extracting variadic arguments matching the syscall ABI
-    let a5 = unsafe { args.next_arg::<c_long>() };
+    let a5 = unsafe { args.arg::<c_long>() };
 
     if syscall_no == libc::SYS_statx {
         // C-style conversions are expected for the variadic syscall arguments.
@@ -42,12 +43,14 @@ unsafe extern "C" fn syscall(syscall_no: c_long, mut args: ...) -> c_long {
                 unsafe { handle_open(BorrowedFd::borrow_raw(dirfd), AccessMode::READ) };
             }
         } else {
-            // SAFETY: pathname is a non-null C string pointer provided by the statx syscall caller.
+            // SAFETY: pathname is a non-null C string pointer provided by the statx syscall
+            // caller.
             unsafe {
                 handle_open(PathAt::borrow_raw(dirfd, pathname), AccessMode::READ);
             };
         }
     }
-    // SAFETY: forwarding the syscall to the original libc syscall function with the extracted arguments
+    // SAFETY: forwarding the syscall to the original libc syscall function with the
+    // extracted arguments
     unsafe { syscall::original()(syscall_no, a0, a1, a2, a3, a4, a5) }
 }

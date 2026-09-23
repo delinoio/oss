@@ -1,6 +1,3 @@
-//! Private implementation shared with the matched native injection artifact.
-pub mod cache;
-pub mod diagnostic;
-pub mod executable;
-pub mod graph;
-pub mod view;
+//! Private pnport interface retained for the CLI and existing integration
+//! tests.
+pub use pnport_core::{cache, diagnostic, executable, graph, view};

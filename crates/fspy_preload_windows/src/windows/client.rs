@@ -24,7 +24,11 @@ impl<'a> Client<'a> {
         // corrupts whatever that process is printing.
         let ipc_sender = payload.channel_conf.sender(allocator);
 
-        Self { payload, payload_bytes, ipc_sender }
+        Self {
+            payload,
+            payload_bytes,
+            ipc_sender,
+        }
     }
 
     pub fn send(&self, access: PathAccess<'_>) {
@@ -39,7 +43,8 @@ impl<'a> Client<'a> {
     pub unsafe fn prepare_child_process(&self, child_handle: HANDLE) -> BOOL {
         // The payload propagates to children unchanged, so forward the bytes
         // this process was given instead of re-serializing.
-        // SAFETY: FFI call to DetourCopyPayloadToProcess with valid handle and payload buffer
+        // SAFETY: FFI call to DetourCopyPayloadToProcess with valid handle and payload
+        // buffer
         unsafe {
             DetourCopyPayloadToProcess(
                 child_handle,
@@ -51,7 +56,8 @@ impl<'a> Client<'a> {
     }
 
     pub const fn ansi_dll_path(&self) -> &'a CStr {
-        // SAFETY: payload.ansi_dll_path_with_nul is guaranteed to be a valid null-terminated byte string
+        // SAFETY: payload.ansi_dll_path_with_nul is guaranteed to be a valid
+        // null-terminated byte string
         unsafe { CStr::from_bytes_with_nul_unchecked(self.payload.ansi_dll_path_with_nul) }
     }
 }

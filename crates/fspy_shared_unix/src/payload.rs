@@ -24,22 +24,15 @@ pub struct Payload<'a> {
     #[cfg(not(target_env = "musl"))]
     pub preload_path: &'a IpcStr,
 
-    #[cfg(target_os = "macos")]
-    pub artifacts: Artifacts<'a>,
-
     #[cfg(target_os = "linux")]
     #[cfg_attr(
         not(target_env = "musl"),
-        expect(clippy::struct_field_names, reason = "descriptive field name for clarity")
+        expect(
+            clippy::struct_field_names,
+            reason = "descriptive field name for clarity"
+        )
     )]
     pub seccomp_payload: fspy_seccomp_unotify::payload::SeccompPayload,
-}
-
-#[cfg(target_os = "macos")]
-#[derive(Debug, SchemaWrite, SchemaRead, Clone, Copy)]
-pub struct Artifacts<'a> {
-    pub bash_path: &'a IpcStr,
-    pub coreutils_path: &'a IpcStr,
 }
 
 pub(crate) const PAYLOAD_ENV_NAME: &str = "FSPY_PAYLOAD";
@@ -83,15 +76,23 @@ pub fn encode_payload<'a, A: Allocator + Clone + 'a>(
     buffer.resize(serialized_size, 0);
     let mut writer: &mut [u8] = &mut buffer;
     wincode::serialize_into(&mut writer, &payload).unwrap();
-    assert!(writer.is_empty(), "the payload wrote fewer bytes than the size it reported");
+    assert!(
+        writer.is_empty(),
+        "the payload wrote fewer bytes than the size it reported"
+    );
 
     let encoded_len =
         base64::encoded_len(serialized_size, false).expect("encoded payload length exceeds usize");
     let mut encoded = allocator_api2::vec::Vec::with_capacity_in(encoded_len, allocator);
     encoded.resize(encoded_len, 0);
-    let written = BASE64_STANDARD_NO_PAD.encode_slice(&buffer, &mut encoded).unwrap();
+    let written = BASE64_STANDARD_NO_PAD
+        .encode_slice(&buffer, &mut encoded)
+        .unwrap();
     encoded.truncate(written);
-    EncodedPayload { payload, encoded_string: BStr::new(encoded.leak()) }
+    EncodedPayload {
+        payload,
+        encoded_string: BStr::new(encoded.leak()),
+    }
 }
 
 /// Decodes the fspy payload from an iterator over environment entries.
@@ -137,5 +138,8 @@ pub fn decode_payload_from_env<'a, A: Allocator + Clone + 'a>(
     buffer.truncate(decoded_len);
     let payload: Payload<'a> = wincode::deserialize_exact(buffer.leak())?;
 
-    Ok(EncodedPayload { payload, encoded_string })
+    Ok(EncodedPayload {
+        payload,
+        encoded_string,
+    })
 }

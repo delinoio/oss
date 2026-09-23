@@ -11,13 +11,17 @@ impl Current {
     /// Returns a fresh fat C-string iterator over the process arguments.
     #[must_use]
     pub fn args(&self) -> FatArgs {
-        FatArgs { inner: self.args.clone() }
+        FatArgs {
+            inner: self.args.clone(),
+        }
     }
 
     /// Returns a fresh fat C-string iterator over the process environment.
     #[must_use]
     pub fn envs(&self) -> FatEnvs {
-        FatEnvs { inner: self.envs.clone() }
+        FatEnvs {
+            inner: self.envs.clone(),
+        }
     }
 }
 
@@ -43,7 +47,9 @@ impl Iterator for FatEnvs {
     type Item = Entry;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next().map(|(name, value)| (name, value.map(CStr::count)))
+        self.inner
+            .next()
+            .map(|(name, value)| (name, value.map(CStr::count)))
     }
 }
 
@@ -88,9 +94,20 @@ mod tests {
         let current = unsafe { current().unwrap() };
 
         let argv_zero = current.args().next().unwrap();
-        assert_eq!(argv_zero.as_units(), std::env::args_os().next().unwrap().as_encoded_bytes());
+        assert_eq!(
+            argv_zero.as_units(),
+            std::env::args_os().next().unwrap().as_encoded_bytes()
+        );
 
-        let path = current.envs().find(|(name, _)| name.as_bytes() == b"PATH").unwrap().1.unwrap();
-        assert_eq!(path.as_units(), std::env::var_os("PATH").unwrap().as_encoded_bytes());
+        let path = current
+            .envs()
+            .find(|(name, _)| name.as_bytes() == b"PATH")
+            .unwrap()
+            .1
+            .unwrap();
+        assert_eq!(
+            path.as_units(),
+            std::env::var_os("PATH").unwrap().as_encoded_bytes()
+        );
     }
 }

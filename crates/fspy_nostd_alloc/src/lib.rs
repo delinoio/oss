@@ -63,18 +63,18 @@ static CHUNK_POOL: ChunkPool<PageAllocator, CHUNK_SIZE, CHUNK_ALIGN, SLOTS> = Ch
 /// The `Bump` settings [`pooled_bump`] uses — the defaults, with two
 /// changes:
 ///
-/// - `WithGuaranteedAllocated<false>`: a bump starts life without a chunk,
-///   so creating one allocates nothing.
+/// - `WithGuaranteedAllocated<false>`: a bump starts life without a chunk, so
+///   creating one allocates nothing.
 /// - `WithMinimumChunkSize<CHUNK_SIZE>`: the bump's first chunk request is
 ///   sized to the pool's chunks, making the coupling explicit — rather than
 ///   relying on the pool rounding the default 512-byte first request up to a
 ///   whole chunk. (Both end up serving the same memory: the pool answers any
 ///   request up to `CHUNK_SIZE` with a whole chunk, and `Bump` uses the full
 ///   returned length.) The request comes out slightly *under* `CHUNK_SIZE` —
-///   bump-scope deducts an assumed allocator-header overhead from its
-///   minimum — which is exactly what keeps a minimum-sized request within
-///   the pool's `size <= CHUNK_SIZE` gate; the
-///   `bump_chunk_requests_fit_the_pool_gates` test pins that fit.
+///   bump-scope deducts an assumed allocator-header overhead from its minimum —
+///   which is exactly what keeps a minimum-sized request within the pool's
+///   `size <= CHUNK_SIZE` gate; the `bump_chunk_requests_fit_the_pool_gates`
+///   test pins that fit.
 type PooledBumpSettings = <<BumpSettings as BumpAllocatorSettings>::WithGuaranteedAllocated<false> as BumpAllocatorSettings>::WithMinimumChunkSize<CHUNK_SIZE>;
 
 /// `Bump::unallocated` requires its base allocator to implement `Default`
@@ -165,14 +165,18 @@ mod tests {
             AllocatorApi2V02Compat<&ChunkPool<Global, CHUNK_SIZE, CHUNK_ALIGN, 4>>,
             TestSettings,
         > = Bump::try_new_in(AllocatorApi2V02Compat(&pool)).unwrap();
-        let block = bump.allocate(Layout::from_size_align(100, 8).unwrap()).unwrap();
+        let block = bump
+            .allocate(Layout::from_size_align(100, 8).unwrap())
+            .unwrap();
         let block_addr = block.cast::<u8>().as_ptr().addr();
         drop(bump);
 
         // The chunk went back into the pool's cache (proving it was served
         // as a chunk, not passed through): the next chunk-sized request
         // returns the block's surroundings.
-        let recycled = pool.allocate(Layout::from_size_align(100, 8).unwrap()).unwrap();
+        let recycled = pool
+            .allocate(Layout::from_size_align(100, 8).unwrap())
+            .unwrap();
         assert_eq!(recycled.len(), CHUNK_SIZE);
         let base = recycled.cast::<u8>().as_ptr().addr();
         assert!((base..base + CHUNK_SIZE).contains(&block_addr));
@@ -189,9 +193,12 @@ mod tests {
         let first = first_bump.allocate(layout).unwrap();
         assert!(first.len() >= 100);
         // SAFETY: fresh exclusive block of at least 100 bytes.
-        unsafe { first.cast::<u8>().as_ptr().write_bytes(0x5A, 100) };
+        unsafe { first.cast::<u8>().as_ptr().write_bytes(0x5a, 100) };
         let second = first_bump.allocate(layout).unwrap();
-        assert_ne!(first.cast::<u8>().as_ptr().addr(), second.cast::<u8>().as_ptr().addr());
+        assert_ne!(
+            first.cast::<u8>().as_ptr().addr(),
+            second.cast::<u8>().as_ptr().addr()
+        );
         let first_addr = first.cast::<u8>().as_ptr().addr();
         // Everything dies at once; the chunk goes back to the pool.
         drop(first_bump);

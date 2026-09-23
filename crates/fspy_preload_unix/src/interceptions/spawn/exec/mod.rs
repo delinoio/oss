@@ -12,7 +12,8 @@ use crate::{
 
 #[cfg(target_os = "macos")]
 pub unsafe fn environ() -> *const *const c_char {
-    // SAFETY: _NSGetEnviron() always returns a valid pointer to the process's environ on macOS
+    // SAFETY: _NSGetEnviron() always returns a valid pointer to the process's
+    // environ on macOS
     unsafe { *(libc::_NSGetEnviron().cast()) }
 }
 
@@ -21,7 +22,8 @@ pub unsafe fn environ() -> *const *const c_char {
     unsafe extern "C" {
         static environ: *const *const c_char;
     }
-    // SAFETY: environ is a valid global pointer to the process environment, as defined by POSIX
+    // SAFETY: environ is a valid global pointer to the process environment, as
+    // defined by POSIX
     unsafe { environ }
 }
 
@@ -34,7 +36,8 @@ fn handle_exec(
 ) -> libc::c_int {
     let client =
         global_client().expect("exec unexpectedly called before client initialized in ctor");
-    // SAFETY: prog, argv, and envp are valid pointers to C strings/arrays forwarded from the interposed exec function
+    // SAFETY: prog, argv, and envp are valid pointers to C strings/arrays forwarded
+    // from the interposed exec function
     let result = unsafe {
         client.handle_exec(
             config,
@@ -44,7 +47,11 @@ fn handle_exec(
                 if let Some(pre_exec) = pre_exec {
                     pre_exec.run()?;
                 }
-                Ok(execve::original()(raw_command.prog, raw_command.argv, raw_command.envp))
+                Ok(execve::original()(
+                    raw_command.prog,
+                    raw_command.argv,
+                    raw_command.envp,
+                ))
             },
         )
     };
@@ -83,7 +90,8 @@ unsafe extern "C" fn execl(path: *const c_char, arg0: *const c_char, valist: ...
         reason = "suppresses unused warning on *::original"
     )]
     let _unused = execl::original;
-    // SAFETY: valist and arg0 are valid variadic arguments forwarded from the interposed execl function
+    // SAFETY: valist and arg0 are valid variadic arguments forwarded from the
+    // interposed execl function
     unsafe {
         with_argv(valist, arg0, |args, _remaining| {
             handle_exec(
@@ -104,7 +112,8 @@ unsafe extern "C" fn execlp(path: *const c_char, arg0: *const c_char, valist: ..
         reason = "suppresses unused warning on *::original"
     )]
     let _unused = execlp::original;
-    // SAFETY: valist and arg0 are valid variadic arguments forwarded from the interposed execlp function
+    // SAFETY: valist and arg0 are valid variadic arguments forwarded from the
+    // interposed execlp function
     unsafe {
         with_argv(valist, arg0, |args, _remaining| {
             handle_exec(
@@ -125,10 +134,11 @@ unsafe extern "C" fn execle(path: *const c_char, arg0: *const c_char, valist: ..
         reason = "suppresses unused warning on *::original"
     )]
     let _unused = execle::original;
-    // SAFETY: valist and arg0 are valid variadic arguments forwarded from the interposed execle function
+    // SAFETY: valist and arg0 are valid variadic arguments forwarded from the
+    // interposed execle function
     unsafe {
         with_argv(valist, arg0, |args, mut remaining| {
-            let envp = remaining.next_arg::<*const *const c_char>();
+            let envp = remaining.arg::<*const *const c_char>();
             handle_exec(
                 fspy_nostd_alloc::pooled_bump(),
                 ExecResolveConfig::search_path_disabled(),
@@ -147,7 +157,8 @@ unsafe extern "C" fn execv(path: *const c_char, argv: *const *const c_char) -> c
         reason = "suppresses unused warning on *::original"
     )]
     let _unused = execv::original;
-    // SAFETY: path, argv are valid pointers forwarded from the interposed function; environ() returns the process environment
+    // SAFETY: path, argv are valid pointers forwarded from the interposed function;
+    // environ() returns the process environment
     unsafe {
         handle_exec(
             fspy_nostd_alloc::pooled_bump(),
@@ -187,7 +198,8 @@ mod linux_only {
     )]
     #[expect(
         clippy::allow_attributes,
-        reason = "using allow because wildcard_imports may or may not fire depending on build target"
+        reason = "using allow because wildcard_imports may or may not fire depending on build \
+                  target"
     )]
     #[allow(
         clippy::wildcard_imports,
@@ -240,7 +252,8 @@ mod linux_only {
         let _unused = execveat::original;
         let arena = fspy_nostd_alloc::pooled_bump();
 
-        // SAFETY: dirfd and pathname are valid arguments from the interposed execveat call.
+        // SAFETY: dirfd and pathname are valid arguments from the interposed execveat
+        // call.
         let path = unsafe { PathAt::borrow_raw(dirfd, pathname) };
         let abs_path = match path.to_absolute_path(&arena) {
             Ok(None) => {

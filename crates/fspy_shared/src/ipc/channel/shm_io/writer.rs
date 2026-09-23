@@ -55,8 +55,8 @@ impl<M: AsRawSlice> ShmWriter<M> {
     ///
     /// # Safety
     ///
-    /// - `mem.as_raw_slice()` must return a stable, valid pointer to the
-    ///   whole region for the writer's lifetime.
+    /// - `mem.as_raw_slice()` must return a stable, valid pointer to the whole
+    ///   region for the writer's lifetime.
     /// - The region must have been zero-initialized when it was created and
     ///   accessed only through this protocol since.
     /// - `slots` must be the count the region was created with.
@@ -108,7 +108,9 @@ impl<M: AsRawSlice> ShmWriter<M> {
         let reservation = u64::from(frame_size.get());
         // Payload bytes first, so a payload-capacity failure does not burn a
         // slot.
-        let payload_start = mapped.payload_reserved().fetch_add(reservation, Ordering::Relaxed);
+        let payload_start = mapped
+            .payload_reserved()
+            .fetch_add(reservation, Ordering::Relaxed);
         let Some(payload_offset) =
             fitted_offset(payload_start, frame_size.get(), mapped.payload_len)
         else {
@@ -138,8 +140,11 @@ impl<M: AsRawSlice> ShmWriter<M> {
         };
         Ok(FrameMut {
             slot,
-            slot_to_commit: SlotState::Committed { offset: payload_offset, len: frame_size }
-                .encode(),
+            slot_to_commit: SlotState::Committed {
+                offset: payload_offset,
+                len: frame_size,
+            }
+            .encode(),
             content,
         })
     }

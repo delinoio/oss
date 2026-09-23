@@ -26,7 +26,8 @@ pub struct SearchPath<'a> {
 #[derive(Debug, Clone)]
 pub struct ExecResolveConfig<'a> {
     /// If Some and the program doesn't contains `/`,
-    /// search the program in PATH (like execvp, execvpe, execlp) instead of finding it in current directory
+    /// search the program in PATH (like execvp, execvpe, execlp) instead of
+    /// finding it in current directory
     pub search_path: Option<SearchPath<'a>>,
     /// Options for parsing shebangs (all exec variants handle shebangs)
     pub shebang_options: ParseShebangOptions,
@@ -36,11 +37,15 @@ impl<'a> ExecResolveConfig<'a> {
     /// Configuration for execve - no PATH search, direct execution
     #[must_use]
     pub fn search_path_disabled() -> Self {
-        Self { search_path: None, shebang_options: ParseShebangOptions::default() }
+        Self {
+            search_path: None,
+            shebang_options: ParseShebangOptions::default(),
+        }
     }
 
     /// execlp/execvp/execvP/execvpe
-    /// `custom_path` allows a customized path to be searched like in execvP (macOS extension)
+    /// `custom_path` allows a customized path to be searched like in execvP
+    /// (macOS extension)
     #[must_use]
     pub fn search_path_enabled(custom_path: Option<&'a BStr>) -> Self {
         Self {
@@ -54,18 +59,21 @@ impl<'a> ExecResolveConfig<'a> {
 pub struct Exec {
     pub program: BString,
     pub args: Vec<BString>,
-    /// vec of (name, value). value is None when the entry in environ doesn't contain a `=` character.
+    /// vec of (name, value). value is None when the entry in environ doesn't
+    /// contain a `=` character.
     pub envs: Vec<(BString, Option<BString>)>,
 }
 
 fn getenv(name: &CStr) -> Option<&'static CStr> {
-    // SAFETY: `getenv` is a C standard library function, called with a valid pointer from `CStr::as_ptr`.
+    // SAFETY: `getenv` is a C standard library function, called with a valid
+    // pointer from `CStr::as_ptr`.
     let value = unsafe { nix::libc::getenv(name.as_ptr().cast()) };
     if value.is_null() {
         None
     } else {
-        // SAFETY: `value` is non-null (checked above) and points to a null-terminated string owned
-        // by the environment, as guaranteed by the C `getenv` contract.
+        // SAFETY: `value` is non-null (checked above) and points to a null-terminated
+        // string owned by the environment, as guaranteed by the C `getenv`
+        // contract.
         Some(unsafe { CStr::from_ptr(value) })
     }
 }
@@ -86,19 +94,22 @@ fn peek_executable(path: &Path, buf: &mut [u8]) -> nix::Result<usize> {
 impl Exec {
     /// Resolve the program path according to exec family semantics
     ///
-    /// This method replicates the behavior of execve/execvp/execvP/execvpe for program resolution,
-    /// including PATH searching and shebang handling.
+    /// This method replicates the behavior of execve/execvp/execvP/execvpe for
+    /// program resolution, including PATH searching and shebang handling.
     ///
     /// # Returns
     ///
-    /// * `Ok(())` if resolution succeeds and `self` is updated with resolved paths
-    /// * `Err(nix::Error)` with appropriate errno, like the exec function would return
+    /// * `Ok(())` if resolution succeeds and `self` is updated with resolved
+    ///   paths
+    /// * `Err(nix::Error)` with appropriate errno, like the exec function would
+    ///   return
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - The program is not found in PATH (`ENOENT`)
-    /// - The program file cannot be accessed or read (`EACCES`, `EISDIR`, `EIO`)
+    /// - The program file cannot be accessed or read (`EACCES`, `EISDIR`,
+    ///   `EIO`)
     /// - Shebang parsing fails due to I/O errors (`EIO`)
     pub fn resolve(
         &mut self,
@@ -147,7 +158,8 @@ impl Exec {
         )? {
             self.args[0] = shebang.interpreter.clone();
             let old_program = replace(&mut self.program, shebang.interpreter);
-            self.args.splice(1..1, shebang.arguments.into_iter().chain(once(old_program)));
+            self.args
+                .splice(1..1, shebang.arguments.into_iter().chain(once(old_program)));
         }
         Ok(())
     }
@@ -155,12 +167,14 @@ impl Exec {
 
 /// Ensures an environment variable is set to the specified value
 ///
-/// If the variable doesn't exist, it is added. If it exists with the same value,
-/// no change is made. If it exists with a different value, an error is returned.
+/// If the variable doesn't exist, it is added. If it exists with the same
+/// value, no change is made. If it exists with a different value, an error is
+/// returned.
 ///
 /// # Errors
 ///
-/// Returns `Err(nix::Error::EINVAL)` if the environment variable already exists with a different value.
+/// Returns `Err(nix::Error::EINVAL)` if the environment variable already exists
+/// with a different value.
 pub fn ensure_env(
     envs: &mut Vec<(BString, Option<BString>)>,
     name: impl AsRef<BStr>,
@@ -168,9 +182,15 @@ pub fn ensure_env(
 ) -> nix::Result<()> {
     let name = name.as_ref();
     let value = value.as_ref();
-    let existing_value = envs.iter().find_map(|(n, v)| if n == name { v.as_ref() } else { None });
+    let existing_value = envs
+        .iter()
+        .find_map(|(n, v)| if n == name { v.as_ref() } else { None });
     if let Some(existing_value) = existing_value {
-        return if existing_value == value { Ok(()) } else { Err(nix::Error::EINVAL) };
+        return if existing_value == value {
+            Ok(())
+        } else {
+            Err(nix::Error::EINVAL)
+        };
     }
     envs.push((name.to_owned(), Some(value.to_owned())));
     Ok(())
@@ -186,11 +206,11 @@ pub fn ensure_env(
 /// mirroring what the OS actually did.
 ///
 /// - Absent: inserts `(name, value)`.
-/// - Present with `value` already as the last colon-separated entry: no
-///   change (idempotent across nested execs within the preloaded shim).
+/// - Present with `value` already as the last colon-separated entry: no change
+///   (idempotent across nested execs within the preloaded shim).
 /// - Present otherwise: rewrites to `{existing}:{value}`. If `existing` is
-///   empty, sets to `value` alone to avoid a leading `:` (which glibc's
-///   `ld.so` interprets as the current directory).
+///   empty, sets to `value` alone to avoid a leading `:` (which glibc's `ld.so`
+///   interprets as the current directory).
 pub fn append_path_env(
     envs: &mut Vec<(BString, Option<BString>)>,
     name: impl AsRef<BStr>,
@@ -248,7 +268,10 @@ mod tests {
 
     #[test]
     fn noop_when_value_is_last_entry() {
-        let mut envs = vec![(BString::from("LD_PRELOAD"), Some(BString::from("/user.so:/a.so")))];
+        let mut envs = vec![(
+            BString::from("LD_PRELOAD"),
+            Some(BString::from("/user.so:/a.so")),
+        )];
         append_path_env(&mut envs, "LD_PRELOAD", "/a.so");
         assert_eq!(env(&envs, b"LD_PRELOAD"), Some(b"/user.so:/a.so".to_vec()));
     }
@@ -280,7 +303,10 @@ mod tests {
     fn does_not_false_match_prefix_without_preceding_colon() {
         // `lib/a.so` ends with `/a.so` as bytes, but the preceding byte is
         // `b` not `:`, so it must NOT be treated as already-present.
-        let mut envs = vec![(BString::from("LD_PRELOAD"), Some(BString::from("/lib/a.so")))];
+        let mut envs = vec![(
+            BString::from("LD_PRELOAD"),
+            Some(BString::from("/lib/a.so")),
+        )];
         append_path_env(&mut envs, "LD_PRELOAD", "a.so");
         assert_eq!(env(&envs, b"LD_PRELOAD"), Some(b"/lib/a.so:a.so".to_vec()));
     }

@@ -17,7 +17,10 @@ pub(super) type ModeBits = u32;
 pub(super) const S_IRUSR: ModeBits = linux_raw_sys::general::S_IRUSR;
 pub(super) const S_IWUSR: ModeBits = linux_raw_sys::general::S_IWUSR;
 
-#[expect(clippy::needless_pass_by_value, reason = "CStr is a borrowed value type")]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "CStr is a borrowed value type"
+)]
 pub(super) fn openat<R>(
     dirfd: BorrowedFd<'_>,
     path: CStr<'_, R>,
@@ -45,7 +48,10 @@ pub(super) fn openat<R>(
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
 }
 
-#[expect(clippy::needless_pass_by_value, reason = "CStr is a borrowed value type")]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "CStr is a borrowed value type"
+)]
 pub(super) fn unlinkat<R>(dirfd: BorrowedFd<'_>, path: CStr<'_, R>, flags: AtFlags) -> Result<()> {
     // SAFETY: `dirfd` remains borrowed and `path` is NUL-terminated for the
     // syscall.
@@ -69,7 +75,9 @@ pub(super) fn fstat(fd: BorrowedFd<'_>) -> Result<Stat> {
         .map_err(Error::from)?;
     // SAFETY: a successful `fstat` initialized the complete structure.
     let raw = unsafe { raw.assume_init() };
-    Ok(Stat { st_size: raw.st_size })
+    Ok(Stat {
+        st_size: raw.st_size,
+    })
 }
 
 pub(super) fn ftruncate(fd: BorrowedFd<'_>, len: u64) -> Result<()> {

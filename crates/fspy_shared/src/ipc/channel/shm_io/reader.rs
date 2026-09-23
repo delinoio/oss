@@ -79,8 +79,8 @@ impl<M: AsRawSlice> ShmReader<M> {
     ///
     /// Same contract as [`ShmWriter::new`](super::ShmWriter::new):
     ///
-    /// - `mem.as_raw_slice()` must return a stable, valid pointer to the
-    ///   whole region for the reader's lifetime.
+    /// - `mem.as_raw_slice()` must return a stable, valid pointer to the whole
+    ///   region for the reader's lifetime.
     /// - The region must have been zero-initialized when it was created and
     ///   accessed only through this protocol since.
     /// - `slots` must be the count the region was created with.
@@ -130,7 +130,11 @@ impl<M: AsRawSlice> ShmReader<M> {
         // mapping this reader owns, and a slot is an `AtomicU64`, so a
         // writer storing a descriptor never invalidates it.
         let table = NonNull::from_ref(admitted);
-        Ok(Self { payload_start: mapped.payload_start, table, _mem: mem })
+        Ok(Self {
+            payload_start: mapped.payload_start,
+            table,
+            _mem: mem,
+        })
     }
 
     /// Iterates over the committed frames in claim order.
@@ -154,7 +158,9 @@ impl<M: AsRawSlice> ShmReader<M> {
 
 impl<M> fmt::Debug for ShmReader<M> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ShmReader").field("slots", &self.table.len()).finish_non_exhaustive()
+        f.debug_struct("ShmReader")
+            .field("slots", &self.table.len())
+            .finish_non_exhaustive()
     }
 }
 
@@ -187,7 +193,10 @@ impl<'a> Iterator for Iter<'a> {
             // keeps the mapping alive.
             return Some(unsafe {
                 slice::from_raw_parts(
-                    self.payload_start.add(to_usize(offset)).as_ptr().cast_const(),
+                    self.payload_start
+                        .add(to_usize(offset))
+                        .as_ptr()
+                        .cast_const(),
                     to_usize(len.get()),
                 )
             });

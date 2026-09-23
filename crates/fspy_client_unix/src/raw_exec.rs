@@ -34,7 +34,9 @@ impl RawExec {
             let cur_str = unsafe { strs.add(i) };
             // SAFETY: *cur_str is a non-null pointer to a valid
             // null-terminated C string, verified by the counting loop above.
-            str_vec.push(map_fn(unsafe { CStr::from_ptr(*cur_str) }.to_bytes().as_bstr()));
+            str_vec.push(map_fn(
+                unsafe { CStr::from_ptr(*cur_str) }.to_bytes().as_bstr(),
+            ));
         }
         str_vec
     }
@@ -73,7 +75,10 @@ impl RawExec {
     pub unsafe fn to_exec(self) -> Exec {
         // SAFETY: self.prog is a non-null pointer to a valid null-terminated C
         // string, as guaranteed by the libc exec calling convention.
-        let program = unsafe { CStr::from_ptr(self.prog) }.to_bytes().as_bstr().to_owned();
+        let program = unsafe { CStr::from_ptr(self.prog) }
+            .to_bytes()
+            .as_bstr()
+            .to_owned();
 
         // SAFETY: self.argv is a valid null-terminated array of C string
         // pointers, as guaranteed by the libc exec calling convention.
@@ -85,12 +90,21 @@ impl RawExec {
             Self::collect_c_str_array(self.envp, |env| {
                 env.iter().position(|b| *b == b'=').map_or_else(
                     || (env.to_owned(), None),
-                    |eq_pos| (env[..eq_pos].to_owned(), Some(env[(eq_pos + 1)..].to_owned())),
+                    |eq_pos| {
+                        (
+                            env[..eq_pos].to_owned(),
+                            Some(env[(eq_pos + 1)..].to_owned()),
+                        )
+                    },
                 )
             })
         };
 
-        Exec { program, args, envs }
+        Exec {
+            program,
+            args,
+            envs,
+        }
     }
 
     pub fn from_exec<R>(cmd: Exec, allocator: impl Allocator, f: impl FnOnce(Self) -> R) -> R {

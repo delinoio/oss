@@ -52,7 +52,10 @@ impl BorrowedHandle<'_> {
     /// call receiving the borrow defines as meaningful.
     #[must_use]
     pub const unsafe fn borrow_raw(handle: RawHandle) -> Self {
-        Self { handle, lifetime: PhantomData }
+        Self {
+            handle,
+            lifetime: PhantomData,
+        }
     }
 
     /// Returns the raw handle without transferring ownership.
@@ -109,7 +112,11 @@ impl Drop for OwnedHandle {
 ///
 /// Returns the calling thread's last Win32 error when `result` is zero.
 pub fn bool_result(result: i32) -> Result<()> {
-    if result == 0 { Err(crate::Error::last_os_error()) } else { Ok(()) }
+    if result == 0 {
+        Err(crate::Error::last_os_error())
+    } else {
+        Ok(())
+    }
 }
 
 /// Returns a handle to the loaded module named by `name`.
@@ -120,7 +127,10 @@ pub fn bool_result(result: i32) -> Result<()> {
 /// # Errors
 ///
 /// Returns the Windows error reported when no matching loaded module exists.
-#[expect(clippy::needless_pass_by_value, reason = "CStr is a borrowed value type")]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "CStr is a borrowed value type"
+)]
 pub fn get_module_handle<R>(name: WideCStr<'_, R>) -> Result<NonNull<c_void>> {
     // SAFETY: `name` remains a valid NUL-terminated wide string for the call.
     let module = unsafe { GetModuleHandleW(name.as_ptr()) };

@@ -8,8 +8,8 @@ use std::os::raw::c_int;
 use libc::syscall;
 
 /// # Safety
-/// The `args` pointer must be valid for the given `operation`, or null if the operation
-/// does not require arguments.
+/// The `args` pointer must be valid for the given `operation`, or null if the
+/// operation does not require arguments.
 unsafe fn seccomp(
     operation: libc::c_uint,
     flags: libc::c_uint,
@@ -34,11 +34,12 @@ fn get_notif_sizes() -> nix::Result<libc::seccomp_notif_sizes> {
     Ok(sizes)
 }
 
-/// Receives a seccomp notification from the given file descriptor into the provided buffer.
+/// Receives a seccomp notification from the given file descriptor into the
+/// provided buffer.
 ///
 /// # Errors
-/// Returns an error if the ioctl call fails (e.g., the fd is invalid or the kernel
-/// returns an error).
+/// Returns an error if the ioctl call fails (e.g., the fd is invalid or the
+/// kernel returns an error).
 #[cfg(feature = "supervisor")]
 pub fn notif_recv(
     fd: std::os::fd::BorrowedFd<'_>,
@@ -47,9 +48,14 @@ pub fn notif_recv(
     use std::os::fd::AsRawFd;
     const SECCOMP_IOCTL_NOTIF_RECV: libc::Ioctl = 3_226_476_800u64 as libc::Ioctl;
     // SAFETY: `notif_buf.zeroed()` returns a valid mutable pointer to a zeroed
-    // `seccomp_notif` buffer with sufficient size for the kernel's notification struct
+    // `seccomp_notif` buffer with sufficient size for the kernel's notification
+    // struct
     let ret = unsafe {
-        libc::ioctl(fd.as_raw_fd(), SECCOMP_IOCTL_NOTIF_RECV, (&raw mut *notif_buf.zeroed()))
+        libc::ioctl(
+            fd.as_raw_fd(),
+            SECCOMP_IOCTL_NOTIF_RECV,
+            (&raw mut *notif_buf.zeroed()),
+        )
     };
     if ret < 0 {
         return Err(nix::Error::last());
@@ -57,11 +63,12 @@ pub fn notif_recv(
     Ok(())
 }
 
-/// Installs a seccomp user notification filter and returns the notification file descriptor.
+/// Installs a seccomp user notification filter and returns the notification
+/// file descriptor.
 ///
 /// # Errors
-/// Returns an error if the seccomp syscall fails (e.g., invalid filter program or
-/// insufficient privileges).
+/// Returns an error if the seccomp syscall fails (e.g., invalid filter program
+/// or insufficient privileges).
 #[cfg(feature = "target")]
 pub fn install_unotify_filter(prog: &[libc::sock_filter]) -> nix::Result<std::os::fd::OwnedFd> {
     use std::os::fd::FromRawFd;

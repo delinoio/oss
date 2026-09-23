@@ -33,7 +33,10 @@ impl BorrowedFd<'_> {
     #[must_use]
     pub const unsafe fn borrow_raw(fd: RawFd) -> Self {
         assert!(fd != -1, "-1 is not a borrowed file descriptor");
-        Self { fd, lifetime: PhantomData }
+        Self {
+            fd,
+            lifetime: PhantomData,
+        }
     }
 
     /// Returns the raw descriptor without transferring ownership.

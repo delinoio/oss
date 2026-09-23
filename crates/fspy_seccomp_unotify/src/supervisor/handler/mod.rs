@@ -4,7 +4,10 @@ use std::io;
 
 use libc::seccomp_notif;
 
-#[expect(clippy::module_name_repetitions, reason = "clearer as a standalone export")]
+#[expect(
+    clippy::module_name_repetitions,
+    reason = "clearer as a standalone export"
+)]
 pub trait SeccompNotifyHandler {
     fn syscalls() -> &'static [syscalls::Sysno];
     /// Handles a seccomp notification for an intercepted syscall.

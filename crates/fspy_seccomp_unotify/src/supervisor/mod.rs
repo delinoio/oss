@@ -48,17 +48,21 @@ impl<H> Supervisor<H> {
     /// Panics if the handling loop task has panicked.
     ///
     /// # Errors
-    /// Returns an error if any of the spawned handler tasks failed with an I/O error.
+    /// Returns an error if any of the spawned handler tasks failed with an I/O
+    /// error.
     pub async fn stop(self) -> io::Result<Vec<H>> {
         drop(self.cancel_tx);
-        self.handling_loop_task.await.expect("handling loop task panicked")
+        self.handling_loop_task
+            .await
+            .expect("handling loop task panicked")
     }
 }
 
 /// Creates a new supervisor that listens for seccomp user notifications.
 ///
 /// # Panics
-/// Panics if the seccomp filter cannot be compiled or the target architecture is unsupported.
+/// Panics if the seccomp filter cannot be compiled or the target architecture
+/// is unsupported.
 ///
 /// # Errors
 /// Returns an error if the temporary IPC socket cannot be created.
@@ -69,15 +73,23 @@ pub fn supervise<H: SeccompNotifyHandler + Default + Send + 'static>() -> io::Re
         .make(|path| UnixListener::bind(path))?;
 
     let seccomp_filter = SeccompFilter::new(
-        H::syscalls().iter().map(|sysno| (sysno.id().into(), vec![])).collect(),
+        H::syscalls()
+            .iter()
+            .map(|sysno| (sysno.id().into(), vec![]))
+            .collect(),
         SeccompAction::Allow,
         SeccompAction::UserNotif,
         std::env::consts::ARCH.try_into().unwrap(),
     )
     .unwrap();
 
-    let bpf_filter =
-        Filter(BpfProgram::try_from(seccomp_filter).unwrap().into_iter().map(Into::into).collect());
+    let bpf_filter = Filter(
+        BpfProgram::try_from(seccomp_filter)
+            .unwrap()
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+    );
 
     let payload = SeccompPayload {
         ipc_path: notify_listener.path().as_os_str().as_bytes().to_vec(),
@@ -111,7 +123,8 @@ pub fn supervise<H: SeccompNotifyHandler + Default + Send + 'static>() -> io::Re
                 while let Some(notify) = listener.next().await? {
                     let _span = span!(Level::TRACE, "notify loop tick");
                     // Errors on the supervisor side could be caused by a target process aborting.
-                    // It shouldn't break the syscall handling loop as there might be target processes.
+                    // It shouldn't break the syscall handling loop as there might be target
+                    // processes.
                     let _handle_result = handler.handle_notify(notify);
                     let req_id = notify.id;
                     listener.send_continue(req_id, &mut resp_buf)?;
@@ -125,5 +138,9 @@ pub fn supervise<H: SeccompNotifyHandler + Default + Send + 'static>() -> io::Re
         }
         Ok(handlers)
     };
-    Ok(Supervisor { payload, cancel_tx, handling_loop_task: tokio::spawn(handling_loop) })
+    Ok(Supervisor {
+        payload,
+        cancel_tx,
+        handling_loop_task: tokio::spawn(handling_loop),
+    })
 }

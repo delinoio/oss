@@ -26,26 +26,30 @@ use wincode::{
 ///
 /// Similar to [`OsStr`], but:
 /// - Can be infallibly and losslessly encoded/decoded using wincode.
-///   (`SchemaWrite`/`SchemaRead` implementations for `OsStr` require it to be valid UTF-8. This does not.)
+///   (`SchemaWrite`/`SchemaRead` implementations for `OsStr` require it to be
+///   valid UTF-8. This does not.)
 /// - Can be constructed from wide characters on Windows with zero copy.
 /// - Supports zero-copy `SchemaRead`.
 ///
 /// # Platform representation
 ///
 /// - **Unix**: raw bytes of the `OsStr`.
-/// - **Windows**: raw bytes transmuted from `&[u16]` (wide chars). See `to_os_string` for decoding.
+/// - **Windows**: raw bytes transmuted from `&[u16]` (wide chars). See
+///   `to_os_string` for decoding.
 ///
 /// # Limitations
 ///
-/// **Not portable across platforms.** The binary representation is platform-specific.
-/// Deserializing an `IpcStr` serialized on a different platform leads to unspecified
-/// behavior (garbage data), but is not unsafe. Designed for same-platform IPC only.
+/// **Not portable across platforms.** The binary representation is
+/// platform-specific. Deserializing an `IpcStr` serialized on a different
+/// platform leads to unspecified behavior (garbage data), but is not unsafe.
+/// Designed for same-platform IPC only.
 #[derive(TransparentWrapper, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct IpcStr {
     // On unix, this is the raw bytes of the OsStr.
-    // On windows, this is safely transmuted from `&[u16]` in `IpcStr::from_wide`. We don't declare it as `&[u16]` to allow zero-copy read.
-    // Transmuting back to `&[u16]` would be unsafe because of different alignments between `u8` and `u16` (See `to_os_string`).
+    // On windows, this is safely transmuted from `&[u16]` in `IpcStr::from_wide`. We don't declare
+    // it as `&[u16]` to allow zero-copy read. Transmuting back to `&[u16]` would be unsafe
+    // because of different alignments between `u8` and `u16` (See `to_os_string`).
     data: [u8],
 }
 
@@ -147,7 +151,8 @@ impl Debug for IpcStr {
 }
 
 // Manual impl: wincode derive requires Sized, but IpcStr wraps unsized [u8].
-// SAFETY: Delegates to `[u8]`'s SchemaWrite impl, preserving its size/write invariants.
+// SAFETY: Delegates to `[u8]`'s SchemaWrite impl, preserving its size/write
+// invariants.
 unsafe impl<C: Config> SchemaWrite<C> for IpcStr {
     type Src = Self;
 

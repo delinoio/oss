@@ -1,9 +1,6 @@
 #[cfg(target_os = "linux")]
 mod syscall_handler;
 
-#[cfg(target_os = "macos")]
-mod macos_artifacts;
-
 use std::{io, path::Path};
 
 #[cfg(target_os = "linux")]
@@ -29,14 +26,12 @@ use crate::{ChildTermination, Command, TrackedChild, arena::PathAccessArena, err
 #[derive(Debug)]
 #[cfg_attr(
     target_os = "macos",
-    expect(clippy::struct_field_names, reason = "each field names a distinct injected path")
+    expect(
+        clippy::struct_field_names,
+        reason = "each field names a distinct injected path"
+    )
 )]
 pub struct SpyImpl {
-    #[cfg(target_os = "macos")]
-    bash_path: Box<IpcStr>,
-    #[cfg(target_os = "macos")]
-    coreutils_path: Box<IpcStr>,
-
     #[cfg(not(target_env = "musl"))]
     preload_path: Box<IpcStr>,
 }
@@ -61,20 +56,6 @@ impl SpyImpl {
         Ok(Self {
             #[cfg(not(target_env = "musl"))]
             preload_path,
-            #[cfg(target_os = "macos")]
-            bash_path: macos_artifacts::OILS_BINARY
-                .materialize()
-                .executable()
-                .at(dir)?
-                .as_path()
-                .into(),
-            #[cfg(target_os = "macos")]
-            coreutils_path: macos_artifacts::COREUTILS_BINARY
-                .materialize()
-                .executable()
-                .at(dir)?
-                .as_path()
-                .into(),
         })
     }
 
@@ -99,12 +80,6 @@ impl SpyImpl {
             #[cfg(not(target_env = "musl"))]
             preload_path: &self.preload_path,
 
-            #[cfg(target_os = "macos")]
-            artifacts: fspy_shared_unix::payload::Artifacts {
-                bash_path: &self.bash_path,
-                coreutils_path: &self.coreutils_path,
-            },
-
             #[cfg(target_os = "linux")]
             seccomp_payload: supervisor.payload().clone(),
         };
@@ -121,7 +96,10 @@ impl SpyImpl {
             ExecResolveConfig::search_path_enabled(None),
             &encoded_payload,
             |mode, path| {
-                exec_resolve_accesses.add(PathAccess { mode, path: path.into() });
+                exec_resolve_accesses.add(PathAccess {
+                    mode,
+                    path: path.into(),
+                });
             },
         )
         .map_err(|err| SpawnError::Injection(err.into()))?;
@@ -130,7 +108,8 @@ impl SpyImpl {
 
         let mut tokio_command = command.into_tokio_command();
 
-        // SAFETY: the pre_exec closure only calls pre_exec.run() which is safe to call in a fork context
+        // SAFETY: the pre_exec closure only calls pre_exec.run() which is safe to call
+        // in a fork context
         unsafe {
             tokio_command.pre_exec(move || {
                 if let Some(pre_exec) = pre_exec.as_ref() {
@@ -141,8 +120,9 @@ impl SpyImpl {
         }
 
         // tokio_command.spawn blocks while executing the `pre_exec` closure.
-        // Run it inside spawn_blocking to avoid blocking the tokio runtime, especially the supervisor loop,
-        // which needs to accept incoming connections while `pre_exec` is connecting to it.
+        // Run it inside spawn_blocking to avoid blocking the tokio runtime, especially
+        // the supervisor loop, which needs to accept incoming connections while
+        // `pre_exec` is connecting to it.
         let mut child = spawn_blocking(move || tokio_command.spawn())
             .await
             .map_err(|err| SpawnError::OsSpawn(err.into()))?
@@ -152,8 +132,9 @@ impl SpyImpl {
             stdin: child.stdin.take(),
             stdout: child.stdout.take(),
             stderr: child.stderr.take(),
-            // Keep polling for the child to exit in the background even if `wait_handle` is not awaited,
-            // because we need to stop the supervisor and close the channel as soon as the child exits.
+            // Keep polling for the child to exit in the background even if `wait_handle` is not
+            // awaited, because we need to stop the supervisor and close the channel as
+            // soon as the child exits.
             wait_handle: tokio::spawn(async move {
                 let status = tokio::select! {
                     status = child.wait() => status?,
@@ -176,15 +157,23 @@ impl SpyImpl {
                 let arenas = arenas.collect::<Vec<_>>();
 
                 // Close the ipc channel after the child has exited.
-                // We are not interested in path accesses from descendants after the main child has exited.
+                // We are not interested in path accesses from descendants after the main child
+                // has exited.
                 #[cfg(not(target_env = "musl"))]
                 #[cfg(not(target_env = "musl"))]
-                let path_accesses = ChannelAccesses::try_from(ipc_receiver)
-                    .map(|ipc_accesses| PathAccessIterable { arenas, ipc_accesses });
+                let path_accesses = ChannelAccesses::try_from(ipc_receiver).map(|ipc_accesses| {
+                    PathAccessIterable {
+                        arenas,
+                        ipc_accesses,
+                    }
+                });
                 #[cfg(target_env = "musl")]
                 let path_accesses = Ok(PathAccessIterable { arenas });
 
-                io::Result::Ok(ChildTermination { status, path_accesses })
+                io::Result::Ok(ChildTermination {
+                    status,
+                    path_accesses,
+                })
             })
             .map(|f| f?) // flatten JoinError and io::Result
             .boxed(),
@@ -200,8 +189,11 @@ pub struct PathAccessIterable {
 
 impl PathAccessIterable {
     pub fn iter(&self) -> impl Iterator<Item = PathAccess<'_>> {
-        let accesses_in_arena =
-            self.arenas.iter().flat_map(|arena| arena.borrow_accesses().iter()).copied();
+        let accesses_in_arena = self
+            .arenas
+            .iter()
+            .flat_map(|arena| arena.borrow_accesses().iter())
+            .copied();
 
         #[cfg(not(target_env = "musl"))]
         {

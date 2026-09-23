@@ -54,7 +54,8 @@ function header(name, size, mode) {
 }
 
 export function nativeArchive(target, binary, preload) {
-  const files = [[target.binary, binary, target.os === "win32" ? 0o644 : 0o755], [companion(target), preload, 0o644]];
+  const files = [[target.binary, binary, target.os === "win32" ? 0o644 : 0o755], [companion(target), preload, 0o644], ["LICENSE", Buffer.from(sourceText("crates/pnport/LICENSE")), 0o644]];
+  if (target.os !== "win32") files.push(["LICENSE.fspy", Buffer.from(sourceText("crates/fspy/LICENSE")), 0o644]);
   const parts = files.flatMap(([name, bytes, mode]) => [header(name, bytes.length, mode), bytes, Buffer.alloc((512 - bytes.length % 512) % 512)]);
   return gzipSync(Buffer.concat([...parts, Buffer.alloc(1024)]), { level: 9 });
 }
@@ -82,7 +83,7 @@ function manifest(target, version, sourceRevision) {
   const value = target ? nativeManifest(target.suffix, version, sourceRevision) : launcherManifest(version, sourceRevision);
   value.repository = { ...value.repository, directory: "packages/pnport" };
   value.publishConfig = { access: "public", registry: "https://registry.npmjs.org" };
-  if (target) value.files = [`bin/${target.binary}`, `bin/${companion(target)}`, "README.md", "LICENSE"];
+  if (target) value.files = [`bin/${target.binary}`, `bin/${companion(target)}`, "README.md", "LICENSE", ...(target.os !== "win32" ? ["LICENSE.fspy"] : [])];
   else value.files = [...mainFiles, "README.md", "LICENSE"];
   return value;
 }
@@ -99,10 +100,14 @@ export function inspectTarball(file, version, sourceRevision) {
   ensure(JSON.stringify([...entries.keys()].sort()) === JSON.stringify(files), "pnport package file inventory mismatch");
   const executable = target ? `bin/${target.binary}` : "bin/pnport.cjs";
   ensure(entries.get(executable).bytes.length > 0, "Empty pnport executable");
-  if (target?.os !== "win32") ensure((entries.get(executable).mode & 0o111) === 0o111, "Missing executable mode");
-  if (target) ensure(entries.get(`bin/${companion(target)}`).bytes.length > 0, "Missing native companion");
+  if (target && target.os !== "win32") ensure((entries.get(executable).mode & 0o111) === 0o111, "Missing executable mode");
+  if (target) {
+    const preload = entries.get(`bin/${companion(target)}`)?.bytes;
+    ensure(preload?.length > 0, "Missing native companion");
+    if (target.os === "darwin") ensure(preload.includes(Buffer.from("PNPORT_PRELOAD_0.1.0_FORMAT_1_READY")), "fspy companion ABI mismatch");
+  }
   else for (const name of mainFiles) ensure(entries.get(name).bytes.equals(Buffer.from(sourceText(`packages/pnport/${name}`))), `Launcher source mismatch: ${name}`);
-  for (const [name, source] of [["LICENSE", "LICENSE"], ["README.md", "packages/pnport/README.md"]]) ensure(entries.get(name).bytes.equals(Buffer.from(sourceText(source))), `${name} source mismatch`);
+  for (const [name, source] of [["LICENSE", "crates/pnport/LICENSE"], ["README.md", "packages/pnport/README.md"], ...(target && target.os !== "win32" ? [["LICENSE.fspy", "crates/fspy/LICENSE"]] : [])]) ensure(entries.get(name).bytes.equals(Buffer.from(sourceText(source))), `${name} source mismatch`);
   ensure(path.basename(file) === tarballName(expected.name, version), "npm tarball name mismatch");
   return { name: expected.name, version, revision: sourceRevision, filename: path.basename(file), integrity: identity(bytes) };
 }
@@ -110,9 +115,9 @@ export function inspectTarball(file, version, sourceRevision) {
 export function inspectArchive(file, target, npmFile) {
   const archive = tarEntries(readFileSync(file), "");
   const packed = tarEntries(readFileSync(npmFile));
-  const names = [target.binary, companion(target)].sort();
-  ensure(JSON.stringify([...archive.keys()].sort()) === JSON.stringify(names), "Native archive must contain exactly the executable and companion");
-  for (const name of names) ensure(archive.get(name).bytes.equals(packed.get(`bin/${name}`).bytes), "Native archive/npm payload mismatch");
+  const names = [target.binary, companion(target), "LICENSE", ...(target.os !== "win32" ? ["LICENSE.fspy"] : [])].sort();
+  ensure(JSON.stringify([...archive.keys()].sort()) === JSON.stringify(names), "Native archive inventory mismatch");
+  for (const name of names) ensure(archive.get(name).bytes.equals(packed.get(name.startsWith("LICENSE") ? name : `bin/${name}`).bytes), "Native archive/npm payload mismatch");
   if (target.os !== "win32") ensure((archive.get(target.binary).mode & 0o111) === 0o111, "Native archive executable mode missing");
   return { target: target.suffix, name: path.basename(file), sha256: sha256(readFileSync(file)) };
 }
@@ -141,7 +146,8 @@ export function buildPackage({ target, binary, preload, output, sourceRevision =
   rmSync(directory, { recursive: true, force: true });
   mkdirSync(path.join(directory, "bin"), { recursive: true });
   writeFileSync(path.join(directory, "README.md"), sourceText("packages/pnport/README.md"));
-  writeFileSync(path.join(directory, "LICENSE"), sourceText("LICENSE"));
+  writeFileSync(path.join(directory, "LICENSE"), sourceText("crates/pnport/LICENSE"));
+  if (target && target.os !== "win32") writeFileSync(path.join(directory, "LICENSE.fspy"), sourceText("crates/fspy/LICENSE"));
   if (target) {
     for (const [name, input] of [[target.binary, binary], [companion(target), preload]]) copyFileSync(path.resolve(input), path.join(directory, "bin", name));
     if (target.os !== "win32") chmodSync(path.join(directory, "bin", target.binary), 0o755);

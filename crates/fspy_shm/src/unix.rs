@@ -152,7 +152,10 @@ impl Drop for Mapping {
     }
 }
 
-#[expect(clippy::len_without_is_empty, reason = "shared-memory mappings are always non-empty")]
+#[expect(
+    clippy::len_without_is_empty,
+    reason = "shared-memory mappings are always non-empty"
+)]
 impl Mapping {
     /// Returns the mapped length in bytes.
     #[must_use]

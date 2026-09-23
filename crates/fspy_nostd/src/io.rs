@@ -15,7 +15,12 @@ use crate::{BorrowedFd, Error, Result};
 pub fn read(fd: BorrowedFd<'_>, buf: &mut [u8]) -> Result<usize> {
     // SAFETY: `fd` stays borrowed and `buf` is writable for its whole length.
     unsafe {
-        syscalls::syscall!(syscalls::Sysno::read, fd.as_raw_fd(), buf.as_mut_ptr(), buf.len())
+        syscalls::syscall!(
+            syscalls::Sysno::read,
+            fd.as_raw_fd(),
+            buf.as_mut_ptr(),
+            buf.len()
+        )
     }
     .map_err(Error::from)
 }
@@ -34,7 +39,12 @@ pub fn write(fd: BorrowedFd<'_>, buf: &[u8]) -> Result<usize> {
     // whole length. The kernel receives the descriptor, buffer pointer, and
     // length explicitly and returns the accepted byte count.
     let written = unsafe {
-        syscalls::syscall!(syscalls::Sysno::write, fd.as_raw_fd(), buf.as_ptr(), buf.len())
+        syscalls::syscall!(
+            syscalls::Sysno::write,
+            fd.as_raw_fd(),
+            buf.as_ptr(),
+            buf.len()
+        )
     }
     .map_err(Error::from)?;
     Ok(written)

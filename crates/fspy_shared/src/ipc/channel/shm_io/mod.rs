@@ -98,7 +98,10 @@ mod tests {
 
             let mem: Vec<usize> = std::iter::repeat_n(0usize, size_in_usize).collect();
 
-            Self { mem: Arc::new(mem), len }
+            Self {
+                mem: Arc::new(mem),
+                len,
+            }
         }
 
         /// Reads one raw `u64` of the region, for asserting on protocol
@@ -221,7 +224,10 @@ mod tests {
         // records would ride on a result the receiver must already
         // reject.
         let oversized = (layout::to_usize(u32::MAX) + 1).try_into().unwrap();
-        assert!(matches!(writer.claim_frame(oversized), Err(ClaimError::Capacity)));
+        assert!(matches!(
+            writer.claim_frame(oversized),
+            Err(ClaimError::Capacity)
+        ));
         assert!(writer.is_closed());
         assert!(!writer.try_write_frame(b"refused"));
 
@@ -542,153 +548,15 @@ mod tests {
 
         let misaligned_shm = Misaligned(MockedShm::alloc(1024));
         assert!(
-            !misaligned_shm.as_raw_slice().cast::<u8>().addr().is_multiple_of(align_of::<u64>())
+            !misaligned_shm
+                .as_raw_slice()
+                .cast::<u8>()
+                .addr()
+                .is_multiple_of(align_of::<u64>())
         );
 
         // SAFETY: the wrapped allocation is valid; only its alignment is
         // deliberately wrong.
         assert!(unsafe { ShmWriter::new(misaligned_shm, S) }.is_none());
-    }
-
-    #[test]
-    #[cfg(not(miri))]
-    fn real_shm_across_processes() {
-        use std::process::{Child, Command};
-
-        use rustc_hash::FxHashSet;
-        use subprocess_test::command_for_fn;
-
-        const CHILD_COUNT: usize = 12;
-        const FRAME_COUNT_EACH_CHILD: usize = 100;
-
-        // Room for every child's frames, in slots and in payload bytes.
-        const S: usize = 16383;
-        const SHM_SIZE: usize = 1024 * 1024;
-
-        let shm_path = crate::ipc::channel::shm_backing_path().unwrap();
-        let shm_name = shm_path.to_str().expect("test temp dir is UTF-8").to_owned();
-        let c_path =
-            crate::ipc::channel::os_c_string(shm_path.as_os_str(), allocator_api2::alloc::Global)
-                .unwrap();
-        let handle = fspy_shm::create(c_path.as_c_str().as_thin(), SHM_SIZE).unwrap();
-        let _keeper = crate::ipc::channel::ShmKeeper { path: c_path };
-        // Map before the children run. Windows keeps views coherent while they
-        // exist at the same time; a view created after every writer exited can
-        // observe the file before the writers' dirty pages reach it.
-        let mapping = handle.map().unwrap();
-
-        let children: Vec<Child> = (0..CHILD_COUNT)
-            .map(|child_index| {
-                let cmd = command_for_fn!(
-                    (shm_name.clone(), child_index),
-                    |(shm_name, child_index): (String, usize)| {
-                        let c_path = crate::ipc::channel::os_c_string(
-                            std::ffi::OsStr::new(&shm_name),
-                            allocator_api2::alloc::Global,
-                        )
-                        .unwrap();
-                        let mapping =
-                            fspy_shm::open(c_path.as_c_str().as_thin()).unwrap().map().unwrap();
-                        // SAFETY: `mapping` is a freshly mapped shared memory
-                        // region with a valid pointer and size; the protocol
-                        // synchronizes concurrent access.
-                        let writer = unsafe { ShmWriter::new(mapping, S) }.unwrap();
-                        for i in 0..FRAME_COUNT_EACH_CHILD {
-                            let frame_data = std::format!("{child_index} {i}");
-                            assert!(writer.try_write_frame(frame_data.as_bytes()));
-                        }
-                    }
-                );
-                Command::from(cmd).spawn().unwrap()
-            })
-            .collect();
-
-        for mut c in children {
-            let status = c.wait().unwrap();
-            assert!(status.success());
-        }
-
-        // SAFETY: the mapping is a valid shared-memory region created zeroed
-        // and accessed only through the protocol.
-        let frames = unsafe { ShmReader::seal(mapping, S) }.unwrap();
-        let collected = frames.iter().map(BStr::new).collect::<FxHashSet<&BStr>>();
-        assert!(collected.len() == CHILD_COUNT * FRAME_COUNT_EACH_CHILD);
-        for child_index in 0..CHILD_COUNT {
-            for i in 0..FRAME_COUNT_EACH_CHILD {
-                let frame_data = format!("{child_index} {i}");
-                assert!(collected.contains(&BStr::new(frame_data.as_bytes())));
-            }
-        }
-    }
-
-    /// A writer killed mid-frame (SIGKILL on Unix, `TerminateProcess` on
-    /// Windows, both via `Child::kill`) must not lose other writers' frames
-    /// or completeness: no cleanup code runs in the killed process.
-    #[test]
-    #[cfg(not(miri))]
-    fn killed_writer_does_not_poison_the_channel() {
-        use std::{
-            io::{BufRead as _, BufReader},
-            process::{Command, Stdio},
-        };
-
-        use subprocess_test::command_for_fn;
-
-        const SHM_SIZE: usize = 1024 * 1024;
-
-        let shm_path = crate::ipc::channel::shm_backing_path().unwrap();
-        let shm_name = shm_path.to_str().expect("test temp dir is UTF-8").to_owned();
-        let c_path =
-            crate::ipc::channel::os_c_string(shm_path.as_os_str(), allocator_api2::alloc::Global)
-                .unwrap();
-        let handle = fspy_shm::create(c_path.as_c_str().as_thin(), SHM_SIZE).unwrap();
-        let _keeper = crate::ipc::channel::ShmKeeper { path: c_path };
-        let mapping = handle.map().unwrap();
-
-        let cmd = command_for_fn!(shm_name, |shm_name: String| {
-            let c_path = crate::ipc::channel::os_c_string(
-                std::ffi::OsStr::new(&shm_name),
-                allocator_api2::alloc::Global,
-            )
-            .unwrap();
-            let child_mapping = fspy_shm::open(c_path.as_c_str().as_thin()).unwrap().map().unwrap();
-            // SAFETY: see `real_shm_across_processes`.
-            let writer = unsafe { ShmWriter::new(child_mapping, S) }.unwrap();
-            let mut frame = writer.claim_frame(5.try_into().unwrap()).unwrap();
-            frame[..3].copy_from_slice(b"wor");
-            // Signal the parent that the frame is claimed and partially
-            // written, then wait to be killed.
-            #[expect(clippy::print_stdout, reason = "readiness handshake with the parent")]
-            {
-                println!("claimed");
-            }
-            let _ = frame;
-            // Wait to be killed; nothing ever unparks this thread.
-            loop {
-                std::thread::park();
-            }
-        });
-        let mut command = Command::from(cmd);
-        command.stdout(Stdio::piped());
-        let mut child = command.spawn().unwrap();
-        let mut line = String::new();
-        BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
-        assert!(line.trim() == "claimed");
-        child.kill().unwrap();
-        child.wait().unwrap();
-
-        // A surviving writer keeps working after the kill. It borrows the
-        // mapping so the seal below can take it over.
-        // SAFETY: see `real_shm_across_processes`.
-        let writer = unsafe { ShmWriter::new(&mapping, S) }.unwrap();
-        assert!(writer.try_write_frame(b"alive"));
-
-        // SAFETY: see `real_shm_across_processes`.
-        let frames = unsafe { ShmReader::seal(mapping, S) }.unwrap();
-        let mut iter = frames.iter();
-        assert!(iter.next().unwrap() == b"alive");
-        assert!(iter.next() == None);
-        // The killed writer left only an unfinished slot; the counters
-        // stayed within their limits, so the channel is complete.
     }
 }

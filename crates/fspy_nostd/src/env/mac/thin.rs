@@ -95,7 +95,9 @@ pub unsafe fn args() -> ThinArgs {
     // SAFETY: `_NSGetArgv` returns the address of the live argument pointer,
     // and the caller accepts responsibility for keeping it stable.
     let first = unsafe { read_array(libc::_NSGetArgv()) };
-    ThinArgs { inner: PointerIter { current: first } }
+    ThinArgs {
+        inner: PointerIter { current: first },
+    }
 }
 
 /// Returns direct thin C-string views of the macOS process environment.
@@ -113,7 +115,9 @@ pub unsafe fn envs() -> ThinEnvs {
     // SAFETY: `_NSGetEnviron` returns the address of the live environment
     // pointer, and the caller accepts responsibility for keeping it stable.
     let first = unsafe { read_array(libc::_NSGetEnviron()) };
-    ThinEnvs { inner: PointerIter { current: first } }
+    ThinEnvs {
+        inner: PointerIter { current: first },
+    }
 }
 
 const unsafe fn read_array(location: *mut *mut *mut c_char) -> *const *const c_char {
@@ -149,7 +153,10 @@ mod tests {
         // SAFETY: this test does not mutate the argument or environment arrays
         // while their iterators or borrowed entries are live.
         let argv_zero = unsafe { args() }.next().unwrap().count();
-        assert_eq!(argv_zero.as_units(), std::env::args_os().next().unwrap().as_encoded_bytes());
+        assert_eq!(
+            argv_zero.as_units(),
+            std::env::args_os().next().unwrap().as_encoded_bytes()
+        );
 
         // SAFETY: as above.
         let path = unsafe { envs() }
@@ -158,6 +165,9 @@ mod tests {
             .1
             .unwrap()
             .count();
-        assert_eq!(path.as_units(), std::env::var_os("PATH").unwrap().as_encoded_bytes());
+        assert_eq!(
+            path.as_units(),
+            std::env::var_os("PATH").unwrap().as_encoded_bytes()
+        );
     }
 }

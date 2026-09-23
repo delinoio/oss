@@ -41,7 +41,8 @@ fn dll_main(_hinstance: HINSTANCE, reason: u32) -> winsafe::SysResult<()> {
             // SAFETY: FFI call to find the injected payload by GUID
             let payload_ptr =
                 unsafe { DetourFindPayloadEx(&PAYLOAD_ID, &raw mut payload_len).cast::<u8>() };
-            // SAFETY: creating a static slice from the payload pointer; lifetime is valid for process duration
+            // SAFETY: creating a static slice from the payload pointer; lifetime is valid
+            // for process duration
             let payload_bytes = unsafe {
                 slice::from_raw_parts::<'static, u8>(payload_ptr, payload_len.try_into().unwrap())
             };

@@ -103,11 +103,16 @@ impl ToAbsolutePath for BorrowedFd<'_> {
         // SAFETY: a resolved descriptor path carries no interior NUL, and
         // exactly one was appended above. The storage stays in `allocator`
         // until it is dropped, which for a per-call arena ends the call.
-        Ok(Some(unsafe { fspy_nostd::CStr::from_units_with_nul_unchecked(path.leak()) }))
+        Ok(Some(unsafe {
+            fspy_nostd::CStr::from_units_with_nul_unchecked(path.leak())
+        }))
     }
 }
 
-pub struct PathAt<'fd, 'path>(pub BorrowedFd<'fd>, pub fspy_nostd::CStr<'path, fspy_nostd::Thin>);
+pub struct PathAt<'fd, 'path>(
+    pub BorrowedFd<'fd>,
+    pub fspy_nostd::CStr<'path, fspy_nostd::Thin>,
+);
 
 impl PathAt<'_, '_> {
     /// Borrows raw directory-descriptor and pathname arguments.
@@ -154,7 +159,9 @@ impl ToAbsolutePath for PathAt<'_, '_> {
             // interior NUL — both come from C strings or the kernel — and
             // exactly one was appended above. The storage stays in
             // `allocator` until it is dropped.
-            Ok(Some(unsafe { fspy_nostd::CStr::from_units_with_nul_unchecked(base.leak()) }))
+            Ok(Some(unsafe {
+                fspy_nostd::CStr::from_units_with_nul_unchecked(base.leak())
+            }))
         }
     }
 }

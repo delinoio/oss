@@ -7,6 +7,9 @@ publish = false
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+pnport = ["dep:pnport-core", "dep:serde_json"]
+
 [target.'cfg(unix)'.dependencies]
 ctor = { workspace = true }
 fspy_client_unix = { workspace = true }
@@ -18,6 +21,10 @@ fspy_nostd = { workspace = true }
 allocator-api2 = { workspace = true }
 fspy_nostd_alloc = { workspace = true }
 static_cell = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+pnport-core = { path = "../pnport-core", optional = true }
+serde_json = { version = "1", optional = true }
 
 [lints]
 workspace = true

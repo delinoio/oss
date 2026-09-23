@@ -1,3 +1,7 @@
+// The pinned rustfmt rewrites nested cfg attributes in this trampoline
+// differently on successive passes. Keep this macro intact until that
+// formatter behavior is fixed or the trampoline is refactored.
+#[rustfmt::skip]
 macro_rules! intercept {
     ($name: ident (64): $fn_sig: ty) => {
         $crate::macros::intercept_inner! {
@@ -17,15 +21,16 @@ macro_rules! intercept {
         const _: () = {
             #[allow(
                 invalid_runtime_symbol_definitions,
-                reason = "naked assembly trampoline forwards the original ABI without a Rust signature"
+                reason = "naked assembly trampoline forwards the original ABI without a Rust \
+                          signature"
             )]
             #[unsafe(naked)]
             #[unsafe(export_name = ::core::concat!(::core::stringify!($name), 64))]
             pub unsafe extern "C" fn interpose_fn() {
-                #[cfg(target_arch = "aarch64")]
-        ::core::arch::naked_asm!("b {}", sym $name);
-                #[cfg(target_arch = "x86_64")]
-        ::core::arch::naked_asm!("jmp {}", sym $name);
+        #[cfg(target_arch = "aarch64")]
+                ::core::arch::naked_asm!("b {}", sym $name);
+        #[cfg(target_arch = "x86_64")]
+                ::core::arch::naked_asm!("jmp {}", sym $name);
             }
         };
     };
@@ -53,7 +58,8 @@ pub fn symbol_exists(name: &str) -> bool {
     use std::ffi::CString;
 
     let name = CString::new(name).unwrap();
-    // SAFETY: dlsym with RTLD_DEFAULT searches for the symbol in the default shared object search order
+    // SAFETY: dlsym with RTLD_DEFAULT searches for the symbol in the default shared
+    // object search order
     !unsafe { libc::dlsym(libc::RTLD_DEFAULT, name.as_ptr().cast()) }.is_null()
 }
 

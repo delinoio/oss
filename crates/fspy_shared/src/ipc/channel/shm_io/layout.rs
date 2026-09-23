@@ -86,19 +86,17 @@ const _: () = assert!(size_of::<Counters>() == 2 * size_of::<AtomicU64>());
 //
 // # Memory-ordering contract
 //
-// 1. **Claim versus seal.** The seal swaps the gate into the claim counter
-//    and reads the old value in one step, so the boundary and the gate are
-//    one point in that counter's modification order: claims at or before
-//    it are in, every later one fails on the gate. Claims publish no
-//    payload data, so `Relaxed` suffices. Completeness rides the same
-//    order: a failed claim sets the gate before performing the operation
-//    whose record it lost, so either the seal sees the bit or the loss
-//    happened past the boundary. A writer that died before setting it
-//    never performed its operation.
+// 1. **Claim versus seal.** The seal swaps the gate into the claim counter and
+//    reads the old value in one step, so the boundary and the gate are one
+//    point in that counter's modification order: claims at or before it are in,
+//    every later one fails on the gate. Claims publish no payload data, so
+//    `Relaxed` suffices. Completeness rides the same order: a failed claim sets
+//    the gate before performing the operation whose record it lost, so either
+//    the seal sees the bit or the loss happened past the boundary. A writer
+//    that died before setting it never performed its operation.
 // 2. **Writer commit.** `FrameMut::finish` stores the descriptor with
-//    `Release`, so every payload write lands first. The writer that
-//    claimed the slot is the only one that writes it, so a store is
-//    enough.
+//    `Release`, so every payload write lands first. The writer that claimed the
+//    slot is the only one that writes it, so a store is enough.
 // 3. **Receiver read.** `Iter` loads each descriptor with `Acquire`, so a
 //    descriptor it sees brings the payload bytes along.
 
@@ -108,9 +106,17 @@ const _: () = assert!(size_of::<Counters>() == 2 * size_of::<AtomicU64>());
 /// assert lets only targets whose `usize` is that wide build this module.
 /// That assert is why the cast is safe, so it sits here rather than at
 /// module scope. It is the only `as` in the protocol.
-#[expect(clippy::cast_possible_truncation, reason = "the assert allows only equal widths")]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "the assert allows only equal widths"
+)]
 pub fn to_usize(value: impl Into<u64>) -> usize {
-    const { assert!(size_of::<usize>() == size_of::<u64>(), "requires a 64-bit target") };
+    const {
+        assert!(
+            size_of::<usize>() == size_of::<u64>(),
+            "requires a 64-bit target"
+        )
+    };
     value.into() as usize
 }
 
@@ -120,7 +126,11 @@ pub fn to_usize(value: impl Into<u64>) -> usize {
 ///
 /// [std]: https://doc.rust-lang.org/std/primitive.pointer.html#method.try_cast_aligned
 fn try_cast_aligned<T, U>(ptr: *mut T) -> Option<*mut U> {
-    if ptr.addr().is_multiple_of(align_of::<U>()) { Some(ptr.cast()) } else { None }
+    if ptr.addr().is_multiple_of(align_of::<U>()) {
+        Some(ptr.cast())
+    } else {
+        None
+    }
 }
 
 /// Where the counters, the descriptor table and the payload area sit in
@@ -194,9 +204,8 @@ impl MappedLayout {
     ///
     /// # Safety
     ///
-    /// - `mem` must be valid for reads and writes, and its address stable,
-    ///   for as long as the returned pointers (and any copy of them) are
-    ///   used.
+    /// - `mem` must be valid for reads and writes, and its address stable, for
+    ///   as long as the returned pointers (and any copy of them) are used.
     /// - The memory must have been zero-initialized when the region was
     ///   created, and accessed only through this protocol since.
     pub unsafe fn new(mem: *mut [u8], slots: usize) -> Option<Self> {
@@ -224,7 +233,12 @@ impl MappedLayout {
         let table = NonNull::slice_from_raw_parts(table_start.cast::<AtomicU64>(), slots);
         // SAFETY: as above.
         let payload_start = NonNull::new(unsafe { mem_start.add(payloads_at) })?;
-        Some(Self { counters, table, payload_start, payload_len })
+        Some(Self {
+            counters,
+            table,
+            payload_start,
+            payload_len,
+        })
     }
 
     /// The counters at the start of the region.
@@ -288,7 +302,11 @@ mod tests {
             // else touches it.
             let mapped = unsafe { MappedLayout::new(raw, slots) }.unwrap();
             for slot in mapped.table() {
-                assert!(std::ptr::from_ref(slot).addr().is_multiple_of(align_of::<AtomicU64>()));
+                assert!(
+                    std::ptr::from_ref(slot)
+                        .addr()
+                        .is_multiple_of(align_of::<AtomicU64>())
+                );
             }
         }
     }

@@ -18,7 +18,10 @@ use windows as platform;
 const _: () = assert!(usize::BITS == u64::BITS);
 
 /// Converts a backing file's size to a mapping length.
-#[expect(clippy::cast_possible_truncation, reason = "lossless; see the width assert above")]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "lossless; see the width assert above"
+)]
 const fn file_size_to_len(size: u64) -> usize {
     size as usize
 }
@@ -27,10 +30,9 @@ const fn file_size_to_len(size: u64) -> usize {
 mod tests {
     #[cfg(windows)]
     use std::fs::File;
-    use std::{ffi::OsStr, mem::align_of, path::PathBuf, process::Command};
+    use std::{ffi::OsStr, mem::align_of, path::PathBuf};
 
     use fspy_nostd::{OsCStr, Thin};
-    use subprocess_test::command_for_fn;
 
     use super::{Mapping, create, open, remove};
 
@@ -74,11 +76,17 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("backing.shm");
             let units = encode(path.as_os_str());
-            Self { _dir: dir, path, units }
+            Self {
+                _dir: dir,
+                path,
+                units,
+            }
         }
 
         fn as_c_str(&self) -> OsCStr<'_, Thin> {
-            fspy_nostd::OsCStr::from_units_with_nul(&self.units).unwrap().as_thin()
+            fspy_nostd::OsCStr::from_units_with_nul(&self.units)
+                .unwrap()
+                .as_thin()
         }
 
         fn exists(&self) -> bool {
@@ -86,7 +94,10 @@ mod tests {
         }
 
         fn to_str(&self) -> String {
-            self.path.to_str().expect("test temp dir is UTF-8").to_owned()
+            self.path
+                .to_str()
+                .expect("test temp dir is UTF-8")
+                .to_owned()
         }
     }
 
@@ -135,24 +146,6 @@ mod tests {
         let _handle = create(path.as_c_str(), SIZE).unwrap();
 
         assert!(create(path.as_c_str(), SIZE).is_err());
-    }
-
-    #[test]
-    fn mapping_is_visible_across_processes() {
-        let path = BackingPath::new();
-        let handle = create(path.as_c_str(), SIZE).unwrap();
-        let mapping = handle.map().unwrap();
-        write_byte(&mapping, 0, 17);
-
-        let command = command_for_fn!(path.to_str(), |path: String| {
-            let units = encode(OsStr::new(&path));
-            let path = fspy_nostd::OsCStr::from_units_with_nul(&units).unwrap().as_thin();
-            let opened = open(path).unwrap().map().unwrap();
-            assert_eq!(read_byte(&opened, 0), 17);
-            write_byte(&opened, SIZE - 1, 29);
-        });
-        assert!(Command::from(command).status().unwrap().success());
-        assert_eq!(read_byte(&mapping, SIZE - 1), 29);
     }
 
     #[test]

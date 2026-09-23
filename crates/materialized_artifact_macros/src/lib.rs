@@ -1,11 +1,11 @@
 //! Proc-macro side of `materialized_artifact`: embed a file and its content
 //! hash at compile time, given an env var holding the file's path.
 //!
-//! The env var is either a Cargo artifact dependency's `CARGO_<KIND>_FILE_<DEP>`
-//! (provided only while the consuming crate is compiled — no build script ever
-//! sees it) or a path the consuming crate's own build script published via
-//! `cargo:rustc-env`. Either way the content hash must be computed here, at
-//! macro-expansion time.
+//! The env var is either a Cargo artifact dependency's
+//! `CARGO_<KIND>_FILE_<DEP>` (provided only while the consuming crate is
+//! compiled — no build script ever sees it) or a path the consuming crate's own
+//! build script published via `cargo:rustc-env`. Either way the content hash
+//! must be computed here, at macro-expansion time.
 //!
 //! # Why `proc_macro::tracked`
 //!
@@ -62,7 +62,9 @@ use syn::{
 pub fn artifact(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     // The single place errors become tokens: every failure inside is a
     // spanned `syn::Error`.
-    expand(input).unwrap_or_else(syn::Error::into_compile_error).into()
+    expand(input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
 }
 
 fn expand(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
@@ -85,7 +87,11 @@ fn expand(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             )
         })?;
         let hash = format!("{:x}", xxhash_rust::xxh3::xxh3_128(&bytes));
-        (quote!(::core::include_bytes!(::core::env!(#env_var))), hash, TokenStream::new())
+        (
+            quote!(::core::include_bytes!(::core::env!(#env_var))),
+            hash,
+            TokenStream::new(),
+        )
     } else {
         // Env var unset. Only the compilation context itself can tell
         // whether that is fine (rust-analyzer never has artifact-dep env
@@ -93,9 +99,8 @@ fn expand(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
         // not emitting the var), so the guard lets the emitted tokens branch
         // on `cfg(rust_analyzer)` instead of guessing here.
         let message = format!(
-            "`{}` is not set at compile time; declare the artifact as a Cargo artifact \
-             dependency under `[dependencies]`, or publish the path from a build script via \
-             `cargo:rustc-env`",
+            "`{}` is not set at compile time; declare the artifact as a Cargo artifact dependency \
+             under `[dependencies]`, or publish the path from a build script via `cargo:rustc-env`",
             env_var.value()
         );
         let guard = quote! {

@@ -18,7 +18,10 @@ pub(super) type ModeBits = libc::mode_t;
 pub(super) const S_IRUSR: ModeBits = libc::S_IRUSR;
 pub(super) const S_IWUSR: ModeBits = libc::S_IWUSR;
 
-#[expect(clippy::needless_pass_by_value, reason = "CStr is a borrowed value type")]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "CStr is a borrowed value type"
+)]
 pub(super) fn openat<R>(
     dirfd: BorrowedFd<'_>,
     path: CStr<'_, R>,
@@ -43,14 +46,25 @@ pub(super) fn openat<R>(
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
 }
 
-#[expect(clippy::needless_pass_by_value, reason = "CStr is a borrowed value type")]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "CStr is a borrowed value type"
+)]
 pub(super) fn unlinkat<R>(dirfd: BorrowedFd<'_>, path: CStr<'_, R>, flags: AtFlags) -> Result<()> {
     // SAFETY: `dirfd` remains borrowed and `path` is NUL-terminated for the
     // call.
     let result = unsafe {
-        libc::unlinkat(dirfd.as_raw_fd(), path.as_ptr().cast(), flags.bits().cast_signed())
+        libc::unlinkat(
+            dirfd.as_raw_fd(),
+            path.as_ptr().cast(),
+            flags.bits().cast_signed(),
+        )
     };
-    if result == -1 { Err(Error::last_os_error()) } else { Ok(()) }
+    if result == -1 {
+        Err(Error::last_os_error())
+    } else {
+        Ok(())
+    }
 }
 
 pub(super) fn fstat(fd: BorrowedFd<'_>) -> Result<Stat> {
@@ -61,7 +75,9 @@ pub(super) fn fstat(fd: BorrowedFd<'_>) -> Result<Stat> {
     }
     // SAFETY: a successful `fstat` initialized the complete structure.
     let raw = unsafe { raw.assume_init() };
-    Ok(Stat { st_size: raw.st_size })
+    Ok(Stat {
+        st_size: raw.st_size,
+    })
 }
 
 pub(super) fn ftruncate(fd: BorrowedFd<'_>, len: u64) -> Result<()> {
@@ -94,7 +110,11 @@ pub fn fcntl_getpath<'buf>(
     // SAFETY: `fd` remains borrowed and `buf` has the `MAXPATHLEN` storage
     // required by `F_GETPATH`.
     let result = unsafe {
-        libc::fcntl(fd.as_raw_fd(), libc::F_GETPATH, buf.as_mut_ptr().cast::<libc::c_char>())
+        libc::fcntl(
+            fd.as_raw_fd(),
+            libc::F_GETPATH,
+            buf.as_mut_ptr().cast::<libc::c_char>(),
+        )
     };
     if result == -1 {
         return Err(Error::last_os_error());
@@ -145,7 +165,12 @@ fn getcwd_small(buf: &mut [MaybeUninit<u8>]) -> Result<CStr<'_, Fat>> {
 fn getcwd_full(buf: &mut [MaybeUninit<u8>; PATH_MAX]) -> Result<CStr<'_, Fat>> {
     // SAFETY: the byte string contains one trailing NUL.
     let dot_path = unsafe { CStr::<Fat>::from_units_with_nul_unchecked(b".\0") };
-    let fd = openat(CWD, dot_path, OFlags::RDONLY | OFlags::CLOEXEC, Mode::empty())?;
+    let fd = openat(
+        CWD,
+        dot_path,
+        OFlags::RDONLY | OFlags::CLOEXEC,
+        Mode::empty(),
+    )?;
 
     let path = fcntl_getpath(fd.as_fd(), buf)?;
     drop(fd);

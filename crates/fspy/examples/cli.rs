@@ -18,12 +18,17 @@ async fn main() -> anyhow::Result<()> {
     let mut command = fspy::Command::new(program);
     command.envs(std::env::vars_os()).args(args);
 
-    let child = command.spawn(tokio_util::sync::CancellationToken::new()).await?;
+    let child = command
+        .spawn(tokio_util::sync::CancellationToken::new())
+        .await?;
     let termination = child.wait_handle.await?;
 
     let mut path_count = 0usize;
-    let out_file: Pin<Box<dyn AsyncWrite>> =
-        if out_path == "-" { Box::pin(stdout()) } else { Box::pin(File::create(out_path).await?) };
+    let out_file: Pin<Box<dyn AsyncWrite>> = if out_path == "-" {
+        Box::pin(stdout())
+    } else {
+        Box::pin(File::create(out_path).await?)
+    };
 
     let mut csv_writer = csv_async::AsyncWriter::from_writer(out_file);
 
@@ -35,7 +40,9 @@ async fn main() -> anyhow::Result<()> {
         path_count += 1;
         let path_str = format!("{:?}", acc.path);
         let mode_str = format!("{:?}", acc.mode);
-        csv_writer.write_record(&[path_str.as_bytes(), mode_str.as_bytes()]).await?;
+        csv_writer
+            .write_record(&[path_str.as_bytes(), mode_str.as_bytes()])
+            .await?;
     }
     csv_writer.flush().await?;
 
@@ -44,7 +51,10 @@ async fn main() -> anyhow::Result<()> {
         reason = "CLI example: stderr output is intentional for user feedback"
     )]
     {
-        eprintln!("\nfspy: {path_count} paths accessed. status: {}", termination.status);
+        eprintln!(
+            "\nfspy: {path_count} paths accessed. status: {}",
+            termination.status
+        );
     }
     Ok(())
 }

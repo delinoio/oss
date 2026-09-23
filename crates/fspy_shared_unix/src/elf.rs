@@ -31,7 +31,10 @@ fn get_interp(executable: &[u8]) -> nix::Result<Option<&BStr>> {
         return Ok(None);
     };
 
-    let Some(interp_header) = headers.into_iter().find(|header| header.p_type == PT_INTERP) else {
+    let Some(interp_header) = headers
+        .into_iter()
+        .find(|header| header.p_type == PT_INTERP)
+    else {
         return Ok(None);
     };
     let Ok(interp) = elf.segment_data(&interp_header) else {

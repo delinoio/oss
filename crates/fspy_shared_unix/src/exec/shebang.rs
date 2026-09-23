@@ -26,7 +26,9 @@ pub struct ParseShebangOptions {
 )]
 impl Default for ParseShebangOptions {
     fn default() -> Self {
-        Self { split_arguments: cfg!(target_vendor = "apple") }
+        Self {
+            split_arguments: cfg!(target_vendor = "apple"),
+        }
     }
 }
 
@@ -36,7 +38,8 @@ pub fn parse_shebang(
     options: ParseShebangOptions,
 ) -> Result<Option<Shebang>, nix::Error> {
     // https://lwn.net/Articles/779997/
-    // > The array used to hold the shebang line is defined to be 128 bytes in length
+    // > The array used to hold the shebang line is defined to be 128 bytes in
+    // > length
     // TODO: check linux/macOS' kernel source
     const PEEK_SIZE: usize = 128;
 
@@ -63,7 +66,11 @@ pub fn parse_shebang(
             .split(|ch| is_whitespace(*ch))
             .filter_map(|arg| {
                 let arg = arg.trim_ascii();
-                if arg.is_empty() { None } else { Some(arg.as_bstr().to_owned()) }
+                if arg.is_empty() {
+                    None
+                } else {
+                    Some(arg.as_bstr().to_owned())
+                }
             })
             .collect()
     } else if arguments_buf.is_empty() {
@@ -72,7 +79,10 @@ pub fn parse_shebang(
         vec![arguments_buf.to_owned()]
     };
 
-    Ok(Some(Shebang { interpreter: interpreter.as_bstr().to_owned(), arguments }))
+    Ok(Some(Shebang {
+        interpreter: interpreter.as_bstr().to_owned(),
+        arguments,
+    }))
 }
 
 // #[derive(Debug)]
@@ -186,8 +196,8 @@ pub fn parse_shebang(
 //     #[test]
 //     fn shebang_split_arguments() {
 //         let mut buf = [0u8; PEEK_SIZE];
-//         let shebang = parse_shebang(&mut buf, "#! /bin/sh a  b\tc \n".as_bytes())
-//             .unwrap()
+//         let shebang = parse_shebang(&mut buf, "#! /bin/sh a  b\tc
+// \n".as_bytes())             .unwrap()
 //             .unwrap();
 //         assert_eq!(shebang.interpreter, "/bin/sh");
 //         assert_eq!(
@@ -216,9 +226,9 @@ pub fn parse_shebang(
 //                 })
 //             },
 //             |arg| {
-//                 args.push(str::from_utf8(arg.as_bytes()).unwrap().to_owned());
-//                 Ok(())
-//             },
+//
+// args.push(str::from_utf8(arg.as_bytes()).unwrap().to_owned());
+// Ok(())             },
 //         )
 //         .unwrap();
 //         args.reverse();

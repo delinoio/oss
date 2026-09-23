@@ -27,9 +27,15 @@ const SHM_CAPACITY_ENV: &str = "VP_RUN_INTERNAL_FSPY_SHM_CAPACITY";
 /// rather than quietly ignoring.
 pub fn shm_capacity() -> usize {
     std::env::var_os(SHM_CAPACITY_ENV).map_or(DEFAULT_SHM_CAPACITY, |value| {
-        value.to_str().and_then(|value| value.parse().ok()).unwrap_or_else(|| {
-            panic!("{SHM_CAPACITY_ENV} is not a byte count: {}", value.display())
-        })
+        value
+            .to_str()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or_else(|| {
+                panic!(
+                    "{SHM_CAPACITY_ENV} is not a byte count: {}",
+                    value.display()
+                )
+            })
     })
 }
 
@@ -54,7 +60,9 @@ impl TryFrom<Receiver<Global>> for ChannelAccesses {
     /// something it went on to do. What did arrive is then a subset of
     /// what the run really touched, so none of it is handed back.
     fn try_from(receiver: Receiver<Global>) -> Result<Self, TrackingIncomplete> {
-        Ok(Self { frames: receiver.close().map_err(|_| TrackingIncomplete)? })
+        Ok(Self {
+            frames: receiver.close().map_err(|_| TrackingIncomplete)?,
+        })
     }
 }
 

@@ -30,7 +30,11 @@ pub(super) unsafe fn mmap(
             offset,
         )
     };
-    if mapped == libc::MAP_FAILED { Err(Error::last_os_error()) } else { Ok(mapped) }
+    if mapped == libc::MAP_FAILED {
+        Err(Error::last_os_error())
+    } else {
+        Ok(mapped)
+    }
 }
 
 pub(super) unsafe fn mmap_anonymous(
@@ -42,9 +46,21 @@ pub(super) unsafe fn mmap_anonymous(
     let flags = flags.bits().cast_signed() | libc::MAP_ANON;
     // SAFETY: the caller upholds the mapping contract; anonymous mappings do
     // not consume a file descriptor or offset.
-    let mapped =
-        unsafe { libc::mmap(address, length, protection.bits().cast_signed(), flags, -1, 0) };
-    if mapped == libc::MAP_FAILED { Err(Error::last_os_error()) } else { Ok(mapped) }
+    let mapped = unsafe {
+        libc::mmap(
+            address,
+            length,
+            protection.bits().cast_signed(),
+            flags,
+            -1,
+            0,
+        )
+    };
+    if mapped == libc::MAP_FAILED {
+        Err(Error::last_os_error())
+    } else {
+        Ok(mapped)
+    }
 }
 
 pub(super) unsafe fn mprotect(

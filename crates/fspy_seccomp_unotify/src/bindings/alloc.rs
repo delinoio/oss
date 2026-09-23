@@ -25,7 +25,10 @@ static BUF_SIZES: LazyLock<BufSizes> = LazyLock::new(|| {
         )
         .unwrap(),
         resp_layout: Layout::from_size_align(
-            max(sizes.seccomp_notif_resp.into(), size_of::<libc::seccomp_notif_resp>()),
+            max(
+                sizes.seccomp_notif_resp.into(),
+                size_of::<libc::seccomp_notif_resp>(),
+            ),
             MAX_ALIGN,
         )
         .unwrap(),
@@ -41,14 +44,17 @@ impl<T> Alloced<T> {
     /// Allocates a zero-initialized buffer with the given layout.
     ///
     /// # Safety
-    /// The `layout` must have a size large enough to hold a value of type `T` and
-    /// must have proper alignment for `T`.
+    /// The `layout` must have a size large enough to hold a value of type `T`
+    /// and must have proper alignment for `T`.
     pub(crate) unsafe fn alloc(layout: Layout) -> Self {
         // SAFETY: layout is non-zero-sized (guaranteed by caller) and properly aligned
         let ptr = unsafe { alloc::alloc_zeroed(layout) };
 
         let ptr = NonNull::new(ptr).unwrap();
-        Self { ptr: ptr.cast(), layout }
+        Self {
+            ptr: ptr.cast(),
+            layout,
+        }
     }
 
     pub(crate) const fn zeroed(&mut self) -> &mut T {
@@ -72,23 +78,23 @@ impl<T> Deref for Alloced<T> {
 
 impl<T> Drop for Alloced<T> {
     fn drop(&mut self) {
-        // SAFETY: `self.ptr` was allocated with `alloc::alloc_zeroed` using `self.layout`,
-        // so it is safe to deallocate with the same layout
+        // SAFETY: `self.ptr` was allocated with `alloc::alloc_zeroed` using
+        // `self.layout`, so it is safe to deallocate with the same layout
         unsafe {
             alloc::dealloc(self.ptr.as_ptr().cast(), self.layout);
         }
     }
 }
 
-// SAFETY: `Alloced<T>` owns a heap allocation and does not use thread-local storage.
-// It is safe to send across threads when `T` itself is `Send + Sync`.
+// SAFETY: `Alloced<T>` owns a heap allocation and does not use thread-local
+// storage. It is safe to send across threads when `T` itself is `Send + Sync`.
 unsafe impl<T: Send + Sync> Send for Alloced<T> {}
 // SAFETY: `Alloced<T>` only provides shared access via `Deref`, which is safe
 // when `T` is `Send + Sync`.
 unsafe impl<T: Send + Sync> Sync for Alloced<T> {}
 
-/// Allocates a zero-initialized buffer for a `seccomp_notif` struct, sized to at least
-/// what the kernel requires.
+/// Allocates a zero-initialized buffer for a `seccomp_notif` struct, sized to
+/// at least what the kernel requires.
 #[must_use]
 pub fn alloc_seccomp_notif() -> Alloced<libc::seccomp_notif> {
     // SAFETY: `BUF_SIZES.req_layout` is computed from `get_notif_sizes()` and
@@ -96,8 +102,8 @@ pub fn alloc_seccomp_notif() -> Alloced<libc::seccomp_notif> {
     unsafe { Alloced::alloc(BUF_SIZES.req_layout) }
 }
 
-/// Allocates a zero-initialized buffer for a `seccomp_notif_resp` struct, sized to at least
-/// what the kernel requires.
+/// Allocates a zero-initialized buffer for a `seccomp_notif_resp` struct, sized
+/// to at least what the kernel requires.
 #[must_use]
 pub fn alloc_seccomp_notif_resp() -> Alloced<libc::seccomp_notif_resp> {
     // SAFETY: `BUF_SIZES.resp_layout` is computed from `get_notif_sizes()` and

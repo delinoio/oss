@@ -13,9 +13,9 @@ use super::PageAllocator;
 /// A fixed-size cache of memory chunks.
 ///
 /// Sits between the bump arenas and the underlying allocator `A` —
-/// the platform `PageAllocator` in real use, any allocator in tests — so the chunks
-/// that a finished arena gives back reach the next arena without going back
-/// to the kernel.
+/// the platform `PageAllocator` in real use, any allocator in tests — so the
+/// chunks that a finished arena gives back reach the next arena without going
+/// back to the kernel.
 ///
 /// The parameters are chosen by the layer above (the arena layer): every
 /// cached chunk is exactly `CHUNK_SIZE` bytes and allocated with
@@ -74,9 +74,15 @@ impl<A: Allocator, const CHUNK_SIZE: usize, const CHUNK_ALIGN: usize, const SLOT
     pub const fn new_in(allocator: A) -> Self {
         const {
             assert!(CHUNK_SIZE > 0, "CHUNK_SIZE must not be zero");
-            assert!(CHUNK_ALIGN.is_power_of_two(), "CHUNK_ALIGN must be a power of two");
+            assert!(
+                CHUNK_ALIGN.is_power_of_two(),
+                "CHUNK_ALIGN must be a power of two"
+            );
         }
-        Self { slots: [const { AtomicPtr::new(ptr::null_mut()) }; SLOTS], allocator }
+        Self {
+            slots: [const { AtomicPtr::new(ptr::null_mut()) }; SLOTS],
+            allocator,
+        }
     }
 
     fn chunk_layout() -> Result<Layout, AllocError> {
@@ -156,7 +162,9 @@ unsafe impl<A: Allocator, const CHUNK_SIZE: usize, const CHUNK_ALIGN: usize, con
                 return;
             }
         }
-        let Ok(chunk_layout) = Self::chunk_layout() else { return };
+        let Ok(chunk_layout) = Self::chunk_layout() else {
+            return;
+        };
         // SAFETY: every block in this branch is a CHUNK_SIZE chunk that came
         // from the underlying allocator with `chunk_layout` (caller contract
         // plus the size routing above), and it no longer has an owner.
@@ -172,7 +180,9 @@ impl<A: Allocator, const CHUNK_SIZE: usize, const CHUNK_ALIGN: usize, const SLOT
         for slot in &mut self.slots {
             let chunk = core::mem::replace(slot.get_mut(), ptr::null_mut());
             if let Some(chunk) = NonNull::new(chunk) {
-                let Ok(chunk_layout) = Self::chunk_layout() else { return };
+                let Ok(chunk_layout) = Self::chunk_layout() else {
+                    return;
+                };
                 // SAFETY: cached chunks came from the underlying allocator
                 // with `chunk_layout`, and `&mut self` means no owner exists.
                 unsafe { self.allocator.deallocate(chunk, chunk_layout) };
@@ -207,7 +217,7 @@ mod tests {
         assert_eq!(first.len(), CHUNK_SIZE);
         let first_addr = first.cast::<u8>().as_ptr().addr();
         // SAFETY: fresh exclusive block of at least 100 bytes.
-        unsafe { first.cast::<u8>().as_ptr().write_bytes(0xAB, 100) };
+        unsafe { first.cast::<u8>().as_ptr().write_bytes(0xab, 100) };
         // SAFETY: allocated above; the full returned size is a legal size to
         // pass back.
         unsafe { pool.deallocate(first.cast(), layout(CHUNK_SIZE)) };
@@ -241,7 +251,7 @@ mod tests {
         assert!(big.len() > CHUNK_SIZE);
         // SAFETY: fresh exclusive block of at least CHUNK_SIZE + 1
         // bytes.
-        unsafe { big.cast::<u8>().as_ptr().write_bytes(0x5A, CHUNK_SIZE + 1) };
+        unsafe { big.cast::<u8>().as_ptr().write_bytes(0x5a, CHUNK_SIZE + 1) };
         // SAFETY: allocated above with the same layout.
         unsafe { pool.deallocate(big.cast(), layout(CHUNK_SIZE + 1)) };
 
@@ -266,7 +276,7 @@ mod tests {
         let pool = pool();
         let block = pool.allocate(layout(256)).unwrap();
         // SAFETY: fresh exclusive block of at least 256 bytes.
-        unsafe { block.cast::<u8>().as_ptr().write_bytes(0xFF, 256) };
+        unsafe { block.cast::<u8>().as_ptr().write_bytes(0xff, 256) };
         // SAFETY: allocated above with a fitting layout.
         unsafe { pool.deallocate(block.cast(), layout(256)) };
 
@@ -286,7 +296,9 @@ mod tests {
         // A tiny 4-slot pool so the full-cache path is genuinely exercised.
         let pool = ChunkPool::<Global, CHUNK_SIZE, CHUNK_ALIGN, 4>::new_in(Global);
         for _ in 0..2 {
-            let blocks: Vec<_> = (0..8).map(|_| pool.allocate(layout(1000)).unwrap()).collect();
+            let blocks: Vec<_> = (0..8)
+                .map(|_| pool.allocate(layout(1000)).unwrap())
+                .collect();
             for block in blocks {
                 // SAFETY: allocated above with a fitting layout. The first 4
                 // chunks fill the cache; the rest go back to the underlying
@@ -352,7 +364,7 @@ mod tests {
         assert_eq!(block.len(), CHUNK_SIZE);
         let addr = block.cast::<u8>().as_ptr().addr();
         // SAFETY: fresh exclusive block of at least 100 bytes.
-        unsafe { block.cast::<u8>().as_ptr().write_bytes(0xCD, 100) };
+        unsafe { block.cast::<u8>().as_ptr().write_bytes(0xcd, 100) };
         // SAFETY: allocated above with a fitting layout.
         unsafe { pool.deallocate(block.cast(), layout(100)) };
         let again = pool.allocate(layout(200)).unwrap();

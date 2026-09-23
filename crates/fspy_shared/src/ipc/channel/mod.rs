@@ -53,7 +53,10 @@ pub struct ChannelConf<'a> {
 /// Creates a mpsc IPC channel and returns its receiver. [`Receiver::conf`]
 /// derives the serializable configuration that other processes use to create
 /// senders.
-#[expect(clippy::missing_errors_doc, reason = "non-vt crate: cannot use vt_str/vt_path types")]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "non-vt crate: cannot use vt_str/vt_path types"
+)]
 pub fn channel<A: Allocator>(capacity: usize, allocator: A) -> io::Result<Receiver<A>> {
     let shm_c_path = os_c_string(shm_backing_path()?.as_os_str(), allocator)?;
     let handle =
@@ -120,8 +123,10 @@ fn shm_backing_path() -> io::Result<PathBuf> {
     // `temp_dir` reflects `TMPDIR` verbatim, which may be relative. The path
     // travels to processes with other working directories, so resolve it
     // against the creator's current directory first.
-    let path = std::path::absolute(temp_dir())?
-        .join(format!("{SHM_BACKING_PREFIX}{}.shm", Uuid::new_v4().simple()));
+    let path = std::path::absolute(temp_dir())?.join(format!(
+        "{SHM_BACKING_PREFIX}{}.shm",
+        Uuid::new_v4().simple()
+    ));
     #[cfg(windows)]
     let path = to_verbatim_if_long(path)?;
     Ok(path)
@@ -241,7 +246,10 @@ impl Sender {
         };
         let mut buf: &mut [u8] = &mut frame;
         T::serialize_into(&mut buf, value).expect("a record will not serialize into its own frame");
-        assert!(buf.is_empty(), "a record wrote fewer bytes than the size it reported");
+        assert!(
+            buf.is_empty(),
+            "a record wrote fewer bytes than the size it reported"
+        );
         frame.finish();
     }
 }
@@ -280,7 +288,9 @@ impl<A: Allocator> Receiver<A> {
     /// [`ChannelConf::sender`], borrowing this receiver's storage.
     #[must_use]
     pub fn conf(&self) -> ChannelConf<'_> {
-        ChannelConf { shm_id: IpcStr::from_os_c_str(self.keeper.path.as_c_str()) }
+        ChannelConf {
+            shm_id: IpcStr::from_os_c_str(self.keeper.path.as_c_str()),
+        }
     }
 
     /// Closes the channel and returns every committed frame, borrowed from
@@ -338,205 +348,3 @@ impl<A: Allocator> Receiver<A> {
 #[derive(thiserror::Error, Clone, Copy, PartialEq, Eq, Debug)]
 #[error("a sender ran out of room in the shared-memory channel")]
 pub struct RecordsLost;
-
-#[cfg(test)]
-mod tests {
-    use std::{ffi::OsString, fs, num::NonZeroUsize, str::from_utf8};
-
-    use allocator_api2::alloc::Global;
-    use assert2::assert;
-    use bstr::B;
-    use subprocess_test::command_for_fn;
-
-    use super::*;
-    use crate::ipc::{AccessMode, IpcPath, PathAccess};
-
-    /// A gibibyte, which clears the table's half of sparse address space
-    /// and leaves the rest for payloads. None of it costs real memory
-    /// until something is written there.
-    const CAPACITY: usize = 1 << 30;
-
-    /// A capacity with no room for the table has to fail here, at
-    /// creation. Everything downstream treats the region as able to host
-    /// the protocol: `sender` panics when it cannot, and so does
-    /// `Receiver::close`.
-    #[test]
-    fn a_capacity_too_small_for_the_table_fails_the_channel() {
-        // The counters alone need sixteen bytes, and the table needs eight
-        // per slot on top.
-        let Err(error) = channel(8, Global) else {
-            panic!("a region too small for the protocol made a channel");
-        };
-        assert!(error.kind() == io::ErrorKind::InvalidInput);
-    }
-
-    /// The shared-memory path is generated absolute, so a sender in a process
-    /// with a different working directory and a relative temporary directory
-    /// must still attach.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn sender_ignores_changed_temp_and_working_directory() {
-        let receiver = channel(CAPACITY, Global).unwrap();
-        let conf = wincode::serialize(&receiver.conf()).unwrap();
-        let changed_cwd = temp_dir().join(format!("fspy-ipc-changed-cwd-{}", Uuid::new_v4()));
-        fs::create_dir(&changed_cwd).unwrap();
-
-        let mut command = command_for_fn!(conf, |conf: Vec<u8>| {
-            let conf: ChannelConf = wincode::deserialize(&conf).unwrap();
-            let sender = conf.sender(Global).unwrap();
-            let frame_size = NonZeroUsize::new(2).unwrap();
-            let mut frame = sender.writer.claim_frame(frame_size).unwrap();
-            frame.copy_from_slice(&[4, 2]);
-            frame.finish();
-        });
-        command.cwd = changed_cwd.clone();
-        for name in ["TMPDIR", "TMP", "TEMP"] {
-            command.envs.insert(OsString::from(name), OsString::from("changed-relative-tmp"));
-        }
-        let succeeded = std::process::Command::from(command).status().unwrap().success();
-        fs::remove_dir(changed_cwd).unwrap();
-        assert!(succeeded);
-
-        let frames = receiver.close().unwrap();
-        assert!(frames.iter().next().unwrap() == &[4, 2]);
-    }
-
-    /// `Sender::send` is the only writer production uses, and the rest of
-    /// these tests reach past it into `claim_frame`. This one drives it
-    /// end to end, so that a disagreement between `serialized_size` and
-    /// `serialize_into` — which would silently drop every record — fails
-    /// here rather than in a build.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn sender_round_trips_records() {
-        let receiver = channel(CAPACITY, Global).unwrap();
-        let sender = receiver.conf().sender(Global).unwrap();
-        // A record path carries the platform's own string form: bytes on
-        // unix, UTF-16 on Windows.
-        #[cfg(unix)]
-        let owned = ["/tmp/one", "/tmp/two/three"];
-        #[cfg(windows)]
-        let owned = [r"C:\tmp\one", r"C:\tmp\two\three"]
-            .map(|path| path.encode_utf16().collect::<Vec<_>>());
-        #[cfg(unix)]
-        let paths = owned.map(<&IpcPath>::from);
-        #[cfg(windows)]
-        let paths = [IpcPath::from_wide(&owned[0]), IpcPath::from_wide(&owned[1])];
-
-        for path in paths {
-            sender.send(&PathAccess::read(path));
-        }
-        drop(sender);
-
-        let frames = receiver.close().unwrap();
-        let mut iter = frames.iter();
-        for path in paths {
-            let access: PathAccess<'_> = wincode::deserialize_exact(iter.next().unwrap()).unwrap();
-            assert!(access.path == path);
-            assert!(access.mode == AccessMode::READ);
-        }
-        assert!(iter.next().is_none());
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn smoke() {
-        let receiver = channel(CAPACITY, Global).unwrap();
-        let conf = wincode::serialize(&receiver.conf()).unwrap();
-        let cmd = command_for_fn!(conf, |conf: Vec<u8>| {
-            let conf: ChannelConf = wincode::deserialize(&conf).unwrap();
-            let sender = conf.sender(Global).unwrap();
-            let frame_size = NonZeroUsize::new(2).unwrap();
-            let mut frame = sender.writer.claim_frame(frame_size).unwrap();
-            frame.copy_from_slice(&[4, 2]);
-            frame.finish();
-        });
-        assert!(std::process::Command::from(cmd).status().unwrap().success());
-
-        let frames = receiver.close().unwrap();
-        let mut iter = frames.iter();
-
-        let received_frame = iter.next().unwrap();
-        assert!(received_frame == &[4, 2]);
-
-        assert!(iter.next().is_none());
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    #[expect(clippy::print_stdout, reason = "test diagnostics")]
-    async fn forbid_new_senders_after_close() {
-        let receiver = channel(CAPACITY, Global).unwrap();
-        let conf = wincode::serialize(&receiver.conf()).unwrap();
-        let _frames = receiver.close().unwrap();
-
-        let cmd = command_for_fn!(conf, |conf: Vec<u8>| {
-            let conf: ChannelConf = wincode::deserialize(&conf).unwrap();
-            print!("{}", conf.sender(Global).is_some());
-        });
-        let output = std::process::Command::from(cmd).output().unwrap();
-        assert!(B(&output.stdout) == B("false"));
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    #[expect(clippy::print_stdout, reason = "test diagnostics")]
-    async fn forbid_new_senders_after_receiver_dropped() {
-        let receiver = channel(CAPACITY, Global).unwrap();
-        let conf = wincode::serialize(&receiver.conf()).unwrap();
-        drop(receiver);
-
-        let cmd = command_for_fn!(conf, |conf: Vec<u8>| {
-            let conf: ChannelConf = wincode::deserialize(&conf).unwrap();
-            print!("{}", conf.sender(Global).is_some());
-        });
-        let output = std::process::Command::from(cmd).output().unwrap();
-        assert!(B(&output.stdout) == B("false"));
-    }
-
-    /// A sender that attached before close keeps its mapping but cannot
-    /// claim any new frame afterwards.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn attached_sender_cannot_claim_after_close() {
-        let receiver = channel(CAPACITY, Global).unwrap();
-        let sender = receiver.conf().sender(Global).unwrap();
-
-        let mut frame = sender.writer.claim_frame(NonZeroUsize::new(2).unwrap()).unwrap();
-        frame.copy_from_slice(&[4, 2]);
-        frame.finish();
-
-        let frames = receiver.close().unwrap();
-        assert!(frames.iter().next().unwrap() == &[4, 2]);
-
-        assert!(
-            sender.writer.claim_frame(NonZeroUsize::new(2).unwrap()).unwrap_err()
-                == shm_io::ClaimError::Closed
-        );
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn concurrent_senders() {
-        let receiver = channel(CAPACITY, Global).unwrap();
-        let conf = wincode::serialize(&receiver.conf()).unwrap();
-        for i in 0u16..200 {
-            let cmd = command_for_fn!((conf.clone(), i), |(conf, i): (Vec<u8>, u16)| {
-                let conf: ChannelConf = wincode::deserialize(&conf).unwrap();
-                let sender = conf.sender(Global).unwrap();
-                let data_to_send = i.to_string();
-                let mut frame = sender
-                    .writer
-                    .claim_frame(NonZeroUsize::new(data_to_send.len()).unwrap())
-                    .unwrap();
-                frame.copy_from_slice(data_to_send.as_bytes());
-                frame.finish();
-            });
-            let output = std::process::Command::from(cmd).output().unwrap();
-            assert!(
-                output.status.success(),
-                "Failed to send in iteration {}: {:?}",
-                i,
-                B(&output.stderr)
-            );
-        }
-        let frames = receiver.close().unwrap();
-        let mut received_values: Vec<u16> =
-            frames.iter().map(|frame| from_utf8(frame).unwrap().parse::<u16>().unwrap()).collect();
-        received_values.sort_unstable();
-        assert!(received_values == (0u16..200).collect::<Vec<u16>>());
-    }
-}

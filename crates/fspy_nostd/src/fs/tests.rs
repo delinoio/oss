@@ -58,5 +58,11 @@ fn readlinkat_returns_the_initialized_target() {
 
     let target = super::readlinkat(crate::CWD, path, &mut buf).unwrap();
 
-    assert_eq!(target, std::fs::read_link("/proc/self/exe").unwrap().as_os_str().as_bytes());
+    assert_eq!(
+        target,
+        std::fs::read_link("/proc/self/exe")
+            .unwrap()
+            .as_os_str()
+            .as_bytes()
+    );
 }

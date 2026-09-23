@@ -83,7 +83,10 @@ impl<A: Allocator, U: CStrUnit> CString<Thin, A, U> {
     #[must_use]
     pub fn count(self) -> CString<Fat, A, U> {
         let repr = self.as_c_str().count().into_repr();
-        CString { units: self.units, repr }
+        CString {
+            units: self.units,
+            repr,
+        }
     }
 }
 

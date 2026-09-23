@@ -20,7 +20,9 @@ use crate::CString;
 /// [`fspy_nostd::fs::getcwd`].
 pub fn getcwd<A: Allocator>(allocator: A) -> Result<CString<Fat, A>> {
     let mut bytes = Vec::new_in(allocator);
-    bytes.try_reserve_exact(fspy_nostd::fs::PATH_MAX).map_err(|_| Error::NOMEM)?;
+    bytes
+        .try_reserve_exact(fspy_nostd::fs::PATH_MAX)
+        .map_err(|_| Error::NOMEM)?;
     let initialized =
         fspy_nostd::fs::getcwd(&mut bytes.spare_capacity_mut()[..fspy_nostd::fs::PATH_MAX])?
             .len_with_nul();
@@ -50,7 +52,9 @@ pub fn readlinkat<A: Allocator>(
     path: CStr<'_, Thin>,
 ) -> Result<Vec<u8, A>> {
     let mut bytes = Vec::new_in(allocator);
-    bytes.try_reserve_exact(fspy_nostd::fs::PATH_MAX).map_err(|_| Error::NOMEM)?;
+    bytes
+        .try_reserve_exact(fspy_nostd::fs::PATH_MAX)
+        .map_err(|_| Error::NOMEM)?;
 
     loop {
         let capacity = bytes.capacity();
@@ -64,7 +68,9 @@ pub fn readlinkat<A: Allocator>(
 
         // The length remains zero, so reserve the desired total capacity.
         let next_capacity = capacity.checked_mul(2).ok_or(Error::NOMEM)?;
-        bytes.try_reserve_exact(next_capacity).map_err(|_| Error::NOMEM)?;
+        bytes
+            .try_reserve_exact(next_capacity)
+            .map_err(|_| Error::NOMEM)?;
     }
 }
 
@@ -117,7 +123,10 @@ mod tests {
         assert_eq!(path.as_c_str().as_units_with_nul(), expected);
         assert_eq!(path.as_units(), &expected[..expected.len() - 1]);
         assert_eq!(path.as_units_with_nul(), expected);
-        assert_eq!(path.into_units().as_slice(), &expected[..expected.len() - 1]);
+        assert_eq!(
+            path.into_units().as_slice(),
+            &expected[..expected.len() - 1]
+        );
 
         let path = super::getcwd(Global).unwrap();
         assert_eq!(path.into_units_with_nul().as_slice(), expected);
@@ -147,7 +156,10 @@ mod tests {
 
         assert_eq!(
             target.as_slice(),
-            std::fs::read_link("/proc/self/exe").unwrap().as_os_str().as_encoded_bytes()
+            std::fs::read_link("/proc/self/exe")
+                .unwrap()
+                .as_os_str()
+                .as_encoded_bytes()
         );
     }
 }
