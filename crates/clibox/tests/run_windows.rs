@@ -197,8 +197,12 @@ while ($true) {{
             &format!("http://127.0.0.1:{port}/health"),
             "--interval",
             "10ms",
+            // Hosted Windows runners can take several seconds to cold-start
+            // PowerShell before it accepts the first TCP connection. This
+            // test verifies post-workload cleanup, so retain a bounded but
+            // startup-tolerant readiness budget.
             "--ready-timeout",
-            "3s",
+            "10s",
             "--service",
             "powershell",
             "-NoProfile",
