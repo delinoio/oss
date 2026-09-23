@@ -730,10 +730,12 @@ impl Trace<'_> {
         let original = read_path(pid, argument(&regs, path_arg))?;
         let is_open = call == libc::SYS_openat || call == libc::SYS_openat2 || call == SYS_OPEN;
         if original.as_os_str().is_empty()
-            && (call == libc::SYS_newfstatat || call == libc::SYS_statx)
+            && (call == libc::SYS_newfstatat
+                || call == libc::SYS_statx
+                || call == libc::SYS_execveat
+                    && argument(&regs, 4) as i32 & libc::AT_EMPTY_PATH != 0)
         {
-            // AT_EMPTY_PATH targets the descriptor itself, including regular
-            // files used by the dynamic loader.
+            // Empty-path descriptor operations can target regular files.
             return Ok(false);
         }
         if !original.is_absolute() && dirfd != libc::AT_FDCWD {

@@ -579,6 +579,49 @@ int main(void) {
     );
     assert_eq!(result.stdout, b"virtual-exec-ok\n");
     assert!(!root.path().join("node_modules").exists());
+
+    let fd_launcher_source = root.path().join("fd-launcher.c");
+    fs::write(
+        &fd_launcher_source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(void) {
+    int fd = open("node_modules/dep/worker", O_RDONLY);
+    if (fd < 0) return 40;
+    char *args[] = {"worker", 0};
+    char *env[] = {0};
+    syscall(SYS_execveat, fd, "", args, env, AT_EMPTY_PATH);
+    return 41;
+}
+"#,
+    )
+    .unwrap();
+    let fd_launcher = root.path().join("fd-launcher");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&fd_launcher)
+        .arg(&fd_launcher_source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--"])
+        .arg(&fd_launcher)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(result.stdout, b"virtual-exec-ok\n");
 }
 
 #[cfg(target_os = "linux")]
