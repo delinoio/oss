@@ -92,13 +92,6 @@ mod tests {
         fn exists(&self) -> bool {
             self.path.exists()
         }
-
-        fn to_str(&self) -> String {
-            self.path
-                .to_str()
-                .expect("test temp dir is UTF-8")
-                .to_owned()
-        }
     }
 
     #[test]
