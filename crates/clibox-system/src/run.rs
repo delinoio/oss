@@ -1937,6 +1937,9 @@ fn nested_wrapper_state() -> bool {
         if unsafe { libc::getpgid(ancestor) } != process_group {
             return executable_matches(ancestor, &current);
         }
+        if !supported_node_launcher(ancestor) {
+            return false;
+        }
         let Some(next) = parent_process(ancestor) else {
             return false;
         };
@@ -1950,6 +1953,16 @@ fn executable_matches(process: libc::pid_t, current: &Path) -> bool {
     parent_executable(process)
         .and_then(|path| path.canonicalize().ok())
         .is_some_and(|executable| executable == current)
+}
+
+#[cfg(unix)]
+fn supported_node_launcher(process: libc::pid_t) -> bool {
+    parent_executable(process).is_some_and(|executable| {
+        matches!(
+            executable.file_name(),
+            Some(name) if name == "node" || name == "nodejs"
+        )
+    })
 }
 
 #[cfg(target_os = "linux")]

@@ -667,6 +667,51 @@ fn outer_timeout_terminates_descendants_of_a_nested_wrapper() {
 }
 
 #[test]
+fn nested_shell_wrapper_owns_its_descendants() {
+    let home = tempfile::tempdir().unwrap();
+    let marker = home.path().join("nested-shell-descendant-pid");
+    let assignment = format!("MARKER={}", marker.display());
+    let script = format!(
+        "\"{}\" run with-timeout --timeout 100ms --kill-after 0 -- sh -c 'sleep 30 & echo $! > \
+         \"$MARKER\"; wait'",
+        env!("CARGO_BIN_EXE_clibox")
+    );
+    let output = command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--timeout",
+            "5s",
+            "--kill-after",
+            "0",
+            &assignment,
+            "--",
+            "sh",
+            "-c",
+            &script,
+        ],
+    )
+    .output()
+    .unwrap();
+    assert_eq!(output.status.code(), Some(124), "{output:?}");
+    let pid = fs::read_to_string(marker)
+        .unwrap()
+        .trim()
+        .parse::<i32>()
+        .unwrap();
+    for _ in 0..50 {
+        if unsafe { libc::kill(pid, 0) } == -1
+            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+        {
+            return;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    panic!("nested shell wrapper left a descendant running");
+}
+
+#[test]
 fn outer_timeout_terminates_descendants_of_a_nested_npm_launcher() {
     let home = tempfile::tempdir().unwrap();
     let marker = home.path().join("nested-npm-descendant-pid");
