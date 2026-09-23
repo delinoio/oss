@@ -22,16 +22,14 @@ test("Selected release is manual, serialized, main-only and permission bounded",
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
   assert.equal(workflow.concurrency.group, "release-project");
   assert.deepEqual(workflow.permissions, { contents: "read" });
-  assert.equal(workflow.jobs.prepare.if, "github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main' && needs.pnport-complete.result == 'success'");
+  assert.equal(workflow.jobs.prepare.if, "github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main'");
   assert.equal(existsSync(new URL("../../.github/workflows/auto-publish.yml", import.meta.url)), false);
 });
 
 test("Publication follows preparation without CI and tags only after registry success", () => {
   const jobs = workflow.jobs;
-  assert.deepEqual(Object.keys(jobs), ["pnport-source", "pnport-native", "pnport-complete", "prepare", "registry", "tag", "summary"]);
-  assert.deepEqual(jobs.prepare.needs, "pnport-complete");
-  assert.deepEqual(jobs["pnport-native"].needs, "pnport-source");
-  assert.deepEqual(jobs["pnport-complete"].needs, ["pnport-source", "pnport-native"]);
+  assert.deepEqual(Object.keys(jobs), ["prepare", "registry", "tag", "summary"]);
+  assert.equal(jobs.prepare.needs, undefined);
   assert.deepEqual(jobs.registry.needs, ["prepare"]);
   assert.deepEqual(jobs.tag.needs, ["prepare", "registry"]);
   const publish = jobs.registry.steps.find((step) => step.name === "Publish only the selected crate");
@@ -52,23 +50,23 @@ test("Publication follows preparation without CI and tags only after registry su
   assert.doesNotMatch(script, /waitForCiWorkflow|wait-ci|\/actions|CI\.yml/u);
   assert.doesNotMatch(source(".github/workflows/release-project.yml"), /wait-ci|wait-release|ci_url|jobs\.ci|needs\.ci|actions: read/u);
   assert.equal(jobs.summary.if, "always()");
-  assert.deepEqual(jobs.summary.needs, ["pnport-source", "pnport-native", "pnport-complete", "prepare", "registry", "tag"]);
+  assert.deepEqual(jobs.summary.needs, ["prepare", "registry", "tag"]);
 });
 
-test("pnport's complete native candidate blocks version commit and tag", () => {
-  const jobs = workflow.jobs;
-  assert.match(jobs["pnport-source"].if, /inputs\.project == 'pnport'/u);
-  assert.deepEqual(jobs["pnport-native"].needs, "pnport-source");
-  assert.equal(jobs["pnport-native"].strategy.matrix.include.length, 6);
-  const native = jobs["pnport-native"].steps.map((step) => step.run ?? "").join("\n");
+test("pnport native and complete-set gates belong to its tag workflow", () => {
+  const coordinator = source(".github/workflows/release-project.yml");
+  assert.doesNotMatch(coordinator, /pnport-candidate|pnport-native|pnport-complete|RELEASE_CANDIDATE|test:typescript|install-smoke\.mjs/u);
+  const release = yaml.load(source(".github/workflows/release-pnport.yml"));
+  assert.equal(release.jobs.build.strategy.matrix.include.length, 6);
+  assert.deepEqual(release.jobs.build.needs, "prepare");
+  const native = release.jobs.build.steps.map((step) => step.run ?? "").join("\n");
   for (const gate of ["cargo test", "test:package", "test:typescript", "install-smoke.mjs", "evidence.mjs record"]) assert.match(native, new RegExp(gate, "u"));
-  const complete = jobs["pnport-complete"].steps.map((step) => step.run ?? "").join("\n");
+  assert.deepEqual(release.jobs.package.needs, ["prepare", "build"]);
+  const complete = release.jobs.package.steps.map((step) => step.run ?? "").join("\n");
   for (const gate of ["evidence.mjs assemble", "publish.mjs", "github-release.mjs", "homebrew.mjs"]) assert.ok(complete.includes(gate), gate);
-  assert.match(jobs["pnport-complete"].if, /needs\.pnport-native\.result == 'success'/u);
-  assert.match(jobs.prepare.if, /needs\.pnport-complete\.result == 'success'/u);
-  assert.match(jobs.prepare.steps.find((step) => step.id === "prepare").env.RELEASE_CANDIDATE_TREE, /needs\.pnport-complete\.outputs\.tree/u);
-  assert.deepEqual(jobs.registry.needs, ["prepare"]);
-  assert.deepEqual(jobs.tag.needs, ["prepare", "registry"]);
+  assert.deepEqual(release.jobs["publish-npm"].needs, ["prepare", "package"]);
+  assert.deepEqual(release.jobs["publish-release"].needs, ["prepare", "package", "publish-npm"]);
+  assert.deepEqual(release.jobs.homebrew.needs, ["prepare", "package", "publish-release"]);
 });
 
 test("pnport publication defaults to a credential-free dry run and exact tag", () => {
@@ -89,7 +87,7 @@ test("pnport publication defaults to a credential-free dry run and exact tag", (
   assert.match(source("scripts/release/update-homebrew.sh"), /conflicting pnport formula bytes/u);
 });
 
-for (const project of [Project.Clibox, Project.AsyncCommitHook]) for (const [scenario, results] of [
+for (const project of [Project.Clibox, Project.Pnport, Project.AsyncCommitHook]) for (const [scenario, results] of [
   ["success", ["success", "success", "success"]],
   ["prepare failure", ["failure", "skipped", "skipped"]],
   ["registry failure", ["success", "failure", "skipped"]],
