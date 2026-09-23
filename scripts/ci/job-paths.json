@@ -230,7 +230,7 @@
   },
   "pnport-native": {
     "paths": [
-      "Cargo.lock", "Cargo.toml", "crates/pnport/**", "crates/pnport-preload/**", "packages/pnport/**",
+      "Cargo.lock", "Cargo.toml", "crates/pnport/**", "crates/pnport-preload/**", "packages/pnport/**", "scripts/install/pnport.*",
       ".github/workflows/release-pnport.yml", ".github/workflows/release-project.yml", "rust-toolchain"
     ],
     "native": true
