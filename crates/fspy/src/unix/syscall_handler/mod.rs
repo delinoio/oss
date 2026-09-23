@@ -1,5 +1,6 @@
 mod execve;
 mod getdents;
+mod mutate;
 mod open;
 mod stat;
 
@@ -97,6 +98,28 @@ impl_handler!(
     #[cfg(target_arch = "x86_64")] creat,
     openat,
     openat2,
+
+    #[cfg(target_arch = "x86_64")] unlink,
+    unlinkat,
+    #[cfg(target_arch = "x86_64")] rename,
+    renameat,
+    renameat2,
+    #[cfg(target_arch = "x86_64")] mkdir,
+    mkdirat,
+    #[cfg(target_arch = "x86_64")] rmdir,
+    #[cfg(target_arch = "x86_64")] symlink,
+    symlinkat,
+    #[cfg(target_arch = "x86_64")] link,
+    linkat,
+    #[cfg(target_arch = "x86_64")] mknod,
+    mknodat,
+    #[cfg(target_arch = "x86_64")] truncate,
+    #[cfg(target_arch = "x86_64")] chmod,
+    fchmodat,
+    #[cfg(target_arch = "x86_64")] chown,
+    #[cfg(target_arch = "x86_64")] lchown,
+    fchownat,
+    utimensat,
 
     #[cfg(target_arch = "x86_64")] getdents,
     getdents64,

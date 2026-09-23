@@ -290,6 +290,66 @@ int main(int argc, char **argv) {
 
     #[cfg(target_os = "linux")]
     #[tokio::test]
+    async fn seccomp_records_path_mutations_as_writes() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let source = directory.path().join("mutate.c");
+        let executable = directory.path().join("mutate");
+        let old = directory.path().join("old");
+        let new = directory.path().join("new");
+        let link = directory.path().join("link");
+        let created_dir = directory.path().join("created");
+        fs::write(&old, b"input").expect("write old image");
+        fs::write(
+            &source,
+            r"#include <fcntl.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+  if (argc != 5) return 2;
+  if (syscall(SYS_mkdirat, AT_FDCWD, argv[4], 0700)) return 3;
+  if (syscall(SYS_renameat2, AT_FDCWD, argv[1], AT_FDCWD, argv[2], 0)) return 4;
+  if (syscall(SYS_symlinkat, argv[2], AT_FDCWD, argv[3])) return 5;
+  if (syscall(SYS_unlinkat, AT_FDCWD, argv[2], 0)) return 6;
+  return 0;
+}
+",
+        )
+        .expect("write mutation fixture");
+        assert!(
+            std::process::Command::new("cc")
+                .arg("-static")
+                .arg(&source)
+                .arg("-o")
+                .arg(&executable)
+                .status()
+                .expect("compile mutation fixture")
+                .success()
+        );
+        let mut command = super::Command::new(&executable);
+        command.args([&old, &new, &link, &created_dir]);
+        let child = command
+            .spawn(CancellationToken::new())
+            .await
+            .expect("spawn tracked fixture");
+        let termination = child.wait_handle.await.expect("wait for fixture");
+        assert!(termination.status.success());
+        let accesses = termination.path_accesses.expect("complete trace");
+        for expected in [&old, &new, &link, &created_dir] {
+            assert!(
+                accesses.iter().any(|access| {
+                    access.mode.contains(super::AccessMode::WRITE)
+                        && access.path.strip_path_prefix(expected, |path| {
+                            path.is_ok_and(|remaining| remaining.as_os_str().is_empty())
+                        })
+                }),
+                "missing write for {}",
+                expected.display()
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
     async fn seccomp_exec_records_script_interpreter() {
         let directory = tempfile::tempdir().expect("create fixture directory");
         let source = directory.path().join("launcher.c");
