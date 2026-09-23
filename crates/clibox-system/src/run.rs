@@ -1352,6 +1352,40 @@ fn limits_expired_at(limits: &Limits, last_activity: Instant, observed_at: Insta
             .is_some_and(|idle| observed_at.saturating_duration_since(last_activity) >= idle)
 }
 
+fn limits_expired_before_activity_refresh(
+    limits: &Limits,
+    last_activity: Instant,
+    latest_activity: Instant,
+    observed_at: Instant,
+) -> bool {
+    if limits
+        .overall
+        .is_some_and(|deadline| observed_at >= deadline)
+    {
+        return true;
+    }
+    let Some(idle_deadline) = limits.idle.and_then(|idle| last_activity.checked_add(idle)) else {
+        return false;
+    };
+    if observed_at < idle_deadline {
+        return false;
+    }
+    // A read that completed before the previous idle deadline extends the
+    // limit. A later read cannot retroactively conceal that deadline.
+    !(latest_activity > last_activity && latest_activity < idle_deadline)
+}
+
+fn supervision_poll_interval(limits: &Limits, last_activity: Instant, now: Instant) -> Duration {
+    let idle = limits.idle.and_then(|idle| last_activity.checked_add(idle));
+    limits
+        .overall
+        .into_iter()
+        .chain(idle)
+        .min()
+        .map(|deadline| POLL.min(deadline.saturating_duration_since(now)))
+        .unwrap_or(POLL)
+}
+
 fn run_once(
     plan: &environment::Plan,
     kill_after: Duration,
@@ -1384,9 +1418,25 @@ fn run_once(
         .map(Activity::last_observed_at)
         .unwrap_or_else(Instant::now);
     loop {
-        if let Some(activity) = &child.activity {
-            last_activity = activity.last_observed_at();
+        let observed_at = Instant::now();
+        let latest_activity = child
+            .activity
+            .as_ref()
+            .map(Activity::last_observed_at)
+            .unwrap_or(last_activity);
+        if limits_expired_before_activity_refresh(
+            &limits,
+            last_activity,
+            latest_activity,
+            observed_at,
+        ) {
+            tracing::debug!(operation = "run", stage = "timeout", "run_cleanup");
+            if cleanup_or_log(&mut child, kill_after) {
+                return finish_timed_out_workload_output(&mut child);
+            }
+            return Ok(Outcome::Code(124));
         }
+        last_activity = latest_activity;
         if child.output_failed() {
             cleanup_run_once_children(&mut child, &mut monitored_service, kill_after);
             return runtime_failure("Could not forward workload output.");
@@ -1436,11 +1486,26 @@ fn run_once(
         }
         if let Some(completion) = workload_completion {
             // A pipe reader can record its successful final read while the
-            // completion worker is being observed. Refresh the timestamp at
-            // this decision boundary so that read still resets idle time.
-            if let Some(activity) = &child.activity {
-                last_activity = activity.last_observed_at();
+            // completion worker is being observed. A read after the prior
+            // idle deadline cannot retroactively extend that expired limit.
+            let latest_activity = child
+                .activity
+                .as_ref()
+                .map(Activity::last_observed_at)
+                .unwrap_or(last_activity);
+            if limits_expired_before_activity_refresh(
+                &limits,
+                last_activity,
+                latest_activity,
+                completion.observed_at,
+            ) {
+                tracing::debug!(operation = "run", stage = "timeout", "run_cleanup");
+                if cleanup_or_log(&mut child, kill_after) {
+                    return finish_timed_out_workload_output(&mut child);
+                }
+                return Ok(Outcome::Code(124));
             }
+            last_activity = latest_activity;
             if child.output_failed() {
                 cleanup_run_once_children(&mut child, &mut monitored_service, kill_after);
                 return runtime_failure("Could not forward workload output.");
@@ -1476,13 +1541,6 @@ fn run_once(
                     );
                 }
             }
-            if limits_expired_at(&limits, last_activity, completion.observed_at) {
-                tracing::debug!(operation = "run", stage = "timeout", "run_cleanup");
-                if cleanup_or_log(&mut child, kill_after) {
-                    return finish_timed_out_workload_output(&mut child);
-                }
-                return Ok(Outcome::Code(124));
-            }
             let status = completion.status;
             // Reaping the direct child does not end ownership of its process
             // group or Job Object. A background descendant can otherwise
@@ -1508,14 +1566,11 @@ fn run_once(
             }
             return finish_workload_output(&mut child, &limits, status);
         }
-        if limits_expired_at(&limits, last_activity, Instant::now()) {
-            tracing::debug!(operation = "run", stage = "timeout", "run_cleanup");
-            if cleanup_or_log(&mut child, kill_after) {
-                return finish_timed_out_workload_output(&mut child);
-            }
-            return Ok(Outcome::Code(124));
-        }
-        thread::sleep(POLL);
+        thread::sleep(supervision_poll_interval(
+            &limits,
+            last_activity,
+            Instant::now(),
+        ));
     }
 }
 
@@ -4894,6 +4949,45 @@ mod lifecycle_tests {
             activity.last_observed_at(),
             completion,
         ));
+    }
+
+    #[test]
+    fn supervision_does_not_allow_late_output_to_clear_an_expired_idle_limit() {
+        let start = Instant::now();
+        let idle = Duration::from_millis(5);
+        let deadline = start.checked_add(idle).unwrap();
+        let observed_at = deadline.checked_add(Duration::from_millis(1)).unwrap();
+        let early_activity = deadline.checked_sub(Duration::from_millis(1)).unwrap();
+        let late_activity = deadline.checked_add(Duration::from_millis(1)).unwrap();
+        let limits = Limits {
+            overall: None,
+            idle: Some(idle),
+        };
+
+        assert!(!limits_expired_before_activity_refresh(
+            &limits,
+            start,
+            early_activity,
+            observed_at,
+        ));
+        assert!(limits_expired_before_activity_refresh(
+            &limits,
+            start,
+            late_activity,
+            observed_at,
+        ));
+    }
+
+    #[test]
+    fn supervision_wakes_at_the_earliest_idle_deadline() {
+        let start = Instant::now();
+        let idle = Duration::from_millis(5);
+        let limits = Limits {
+            overall: None,
+            idle: Some(idle),
+        };
+
+        assert_eq!(supervision_poll_interval(&limits, start, start), idle);
     }
 
     #[test]
