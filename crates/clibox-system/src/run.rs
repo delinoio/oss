@@ -539,7 +539,7 @@ fn with_service(options: Service) -> Result<Outcome> {
             let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
             return check_cancelled().and_then(|()| unreachable!());
         }
-        if service_child.completion()?.is_some() {
+        if completion_or_cleanup(&mut service_child, options.workload.kill_after)?.is_some() {
             let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
             return runtime_failure("The managed service exited before it became ready.");
         }
@@ -549,7 +549,8 @@ fn with_service(options: Service) -> Result<Outcome> {
                 // The service can exit while one bounded HTTP attempt is in
                 // progress. Prefer that owned-process failure to reporting a
                 // coincident readiness deadline.
-                if service_child.completion()?.is_some() {
+                if completion_or_cleanup(&mut service_child, options.workload.kill_after)?.is_some()
+                {
                     let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
                     return runtime_failure("The managed service exited before it became ready.");
                 }
@@ -565,7 +566,8 @@ fn with_service(options: Service) -> Result<Outcome> {
                 }
             }
             Err(HttpProbeError::OverallTimeout) => {
-                if service_child.completion()?.is_some() {
+                if completion_or_cleanup(&mut service_child, options.workload.kill_after)?.is_some()
+                {
                     let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
                     return runtime_failure("The managed service exited before it became ready.");
                 }
@@ -976,12 +978,24 @@ fn run_once(
                 "Execution was cancelled; owned children were asked to stop.",
             ));
         }
-        let service_completion = monitored_service
-            .as_deref_mut()
-            .map(OwnedChild::completion)
-            .transpose()?
-            .flatten();
-        let workload_completion = child.completion()?;
+        let service_completion = match monitored_service.as_deref_mut() {
+            Some(service) => match service.completion() {
+                Ok(completion) => completion,
+                Err(error) => {
+                    let _ = cleanup_or_log(service, kill_after);
+                    let _ = cleanup_or_log(&mut child, kill_after);
+                    return Err(error);
+                }
+            },
+            None => None,
+        };
+        let workload_completion = match child.completion() {
+            Ok(completion) => completion,
+            Err(error) => {
+                cleanup_run_once_children(&mut child, &mut monitored_service, kill_after);
+                return Err(error);
+            }
+        };
         if service_completion.is_some_and(|service| {
             service_exited_before_workload(
                 service.observed_at,
@@ -1006,7 +1020,13 @@ fn run_once(
             // group or Job Object. A background descendant can otherwise
             // retain an inherited pipe or outlive the wrapper after its parent
             // exits, so confirm bounded cleanup before returning this status.
-            let descendants_running = child.tree_running()?;
+            let descendants_running = match child.tree_running() {
+                Ok(running) => running,
+                Err(error) => {
+                    cleanup_run_once_children(&mut child, &mut monitored_service, kill_after);
+                    return Err(error);
+                }
+            };
             if descendants_running && !cleanup_or_log(&mut child, kill_after) {
                 // Never join inherited pipes after unconfirmed cleanup: a
                 // surviving descendant could hold one forever. Cleanup has
@@ -1042,6 +1062,30 @@ fn cleanup_or_log(child: &mut OwnedChild, kill_after: Duration) -> bool {
             error.report("run");
             false
         }
+    }
+}
+
+fn completion_or_cleanup(
+    child: &mut OwnedChild,
+    kill_after: Duration,
+) -> Result<Option<Completion>> {
+    match child.completion() {
+        Ok(completion) => Ok(completion),
+        Err(error) => {
+            let _ = cleanup_or_log(child, kill_after);
+            Err(error)
+        }
+    }
+}
+
+fn cleanup_run_once_children(
+    workload: &mut OwnedChild,
+    monitored_service: &mut Option<&mut OwnedChild>,
+    kill_after: Duration,
+) {
+    let _ = cleanup_or_log(workload, kill_after);
+    if let Some(service) = monitored_service.as_deref_mut() {
+        let _ = cleanup_or_log(service, kill_after);
     }
 }
 
