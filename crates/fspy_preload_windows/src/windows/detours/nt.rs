@@ -16,7 +16,7 @@ use winapi::{
     shared::{
         minwindef::HFILE,
         ntdef::{
-            BOOLEAN, HANDLE, NTSTATUS, PHANDLE, PLARGE_INTEGER, POBJECT_ATTRIBUTES,
+            BOOLEAN, HANDLE, NT_SUCCESS, NTSTATUS, PHANDLE, PLARGE_INTEGER, POBJECT_ATTRIBUTES,
             PUNICODE_STRING, PVOID, ULONG,
         },
     },
@@ -75,7 +75,7 @@ static DETOUR_NT_CREATE_USER_PROCESS: Detour<
                 unsafe { handle_process_image(attribute_list) };
 
                 // SAFETY: calling the original NtCreateUserProcess with all original arguments
-                unsafe {
+                let status = unsafe {
                     (DETOUR_NT_CREATE_USER_PROCESS.real())(
                         process_handle,
                         thread_handle,
@@ -89,7 +89,15 @@ static DETOUR_NT_CREATE_USER_PROCESS: Detour<
                         create_info,
                         attribute_list,
                     )
+                };
+                if NT_SUCCESS(status) && !super::create_process::is_hooking_create_process() {
+                    // Direct NT creation bypasses the CreateProcess callbacks
+                    // that copy the payload and inject the DLL. Its child can
+                    // run, but this trace cannot claim to cover that child.
+                    // SAFETY: the DLL client was initialized before detours.
+                    unsafe { global_client() }.mark_incomplete();
                 }
+                status
             }
             new_fn
         })

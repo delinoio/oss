@@ -26,6 +26,10 @@ thread_local! {
     static IS_HOOKING_CREATE_PROCESS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
+pub(super) fn is_hooking_create_process() -> bool {
+    IS_HOOKING_CREATE_PROCESS.with(std::cell::Cell::get)
+}
+
 struct HookGuard;
 impl HookGuard {
     pub fn new() -> Option<Self> {

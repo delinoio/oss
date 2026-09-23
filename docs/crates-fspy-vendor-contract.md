@@ -26,6 +26,8 @@ On Windows, Detours requires an ANSI DLL path. The runner round-trips the materi
 
 Windows descendant hooks terminate and close a newly created suspended child when payload propagation or resumption fails inside the Detours callback; the original Win32 error remains available to the caller.
 
+The low-level `NtCreateUserProcess` hook records the attempted image. A successful creation outside the wrapped `CreateProcessA/W` injection callbacks marks the channel incomplete, because that native path does not inject the child DLL.
+
 Windows preload attachment and detachment check the returned Detours `LONG` status from each transaction operation. A failed attach prevents DLL initialization from reporting a complete trace.
 
 Windows access classification treats deletion, file metadata and extended-attribute mutation, directory-child deletion, and security-owner/DACL mutation rights as writes. Combined read/write masks remain both inputs and outputs; maximum-allowed access is classified conservatively.
