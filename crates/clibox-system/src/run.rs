@@ -1119,7 +1119,9 @@ fn http_attempt(
 }
 
 fn has_terminal_connect_failure(error: &reqwest::Error) -> bool {
-    contains_tls_failure(error) || contains_permission_denied(error)
+    contains_tls_failure(error)
+        || contains_permission_denied(error)
+        || contains_local_resource_failure(error)
 }
 
 fn contains_tls_failure(error: &(dyn std::error::Error + 'static)) -> bool {
@@ -1148,6 +1150,46 @@ fn contains_permission_denied(error: &(dyn std::error::Error + 'static)) -> bool
         }
     }
     error.source().is_some_and(contains_permission_denied)
+}
+
+fn contains_local_resource_failure(error: &(dyn std::error::Error + 'static)) -> bool {
+    if let Some(io_error) = error.downcast_ref::<std::io::Error>() {
+        if io_error.raw_os_error().is_some_and(is_local_resource_error) {
+            return true;
+        }
+        if let Some(source) = io_error.get_ref() {
+            if contains_local_resource_failure(source) {
+                return true;
+            }
+        }
+    }
+    error.source().is_some_and(contains_local_resource_failure)
+}
+
+fn is_local_resource_error(error: i32) -> bool {
+    #[cfg(unix)]
+    if matches!(
+        error,
+        libc::EMFILE | libc::ENFILE | libc::ENOBUFS | libc::ENOMEM
+    ) {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::{
+            Foundation::{ERROR_NOT_ENOUGH_MEMORY, ERROR_TOO_MANY_OPEN_FILES},
+            Networking::WinSock::{WSAEMFILE, WSAENOBUFS},
+        };
+
+        if error == ERROR_NOT_ENOUGH_MEMORY as i32
+            || error == ERROR_TOO_MANY_OPEN_FILES as i32
+            || error == WSAEMFILE
+            || error == WSAENOBUFS
+        {
+            return true;
+        }
+    }
+    false
 }
 
 fn service_http_client(
@@ -4628,6 +4670,16 @@ mod lifecycle_tests {
 
         assert!(contains_permission_denied(&denied));
         assert!(!contains_permission_denied(&refused));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_resource_connect_errors_are_terminal() {
+        let exhausted = io::Error::from_raw_os_error(libc::EMFILE);
+        let refused = io::Error::from(io::ErrorKind::ConnectionRefused);
+
+        assert!(contains_local_resource_failure(&exhausted));
+        assert!(!contains_local_resource_failure(&refused));
     }
 
     #[test]
