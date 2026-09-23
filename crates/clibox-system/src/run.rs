@@ -1718,6 +1718,7 @@ struct ForegroundTerminal {
     descriptor: libc::c_int,
     parent_group: libc::pid_t,
     child_group: libc::pid_t,
+    interrupt_relay: libc::pid_t,
 }
 
 #[cfg(unix)]
@@ -2730,24 +2731,28 @@ fn foreground_parent_group(
 impl ForegroundTerminal {
     fn transfer(parent: ForegroundTerminalParent, child_pid: u32) -> Result<Self> {
         let child_group = child_pid as libc::pid_t;
-        set_terminal_foreground_group(parent.descriptor, child_group)
-            .map_err(|error| Failure::io(&error))?;
+        let interrupt_relay = spawn_foreground_interrupt_relay(child_group)?;
+        if let Err(error) = set_terminal_foreground_group(parent.descriptor, child_group) {
+            stop_foreground_interrupt_relay(interrupt_relay);
+            return Err(Failure::io(&error));
+        }
         if let Err(error) = continue_process_group(child_pid) {
             let _ = set_terminal_foreground_group(parent.descriptor, parent.group);
+            stop_foreground_interrupt_relay(interrupt_relay);
             return Err(error);
         }
         Ok(Self {
             descriptor: parent.descriptor,
             parent_group: parent.group,
             child_group,
+            interrupt_relay,
         })
     }
 
     fn restore(&self) {
-        if unsafe { libc::tcgetpgrp(self.descriptor) } != self.child_group {
-            return;
-        }
-        if set_terminal_foreground_group(self.descriptor, self.parent_group).is_err() {
+        if unsafe { libc::tcgetpgrp(self.descriptor) } == self.child_group
+            && set_terminal_foreground_group(self.descriptor, self.parent_group).is_err()
+        {
             tracing::debug!(
                 operation = "run",
                 child_group = self.child_group,
@@ -2755,6 +2760,7 @@ impl ForegroundTerminal {
                 "run_cleanup"
             );
         }
+        stop_foreground_interrupt_relay(self.interrupt_relay);
     }
 
     fn suspend_wrapper(&self) -> Result<()> {
@@ -2771,6 +2777,116 @@ impl ForegroundTerminal {
         set_terminal_foreground_group(self.descriptor, self.child_group)
             .map_err(|error| Failure::io(&error))?;
         continue_process_group(self.child_group as u32)
+    }
+}
+
+#[cfg(unix)]
+static mut FOREGROUND_INTERRUPT_RELAY_SUPERVISOR: libc::pid_t = 0;
+
+#[cfg(unix)]
+extern "C" fn forward_foreground_interrupt(_: libc::c_int) {
+    // The relay has no shared Rust state after fork. `getppid` prevents a
+    // stale relay from targeting a reused PID if its supervisor disappears
+    // before normal lifecycle cleanup can reap it.
+    unsafe {
+        let supervisor = FOREGROUND_INTERRUPT_RELAY_SUPERVISOR;
+        if supervisor > 0 && libc::getppid() == supervisor {
+            let _ = libc::kill(supervisor, libc::SIGINT);
+        }
+    }
+}
+
+#[cfg(unix)]
+fn spawn_foreground_interrupt_relay(child_group: libc::pid_t) -> Result<libc::pid_t> {
+    let mut readiness = [-1; 2];
+    if unsafe { libc::pipe(readiness.as_mut_ptr()) } == -1 {
+        return Err(Failure::io(&io::Error::last_os_error()));
+    }
+    let relay = unsafe { libc::fork() };
+    if relay == -1 {
+        let error = io::Error::last_os_error();
+        unsafe {
+            libc::close(readiness[0]);
+            libc::close(readiness[1]);
+        }
+        return Err(Failure::io(&error));
+    }
+    if relay == 0 {
+        // `spawn` may follow service readiness and output workers, so this
+        // post-fork child can use only async-signal-safe libc functions. It
+        // stays in the workload group, relays terminal Ctrl+C to its native
+        // supervisor, and otherwise waits for normal group cleanup.
+        unsafe {
+            libc::close(readiness[0]);
+            FOREGROUND_INTERRUPT_RELAY_SUPERVISOR = libc::getppid();
+            let mut action: libc::sigaction = std::mem::zeroed();
+            action.sa_sigaction = forward_foreground_interrupt as *const () as libc::sighandler_t;
+            action.sa_flags = libc::SA_RESTART;
+            let ready = libc::setpgid(0, child_group) == 0
+                && FOREGROUND_INTERRUPT_RELAY_SUPERVISOR > 0
+                && libc::sigemptyset(&mut action.sa_mask) == 0
+                && libc::sigaction(libc::SIGINT, &action, std::ptr::null_mut()) == 0
+                && libc::write(readiness[1], [1u8].as_ptr().cast(), 1) == 1;
+            libc::close(readiness[1]);
+            if !ready {
+                libc::_exit(127);
+            }
+            loop {
+                libc::pause();
+            }
+        }
+    }
+
+    unsafe {
+        libc::close(readiness[1]);
+    }
+    let mut ready = [0u8; 1];
+    let read_result = loop {
+        let result = unsafe { libc::read(readiness[0], ready.as_mut_ptr().cast(), ready.len()) };
+        if result == -1 && io::Error::last_os_error().kind() == io::ErrorKind::Interrupted {
+            continue;
+        }
+        break result;
+    };
+    unsafe {
+        libc::close(readiness[0]);
+    }
+    if read_result == 1 && ready == [1] {
+        return Ok(relay);
+    }
+
+    reap_foreground_interrupt_relay(relay);
+    Err(Failure::new(
+        Code::IoFailed,
+        "Could not prepare foreground terminal interruption handling.",
+    ))
+}
+
+#[cfg(unix)]
+fn stop_foreground_interrupt_relay(relay: libc::pid_t) {
+    if unsafe { libc::kill(relay, libc::SIGTERM) } == -1
+        && io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
+    {
+        tracing::debug!(
+            operation = "run",
+            relay,
+            stage = "terminal_interrupt_relay_stop_failed",
+            "run_cleanup"
+        );
+    }
+    reap_foreground_interrupt_relay(relay);
+}
+
+#[cfg(unix)]
+fn reap_foreground_interrupt_relay(relay: libc::pid_t) {
+    loop {
+        let observed = unsafe { libc::waitpid(relay, std::ptr::null_mut(), 0) };
+        if observed == relay {
+            return;
+        }
+        if observed != -1 || io::Error::last_os_error().kind() != io::ErrorKind::Interrupted {
+            return;
+        }
     }
 }
 

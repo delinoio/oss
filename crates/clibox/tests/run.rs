@@ -466,6 +466,58 @@ fn interactive_workload_keeps_foreground_terminal_access() {
 
 #[test]
 #[cfg(target_os = "linux")]
+fn terminal_interrupt_cancels_a_foreground_workload_and_its_wrapper() {
+    let home = tempfile::tempdir().unwrap();
+    let (mut wrapper, terminal) = terminal_command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--timeout",
+            "30s",
+            "--kill-after",
+            "0",
+            "--",
+            "sh",
+            "-c",
+            "trap '' INT; while :; do :; done",
+        ],
+    );
+    let mut wrapper = wrapper.spawn().unwrap();
+    let wrapper_group = wrapper.id() as libc::pid_t;
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    let child_group = loop {
+        let group = terminal_foreground_group(&terminal);
+        if group != wrapper_group {
+            break group;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "workload did not receive terminal ownership"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+
+    assert_eq!(unsafe { libc::kill(-child_group, libc::SIGINT) }, 0);
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        if let Some(status) = wrapper.try_wait().unwrap() {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = unsafe { libc::kill(-wrapper_group, libc::SIGKILL) };
+            let _ = unsafe { libc::kill(-child_group, libc::SIGKILL) };
+            let _ = wrapper.wait();
+            panic!("foreground terminal interrupt did not cancel the wrapper");
+        }
+        thread::sleep(Duration::from_millis(20));
+    };
+
+    assert_eq!(status.code(), Some(130));
+}
+
+#[test]
+#[cfg(target_os = "linux")]
 fn interactive_output_forwarding_survives_tostop() {
     let home = tempfile::tempdir().unwrap();
     let (mut wrapper, terminal) = terminal_command(
