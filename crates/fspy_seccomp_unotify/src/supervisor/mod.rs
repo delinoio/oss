@@ -120,16 +120,20 @@ pub fn supervise<H: SeccompNotifyHandler + Default + Send + 'static>() -> io::Re
             let mut resp_buf = alloc_seccomp_notif_resp();
 
             join_set.spawn(async move {
+                let mut first_tracking_error = None;
                 while let Some(notify) = listener.next().await? {
                     let _span = span!(Level::TRACE, "notify loop tick");
                     // Errors on the supervisor side could be caused by a target process aborting.
-                    // It shouldn't break the syscall handling loop as there might be target
-                    // processes.
-                    let _handle_result = handler.handle_notify(notify);
+                    // Continue the syscall even when recording fails, but preserve that
+                    // failure so the caller cannot use an incomplete trace as complete.
+                    let handle_result = handler.handle_notify(notify);
                     let req_id = notify.id;
                     listener.send_continue(req_id, &mut resp_buf)?;
+                    if let Err(error) = handle_result {
+                        first_tracking_error.get_or_insert(error);
+                    }
                 }
-                io::Result::Ok(handler)
+                first_tracking_error.map_or(Ok(handler), Err)
             });
         }
         let mut handlers = Vec::<H>::new();
