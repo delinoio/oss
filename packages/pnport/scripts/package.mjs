@@ -15,6 +15,7 @@ const identity = (bytes) => `sha512-${createHash("sha512").update(bytes).digest(
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 export const tarballName = (name, version) => `${name.replace(/^@/u, "").replace("/", "-")}-${version}.tgz`;
 export const archiveName = (target) => `pnport-${target.suffix}.tar.gz`;
+export const packageNames = (version) => [...targets.map(({ name }) => name), "@delino/pnport"].map((name) => tarballName(name, version));
 
 // This closed ustar reader rejects links, duplicates, extensions, and traversal.
 // Verification never rewrites an already packed or downloaded artifact.
@@ -118,10 +119,10 @@ export function inspectArchive(file, target, npmFile) {
 
 export function verifySet(directory, sourceRevision = revision()) {
   const { version } = metadata();
-  const names = [...targets.map(({ name }) => name), "@delino/pnport"].map((name) => tarballName(name, version));
+  const names = packageNames(version);
   const tarballs = path.join(directory, "tarballs");
   const archives = path.join(directory, "archives");
-  ensure(JSON.stringify(readdirSync(tarballs).sort()) === JSON.stringify(names.sort()), "Expected exactly seven pnport npm tarballs");
+  ensure(JSON.stringify(readdirSync(tarballs).sort()) === JSON.stringify([...names].sort()), "Expected exactly seven pnport npm tarballs");
   ensure(JSON.stringify(readdirSync(archives).sort()) === JSON.stringify(targets.map(archiveName).sort()), "Expected exactly six native archives");
   const packages = names.map((name) => inspectTarball(path.join(tarballs, name), version, sourceRevision));
   const native = targets.map((target) => inspectArchive(path.join(archives, archiveName(target)), target, path.join(tarballs, tarballName(target.name, version))));

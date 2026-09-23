@@ -7,7 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { buildPackage, nativeArchive, tarEntries } from "../../packages/pnport/scripts/package.mjs";
+import { buildPackage, nativeArchive, packageNames, tarEntries } from "../../packages/pnport/scripts/package.mjs";
 import { publishArtifacts } from "../../packages/pnport/scripts/publish.mjs";
 import { publish as publishGithub } from "../../packages/pnport/scripts/github-release.mjs";
 import { metadata } from "../../packages/pnport/scripts/common.mjs";
@@ -42,6 +42,7 @@ test("native release archive contains exactly one matched adjacent pair", () => 
 });
 
 test("npm publication confirms six native dependencies before launcher and fails before writing on conflict", async () => {
+  assert.deepEqual(packageNames("0.1.0"), [...targets.map(({ name }) => `delino-${name.split("/")[1]}-0.1.0.tgz`), "delino-pnport-0.1.0.tgz"]);
   const artifacts = [...targets.map(({ name }) => ({ name, version: "0.1.0", integrity: name })), { name: "@delino/pnport", version: "0.1.0", integrity: "main" }];
   const remote = new Map();
   const writes = [];
