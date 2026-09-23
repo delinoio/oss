@@ -690,12 +690,33 @@ fn with_service(options: Service) -> Result<Outcome> {
             return Err(error);
         }
     };
-    if !cleanup_or_log(&mut service_child, options.workload.kill_after)
-        && matches!(outcome, Outcome::Child(status) if status.success())
-    {
+    let service_cleanup_confirmed = cleanup_or_log(&mut service_child, options.workload.kill_after);
+    if !service_cleanup_confirmed && matches!(outcome, Outcome::Child(status) if status.success()) {
         return runtime_failure("Managed service cleanup could not be confirmed.");
     }
+    if service_cleanup_confirmed {
+        finish_managed_service_output(&mut service_child)?;
+    }
     Ok(outcome)
+}
+
+fn finish_managed_service_output(service: &mut OwnedChild) -> Result<()> {
+    match service.join_output_within(&Limits::default()) {
+        OutputJoin::Complete if service.output_failed() => {
+            runtime_failure("Could not forward managed service output.")
+        }
+        OutputJoin::Complete => Ok(()),
+        OutputJoin::Deadline => {
+            runtime_failure("Could not finish forwarding managed service output.")
+        }
+        OutputJoin::Cancelled => Err(Failure::new(
+            Code::Cancelled,
+            "Execution was cancelled while forwarding managed service output.",
+        )),
+        OutputJoin::Failed => {
+            runtime_failure("Could not finish forwarding managed service output.")
+        }
+    }
 }
 
 fn wait_for_external_service(

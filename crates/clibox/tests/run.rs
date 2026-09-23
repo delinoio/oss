@@ -1260,6 +1260,50 @@ fn managed_service_waits_after_an_unready_preflight() {
 }
 
 #[test]
+fn managed_service_forwards_shutdown_output_before_success() {
+    let home = tempfile::tempdir().unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        for status in ["503 Service Unavailable", "204 No Content"] {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 1024];
+            let _ = stream.read(&mut request);
+            stream
+                .write_all(format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\n\r\n").as_bytes())
+                .unwrap();
+        }
+    });
+    let output = command(
+        home.path(),
+        &[
+            "run",
+            "with-service",
+            &format!("http://{address}/health"),
+            "--interval",
+            "10ms",
+            "--service",
+            "sh",
+            "-c",
+            "trap 'printf managed-service-shutdown >&2; exit 0' TERM; while :; do sleep 1; done",
+            "--",
+            "sh",
+            "-c",
+            "exit 0",
+        ],
+    )
+    .output()
+    .unwrap();
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("managed-service-shutdown"),
+        "managed service shutdown output was not forwarded: {output:?}"
+    );
+    server.join().unwrap();
+}
+
+#[test]
 fn managed_service_must_remain_alive_after_a_successful_probe() {
     let home = tempfile::tempdir().unwrap();
     let marker = home.path().join("workload-started");
