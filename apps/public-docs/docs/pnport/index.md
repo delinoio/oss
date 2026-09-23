@@ -15,7 +15,7 @@ Development evidence on one macOS arm64 host does not establish support for the 
 - Select one installed Yarn 4 PnP project without changing the subprocess's working directory.
 - Give supported subprocesses a read-only dependency view, including ZIP-backed packages, while preserving ordinary source and output writes.
 - Keep child standard streams and exit status intact, so protocol-based tools can use stdout.
-- Report unsupported interception or a changed dependency graph explicitly instead of silently running without virtualization.
+- Report unsupported children explicitly and require a restart when the dependency graph changes, without silently running outside the virtual view.
 
 Start with [getting started](/pnport/getting-started) and the [command reference](/pnport/commands). The [filesystem and process guide](/pnport/filesystem-and-processes) explains the boundaries.
 
