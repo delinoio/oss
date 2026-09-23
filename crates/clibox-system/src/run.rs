@@ -1707,6 +1707,7 @@ struct OwnedChild {
     job: Job,
     completions: mpsc::Receiver<Result<Completion>>,
     completion: Option<Completion>,
+    completion_observation_failed: bool,
     activity: Option<Activity>,
     output_failure: Option<Arc<AtomicBool>>,
     output_threads: Vec<thread::JoinHandle<()>>,
@@ -1945,6 +1946,7 @@ fn spawn(
         job,
         completions,
         completion: None,
+        completion_observation_failed: false,
         activity,
         output_failure,
         output_threads,
@@ -2127,9 +2129,26 @@ impl OwnedChild {
     fn completion(&mut self) -> Result<Option<Completion>> {
         if self.completion.is_none() {
             match self.completions.try_recv() {
-                Ok(completion) => self.completion = Some(completion?),
+                Ok(Ok(completion)) => self.completion = Some(completion),
+                Ok(Err(error)) => {
+                    self.completion_observation_failed = true;
+                    tracing::debug!(
+                        operation = "run",
+                        pid = self.pid,
+                        stage = "completion-unavailable",
+                        "run_cleanup"
+                    );
+                    return Err(error);
+                }
                 Err(mpsc::TryRecvError::Empty) => (),
                 Err(mpsc::TryRecvError::Disconnected) => {
+                    self.completion_observation_failed = true;
+                    tracing::debug!(
+                        operation = "run",
+                        pid = self.pid,
+                        stage = "completion-unavailable",
+                        "run_cleanup"
+                    );
                     return runtime_failure(
                         "Cannot observe the owned child process; cleanup may be incomplete.",
                     );
@@ -2140,7 +2159,7 @@ impl OwnedChild {
     }
 
     fn request_graceful_termination(&mut self) -> Result<()> {
-        if !self.tree_running()? {
+        if !self.cleanup_tree_running()? {
             return Ok(());
         }
         tracing::debug!(
@@ -2158,7 +2177,7 @@ impl OwnedChild {
         // child exits. A descendant can retain an inherited output pipe, and
         // a forwarding thread can block writing to the wrapper's consumer.
         // Bounded cleanup must never wait for either thread to drain.
-        if !self.tree_running()? {
+        if !self.cleanup_tree_running()? {
             return Ok(());
         }
         tracing::debug!(
@@ -2177,7 +2196,7 @@ impl OwnedChild {
             Failure::new(Code::IoFailed, "Cleanup deadline cannot be represented.")
         })?;
         while Instant::now() < graceful_deadline {
-            if !self.tree_running()? {
+            if !self.cleanup_tree_running()? {
                 return Ok(());
             }
             if initial_cancellation
@@ -2199,7 +2218,7 @@ impl OwnedChild {
             // scheduling opportunity. Recheck before SIGKILL because macOS
             // retains the unreaped group leader while the live descendants
             // have already exited.
-            if !self.tree_running()? {
+            if !self.cleanup_tree_running()? {
                 return Ok(());
             }
             self.signal(true)?;
@@ -2210,7 +2229,7 @@ impl OwnedChild {
                 Failure::new(Code::IoFailed, "Cleanup deadline cannot be represented.")
             })?;
         while Instant::now() < confirmation {
-            if !self.tree_running()? {
+            if !self.cleanup_tree_running()? {
                 return Ok(());
             }
             thread::sleep(POLL);
@@ -2293,6 +2312,37 @@ impl OwnedChild {
             UnixOwnership::ProcessGroup => process_group_running(self.pid),
             UnixOwnership::DirectChild => process_running(self.pid),
         }
+    }
+
+    fn cleanup_tree_running(&mut self) -> Result<bool> {
+        if !self.completion_observation_failed {
+            return self.tree_running();
+        }
+        #[cfg(unix)]
+        {
+            return match self.unix_ownership {
+                UnixOwnership::ProcessGroup => {
+                    if child_exit_observed_without_reaping(self.pid)? {
+                        completed_process_group_running(self.pid)
+                    } else {
+                        process_group_running(self.pid)
+                    }
+                }
+                UnixOwnership::DirectChild => {
+                    if child_exit_observed_without_reaping(self.pid)? {
+                        Ok(false)
+                    } else {
+                        process_running(self.pid)
+                    }
+                }
+            };
+        }
+        #[cfg(windows)]
+        {
+            return self.job.is_running();
+        }
+        #[allow(unreachable_code)]
+        runtime_failure("Owned child cleanup is unavailable on this platform.")
     }
 
     #[cfg(unix)]
@@ -5009,6 +5059,39 @@ mod lifecycle_tests {
 
         assert_eq!(graceful_cleanup_wait(true, kill_after), kill_after);
         assert_eq!(graceful_cleanup_wait(false, kill_after), Duration::ZERO);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn completion_failure_still_terminates_the_owned_direct_child() {
+        let mut process = ProcessCommand::new("sh")
+            .args(["-c", "trap 'exit 0' TERM; while :; do :; done"])
+            .spawn()
+            .unwrap();
+        let (sender, completions) = mpsc::sync_channel(1);
+        let mut child = OwnedChild {
+            pid: process.id(),
+            unix_ownership: UnixOwnership::DirectChild,
+            reaped: false,
+            foreground_terminal: None,
+            completions,
+            completion: None,
+            completion_observation_failed: false,
+            activity: None,
+            output_failure: None,
+            output_threads: Vec::new(),
+        };
+        sender
+            .send(runtime_failure("The completion worker failed."))
+            .unwrap();
+
+        let error = match child.completion() {
+            Ok(_) => panic!("the injected completion failure must be observed"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code, Code::IoFailed);
+        assert!(child.cleanup(Duration::from_millis(20), None).is_ok());
+        assert!(process.try_wait().unwrap().is_some());
     }
 
     #[test]
