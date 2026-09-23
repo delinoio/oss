@@ -1586,12 +1586,13 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
     );
     let binary = std::env::current_exe().map_err(|_| injection_failed())?;
     let mut command = Command::new(binary);
+    // Keep the shell's foreground process group so interactive reads and
+    // terminal-generated signals reach the command as they do without pnport.
     command
         .arg(LAUNCH_ARG)
         .arg(&prepared.program)
         .args(&prepared.args)
-        .env("PNPORT_SESSION", &view.session)
-        .process_group(0);
+        .env("PNPORT_SESSION", &view.session);
     let child = command.spawn().map_err(|_| injection_failed())?;
     let pid = child.id() as i32;
     let mut status = 0;
