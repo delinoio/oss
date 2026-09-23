@@ -210,7 +210,7 @@ export function validateCommit(directory, revision, project, bump, runId) {
   return { ...identity, revision };
 }
 
-export async function prepareRelease({ directory, project, bump, runId, name, email, preflight = async () => {}, expectedBase, expectedTree }) {
+export async function prepareRelease({ directory, project, bump, runId, name, email, preflight = async () => {} }) {
   validateRun(project, bump, runId);
   requireValue(name === botName && /^\d+\+delino-release-bot\[bot\]@users\.noreply\.github\.com$/u.test(email ?? ""), "Unexpected release bot commit identity");
   requireValue(git(directory, ["status", "--porcelain"]) === "", "Release checkout must be clean");
@@ -220,24 +220,16 @@ export async function prepareRelease({ directory, project, bump, runId, name, em
   requireValue(candidates.length <= 1, "Multiple commits claim this release run");
   if (candidates.length === 1) {
     const identity = validateCommit(directory, candidates[0], project, bump, runId);
-    if (project === Project.Pnport) {
-      requireValue(shaPattern.test(expectedTree ?? "") && git(directory, ["rev-parse", `${identity.revision}^{tree}`]) === expectedTree, "pnport resumed commit differs from the six-target candidate");
-    }
     git(directory, ["checkout", "--detach", identity.revision]);
     return { ...identity, resumed: true };
   }
   git(directory, ["checkout", "--detach", "origin/main"]);
-  if (project === Project.Pnport) {
-    requireValue(shaPattern.test(expectedBase ?? "") && shaPattern.test(expectedTree ?? ""), "pnport requires complete pre-commit evidence");
-    requireValue(git(directory, ["rev-parse", "HEAD"]) === expectedBase, "pnport main advanced after native preflight");
-  }
   const plan = versionChanges(project, bump, (file) => readFileSync(path.join(directory, file), "utf8"));
   await preflight(plan);
   for (const [file, text] of Object.entries(plan.changes)) writeFileSync(path.join(directory, file), text);
   git(directory, ["config", "user.name", name]);
   git(directory, ["config", "user.email", email]);
   git(directory, ["add", "--", ...Object.keys(plan.changes)]);
-  if (project === Project.Pnport) requireValue(git(directory, ["write-tree"]) === expectedTree, "pnport version commit differs from the six-target candidate");
   git(directory, ["commit", "--file=-"], { input: releaseMessage(plan, runId) + "\n" });
   const revision = git(directory, ["rev-parse", "HEAD"]);
   const identity = validateCommit(directory, revision, project, bump, runId);
@@ -326,7 +318,7 @@ export async function main(command) {
   const context = workflowContext();
   log({ phase: command, project: context.project, run_id: context.runId, outcome: "started" });
   if (command === "prepare") {
-    output(await prepareRelease({ ...context, name: process.env.RELEASE_BOT_NAME, email: process.env.RELEASE_BOT_EMAIL, expectedBase: process.env.RELEASE_CANDIDATE_BASE, expectedTree: process.env.RELEASE_CANDIDATE_TREE, preflight: (plan) => preflightVersion(plan, githubRequest) }));
+    output(await prepareRelease({ ...context, name: process.env.RELEASE_BOT_NAME, email: process.env.RELEASE_BOT_EMAIL, preflight: (plan) => preflightVersion(plan, githubRequest) }));
     return;
   }
   const identity = validateCommit(root, process.env.RELEASE_REVISION, context.project, context.bump, context.runId);
