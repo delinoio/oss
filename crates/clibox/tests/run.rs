@@ -1,5 +1,7 @@
 #![cfg(unix)]
 
+#[cfg(target_os = "linux")]
+use std::os::fd::AsRawFd;
 #[cfg(unix)]
 use std::os::fd::FromRawFd;
 #[cfg(target_os = "linux")]
@@ -327,6 +329,45 @@ fn unwritable_wrapper_output_returns_a_runtime_failure() {
     let mut wrapper = wrapper.spawn().unwrap();
 
     assert_eq!(wrapper.wait().unwrap().code(), Some(1));
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn timeout_does_not_block_on_a_stalled_output_consumer() {
+    let home = tempfile::tempdir().unwrap();
+    let mut wrapper = command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--idle-timeout",
+            "100ms",
+            "--kill-after",
+            "0",
+            "--",
+            "sh",
+            "-c",
+            "head -c 8192 /dev/zero",
+        ],
+    );
+    let mut output_pipe = [0; 2];
+    assert_eq!(unsafe { libc::pipe(output_pipe.as_mut_ptr()) }, 0);
+    let reader = unsafe { fs::File::from_raw_fd(output_pipe[0]) };
+    let writer = unsafe { fs::File::from_raw_fd(output_pipe[1]) };
+    assert_ne!(
+        unsafe { libc::fcntl(writer.as_raw_fd(), libc::F_SETPIPE_SZ, 4_096) },
+        -1
+    );
+    wrapper.stdout(Stdio::from(writer));
+    let mut wrapper = wrapper.spawn().unwrap();
+
+    let started = std::time::Instant::now();
+    assert_eq!(wrapper.wait().unwrap().code(), Some(124));
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "the wrapper waited for a blocked output writer"
+    );
+    drop(reader);
 }
 
 #[test]

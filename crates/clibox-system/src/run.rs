@@ -1179,11 +1179,22 @@ fn run_once(
                 // output join; returning drops the detached forwarders.
                 return Ok(Outcome::Child(status));
             }
-            child.join_output();
-            if child.output_failed() {
-                return runtime_failure("Could not forward workload output.");
+            match child.join_output_within(&limits) {
+                OutputJoin::Complete if child.output_failed() => {
+                    return runtime_failure("Could not forward workload output.");
+                }
+                OutputJoin::Complete => return Ok(Outcome::Child(status)),
+                OutputJoin::Deadline => return Ok(Outcome::Code(124)),
+                OutputJoin::Cancelled => {
+                    return Err(Failure::new(
+                        Code::Cancelled,
+                        "Execution was cancelled after the workload completed.",
+                    ));
+                }
+                OutputJoin::Failed => {
+                    return runtime_failure("Could not finish forwarding workload output.");
+                }
             }
-            return Ok(Outcome::Child(status));
         }
         if limits_expired_at(&limits, last_activity, Instant::now()) {
             tracing::debug!(operation = "run", stage = "timeout", "run_cleanup");
@@ -1570,10 +1581,52 @@ impl OwnedChild {
         ))
     }
 
-    fn join_output(&mut self) {
-        for handle in self.output_threads.drain(..) {
-            let _ = handle.join();
+    fn join_output_within(&mut self, limits: &Limits) -> OutputJoin {
+        loop {
+            if self
+                .output_threads
+                .iter()
+                .all(thread::JoinHandle::is_finished)
+            {
+                return if self.join_output() {
+                    OutputJoin::Complete
+                } else {
+                    OutputJoin::Failed
+                };
+            }
+            if runtime::cancelled() {
+                return OutputJoin::Cancelled;
+            }
+            let deadline = self.output_deadline(limits);
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return OutputJoin::Deadline;
+            }
+            thread::sleep(POLL.min(remaining));
         }
+    }
+
+    fn output_deadline(&self, limits: &Limits) -> Instant {
+        let now = Instant::now();
+        let idle = self.activity.as_ref().and_then(|activity| {
+            limits
+                .idle
+                .and_then(|duration| activity.last_observed_at().checked_add(duration))
+        });
+        limits
+            .overall
+            .into_iter()
+            .chain(idle)
+            .min()
+            .unwrap_or_else(|| now.checked_add(CLEANUP_CONFIRMATION).unwrap_or(now))
+    }
+
+    fn join_output(&mut self) -> bool {
+        let mut joined = true;
+        for handle in self.output_threads.drain(..) {
+            joined &= handle.join().is_ok();
+        }
+        joined
     }
 
     #[cfg(unix)]
@@ -1602,6 +1655,13 @@ impl OwnedChild {
     fn tree_running(&self) -> Result<bool> {
         self.job.is_running()
     }
+}
+
+enum OutputJoin {
+    Complete,
+    Deadline,
+    Cancelled,
+    Failed,
 }
 
 fn graceful_cleanup_wait(graceful_delivered: bool, kill_after: Duration) -> Duration {
