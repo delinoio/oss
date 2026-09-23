@@ -75,6 +75,13 @@ int main(int argc, char **argv) {
     if (fstatat(dirfd(dir), "dep/missing", &info, AT_SYMLINK_NOFOLLOW) != -1
         || errno != ENOENT) return 40;
     closedir(dir);
+    char *missing_argv[] = {"node_modules/dep/missing-bin", NULL};
+    char *missing_env[] = {NULL};
+    errno = 0;
+    if (execve(missing_argv[0], missing_argv, missing_env) != -1 || errno != ENOENT) return 50;
+    pid_t missing_child = -1;
+    if (posix_spawn(&missing_child, missing_argv[0], NULL, NULL, missing_argv, missing_env)
+        != ENOENT) return 51;
     if (!getenv("PNPORT_TEST_CHILD")) {
         pid_t child;
         char *environment[] = {"PNPORT_TEST_CHILD=1", NULL};

@@ -59,13 +59,13 @@ unsafe fn errno(value: c_int) {
     }
 }
 fn fail(code: Code) -> c_int {
-    if !matches!(code, Code::PnportResolutionFailed) {
+    if !matches!(code, Code::PnportResolutionFailed | Code::PnportCommandNotFound) {
         if let Some(session) = SESSION.get() {
             let _ = fs::write(session.join("failure"), code.as_str());
         }
     }
     match code {
-        Code::PnportResolutionFailed => ENOENT,
+        Code::PnportResolutionFailed | Code::PnportCommandNotFound => ENOENT,
         Code::PnportFilesystemConflict => EEXIST,
         Code::PnportUnsupportedOperation => ENOTSUP,
         _ => EIO,
