@@ -2993,7 +2993,7 @@ fn completed_process_group_running(group: u32) -> Result<bool> {
         if candidate == group {
             continue;
         }
-        let stat = match fs::read_to_string(entry.path().join("stat")) {
+        let stat = match fs::read(entry.path().join("stat")) {
             Ok(stat) => stat,
             Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
             Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
@@ -3027,14 +3027,19 @@ fn linux_process_group_matches(pid: u32, group: u32) -> Result<bool> {
     Ok(observed as u32 == group)
 }
 
-#[cfg(target_os = "linux")]
-fn linux_process_group_member(stat: &str, group: u32) -> Result<bool> {
+#[cfg(any(target_os = "linux", test))]
+fn linux_process_group_member(stat: &[u8], group: u32) -> Result<bool> {
     // Linux /proc/<pid>/stat permits spaces and parentheses in comm, so parse
-    // the stable fields only after the final closing parenthesis.
-    let (_, fields) = stat
-        .rsplit_once(')')
+    // the stable ASCII fields only after the final closing parenthesis. A
+    // process comm can contain arbitrary bytes and must not affect cleanup of
+    // an unrelated owned process group.
+    let closing = stat
+        .iter()
+        .rposition(|byte| *byte == b')')
         .ok_or_else(|| Failure::new(Code::IoFailed, "Could not parse process status."))?;
-    let mut fields = fields.split_whitespace();
+    let mut fields = stat[closing + 1..]
+        .split(u8::is_ascii_whitespace)
+        .filter(|field| !field.is_empty());
     let state = fields
         .next()
         .ok_or_else(|| Failure::new(Code::IoFailed, "Could not parse process status."))?;
@@ -3043,10 +3048,22 @@ fn linux_process_group_member(stat: &str, group: u32) -> Result<bool> {
         .ok_or_else(|| Failure::new(Code::IoFailed, "Could not parse process status."))?;
     let process_group = fields
         .next()
-        .ok_or_else(|| Failure::new(Code::IoFailed, "Could not parse process status."))?
-        .parse::<u32>()
-        .map_err(|_| Failure::new(Code::IoFailed, "Could not parse process status."))?;
-    Ok(state != "Z" && process_group == group)
+        .ok_or_else(|| Failure::new(Code::IoFailed, "Could not parse process status."))?;
+    let process_group = parse_ascii_u32(process_group)?;
+    Ok(state != b"Z" && process_group == group)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn parse_ascii_u32(value: &[u8]) -> Result<u32> {
+    value.iter().try_fold(0u32, |number, byte| {
+        if !byte.is_ascii_digit() {
+            return runtime_failure("Could not parse process status.");
+        }
+        number
+            .checked_mul(10)
+            .and_then(|number| number.checked_add(u32::from(*byte - b'0')))
+            .ok_or_else(|| Failure::new(Code::IoFailed, "Could not parse process status."))
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -4932,6 +4949,15 @@ mod lifecycle_tests {
 
         assert!(contains_local_resource_failure(&exhausted));
         assert!(!contains_local_resource_failure(&refused));
+    }
+
+    #[cfg(any(target_os = "linux", test))]
+    #[test]
+    fn process_group_parser_ignores_non_utf8_comm_bytes() {
+        let stat = b"7 (unrelated \xff process) S 1 42 0 0 0";
+
+        assert!(linux_process_group_member(stat, 42).unwrap());
+        assert!(!linux_process_group_member(stat, 7).unwrap());
     }
 
     #[test]
