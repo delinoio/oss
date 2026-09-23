@@ -936,7 +936,7 @@ fn http_attempt(
         .map_err(|error| {
             if error.is_timeout() {
                 HttpProbeError::AttemptTimeout
-            } else if error.is_connect() && !has_tls_failure(&error) {
+            } else if error.is_connect() && !has_terminal_connect_failure(&error) {
                 HttpProbeError::NotReady
             } else {
                 HttpProbeError::Terminal
@@ -953,8 +953,8 @@ fn http_attempt(
     }
 }
 
-fn has_tls_failure(error: &reqwest::Error) -> bool {
-    contains_tls_failure(error)
+fn has_terminal_connect_failure(error: &reqwest::Error) -> bool {
+    contains_tls_failure(error) || contains_permission_denied(error)
 }
 
 fn contains_tls_failure(error: &(dyn std::error::Error + 'static)) -> bool {
@@ -969,6 +969,20 @@ fn contains_tls_failure(error: &(dyn std::error::Error + 'static)) -> bool {
         }
     }
     error.source().is_some_and(contains_tls_failure)
+}
+
+fn contains_permission_denied(error: &(dyn std::error::Error + 'static)) -> bool {
+    if let Some(io_error) = error.downcast_ref::<std::io::Error>() {
+        if io_error.kind() == io::ErrorKind::PermissionDenied {
+            return true;
+        }
+        if let Some(source) = io_error.get_ref() {
+            if contains_permission_denied(source) {
+                return true;
+            }
+        }
+    }
+    error.source().is_some_and(contains_permission_denied)
 }
 
 fn service_http_client(https: bool) -> Result<reqwest::blocking::Client> {
@@ -3984,6 +3998,15 @@ mod rate_limit_tests {
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
+
+    #[test]
+    fn permission_denied_connect_errors_are_terminal() {
+        let denied = io::Error::from(io::ErrorKind::PermissionDenied);
+        let refused = io::Error::from(io::ErrorKind::ConnectionRefused);
+
+        assert!(contains_permission_denied(&denied));
+        assert!(!contains_permission_denied(&refused));
+    }
 
     #[test]
     fn readiness_rejects_a_success_observed_after_its_deadline() {
