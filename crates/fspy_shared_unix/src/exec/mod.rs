@@ -148,14 +148,25 @@ impl Exec {
         mut on_path_access: impl FnMut(AccessMode, &Path),
         options: ParseShebangOptions,
     ) -> nix::Result<()> {
-        if let Some(shebang) = parse_shebang(
-            |path, buf| {
-                on_path_access(AccessMode::READ, path);
-                peek_executable(path, buf)
-            },
-            Path::new(OsStr::from_bytes(&self.program)),
-            options,
-        )? {
+        // Linux permits four successive script interpreters. Inspecting the
+        // next image also detects an over-deep chain before injection setup
+        // tries to parse a script as an executable binary.
+        const MAX_SHEBANG_DEPTH: usize = 4;
+        for depth in 0..=MAX_SHEBANG_DEPTH {
+            let Some(shebang) = parse_shebang(
+                |path, buf| {
+                    on_path_access(AccessMode::READ, path);
+                    peek_executable(path, buf)
+                },
+                Path::new(OsStr::from_bytes(&self.program)),
+                options,
+            )?
+            else {
+                return Ok(());
+            };
+            if depth == MAX_SHEBANG_DEPTH {
+                return Err(nix::Error::ELOOP);
+            }
             self.args[0] = shebang.interpreter.clone();
             let old_program = replace(&mut self.program, shebang.interpreter);
             self.args
@@ -242,9 +253,79 @@ pub fn append_path_env(
 
 #[cfg(test)]
 mod tests {
-    use bstr::BString;
+    use std::{
+        fs,
+        os::unix::{ffi::OsStrExt, fs::PermissionsExt},
+    };
 
-    use super::append_path_env;
+    use bstr::BString;
+    use nix::errno::Errno;
+
+    use super::{Exec, ExecResolveConfig, append_path_env};
+
+    #[test]
+    fn resolves_nested_shebang_interpreters() {
+        let directory = tempfile::tempdir().expect("create temporary directory");
+        let outer = directory.path().join("outer");
+        let inner = directory.path().join("inner");
+        fs::write(&outer, format!("#!{} outer-arg\n", inner.display())).expect("write outer");
+        fs::write(&inner, "#!/bin/sh inner-arg\n").expect("write inner");
+        for path in [&outer, &inner] {
+            fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("chmod script");
+        }
+        let mut command = Exec {
+            program: outer.as_os_str().as_bytes().into(),
+            args: vec![
+                outer.as_os_str().as_bytes().into(),
+                b"user-arg".as_slice().into(),
+            ],
+            envs: vec![],
+        };
+        let mut accessed = Vec::new();
+        command
+            .resolve(
+                |_, path| accessed.push(path.to_owned()),
+                ExecResolveConfig::search_path_disabled(),
+            )
+            .expect("resolve nested scripts");
+        assert_eq!(command.program, "/bin/sh");
+        assert_eq!(
+            command.args,
+            vec![
+                BString::from("/bin/sh"),
+                BString::from("inner-arg"),
+                inner.as_os_str().as_bytes().into(),
+                BString::from("outer-arg"),
+                outer.as_os_str().as_bytes().into(),
+                BString::from("user-arg")
+            ]
+        );
+        assert_eq!(accessed, vec![outer, inner, "/bin/sh".into()]);
+    }
+
+    #[test]
+    fn rejects_shebang_chains_beyond_kernel_limit() {
+        let directory = tempfile::tempdir().expect("create temporary directory");
+        let paths: Vec<_> = (0..5)
+            .map(|index| directory.path().join(format!("script-{index}")))
+            .collect();
+        for (index, path) in paths.iter().enumerate() {
+            let interpreter = paths
+                .get(index + 1)
+                .map_or_else(|| "/bin/sh".to_owned(), |next| next.display().to_string());
+            fs::write(path, format!("#!{interpreter}\n")).expect("write script");
+            fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("chmod script");
+        }
+        let mut command = Exec {
+            program: paths[0].as_os_str().as_bytes().into(),
+            args: vec![paths[0].as_os_str().as_bytes().into()],
+            envs: vec![],
+        };
+        assert_eq!(
+            command.resolve(|_, _| {}, ExecResolveConfig::search_path_disabled()),
+            Err(Errno::ELOOP)
+        );
+    }
 
     fn env(envs: &[(BString, Option<BString>)], name: &[u8]) -> Option<Vec<u8>> {
         envs.iter()
