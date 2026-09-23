@@ -33,12 +33,19 @@ test("launcher tarball has exact source text, version and executable mode", (t) 
   assert.deepEqual(JSON.parse(files.get("package.json").bytes).optionalDependencies, Object.fromEntries(targets.map(({ name }) => [name, metadata().version])));
 });
 
-test("native release archive contains exactly one matched adjacent pair", () => {
-  const target = targets[0];
-  const archive = tarEntries(nativeArchive(target, Buffer.from("binary"), Buffer.from("preload")), "");
-  assert.deepEqual([...archive.keys()].sort(), [target.binary, "libpnport_preload.dylib"].sort());
-  assert.equal(archive.get(target.binary).mode & 0o111, 0o111);
-  assert.equal(archive.get("libpnport_preload.dylib").bytes.toString(), "preload");
+test("native release archives contain one matched pair and exact license notices", () => {
+  const pnportLicense = readFileSync(path.join(root, "crates/pnport/LICENSE"));
+  const fspyLicense = readFileSync(path.join(root, "crates/fspy/LICENSE"));
+  for (const target of targets) {
+    const archive = tarEntries(nativeArchive(target, Buffer.from("binary"), Buffer.from("preload")), "");
+    const companion = target.os === "darwin" ? "libpnport_preload.dylib" : target.os === "win32" ? "pnport_preload.dll" : "libpnport_preload.so";
+    const notices = target.os === "win32" ? ["LICENSE"] : ["LICENSE", "LICENSE.fspy"];
+    assert.deepEqual([...archive.keys()].sort(), [target.binary, companion, ...notices].sort());
+    assert.equal(archive.get(target.binary).mode & 0o111, target.os === "win32" ? 0 : 0o111);
+    assert.equal(archive.get(companion).bytes.toString(), "preload");
+    assert.ok(archive.get("LICENSE").bytes.equals(pnportLicense));
+    if (target.os !== "win32") assert.ok(archive.get("LICENSE.fspy").bytes.equals(fspyLicense));
+  }
 });
 
 test("native install smoke executes the activated POSIX launcher", { skip: process.platform === "win32" }, (t) => {
