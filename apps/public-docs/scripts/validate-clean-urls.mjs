@@ -87,6 +87,19 @@ const cliboxHeadings = {
   ]
 };
 
+const pnportHeadings = {
+  "/pnport/": ["pnport", "Release targets", "What the CLI is designed to do", "Guides"],
+  "/pnport/installation": ["Installation and availability", "Planned distribution", "Before a future install"],
+  "/pnport/getting-started": ["Getting started", "Check the project", "Run a command"],
+  "/pnport/commands": ["Commands", "Global options", "Machine-readable doctor output"],
+  "/pnport/filesystem-and-processes": ["Filesystem and processes", "Dependency view", "Child processes and watches", "Current limits"],
+  "/pnport/editors": ["Editors and language servers", "Configure the executable", "Recovery"],
+  "/pnport/cache": ["Cache management", "Inspect the cache", "Prune or clean"],
+  "/pnport/diagnostics": ["Diagnostics and troubleshooting", "Start with doctor", "Exit codes and streams"],
+  "/pnport/benchmarks": ["Benchmarks", "Reproduction protocol"],
+  "/pnport/releases": ["Releases and rollback", "Release readiness", "Explicit updates and rollback"],
+};
+
 const stableRouteIds = [
   ...Object.entries(projectRoutes).flatMap(([slug, routes]) => routes.map((route) => `/${slug}${route}`)),
   "/",
@@ -106,7 +119,7 @@ const stableRouteIds = [
   "/derun",
   "/with-watch",
 ];
-const projectSlugs = Object.keys(projectRoutes).filter((slug) => slug !== "clibox");
+const projectSlugs = Object.keys(projectRoutes).filter((slug) => slug !== "clibox" && slug !== "pnport");
 
 const outputDir = path.resolve("doc_build");
 const stableRoutePathPattern = stableRouteIds
@@ -170,8 +183,8 @@ async function collectHtmlFiles(directory, depth = 0) {
 const htmlFiles = await collectHtmlFiles(outputDir);
 const failures = [];
 
-// Existing project sections have separate validators. clibox also uses the
-// strict article/resource checks below, with exact route exceptions only.
+// Existing project sections have separate validators. clibox and pnport also
+// use the strict article/resource checks below, with exact route exceptions.
 for (const slug of projectSlugs) {
   if (!(await pathExists(path.join(outputDir, slug)))) {
     failures.push(`${slug} is missing from the public documentation tree`);
@@ -184,6 +197,7 @@ function attributeValue(match) {
 
 const requiredHeadings = new Map([
   ...Object.entries(cliboxHeadings),
+  ...Object.entries(pnportHeadings),
   ["/devhud", ["DevHud"]],
   ["/devhud/install", ["Install and Verify DevHud", "Desktop", "Mobile stores", "Chrome extension"]],
   ["/devhud/guide", ["Using DevHud", "First run and identity", "Settings and PAT profiles", "Capture, drafts, and browser context", "Decks and widgets"]],
@@ -197,8 +211,11 @@ const requiredLinks = new Map([
   ["/clibox/", ["/clibox/install", "/clibox/getting-started", "/clibox/commands", "/clibox/migration"]],
   ["/clibox/install", ["/clibox/releases", "https://oss.delino.io/linux-packages"]],
   ["/clibox/commands", ["/clibox/system#run-with-environment-variables", "/clibox/transformations#hashes-and-verification", "/clibox/wait#http", "/clibox/configuration#normalize-yaml"]],
-  ["/", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/", "https://oss.delino.io/clibox/"]],
-  ["/projects-overview", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/", "https://oss.delino.io/clibox/"]],
+  ["/pnport/", ["/pnport/installation", "/pnport/getting-started", "/pnport/commands", "/pnport/filesystem-and-processes", "/pnport/editors", "/pnport/cache", "/pnport/diagnostics", "/pnport/benchmarks", "/pnport/releases"]],
+  ["/pnport/installation", ["/pnport/getting-started", "/pnport/commands", "/pnport/releases"]],
+  ["/pnport/diagnostics", ["/pnport/cache"]],
+  ["/", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/", "https://oss.delino.io/clibox/", "https://oss.delino.io/pnport/"]],
+  ["/projects-overview", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/", "https://oss.delino.io/clibox/", "https://oss.delino.io/pnport/"]],
   ["/devhud", ["/devhud/install", "/devhud/privacy", "/devhud/security", "/devhud/support"]],
   ["/devhud/install", ["/devhud/releases", "/devhud/security", "/devhud/support"]],
   ["/devhud/guide", ["/devhud/privacy", "/devhud/security", "/devhud/support"]],
@@ -401,7 +418,7 @@ function publicPathText(text, htmlFile) {
   return text;
 }
 // The terminal boundary must apply to every alternative, not just static assets.
-const allowedPublicPathPattern = `(?:${stableRoutePathPattern}|(?:assets|static)(?:[/\\\\][A-Za-z0-9._~-]+)*)`;
+const allowedPublicPathPattern = `(?:${stableRoutePathPattern}|pnport/install\\.(?:sh|ps1)|(?:assets|static)(?:[/\\\\][A-Za-z0-9._~-]+)*)`;
 const forbiddenPathContent = [
   new RegExp(`(?:^|[\\s("'\\x60>])/(?!${allowedPublicPathPattern}(?:\\.html)?(?:[?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
   /(?:^|[\s("'`>])(?:\.\.[\\/])+(?:[A-Za-z0-9._~-]+[\\/])+[^\s"'`<>]*/u,

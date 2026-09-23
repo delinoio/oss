@@ -22,17 +22,20 @@ test("Selected release is manual, serialized, main-only and permission bounded",
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
   assert.equal(workflow.concurrency.group, "release-project");
   assert.deepEqual(workflow.permissions, { contents: "read" });
-  assert.equal(workflow.jobs.prepare.if, "github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main'");
+  assert.equal(workflow.jobs.prepare.if, "github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main' && needs.pnport-complete.result == 'success'");
   assert.equal(existsSync(new URL("../../.github/workflows/auto-publish.yml", import.meta.url)), false);
 });
 
 test("Publication follows preparation without CI and tags only after registry success", () => {
   const jobs = workflow.jobs;
-  assert.deepEqual(Object.keys(jobs), ["prepare", "registry", "tag", "summary"]);
+  assert.deepEqual(Object.keys(jobs), ["pnport-source", "pnport-native", "pnport-complete", "prepare", "registry", "tag", "summary"]);
+  assert.deepEqual(jobs.prepare.needs, "pnport-complete");
+  assert.deepEqual(jobs["pnport-native"].needs, "pnport-source");
+  assert.deepEqual(jobs["pnport-complete"].needs, ["pnport-source", "pnport-native"]);
   assert.deepEqual(jobs.registry.needs, ["prepare"]);
   assert.deepEqual(jobs.tag.needs, ["prepare", "registry"]);
   const publish = jobs.registry.steps.find((step) => step.name === "Publish only the selected crate");
-  assert.equal(publish.if, "needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox'");
+  assert.equal(publish.if, "needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox' && inputs.project != 'pnport'");
   assert.equal(publish.run, 'cargo run --locked -p cargo-mono -- publish --package "$RELEASE_PROJECT"');
   assert.equal(publish["continue-on-error"], undefined);
   for (const name of ["registry", "tag"]) {
@@ -49,7 +52,41 @@ test("Publication follows preparation without CI and tags only after registry su
   assert.doesNotMatch(script, /waitForCiWorkflow|wait-ci|\/actions|CI\.yml/u);
   assert.doesNotMatch(source(".github/workflows/release-project.yml"), /wait-ci|wait-release|ci_url|jobs\.ci|needs\.ci|actions: read/u);
   assert.equal(jobs.summary.if, "always()");
-  assert.deepEqual(jobs.summary.needs, ["prepare", "registry", "tag"]);
+  assert.deepEqual(jobs.summary.needs, ["pnport-source", "pnport-native", "pnport-complete", "prepare", "registry", "tag"]);
+});
+
+test("pnport's complete native candidate blocks version commit and tag", () => {
+  const jobs = workflow.jobs;
+  assert.match(jobs["pnport-source"].if, /inputs\.project == 'pnport'/u);
+  assert.deepEqual(jobs["pnport-native"].needs, "pnport-source");
+  assert.equal(jobs["pnport-native"].strategy.matrix.include.length, 6);
+  const native = jobs["pnport-native"].steps.map((step) => step.run ?? "").join("\n");
+  for (const gate of ["cargo test", "test:package", "test:typescript", "install-smoke.mjs", "evidence.mjs record"]) assert.match(native, new RegExp(gate, "u"));
+  const complete = jobs["pnport-complete"].steps.map((step) => step.run ?? "").join("\n");
+  for (const gate of ["evidence.mjs assemble", "publish.mjs", "github-release.mjs", "homebrew.mjs"]) assert.ok(complete.includes(gate), gate);
+  assert.match(jobs["pnport-complete"].if, /needs\.pnport-native\.result == 'success'/u);
+  assert.match(jobs.prepare.if, /needs\.pnport-complete\.result == 'success'/u);
+  assert.match(jobs.prepare.steps.find((step) => step.id === "prepare").env.RELEASE_CANDIDATE_TREE, /needs\.pnport-complete\.outputs\.tree/u);
+  assert.deepEqual(jobs.registry.needs, ["prepare"]);
+  assert.deepEqual(jobs.tag.needs, ["prepare", "registry"]);
+});
+
+test("pnport publication defaults to a credential-free dry run and exact tag", () => {
+  const release = yaml.load(source(".github/workflows/release-pnport.yml"));
+  assert.equal(release.on.workflow_dispatch.inputs.dry_run.default, "true");
+  assert.deepEqual(release.permissions, { contents: "read" });
+  assert.equal(release.jobs.build.strategy.matrix.include.length, 6);
+  for (const jobName of ["publish-npm", "publish-release", "homebrew"]) {
+    const job = release.jobs[jobName];
+    assert.match(job.if, /needs\.prepare\.outputs\.dry_run == 'false'/u);
+    assert.match(job.if, /refs\/tags\/pnport@v/u);
+    assert.ok(job.needs.includes("package"));
+  }
+  assert.deepEqual(release.jobs["publish-release"].needs, ["prepare", "package", "publish-npm"]);
+  assert.deepEqual(release.jobs.homebrew.needs, ["prepare", "package", "publish-release"]);
+  assert.equal(release.jobs["publish-npm"].permissions["id-token"], "write");
+  assert.equal(release.jobs["publish-release"].permissions["id-token"], "write");
+  assert.match(source("scripts/release/update-homebrew.sh"), /conflicting pnport formula bytes/u);
 });
 
 for (const project of [Project.Clibox, Project.AsyncCommitHook]) for (const [scenario, results] of [
@@ -121,7 +158,7 @@ test("Source and tap tokens are separately scoped and project release triggers r
       continue;
     }
     assert.deepEqual(release.on.push.tags, [`${project}@v*`]);
-    if ([Project.CargoMono, Project.Runmoor, Project.Clibox].includes(project)) continue;
+    if ([Project.CargoMono, Project.Runmoor, Project.Clibox, Project.Pnport].includes(project)) continue;
     const steps = release.jobs.publish.steps;
     const token = steps.find((step) => step.uses === "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1");
     assert.equal(token.with.repositories, "homebrew-tap");
@@ -139,21 +176,22 @@ test("Source and tap tokens are separately scoped and project release triggers r
   assert.match(tap, /credential\.helper=!gh auth git-credential/u);
 });
 
-test("clibox and async-commit-hook reach source validation and tagging without Cargo publication credentials", () => {
+test("clibox, pnport and async-commit-hook reach source validation and tagging without Cargo publication credentials", () => {
   const prepare = workflow.jobs.prepare.steps.find((step) => step.name === "Validate configuration before committing");
-  const registryToken = "${{ inputs.project != 'clibox' && inputs.project != 'async-commit-hook' && secrets.CARGO_REGISTRY_TOKEN || '' }}";
+  const registryToken = "${{ inputs.project != 'clibox' && inputs.project != 'pnport' && inputs.project != 'async-commit-hook' && secrets.CARGO_REGISTRY_TOKEN || '' }}";
   assert.equal(prepare.env.REGISTRY_TOKEN, registryToken);
   assert.equal(workflow.jobs.registry.steps.find((step) => step.name === "Publish only the selected crate").env.CARGO_REGISTRY_TOKEN, registryToken);
   assert.match(prepare.run, /requiresCargoPublish\(plan.project\)/u);
   const preflight = prepare.run.split("<<'JS'\n")[1].split("\nJS")[0];
   const environment = { CLIENT_ID: "fixture-id", PRIVATE_KEY: "fixture-key", RELEASE_BUMP: Bump.Patch };
-  const runPreflight = (project) => execFileSync(process.execPath, ["--input-type=module"], {
+  const runPreflight = (project, bump = Bump.Patch) => execFileSync(process.execPath, ["--input-type=module"], {
     cwd: new URL("../../", import.meta.url),
     input: preflight,
-    env: { ...environment, RELEASE_PROJECT: project },
+    env: { ...environment, RELEASE_PROJECT: project, RELEASE_BUMP: bump },
     stdio: "pipe",
   });
   assert.doesNotThrow(() => runPreflight(Project.Clibox));
+  assert.doesNotThrow(() => runPreflight(Project.Pnport, Bump.Minor));
   assert.doesNotThrow(() => runPreflight(Project.AsyncCommitHook));
   assert.throws(() => runPreflight(Project.Binpm), /CARGO_REGISTRY_TOKEN is required/u);
   const registry = workflow.jobs.registry;
@@ -163,7 +201,7 @@ test("clibox and async-commit-hook reach source validation and tagging without C
   assert.equal(validation.run, "node scripts/release/project.mjs validate");
   for (const step of registry.steps.filter((step) =>
     ["Install Rust toolchain", "Cache Rust dependencies", "Publish only the selected crate"].includes(step.name))) {
-    assert.equal(step.if, "needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox'");
+    assert.equal(step.if, "needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox' && inputs.project != 'pnport'");
   }
   for (const project of Object.values(Project)) {
     assert.equal(requiresCargoPublish(project), [Project.Binpm, Project.CargoMono, Project.Nodeup, Project.WithWatch].includes(project));

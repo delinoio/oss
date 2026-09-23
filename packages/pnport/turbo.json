@@ -6,6 +6,7 @@
       "outputs": []
     },
     "test:typescript:prepare": { "cache": false },
-    "test:typescript": { "cache": false }
+    "test:typescript": { "cache": false },
+    "test:package": { "cache": false }
   }
 }

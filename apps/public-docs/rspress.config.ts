@@ -82,12 +82,26 @@ const cliboxPages = [
   { text: "Troubleshooting", link: "/clibox/troubleshooting" },
 ];
 
+const pnportPages = [
+  { text: "Overview", link: "/pnport/", activeMatch: "^/pnport/$" },
+  { text: "Installation and Availability", link: "/pnport/installation" },
+  { text: "Getting Started", link: "/pnport/getting-started" },
+  { text: "Commands", link: "/pnport/commands" },
+  { text: "Filesystem and Processes", link: "/pnport/filesystem-and-processes" },
+  { text: "Editors and Language Servers", link: "/pnport/editors" },
+  { text: "Cache Management", link: "/pnport/cache" },
+  { text: "Diagnostics and Troubleshooting", link: "/pnport/diagnostics" },
+  { text: "Benchmarks", link: "/pnport/benchmarks" },
+  { text: "Releases and Rollback", link: "/pnport/releases" },
+];
+
 const projectPages = [
   { text: "Runmoor", link: "/runmoor/", activeMatch: "^/runmoor" },
   { text: "Nodeup", link: "/nodeup/", activeMatch: "^/nodeup" },
   { text: "binpm", link: "/binpm/", activeMatch: "^/binpm" },
   { text: "async-commit-hook", link: "/async-commit-hook/", activeMatch: "^/async-commit-hook" },
   { text: "clibox", link: "/clibox/", activeMatch: "^/clibox(?:/|$)" },
+  { text: "pnport", link: "/pnport/", activeMatch: "^/pnport(?:/|$)" },
 ];
 
 export default defineConfig({
@@ -137,6 +151,7 @@ export default defineConfig({
         },
       ],
       "/clibox/": [{ text: "clibox", items: cliboxPages }],
+      "/pnport/": [{ text: "pnport", items: pnportPages }],
       "/runmoor/": [{ text: "Runmoor", items: runmoorPages }],
       "/nodeup/": [{ text: "Nodeup", items: nodeupPages }],
       "/binpm/": [{ text: "binpm", items: binpmPages }],

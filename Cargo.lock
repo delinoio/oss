@@ -7916,7 +7916,7 @@ dependencies = [
 
 [[package]]
 name = "pnport"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "clap",
  "core-foundation 0.10.1",
@@ -7939,7 +7939,7 @@ dependencies = [
 
 [[package]]
 name = "pnport-preload"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "libc",
  "pnport",

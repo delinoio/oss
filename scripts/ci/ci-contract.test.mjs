@@ -26,7 +26,7 @@ const devhudTauri = JSON.parse(readFileSync(`${root}/apps/devhud/src-tauri/tauri
 
 const legacyJobs = [
   "go-quality", "go-test", "repository-environment", "rust-fmt", "rust-clippy", "rust-test",
-  "linux-packages", "node-mpapp-test", "node-mpapp-lint", "node-public-docs-test", "node-clibox-test",
+  "linux-packages", "node-mpapp-test", "node-mpapp-lint", "node-public-docs-test", "node-clibox-test", "node-pnport-test", "pnport-native",
 ];
 const devhudJobs = [
   "devhud-frontend", "devhud-extension", "devhud-rust-conformance", "devhud-security", "devhud-desktop",

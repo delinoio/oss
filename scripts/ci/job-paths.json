@@ -212,12 +212,28 @@
       "scripts/install/async-commit-hook.*",
       "scripts/install/binpm.*",
       "scripts/install/nodeup.*",
+      "scripts/install/pnport.*",
       "turbo.json"
     ],
     "workspace": "public-docs",
     "workspacePaths": [
       "apps/public-docs/**"
     ]
+  },
+  "node-pnport-test": {
+    "paths": [
+      ".npmrc", ".nvmrc", "Cargo.lock", "Cargo.toml", "crates/pnport/**", "crates/pnport-preload/**",
+      "packages/pnport/**", "packaging/homebrew/templates/pnport.rb.tmpl", "scripts/install/pnport.*",
+      "scripts/release/pnport-*", "scripts/release/project.mjs", ".github/workflows/release-pnport.yml",
+      ".github/workflows/release-project.yml", "package.json", "pnpm-lock.yaml", "rust-toolchain", "turbo.json"
+    ]
+  },
+  "pnport-native": {
+    "paths": [
+      "Cargo.lock", "Cargo.toml", "crates/pnport/**", "crates/pnport-preload/**", "packages/pnport/**", "scripts/install/pnport.*",
+      ".github/workflows/release-pnport.yml", ".github/workflows/release-project.yml", "rust-toolchain"
+    ],
+    "native": true
   },
   "devhud-frontend": {
     "paths": [

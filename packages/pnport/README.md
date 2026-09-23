@@ -42,8 +42,9 @@ paths, but never file contents, environment values, full argv or child output.
 
 Future releases use explicit exact-version installation for updates and rollback,
 with no automatic update checks. Only use a version whose complete platform
-artifacts and installation evidence have been published. Editor configuration
-and reproducible performance results will accompany release acceptance; no
-editor-specific compatibility or benchmark result is certified yet.
+artifacts and installation evidence have been published. The
+[public guides](https://oss.delino.io/pnport/) describe editor configuration
+and a reproducible benchmark method. Performance results still require release
+acceptance; no editor-specific compatibility or benchmark result is certified yet.
 
 Support: [GitHub issues](https://github.com/delinoio/oss/issues).
