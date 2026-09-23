@@ -80,10 +80,7 @@ impl<'a> Client<'a> {
             return;
         };
         let path_bytes = path.as_os_str().as_bytes();
-        if path_bytes.starts_with(b"/dev/")
-            || (cfg!(target_os = "linux")
-                && (path_bytes.starts_with(b"/proc/") || path_bytes.starts_with(b"/sys/")))
-        {
+        if path_bytes.starts_with(b"/dev/") {
             return;
         }
         // The interception proceeds whether or not the record could be
