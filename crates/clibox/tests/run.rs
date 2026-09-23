@@ -538,6 +538,10 @@ fn outer_timeout_terminates_descendants_of_a_nested_wrapper() {
 fn outer_timeout_terminates_descendants_of_a_nested_npm_launcher() {
     let home = tempfile::tempdir().unwrap();
     let marker = home.path().join("nested-npm-descendant-pid");
+    let node_home = format!(
+        "HOME={}",
+        std::env::var("HOME").expect("the Node launcher test needs a host home directory")
+    );
     let launcher = home.path().join("launcher.cjs");
     let clibox_launcher = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../packages/clibox/src/launcher.cjs")
@@ -565,6 +569,7 @@ fn outer_timeout_terminates_descendants_of_a_nested_npm_launcher() {
             "5s",
             "--kill-after",
             "0",
+            &node_home,
             &assignment,
             "--",
             "node",
