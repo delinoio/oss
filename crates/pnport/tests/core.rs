@@ -626,6 +626,61 @@ int main(void) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_nonleader_thread_exec_reaps_the_owned_tree() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("thread-exec.c");
+    fs::write(
+        &source,
+        r#"
+#include <pthread.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+static void *replace(void *path) {
+    char *args[] = {(char *)path, "after", 0};
+    char *env[] = {0};
+    execve((char *)path, args, env);
+    _exit(42);
+}
+int main(int argc, char **argv) {
+    if (argc > 1 && !strcmp(argv[1], "after")) {
+        puts("thread-exec-ok");
+        return 0;
+    }
+    pthread_t thread;
+    if (pthread_create(&thread, 0, replace, argv[0])) return 41;
+    pause();
+    return 43;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("thread-exec");
+    assert!(Command::new("cc")
+        .args(["-static", "-pthread", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["--log-level", "debug", "run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(result.stdout, b"thread-exec-ok\n");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_openat2_preserves_dirfd_resolution_constraints() {
     use std::process::Command;
     let root = fixture();

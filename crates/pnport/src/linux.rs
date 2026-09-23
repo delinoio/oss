@@ -1438,6 +1438,23 @@ impl Trace<'_> {
                 }
             }
             if event == libc::PTRACE_EVENT_EXEC {
+                let mut former = 0usize;
+                if unsafe { libc::ptrace(libc::PTRACE_GETEVENTMSG, pid, 0, &mut former) } != 0 {
+                    return Err(injection_failed());
+                }
+                let former = former as i32;
+                if former > 0 && former != pid {
+                    // Linux changes a non-leader execing thread's TID to its
+                    // leader's TID. The former TID will never report an exit.
+                    tracing::debug!(
+                        action = "linux_exec_tid",
+                        pid,
+                        former,
+                        "Reconciled execing thread identity"
+                    );
+                    self.tasks.remove(&former);
+                    self.pending.remove(&former);
+                }
                 self.pending.remove(&pid);
                 if pid == self.root {
                     self.root_exec = true;
