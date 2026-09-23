@@ -12,7 +12,7 @@ use std::{
 
 use fspy_detours_sys::{DetourCopyPayloadToProcess, DetourUpdateProcessWithDll};
 use fspy_shared::{
-    ipc::{PathAccess, channel::channel},
+    ipc::{AccessMode, IpcPath, PathAccess, channel::channel},
     windows::{PAYLOAD_ID, Payload},
 };
 use futures_util::FutureExt;
@@ -38,11 +38,17 @@ const INTERPOSE_CDYLIB: Artifact =
 
 pub struct PathAccessIterable {
     ipc_accesses: ChannelAccesses,
+    resolution_accesses: Vec<Vec<u16>>,
 }
 
 impl PathAccessIterable {
     pub fn iter(&self) -> impl Iterator<Item = PathAccess<'_>> {
-        self.ipc_accesses.iter_path_accesses()
+        self.ipc_accesses
+            .iter_path_accesses()
+            .chain(self.resolution_accesses.iter().map(|path| PathAccess {
+                mode: AccessMode::READ,
+                path: IpcPath::from_wide(path),
+            }))
     }
 }
 
@@ -94,6 +100,11 @@ impl SpyImpl {
         cancellation_token: CancellationToken,
     ) -> Result<TrackedChild, SpawnError> {
         let ansi_dll_path_with_nul = &self.ansi_dll_path_with_nul;
+        let resolution_accesses = command
+            .resolution_accesses
+            .iter()
+            .map(|path| path.as_os_str().encode_wide().collect::<Vec<_>>())
+            .collect::<Vec<_>>();
         command.env("FSPY", "1");
 
         let receiver = channel(crate::ipc::shm_capacity(), allocator_api2::alloc::Global)
@@ -181,8 +192,11 @@ impl SpyImpl {
                 // Close the ipc channel after the child has exited.
                 // We are not interested in path accesses from descendants after the main child
                 // has exited.
-                let path_accesses = ChannelAccesses::try_from(receiver)
-                    .map(|ipc_accesses| PathAccessIterable { ipc_accesses });
+                let path_accesses =
+                    ChannelAccesses::try_from(receiver).map(|ipc_accesses| PathAccessIterable {
+                        ipc_accesses,
+                        resolution_accesses,
+                    });
 
                 io::Result::Ok(ChildTermination {
                     status,

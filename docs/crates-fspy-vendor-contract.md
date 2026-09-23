@@ -16,6 +16,8 @@ Both macOS fspy and pnport command admission use `pnport-core` to validate the s
 
 The generic fspy runner creates a random, user-private preload directory for each process instead of using a fixed shared temporary path. The directory remains owned for the runner's lifetime. `materialized_artifact` checks the bytes of any pre-existing regular artifact without following Unix symlinks before returning its path; a collision with different bytes fails initialization.
 
+The generic fspy runner records every executable candidate examined during PATH resolution, including absent candidates before the selected program. These reads join the Unix and Windows access results so a new earlier PATH match invalidates a cached trace. Relative selected paths are bound to the lookup process's working directory before launch.
+
 On Windows, Detours requires an ANSI DLL path. The runner round-trips the materialized path through the active ANSI code page, then tries the same file's short path if the original loses characters. If neither path round-trips exactly, initialization fails before spawning a child.
 
 Windows descendant hooks terminate and close a newly created suspended child when payload propagation or resumption fails inside the Detours callback; the original Win32 error remains available to the caller.

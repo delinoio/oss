@@ -84,6 +84,12 @@ impl SpyImpl {
 
         let mut exec = command.get_exec();
         let mut exec_resolve_accesses = PathAccessArena::default();
+        for candidate in &command.resolution_accesses {
+            exec_resolve_accesses.add(PathAccess {
+                mode: fspy_shared::ipc::AccessMode::READ,
+                path: candidate.as_path().into(),
+            });
+        }
         let pre_exec = handle_exec(
             &mut exec,
             ExecResolveConfig::search_path_enabled(None),

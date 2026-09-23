@@ -1,5 +1,9 @@
 use std::{
+    borrow::Cow,
+    cell::RefCell,
     ffi::{OsStr, OsString},
+    fs::{DirEntry, Metadata},
+    io,
     path::{Path, PathBuf},
     process::Stdio,
 };
@@ -9,6 +13,7 @@ use fspy_shared_unix::exec::Exec;
 use rustc_hash::FxHashMap;
 use tokio::process::Command as TokioCommand;
 use tokio_util::sync::CancellationToken;
+use which::sys::{RealSys, Sys};
 
 use crate::{SPY_IMPL, TrackedChild, error::SpawnError};
 
@@ -18,6 +23,7 @@ pub struct Command {
     args: Vec<OsString>,
     envs: FxHashMap<OsString, OsString>,
     cwd: Option<PathBuf>,
+    pub(crate) resolution_accesses: Vec<PathBuf>,
     #[cfg(unix)]
     arg0: Option<OsString>,
 
@@ -40,6 +46,7 @@ impl Command {
             args: Vec::new(),
             envs: FxHashMap::default(),
             cwd: None,
+            resolution_accesses: Vec::new(),
             #[cfg(unix)]
             arg0: None,
             stderr: None,
@@ -216,14 +223,33 @@ impl Command {
             .cwd
             .clone()
             .unwrap_or_else(|| std::env::current_dir().expect("failed to get current dir"));
-        self.program = which::which_in(self.program.as_os_str(), path_env, &cwd)
-            .map_err(|err| SpawnError::Which {
-                program: self.program.clone(),
-                path: path_env.map(OsStr::to_owned),
-                cwd,
-                cause: err,
-            })?
-            .into_os_string();
+        let lookup_cwd = std::env::current_dir().unwrap_or_else(|_| cwd.clone());
+        let checked = RefCell::new(Vec::new());
+        let recorder = RecordingSys {
+            checked: &checked,
+            lookup_cwd: &lookup_cwd,
+        };
+        let mut query = which::WhichConfig::new_with_sys(recorder)
+            .binary_name(self.program.clone())
+            .custom_cwd(cwd.clone());
+        if let Some(path) = path_env {
+            query = query.custom_path_list(path.to_owned());
+        }
+        let selected = query.first_result().map_err(|err| SpawnError::Which {
+            program: self.program.clone(),
+            path: path_env.map(OsStr::to_owned),
+            cwd,
+            cause: err,
+        })?;
+        self.resolution_accesses.extend(checked.into_inner());
+        // PATH entries can be relative. Bind execution to the exact candidate
+        // checked by which, using the lookup process's working directory.
+        self.program = if selected.is_absolute() {
+            selected
+        } else {
+            lookup_cwd.join(selected)
+        }
+        .into_os_string();
         Ok(())
     }
 
@@ -276,5 +302,146 @@ impl Command {
         }
 
         tokio_cmd
+    }
+}
+
+struct RecordingSys<'a> {
+    checked: &'a RefCell<Vec<PathBuf>>,
+    lookup_cwd: &'a Path,
+}
+
+impl RecordingSys<'_> {
+    fn record(&self, path: &Path) {
+        self.checked.borrow_mut().push(if path.is_absolute() {
+            path.to_owned()
+        } else {
+            self.lookup_cwd.join(path)
+        });
+    }
+}
+
+impl Sys for RecordingSys<'_> {
+    type Metadata = Metadata;
+    type ReadDirEntry = DirEntry;
+
+    fn is_windows(&self) -> bool {
+        RealSys.is_windows()
+    }
+
+    fn current_dir(&self) -> io::Result<PathBuf> {
+        RealSys.current_dir()
+    }
+
+    fn home_dir(&self) -> Option<PathBuf> {
+        RealSys.home_dir()
+    }
+
+    fn env_split_paths(&self, paths: &OsStr) -> Vec<PathBuf> {
+        RealSys.env_split_paths(paths)
+    }
+
+    fn env_path(&self) -> Option<OsString> {
+        RealSys.env_path()
+    }
+
+    fn env_path_ext(&self) -> Option<OsString> {
+        RealSys.env_path_ext()
+    }
+
+    fn env_windows_path_ext(&self) -> Cow<'static, [String]> {
+        RealSys.env_windows_path_ext()
+    }
+
+    fn metadata(&self, path: &Path) -> io::Result<Self::Metadata> {
+        self.record(path);
+        RealSys.metadata(path)
+    }
+
+    fn symlink_metadata(&self, path: &Path) -> io::Result<Self::Metadata> {
+        self.record(path);
+        RealSys.symlink_metadata(path)
+    }
+
+    fn read_dir(
+        &self,
+        path: &Path,
+    ) -> io::Result<Box<dyn Iterator<Item = io::Result<Self::ReadDirEntry>>>> {
+        RealSys.read_dir(path)
+    }
+
+    fn is_valid_executable(&self, path: &Path) -> io::Result<bool> {
+        RealSys.is_valid_executable(path)
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::{fs, os::unix::fs::PermissionsExt};
+
+    use tokio_util::sync::CancellationToken;
+
+    use super::Command;
+
+    #[test]
+    fn records_missing_path_candidates_before_the_selected_image() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let first = directory.path().join("first");
+        let second = directory.path().join("second");
+        fs::create_dir(&first).expect("create first PATH directory");
+        fs::create_dir(&second).expect("create second PATH directory");
+        let found = second.join("tool");
+        fs::write(&found, "#!/bin/sh\n").expect("write executable");
+        fs::set_permissions(&found, fs::Permissions::from_mode(0o755)).expect("make executable");
+
+        let mut command = Command::new("tool");
+        command.env(
+            "PATH",
+            std::env::join_paths([&first, &second]).expect("build PATH"),
+        );
+        command.resolve_program().expect("resolve tool");
+        assert_eq!(command.program, found.as_os_str());
+        assert!(command.resolution_accesses.contains(&first.join("tool")));
+        assert!(command.resolution_accesses.contains(&found));
+    }
+
+    #[tokio::test]
+    async fn trace_includes_missing_path_candidate() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let first = directory.path().join("first");
+        let second = directory.path().join("second");
+        fs::create_dir(&first).expect("create first PATH directory");
+        fs::create_dir(&second).expect("create second PATH directory");
+        let source = directory.path().join("tool.c");
+        let executable = second.join("tool");
+        fs::write(&source, "int main(void) { return 0; }\n").expect("write fixture");
+        assert!(
+            std::process::Command::new("cc")
+                .arg(&source)
+                .arg("-o")
+                .arg(&executable)
+                .status()
+                .expect("compile fixture")
+                .success()
+        );
+
+        let mut command = Command::new("tool");
+        command.env(
+            "PATH",
+            std::env::join_paths([&first, &second]).expect("build PATH"),
+        );
+        let child = command
+            .spawn(CancellationToken::new())
+            .await
+            .expect("spawn tracked fixture");
+        let termination = child.wait_handle.await.expect("wait for fixture");
+        assert!(termination.status.success());
+        let accesses = termination.path_accesses.expect("complete trace");
+        let missing = first.join("tool");
+        assert!(accesses.iter().any(|access| {
+            access.mode.contains(super::super::AccessMode::READ)
+                && access.path.strip_path_prefix(&missing, |path| {
+                    path.is_ok_and(|remaining| remaining.as_os_str().is_empty())
+                })
+        }));
     }
 }
