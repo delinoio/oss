@@ -1485,15 +1485,16 @@ impl Trace<'_> {
             } else {
                 argument(&regs, 0)
             };
-            if flags & libc::CLONE_FILES as u64 != 0
+            if flags & (libc::CLONE_FILES | libc::CLONE_FS) as u64 != 0
                 && (call == libc::SYS_unshare || flags & libc::CLONE_THREAD as u64 == 0)
             {
-                // The tracker has one FD map per thread group. A shared or
-                // unshared table spanning that boundary cannot use this map.
+                // FD and logical cwd state are owned by one thread group.
+                // Sharing or splitting either context across that boundary
+                // would make its cached identity stale.
                 deny_syscall(&mut regs);
                 set_registers(pid, &regs)?;
                 return Err(unsupported(
-                    "Linux shared descriptor tables across process groups cannot be mediated.",
+                    "Linux cross-group CLONE_FILES or CLONE_FS cannot be mediated.",
                 ));
             }
             return resume(pid, false, 0);
