@@ -83,6 +83,7 @@ impl_handler!(
     SyscallHandler:
 
     #[cfg(target_arch = "x86_64")] open,
+    #[cfg(target_arch = "x86_64")] creat,
     openat,
     openat2,
 

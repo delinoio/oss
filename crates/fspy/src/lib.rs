@@ -161,4 +161,55 @@ int main(void) {
             .expect("read descendant output");
         assert_eq!(output, "continued\n");
     }
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[tokio::test]
+    async fn seccomp_creat_records_an_output() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let source = directory.path().join("create.c");
+        let executable = directory.path().join("create");
+        let output = directory.path().join("output");
+        fs::write(
+            &source,
+            r#"#include <fcntl.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+  if (argc != 2) return 2;
+  int fd = syscall(SYS_creat, argv[1], 0600);
+  if (fd < 0) return 3;
+  close(fd);
+  return 0;
+}
+"#,
+        )
+        .expect("write fixture");
+        assert!(
+            std::process::Command::new("cc")
+                .arg("-static")
+                .arg(&source)
+                .arg("-o")
+                .arg(&executable)
+                .status()
+                .expect("compile static fixture")
+                .success()
+        );
+
+        let mut command = super::Command::new(&executable);
+        command.arg(&output);
+        let child = command
+            .spawn(CancellationToken::new())
+            .await
+            .expect("spawn tracked fixture");
+        let termination = child.wait_handle.await.expect("wait for fixture");
+        assert!(termination.status.success());
+        assert!(output.exists());
+        let accesses = termination.path_accesses.expect("complete trace");
+        assert!(accesses.iter().any(|access| {
+            access.mode.contains(super::AccessMode::WRITE)
+                && access.path.strip_path_prefix(&output, |path| {
+                    path.is_ok_and(|remaining| remaining.as_os_str().is_empty())
+                })
+        }));
+    }
 }
