@@ -3122,7 +3122,10 @@ fn open_state_for_read(path: &Path) -> io::Result<File> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NOFOLLOW);
+        // A substituted FIFO blocks a blocking read-only open before its
+        // metadata can be checked. Open nonblocking so every non-regular
+        // state object is rejected through the normal fail-closed validation.
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
     #[cfg(windows)]
     {
@@ -3806,7 +3809,10 @@ fn parse_http_url(value: &str) -> std::result::Result<reqwest::Url, &'static str
 
 #[cfg(all(test, unix))]
 mod rate_limit_tests {
-    use std::os::unix::fs::OpenOptionsExt;
+    use std::{
+        ffi::CString,
+        os::unix::{ffi::OsStrExt, fs::OpenOptionsExt},
+    };
 
     use fs4::FileExt;
 
@@ -3882,6 +3888,21 @@ mod rate_limit_tests {
 
         let error = match read_bucket(&path, 1, Duration::from_secs(1), 1, 0) {
             Ok(_) => panic!("state with unknown fields must be rejected"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.code, Code::IoFailed);
+    }
+
+    #[test]
+    fn fifo_bucket_state_fails_closed_without_waiting_for_a_writer() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("bucket.fifo");
+        let path_c = CString::new(path.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(path_c.as_ptr(), 0o600) }, 0);
+
+        let error = match read_bucket(&path, 1, Duration::from_secs(1), 1, 0) {
+            Ok(_) => panic!("a FIFO state path must be rejected"),
             Err(error) => error,
         };
 
