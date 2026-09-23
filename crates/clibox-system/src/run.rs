@@ -1603,14 +1603,10 @@ fn forward(
                 }
                 let write = if stderr {
                     let mut output = io::stderr().lock();
-                    output
-                        .write_all(&buffer[..count])
-                        .and_then(|()| output.flush())
+                    write_forwarded_output(&mut output, &buffer[..count])
                 } else {
                     let mut output = io::stdout().lock();
-                    output
-                        .write_all(&buffer[..count])
-                        .and_then(|()| output.flush())
+                    write_forwarded_output(&mut output, &buffer[..count])
                 };
                 if write.is_err() {
                     tracing::debug!(operation = "run", stage = "forward-failed", "run_output");
@@ -1621,6 +1617,17 @@ fn forward(
                 }
             }
         })
+}
+
+fn write_forwarded_output(output: &mut impl Write, bytes: &[u8]) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        with_sigttou_blocked(|| output.write_all(bytes).and_then(|()| output.flush()))
+    }
+    #[cfg(not(unix))]
+    {
+        output.write_all(bytes).and_then(|()| output.flush())
+    }
 }
 
 #[derive(Clone)]
@@ -2055,10 +2062,20 @@ impl ForegroundTerminal {
 
 #[cfg(unix)]
 fn set_terminal_foreground_group(group: libc::pid_t) -> io::Result<()> {
-    // A completed workload leaves the wrapper in a background group until its
-    // terminal is restored. Block SIGTTOU in this thread around tcsetpgrp so
-    // restoration cannot stop the wrapper before it returns control to the
-    // invoking shell.
+    with_sigttou_blocked(|| {
+        if unsafe { libc::tcsetpgrp(libc::STDIN_FILENO, group) } == -1 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
+    })
+}
+
+#[cfg(unix)]
+fn with_sigttou_blocked<T>(operation: impl FnOnce() -> io::Result<T>) -> io::Result<T> {
+    // A foreground workload leaves forwarding threads in the wrapper's
+    // background group. TOSTOP would otherwise deliver SIGTTOU and stop that
+    // group before it can supervise timeouts or restore the terminal.
     unsafe {
         let mut blocked = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
         if libc::sigemptyset(blocked.as_mut_ptr()) == -1
@@ -2072,18 +2089,14 @@ fn set_terminal_foreground_group(group: libc::pid_t) -> io::Result<()> {
         if blocked_result != 0 {
             return Err(io::Error::from_raw_os_error(blocked_result));
         }
-        let result = libc::tcsetpgrp(libc::STDIN_FILENO, group);
-        let operation_error = io::Error::last_os_error();
+        let result = operation();
         let restore_result =
             libc::pthread_sigmask(libc::SIG_SETMASK, original.as_ptr(), std::ptr::null_mut());
         if restore_result != 0 {
             return Err(io::Error::from_raw_os_error(restore_result));
         }
-        if result == -1 {
-            return Err(operation_error);
-        }
+        result
     }
-    Ok(())
 }
 
 #[cfg(unix)]

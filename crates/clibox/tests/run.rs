@@ -84,6 +84,21 @@ fn terminal_foreground_group(terminal: &fs::File) -> libc::pid_t {
     group
 }
 
+#[cfg(target_os = "linux")]
+fn enable_terminal_tostop(terminal: &fs::File) {
+    let mut settings = std::mem::MaybeUninit::<libc::termios>::uninit();
+    assert_eq!(
+        unsafe { libc::tcgetattr(terminal.as_raw_fd(), settings.as_mut_ptr()) },
+        0
+    );
+    let mut settings = unsafe { settings.assume_init() };
+    settings.c_lflag |= libc::TOSTOP;
+    assert_eq!(
+        unsafe { libc::tcsetattr(terminal.as_raw_fd(), libc::TCSANOW, &settings) },
+        0
+    );
+}
+
 #[test]
 fn rate_limit_uses_shared_hashed_state_and_zero_wait_is_immediate() {
     let home = tempfile::tempdir().unwrap();
@@ -393,6 +408,51 @@ fn interactive_workload_keeps_foreground_terminal_access() {
     terminal.write_all(b"answer\n").unwrap();
     assert!(wrapper.wait().unwrap().success());
     assert!(read_terminal(terminal).contains("reply=answer"));
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn interactive_output_forwarding_survives_tostop() {
+    let home = tempfile::tempdir().unwrap();
+    let (mut wrapper, terminal) = terminal_command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--timeout",
+            "100ms",
+            "--idle-timeout",
+            "30s",
+            "--kill-after",
+            "0",
+            "--",
+            "sh",
+            "-c",
+            "printf forwarded-output; sleep 30",
+        ],
+    );
+    enable_terminal_tostop(&terminal);
+    let wrapper_group = wrapper.id() as libc::pid_t;
+    let mut wrapper = wrapper.spawn().unwrap();
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    let status = loop {
+        if let Some(status) = wrapper.try_wait().unwrap() {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = unsafe { libc::kill(-wrapper_group, libc::SIGKILL) };
+            let foreground_group = unsafe { libc::tcgetpgrp(terminal.as_raw_fd()) };
+            if foreground_group > 0 && foreground_group != wrapper_group {
+                let _ = unsafe { libc::kill(-foreground_group, libc::SIGKILL) };
+            }
+            let _ = wrapper.wait();
+            panic!("TOSTOP stopped the wrapper while it was forwarding output");
+        }
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(status.code(), Some(124));
+    assert!(read_terminal(terminal).contains("forwarded-output"));
 }
 
 #[test]
