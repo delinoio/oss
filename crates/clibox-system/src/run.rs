@@ -1355,7 +1355,7 @@ fn limits_expired_at(limits: &Limits, last_activity: Instant, observed_at: Insta
 fn limits_expired_before_activity_refresh(
     limits: &Limits,
     last_activity: Instant,
-    latest_activity: Instant,
+    activity: Option<ActivityBatch>,
     observed_at: Instant,
 ) -> bool {
     if limits
@@ -1364,15 +1364,19 @@ fn limits_expired_before_activity_refresh(
     {
         return true;
     }
-    let Some(idle_deadline) = limits.idle.and_then(|idle| last_activity.checked_add(idle)) else {
+    let Some(idle) = limits.idle else {
         return false;
     };
-    if observed_at < idle_deadline {
-        return false;
-    }
-    // A read that completed before the previous idle deadline extends the
-    // limit. A later read cannot retroactively conceal that deadline.
-    !(latest_activity > last_activity && latest_activity < idle_deadline)
+    let Some(activity) = activity else {
+        return observed_at.saturating_duration_since(last_activity) >= idle;
+    };
+    // A completed read can extend the idle deadline only if it arrived before
+    // the prior deadline. Retain the largest gap between output reads so a
+    // supervisor stall neither loses an earlier valid extension nor lets a
+    // later read conceal a genuinely expired interval.
+    activity.first.saturating_duration_since(last_activity) >= idle
+        || activity.greatest_gap >= idle
+        || observed_at.saturating_duration_since(activity.last) >= idle
 }
 
 fn supervision_poll_interval(limits: &Limits, last_activity: Instant, now: Instant) -> Duration {
@@ -1419,15 +1423,11 @@ fn run_once(
         .unwrap_or_else(Instant::now);
     loop {
         let observed_at = Instant::now();
-        let latest_activity = child
-            .activity
-            .as_ref()
-            .map(Activity::last_observed_at)
-            .unwrap_or(last_activity);
+        let activity_since_last = child.activity.as_ref().and_then(Activity::take);
         if limits_expired_before_activity_refresh(
             &limits,
             last_activity,
-            latest_activity,
+            activity_since_last,
             observed_at,
         ) {
             tracing::debug!(operation = "run", stage = "timeout", "run_cleanup");
@@ -1436,7 +1436,9 @@ fn run_once(
             }
             return Ok(Outcome::Code(124));
         }
-        last_activity = latest_activity;
+        if let Some(activity) = activity_since_last {
+            last_activity = activity.last;
+        }
         if child.output_failed() {
             cleanup_run_once_children(&mut child, &mut monitored_service, kill_after);
             return runtime_failure("Could not forward workload output.");
@@ -1488,15 +1490,11 @@ fn run_once(
             // A pipe reader can record its successful final read while the
             // completion worker is being observed. A read after the prior
             // idle deadline cannot retroactively extend that expired limit.
-            let latest_activity = child
-                .activity
-                .as_ref()
-                .map(Activity::last_observed_at)
-                .unwrap_or(last_activity);
+            let activity_since_last = child.activity.as_ref().and_then(Activity::take);
             if limits_expired_before_activity_refresh(
                 &limits,
                 last_activity,
-                latest_activity,
+                activity_since_last,
                 completion.observed_at,
             ) {
                 tracing::debug!(operation = "run", stage = "timeout", "run_cleanup");
@@ -1505,7 +1503,9 @@ fn run_once(
                 }
                 return Ok(Outcome::Code(124));
             }
-            last_activity = latest_activity;
+            if let Some(activity) = activity_since_last {
+                last_activity = activity.last;
+            }
             if child.output_failed() {
                 cleanup_run_once_children(&mut child, &mut monitored_service, kill_after);
                 return runtime_failure("Could not forward workload output.");
@@ -2057,7 +2057,7 @@ fn forward(
                 // notification. Output can outpace supervisor polls, and a stale
                 // earlier event must not make a later read look idle.
                 if let Some(activity) = &activity {
-                    activity.observe(Instant::now());
+                    activity.observe();
                 }
                 let write = if stderr {
                     let mut output = io::stderr().lock();
@@ -2090,8 +2090,19 @@ fn write_forwarded_output(output: &mut impl Write, bytes: &[u8]) -> io::Result<(
 
 #[derive(Clone)]
 struct Activity {
-    started_at: Instant,
-    latest_elapsed_nanos: Arc<std::sync::atomic::AtomicU64>,
+    state: Arc<Mutex<ActivityState>>,
+}
+
+#[derive(Clone, Copy)]
+struct ActivityBatch {
+    first: Instant,
+    last: Instant,
+    greatest_gap: Duration,
+}
+
+struct ActivityState {
+    latest: Instant,
+    pending: Option<ActivityBatch>,
 }
 
 impl Activity {
@@ -2101,27 +2112,61 @@ impl Activity {
 
     fn at(started_at: Instant) -> Self {
         Self {
-            started_at,
-            latest_elapsed_nanos: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            state: Arc::new(Mutex::new(ActivityState {
+                latest: started_at,
+                pending: None,
+            })),
         }
     }
 
-    fn observe(&self, observed_at: Instant) {
-        let elapsed = observed_at
-            .saturating_duration_since(self.started_at)
-            .as_nanos();
-        let elapsed = u64::try_from(elapsed).unwrap_or(u64::MAX);
-        self.latest_elapsed_nanos
-            .fetch_max(elapsed, std::sync::atomic::Ordering::Release);
+    fn observe(&self) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        Self::record(&mut state, Instant::now());
+    }
+
+    #[cfg(test)]
+    fn observe_at(&self, observed_at: Instant) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        Self::record(&mut state, observed_at);
+    }
+
+    fn record(state: &mut ActivityState, observed_at: Instant) {
+        state.latest = observed_at;
+        state.pending = Some(match state.pending {
+            Some(previous) => ActivityBatch {
+                first: previous.first,
+                last: observed_at,
+                greatest_gap: previous
+                    .greatest_gap
+                    .max(observed_at.saturating_duration_since(previous.last)),
+            },
+            None => ActivityBatch {
+                first: observed_at,
+                last: observed_at,
+                greatest_gap: Duration::ZERO,
+            },
+        });
+    }
+
+    fn take(&self) -> Option<ActivityBatch> {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .pending
+            .take()
     }
 
     fn last_observed_at(&self) -> Instant {
-        self.started_at
-            .checked_add(Duration::from_nanos(
-                self.latest_elapsed_nanos
-                    .load(std::sync::atomic::Ordering::Acquire),
-            ))
-            .unwrap_or_else(Instant::now)
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .latest
     }
 }
 
@@ -5347,16 +5392,21 @@ mod lifecycle_tests {
     }
 
     #[test]
-    fn activity_retains_the_latest_read_before_supervision() {
+    fn activity_retains_read_history_before_supervision() {
         let start = Instant::now();
         let first = start.checked_add(Duration::from_millis(1)).unwrap();
         let latest = start.checked_add(Duration::from_millis(10)).unwrap();
         let activity = Activity::at(start);
 
-        activity.observe(first);
-        activity.observe(latest);
+        activity.observe_at(first);
+        activity.observe_at(latest);
 
         assert_eq!(activity.last_observed_at(), latest);
+        let batch = activity.take().unwrap();
+        assert_eq!(batch.first, first);
+        assert_eq!(batch.last, latest);
+        assert_eq!(batch.greatest_gap, Duration::from_millis(9));
+        assert!(activity.take().is_none());
     }
 
     #[test]
@@ -5365,7 +5415,7 @@ mod lifecycle_tests {
         let completion = start.checked_add(Duration::from_millis(10)).unwrap();
         let final_read = start.checked_add(Duration::from_millis(9)).unwrap();
         let activity = Activity::at(start);
-        activity.observe(final_read);
+        activity.observe_at(final_read);
         let limits = Limits {
             overall: None,
             idle: Some(Duration::from_millis(5)),
@@ -5392,16 +5442,48 @@ mod lifecycle_tests {
             idle: Some(idle),
         };
 
+        let early_batch = ActivityBatch {
+            first: early_activity,
+            last: early_activity,
+            greatest_gap: Duration::ZERO,
+        };
+        let late_batch = ActivityBatch {
+            first: late_activity,
+            last: late_activity,
+            greatest_gap: Duration::ZERO,
+        };
         assert!(!limits_expired_before_activity_refresh(
             &limits,
             start,
-            early_activity,
+            Some(early_batch),
             observed_at,
         ));
         assert!(limits_expired_before_activity_refresh(
             &limits,
             start,
-            late_activity,
+            Some(late_batch),
+            observed_at,
+        ));
+    }
+
+    #[test]
+    fn supervision_retains_intermediate_idle_activity() {
+        let start = Instant::now();
+        let first = start.checked_add(Duration::from_millis(4)).unwrap();
+        let second = start.checked_add(Duration::from_millis(8)).unwrap();
+        let observed_at = start.checked_add(Duration::from_millis(9)).unwrap();
+        let idle = Duration::from_millis(5);
+        let activity = Activity::at(start);
+        activity.observe_at(first);
+        activity.observe_at(second);
+
+        assert!(!limits_expired_before_activity_refresh(
+            &Limits {
+                overall: None,
+                idle: Some(idle),
+            },
+            start,
+            activity.take(),
             observed_at,
         ));
     }
