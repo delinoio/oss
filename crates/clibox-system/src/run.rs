@@ -3442,13 +3442,16 @@ fn valid_machine_id(value: &str) -> bool {
         && value.bytes().any(|byte| byte != b'0')
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 fn valid_uuid(value: &str) -> bool {
     value.len() == 36
         && value.bytes().enumerate().all(|(index, byte)| match index {
             8 | 13 | 18 | 23 => byte == b'-',
             _ => byte.is_ascii_hexdigit(),
         })
+        && value
+            .bytes()
+            .any(|byte| byte.is_ascii_hexdigit() && byte != b'0')
 }
 
 #[cfg(target_os = "macos")]
@@ -3503,11 +3506,7 @@ fn machine_identity() -> Result<Vec<u8>> {
         .unwrap_or(&value[..value_len]);
     let identity = String::from_utf16(value)
         .map_err(|_| Failure::new(Code::IoFailed, "The local machine identity is invalid."))?;
-    if identity.is_empty()
-        || !identity
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() || matches!(byte, b'-' | b'{' | b'}'))
-    {
+    if !valid_uuid(&identity) {
         return runtime_failure("The local machine identity is invalid.");
     }
     Ok(identity.into_bytes())
@@ -4795,6 +4794,14 @@ mod rate_limit_tests {
     #[test]
     fn linux_machine_identity_rejects_the_all_zero_sentinel() {
         assert!(!valid_machine_id("00000000000000000000000000000000"));
+    }
+
+    #[test]
+    fn machine_guid_requires_a_nonzero_structural_uuid() {
+        assert!(valid_uuid("01234567-89ab-cdef-0123-456789abcdef"));
+        assert!(!valid_uuid("00000000-0000-0000-0000-000000000000"));
+        assert!(!valid_uuid("{01234567-89ab-cdef-0123-456789abcdef}"));
+        assert!(!valid_uuid("-"));
     }
 }
 
