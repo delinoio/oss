@@ -1150,6 +1150,38 @@ fn run_once(
                 cleanup_run_once_children(&mut child, &mut monitored_service, kill_after);
                 return runtime_failure("Could not forward workload output.");
             }
+            if let Some(service) = monitored_service.as_deref_mut() {
+                // The service and workload completion workers can be
+                // scheduled independently. If the service result has not
+                // arrived yet, confirm that its owned tree still exists
+                // before accepting the workload result.
+                let service_exited = match service.completion() {
+                    Ok(Some(service_completion)) => service_exited_before_workload(
+                        service_completion.observed_at,
+                        Some(completion.observed_at),
+                    ),
+                    Ok(None) => match service.tree_running() {
+                        Ok(running) => !running,
+                        Err(error) => {
+                            let _ = cleanup_or_log(service, kill_after);
+                            let _ = cleanup_or_log(&mut child, kill_after);
+                            return Err(error);
+                        }
+                    },
+                    Err(error) => {
+                        let _ = cleanup_or_log(service, kill_after);
+                        let _ = cleanup_or_log(&mut child, kill_after);
+                        return Err(error);
+                    }
+                };
+                if service_exited {
+                    let _ = cleanup_or_log(service, kill_after);
+                    let _ = cleanup_or_log(&mut child, kill_after);
+                    return runtime_failure(
+                        "The managed service exited before the workload completed.",
+                    );
+                }
+            }
             if limits_expired_at(&limits, last_activity, completion.observed_at) {
                 tracing::debug!(operation = "run", stage = "timeout", "run_cleanup");
                 let _ = cleanup_or_log(&mut child, kill_after);
