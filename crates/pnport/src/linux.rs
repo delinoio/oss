@@ -35,7 +35,8 @@ const SECCOMP_RET_TRACE: u32 = 0x7ff0_0000;
 const SECCOMP_RET_ALLOW: u32 = 0x7fff_0000;
 const SECCOMP_SET_MODE_FILTER: libc::c_uint = 1;
 const PATH_LIMIT: usize = 4096;
-const EXEC_VECTOR_LIMIT: usize = 256;
+// Linux execve(2) caps argv+envp storage at 3/4 of _STK_LIM (8 MiB).
+const EXEC_BYTES_LIMIT: usize = 6 * 1024 * 1024;
 // The fixed prefix and resolution bits from Linux's openat2 UAPI.
 const OPEN_HOW_SIZE: usize = 24;
 const RESOLVE_BENEATH: u64 = 0x08;
@@ -604,46 +605,52 @@ fn read_pointer_vector(pid: i32, address: u64) -> Result<Vec<u64>> {
         return Ok(Vec::new());
     }
     let mut values = Vec::new();
-    for index in 0..EXEC_VECTOR_LIMIT {
-        let bytes = read_remote(pid, address + (index * mem::size_of::<u64>()) as u64, 8)?;
-        let pointer = u64::from_ne_bytes(
-            bytes
-                .get(..8)
-                .ok_or_else(injection_failed)?
-                .try_into()
-                .unwrap(),
-        );
-        if pointer == 0 {
-            return Ok(values);
+    let mut offset = 0;
+    while offset < EXEC_BYTES_LIMIT {
+        let bytes = read_remote(
+            pid,
+            address + offset as u64,
+            (EXEC_BYTES_LIMIT - offset).min(PATH_LIMIT),
+        )?;
+        if bytes.len() < mem::size_of::<u64>() || bytes.len() % mem::size_of::<u64>() != 0 {
+            return Err(injection_failed());
         }
-        values.push(pointer);
+        for chunk in bytes.chunks_exact(mem::size_of::<u64>()) {
+            let pointer = u64::from_ne_bytes(chunk.try_into().map_err(|_| injection_failed())?);
+            if pointer == 0 {
+                return Ok(values);
+            }
+            values.push(pointer);
+        }
+        offset += bytes.len();
     }
     Err(unsupported(
-        "A child exec argument vector exceeded the supported bound.",
+        "A child exec pointer vector exceeded Linux's argument byte limit.",
     ))
 }
 
 fn child_search_path(pid: i32, envp: u64) -> Result<Option<OsString>> {
-    if envp == 0 {
-        return Ok(None);
-    }
-    for index in 0..EXEC_VECTOR_LIMIT {
-        let bytes = read_remote(pid, envp + (index * mem::size_of::<u64>()) as u64, 8)?;
-        let pointer = u64::from_ne_bytes(
-            bytes
-                .get(..8)
-                .ok_or_else(injection_failed)?
-                .try_into()
-                .unwrap(),
-        );
-        if pointer == 0 {
-            return Ok(None);
-        }
+    for pointer in read_pointer_vector(pid, envp)? {
         if read_remote(pid, pointer, 5)?.get(..5) == Some(b"PATH=") {
-            let value = read_path(pid, pointer)?;
-            return Ok(Some(OsString::from(OsStr::from_bytes(
-                &value.as_os_str().as_bytes()[5..],
-            ))));
+            let mut bytes = Vec::new();
+            while bytes.len() < EXEC_BYTES_LIMIT {
+                let part = read_remote(
+                    pid,
+                    pointer + bytes.len() as u64,
+                    (EXEC_BYTES_LIMIT - bytes.len()).min(256),
+                )?;
+                if let Some(end) = part.iter().position(|byte| *byte == 0) {
+                    bytes.extend_from_slice(&part[..end]);
+                    break;
+                }
+                bytes.extend_from_slice(&part);
+            }
+            if bytes.len() == EXEC_BYTES_LIMIT {
+                return Err(unsupported(
+                    "A child PATH value exceeded Linux's argument byte limit.",
+                ));
+            }
+            return Ok(Some(OsString::from(OsStr::from_bytes(&bytes[5..]))));
         }
     }
     Ok(None)
@@ -730,9 +737,9 @@ fn rewrite_exec_arguments(
         .iter()
         .flat_map(|pointer| pointer.to_ne_bytes())
         .collect();
-    if raw.len() > PATH_LIMIT {
+    if raw.len() > EXEC_BYTES_LIMIT {
         return Err(unsupported(
-            "A child exec argument vector exceeded the supported bound.",
+            "A child exec pointer vector exceeded Linux's argument byte limit.",
         ));
     }
     cursor = cursor

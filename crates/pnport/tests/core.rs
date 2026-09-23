@@ -1077,6 +1077,80 @@ int main(void) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_virtual_script_accepts_long_exec_vectors() {
+    use std::process::Command;
+    let root = fixture();
+    let cache = tempfile::tempdir().unwrap();
+    let mut archive = zip::ZipWriter::new(fs::File::create(root.path().join("cache.zip")).unwrap());
+    archive
+        .start_file(
+            "node_modules/dep/script",
+            zip::write::SimpleFileOptions::default().unix_permissions(0o755),
+        )
+        .unwrap();
+    archive
+        .write_all(b"#!/usr/bin/env -S sh\nprintf '%s|%s|%s\\n' \"$0\" \"$#\" \"$1\"\n")
+        .unwrap();
+    archive.finish().unwrap();
+    let source = root.path().join("long-exec.c");
+    fs::write(
+        &source,
+        r#"
+#include <unistd.h>
+int main(void) {
+    char *args[602];
+    args[0] = "node_modules/dep/script";
+    for (int i = 1; i <= 600; ++i) args[i] = "arg";
+    args[601] = 0;
+    char *env[322];
+    for (int i = 0; i < 320; ++i) env[i] = "D=1";
+    env[320] = "PATH=/bin";
+    env[321] = 0;
+    execve(args[0], args, env);
+    return 42;
+}
+"#,
+    )
+    .unwrap();
+    let launcher = root.path().join("long-exec");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&launcher)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(
+        Command::new(&launcher)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(42)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--"])
+        .arg(&launcher)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let logical = root.path().join("cache.zip/node_modules/dep/script");
+    assert_eq!(
+        result.stdout,
+        format!("{}|600|arg\n", logical.display()).as_bytes()
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_nonleader_thread_exec_reaps_the_owned_tree() {
     use std::process::Command;
     let root = fixture();
