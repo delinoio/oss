@@ -29,6 +29,8 @@ fn admit_preload(fd: &std::os::fd::OwnedFd) -> nix::Result<()> {
     }
     // A file capability also puts the loader into secure-execution mode.
     // Fail closed if its presence cannot be determined from the opened image.
+    // SAFETY: fd is open and the fixed capability key is a valid C string;
+    // a null value buffer with zero length requests only the attribute size.
     let capability_len = unsafe {
         libc::fgetxattr(
             fd.as_raw_fd(),
