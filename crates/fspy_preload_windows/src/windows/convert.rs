@@ -83,7 +83,7 @@ impl ToAbsolutePath for POBJECT_ATTRIBUTES {
                 unsafe { U16CStr::from_ptr_str(root_dir.as_ptr()) }
             };
             let fname_cstring = U16CString::from_ustr_truncate(fname_str);
-            let abs_path = combine_paths(root_dir_cstr, fname_cstring.as_ucstr()).unwrap();
+            let abs_path = combine_paths(root_dir_cstr, fname_cstring.as_ucstr())?;
             f(Some(abs_path.to_u16_str()))
         }
     }

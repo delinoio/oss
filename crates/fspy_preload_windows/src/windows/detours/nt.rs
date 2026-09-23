@@ -312,7 +312,7 @@ unsafe fn handle_open(access_mode: impl ToAccessMode, path: impl ToAbsolutePath)
     let client = unsafe { global_client() };
     // SAFETY: resolving path from Windows object attributes or handle for access
     // tracking
-    unsafe {
+    if unsafe {
         path.to_absolute_path(|path| {
             let Some(path) = path else {
                 return Ok(());
@@ -345,7 +345,12 @@ unsafe fn handle_open(access_mode: impl ToAccessMode, path: impl ToAbsolutePath)
             Ok(())
         })
     }
-    .unwrap();
+    .is_err()
+    {
+        // The native call still receives its original arguments. Its access
+        // cannot be represented in the trace after path resolution fails.
+        client.mark_incomplete();
+    }
 }
 
 static DETOUR_NT_FULL_QUERY_ATTRIBUTES_FILE: Detour<

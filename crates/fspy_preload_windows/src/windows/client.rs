@@ -40,6 +40,12 @@ impl<'a> Client<'a> {
         sender.send(&access);
     }
 
+    pub fn mark_incomplete(&self) {
+        if let Some(sender) = &self.ipc_sender {
+            sender.mark_incomplete();
+        }
+    }
+
     pub unsafe fn prepare_child_process(&self, child_handle: HANDLE) -> BOOL {
         // The payload propagates to children unchanged, so forward the bytes
         // this process was given instead of re-serializing.
