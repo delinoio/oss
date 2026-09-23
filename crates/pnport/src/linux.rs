@@ -959,7 +959,7 @@ impl Trace<'_> {
             mapped,
             "Tracee mmap result"
         );
-        if mapped <= 0 || mapped as u64 % 4096 != 0 {
+        if mapped <= 0 || !(mapped as u64).is_multiple_of(4096) {
             return Err(unsupported("Linux tracee scratch allocation failed."));
         }
         self.scratch.insert(pid, mapped as u64);
