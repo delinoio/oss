@@ -129,25 +129,26 @@ unsafe fn handle_process_image(attribute_list: PPS_ATTRIBUTE_LIST) {
 unsafe fn read_process_image_attribute<'a>(
     attribute_list: PPS_ATTRIBUTE_LIST,
 ) -> Option<&'a [u16]> {
-    // SAFETY: NtCreateUserProcess keeps a supplied attribute list valid for this
-    // call; a null optional pointer is parsed as None.
-    let attribute_list = unsafe { attribute_list.as_ref()? };
-
-    // Attributes is a trailing array. Subtract its byte offset to remove the
-    // header; the native API contract guarantees that the remaining bytes
-    // contain complete PS_ATTRIBUTE entries.
-    let attributes_offset = offset_of!(PS_ATTRIBUTE_LIST, Attributes);
-    let attribute_count =
-        (attribute_list.TotalLength - attributes_offset) / size_of::<PS_ATTRIBUTE>();
-
-    // The Rust field exposes the first placeholder entry as a reference;
-    // TotalLength describes how many contiguous entries follow it in the actual
-    // variable-length allocation.
-    let first_attribute = attribute_list.Attributes.first()?;
-    // SAFETY: TotalLength covers a contiguous variable-length tail starting at
-    // first_attribute.
-    let attributes: &[PS_ATTRIBUTE] =
-        unsafe { std::slice::from_raw_parts(std::ptr::from_ref(first_attribute), attribute_count) };
+    if attribute_list.is_null() {
+        return None;
+    }
+    // Read only the fixed header before trusting TotalLength. In particular,
+    // do not create a reference to the trailing placeholder entry when the
+    // caller supplied a short or malformed list.
+    let total_length = unsafe { std::ptr::addr_of!((*attribute_list).TotalLength).read() };
+    let attribute_count = checked_attribute_count(total_length)?;
+    // SAFETY: a native attribute list with the validated length contains this
+    // many contiguous entries after its header. The caller owns the allocation
+    // for the duration of NtCreateUserProcess.
+    let attributes: &[PS_ATTRIBUTE] = unsafe {
+        std::slice::from_raw_parts(
+            attribute_list
+                .cast::<u8>()
+                .add(offset_of!(PS_ATTRIBUTE_LIST, Attributes))
+                .cast::<PS_ATTRIBUTE>(),
+            attribute_count,
+        )
+    };
     for attribute in attributes {
         if attribute.Attribute != PS_ATTRIBUTE_IMAGE_NAME {
             continue;
@@ -172,6 +173,31 @@ unsafe fn read_process_image_attribute<'a>(
     }
 
     None
+}
+
+fn checked_attribute_count(total_length: usize) -> Option<usize> {
+    let tail_length = total_length.checked_sub(offset_of!(PS_ATTRIBUTE_LIST, Attributes))?;
+    let entry_size = size_of::<PS_ATTRIBUTE>();
+    if tail_length == 0 || tail_length % entry_size != 0 || total_length > isize::MAX as usize {
+        return None;
+    }
+    Some(tail_length / entry_size)
+}
+
+#[cfg(test)]
+mod attribute_list_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_short_and_partial_attribute_lists() {
+        let offset = offset_of!(PS_ATTRIBUTE_LIST, Attributes);
+        let entry = size_of::<PS_ATTRIBUTE>();
+        assert_eq!(checked_attribute_count(offset - 1), None);
+        assert_eq!(checked_attribute_count(offset), None);
+        assert_eq!(checked_attribute_count(offset + entry - 1), None);
+        assert_eq!(checked_attribute_count(offset + entry), Some(1));
+        assert_eq!(checked_attribute_count(usize::MAX), None);
+    }
 }
 
 static DETOUR_NT_CREATE_FILE: Detour<
