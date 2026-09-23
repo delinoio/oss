@@ -355,7 +355,7 @@ Windows protected-DACL fixtures compare owner/group, ACEs and protection state a
 [KEY=VALUE ...] [--] COMMAND [ARG ...]
 ```
 
-Every workload is prepared by the existing environment planner: assignments expand from the parent environment, duplicate and empty assignments retain `run env` behavior, argv is never shell-evaluated, child PATH/PATHEXT lookup remains platform-specific, cwd is inherited, and the child environment is isolated. All wrappers accept `--kill-after DURATION` (default `5s`). Durations are nonnegative integer `ms`, `s`, `m`, or `h` values; periods, polling, attempts, and retry delays are positive. Bare `0` disables an individual execution limit (`--ready-timeout`, retry `--timeout`, or either timeout limit), while a lock/rate admission `--wait-timeout 0` makes an immediate admission decision.
+Every workload is prepared by the existing environment planner: assignments expand from the parent environment, duplicate and empty assignments retain `run env` behavior, argv is never shell-evaluated, child PATH/PATHEXT lookup remains platform-specific, cwd is inherited, and the child environment is isolated. On Windows, wrappers supervise blocking executable lookup against cancellation and the active wrapper deadline, and a late lookup result cannot start a child. All wrappers accept `--kill-after DURATION` (default `5s`). Durations are nonnegative integer `ms`, `s`, `m`, or `h` values; periods, polling, attempts, and retry delays are positive. Bare `0` disables an individual execution limit (`--ready-timeout`, retry `--timeout`, or either timeout limit), while a lock/rate admission `--wait-timeout 0` makes an immediate admission decision.
 
 | Command | Contract |
 | --- | --- |

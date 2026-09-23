@@ -5,7 +5,7 @@ use std::{
         atomic::{AtomicI32, AtomicUsize, Ordering},
         mpsc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crate::error::{Code, Failure, Result};
@@ -143,13 +143,37 @@ pub fn delegated(mut command: Command) -> Result<ExitStatus> {
 pub fn interruptible<T: Send + 'static>(
     work: impl FnOnce() -> Result<T> + Send + 'static,
 ) -> Result<T> {
+    interruptible_until(None, work)
+}
+
+/// Block on cancellable OS work until an optional monotonic deadline. The
+/// worker can outlive the caller when the operating system does not provide a
+/// cancellation primitive, so callers must not let its result create side
+/// effects after the boundary has elapsed.
+pub fn interruptible_until<T: Send + 'static>(
+    deadline: Option<Instant>,
+    work: impl FnOnce() -> Result<T> + Send + 'static,
+) -> Result<T> {
     let (tx, rx) = mpsc::sync_channel(1);
     std::thread::spawn(move || {
         let _ = tx.send(work());
     });
     loop {
         check_cancelled()?;
-        match rx.recv_timeout(POLL) {
+        let timeout = match deadline {
+            Some(deadline) => {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    return Err(Failure::new(
+                        Code::TerminationTimeout,
+                        "Execution time limit expired while preparing the child command.",
+                    ));
+                }
+                POLL.min(remaining)
+            }
+            None => POLL,
+        };
+        match rx.recv_timeout(timeout) {
             Ok(result) => return result,
             Err(mpsc::RecvTimeoutError::Timeout) => (),
             Err(_) => {
@@ -159,6 +183,30 @@ pub fn interruptible<T: Send + 'static>(
                 ))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn interruptible_work_stops_waiting_at_its_deadline() {
+        let (release, blocked_work) = mpsc::sync_channel(0);
+        let deadline = Instant::now()
+            .checked_add(Duration::from_millis(1))
+            .unwrap();
+
+        let error = match interruptible_until(Some(deadline), move || {
+            let _ = blocked_work.recv();
+            Ok(())
+        }) {
+            Ok(()) => panic!("blocked work must not outlive its deadline"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.code, Code::TerminationTimeout);
+        release.send(()).unwrap();
     }
 }
 

@@ -1745,10 +1745,12 @@ fn spawn(
     mode: OutputMode,
     deadline: Option<Instant>,
 ) -> Result<OwnedChild> {
-    let mut command = environment::command(plan)?;
-    // Windows resolves PATH/PATHEXT while building the command. The lookup
-    // can block on a slow filesystem, so enforce the wrapper deadline after
-    // resolution and before any child can execute application code.
+    check_spawn_boundary(deadline)?;
+    let mut command = command_for_spawn(plan, deadline)?;
+    // Windows resolves PATH/PATHEXT while building the command. The lookup is
+    // supervised so cancellation and wrapper deadlines do not wait for a
+    // stalled filesystem, and this boundary prevents a late result from
+    // starting a child after the worker is no longer owned.
     check_spawn_boundary(deadline)?;
     #[cfg(unix)]
     let unix_ownership = unix_ownership();
@@ -1951,6 +1953,22 @@ fn spawn(
         output_failure,
         output_threads,
     })
+}
+
+fn command_for_spawn(
+    plan: &environment::Plan,
+    deadline: Option<Instant>,
+) -> Result<ProcessCommand> {
+    #[cfg(windows)]
+    {
+        let plan = plan.clone();
+        return runtime::interruptible_until(deadline, move || environment::command(&plan));
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = deadline;
+        environment::command(plan)
+    }
 }
 
 fn check_spawn_boundary(deadline: Option<Instant>) -> Result<()> {
