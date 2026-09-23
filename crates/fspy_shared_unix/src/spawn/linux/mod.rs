@@ -2,7 +2,11 @@
 use std::os::fd::AsRawFd;
 use std::os::fd::OwnedFd;
 #[cfg(not(target_env = "musl"))]
-use std::{ffi::OsStr, os::unix::ffi::OsStrExt as _, path::Path};
+use std::{
+    ffi::{CString, OsStr},
+    os::unix::ffi::OsStrExt as _,
+    path::Path,
+};
 
 use fspy_seccomp_unotify::{payload::SeccompPayload, target::install_target};
 #[cfg(not(target_env = "musl"))]
@@ -10,7 +14,9 @@ use memmap2::Mmap;
 #[cfg(not(target_env = "musl"))]
 use nix::{
     errno::Errno,
+    fcntl::{OFlag, open},
     libc,
+    sys::stat::Mode,
     unistd::{AccessFlags, access},
 };
 
@@ -65,6 +71,36 @@ fn bind_open_image(command: &mut Exec, executable_fd: &OwnedFd) {
     command.program = format!("/proc/self/fd/{}", executable_fd.as_raw_fd()).into();
 }
 
+#[cfg(not(target_env = "musl"))]
+fn admit_execute_only(command: &mut Exec) -> nix::Result<OwnedFd> {
+    let path = Path::new(OsStr::from_bytes(&command.program));
+    let fd = open(path, OFlag::O_PATH | OFlag::O_CLOEXEC, Mode::empty())?;
+    if nix::sys::stat::fstat(&fd)?.st_mode & 0o6000 != 0 {
+        return Err(Errno::ENOTSUP);
+    }
+    // O_PATH cannot be passed to fgetxattr. Resolve its procfd link so the
+    // capability query and subsequent exec stay bound to the same inode.
+    let proc_path =
+        CString::new(format!("/proc/self/fd/{}", fd.as_raw_fd())).map_err(|_| Errno::EINVAL)?;
+    // SAFETY: the procfd path and attribute name are valid C strings, and a
+    // null value buffer requests only the attribute size.
+    let capability_len = unsafe {
+        libc::getxattr(
+            proc_path.as_ptr(),
+            c"security.capability".as_ptr(),
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if capability_len > 0
+        || (capability_len < 0 && !matches!(Errno::last(), Errno::ENODATA | Errno::ENOTSUP))
+    {
+        return Err(Errno::ENOTSUP);
+    }
+    bind_open_image(command, &fd);
+    Ok(fd)
+}
+
 impl PreExec {
     /// Installs the seccomp unotify filter for the current process.
     ///
@@ -92,14 +128,15 @@ pub fn handle_exec(
             Ok(fd) => fd,
             Err(Errno::EACCES) if access(executable_path, AccessFlags::X_OK).is_ok() => {
                 // The kernel can execute this image, but its unreadable bytes
-                // cannot be classified for preload admission. Preserve the
-                // path and use the seccomp backend conservatively.
+                // cannot be classified for preload admission. Reject images
+                // whose privilege transitions no_new_privs would suppress.
+                let image = admit_execute_only(command)?;
                 command
                     .envs
                     .retain(|(name, _)| name != LD_PRELOAD && name != PAYLOAD_ENV_NAME);
                 return Ok(Some(PreExec {
                     filter: Some(encoded_payload.payload.seccomp_payload.clone()),
-                    _image: None,
+                    _image: Some(image),
                 }));
             }
             Err(error) => return Err(error),
@@ -164,7 +201,7 @@ mod tests {
 
     use nix::errno::Errno;
 
-    use super::{admit_preload, bind_open_image, open_executable};
+    use super::{admit_execute_only, admit_preload, bind_open_image, open_executable};
 
     #[test]
     fn bound_image_survives_path_replacement() {
@@ -200,5 +237,20 @@ mod tests {
         assert_eq!(admit_preload(&fd), Ok(()));
         fs::set_permissions(&path, fs::Permissions::from_mode(0o4755)).expect("set image uid bit");
         assert_eq!(admit_preload(&fd), Err(Errno::ENOTSUP));
+    }
+
+    #[test]
+    fn execute_only_fallback_rejects_set_id_images() {
+        let directory = tempfile::tempdir().expect("create temporary directory");
+        let path = directory.path().join("image");
+        fs::copy("/bin/true", &path).expect("copy image");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o4711))
+            .expect("set executable and setuid mode");
+        let mut command = crate::exec::Exec {
+            program: path.as_os_str().as_bytes().into(),
+            args: vec![],
+            envs: vec![],
+        };
+        assert_eq!(admit_execute_only(&mut command).err(), Some(Errno::ENOTSUP));
     }
 }
