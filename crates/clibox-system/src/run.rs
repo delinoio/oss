@@ -656,14 +656,25 @@ fn with_service(options: Service) -> Result<Outcome> {
                         Ok(Outcome::Code(124)),
                     );
                 }
-                if let Err(error) =
-                    sleep_cancellable(clip_to_deadline(options.interval, ready_deadline))
-                {
-                    return cleanup_managed_service(
-                        &mut service_child,
-                        options.workload.kill_after,
-                        Err(error),
-                    );
+                match wait_for_managed_service(
+                    &mut service_child,
+                    clip_to_deadline(options.interval, ready_deadline),
+                ) {
+                    Ok(ManagedServiceWait::Elapsed) => (),
+                    Ok(ManagedServiceWait::Exited) => {
+                        return cleanup_managed_service(
+                            &mut service_child,
+                            options.workload.kill_after,
+                            runtime_failure("The managed service exited before it became ready."),
+                        );
+                    }
+                    Err(error) => {
+                        return cleanup_managed_service(
+                            &mut service_child,
+                            options.workload.kill_after,
+                            Err(error),
+                        );
+                    }
                 }
             }
             Err(HttpProbeError::OverallTimeout) => {
@@ -4137,6 +4148,46 @@ fn sleep_cancellable(duration: Duration) -> Result<()> {
     Ok(())
 }
 
+enum ManagedServiceWait {
+    Elapsed,
+    Exited,
+}
+
+fn wait_for_managed_service(
+    service: &mut OwnedChild,
+    duration: Duration,
+) -> Result<ManagedServiceWait> {
+    let outcome = wait_for_service_completion(duration, || Ok(service.completion()?.is_some()))?;
+    if matches!(outcome, ManagedServiceWait::Exited) {
+        tracing::debug!(
+            operation = "run-with-service",
+            stage = "readiness_service_exited",
+            "run_readiness"
+        );
+    }
+    Ok(outcome)
+}
+
+fn wait_for_service_completion(
+    duration: Duration,
+    mut completed: impl FnMut() -> Result<bool>,
+) -> Result<ManagedServiceWait> {
+    let end = Instant::now()
+        .checked_add(duration)
+        .ok_or_else(|| Failure::new(Code::InvalidInput, "Duration is too large."))?;
+    loop {
+        check_cancelled()?;
+        if completed()? {
+            return Ok(ManagedServiceWait::Exited);
+        }
+        let remaining = end.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Ok(ManagedServiceWait::Elapsed);
+        }
+        thread::sleep(POLL.min(remaining));
+    }
+}
+
 fn check_cancelled() -> Result<()> {
     runtime::check_cancelled()
 }
@@ -4491,6 +4542,20 @@ mod lifecycle_tests {
             queued_probe_result(&receiver, deadline, Some(deadline)),
             Some(Ok(()))
         ));
+    }
+
+    #[test]
+    fn managed_service_wait_rechecks_completion_before_its_delay_elapses() {
+        let mut checks = 0;
+
+        let outcome = wait_for_service_completion(Duration::from_secs(1), || {
+            checks += 1;
+            Ok(checks == 2)
+        })
+        .unwrap();
+
+        assert!(matches!(outcome, ManagedServiceWait::Exited));
+        assert_eq!(checks, 2);
     }
 
     #[test]
