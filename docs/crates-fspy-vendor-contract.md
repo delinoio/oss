@@ -34,6 +34,7 @@ The low-level `NtCreateUserProcess` hook records the attempted image. A successf
 Windows preload attachment and detachment check the returned Detours `LONG` status from each transaction operation. A failed attach prevents DLL initialization from reporting a complete trace.
 
 Windows access classification treats deletion, file metadata and extended-attribute mutation, directory-child deletion, and security-owner/DACL mutation rights as writes. Combined read/write masks remain both inputs and outputs; maximum-allowed access is classified conservatively.
+`NtCreateFile` also classifies create, open-or-create, overwrite, and supersede dispositions as writes even when the requested access mask is read-only; an open-or-create attempt remains conservatively a write when the file already exists.
 Windows handle-to-path lookup retries boundedly when the required UTF-16 buffer grows between calls. A persistently changing path returns an error to the access recorder instead of panicking or reporting an unchecked path.
 Windows NT file hooks treat null `OBJECT_ATTRIBUTES` as having no recordable pathname and forward the native call unchanged, preserving the system's error behavior without dereferencing the null pointer.
 

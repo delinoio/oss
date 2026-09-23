@@ -3,9 +3,9 @@ use std::mem::{offset_of, size_of};
 use fspy_shared::ipc::{AccessMode, IpcPath, PathAccess};
 use ntapi::{
     ntioapi::{
-        FILE_INFORMATION_CLASS, NtQueryDirectoryFile, NtQueryFullAttributesFile,
-        NtQueryInformationByName, PFILE_BASIC_INFORMATION, PFILE_NETWORK_OPEN_INFORMATION,
-        PIO_APC_ROUTINE, PIO_STATUS_BLOCK,
+        FILE_CREATE, FILE_INFORMATION_CLASS, FILE_OPEN_IF, FILE_OVERWRITE, FILE_OVERWRITE_IF,
+        FILE_SUPERSEDE, NtQueryDirectoryFile, NtQueryFullAttributesFile, NtQueryInformationByName,
+        PFILE_BASIC_INFORMATION, PFILE_NETWORK_OPEN_INFORMATION, PIO_APC_ROUTINE, PIO_STATUS_BLOCK,
     },
     ntpsapi::{
         NtCreateUserProcess, PPS_ATTRIBUTE_LIST, PPS_CREATE_INFO, PS_ATTRIBUTE,
@@ -241,7 +241,12 @@ static DETOUR_NT_CREATE_FILE: Detour<
             ) -> HFILE {
                 // SAFETY: intercepting file open to record access before forwarding to real
                 // function
-                unsafe { handle_open(desired_access, object_attributes) };
+                unsafe {
+                    handle_open(
+                        create_file_access_mode(desired_access, create_disposition),
+                        object_attributes,
+                    )
+                };
 
                 // SAFETY: calling the original NtCreateFile with all original arguments
                 unsafe {
@@ -263,6 +268,41 @@ static DETOUR_NT_CREATE_FILE: Detour<
             new_nt_create_file
         })
     };
+
+fn create_file_access_mode(desired_access: ACCESS_MASK, disposition: ULONG) -> AccessMode {
+    let mode = crate::windows::winapi_utils::access_mask_to_mode(desired_access);
+    match disposition {
+        FILE_SUPERSEDE | FILE_CREATE | FILE_OPEN_IF | FILE_OVERWRITE | FILE_OVERWRITE_IF => {
+            mode.union(AccessMode::WRITE)
+        }
+        _ => mode,
+    }
+}
+
+#[cfg(test)]
+mod create_file_tests {
+    use super::*;
+
+    #[test]
+    fn creating_or_replacing_with_read_access_is_a_write() {
+        for disposition in [
+            FILE_SUPERSEDE,
+            FILE_CREATE,
+            FILE_OPEN_IF,
+            FILE_OVERWRITE,
+            FILE_OVERWRITE_IF,
+        ] {
+            assert_eq!(
+                create_file_access_mode(GENERIC_READ, disposition),
+                AccessMode::READ.union(AccessMode::WRITE)
+            );
+        }
+        assert_eq!(
+            create_file_access_mode(GENERIC_READ, ntapi::ntioapi::FILE_OPEN),
+            AccessMode::READ
+        );
+    }
+}
 
 static DETOUR_NT_OPEN_FILE: Detour<
     unsafe extern "system" fn(
