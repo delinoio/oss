@@ -7,6 +7,8 @@
 
 ### Scope in This Domain
 
+- `crates/forge-tree-doc`, `crates/forge-pptx`, `crates/delino-forge`: private Forge DSL, preserving PPTX adapter, and local CLI/stdio MCP. Follow `docs/crates-forge-foundation.md`; keep structured logs free of document content and keep source writes behind explicit export.
+
 - `crates/binpm`: Rust-based Node-free binary package manager for release assets.
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
 - `crates/clibox`: non-publishable Rust executable distributed through npm and native packages.
