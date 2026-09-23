@@ -956,10 +956,16 @@ int main(int argc, char **argv) {
         .spawn()
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
-    while !marker.exists() && Instant::now() < deadline {
+    let tracee: i32 = loop {
+        if let Some(pid) = fs::read_to_string(&marker)
+            .ok()
+            .and_then(|value| value.parse().ok())
+        {
+            break pid;
+        }
+        assert!(Instant::now() < deadline, "tracee PID was not published");
         std::thread::sleep(Duration::from_millis(10));
-    }
-    let tracee: i32 = fs::read_to_string(&marker).unwrap().parse().unwrap();
+    };
     std::thread::sleep(Duration::from_millis(150));
     assert!(
         child.try_wait().unwrap().is_none(),
