@@ -1949,7 +1949,7 @@ impl Trace<'_> {
                 output,
                 capacity,
                 logical,
-            } => {
+            } if returned >= 0 => {
                 let bytes =
                     CString::new(logical.as_os_str().as_bytes()).map_err(|_| injection_failed())?;
                 if bytes.as_bytes_with_nul().len() > capacity {

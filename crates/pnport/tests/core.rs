@@ -498,6 +498,54 @@ int main(int argc, char **argv) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_getcwd_preserves_kernel_errors_for_virtual_directories() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("getcwd-fault.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(void) {
+    if (chdir("node_modules/dep")) return 40;
+    errno = 0;
+    if (syscall(SYS_getcwd, (void *)1, 4096) != -1 || errno != EFAULT) return 41;
+    errno = 0;
+    char output[4096];
+    if (syscall(SYS_getcwd, output, 0) != -1 || errno != ERANGE) return 42;
+    if (syscall(SYS_getcwd, output, sizeof(output)) <= 0) return 43;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("getcwd-fault");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_proc_cwd_aliases_preserve_virtual_dependency_ownership() {
     use std::process::Command;
     let root = fixture();
