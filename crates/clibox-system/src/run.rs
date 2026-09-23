@@ -1406,11 +1406,12 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
             let _ = completion_tx.send(completion);
         });
     if let Err(error) = completion_thread {
+        let failure = Failure::io(&error);
         tracing::error!(
             operation = "run",
             pid,
             stage = "completion_spawn_failed",
-            error = %error,
+            code = ?failure.code,
             "run_child"
         );
         let mut child = child
@@ -1446,7 +1447,7 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
             }
             let _ = child.wait();
         }
-        return Err(Failure::io(&error));
+        return Err(failure);
     }
     Ok(OwnedChild {
         pid,
