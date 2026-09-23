@@ -1,6 +1,7 @@
 use std::os::raw::c_void;
 
 // $crate::macros::
+#[cfg(not(feature = "pnport"))]
 macro_rules! intercept {
     ($name: ident $((64))? : $fn_sig: ty) => {
         const _: () = {
@@ -37,6 +38,7 @@ macro_rules! intercept {
     };
 }
 
+#[cfg(not(feature = "pnport"))]
 pub(crate) use intercept;
 
 #[doc(hidden)]

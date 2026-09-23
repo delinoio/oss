@@ -1,7 +1,10 @@
 // These hooks preserve pnport's C ABI while registering in fspy's Mach-O
 // interpose section. Keep the lint scoped to this imported 2021-era hook
 // module until each unsafe libc operation is migrated to an explicit block.
-#![allow(unsafe_op_in_unsafe_fn)]
+#![allow(
+    unsafe_op_in_unsafe_fn,
+    reason = "the imported C ABI hook bodies still use the Rust 2021 unsafe convention"
+)]
 
 use std::{
     cell::Cell,
@@ -17,7 +20,15 @@ use std::{
     },
 };
 
-use libc::*;
+#[cfg(target_os = "linux")]
+use libc::{__errno_location, RTLD_NEXT, dlsym};
+use libc::{
+    __error, _exit, AT_FDCWD, AT_SYMLINK_NOFOLLOW, DIR, EBADF, EEXIST, EFAULT, EINVAL, EIO,
+    ENAMETOOLONG, ENOENT, ENOMEM, ENOTDIR, ENOTSUP, ERANGE, EROFS, F_GETPATH, FILE, O_APPEND,
+    O_CREAT, O_RDWR, O_TRUNC, O_WRONLY, PATH_MAX, S_IFDIR, S_IFLNK, S_IFMT, W_OK, c_char, c_int,
+    c_void, dirfd, fcntl, fileno, free, fstat, getpid, malloc, mode_t, off_t, pid_t,
+    posix_spawn_file_actions_t, posix_spawnattr_t, size_t, ssize_t, stat, strcpy,
+};
 use pnport_core::{
     cache::Cache,
     diagnostic::Code,
@@ -67,10 +78,9 @@ fn fail(code: Code) -> c_int {
     if !matches!(
         code,
         Code::PnportResolutionFailed | Code::PnportCommandNotFound
-    ) {
-        if let Some(session) = SESSION.get() {
-            let _ = fs::write(session.join("failure"), code.as_str());
-        }
+    ) && let Some(session) = SESSION.get()
+    {
+        let _ = fs::write(session.join("failure"), code.as_str());
     }
     match code {
         Code::PnportResolutionFailed | Code::PnportCommandNotFound => ENOENT,
@@ -152,16 +162,16 @@ unsafe fn translate(
     if write && translation.readonly {
         return Err(EROFS);
     }
+    drop(runtime);
     let physical = CString::new(translation.physical.as_os_str().as_bytes()).map_err(|_| EINVAL)?;
     Ok((physical, translation))
 }
 unsafe fn track(fd: c_int, translation: Translation) {
-    if fd >= 0 {
-        if let Some(runtime) = RUNTIME.get() {
-            if let Ok(mut runtime) = runtime.lock() {
-                runtime.descriptors.insert(fd, translation);
-            }
-        }
+    if fd >= 0
+        && let Some(runtime) = RUNTIME.get()
+        && let Ok(mut runtime) = runtime.lock()
+    {
+        runtime.descriptors.insert(fd, translation);
     }
 }
 
@@ -408,7 +418,8 @@ hook!(dlopen, pnport_dlopen, (path:*const c_char,flags:c_int) -> *mut c_void, {
 unsafe fn virtual_link_metadata(output: *mut stat, translation: &Translation) {
     if translation.virtual_link {
         (*output).st_mode = ((*output).st_mode & !S_IFMT) | S_IFLNK;
-        (*output).st_size = translation.logical.as_os_str().as_bytes().len() as off_t;
+        (*output).st_size =
+            off_t::try_from(translation.logical.as_os_str().as_bytes().len()).unwrap_or(off_t::MAX);
     }
 }
 
@@ -455,7 +466,7 @@ hook!(readlink, pnport_readlink, (path:*const c_char, output:*mut c_char, size:s
     if size == 0 { errno(EINVAL); return -1; }
     if output.is_null() { errno(EFAULT); return -1; }
     let bytes = translation.logical.as_os_str().as_bytes(); let count = size.min(bytes.len());
-    ptr::copy_nonoverlapping(bytes.as_ptr(),output.cast(),count); count as ssize_t
+    ptr::copy_nonoverlapping(bytes.as_ptr(),output.cast(),count); count.cast_signed()
 });
 hook!(chdir, pnport_chdir, (path:*const c_char) -> c_int, {
     let original = original!(chdir, unsafe extern "C" fn(*const c_char)->c_int);
@@ -463,7 +474,7 @@ hook!(chdir, pnport_chdir, (path:*const c_char) -> c_int, {
     if RUNTIME.get().is_none() { return original(path); }
     let (path,translation) = translated!(path,AT_FDCWD,false,-1);
     let result = original(path.as_ptr());
-    if result == 0 { if let Ok(mut runtime) = RUNTIME.get().unwrap().lock() { runtime.cwd=Some(translation.logical); } } result
+    if result == 0 && let Ok(mut runtime) = RUNTIME.get().unwrap().lock() { runtime.cwd=Some(translation.logical); } result
 });
 hook!(getcwd, pnport_getcwd, (buffer:*mut c_char,size:size_t) -> *mut c_char, {
     let original = original!(getcwd,unsafe extern "C" fn(*mut c_char,size_t)->*mut c_char);
@@ -479,7 +490,7 @@ hook!(getcwd, pnport_getcwd, (buffer:*mut c_char,size:size_t) -> *mut c_char, {
 hook!(close, pnport_close, (fd:c_int) -> c_int, {
     let original=original!(close,unsafe extern "C" fn(c_int)->c_int);
     let Some(_guard)=Guard::enter() else {return original(fd);};
-    if let Some(runtime)=RUNTIME.get() {if let Ok(mut runtime)=runtime.lock() {runtime.descriptors.remove(&fd);}}
+    if let Some(runtime)=RUNTIME.get() && let Ok(mut runtime)=runtime.lock() {runtime.descriptors.remove(&fd);}
     original(fd)
 });
 
@@ -514,19 +525,19 @@ hook!(fchdir, pnport_fchdir, (fd:c_int) -> c_int, {
     let original=original!(fchdir,unsafe extern "C" fn(c_int)->c_int);
     let Some(_guard)=Guard::enter() else {return original(fd);};
     let result=original(fd);
-    if result==0 {if let Some(runtime)=RUNTIME.get() {if let Ok(mut runtime)=runtime.lock() {runtime.cwd=runtime.descriptors.get(&fd).map(|t|t.logical.clone());}}}result
+    if result==0 && let Some(runtime)=RUNTIME.get() && let Ok(mut runtime)=runtime.lock() {runtime.cwd=runtime.descriptors.get(&fd).map(|t|t.logical.clone());}result
 });
 hook!(dup, pnport_dup, (fd:c_int) -> c_int, {
     let original=original!(dup,unsafe extern "C" fn(c_int)->c_int);
     let Some(_guard)=Guard::enter() else {return original(fd);};
     let result=original(fd);
-    if result>=0 {if let Some(runtime)=RUNTIME.get() {if let Ok(mut runtime)=runtime.lock() {if let Some(t)=runtime.descriptors.get(&fd).cloned() {runtime.descriptors.insert(result,t);}}}} result
+    if result>=0 && let Some(runtime)=RUNTIME.get() && let Ok(mut runtime)=runtime.lock() && let Some(t)=runtime.descriptors.get(&fd).cloned() {runtime.descriptors.insert(result,t);} result
 });
 hook!(dup2, pnport_dup2, (fd:c_int,newfd:c_int) -> c_int, {
     let original=original!(dup2,unsafe extern "C" fn(c_int,c_int)->c_int);
     let Some(_guard)=Guard::enter() else {return original(fd,newfd);};
     let result=original(fd,newfd);
-    if result>=0 {if let Some(runtime)=RUNTIME.get() {if let Ok(mut runtime)=runtime.lock() {let t=runtime.descriptors.get(&fd).cloned();runtime.descriptors.remove(&newfd);if let Some(t)=t {runtime.descriptors.insert(newfd,t);}}}} result
+    if result>=0 && let Some(runtime)=RUNTIME.get() && let Ok(mut runtime)=runtime.lock() {let t=runtime.descriptors.get(&fd).cloned();runtime.descriptors.remove(&newfd);if let Some(t)=t {runtime.descriptors.insert(newfd,t);}} result
 });
 
 static INJECTION_ENV: OnceLock<Vec<CString>> = OnceLock::new();
@@ -575,6 +586,6 @@ hook!(posix_spawn,pnport_spawn,(pid:*mut pid_t,path:*const c_char,actions:*const
     let (path,translation)=match translate(path,AT_FDCWD,false) {Ok(value)=>value,Err(code)=>return code};
     if let Err(error)=pnport_core::executable::validate(&translation.physical) {return fail(error.code);}
     let env=match child_env(envp.cast()) {Ok(env)=>env,Err(code)=>return code};
-    let mut pointers:Vec<_>=env.iter().map(|e|e.as_ptr() as *mut c_char).collect();pointers.push(ptr::null_mut());
+    let mut pointers:Vec<_>=env.iter().map(|e|e.as_ptr().cast_mut()).collect();pointers.push(ptr::null_mut());
     original(pid,path.as_ptr(),actions,attributes,argv,pointers.as_ptr())
 });
