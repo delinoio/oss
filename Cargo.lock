@@ -4001,6 +4001,7 @@ dependencies = [
  "fspy_shared",
  "memmap2",
  "nix",
+ "pnport-core",
  "stackalloc",
  "tempfile",
  "wincode",

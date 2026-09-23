@@ -1,13 +1,13 @@
 use std::{
     convert::Infallible,
     ffi::OsStr,
-    fs,
     os::unix::ffi::{OsStrExt, OsStringExt},
     path::{Path, absolute},
     process::Command,
 };
 
 use nix::errno::Errno;
+use pnport_core::diagnostic::Code;
 
 use crate::{
     exec::{Exec, append_path_env, ensure_env},
@@ -27,17 +27,15 @@ impl PreExec {
 }
 
 fn admit_injection(program: &Path) -> nix::Result<()> {
-    // Resolve symlinks and parent components before checking whether dyld will
-    // ignore the preload for the executable that the kernel actually opens.
-    let program = fs::canonicalize(program)
-        .map_err(|error| error.raw_os_error().map_or(Errno::EIO, Errno::from_raw))?;
-    if ["/bin", "/sbin", "/usr/bin", "/usr/sbin", "/System"]
-        .iter()
-        .any(|prefix| program.starts_with(prefix))
-    {
-        return Err(Errno::ENOTSUP);
-    }
-    Ok(())
+    // The shared pnport admission inspects the canonical Mach-O slice,
+    // signature, and hardened-runtime entitlements before either fspy or
+    // pnport claims a complete interposed trace.
+    pnport_core::executable::validate(program).map_err(|error| match error.code {
+        Code::PnportCommandNotFound => Errno::ENOENT,
+        Code::PnportCommandNotExecutable => Errno::EACCES,
+        Code::PnportUnsupportedOperation => Errno::ENOTSUP,
+        _ => Errno::EIO,
+    })
 }
 
 /// Configure the pnport supervisor's already-admitted macOS command with the
@@ -46,7 +44,8 @@ fn admit_injection(program: &Path) -> nix::Result<()> {
 /// # Errors
 ///
 /// Returns `ENOTSUP` when the executable is protected from dyld interposition,
-/// or the filesystem error when its canonical path cannot be resolved.
+/// `ENOENT` when it cannot be found, or `EACCES` when it is not executable or
+/// its signed image cannot be validated.
 pub fn configure_pnport_command(
     command: &mut Command,
     program: &Path,
@@ -89,7 +88,7 @@ pub fn handle_exec(
 
 #[cfg(test)]
 mod tests {
-    use std::{os::unix::fs::symlink, path::Path};
+    use std::{fs, os::unix::fs::symlink, path::Path, process::Command};
 
     use nix::errno::Errno;
 
@@ -110,5 +109,60 @@ mod tests {
             admit_injection(&directory.path().join("missing")),
             Err(Errno::ENOENT)
         );
+    }
+
+    #[test]
+    fn hardened_executable_requires_injection_entitlements() {
+        let directory = tempfile::tempdir().expect("create temporary directory");
+        let source = directory.path().join("tool.c");
+        let executable = directory.path().join("tool");
+        fs::write(&source, "int main(void) { return 0; }\n").expect("write source");
+        assert!(
+            Command::new("cc")
+                .arg(&source)
+                .arg("-o")
+                .arg(&executable)
+                .status()
+                .expect("compile fixture")
+                .success()
+        );
+        assert_eq!(admit_injection(&executable), Ok(()));
+
+        assert!(
+            Command::new("codesign")
+                .args(["--force", "--sign", "-", "--options", "runtime"])
+                .arg(&executable)
+                .status()
+                .expect("sign hardened fixture")
+                .success()
+        );
+        assert_eq!(admit_injection(&executable), Err(Errno::ENOTSUP));
+
+        let entitlements = directory.path().join("entitlements.plist");
+        fs::write(
+            &entitlements,
+            "<?xml version=\"1.0\"?><plist \
+             version=\"1.0\"><dict><key>com.apple.security.cs.allow-dyld-environment-variables</\
+             key><true/><key>com.apple.security.cs.disable-library-validation</key><true/></\
+             dict></plist>",
+        )
+        .expect("write entitlements");
+        assert!(
+            Command::new("codesign")
+                .args([
+                    "--force",
+                    "--sign",
+                    "-",
+                    "--options",
+                    "runtime",
+                    "--entitlements"
+                ])
+                .arg(&entitlements)
+                .arg(&executable)
+                .status()
+                .expect("sign injectable fixture")
+                .success()
+        );
+        assert_eq!(admit_injection(&executable), Ok(()));
     }
 }

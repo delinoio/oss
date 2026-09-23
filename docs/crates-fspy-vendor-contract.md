@@ -12,6 +12,8 @@ The fork joins the root Cargo workspace, uses its pinned nightly and dependency 
 
 `pnport-core` owns the graph, cache, virtual path and executable admission code shared by pnport and the preload. On macOS, the `pnport` feature of `fspy_preload_unix` compiles pnport's virtualizing hooks through fspy's Mach-O interpose entry layout. It preserves the pnport preload ABI marker, descriptor tracking, read-only checks, child propagation and constructor entry/ready/failure signals. The pnport supervisor retains exit, cancellation and input-watch behavior. Linux and Windows continue to use `pnport-preload` in this change; no new runtime claim is made for those platforms.
 
+Both macOS fspy and pnport command admission use `pnport-core` to validate the selected Mach-O slice, offline signature, and hardened-runtime entitlements before injection. A signed image without the required DYLD-environment and disabled-library-validation entitlements is rejected before spawn.
+
 ## Maintenance and validation
 
 For an update, select an exact upstream commit, compare all imported trees and external Git revisions, update licenses and provenance, then reapply and review every local change. Verify the locked Cargo graph, formatting, Clippy and root `cargo test`. Build the macOS pnport-mode fspy preload before pnport fixture and TypeScript tests. Run Linux and Windows build checks on their native CI hosts. Inspect npm/native package inventories, ABI marker, installed license notices and the six-host release gate. No GitHub repository fork, crates.io publication or pnport release is part of this source fork.

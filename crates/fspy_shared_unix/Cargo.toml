@@ -24,6 +24,9 @@ elf = { workspace = true }
 fspy_seccomp_unotify = { workspace = true, features = ["target"] }
 memmap2 = { workspace = true }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+pnport-core = { path = "../pnport-core" }
+
 [lints]
 workspace = true
 
