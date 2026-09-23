@@ -386,6 +386,12 @@ int main(int argc, char **argv) {
     errno = 0;
     if (fchmod(fd, 0600) != -1 || errno != EROFS) return 34;
     close(fd);
+    snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d/file.txt", dirfd(dir));
+    errno = 0;
+    if (open(fd_path, O_WRONLY) != -1 || errno != EROFS) return 54;
+    fd = open(fd_path, O_RDONLY);
+    if (fd < 0 || fchmod(fd, 0600) != -1 || errno != EROFS) return 55;
+    close(fd);
     closedir(dir);
     if (lstat("node_modules/dep", &info) || !S_ISLNK(info.st_mode)) return 27;
     errno = 0;

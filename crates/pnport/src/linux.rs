@@ -750,16 +750,24 @@ impl Trace<'_> {
         })
     }
 
-    fn proc_descriptor(&self, pid: i32, path: &Path) -> Option<Translation> {
+    fn proc_descriptor(&self, pid: i32, path: &Path) -> Option<(Translation, bool)> {
         let text = path.to_str()?;
-        let fd = text
+        let remainder = text
             .strip_prefix("/proc/self/fd/")
             .or_else(|| text.strip_prefix("/proc/thread-self/fd/"))
             .or_else(|| text.strip_prefix("/dev/fd/"))
-            .or_else(|| text.strip_prefix(&format!("/proc/{pid}/fd/")))?
-            .parse::<i32>()
-            .ok()?;
-        self.fds.get(&Self::group(pid))?.get(&fd).cloned()
+            .or_else(|| text.strip_prefix(&format!("/proc/{pid}/fd/")))?;
+        let (number, suffix) = remainder
+            .split_once('/')
+            .map_or((remainder, None), |(number, suffix)| (number, Some(suffix)));
+        let fd = number.parse::<i32>().ok()?;
+        let mut entry = self.fds.get(&Self::group(pid))?.get(&fd)?.clone();
+        if let Some(suffix) = suffix {
+            entry.logical.push(suffix);
+            entry.physical.push(suffix);
+            entry.virtual_link = false;
+        }
+        Some((entry, suffix.is_none()))
     }
 
     fn path_call(&mut self, pid: i32, mut regs: Registers) -> Result<bool> {
@@ -942,11 +950,11 @@ impl Trace<'_> {
                 _ => {}
             }
         }
-        if let Some(descriptor) = (!in_root)
+        if let Some((descriptor, exact_fd)) = (!in_root)
             .then(|| self.proc_descriptor(pid, &original))
             .flatten()
         {
-            if call == libc::SYS_readlinkat || call == SYS_READLINK {
+            if exact_fd && (call == libc::SYS_readlinkat || call == SYS_READLINK) {
                 let (output, capacity) = if call == libc::SYS_readlinkat {
                     (argument(&regs, 2), argument(&regs, 3) as usize)
                 } else {
