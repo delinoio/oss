@@ -925,7 +925,6 @@ impl Trace<'_> {
         translation: &Translation,
         path_arg: usize,
         argv_arg: usize,
-        envp_arg: usize,
         empty_path: bool,
     ) -> Result<bool> {
         if translation.logical == translation.physical {
@@ -940,7 +939,7 @@ impl Trace<'_> {
             return Ok(false);
         }
         let original_argv = read_pointer_vector(pid, argument(regs, argv_arg))?;
-        let search_path = child_search_path(pid, argument(regs, envp_arg))?;
+        let search_path = child_search_path(pid, argument(regs, argv_arg + 1))?;
         let cwd = self.base(pid, libc::AT_FDCWD, Path::new("."))?;
         let prepared = pnport::executable::prepare_with_context(
             self.view,
@@ -1160,7 +1159,6 @@ impl Trace<'_> {
                             &translation,
                             path_arg,
                             2,
-                            3,
                             true,
                         )? {
                             return Ok(true);
@@ -1297,16 +1295,7 @@ impl Trace<'_> {
         };
         if call == libc::SYS_execve || call == libc::SYS_execveat {
             let argv_arg = if call == libc::SYS_execve { 1 } else { 2 };
-            let envp_arg = if call == libc::SYS_execve { 2 } else { 3 };
-            if self.prepare_script_exec(
-                pid,
-                &mut regs,
-                &translation,
-                path_arg,
-                argv_arg,
-                envp_arg,
-                false,
-            )? {
+            if self.prepare_script_exec(pid, &mut regs, &translation, path_arg, argv_arg, false)? {
                 return Ok(true);
             }
         }
