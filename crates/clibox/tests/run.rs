@@ -875,6 +875,54 @@ fn external_service_waits_after_an_unready_preflight() {
 }
 
 #[test]
+fn managed_service_waits_after_an_unready_preflight() {
+    let home = tempfile::tempdir().unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let (observed_tx, observed_rx) = std::sync::mpsc::sync_channel(1);
+    let server = thread::spawn(move || {
+        let mut observed = Vec::new();
+        for status in ["503 Service Unavailable", "204 No Content"] {
+            let (mut stream, _) = listener.accept().unwrap();
+            observed.push(std::time::Instant::now());
+            let mut request = [0u8; 1024];
+            let _ = stream.read(&mut request);
+            stream
+                .write_all(format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\n\r\n").as_bytes())
+                .unwrap();
+        }
+        observed_tx.send(observed).unwrap();
+    });
+    let output = command(
+        home.path(),
+        &[
+            "run",
+            "with-service",
+            &format!("http://{address}/health"),
+            "--interval",
+            "100ms",
+            "--service",
+            "sh",
+            "-c",
+            "sleep 30",
+            "--",
+            "sh",
+            "-c",
+            "exit 0",
+        ],
+    )
+    .output()
+    .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let observed = observed_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert!(
+        observed[1].saturating_duration_since(observed[0]) >= Duration::from_millis(80),
+        "the first managed-service probe did not honor the configured interval: {observed:?}"
+    );
+    server.join().unwrap();
+}
+
+#[test]
 fn external_service_waits_for_delayed_readiness() {
     let home = tempfile::tempdir().unwrap();
     let reservation = TcpListener::bind("127.0.0.1:0").unwrap();

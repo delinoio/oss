@@ -534,6 +534,13 @@ fn with_service(options: Service) -> Result<Outcome> {
 
     let service_plan = service.expect("service is checked above");
     let mut service_child = spawn(&service_plan, OutputMode::Service)?;
+    // The retryable preflight is the first unsuccessful probe. Keep the
+    // configured cadence before the managed service's first post-start probe,
+    // just as external service observation does.
+    if let Err(error) = sleep_cancellable(clip_to_deadline(options.interval, ready_deadline)) {
+        let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
+        return Err(error);
+    }
     loop {
         if runtime::cancelled() {
             let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
