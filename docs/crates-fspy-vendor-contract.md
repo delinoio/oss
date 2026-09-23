@@ -16,6 +16,8 @@ Both macOS fspy and pnport command admission use `pnport-core` to validate the s
 
 The generic fspy runner creates a random, user-private preload directory for each process instead of using a fixed shared temporary path. The directory remains owned for the runner's lifetime. `materialized_artifact` checks the bytes of any pre-existing regular artifact without following Unix symlinks before returning its path; a collision with different bytes fails initialization.
 
+On Windows, Detours requires an ANSI DLL path. The runner round-trips the materialized path through the active ANSI code page, then tries the same file's short path if the original loses characters. If neither path round-trips exactly, initialization fails before spawning a child.
+
 On Linux, a seccomp notification whose access cannot be recorded still resumes the target syscall. The supervisor retains the recording error and fails collection after the target exits, so callers cannot treat the partial trace as complete.
 
 The Unix preload forwards an intercepted filesystem call after a path-resolution error and marks the shared channel incomplete first. The receiver rejects that channel at seal time instead of reporting a partial trace as complete.

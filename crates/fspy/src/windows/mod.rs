@@ -6,6 +6,7 @@ use std::{
         io::{AsRawHandle, BorrowedHandle},
     },
     path::Path,
+    ptr,
     sync::Arc,
 };
 
@@ -20,9 +21,13 @@ use ntapi::{ntpsapi::NtResumeProcess, ntrtl::RtlNtStatusToDosError};
 use tokio_util::sync::CancellationToken;
 use winapi::{
     shared::{minwindef::TRUE, ntdef::NT_SUCCESS},
-    um::winbase::CREATE_SUSPENDED,
+    um::{
+        fileapi::GetShortPathNameW,
+        stringapiset::{MultiByteToWideChar, WideCharToMultiByte},
+        winbase::CREATE_SUSPENDED,
+        winnls::CP_ACP,
+    },
 };
-use winsafe::co::{CP, WC};
 
 use crate::{
     ChildTermination, TrackedChild, command::Command, error::SpawnError, ipc::ChannelAccesses,
@@ -54,19 +59,24 @@ pub struct SpyImpl {
 impl SpyImpl {
     pub fn init_in(path: &Path) -> io::Result<Self> {
         let dll_path = INTERPOSE_CDYLIB.materialize().suffix(".dll").at(path)?;
-
         let wide_dll_path = dll_path.as_os_str().encode_wide().collect::<Vec<u16>>();
-        let mut ansi_dll_path =
-            winsafe::WideCharToMultiByte(CP::ACP, WC::NoValue, &wide_dll_path, None, None)
-                .map_err(|err| io::Error::from_raw_os_error(err.raw().cast_signed()))?;
-
-        ansi_dll_path.push(0);
-
-        // SAFETY: we just pushed a NUL byte, so the slice is NUL-terminated
-        let ansi_dll_path_with_nul =
-            unsafe { CStr::from_bytes_with_nul_unchecked(ansi_dll_path.as_slice()) };
+        let ansi_dll_path_with_nul = match encode_ansi_path(&wide_dll_path)? {
+            Some(path) => path,
+            None => {
+                // Detours accepts an ANSI DLL path even from its wide process
+                // APIs. A short alias can name the same file without losing
+                // Unicode characters under the process ANSI code page.
+                let short_path = short_path(&dll_path)?;
+                encode_ansi_path(&short_path)?.ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::Unsupported,
+                        "the preload DLL has no lossless ANSI or short path for Detours",
+                    )
+                })?
+            }
+        };
         Ok(Self {
-            ansi_dll_path_with_nul: ansi_dll_path_with_nul.into(),
+            ansi_dll_path_with_nul,
         })
     }
 
@@ -183,4 +193,110 @@ impl SpyImpl {
             .boxed(),
         })
     }
+}
+
+fn encode_ansi_path(wide_path: &[u16]) -> io::Result<Option<Arc<CStr>>> {
+    let wide_len = i32::try_from(wide_path.len())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "preload DLL path is too long"))?;
+    // SAFETY: the input slice is valid for `wide_len` code units. Null output
+    // and default-character pointers request sizing without substitution
+    // parameters, which also supports a UTF-8 active ANSI code page.
+    let byte_len = unsafe {
+        WideCharToMultiByte(
+            CP_ACP,
+            0,
+            wide_path.as_ptr(),
+            wide_len,
+            ptr::null_mut(),
+            0,
+            ptr::null(),
+            ptr::null_mut(),
+        )
+    };
+    if byte_len == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut bytes = vec![0; usize::try_from(byte_len).expect("positive Windows length")];
+    // SAFETY: `bytes` has exactly the size returned by the preceding call.
+    let written = unsafe {
+        WideCharToMultiByte(
+            CP_ACP,
+            0,
+            wide_path.as_ptr(),
+            wide_len,
+            bytes.as_mut_ptr().cast(),
+            byte_len,
+            ptr::null(),
+            ptr::null_mut(),
+        )
+    };
+    if written != byte_len {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: `bytes` is valid for `byte_len` bytes; a null output buffer
+    // requests the number of UTF-16 code units needed for the round trip.
+    let decoded_len = unsafe {
+        MultiByteToWideChar(
+            CP_ACP,
+            0,
+            bytes.as_ptr().cast(),
+            byte_len,
+            ptr::null_mut(),
+            0,
+        )
+    };
+    if decoded_len == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut decoded = vec![0; usize::try_from(decoded_len).expect("positive Windows length")];
+    // SAFETY: `decoded` has the capacity returned by the preceding call.
+    let decoded_written = unsafe {
+        MultiByteToWideChar(
+            CP_ACP,
+            0,
+            bytes.as_ptr().cast(),
+            byte_len,
+            decoded.as_mut_ptr(),
+            decoded_len,
+        )
+    };
+    if decoded_written != decoded_len {
+        return Err(io::Error::last_os_error());
+    }
+    if decoded != wide_path {
+        return Ok(None);
+    }
+    bytes.push(0);
+    let path = CStr::from_bytes_with_nul(&bytes).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "the preload DLL path contains NUL",
+        )
+    })?;
+    Ok(Some(Arc::from(path)))
+}
+
+fn short_path(path: &Path) -> io::Result<Vec<u16>> {
+    let mut wide = path.as_os_str().encode_wide().collect::<Vec<_>>();
+    wide.push(0);
+    // SAFETY: the path is NUL-terminated and GetShortPathNameW accepts a
+    // null output pointer when querying the required buffer length.
+    let needed = unsafe { GetShortPathNameW(wide.as_ptr(), ptr::null_mut(), 0) };
+    if needed == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut short = vec![0; usize::try_from(needed).expect("Windows path length fits usize")];
+    // SAFETY: the input remains valid and the output buffer has `needed`
+    // UTF-16 code units, including the terminator.
+    let written = unsafe { GetShortPathNameW(wide.as_ptr(), short.as_mut_ptr(), needed) };
+    if written == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if written >= needed {
+        return Err(io::Error::other(
+            "the preload DLL short path changed during lookup",
+        ));
+    }
+    short.truncate(usize::try_from(written).expect("Windows path length fits usize"));
+    Ok(short)
 }
