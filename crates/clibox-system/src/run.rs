@@ -2338,16 +2338,17 @@ impl OwnedChild {
         }
         #[cfg(unix)]
         {
+            let direct_child_exited = self.reap_direct_child_for_cleanup()?;
             return match self.unix_ownership {
                 UnixOwnership::ProcessGroup => {
-                    if child_exit_observed_without_reaping(self.pid)? {
+                    if direct_child_exited {
                         completed_process_group_running(self.pid)
                     } else {
                         process_group_running(self.pid)
                     }
                 }
                 UnixOwnership::DirectChild => {
-                    if child_exit_observed_without_reaping(self.pid)? {
+                    if direct_child_exited {
                         Ok(false)
                     } else {
                         process_running(self.pid)
@@ -2361,6 +2362,33 @@ impl OwnedChild {
         }
         #[allow(unreachable_code)]
         runtime_failure("Owned child cleanup is unavailable on this platform.")
+    }
+
+    #[cfg(unix)]
+    fn reap_direct_child_for_cleanup(&mut self) -> Result<bool> {
+        if self.reaped {
+            return Ok(true);
+        }
+        // The completion worker keeps the direct child waitable. If that
+        // worker fails, use this independent nonblocking reap only for
+        // cleanup, so a live process group still receives termination.
+        loop {
+            let mut status = 0;
+            let observed =
+                unsafe { libc::waitpid(self.pid as libc::pid_t, &mut status, libc::WNOHANG) };
+            if observed == self.pid as libc::pid_t {
+                self.reaped = true;
+                return Ok(true);
+            }
+            if observed == 0 {
+                return Ok(false);
+            }
+            let error = io::Error::last_os_error();
+            if error.kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(Failure::io(&error));
+        }
     }
 
     #[cfg(unix)]
@@ -5082,13 +5110,14 @@ mod lifecycle_tests {
     #[cfg(unix)]
     #[test]
     fn completion_failure_still_terminates_the_owned_direct_child() {
-        let mut process = ProcessCommand::new("sh")
+        let process = ProcessCommand::new("sh")
             .args(["-c", "trap 'exit 0' TERM; while :; do :; done"])
             .spawn()
             .unwrap();
+        let pid = process.id();
         let (sender, completions) = mpsc::sync_channel(1);
         let mut child = OwnedChild {
-            pid: process.id(),
+            pid,
             unix_ownership: UnixOwnership::DirectChild,
             reaped: false,
             foreground_terminal: None,
@@ -5109,7 +5138,8 @@ mod lifecycle_tests {
         };
         assert_eq!(error.code, Code::IoFailed);
         assert!(child.cleanup(Duration::from_millis(20), None).is_ok());
-        assert!(process.try_wait().unwrap().is_some());
+        assert_eq!(unsafe { libc::kill(pid as libc::pid_t, 0) }, -1);
+        assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::ESRCH));
     }
 
     #[test]
