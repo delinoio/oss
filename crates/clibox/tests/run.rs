@@ -948,7 +948,7 @@ fn completed_workload_cleans_up_its_background_descendants() {
     let home = tempfile::tempdir().unwrap();
     let marker = home.path().join("completed-descendant-pid");
     let assignment = format!("MARKER={}", marker.display());
-    let mut wrapper = command(
+    let output = command(
         home.path(),
         &[
             "run",
@@ -961,30 +961,17 @@ fn completed_workload_cleans_up_its_background_descendants() {
             "--",
             "sh",
             "-c",
-            "sleep 30 & echo $! > \"$MARKER\"",
+            "sh -c 'trap \"printf descendant-cleanup-output >&2; exit 0\" TERM; while :; do sleep \
+             30; done' & echo $! > \"$MARKER\"",
         ],
     )
-    .stdout(Stdio::null())
-    .stderr(Stdio::null())
-    .spawn()
+    .output()
     .unwrap();
-    let deadline = std::time::Instant::now() + Duration::from_secs(3);
-    while wrapper.try_wait().unwrap().is_none() {
-        if std::time::Instant::now() >= deadline {
-            let _ = wrapper.kill();
-            let _ = wrapper.wait();
-            if let Ok(pid) = fs::read_to_string(&marker)
-                .and_then(|value| value.trim().parse::<i32>().map_err(std::io::Error::other))
-            {
-                unsafe {
-                    libc::kill(pid, libc::SIGKILL);
-                }
-            }
-            panic!("completed workload left a descendant supervising its output");
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-    assert!(wrapper.wait().unwrap().success());
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("descendant-cleanup-output"),
+        "descendant cleanup output was not forwarded: {output:?}"
+    );
     let pid = fs::read_to_string(marker)
         .unwrap()
         .trim()

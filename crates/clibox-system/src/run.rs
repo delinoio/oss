@@ -1257,28 +1257,9 @@ fn run_once(
                 return runtime_failure("Owned workload cleanup could not be confirmed.");
             }
             if descendants_running {
-                // Cleanup is bounded, but an output forwarding thread can
-                // still be blocked by the wrapper's own downstream pipe. Do
-                // not turn a successful bounded cleanup into an unbounded
-                // output join; returning drops the detached forwarders.
-                return Ok(Outcome::Child(status));
+                return finish_workload_output(&mut child, &Limits::default(), status);
             }
-            match child.join_output_within(&limits) {
-                OutputJoin::Complete if child.output_failed() => {
-                    return runtime_failure("Could not forward workload output.");
-                }
-                OutputJoin::Complete => return Ok(Outcome::Child(status)),
-                OutputJoin::Deadline => return Ok(Outcome::Code(124)),
-                OutputJoin::Cancelled => {
-                    return Err(Failure::new(
-                        Code::Cancelled,
-                        "Execution was cancelled after the workload completed.",
-                    ));
-                }
-                OutputJoin::Failed => {
-                    return runtime_failure("Could not finish forwarding workload output.");
-                }
-            }
+            return finish_workload_output(&mut child, &limits, status);
         }
         if limits_expired_at(&limits, last_activity, Instant::now()) {
             tracing::debug!(operation = "run", stage = "timeout", "run_cleanup");
@@ -1286,6 +1267,25 @@ fn run_once(
             return Ok(Outcome::Code(124));
         }
         thread::sleep(POLL);
+    }
+}
+
+fn finish_workload_output(
+    child: &mut OwnedChild,
+    limits: &Limits,
+    status: ExitStatus,
+) -> Result<Outcome> {
+    match child.join_output_within(limits) {
+        OutputJoin::Complete if child.output_failed() => {
+            runtime_failure("Could not forward workload output.")
+        }
+        OutputJoin::Complete => Ok(Outcome::Child(status)),
+        OutputJoin::Deadline => Ok(Outcome::Code(124)),
+        OutputJoin::Cancelled => Err(Failure::new(
+            Code::Cancelled,
+            "Execution was cancelled after the workload completed.",
+        )),
+        OutputJoin::Failed => runtime_failure("Could not finish forwarding workload output."),
     }
 }
 
