@@ -3170,11 +3170,12 @@ fn write_bucket(path: &Path, bucket: &Bucket) -> Result<()> {
         )
     })?;
     let temporary = parent.join(format!(
-        ".{}.{}.tmp",
+        ".{}.{}.{:032x}.tmp",
         path.file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("state"),
-        std::process::id()
+        std::process::id(),
+        rand::rng().random::<u128>()
     ));
     let result = (|| -> Result<()> {
         let mut options = OpenOptions::new();
@@ -4217,6 +4218,32 @@ mod lifecycle_tests {
 #[cfg(test)]
 mod state_key_tests {
     use super::*;
+
+    #[test]
+    fn bucket_write_ignores_a_stale_pid_temporary_file() {
+        let temporary = tempfile::tempdir().unwrap();
+        let bucket_path = temporary.path().join("admission.json");
+        let stale = temporary
+            .path()
+            .join(format!(".admission.json.{}.tmp", std::process::id()));
+        fs::write(&stale, b"interrupted write").unwrap();
+
+        write_bucket(
+            &bucket_path,
+            &Bucket {
+                version: STATE_VERSION,
+                limit: 1,
+                period_ms: 1,
+                burst: 1,
+                tokens: 1.0,
+                refill_utc_ms: 0,
+            },
+        )
+        .unwrap();
+
+        assert!(bucket_path.is_file());
+        assert!(stale.is_file());
+    }
 
     #[cfg(unix)]
     #[test]
