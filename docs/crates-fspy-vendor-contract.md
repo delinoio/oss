@@ -52,6 +52,7 @@ The Linux preload hooks the fixed-arity libc `statx` entry point. It does not in
 At root-process exit, the seccomp supervisor seals the trace. Active handlers return their already collected accesses and recording errors without waiting for surviving descendants. Existing notification listeners and a detached socket acceptor answer inherited and later installed filters with `CONTINUE`; those later accesses do not extend the sealed trace. The acceptor stays owned until the supervisor process exits because the runner does not yet own a reliable descendant-liveness boundary.
 
 The Unix preload forwards an intercepted filesystem call after a path-resolution error and marks the shared channel incomplete first. The receiver rejects that channel at seal time instead of reporting a partial trace as complete.
+Unix open-family hooks forward null pathname arguments to libc without constructing a C string, preserving the native error. A null `freopen` pathname can legitimately reopen the stream's prior file, so that call also marks the trace incomplete before forwarding.
 Linux preload accesses under `/proc` and `/sys` remain visible in the trace. Only `/dev/` paths retain the Unix client's device-path exclusion.
 
 ## Maintenance and validation

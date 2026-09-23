@@ -112,6 +112,53 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[tokio::test]
+    async fn null_open_paths_keep_native_efault() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let source = directory.path().join("null-open.c");
+        let executable = directory.path().join("null-open");
+        let input = directory.path().join("input");
+        fs::write(&input, b"input").expect("write input");
+        fs::write(
+            &source,
+            r"#include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+  if (argc != 2) return 2;
+  volatile unsigned long zero = 0;
+  const char *path = (const char *)zero;
+  if (open(path, O_RDONLY) != -1 || errno != EFAULT) return 3;
+  if (openat(AT_FDCWD, path, O_RDONLY) != -1 || errno != EFAULT) return 4;
+  int fd = open(argv[1], O_RDONLY);
+  if (fd < 0) return 5;
+  close(fd);
+  return 0;
+}
+",
+        )
+        .expect("write fixture");
+        assert!(
+            std::process::Command::new("cc")
+                .arg(&source)
+                .arg("-o")
+                .arg(&executable)
+                .status()
+                .expect("compile fixture")
+                .success()
+        );
+        let mut command = super::Command::new(&executable);
+        command.arg(&input);
+        let child = command
+            .spawn(CancellationToken::new())
+            .await
+            .expect("spawn fixture");
+        let termination = child.wait_handle.await.expect("wait for fixture");
+        assert!(termination.status.success());
+        assert!(termination.path_accesses.is_ok());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
     async fn late_seccomp_filter_continues_after_root_trace_seals() {
         let directory = tempfile::tempdir().expect("create fixture directory");
         let static_source = directory.path().join("late-static.c");
