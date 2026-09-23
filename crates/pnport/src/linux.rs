@@ -1278,6 +1278,21 @@ impl Trace<'_> {
             // flags retain the kernel's EINVAL result.
             return resume(pid, false, 0);
         }
+        if call == libc::SYS_utimensat && argument(&regs, 1) == 0 {
+            let fd = argument(&regs, 0) as i32;
+            if self
+                .fds
+                .get(&Self::group(pid))
+                .and_then(|fds| fds.get(&fd))
+                .is_some_and(|entry| entry.readonly)
+            {
+                set_argument(&mut regs, 0, u64::MAX);
+                set_registers(pid, &regs)?;
+                self.pending.insert(pid, Pending::ForcedError(libc::EROFS));
+                return resume(pid, true, 0);
+            }
+            return resume(pid, false, 0);
+        }
         if self.path_call(pid, regs).inspect_err(|error| {
             tracing::debug!(
                 action = "linux_path_failure",

@@ -378,6 +378,8 @@ int main(int argc, char **argv) {
     errno = 0;
     if (fchmod(reopened, 0600) != -1 || errno != EROFS) return 39;
     close(reopened);
+    errno = 0;
+    if (futimens(fd, NULL) != -1 || errno != EROFS) return 58;
     close(fd);
     DIR *dir = opendir("node_modules/dep");
     if (!dir) return 25;
@@ -421,6 +423,7 @@ int main(int argc, char **argv) {
     close(watcher);
     fd = open("output.txt", O_WRONLY | O_CREAT, 0600);
     if (fd < 0 || write(fd, "native", 6) != 6) return 30;
+    if (futimens(fd, NULL) != 0) return 59;
     close(fd);
     if (argc == 1) {
         if (mkdir("native-old", 0700) || symlink("native-old", "native-link")) return 49;
