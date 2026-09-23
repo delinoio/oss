@@ -2301,6 +2301,7 @@ fn open_lock(path: &Path) -> Result<File> {
     #[cfg(unix)]
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 
+    #[cfg(target_os = "macos")]
     let existed = path.try_exists().map_err(|error| Failure::io(&error))?;
     let mut options = OpenOptions::new();
     options.create(true).read(true).write(true);
