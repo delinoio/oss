@@ -18,6 +18,8 @@ The generic fspy runner creates a random, user-private preload directory for eac
 
 On Windows, Detours requires an ANSI DLL path. The runner round-trips the materialized path through the active ANSI code page, then tries the same file's short path if the original loses characters. If neither path round-trips exactly, initialization fails before spawning a child.
 
+Windows descendant hooks terminate and close a newly created suspended child when payload propagation or resumption fails inside the Detours callback; the original Win32 error remains available to the caller.
+
 On Linux, a seccomp notification whose access cannot be recorded still resumes the target syscall. The supervisor retains the recording error and fails collection after the target exits, so callers cannot treat the partial trace as complete.
 
 The Unix preload forwards an intercepted filesystem call after a path-resolution error and marks the shared channel incomplete first. The receiver rejects that channel at seal time instead of reporting a partial trace as complete.

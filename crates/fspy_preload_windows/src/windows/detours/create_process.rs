@@ -5,10 +5,12 @@ use winapi::{
         ntdef::{LPCSTR, LPSTR},
     },
     um::{
+        errhandlingapi::{GetLastError, SetLastError},
+        handleapi::CloseHandle,
         minwinbase::LPSECURITY_ATTRIBUTES,
         processthreadsapi::{
             CreateProcessA, CreateProcessW, LPPROCESS_INFORMATION, LPSTARTUPINFOA, LPSTARTUPINFOW,
-            ResumeThread,
+            ResumeThread, TerminateProcess,
         },
         winbase::CREATE_SUSPENDED,
         winnt::{LPCWSTR, LPWSTR},
@@ -40,6 +42,29 @@ impl Drop for HookGuard {
         IS_HOOKING_CREATE_PROCESS.with(|c| {
             c.set(false);
         });
+    }
+}
+
+/// Discards a child created inside a Detours callback before returning FALSE.
+/// Detours does not own the callback's process handles when the callback fails.
+///
+/// # Safety
+///
+/// `information` must point to the PROCESS_INFORMATION returned by a
+/// successful CreateProcess call, with both handles still owned by this call.
+unsafe fn discard_created_process(information: LPPROCESS_INFORMATION) {
+    // SAFETY: the caller supplies live process/thread handles. Preserve the
+    // error from payload copying or resumption across cleanup calls.
+    let error = unsafe { GetLastError() };
+    unsafe {
+        TerminateProcess((*information).hProcess, 1);
+        CloseHandle((*information).hThread);
+        CloseHandle((*information).hProcess);
+        (*information).hThread = std::ptr::null_mut();
+        (*information).hProcess = std::ptr::null_mut();
+        (*information).dwProcessId = 0;
+        (*information).dwThreadId = 0;
+        SetLastError(error);
     }
 }
 
@@ -112,12 +137,18 @@ static DETOUR_CREATE_PROCESS_W: Detour<
                     };
 
                     if ret == 0 {
+                        // SAFETY: CreateProcessW succeeded and these handles
+                        // belong to this callback until it returns success.
+                        unsafe { discard_created_process(lp_process_information) };
                         return 0;
                     }
                     if dw_creation_flags & CREATE_SUSPENDED == 0 {
                         // SAFETY: resuming the suspended child thread after DLL injection
                         let ret = unsafe { ResumeThread((*lp_process_information).hThread) };
                         if ret == (-1i32).cast_unsigned() {
+                            // SAFETY: the child is still suspended and owned
+                            // by this callback after resumption failed.
+                            unsafe { discard_created_process(lp_process_information) };
                             return 0;
                         }
                     }
@@ -238,12 +269,18 @@ static DETOUR_CREATE_PROCESS_A: Detour<
                     };
 
                     if ret == 0 {
+                        // SAFETY: CreateProcessA succeeded and these handles
+                        // belong to this callback until it returns success.
+                        unsafe { discard_created_process(lp_process_information) };
                         return 0;
                     }
                     if dw_creation_flags & CREATE_SUSPENDED == 0 {
                         // SAFETY: resuming the suspended child thread after DLL injection
                         let ret = unsafe { ResumeThread((*lp_process_information).hThread) };
                         if ret == (-1i32).cast_unsigned() {
+                            // SAFETY: the child is still suspended and owned
+                            // by this callback after resumption failed.
+                            unsafe { discard_created_process(lp_process_information) };
                             return 0;
                         }
                     }
