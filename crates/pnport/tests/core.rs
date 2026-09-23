@@ -374,7 +374,20 @@ fn peer_instances_keep_logical_identity_while_sharing_package_bytes() {
     let peer_two = view
         .translate(&root_path.join("node_modules/two/node_modules/peer/package.json"))
         .unwrap();
+    assert!(matches!(
+        pnp::fs::VPath::from(&peer_one.logical),
+        Ok(pnp::fs::VPath::Zip(_))
+    ));
+    assert!(matches!(
+        pnp::fs::VPath::from(&peer_two.logical),
+        Ok(pnp::fs::VPath::Zip(_))
+    ));
     assert_ne!(peer_one.physical, peer_two.physical);
+    assert_eq!(fs::read(&peer_one.physical).unwrap(), br#"{"name":"dep"}"#);
+    assert_eq!(
+        fs::read(&peer_two.physical).unwrap(),
+        br#"{"name":"@scope/pkg"}"#
+    );
 }
 #[test]
 fn doctor_json_is_typed_ansi_free_and_does_not_leak_invalid_data() {
