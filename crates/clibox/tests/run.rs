@@ -1119,6 +1119,58 @@ fn first_cancellation_honors_the_configured_cleanup_grace() {
 }
 
 #[test]
+fn cancellation_during_completed_descendant_cleanup_overrides_child_success() {
+    let home = tempfile::tempdir().unwrap();
+    let ready = home.path().join("descendant-cleanup-ready");
+    let ready_assignment = format!("READY={}", ready.display());
+    let mut wrapper = command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--timeout",
+            "30s",
+            "--kill-after",
+            "500ms",
+            &ready_assignment,
+            "--",
+            "sh",
+            "-c",
+            "sh -c 'trap \": > \\\"$READY\\\"\" TERM; while :; do sleep 1; done' &",
+        ],
+    )
+    .stdout(Stdio::null())
+    .stderr(Stdio::null())
+    .spawn()
+    .unwrap();
+    let ready_deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !ready.is_file() {
+        if wrapper.try_wait().unwrap().is_some() || std::time::Instant::now() >= ready_deadline {
+            let _ = wrapper.kill();
+            let _ = wrapper.wait();
+            panic!("descendant cleanup did not begin");
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    assert_eq!(unsafe { libc::kill(wrapper.id() as i32, libc::SIGINT) }, 0);
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        if let Some(status) = wrapper.try_wait().unwrap() {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = wrapper.kill();
+            let _ = wrapper.wait();
+            panic!("cancellation did not complete descendant cleanup");
+        }
+        thread::sleep(Duration::from_millis(20));
+    };
+
+    assert_eq!(status.code(), Some(130));
+}
+
+#[test]
 fn service_probe_ignores_custom_ca_override_variables() {
     let certificate = rcgen::generate_simple_self_signed(vec!["127.0.0.1".to_owned()]).unwrap();
     let home = tempfile::tempdir().unwrap();

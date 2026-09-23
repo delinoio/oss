@@ -143,6 +143,16 @@ impl Action {
     }
 }
 
+fn finish_wrapper_outcome(outcome: run::Outcome) -> Result<i32> {
+    match outcome {
+        run::Outcome::Child(status) => {
+            runtime::check_cancelled()?;
+            runtime::exit_child(status);
+        }
+        run::Outcome::Code(code) => Ok(code),
+    }
+}
+
 pub fn execute(command: Action, leading_separator: bool, raw: &[OsString]) -> Result<i32> {
     match command {
         Action::Run {
@@ -155,34 +165,19 @@ pub fn execute(command: Action, leading_separator: bool, raw: &[OsString]) -> Re
         }
         Action::Run {
             command: Run::WithRateLimit(options),
-        } => match run::execute(run::Command::RateLimit(options), raw)? {
-            run::Outcome::Child(status) => runtime::exit_child(status),
-            run::Outcome::Code(code) => return Ok(code),
-        },
+        } => return finish_wrapper_outcome(run::execute(run::Command::RateLimit(options), raw)?),
         Action::Run {
             command: Run::WithLock(options),
-        } => match run::execute(run::Command::Lock(options), raw)? {
-            run::Outcome::Child(status) => runtime::exit_child(status),
-            run::Outcome::Code(code) => return Ok(code),
-        },
+        } => return finish_wrapper_outcome(run::execute(run::Command::Lock(options), raw)?),
         Action::Run {
             command: Run::WithService(options),
-        } => match run::execute(run::Command::Service(options), raw)? {
-            run::Outcome::Child(status) => runtime::exit_child(status),
-            run::Outcome::Code(code) => return Ok(code),
-        },
+        } => return finish_wrapper_outcome(run::execute(run::Command::Service(options), raw)?),
         Action::Run {
             command: Run::WithRetry(options),
-        } => match run::execute(run::Command::Retry(options), raw)? {
-            run::Outcome::Child(status) => runtime::exit_child(status),
-            run::Outcome::Code(code) => return Ok(code),
-        },
+        } => return finish_wrapper_outcome(run::execute(run::Command::Retry(options), raw)?),
         Action::Run {
             command: Run::WithTimeout(options),
-        } => match run::execute(run::Command::Timeout(options), raw)? {
-            run::Outcome::Child(status) => runtime::exit_child(status),
-            run::Outcome::Code(code) => return Ok(code),
-        },
+        } => return finish_wrapper_outcome(run::execute(run::Command::Timeout(options), raw)?),
         Action::Port { command } => return port::execute(command),
         Action::Open { target, app, wait } => open::execute(target, app, wait)?,
         Action::Clipboard { command } => clipboard::execute(command)?,
