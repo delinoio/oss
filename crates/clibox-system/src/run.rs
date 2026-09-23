@@ -1489,14 +1489,10 @@ impl OwnedChild {
         );
         let graceful_delivered = self.signal(false)?;
         // A Windows Job can be force-terminated when its isolated process
-        // group has no attached console to receive CTRL_BREAK. In that case
-        // the fallback has already skipped graceful shutdown, so spend only
-        // the bounded confirmation interval waiting for the Job to drain.
-        let graceful_wait = if graceful_delivered {
-            kill_after
-        } else {
-            CLEANUP_CONFIRMATION
-        };
+        // group has no attached console to receive CTRL_BREAK. That fallback
+        // is already forced, so skip grace and use the common confirmation
+        // window below exactly once.
+        let graceful_wait = graceful_cleanup_wait(graceful_delivered, kill_after);
         let graceful_deadline = Instant::now().checked_add(graceful_wait).ok_or_else(|| {
             Failure::new(Code::IoFailed, "Cleanup deadline cannot be represented.")
         })?;
@@ -1569,6 +1565,14 @@ impl OwnedChild {
     #[cfg(windows)]
     fn tree_running(&self) -> Result<bool> {
         self.job.is_running()
+    }
+}
+
+fn graceful_cleanup_wait(graceful_delivered: bool, kill_after: Duration) -> Duration {
+    if graceful_delivered {
+        kill_after
+    } else {
+        Duration::ZERO
     }
 }
 
@@ -3544,6 +3548,14 @@ mod rate_limit_tests {
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
+
+    #[test]
+    fn forced_cleanup_skips_the_grace_window() {
+        let kill_after = Duration::from_secs(5);
+
+        assert_eq!(graceful_cleanup_wait(true, kill_after), kill_after);
+        assert_eq!(graceful_cleanup_wait(false, kill_after), Duration::ZERO);
+    }
 
     #[test]
     fn retry_delay_stops_when_the_cap_cannot_change() {
