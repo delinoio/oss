@@ -657,6 +657,12 @@ hook!(posix_spawn,pnport_spawn,(pid:*mut pid_t,path:*const c_char,actions:*const
     let original=original!(posix_spawn,unsafe extern "C" fn(*mut pid_t,*const c_char,*const posix_spawn_file_actions_t,*const posix_spawnattr_t,*const *mut c_char,*const *mut c_char)->c_int);
     let Some(_guard)=Guard::enter() else {return original(pid,path,actions,attributes,argv,envp);};
     if RUNTIME.get().is_none() {return original(pid,path,actions,attributes,argv,envp);}
+    // Opaque file actions can change the child's cwd before resolving a
+    // relative image. Until the actions can be inspected, reject this shape
+    // instead of resolving and launching a different image in the parent cwd.
+    if !actions.is_null() && !path.is_null() && !Path::new(OsStr::from_bytes(CStr::from_ptr(path).to_bytes())).is_absolute() {
+        return fail(Code::PnportUnsupportedOperation);
+    }
     let env=match child_env(envp.cast()) {Ok(env)=>env,Err(code)=>return code};
     let image=match prepare_child_image(path,argv.cast(),&env) {Ok(image)=>image,Err(code)=>return code};
     let script_argv=image.script_argv.as_ref().map(|args| {let mut pointers:Vec<_>=args.iter().map(|arg|arg.as_ptr().cast_mut()).collect();pointers.push(ptr::null_mut());pointers});

@@ -558,7 +558,8 @@ int main(int argc, char **argv) {
     let launcher = root.path().join("child-launcher");
     fs::write(
         &launcher_source,
-        r#"#include <spawn.h>
+        r#"#include <errno.h>
+#include <spawn.h>
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -569,6 +570,14 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "execve") == 0) {
     execve(argv[2], args, environ);
     return 30;
+  }
+  if (strcmp(argv[1], "posix_spawn_chdir") == 0) {
+    posix_spawn_file_actions_t actions;
+    if (posix_spawn_file_actions_init(&actions) != 0) return 34;
+    if (posix_spawn_file_actions_addchdir_np(&actions, ".") != 0) return 35;
+    int result = posix_spawn(0, "child-script", &actions, 0, args, environ);
+    posix_spawn_file_actions_destroy(&actions);
+    return result == ENOTSUP ? 0 : (result ? result : 36);
   }
   pid_t pid;
   if (posix_spawn(&pid, argv[2], 0, 0, args, environ) != 0) return 31;
@@ -605,6 +614,23 @@ int main(int argc, char **argv) {
         );
         assert_eq!(result.stdout, b"descendant-script-ok\n", "{method}");
     }
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(root.path().join("private-cache"))
+        .args(["run", "--"])
+        .arg(&launcher)
+        .arg("posix_spawn_chdir")
+        .arg(&script)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(125),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
 }
 
 #[cfg(target_os = "macos")]
