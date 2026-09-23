@@ -96,7 +96,7 @@ pnpm exec clibox run with-retry --max-attempts 5 --jitter none -- npm install
 pnpm exec clibox run with-timeout --timeout 10m --idle-timeout 30s -- npm test
 ```
 
-Options come before the literal `[KEY=VALUE ...] [--] COMMAND [ARG ...]` workload. The wrappers retain `run env` assignment expansion, literal argv, child-only environment, cwd, PATH/PATHEXT lookup, and no-shell behavior. All accept `--kill-after DURATION` (default `5s`); units are integer `ms`, `s`, `m`, or `h`.
+Options come before the literal `[KEY=VALUE ...] [--] COMMAND [ARG ...]` workload. The wrappers retain `run env` assignment expansion, literal argv, child-only environment, cwd, PATH/PATHEXT lookup, and no-shell behavior. All accept `--kill-after DURATION` (default `5s`); units are integer `ms`, `s`, `m`, or `h`. On Unix, workloads and managed services must stay in the wrapper's process group; do not daemonize or create a new session or process group unless that program manages its own lifecycle.
 
 Rate and lock names use case-sensitive ASCII `[A-Za-z0-9._-]` up to 128 characters. The default scope is the canonical current project directory; use `--scope user` for local user scope or `--project-dir DIR` for another existing project identity without changing cwd. The latter cannot combine with user scope. Lock/bucket state uses separate hashed filenames and never stores raw names, paths, argv, or environment values. It is private local state at `$XDG_STATE_HOME/clibox/run` (or `~/.local/state/clibox/run`) on Linux, `~/Library/Application Support/clibox/run` on macOS, and LocalAppData `clibox/run` on Windows. It is not cross-machine synchronization, FIFO queuing, a command history, or a service. Manually remove state only after all relevant invocations stop.
 

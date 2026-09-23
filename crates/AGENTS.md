@@ -32,7 +32,7 @@
 - Add new crates as explicit workspace members in root `Cargo.toml`.
 - Keep crate naming aligned with project IDs when possible.
 - Document behavior contracts in project index docs and relevant crate-domain docs before large implementation changes.
-- Keep clibox execution wrappers in `clibox-system` and their `run` command family independent of the other clibox companion crates. Reuse only the system environment planner, preserve literal child invocation semantics, and use native process groups/Windows Job Objects plus bounded cleanup for owned descendants. Lock/rate coordination may retain only documented private hashed local state and must fail closed on unsafe state.
+- Keep clibox execution wrappers in `clibox-system` and their `run` command family independent of the other clibox companion crates. Reuse only the system environment planner, preserve literal child invocation semantics, and use native process groups/Windows Job Objects plus bounded cleanup for owned descendants. Unix ownership is limited to the wrapper process group, so daemonizing workloads or managed services that create another session/process group are unsupported and must be documented as self-managed. Lock/rate coordination may retain only documented private hashed local state and must fail closed on unsafe state.
 - Planned crate paths must not be added as workspace members until the crate skeleton exists.
 - For new package scaffolding, default `publish = false` until publish contracts are explicitly approved.
 - Prefer minimal default features and keep optional capabilities opt-in for size-sensitive crates.
