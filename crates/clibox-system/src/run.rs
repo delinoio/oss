@@ -608,7 +608,11 @@ fn with_service(options: Service) -> Result<Outcome> {
     // Recheck at the side-effect boundary before starting the managed service.
     check_cancelled()?;
     let service_plan = service.expect("service is checked above");
-    let mut service_child = spawn(&service_plan, OutputMode::Service)?;
+    let mut service_child = match spawn(&service_plan, OutputMode::Service, ready_deadline) {
+        Ok(child) => child,
+        Err(error) if error.code == Code::TerminationTimeout => return Ok(Outcome::Code(124)),
+        Err(error) => return Err(error),
+    };
     loop {
         if service_child.output_failed() {
             let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
@@ -1091,7 +1095,11 @@ fn run_once(
     } else {
         OutputMode::WorkloadInherited
     };
-    let mut child = spawn(plan, output_mode)?;
+    let mut child = match spawn(plan, output_mode, limits.overall) {
+        Ok(child) => child,
+        Err(error) if error.code == Code::TerminationTimeout => return Ok(Outcome::Code(124)),
+        Err(error) => return Err(error),
+    };
     let mut last_activity = child
         .activity
         .as_ref()
@@ -1329,8 +1337,16 @@ struct ForegroundTerminalParent {
     group: libc::pid_t,
 }
 
-fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
+fn spawn(
+    plan: &environment::Plan,
+    mode: OutputMode,
+    deadline: Option<Instant>,
+) -> Result<OwnedChild> {
     let mut command = environment::command(plan)?;
+    // Windows resolves PATH/PATHEXT while building the command. The lookup
+    // can block on a slow filesystem, so enforce the wrapper deadline after
+    // resolution and before any child can execute application code.
+    check_spawn_boundary(deadline)?;
     #[cfg(unix)]
     let unix_ownership = unix_ownership();
     #[cfg(unix)]
@@ -1398,6 +1414,12 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
             return Err(error);
         }
     };
+    #[cfg(windows)]
+    if let Err(error) = check_spawn_boundary(deadline) {
+        let _ = job.signal(child.id(), true);
+        let _ = child.wait();
+        return Err(error);
+    }
     #[cfg(windows)]
     if let Err(error) = resume_suspended_process(&child) {
         let _ = job.signal(child.id(), true);
@@ -1523,6 +1545,16 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
         output_failure,
         output_threads,
     })
+}
+
+fn check_spawn_boundary(deadline: Option<Instant>) -> Result<()> {
+    if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+        return Err(Failure::new(
+            Code::TerminationTimeout,
+            "Execution time limit expired before the child process started.",
+        ));
+    }
+    check_cancelled()
 }
 
 fn supervision_spawn_failure(
@@ -4040,6 +4072,17 @@ mod lifecycle_tests {
             start,
             completion,
         ));
+    }
+
+    #[test]
+    fn spawn_boundary_rejects_an_expired_deadline() {
+        let deadline = Instant::now()
+            .checked_sub(Duration::from_millis(1))
+            .unwrap();
+
+        let error = check_spawn_boundary(Some(deadline)).unwrap_err();
+
+        assert_eq!(error.code, Code::TerminationTimeout);
     }
 
     #[test]
