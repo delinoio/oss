@@ -8,7 +8,11 @@ use fspy_seccomp_unotify::{payload::SeccompPayload, target::install_target};
 #[cfg(not(target_env = "musl"))]
 use memmap2::Mmap;
 #[cfg(not(target_env = "musl"))]
-use nix::{errno::Errno, libc};
+use nix::{
+    errno::Errno,
+    libc,
+    unistd::{AccessFlags, access},
+};
 
 #[cfg(not(target_env = "musl"))]
 use crate::{
@@ -83,7 +87,23 @@ pub fn handle_exec(
     // Always use seccomp-based tracking instead.
     #[cfg(not(target_env = "musl"))]
     {
-        let executable_fd = open_executable(Path::new(OsStr::from_bytes(&command.program)))?;
+        let executable_path = OsStr::from_bytes(&command.program);
+        let executable_fd = match open_executable(Path::new(executable_path)) {
+            Ok(fd) => fd,
+            Err(Errno::EACCES) if access(executable_path, AccessFlags::X_OK).is_ok() => {
+                // The kernel can execute this image, but its unreadable bytes
+                // cannot be classified for preload admission. Preserve the
+                // path and use the seccomp backend conservatively.
+                command
+                    .envs
+                    .retain(|(name, _)| name != LD_PRELOAD && name != PAYLOAD_ENV_NAME);
+                return Ok(Some(PreExec {
+                    filter: Some(encoded_payload.payload.seccomp_payload.clone()),
+                    _image: None,
+                }));
+            }
+            Err(error) => return Err(error),
+        };
         admit_preload(&executable_fd)?;
         // SAFETY: The file descriptor is valid and we only read from the mapping.
         let executable_mmap = unsafe { Mmap::map(&executable_fd) }.map_err(|io_error| {

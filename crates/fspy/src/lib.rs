@@ -389,6 +389,57 @@ int main(int argc, char **argv) {
 
     #[cfg(target_os = "linux")]
     #[tokio::test]
+    async fn execute_only_image_runs_with_seccomp_tracking() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let source = directory.path().join("execute-only.c");
+        let image = directory.path().join("execute-only");
+        let output = directory.path().join("ran");
+        fs::write(
+            &source,
+            r#"#include <fcntl.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+  if (argc != 2) return 2;
+  int fd = open(argv[1], O_WRONLY | O_CREAT | O_TRUNC, 0600);
+  if (fd < 0) return 3;
+  if (write(fd, "ran", 3) != 3) return 4;
+  close(fd);
+  return 0;
+}
+"#,
+        )
+        .expect("write executable source");
+        assert!(
+            std::process::Command::new("cc")
+                .arg("-static")
+                .arg(&source)
+                .arg("-o")
+                .arg(&image)
+                .status()
+                .expect("compile executable")
+                .success()
+        );
+        fs::set_permissions(&image, fs::Permissions::from_mode(0o111))
+            .expect("make image execute-only");
+        // Privileged test runners can read mode-0111 files regardless of mode.
+        if fs::File::open(&image).is_ok() {
+            return;
+        }
+
+        let mut command = super::Command::new(&image);
+        command.arg(&output);
+        let child = command
+            .spawn(CancellationToken::new())
+            .await
+            .expect("spawn execute-only image");
+        // The seccomp handler cannot inspect an unreadable script line, so
+        // collection fails closed even though the kernel ran the image.
+        assert!(child.wait_handle.await.is_err());
+        assert_eq!(fs::read(&output).expect("image ran"), b"ran");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
     async fn path_search_exec_runs_plain_text_through_tracked_shell() {
         let directory = tempfile::tempdir().expect("create fixture directory");
         let source = directory.path().join("shell-fallback.c");

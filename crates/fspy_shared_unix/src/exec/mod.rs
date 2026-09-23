@@ -153,15 +153,23 @@ impl Exec {
         // tries to parse a script as an executable binary.
         const MAX_SHEBANG_DEPTH: usize = 4;
         for depth in 0..=MAX_SHEBANG_DEPTH {
-            let Some(shebang) = parse_shebang(
+            let shebang = parse_shebang(
                 |path, buf| {
                     on_path_access(AccessMode::READ, path);
                     peek_executable(path, buf)
                 },
                 Path::new(OsStr::from_bytes(&self.program)),
                 options,
-            )?
-            else {
+            );
+            // An execute-only Linux image cannot be peeked for a shebang.
+            // Leave it to the seccomp backend, which can still launch it.
+            #[cfg(target_os = "linux")]
+            if matches!(&shebang, Err(nix::Error::EACCES))
+                && access(OsStr::from_bytes(&self.program), AccessFlags::X_OK).is_ok()
+            {
+                return Ok(());
+            }
+            let Some(shebang) = shebang? else {
                 return Ok(());
             };
             if depth == MAX_SHEBANG_DEPTH {

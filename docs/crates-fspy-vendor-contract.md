@@ -41,6 +41,7 @@ The seccomp `execve` and `execveat` handlers inspect bounded shebang chains and 
 Linux preload selection recognizes only the host glibc loader for the supported x64 and arm64 targets. Foreign ELF interpreters, including musl loaders, use seccomp so the host-built preload is not injected into an incompatible process.
 
 For readable Linux executable images, fspy keeps the inspected descriptor alive through launch and executes its `/proc/self/fd` path. This binds preload-versus-seccomp selection to the same inode the kernel executes even if the original pathname is replaced between inspection and launch.
+An execute-only Linux image whose read open fails after `X_OK` is launched with seccomp instead of being rejected before spawn. Since its possible shebang cannot be inspected, a seccomp inspection error makes collection fail closed; execution still proceeds. Readable images retain descriptor-bound launch.
 
 The Linux preload hooks the fixed-arity libc `statx` entry point. It does not interpose libc's generic variadic `syscall` entry point: extracting a fixed six arguments from lower-arity calls is undefined behavior. A direct `syscall(SYS_statx, ...)` in a dynamically linked process is outside the preload trace; callers needing that access must use the seccomp path.
 
