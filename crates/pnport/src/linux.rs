@@ -1330,7 +1330,7 @@ impl Trace<'_> {
                 output,
                 capacity,
                 target,
-            } => {
+            } if returned >= 0 => {
                 let bytes = target.as_os_str().as_bytes();
                 if capacity == 0 {
                     set_result(&mut regs, -(libc::EINVAL as i64));
