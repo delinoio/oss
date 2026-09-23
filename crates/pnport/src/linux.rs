@@ -1428,6 +1428,9 @@ impl Trace<'_> {
         for pid in &self.tasks {
             unsafe {
                 libc::kill(*pid, libc::SIGTERM);
+                // A traced task can be parked at the stop that caused the
+                // failure. SIGTERM is only delivered after it is resumed.
+                libc::ptrace(libc::PTRACE_CONT, *pid, 0, 0);
             }
         }
         let deadline = Instant::now() + Duration::from_secs(5);
