@@ -21,8 +21,15 @@ unsafe fn track_path_at(dirfd: c_int, path: *const c_char) {
 }
 
 macro_rules! intercept_mutation {
+    ($name:ident($($arg:ident: $ty:ty),*), $record:block, alias64) => {
+        intercept!($name(64): unsafe extern "C" fn($($ty),*) -> c_int);
+        intercept_mutation!(@function $name($($arg: $ty),*), $record);
+    };
     ($name:ident($($arg:ident: $ty:ty),*), $record:block) => {
         intercept!($name: unsafe extern "C" fn($($ty),*) -> c_int);
+        intercept_mutation!(@function $name($($arg: $ty),*), $record);
+    };
+    (@function $name:ident($($arg:ident: $ty:ty),*), $record:block) => {
         unsafe extern "C" fn $name($($arg: $ty),*) -> c_int {
             // SAFETY: each path comes from the intercepted libc call and is
             // inspected only while that call's arguments remain alive.
@@ -39,8 +46,8 @@ intercept_mutation!(rmdir(path: *const c_char), { track_path(path) });
 intercept_mutation!(mkdir(path: *const c_char, mode: mode_t), { track_path(path) });
 intercept_mutation!(mkfifo(path: *const c_char, mode: mode_t), { track_path(path) });
 intercept_mutation!(mknod(path: *const c_char, mode: mode_t, dev: dev_t), { track_path(path) });
-intercept_mutation!(creat(path: *const c_char, mode: mode_t), { track_path(path) });
-intercept_mutation!(truncate(path: *const c_char, length: off_t), { track_path(path) });
+intercept_mutation!(creat(path: *const c_char, mode: mode_t), { track_path(path) }, alias64);
+intercept_mutation!(truncate(path: *const c_char, length: off_t), { track_path(path) }, alias64);
 intercept_mutation!(chmod(path: *const c_char, mode: mode_t), { track_path(path) });
 intercept_mutation!(chown(path: *const c_char, owner: libc::uid_t, group: libc::gid_t), { track_path(path) });
 intercept_mutation!(lchown(path: *const c_char, owner: libc::uid_t, group: libc::gid_t), { track_path(path) });
