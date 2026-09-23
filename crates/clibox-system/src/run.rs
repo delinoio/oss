@@ -3187,6 +3187,9 @@ fn retry_delay(
     let mut millis = initial.as_millis();
     let maximum = maximum.as_millis();
     for _ in 1..attempt {
+        if millis >= maximum || factor == 1 {
+            break;
+        }
         millis = millis.saturating_mul(factor as u128).min(maximum);
     }
     let millis = u64::try_from(millis).unwrap_or(u64::MAX);
@@ -3509,6 +3512,20 @@ mod rate_limit_tests {
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
+
+    #[test]
+    fn retry_delay_stops_when_the_cap_cannot_change() {
+        assert_eq!(
+            retry_delay(
+                Duration::from_millis(1),
+                Duration::from_millis(1),
+                1,
+                u32::MAX,
+                Jitter::None,
+            ),
+            Duration::from_millis(1),
+        );
+    }
 
     #[test]
     fn service_completion_requires_a_strictly_earlier_event() {
