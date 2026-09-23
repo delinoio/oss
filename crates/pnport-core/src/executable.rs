@@ -144,7 +144,7 @@ fn executable_permissions(path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn validate(path: &Path) -> Result<()> {
+pub fn validate(path: &Path) -> Result<PathBuf> {
     let path = fs::canonicalize(path).map_err(access_error)?;
     executable_permissions(&path)?;
     #[cfg(target_os = "macos")]
@@ -260,7 +260,7 @@ pub fn validate(path: &Path) -> Result<()> {
             offset += length;
         }
     }
-    Ok(())
+    Ok(path)
 }
 fn access_error(error: std::io::Error) -> Error {
     Error::new(
@@ -348,7 +348,30 @@ fn check_signature(bytes: &[u8]) -> Result<()> {
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
+    use std::os::unix::fs::symlink;
+
     use super::*;
+
+    #[test]
+    fn returns_the_canonical_admitted_image() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let source = directory.path().join("tool.c");
+        let executable = directory.path().join("tool");
+        let alias = directory.path().join("tool-alias");
+        fs::write(&source, "int main(void) { return 0; }\n").expect("write fixture");
+        assert!(std::process::Command::new("cc")
+            .arg(&source)
+            .arg("-o")
+            .arg(&executable)
+            .status()
+            .expect("compile fixture")
+            .success());
+        symlink(&executable, &alias).expect("create executable alias");
+        assert_eq!(
+            validate(&alias).expect("admit alias"),
+            fs::canonicalize(executable).expect("canonicalize fixture")
+        );
+    }
 
     #[test]
     fn truncated_entitlement_blob_is_rejected_without_panicking() {

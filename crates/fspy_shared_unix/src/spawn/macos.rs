@@ -1,7 +1,6 @@
 use std::{
     convert::Infallible,
     ffi::OsStr,
-    fs,
     os::unix::ffi::{OsStrExt, OsStringExt},
     path::{Path, PathBuf, absolute},
 };
@@ -30,15 +29,12 @@ fn admit_injection(program: &Path) -> nix::Result<PathBuf> {
     // The shared pnport admission inspects the canonical Mach-O slice,
     // signature, and hardened-runtime entitlements before either fspy or
     // pnport claims a complete interposed trace.
-    let canonical = fs::canonicalize(program)
-        .map_err(|error| nix::Error::try_from(error).unwrap_or(nix::Error::UnknownErrno))?;
-    pnport_core::executable::validate(&canonical).map_err(|error| match error.code {
+    pnport_core::executable::validate(program).map_err(|error| match error.code {
         Code::PnportCommandNotFound => Errno::ENOENT,
         Code::PnportCommandNotExecutable => Errno::EACCES,
         Code::PnportUnsupportedOperation => Errno::ENOTSUP,
         _ => Errno::EIO,
-    })?;
-    Ok(canonical)
+    })
 }
 
 /// Configure the pnport supervisor's already-admitted macOS command with the

@@ -541,6 +541,10 @@ hook!(dup2, pnport_dup2, (fd:c_int,newfd:c_int) -> c_int, {
 });
 
 static INJECTION_ENV: OnceLock<Vec<CString>> = OnceLock::new();
+fn admitted_program(path: &Path) -> std::result::Result<CString, c_int> {
+    let canonical = pnport_core::executable::validate(path).map_err(|error| fail(error.code))?;
+    CString::new(canonical.as_os_str().as_bytes()).map_err(|_| EINVAL)
+}
 unsafe fn child_env(envp: *const *const c_char) -> std::result::Result<Vec<CString>, c_int> {
     if envp.is_null() {
         return Err(EFAULT);
@@ -573,8 +577,8 @@ hook!(execve,pnport_execve,(path:*const c_char,argv:*const *const c_char,envp:*c
     let original=original!(execve,unsafe extern "C" fn(*const c_char,*const *const c_char,*const *const c_char)->c_int);
     let Some(_guard)=Guard::enter() else {return original(path,argv,envp);};
     if RUNTIME.get().is_none() {return original(path,argv,envp);}
-    let (path,translation)=translated!(path,AT_FDCWD,false,-1);
-    if let Err(error)=pnport_core::executable::validate(&translation.physical) {errno(fail(error.code));return -1;}
+    let (_path,translation)=translated!(path,AT_FDCWD,false,-1);
+    let path=match admitted_program(&translation.physical) {Ok(path)=>path,Err(code)=>{errno(code);return -1;}};
     let env=match child_env(envp) {Ok(env)=>env,Err(code)=>{errno(code);return -1;}};
     let mut pointers:Vec<_>=env.iter().map(|e|e.as_ptr()).collect();pointers.push(ptr::null());
     original(path.as_ptr(),argv,pointers.as_ptr())
@@ -583,8 +587,8 @@ hook!(posix_spawn,pnport_spawn,(pid:*mut pid_t,path:*const c_char,actions:*const
     let original=original!(posix_spawn,unsafe extern "C" fn(*mut pid_t,*const c_char,*const posix_spawn_file_actions_t,*const posix_spawnattr_t,*const *mut c_char,*const *mut c_char)->c_int);
     let Some(_guard)=Guard::enter() else {return original(pid,path,actions,attributes,argv,envp);};
     if RUNTIME.get().is_none() {return original(pid,path,actions,attributes,argv,envp);}
-    let (path,translation)=match translate(path,AT_FDCWD,false) {Ok(value)=>value,Err(code)=>return code};
-    if let Err(error)=pnport_core::executable::validate(&translation.physical) {return fail(error.code);}
+    let (_path,translation)=match translate(path,AT_FDCWD,false) {Ok(value)=>value,Err(code)=>return code};
+    let path=match admitted_program(&translation.physical) {Ok(path)=>path,Err(code)=>return code};
     let env=match child_env(envp.cast()) {Ok(env)=>env,Err(code)=>return code};
     let mut pointers:Vec<_>=env.iter().map(|e|e.as_ptr().cast_mut()).collect();pointers.push(ptr::null_mut());
     original(pid,path.as_ptr(),actions,attributes,argv,pointers.as_ptr())
