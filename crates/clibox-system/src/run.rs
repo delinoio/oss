@@ -350,7 +350,56 @@ mod workload_tests {
 
 #[cfg(all(test, windows))]
 mod windows_state_tests {
+    use std::os::windows::io::AsRawHandle;
+
+    use windows_sys::Win32::{
+        Foundation::{LocalFree, ERROR_SUCCESS},
+        Security::{
+            Authorization::{GetSecurityInfo, SetSecurityInfo, SE_FILE_OBJECT},
+            DACL_SECURITY_INFORMATION, UNPROTECTED_DACL_SECURITY_INFORMATION,
+        },
+    };
+
     use super::*;
+
+    fn unprotect_dacl(file: &File) {
+        let mut dacl = std::ptr::null_mut();
+        let mut descriptor = std::ptr::null_mut();
+        assert_eq!(
+            unsafe {
+                GetSecurityInfo(
+                    file.as_raw_handle(),
+                    SE_FILE_OBJECT,
+                    DACL_SECURITY_INFORMATION,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    &mut dacl,
+                    std::ptr::null_mut(),
+                    &mut descriptor,
+                )
+            },
+            ERROR_SUCCESS,
+            "read test DACL"
+        );
+        assert_eq!(
+            unsafe {
+                SetSecurityInfo(
+                    file.as_raw_handle(),
+                    SE_FILE_OBJECT,
+                    DACL_SECURITY_INFORMATION | UNPROTECTED_DACL_SECURITY_INFORMATION,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    dacl,
+                    std::ptr::null(),
+                )
+            },
+            ERROR_SUCCESS,
+            "unprotect test DACL"
+        );
+        unsafe {
+            LocalFree(descriptor);
+        }
+    }
 
     #[test]
     fn state_directory_and_files_retain_the_current_users_private_dacl() {
@@ -381,6 +430,18 @@ mod windows_state_tests {
         let bucket = open_state_for_read(&bucket_path).expect("state bucket handle");
         ensure_windows_state_object(&bucket, false).expect("state bucket links");
         ensure_windows_private_dacl(&bucket).expect("state bucket DACL");
+    }
+
+    #[test]
+    fn state_objects_reject_an_unprotected_dacl() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let state = temporary.path().join("state");
+        ensure_private_dir(&state).expect("private state directory");
+        let lock = open_lock(&state.join("admission.lock")).expect("state lock");
+
+        unprotect_dacl(&lock);
+
+        assert!(ensure_windows_private_dacl(&lock).is_err());
     }
 }
 
@@ -2925,8 +2986,9 @@ fn ensure_windows_private_dacl(file: &File) -> Result<()> {
         Foundation::{LocalFree, ERROR_SUCCESS},
         Security::{
             Authorization::{GetSecurityInfo, SE_FILE_OBJECT},
-            EqualSid, GetAce, GetAclInformation, ACCESS_ALLOWED_ACE, ACL_SIZE_INFORMATION,
-            DACL_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION,
+            EqualSid, GetAce, GetAclInformation, GetSecurityDescriptorControl, ACCESS_ALLOWED_ACE,
+            ACL_SIZE_INFORMATION, DACL_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION,
+            SE_DACL_PROTECTED,
         },
         Storage::FileSystem::FILE_ALL_ACCESS,
         System::SystemServices::ACCESS_ALLOWED_ACE_TYPE,
@@ -2955,7 +3017,13 @@ fn ensure_windows_private_dacl(file: &File) -> Result<()> {
         return runtime_failure("Execution state ownership could not be verified.");
     }
     let result = (|| {
-        if dacl.is_null() || !owner_belongs_to_current_identity(owner, user, default_owner) {
+        let mut control = 0;
+        let mut revision = 0;
+        if dacl.is_null()
+            || unsafe { GetSecurityDescriptorControl(descriptor, &mut control, &mut revision) } == 0
+            || control & SE_DACL_PROTECTED == 0
+            || !owner_belongs_to_current_identity(owner, user, default_owner)
+        {
             return runtime_failure("Execution state ownership is unsafe.");
         }
         let mut information = ACL_SIZE_INFORMATION::default();
