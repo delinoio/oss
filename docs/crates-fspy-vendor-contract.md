@@ -26,6 +26,8 @@ Windows access classification treats deletion, file metadata and extended-attrib
 
 On Linux, a seccomp notification whose access cannot be recorded still resumes the target syscall. The supervisor retains the recording error and fails collection after the target exits, so callers cannot treat the partial trace as complete.
 
+The Linux preload hooks the fixed-arity libc `statx` entry point. It does not interpose libc's generic variadic `syscall` entry point: extracting a fixed six arguments from lower-arity calls is undefined behavior. A direct `syscall(SYS_statx, ...)` in a dynamically linked process is outside the preload trace; callers needing that access must use the seccomp path.
+
 At root-process exit, the seccomp supervisor cancels both listener acceptance and each active handler's notification wait. Handlers return their already collected accesses and recording errors without waiting for descendants that still hold the listener open.
 
 The Unix preload forwards an intercepted filesystem call after a path-resolution error and marks the shared channel incomplete first. The receiver rejects that channel at seal time instead of reporting a partial trace as complete.
