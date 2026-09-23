@@ -4481,7 +4481,10 @@ fn wait_for_managed_service(
     service: &mut OwnedChild,
     duration: Duration,
 ) -> Result<ManagedServiceWait> {
-    let outcome = wait_for_service_completion(duration, || Ok(service.completion()?.is_some()))?;
+    let outcome = wait_for_service_completion(duration, || {
+        ensure_managed_service_output(service.output_failed())?;
+        Ok(service.completion()?.is_some())
+    })?;
     if matches!(outcome, ManagedServiceWait::Exited) {
         tracing::debug!(
             operation = "run-with-service",
@@ -4490,6 +4493,13 @@ fn wait_for_managed_service(
         );
     }
     Ok(outcome)
+}
+
+fn ensure_managed_service_output(forwarding_failed: bool) -> Result<()> {
+    if forwarding_failed {
+        return runtime_failure("Could not forward managed service output.");
+    }
+    Ok(())
 }
 
 fn wait_for_service_completion(
@@ -4934,6 +4944,23 @@ mod lifecycle_tests {
 
         assert!(matches!(outcome, ManagedServiceWait::Exited));
         assert_eq!(checks, 2);
+    }
+
+    #[test]
+    fn managed_service_wait_stops_before_polling_when_forwarding_fails() {
+        let mut completion_checks = 0;
+
+        let error = match wait_for_service_completion(Duration::from_secs(1), || {
+            ensure_managed_service_output(true)?;
+            completion_checks += 1;
+            Ok(false)
+        }) {
+            Ok(_) => panic!("a forwarding failure must stop readiness polling"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.code, Code::IoFailed);
+        assert_eq!(completion_checks, 0);
     }
 
     #[cfg(unix)]
