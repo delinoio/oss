@@ -3,7 +3,7 @@ use std::{fs, io::Write, path::Path};
 use pnport::{
     cache::{Cache, Operation, State},
     diagnostic::Code,
-    graph::Graph,
+    graph::{Graph, Input},
     view::View,
 };
 use serde_json::{json, Value};
@@ -392,6 +392,45 @@ fn concurrent_materializers_publish_one_entry() {
     let entries = cache.entries(Operation::Clean).unwrap();
     assert_eq!(entries.len(), 1);
     assert!(matches!(entries[0].state, State::Active));
+}
+
+#[test]
+fn active_markers_retain_distinct_archive_versions() {
+    let root = fixture();
+    let root_path = fs::canonicalize(root.path()).unwrap();
+    let cache_root = tempfile::tempdir().unwrap();
+    let session = tempfile::tempdir().unwrap();
+    let make_view = || {
+        View::new(
+            Graph::load(&root.path().join(".pnp.cjs")).unwrap(),
+            Cache::open(cache_root.path().join("cache")).unwrap(),
+            session.path().to_owned(),
+        )
+    };
+    let mut first = make_view();
+    let first_path = first
+        .translate(&root_path.join("node_modules/dep/file.txt"))
+        .unwrap()
+        .physical;
+    archive(
+        &root.path().join("cache.zip"),
+        &[("node_modules/dep/file.txt", b"updated bytes")],
+    );
+    let mut second = make_view();
+    let second_path = second
+        .translate(&root_path.join("node_modules/dep/file.txt"))
+        .unwrap()
+        .physical;
+    assert_ne!(first_path, second_path);
+    assert_eq!(fs::read(first_path).unwrap(), b"package bytes");
+    assert_eq!(fs::read(second_path).unwrap(), b"updated bytes");
+    let markers: Vec<Input> = fs::read_dir(session.path().join("active"))
+        .unwrap()
+        .map(|entry| serde_json::from_slice(&fs::read(entry.unwrap().path()).unwrap()).unwrap())
+        .collect();
+    assert_eq!(markers.len(), 2);
+    assert_eq!(markers[0].path, markers[1].path);
+    assert_ne!(markers[0].sha256, markers[1].sha256);
 }
 
 #[cfg(target_os = "macos")]

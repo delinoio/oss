@@ -136,12 +136,12 @@ impl View {
                     let lease = self.cache.materialize(&archive)?;
                     let active = self.session.join("active");
                     fs::create_dir_all(&active).map_err(|_| cache_error())?;
-                    let marker = active.join(digest(archive.to_string_lossy().as_bytes()));
                     let bytes = serde_json::to_vec(&crate::graph::Input {
                         path: archive.clone(),
                         sha256: lease.sha256.clone(),
                     })
                     .map_err(|_| cache_error())?;
+                    let marker = active.join(digest(&bytes));
                     let temp =
                         tempfile::NamedTempFile::new_in(&active).map_err(|_| cache_error())?;
                     fs::write(temp.path(), bytes).map_err(|_| cache_error())?;
