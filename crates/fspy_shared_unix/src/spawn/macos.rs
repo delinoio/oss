@@ -1,6 +1,7 @@
 use std::{
     convert::Infallible,
     ffi::OsStr,
+    fs,
     os::unix::ffi::{OsStrExt, OsStringExt},
     path::{Path, absolute},
     process::Command,
@@ -26,6 +27,10 @@ impl PreExec {
 }
 
 fn admit_injection(program: &Path) -> nix::Result<()> {
+    // Resolve symlinks and parent components before checking whether dyld will
+    // ignore the preload for the executable that the kernel actually opens.
+    let program = fs::canonicalize(program)
+        .map_err(|error| error.raw_os_error().map_or(Errno::EIO, Errno::from_raw))?;
     if ["/bin", "/sbin", "/usr/bin", "/usr/sbin", "/System"]
         .iter()
         .any(|prefix| program.starts_with(prefix))
@@ -40,7 +45,8 @@ fn admit_injection(program: &Path) -> nix::Result<()> {
 ///
 /// # Errors
 ///
-/// Returns `ENOTSUP` when the executable is protected from dyld interposition.
+/// Returns `ENOTSUP` when the executable is protected from dyld interposition,
+/// or the filesystem error when its canonical path cannot be resolved.
 pub fn configure_pnport_command(
     command: &mut Command,
     program: &Path,
@@ -79,4 +85,30 @@ pub fn handle_exec(
         encoded_payload.encoded_string,
     )?;
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{os::unix::fs::symlink, path::Path};
+
+    use nix::errno::Errno;
+
+    use super::admit_injection;
+
+    #[test]
+    fn protected_executable_aliases_cannot_bypass_injection_admission() {
+        let directory = tempfile::tempdir().expect("create temporary directory");
+        let alias = directory.path().join("protected-executable");
+        symlink("/usr/bin/env", &alias).expect("create executable symlink");
+
+        assert_eq!(admit_injection(&alias), Err(Errno::ENOTSUP));
+        assert_eq!(
+            admit_injection(Path::new("/private/tmp/../../usr/bin/env")),
+            Err(Errno::ENOTSUP)
+        );
+        assert_eq!(
+            admit_injection(&directory.path().join("missing")),
+            Err(Errno::ENOENT)
+        );
+    }
 }

@@ -17,6 +17,7 @@ fspy_nostd = { workspace = true }
 stackalloc = { workspace = true }
 
 [dev-dependencies]
+tempfile = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 elf = { workspace = true }
