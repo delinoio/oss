@@ -13,14 +13,14 @@ use crate::error::{Code, Failure, Result};
 static SIGNAL: AtomicI32 = AtomicI32::new(0);
 static CANCELLATION_GENERATION: AtomicUsize = AtomicUsize::new(0);
 #[cfg(unix)]
-static TERMINAL_INTERRUPT_ACK_PARENT: AtomicI32 = AtomicI32::new(0);
+static TERMINAL_INTERRUPT_ACK_DESCRIPTOR: AtomicI32 = AtomicI32::new(-1);
 pub const POLL: Duration = Duration::from_millis(20);
 
 pub fn install_signals() -> Result<()> {
     #[cfg(unix)]
     for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP, libc::SIGQUIT] {
         // Signal handlers only update atomics and, for a terminal SIGINT,
-        // acknowledge the installed launcher with async-signal-safe `kill`.
+        // acknowledge the installed launcher through its private pipe.
         // Blocking work stays in the command loop.
         unsafe {
             signal_hook_registry::register_sigaction(signal, move |info| {
@@ -53,20 +53,27 @@ pub fn install_signals() -> Result<()> {
 }
 
 #[cfg(unix)]
-pub fn configure_terminal_interrupt_acknowledgement(parent: Option<libc::pid_t>) {
-    let parent = parent.filter(|parent| *parent > 0).unwrap_or_default();
-    TERMINAL_INTERRUPT_ACK_PARENT.store(parent, Ordering::SeqCst);
+pub fn configure_terminal_interrupt_acknowledgement(descriptor: Option<libc::c_int>) {
+    let descriptor = descriptor
+        .filter(|descriptor| *descriptor >= 3)
+        .unwrap_or(-1);
+    TERMINAL_INTERRUPT_ACK_DESCRIPTOR.store(descriptor, Ordering::SeqCst);
 }
 
 #[cfg(unix)]
 fn acknowledge_terminal_interrupt(info: &libc::siginfo_t) {
-    let parent = TERMINAL_INTERRUPT_ACK_PARENT.load(Ordering::SeqCst);
+    let descriptor = TERMINAL_INTERRUPT_ACK_DESCRIPTOR.load(Ordering::SeqCst);
     // Terminal-generated signals have no sending process. An explicit signal
     // to the launcher has a sender PID and must keep its normal forwarding
     // behavior.
-    if parent > 0 && unsafe { info.si_pid() } == 0 {
+    if descriptor >= 3 && unsafe { info.si_pid() } == 0 {
+        let acknowledgement = [1u8];
         unsafe {
-            let _ = libc::kill(parent, libc::SIGUSR2);
+            let _ = libc::write(
+                descriptor,
+                acknowledgement.as_ptr().cast(),
+                acknowledgement.len(),
+            );
         }
     }
 }

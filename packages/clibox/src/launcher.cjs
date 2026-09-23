@@ -7,7 +7,8 @@ const path = require("node:path");
 const { Platform, selectTarget } = require("./platforms.cjs");
 
 const Failure = Object.freeze({ Unsupported: "unsupported-platform", Missing: "missing-binary", Version: "version-mismatch", Spawn: "spawn-failed" });
-const TerminalInterruptAcknowledgement = "SIGUSR2";
+const TerminalInterruptAcknowledgementDescriptor = 3;
+const TerminalInterruptAcknowledgementEnvironment = "CLIBOX_TERMINAL_INTERRUPT_ACK_FD";
 const TerminalInterruptGraceMs = 10;
 class LauncherError extends Error {
   constructor(code, message) { super(message); this.code = code; }
@@ -36,14 +37,25 @@ function resolveBinary(manifestPath = path.join(__dirname, "..", "package.json")
   return binary;
 }
 
-function launch(binary, args, { spawnChild = spawn, parent = process, platform = process.platform } = {}) {
+function launch(binary, args, { spawnChild = spawn, parent = process, environment = process.env, platform = process.platform } = {}) {
   return new Promise((resolve, reject) => {
     let terminalInterruptAcknowledgements = 0;
-    const acknowledgeTerminalInterrupt = () => { terminalInterruptAcknowledgements += 1; };
-    // Install this before spawning the native child so a terminal interrupt in
-    // that narrow startup window cannot apply SIGUSR2's default disposition.
-    parent.on(TerminalInterruptAcknowledgement, acknowledgeTerminalInterrupt);
-    const child = spawnChild(binary, args, { stdio: "inherit", shell: false });
+    const usesTerminalInterruptAcknowledgement = platform !== Platform.Windows;
+    const child = spawnChild(binary, args, {
+      stdio: usesTerminalInterruptAcknowledgement ? ["inherit", "inherit", "inherit", "pipe"] : "inherit",
+      shell: false,
+      ...(usesTerminalInterruptAcknowledgement ? {
+        env: {
+          ...environment,
+          [TerminalInterruptAcknowledgementEnvironment]: String(TerminalInterruptAcknowledgementDescriptor),
+        },
+      } : {}),
+    });
+    const acknowledgement = usesTerminalInterruptAcknowledgement ? child.stdio?.[TerminalInterruptAcknowledgementDescriptor] : null;
+    const acknowledgeTerminalInterrupt = (chunk) => { terminalInterruptAcknowledgements += chunk.length; };
+    const ignoreAcknowledgementError = () => {};
+    acknowledgement?.on("data", acknowledgeTerminalInterrupt);
+    acknowledgement?.on("error", ignoreAcknowledgementError);
     const signals = ["SIGINT", "SIGTERM", "SIGHUP", ...(platform === Platform.Windows ? ["SIGBREAK"] : [])];
     const handlers = signals.map((signal) => [signal, () => {
       // Windows broadcasts console Ctrl+C/Break to both processes. Node's kill
@@ -70,7 +82,8 @@ function launch(binary, args, { spawnChild = spawn, parent = process, platform =
     }]);
     for (const [signal, handler] of handlers) parent.on(signal, handler);
     const cleanup = () => {
-      parent.removeListener(TerminalInterruptAcknowledgement, acknowledgeTerminalInterrupt);
+      acknowledgement?.removeListener("data", acknowledgeTerminalInterrupt);
+      acknowledgement?.removeListener("error", ignoreAcknowledgementError);
       for (const [signal, handler] of handlers) parent.removeListener(signal, handler);
     };
     child.once("error", () => {

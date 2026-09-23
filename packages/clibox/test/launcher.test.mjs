@@ -61,7 +61,9 @@ test("launch preserves literal argv, stdio, status and forwards signals without 
   const result = launch("/a path/clibox", args, { parent, spawnChild: (file, actualArgs, options) => {
     assert.equal(file, "/a path/clibox");
     assert.equal(actualArgs, args);
-    assert.deepEqual(options, { stdio: "inherit", shell: false });
+    assert.deepEqual(options.stdio, ["inherit", "inherit", "inherit", "pipe"]);
+    assert.equal(options.shell, false);
+    assert.equal(options.env.CLIBOX_TERMINAL_INTERRUPT_ACK_FD, "3");
     return child;
   } });
   parent.emit("SIGTERM");
@@ -122,6 +124,8 @@ test("Unix launchers continue forwarding SIGINT, SIGTERM and SIGHUP", async () =
 test("Unix launchers do not forward a terminal SIGINT acknowledged by the native child", async () => {
   const parent = new EventEmitter();
   const child = new EventEmitter();
+  const acknowledgement = new EventEmitter();
+  child.stdio = [null, null, null, acknowledgement];
   child.exitCode = null;
   child.signalCode = null;
   const received = [];
@@ -129,7 +133,7 @@ test("Unix launchers do not forward a terminal SIGINT acknowledged by the native
   const result = launch("clibox", [], { platform: Platform.Linux, parent, spawnChild: () => child });
 
   parent.emit("SIGINT");
-  parent.emit("SIGUSR2");
+  acknowledgement.emit("data", Buffer.from([1]));
   await delay(20);
   assert.deepEqual(received, []);
 
