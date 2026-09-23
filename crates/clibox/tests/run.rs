@@ -956,7 +956,7 @@ fn completed_workload_cleans_up_its_background_descendants() {
             "--idle-timeout",
             "30s",
             "--kill-after",
-            "0",
+            "100ms",
             &assignment,
             "--",
             "sh",

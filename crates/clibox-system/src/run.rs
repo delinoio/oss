@@ -1251,10 +1251,10 @@ fn run_once(
             if descendants_running && !cleanup_or_log(&mut child, kill_after) {
                 // Never join inherited pipes after unconfirmed cleanup: a
                 // surviving descendant could hold one forever. Cleanup has
-                // already sent graceful and forced signals within its bounded
-                // deadlines, so preserve the direct child's status rather
-                // than turn a completed workload into a hang.
-                return Ok(Outcome::Child(status));
+                // already exhausted its bounded termination attempts, so a
+                // retryable direct-child status must not start overlapping
+                // work without an owned handle for the surviving descendant.
+                return runtime_failure("Owned workload cleanup could not be confirmed.");
             }
             if descendants_running {
                 // Cleanup is bounded, but an output forwarding thread can
