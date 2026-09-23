@@ -2814,7 +2814,7 @@ fn ensure_private_state_ancestors(path: &Path) -> Result<()> {
         if let Some(parent_mode) = parent_mode {
             let parent_is_private = parent_mode & 0o022 == 0;
             let parent_is_sticky = parent_mode & 0o1000 != 0;
-            if !parent_is_private && !(parent_is_sticky && owned_by_effective_user(&metadata)) {
+            if !(parent_is_private || parent_is_sticky && owned_by_effective_user(&metadata)) {
                 return runtime_failure(
                     "Execution state directory permissions or ownership are unsafe.",
                 );
