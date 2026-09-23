@@ -76,7 +76,8 @@ fn runtime_failure(session: &Path) -> Result<Option<Error>> {
     .unwrap_or(Code::PnportInjectionFailed);
     Ok(Some(Error::new(
         code,
-        "Native filesystem interception reported a runtime failure; the process tree has been stopped.",
+        "Native filesystem interception reported a runtime failure; the process tree has been \
+         stopped.",
     )))
 }
 

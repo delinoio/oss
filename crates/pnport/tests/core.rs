@@ -257,7 +257,10 @@ fn confined_dangling_archive_symlinks_remain_readable() {
     let lease = cache.materialize(&path).unwrap();
     for (name, target) in [("missing", "not-installed"), ("indirect", "missing")] {
         let link = lease.content.join("node_modules/dep").join(name);
-        assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert!(fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
         assert_eq!(fs::read_link(&link).unwrap(), Path::new(target));
         assert_eq!(
             fs::read(&link).unwrap_err().kind(),
