@@ -2894,7 +2894,7 @@ fn ensure_private_dir(path: &Path) -> Result<()> {
 
 #[cfg(unix)]
 fn ensure_private_state_ancestors(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
     if !path.is_absolute() {
         return runtime_failure("Execution state directory must be an absolute path.");
@@ -2929,6 +2929,15 @@ fn ensure_private_state_ancestors(path: &Path) -> Result<()> {
         if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
             return runtime_failure("Execution state directory is not a safe directory.");
         }
+        if !state_ancestor_ownership_is_safe(
+            metadata.permissions().mode(),
+            metadata.uid(),
+            unsafe { libc::geteuid() },
+        ) {
+            return runtime_failure(
+                "Execution state directory permissions or ownership are unsafe.",
+            );
+        }
         if let Some(parent_mode) = parent_mode {
             let parent_is_private = parent_mode & 0o022 == 0;
             let parent_is_sticky = parent_mode & 0o1000 != 0;
@@ -2941,6 +2950,11 @@ fn ensure_private_state_ancestors(path: &Path) -> Result<()> {
         parent_mode = Some(metadata.permissions().mode());
     }
     Ok(())
+}
+
+#[cfg(unix)]
+fn state_ancestor_ownership_is_safe(mode: u32, owner: u32, effective_user: u32) -> bool {
+    owner == 0 || owner == effective_user || mode & 0o200 == 0
 }
 
 #[cfg(windows)]
@@ -4257,6 +4271,15 @@ mod state_key_tests {
 
         let error = ensure_private_dir(&unsafe_ancestor.join("state")).unwrap_err();
         assert_eq!(error.code, Code::IoFailed);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn state_directory_rejects_a_foreign_owner_writable_ancestor() {
+        assert!(!state_ancestor_ownership_is_safe(0o755, 501, 502));
+        assert!(state_ancestor_ownership_is_safe(0o755, 0, 502));
+        assert!(state_ancestor_ownership_is_safe(0o755, 502, 502));
+        assert!(state_ancestor_ownership_is_safe(0o555, 501, 502));
     }
 
     #[cfg(unix)]
