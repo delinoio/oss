@@ -18,7 +18,7 @@ use tokio::{
     task::{JoinHandle, JoinSet},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{Level, span};
+use tracing::{Level, span, warn};
 
 use crate::{
     bindings::alloc::alloc_seccomp_notif_resp,
@@ -39,6 +39,7 @@ impl<H> Supervisor<H> {
 
     /// Stops accepting notifications and returns the recorded handler state
     /// without waiting for inherited listeners in surviving descendants.
+    /// Existing listeners continue forwarding syscalls after the trace seals.
     ///
     /// # Panics
     /// Panics if the handling loop task has panicked.
@@ -132,7 +133,18 @@ pub fn supervise<H: SeccompNotifyHandler + Default + Send + 'static>() -> io::Re
                 loop {
                     let notify = tokio::select! {
                         biased;
-                        () = handler_cancellation.cancelled() => break,
+                        () = handler_cancellation.cancelled() => {
+                            // Descendants inherit the filter after the root exits.
+                            // Closing its listener would turn their future
+                            // intercepted syscalls into ENOSYS. Continue them
+                            // without extending the sealed access trace.
+                            tokio::spawn(async move {
+                                if let Err(error) = serve_pass_through(listener).await {
+                                    warn!(%error, "Seccomp pass-through listener failed");
+                                }
+                            });
+                            break;
+                        },
                         notify = listener.next() => notify?,
                     };
                     let Some(notify) = notify else { break };
@@ -161,4 +173,13 @@ pub fn supervise<H: SeccompNotifyHandler + Default + Send + 'static>() -> io::Re
         cancellation,
         handling_loop_task: Some(tokio::spawn(handling_loop)),
     })
+}
+
+async fn serve_pass_through(mut listener: NotifyListener) -> io::Result<()> {
+    let mut response = alloc_seccomp_notif_resp();
+    while let Some(notify) = listener.next().await? {
+        let request_id = notify.id;
+        listener.send_continue(request_id, &mut response)?;
+    }
+    Ok(())
 }

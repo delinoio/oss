@@ -88,6 +88,13 @@ pub(crate) static SPY_IMPL: LazyLock<GlobalSpy> = LazyLock::new(|| {
 #[cfg(all(test, unix))]
 mod tests {
     use std::os::unix::fs::PermissionsExt;
+    #[cfg(target_os = "linux")]
+    use std::{fs, process::Stdio, time::Duration};
+
+    #[cfg(target_os = "linux")]
+    use tokio::io::AsyncReadExt;
+    #[cfg(target_os = "linux")]
+    use tokio_util::sync::CancellationToken;
 
     use super::private_preload_dir;
 
@@ -101,5 +108,57 @@ mod tests {
             .permissions()
             .mode();
         assert_eq!(mode & 0o777, 0o700);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn filtered_descendant_continues_after_root_trace_seals() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let source = directory.path().join("survivor.c");
+        let executable = directory.path().join("survivor");
+        fs::write(
+            &source,
+            r#"#include <fcntl.h>
+#include <stdio.h>
+#include <unistd.h>
+int main(void) {
+  if (fork() == 0) {
+    usleep(500000);
+    int fd = open("/dev/null", O_RDONLY);
+    puts(fd >= 0 ? "continued" : "blocked");
+    if (fd >= 0) close(fd);
+    return 0;
+  }
+  return 0;
+}
+"#,
+        )
+        .expect("write fixture");
+        assert!(
+            std::process::Command::new("cc")
+                .arg("-static")
+                .arg(&source)
+                .arg("-o")
+                .arg(&executable)
+                .status()
+                .expect("compile static fixture")
+                .success()
+        );
+
+        let mut command = super::Command::new(&executable);
+        command.stdout(Stdio::piped());
+        let mut child = command
+            .spawn(CancellationToken::new())
+            .await
+            .expect("spawn tracked fixture");
+        let mut stdout = child.stdout.take().expect("capture descendant output");
+        let termination = child.wait_handle.await.expect("wait for tracked root");
+        assert!(termination.status.success());
+        let mut output = String::new();
+        tokio::time::timeout(Duration::from_secs(5), stdout.read_to_string(&mut output))
+            .await
+            .expect("descendant did not finish")
+            .expect("read descendant output");
+        assert_eq!(output, "continued\n");
     }
 }

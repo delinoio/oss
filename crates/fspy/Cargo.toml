@@ -62,7 +62,7 @@ csv-async = { workspace = true, features = ["tokio"] }
 ctor = { workspace = true }
 ntest = { workspace = true }
 test-log = { workspace = true, features = ["trace"] }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "fs", "io-std"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "fs", "io-std", "time"] }
 
 [lints]
 workspace = true
