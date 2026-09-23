@@ -572,9 +572,10 @@ fn with_service(options: Service) -> Result<Outcome> {
         Err(error) if error.code == Code::TerminationTimeout => return Ok(Outcome::Code(124)),
         Err(error) => return Err(error),
     };
+    let mut pending_probe = None;
 
     // The bounded preflight deliberately happens before spawning either child.
-    match check_http(&options, &client, ready_deadline) {
+    match check_http(&options, &client, ready_deadline, &mut pending_probe) {
         Ok(()) if service.is_some() => {
             return runtime_failure(
                 "The endpoint is already ready; omit --service to use the existing server.",
@@ -594,7 +595,13 @@ fn with_service(options: Service) -> Result<Outcome> {
             }
         }
         Err(code) if code.retryable() => {
-            return wait_for_external_service(&options, &client, &workload, ready_deadline);
+            return wait_for_external_service(
+                &options,
+                &client,
+                &workload,
+                ready_deadline,
+                &mut pending_probe,
+            );
         }
         Err(HttpProbeError::OverallTimeout) => return Ok(Outcome::Code(124)),
         Err(HttpProbeError::Cancelled) => return check_cancelled().and_then(|()| unreachable!()),
@@ -639,7 +646,7 @@ fn with_service(options: Service) -> Result<Outcome> {
                 runtime_failure("The managed service exited before it became ready."),
             );
         }
-        match check_http(&options, &client, ready_deadline) {
+        match check_http(&options, &client, ready_deadline, &mut pending_probe) {
             Ok(()) => break,
             Err(code) if code.retryable() => {
                 // The service can exit while one bounded HTTP attempt is in
@@ -803,6 +810,7 @@ fn wait_for_external_service(
     client: &reqwest::blocking::Client,
     workload: &environment::Plan,
     ready_deadline: Option<Instant>,
+    pending_probe: &mut Option<PendingHttpProbe>,
 ) -> Result<Outcome> {
     // The caller already performed a retryable preflight. Treat it as the
     // first unsuccessful probe so external endpoints never receive an
@@ -810,7 +818,7 @@ fn wait_for_external_service(
     sleep_cancellable(clip_to_deadline(options.interval, ready_deadline))?;
     loop {
         check_cancelled()?;
-        match check_http(options, client, ready_deadline) {
+        match check_http(options, client, ready_deadline, pending_probe) {
             Ok(()) => {
                 return run_once(
                     workload,
@@ -941,26 +949,78 @@ fn check_http(
     options: &Service,
     client: &reqwest::blocking::Client,
     deadline: Option<Instant>,
+    pending: &mut Option<PendingHttpProbe>,
 ) -> std::result::Result<(), HttpProbeError> {
-    let started = Instant::now();
-    let remaining = deadline.map(|limit| limit.saturating_duration_since(started));
-    if remaining == Some(Duration::ZERO) {
-        return Err(HttpProbeError::OverallTimeout);
+    if let Some(result) = queued_probe_result(pending, deadline) {
+        return result;
     }
-    let budget = remaining
-        .map(|remaining| remaining.min(options.attempt_timeout))
-        .unwrap_or(options.attempt_timeout);
-    let attempt_deadline = started
-        .checked_add(budget)
-        .ok_or(HttpProbeError::Terminal)?;
-    let method = match options.method {
-        HttpMethod::Get => reqwest::Method::GET,
-        HttpMethod::Head => reqwest::Method::HEAD,
-    };
+    if pending.is_none() {
+        let started = Instant::now();
+        let remaining = deadline.map(|limit| limit.saturating_duration_since(started));
+        if remaining == Some(Duration::ZERO) {
+            return Err(HttpProbeError::OverallTimeout);
+        }
+        let budget = remaining
+            .map(|remaining| remaining.min(options.attempt_timeout))
+            .unwrap_or(options.attempt_timeout);
+        let attempt_deadline = started
+            .checked_add(budget)
+            .ok_or(HttpProbeError::Terminal)?;
+        let method = match options.method {
+            HttpMethod::Get => reqwest::Method::GET,
+            HttpMethod::Head => reqwest::Method::HEAD,
+        };
+        *pending = Some(start_http_probe(
+            client.clone(),
+            options.url.clone(),
+            method,
+            options.status,
+            budget,
+            attempt_deadline,
+        )?);
+    }
+    loop {
+        if runtime::cancelled() {
+            return Err(HttpProbeError::Cancelled);
+        }
+        if let Some(result) = queued_probe_result(pending, deadline) {
+            return result;
+        }
+        let attempt_deadline = pending
+            .as_ref()
+            .expect("a pending readiness probe is retained until it finishes")
+            .attempt_deadline;
+        let until_attempt = attempt_deadline.saturating_duration_since(Instant::now());
+        if until_attempt.is_zero() {
+            // Retain the worker: some native trust/connect paths cannot be
+            // interrupted by the request timeout. Starting another probe
+            // before it reports would violate the non-overlap contract.
+            return Err(HttpProbeError::AttemptTimeout);
+        }
+        let until_overall = deadline
+            .map(|limit| limit.saturating_duration_since(Instant::now()))
+            .unwrap_or(until_attempt);
+        if until_overall.is_zero() {
+            return Err(HttpProbeError::OverallTimeout);
+        }
+        thread::sleep(POLL.min(until_attempt).min(until_overall));
+    }
+}
+
+struct PendingHttpProbe {
+    receiver: mpsc::Receiver<HttpProbe>,
+    attempt_deadline: Instant,
+}
+
+fn start_http_probe(
+    client: reqwest::blocking::Client,
+    url: reqwest::Url,
+    method: reqwest::Method,
+    expected_status: Option<u16>,
+    budget: Duration,
+    attempt_deadline: Instant,
+) -> std::result::Result<PendingHttpProbe, HttpProbeError> {
     let (sender, receiver) = mpsc::sync_channel(1);
-    let client = client.clone();
-    let url = options.url.clone();
-    let expected_status = options.status;
     thread::Builder::new()
         .name("clibox-readiness-probe".into())
         .spawn(move || {
@@ -979,46 +1039,32 @@ fn check_http(
             );
             HttpProbeError::Terminal
         })?;
-    loop {
-        if runtime::cancelled() {
-            return Err(HttpProbeError::Cancelled);
-        }
-        if let Some(result) = queued_probe_result(&receiver, attempt_deadline, deadline) {
-            return result;
-        }
-        let until_attempt = attempt_deadline.saturating_duration_since(Instant::now());
-        if until_attempt.is_zero() {
-            return Err(HttpProbeError::AttemptTimeout);
-        }
-        let until_overall = deadline
-            .map(|limit| limit.saturating_duration_since(Instant::now()))
-            .unwrap_or(until_attempt);
-        if until_overall.is_zero() {
-            return Err(HttpProbeError::OverallTimeout);
-        }
-        match receiver.recv_timeout(POLL.min(until_attempt).min(until_overall)) {
-            Ok(probe) => {
-                return bounded_probe_result(probe, attempt_deadline, deadline);
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => (),
-            Err(mpsc::RecvTimeoutError::Disconnected) => return Err(HttpProbeError::Terminal),
-        }
-    }
+    Ok(PendingHttpProbe {
+        receiver,
+        attempt_deadline,
+    })
 }
 
 fn queued_probe_result(
-    receiver: &mpsc::Receiver<HttpProbe>,
-    attempt_deadline: Instant,
+    pending: &mut Option<PendingHttpProbe>,
     overall_deadline: Option<Instant>,
 ) -> Option<std::result::Result<(), HttpProbeError>> {
-    match receiver.try_recv() {
-        Ok(probe) => Some(bounded_probe_result(
-            probe,
-            attempt_deadline,
-            overall_deadline,
-        )),
+    let probe = pending.as_ref()?;
+    let attempt_deadline = probe.attempt_deadline;
+    match probe.receiver.try_recv() {
+        Ok(probe) => {
+            *pending = None;
+            Some(bounded_probe_result(
+                probe,
+                attempt_deadline,
+                overall_deadline,
+            ))
+        }
         Err(mpsc::TryRecvError::Empty) => None,
-        Err(mpsc::TryRecvError::Disconnected) => Some(Err(HttpProbeError::Terminal)),
+        Err(mpsc::TryRecvError::Disconnected) => {
+            *pending = None;
+            Some(Err(HttpProbeError::Terminal))
+        }
     }
 }
 
@@ -4641,10 +4687,41 @@ mod lifecycle_tests {
 
         thread::sleep(Duration::from_millis(2));
 
+        let mut pending = Some(PendingHttpProbe {
+            receiver,
+            attempt_deadline: deadline,
+        });
+
         assert!(matches!(
-            queued_probe_result(&receiver, deadline, Some(deadline)),
+            queued_probe_result(&mut pending, Some(deadline)),
             Some(Ok(()))
         ));
+        assert!(pending.is_none());
+    }
+
+    #[test]
+    fn readiness_retains_an_unfinished_probe_for_the_next_poll() {
+        let deadline = Instant::now().checked_add(Duration::from_secs(1)).unwrap();
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let mut pending = Some(PendingHttpProbe {
+            receiver,
+            attempt_deadline: deadline,
+        });
+
+        assert!(queued_probe_result(&mut pending, None).is_none());
+        assert!(pending.is_some());
+
+        sender
+            .send(HttpProbe {
+                result: Err(HttpProbeError::NotReady),
+                observed_at: Instant::now(),
+            })
+            .unwrap();
+        assert!(matches!(
+            queued_probe_result(&mut pending, None),
+            Some(Err(HttpProbeError::NotReady))
+        ));
+        assert!(pending.is_none());
     }
 
     #[test]
