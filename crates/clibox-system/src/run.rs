@@ -1372,6 +1372,8 @@ struct OwnedChild {
     #[cfg(unix)]
     unix_ownership: UnixOwnership,
     #[cfg(unix)]
+    reaped: bool,
+    #[cfg(unix)]
     foreground_terminal: Option<Arc<ForegroundTerminal>>,
     #[cfg(windows)]
     job: Job,
@@ -1607,6 +1609,8 @@ fn spawn(
         pid,
         #[cfg(unix)]
         unix_ownership,
+        #[cfg(unix)]
+        reaped: false,
         #[cfg(unix)]
         foreground_terminal,
         #[cfg(windows)]
@@ -1925,10 +1929,43 @@ impl OwnedChild {
     }
 
     #[cfg(unix)]
-    fn tree_running(&self) -> Result<bool> {
+    fn tree_running(&mut self) -> Result<bool> {
+        if self.completion()?.is_some() {
+            return match self.unix_ownership {
+                UnixOwnership::ProcessGroup => completed_process_group_running(self.pid),
+                // Nested wrappers deliberately own only their direct child.
+                // Once that child has exited, never probe or signal its
+                // reusable numeric PID on behalf of descendants owned by the
+                // outer wrapper.
+                UnixOwnership::DirectChild => Ok(false),
+            };
+        }
         match self.unix_ownership {
             UnixOwnership::ProcessGroup => process_group_running(self.pid),
             UnixOwnership::DirectChild => process_running(self.pid),
+        }
+    }
+
+    #[cfg(unix)]
+    fn reap_completed_child(&mut self) -> Result<()> {
+        if self.reaped || self.completion.is_none() {
+            return Ok(());
+        }
+        loop {
+            let mut status = 0;
+            let observed = unsafe { libc::waitpid(self.pid as libc::pid_t, &mut status, 0) };
+            if observed == self.pid as libc::pid_t {
+                self.reaped = true;
+                return Ok(());
+            }
+            if observed == -1 {
+                let error = io::Error::last_os_error();
+                if error.kind() == io::ErrorKind::Interrupted {
+                    continue;
+                }
+                return Err(Failure::io(&error));
+            }
+            return runtime_failure("Could not reap the completed owned child.");
         }
     }
 
@@ -1974,6 +2011,7 @@ fn graceful_cleanup_wait(graceful_delivered: bool, kill_after: Duration) -> Dura
 #[cfg(unix)]
 impl Drop for OwnedChild {
     fn drop(&mut self) {
+        let _ = self.reap_completed_child();
         if let Some(terminal) = self.foreground_terminal.take() {
             terminal.restore();
         }
@@ -1988,12 +2026,20 @@ fn wait_for_completion(
     use std::os::unix::process::ExitStatusExt;
 
     let pid = child.id() as libc::pid_t;
-    // waitpid owns reaping from this point. Keeping std::process::Child would
-    // add no supervision capability, and dropping it never terminates a child.
+    // Keep the child waitable until OwnedChild has finished every signal and
+    // liveness decision. Reaping would make its numeric PID reusable while
+    // cleanup still addresses the owned process group or direct child.
     drop(child);
     loop {
-        let mut status = 0;
-        let observed = unsafe { libc::waitpid(pid, &mut status, libc::WUNTRACED) };
+        let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::zeroed();
+        let observed = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                pid as libc::id_t,
+                info.as_mut_ptr(),
+                libc::WEXITED | libc::WSTOPPED | libc::WNOWAIT,
+            )
+        };
         if observed == -1 {
             let error = io::Error::last_os_error();
             if error.kind() == io::ErrorKind::Interrupted {
@@ -2001,19 +2047,51 @@ fn wait_for_completion(
             }
             return Err(Failure::io(&error));
         }
-        if libc::WIFSTOPPED(status) {
+        let info = unsafe { info.assume_init() };
+        if info.si_code == libc::CLD_STOPPED {
+            consume_child_stop(pid)?;
             if let Some(terminal) = &foreground_terminal {
                 terminal.suspend_wrapper()?;
             }
             continue;
         }
-        if libc::WIFEXITED(status) || libc::WIFSIGNALED(status) {
+        let status = unsafe { info.si_status() };
+        let raw_status = match info.si_code {
+            libc::CLD_EXITED => status << 8,
+            libc::CLD_KILLED => status,
+            libc::CLD_DUMPED => status | 0x80,
+            _ => return runtime_failure("Owned child reported an unsupported process state."),
+        };
+        if libc::WIFEXITED(raw_status) || libc::WIFSIGNALED(raw_status) {
             return Ok(Completion {
-                status: ExitStatus::from_raw(status),
+                status: ExitStatus::from_raw(raw_status),
                 observed_at: Instant::now(),
             });
         }
         return runtime_failure("Owned child reported an unsupported process state.");
+    }
+}
+
+#[cfg(unix)]
+fn consume_child_stop(pid: libc::pid_t) -> Result<()> {
+    loop {
+        let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::zeroed();
+        let observed = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                pid as libc::id_t,
+                info.as_mut_ptr(),
+                libc::WSTOPPED,
+            )
+        };
+        if observed == 0 {
+            return Ok(());
+        }
+        let error = io::Error::last_os_error();
+        if error.kind() == io::ErrorKind::Interrupted {
+            continue;
+        }
+        return Err(Failure::io(&error));
     }
 }
 
@@ -2408,6 +2486,105 @@ fn signal_process(pid: u32, force: bool) -> Result<()> {
 fn process_group_running(pid: u32) -> Result<bool> {
     let result = unsafe { libc::kill(-(pid as i32), 0) };
     process_running_result(result)
+}
+
+#[cfg(target_os = "linux")]
+fn completed_process_group_running(group: u32) -> Result<bool> {
+    for entry in fs::read_dir("/proc").map_err(|error| Failure::io(&error))? {
+        let entry = entry.map_err(|error| Failure::io(&error))?;
+        let name = entry.file_name();
+        let Some(candidate) = name.to_str().and_then(|value| value.parse::<u32>().ok()) else {
+            continue;
+        };
+        // The direct child is deliberately unreaped while cleanup is in
+        // progress. It is a zombie, not a descendant that still needs a
+        // termination signal.
+        if candidate == group {
+            continue;
+        }
+        let stat = match fs::read_to_string(entry.path().join("stat")) {
+            Ok(stat) => stat,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(Failure::io(&error)),
+        };
+        if linux_process_group_member(&stat, group)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_process_group_member(stat: &str, group: u32) -> Result<bool> {
+    // Linux /proc/<pid>/stat permits spaces and parentheses in comm, so parse
+    // the stable fields only after the final closing parenthesis.
+    let (_, fields) = stat
+        .rsplit_once(')')
+        .ok_or_else(|| Failure::new(Code::IoFailed, "Could not parse process status."))?;
+    let mut fields = fields.split_whitespace();
+    let state = fields
+        .next()
+        .ok_or_else(|| Failure::new(Code::IoFailed, "Could not parse process status."))?;
+    let _parent = fields
+        .next()
+        .ok_or_else(|| Failure::new(Code::IoFailed, "Could not parse process status."))?;
+    let process_group = fields
+        .next()
+        .ok_or_else(|| Failure::new(Code::IoFailed, "Could not parse process status."))?
+        .parse::<u32>()
+        .map_err(|_| Failure::new(Code::IoFailed, "Could not parse process status."))?;
+    Ok(state != "Z" && process_group == group)
+}
+
+#[cfg(target_os = "macos")]
+fn completed_process_group_running(group: u32) -> Result<bool> {
+    unsafe extern "C" {
+        fn proc_listpgrppids(
+            pgrpid: libc::pid_t,
+            buffer: *mut libc::pid_t,
+            buffersize: libc::c_int,
+        ) -> libc::c_int;
+    }
+
+    const INITIAL_GROUP_MEMBERS: usize = 64;
+    const MAXIMUM_GROUP_MEMBERS: usize = 4096;
+
+    let mut members = vec![0; INITIAL_GROUP_MEMBERS];
+    loop {
+        let bytes = members
+            .len()
+            .checked_mul(std::mem::size_of::<libc::pid_t>())
+            .and_then(|bytes| libc::c_int::try_from(bytes).ok())
+            .ok_or_else(|| {
+                Failure::new(Code::IoFailed, "Process-group member list is too large.")
+            })?;
+        // proc_listpgrppids returns a PID count, rather than a byte count.
+        let count = unsafe { proc_listpgrppids(group as libc::pid_t, members.as_mut_ptr(), bytes) };
+        if count < 0 {
+            return Err(Failure::io(&io::Error::last_os_error()));
+        }
+        let count = usize::try_from(count).map_err(|_| {
+            Failure::new(Code::IoFailed, "Could not inspect the owned process group.")
+        })?;
+        if count > members.len() {
+            return runtime_failure("Could not inspect the owned process group.");
+        }
+        if count == members.len() {
+            if members.len() == MAXIMUM_GROUP_MEMBERS {
+                return runtime_failure("Could not inspect the owned process group.");
+            }
+            members.resize((members.len() * 2).min(MAXIMUM_GROUP_MEMBERS), 0);
+            continue;
+        }
+        return Ok(members[..count]
+            .iter()
+            .any(|member| *member > 0 && *member as u32 != group));
+    }
+}
+
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+fn completed_process_group_running(_group: u32) -> Result<bool> {
+    runtime_failure("Could not inspect the owned process group on this platform.")
 }
 
 #[cfg(unix)]
