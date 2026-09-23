@@ -1317,8 +1317,16 @@ enum UnixOwnership {
 
 #[cfg(unix)]
 struct ForegroundTerminal {
+    descriptor: libc::c_int,
     parent_group: libc::pid_t,
     child_group: libc::pid_t,
+}
+
+#[cfg(unix)]
+#[derive(Clone, Copy)]
+struct ForegroundTerminalParent {
+    descriptor: libc::c_int,
+    group: libc::pid_t,
 }
 
 fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
@@ -1369,7 +1377,7 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
     let pid = child.id();
     #[cfg(unix)]
     let foreground_terminal = match foreground_parent_group {
-        Some(parent_group) => match ForegroundTerminal::transfer(parent_group, child.id()) {
+        Some(parent) => match ForegroundTerminal::transfer(parent, child.id()) {
             Ok(terminal) => Some(Arc::new(terminal)),
             Err(error) => {
                 let _ = signal_process_group(child.id(), true);
@@ -2010,20 +2018,9 @@ fn parent_process(_process: libc::pid_t) -> Option<libc::pid_t> {
 fn foreground_parent_group(
     ownership: UnixOwnership,
     mode: &OutputMode,
-) -> Result<Option<libc::pid_t>> {
-    if !matches!(ownership, UnixOwnership::ProcessGroup)
-        || matches!(mode, OutputMode::Service)
-        || unsafe { libc::isatty(libc::STDIN_FILENO) } == 0
-    {
+) -> Result<Option<ForegroundTerminalParent>> {
+    if !matches!(ownership, UnixOwnership::ProcessGroup) || matches!(mode, OutputMode::Service) {
         return Ok(None);
-    }
-    let foreground_group = unsafe { libc::tcgetpgrp(libc::STDIN_FILENO) };
-    if foreground_group == -1 {
-        let error = io::Error::last_os_error();
-        if error.raw_os_error() == Some(libc::ENOTTY) {
-            return Ok(None);
-        }
-        return Err(Failure::io(&error));
     }
     let parent_group = unsafe { libc::getpgrp() };
     if parent_group <= 0 {
@@ -2032,29 +2029,57 @@ fn foreground_parent_group(
             "Could not identify the wrapper's terminal process group.",
         ));
     }
-    Ok((foreground_group == parent_group).then_some(parent_group))
+    let descriptors: &[libc::c_int] = match mode {
+        OutputMode::WorkloadInherited => {
+            &[libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO]
+        }
+        OutputMode::WorkloadPiped => &[libc::STDIN_FILENO],
+        OutputMode::Service => unreachable!("managed services do not inherit a terminal"),
+    };
+    for &descriptor in descriptors {
+        if unsafe { libc::isatty(descriptor) } == 0 {
+            continue;
+        }
+        let foreground_group = unsafe { libc::tcgetpgrp(descriptor) };
+        if foreground_group == -1 {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() == Some(libc::ENOTTY) {
+                continue;
+            }
+            return Err(Failure::io(&error));
+        }
+        if foreground_group == parent_group {
+            return Ok(Some(ForegroundTerminalParent {
+                descriptor,
+                group: parent_group,
+            }));
+        }
+    }
+    Ok(None)
 }
 
 #[cfg(unix)]
 impl ForegroundTerminal {
-    fn transfer(parent_group: libc::pid_t, child_pid: u32) -> Result<Self> {
+    fn transfer(parent: ForegroundTerminalParent, child_pid: u32) -> Result<Self> {
         let child_group = child_pid as libc::pid_t;
-        set_terminal_foreground_group(child_group).map_err(|error| Failure::io(&error))?;
+        set_terminal_foreground_group(parent.descriptor, child_group)
+            .map_err(|error| Failure::io(&error))?;
         if let Err(error) = continue_process_group(child_pid) {
-            let _ = set_terminal_foreground_group(parent_group);
+            let _ = set_terminal_foreground_group(parent.descriptor, parent.group);
             return Err(error);
         }
         Ok(Self {
-            parent_group,
+            descriptor: parent.descriptor,
+            parent_group: parent.group,
             child_group,
         })
     }
 
     fn restore(&self) {
-        if unsafe { libc::tcgetpgrp(libc::STDIN_FILENO) } != self.child_group {
+        if unsafe { libc::tcgetpgrp(self.descriptor) } != self.child_group {
             return;
         }
-        if set_terminal_foreground_group(self.parent_group).is_err() {
+        if set_terminal_foreground_group(self.descriptor, self.parent_group).is_err() {
             tracing::debug!(
                 operation = "run",
                 child_group = self.child_group,
@@ -2072,17 +2097,19 @@ impl ForegroundTerminal {
         // return control to the shell. Once the shell continues the job, put
         // the child back in the foreground and continue its separate process
         // group before waiting again.
-        set_terminal_foreground_group(self.parent_group).map_err(|error| Failure::io(&error))?;
+        set_terminal_foreground_group(self.descriptor, self.parent_group)
+            .map_err(|error| Failure::io(&error))?;
         suspend_process_group(self.parent_group)?;
-        set_terminal_foreground_group(self.child_group).map_err(|error| Failure::io(&error))?;
+        set_terminal_foreground_group(self.descriptor, self.child_group)
+            .map_err(|error| Failure::io(&error))?;
         continue_process_group(self.child_group as u32)
     }
 }
 
 #[cfg(unix)]
-fn set_terminal_foreground_group(group: libc::pid_t) -> io::Result<()> {
+fn set_terminal_foreground_group(descriptor: libc::c_int, group: libc::pid_t) -> io::Result<()> {
     with_sigttou_blocked(|| {
-        if unsafe { libc::tcsetpgrp(libc::STDIN_FILENO, group) } == -1 {
+        if unsafe { libc::tcsetpgrp(descriptor, group) } == -1 {
             Err(io::Error::last_os_error())
         } else {
             Ok(())

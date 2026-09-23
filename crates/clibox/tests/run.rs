@@ -27,6 +27,23 @@ fn command(home: &std::path::Path, args: &[&str]) -> Command {
 
 #[cfg(target_os = "linux")]
 fn terminal_command(home: &std::path::Path, args: &[&str]) -> (Command, fs::File) {
+    terminal_command_with_stdio(home, args, false)
+}
+
+#[cfg(target_os = "linux")]
+fn terminal_command_with_redirected_stdin(
+    home: &std::path::Path,
+    args: &[&str],
+) -> (Command, fs::File) {
+    terminal_command_with_stdio(home, args, true)
+}
+
+#[cfg(target_os = "linux")]
+fn terminal_command_with_stdio(
+    home: &std::path::Path,
+    args: &[&str],
+    redirected_stdin: bool,
+) -> (Command, fs::File) {
     let mut master = -1;
     let mut slave = -1;
     assert_eq!(
@@ -45,13 +62,22 @@ fn terminal_command(home: &std::path::Path, args: &[&str]) -> (Command, fs::File
     let slave = unsafe { fs::File::from_raw_fd(slave) };
     let mut command = command(home, args);
     command
-        .stdin(Stdio::from(slave.try_clone().unwrap()))
+        .stdin(if redirected_stdin {
+            Stdio::null()
+        } else {
+            Stdio::from(slave.try_clone().unwrap())
+        })
         .stdout(Stdio::from(slave.try_clone().unwrap()))
         .stderr(Stdio::from(slave));
+    let controlling_descriptor = if redirected_stdin {
+        libc::STDOUT_FILENO
+    } else {
+        libc::STDIN_FILENO
+    };
     unsafe {
-        command.pre_exec(|| {
+        command.pre_exec(move || {
             if libc::setsid() == -1
-                || libc::ioctl(libc::STDIN_FILENO, libc::TIOCSCTTY as _, 0) == -1
+                || libc::ioctl(controlling_descriptor, libc::TIOCSCTTY as _, 0) == -1
             {
                 Err(std::io::Error::last_os_error())
             } else {
@@ -453,6 +479,49 @@ fn interactive_output_forwarding_survives_tostop() {
     };
     assert_eq!(status.code(), Some(124));
     assert!(read_terminal(terminal).contains("forwarded-output"));
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn inherited_output_keeps_foreground_terminal_when_stdin_is_redirected() {
+    let home = tempfile::tempdir().unwrap();
+    let (mut wrapper, terminal) = terminal_command_with_redirected_stdin(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--timeout",
+            "100ms",
+            "--kill-after",
+            "0",
+            "--",
+            "sh",
+            "-c",
+            "printf inherited-output; sleep 30",
+        ],
+    );
+    enable_terminal_tostop(&terminal);
+    let mut wrapper = wrapper.spawn().unwrap();
+    let wrapper_group = wrapper.id() as libc::pid_t;
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    let status = loop {
+        if let Some(status) = wrapper.try_wait().unwrap() {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = unsafe { libc::kill(-wrapper_group, libc::SIGKILL) };
+            let foreground_group = unsafe { libc::tcgetpgrp(terminal.as_raw_fd()) };
+            if foreground_group > 0 && foreground_group != wrapper_group {
+                let _ = unsafe { libc::kill(-foreground_group, libc::SIGKILL) };
+            }
+            let _ = wrapper.wait();
+            panic!("TOSTOP stopped inherited output after stdin was redirected");
+        }
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(status.code(), Some(124));
+    assert!(read_terminal(terminal).contains("inherited-output"));
 }
 
 #[test]
