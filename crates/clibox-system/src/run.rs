@@ -1360,6 +1360,7 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
         stage = "started",
         "run_child"
     );
+    let pid = child.id();
     #[cfg(unix)]
     let foreground_terminal = match foreground_parent_group {
         Some(parent_group) => match ForegroundTerminal::transfer(parent_group, child.id()) {
@@ -1394,22 +1395,52 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
     let stderr_for_both = matches!(mode, OutputMode::Service);
     let mut output_threads = Vec::new();
     if let Some(stdout) = child.stdout.take() {
-        output_threads.push(forward(
+        let output = forward(
             stdout,
             stderr_for_both,
             activity.clone(),
             output_failure.clone(),
-        ));
+        );
+        let output = match output {
+            Ok(output) => output,
+            Err(error) => {
+                return Err(supervision_spawn_failure(
+                    &mut child,
+                    pid,
+                    #[cfg(unix)]
+                    unix_ownership,
+                    #[cfg(unix)]
+                    foreground_terminal.as_deref(),
+                    #[cfg(windows)]
+                    &job,
+                    &error,
+                    "output_spawn_failed",
+                ));
+            }
+        };
+        output_threads.push(output);
     }
     if let Some(stderr) = child.stderr.take() {
-        output_threads.push(forward(
-            stderr,
-            true,
-            activity.clone(),
-            output_failure.clone(),
-        ));
+        let output = forward(stderr, true, activity.clone(), output_failure.clone());
+        let output = match output {
+            Ok(output) => output,
+            Err(error) => {
+                return Err(supervision_spawn_failure(
+                    &mut child,
+                    pid,
+                    #[cfg(unix)]
+                    unix_ownership,
+                    #[cfg(unix)]
+                    foreground_terminal.as_deref(),
+                    #[cfg(windows)]
+                    &job,
+                    &error,
+                    "output_spawn_failed",
+                ));
+            }
+        };
+        output_threads.push(output);
     }
-    let pid = child.id();
     let (completion_tx, completions) = mpsc::sync_channel(1);
     #[cfg(unix)]
     let completion_terminal = foreground_terminal.clone();
@@ -1441,14 +1472,6 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
             let _ = completion_tx.send(completion);
         });
     if let Err(error) = completion_thread {
-        let failure = Failure::io(&error);
-        tracing::error!(
-            operation = "run",
-            pid,
-            stage = "completion_spawn_failed",
-            code = ?failure.code,
-            "run_child"
-        );
         let mut child = child
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -1459,30 +1482,18 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
                     "Could not recover the child after its supervisor failed to start.",
                 )
             })?;
-        #[cfg(unix)]
-        {
-            let cleanup = match unix_ownership {
-                UnixOwnership::ProcessGroup => signal_process_group(pid, true),
-                UnixOwnership::DirectChild => signal_process(pid, true),
-            };
-            if let Err(cleanup_error) = cleanup {
-                cleanup_error.report("run");
-                let _ = child.kill();
-            }
-            let _ = child.wait();
-            if let Some(terminal) = &foreground_terminal {
-                terminal.restore();
-            }
-        }
-        #[cfg(windows)]
-        {
-            if let Err(cleanup_error) = job.signal(pid, true) {
-                cleanup_error.report("run");
-                let _ = child.kill();
-            }
-            let _ = child.wait();
-        }
-        return Err(failure);
+        return Err(supervision_spawn_failure(
+            &mut child,
+            pid,
+            #[cfg(unix)]
+            unix_ownership,
+            #[cfg(unix)]
+            foreground_terminal.as_deref(),
+            #[cfg(windows)]
+            &job,
+            &error,
+            "completion_spawn_failed",
+        ));
     }
     Ok(OwnedChild {
         pid,
@@ -1500,58 +1511,116 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
     })
 }
 
+fn supervision_spawn_failure(
+    child: &mut Child,
+    pid: u32,
+    #[cfg(unix)] unix_ownership: UnixOwnership,
+    #[cfg(unix)] foreground_terminal: Option<&ForegroundTerminal>,
+    #[cfg(windows)] job: &Job,
+    error: &io::Error,
+    stage: &'static str,
+) -> Failure {
+    let failure = Failure::io(error);
+    tracing::error!(operation = "run", pid, stage, code = ?failure.code, "run_child");
+    recover_unclaimed_child(
+        child,
+        pid,
+        #[cfg(unix)]
+        unix_ownership,
+        #[cfg(unix)]
+        foreground_terminal,
+        #[cfg(windows)]
+        job,
+    );
+    failure
+}
+
+fn recover_unclaimed_child(
+    child: &mut Child,
+    pid: u32,
+    #[cfg(unix)] unix_ownership: UnixOwnership,
+    #[cfg(unix)] foreground_terminal: Option<&ForegroundTerminal>,
+    #[cfg(windows)] job: &Job,
+) {
+    #[cfg(unix)]
+    {
+        let cleanup = match unix_ownership {
+            UnixOwnership::ProcessGroup => signal_process_group(pid, true),
+            UnixOwnership::DirectChild => signal_process(pid, true),
+        };
+        if let Err(cleanup_error) = cleanup {
+            cleanup_error.report("run");
+            let _ = child.kill();
+        }
+        let _ = child.wait();
+        if let Some(terminal) = foreground_terminal {
+            terminal.restore();
+        }
+    }
+    #[cfg(windows)]
+    {
+        if let Err(cleanup_error) = job.signal(pid, true) {
+            cleanup_error.report("run");
+            let _ = child.kill();
+        }
+        let _ = child.wait();
+    }
+}
+
 fn forward(
     mut reader: impl Read + Send + 'static,
     stderr: bool,
     activity: Option<Activity>,
     output_failure: Option<Arc<AtomicBool>>,
-) -> thread::JoinHandle<()> {
-    thread::spawn(move || {
-        let mut buffer = [0u8; 8192];
-        loop {
-            let count = match reader.read(&mut buffer) {
-                Ok(0) => return,
-                Err(_) => {
-                    tracing::debug!(
-                        operation = "run",
-                        stage = "forward-read-failed",
-                        "run_output"
-                    );
+) -> io::Result<thread::JoinHandle<()>> {
+    thread::Builder::new()
+        .name("clibox-output-forward".into())
+        .spawn(move || {
+            let mut buffer = [0u8; 8192];
+            loop {
+                let count = match reader.read(&mut buffer) {
+                    Ok(0) => return,
+                    Err(_) => {
+                        tracing::debug!(
+                            operation = "run",
+                            stage = "forward-read-failed",
+                            "run_output"
+                        );
+                        if let Some(output_failure) = &output_failure {
+                            output_failure.store(true, Ordering::Release);
+                        }
+                        return;
+                    }
+                    Ok(count) => count,
+                };
+                // A successful read is workload activity even when a slow consumer
+                // blocks forwarding these bytes for longer than the idle limit.
+                // Retain the most recent read timestamp rather than a bounded
+                // notification. Output can outpace supervisor polls, and a stale
+                // earlier event must not make a later read look idle.
+                if let Some(activity) = &activity {
+                    activity.observe(Instant::now());
+                }
+                let write = if stderr {
+                    let mut output = io::stderr().lock();
+                    output
+                        .write_all(&buffer[..count])
+                        .and_then(|()| output.flush())
+                } else {
+                    let mut output = io::stdout().lock();
+                    output
+                        .write_all(&buffer[..count])
+                        .and_then(|()| output.flush())
+                };
+                if write.is_err() {
+                    tracing::debug!(operation = "run", stage = "forward-failed", "run_output");
                     if let Some(output_failure) = &output_failure {
                         output_failure.store(true, Ordering::Release);
                     }
                     return;
                 }
-                Ok(count) => count,
-            };
-            // A successful read is workload activity even when a slow consumer
-            // blocks forwarding these bytes for longer than the idle limit.
-            // Retain the most recent read timestamp rather than a bounded
-            // notification. Output can outpace supervisor polls, and a stale
-            // earlier event must not make a later read look idle.
-            if let Some(activity) = &activity {
-                activity.observe(Instant::now());
             }
-            let write = if stderr {
-                let mut output = io::stderr().lock();
-                output
-                    .write_all(&buffer[..count])
-                    .and_then(|()| output.flush())
-            } else {
-                let mut output = io::stdout().lock();
-                output
-                    .write_all(&buffer[..count])
-                    .and_then(|()| output.flush())
-            };
-            if write.is_err() {
-                tracing::debug!(operation = "run", stage = "forward-failed", "run_output");
-                if let Some(output_failure) = &output_failure {
-                    output_failure.store(true, Ordering::Release);
-                }
-                return;
-            }
-        }
-    })
+        })
 }
 
 #[derive(Clone)]
