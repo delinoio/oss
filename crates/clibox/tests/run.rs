@@ -432,8 +432,8 @@ fn interactive_output_forwarding_survives_tostop() {
         ],
     );
     enable_terminal_tostop(&terminal);
-    let wrapper_group = wrapper.id() as libc::pid_t;
     let mut wrapper = wrapper.spawn().unwrap();
+    let wrapper_group = wrapper.id() as libc::pid_t;
 
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
     let status = loop {
