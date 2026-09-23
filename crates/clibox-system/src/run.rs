@@ -2047,10 +2047,10 @@ fn recover_unclaimed_child(
             cleanup_error.report("run");
             let _ = child.kill();
         }
-        let _ = child.wait();
         if let Some(terminal) = foreground_terminal {
             terminal.restore();
         }
+        confirm_unclaimed_child_cleanup(child, pid, unix_ownership);
     }
     #[cfg(windows)]
     {
@@ -2058,8 +2058,71 @@ fn recover_unclaimed_child(
             cleanup_error.report("run");
             let _ = child.kill();
         }
-        let _ = child.wait();
+        confirm_unclaimed_child_cleanup(pid, job);
     }
+}
+
+#[cfg(unix)]
+fn confirm_unclaimed_child_cleanup(child: &mut Child, pid: u32, ownership: UnixOwnership) {
+    let deadline = Instant::now()
+        .checked_add(CLEANUP_CONFIRMATION)
+        .unwrap_or_else(Instant::now);
+    while Instant::now() < deadline {
+        match unclaimed_child_tree_running(child, pid, ownership) {
+            Ok(false) => return,
+            Ok(true) => thread::sleep(POLL),
+            Err(error) => {
+                error.report("run");
+                return;
+            }
+        }
+    }
+    tracing::error!(
+        operation = "run",
+        pid,
+        stage = "supervision_recovery_timeout",
+        "run_child"
+    );
+}
+
+#[cfg(unix)]
+fn unclaimed_child_tree_running(
+    child: &mut Child,
+    pid: u32,
+    ownership: UnixOwnership,
+) -> Result<bool> {
+    let direct_child_exited = child
+        .try_wait()
+        .map_err(|error| Failure::io(&error))?
+        .is_some();
+    match ownership {
+        UnixOwnership::ProcessGroup if direct_child_exited => completed_process_group_running(pid),
+        UnixOwnership::ProcessGroup => process_group_running(pid),
+        UnixOwnership::DirectChild => Ok(!direct_child_exited),
+    }
+}
+
+#[cfg(windows)]
+fn confirm_unclaimed_child_cleanup(pid: u32, job: &Job) {
+    let deadline = Instant::now()
+        .checked_add(CLEANUP_CONFIRMATION)
+        .unwrap_or_else(Instant::now);
+    while Instant::now() < deadline {
+        match job.is_running() {
+            Ok(false) => return,
+            Ok(true) => thread::sleep(POLL),
+            Err(error) => {
+                error.report("run");
+                return;
+            }
+        }
+    }
+    tracing::error!(
+        operation = "run",
+        pid,
+        stage = "supervision_recovery_timeout",
+        "run_child"
+    );
 }
 
 fn forward(
@@ -5378,6 +5441,25 @@ mod lifecycle_tests {
         }
 
         assert!(child.wait().unwrap().success());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn emergency_recovery_reaps_a_forced_direct_child_without_blocking() {
+        let mut child = ProcessCommand::new("sh")
+            .args(["-c", "trap '' TERM; while :; do :; done"])
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let started = Instant::now();
+
+        recover_unclaimed_child(&mut child, pid, UnixOwnership::DirectChild, None);
+
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "emergency recovery exceeded the bounded cleanup window"
+        );
+        assert!(child.try_wait().unwrap().is_some());
     }
 
     #[test]
