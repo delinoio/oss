@@ -10,6 +10,8 @@ Exit status is `0` for success, `1` for runtime failure or checksum mismatch, `2
 
 Operations are offline and use current OS permissions. No settings, history, telemetry, or automatic retry is added outside the explicit [execution wrappers](/clibox/system#coordinate-execution). Named rate limits and locks retain only private local coordination state. No fixed input/output size limit is imposed: text replacement holds the entire input/result in memory, while Base64 and hashing stream bytes. Resource exhaustion can fail an operation. **Streaming stdout may already contain partial output when reading, decoding, writing, or interruption fails.** Use `--output` when an incomplete result must not replace a file.
 
+If an execution wrapper cannot forward an owned workload or managed-service stream, it stops owned work and returns a runtime failure.
+
 ## File replacement
 
 Output is prepared in a temporary file beside its destination and published only after processing succeeds. Existing output requires `--force`. Replacement does not require reading the existing file contents; metadata and security information must remain accessible. `--in-place` still needs read access to its input. Access permissions, including supported native ACLs and ownership, are preserved on replacement; inability to preserve them fails instead of silently discarding them. Symbolic-link and multiply-linked replacement destinations are rejected. On Windows, replacing a read-only file requires attribute-write and replacement permission and preserves its read-only status. Unsupported filesystem replacement capabilities fail without changing the original.

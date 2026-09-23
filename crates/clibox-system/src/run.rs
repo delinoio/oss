@@ -11,7 +11,10 @@ use std::{
     io::{self, Read, Write},
     path::{Path, PathBuf},
     process::{Child, Command as ProcessCommand, ExitStatus, Stdio},
-    sync::{mpsc, Arc},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc,
+    },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -542,6 +545,10 @@ fn with_service(options: Service) -> Result<Outcome> {
     let service_plan = service.expect("service is checked above");
     let mut service_child = spawn(&service_plan, OutputMode::Service)?;
     loop {
+        if service_child.output_failed() {
+            let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
+            return runtime_failure("Could not forward managed service output.");
+        }
         if runtime::cancelled() {
             let _ = cleanup_or_log(&mut service_child, options.workload.kill_after);
             return check_cancelled().and_then(|()| unreachable!());
@@ -982,6 +989,17 @@ fn run_once(
         if let Some(activity) = &child.activity {
             last_activity = activity.last_observed_at();
         }
+        if child.output_failed() {
+            cleanup_run_once_children(&mut child, &mut monitored_service, kill_after);
+            return runtime_failure("Could not forward workload output.");
+        }
+        if let Some(service) = monitored_service.as_deref_mut() {
+            if service.output_failed() {
+                let _ = cleanup_or_log(service, kill_after);
+                let _ = cleanup_or_log(&mut child, kill_after);
+                return runtime_failure("Could not forward managed service output.");
+            }
+        }
         if runtime::cancelled() {
             let _ = cleanup_or_log(&mut child, kill_after);
             return Err(Failure::new(
@@ -1027,6 +1045,10 @@ fn run_once(
             if let Some(activity) = &child.activity {
                 last_activity = activity.last_observed_at();
             }
+            if child.output_failed() {
+                cleanup_run_once_children(&mut child, &mut monitored_service, kill_after);
+                return runtime_failure("Could not forward workload output.");
+            }
             if limits_expired_at(&limits, last_activity, completion.observed_at) {
                 tracing::debug!(operation = "run", stage = "timeout", "run_cleanup");
                 let _ = cleanup_or_log(&mut child, kill_after);
@@ -1060,6 +1082,9 @@ fn run_once(
                 return Ok(Outcome::Child(status));
             }
             child.join_output();
+            if child.output_failed() {
+                return runtime_failure("Could not forward workload output.");
+            }
             return Ok(Outcome::Child(status));
         }
         if limits_expired_at(&limits, last_activity, Instant::now()) {
@@ -1123,6 +1148,7 @@ struct OwnedChild {
     completions: mpsc::Receiver<Result<Completion>>,
     completion: Option<Completion>,
     activity: Option<Activity>,
+    output_failure: Option<Arc<AtomicBool>>,
     output_threads: Vec<thread::JoinHandle<()>>,
 }
 
@@ -1220,13 +1246,24 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
         return Err(error);
     }
     let activity = matches!(mode, OutputMode::WorkloadPiped).then(Activity::new);
+    let output_failure = pipe.then(|| Arc::new(AtomicBool::new(false)));
     let stderr_for_both = matches!(mode, OutputMode::Service);
     let mut output_threads = Vec::new();
     if let Some(stdout) = child.stdout.take() {
-        output_threads.push(forward(stdout, stderr_for_both, activity.clone()));
+        output_threads.push(forward(
+            stdout,
+            stderr_for_both,
+            activity.clone(),
+            output_failure.clone(),
+        ));
     }
     if let Some(stderr) = child.stderr.take() {
-        output_threads.push(forward(stderr, true, activity.clone()));
+        output_threads.push(forward(
+            stderr,
+            true,
+            activity.clone(),
+            output_failure.clone(),
+        ));
     }
     let pid = child.id();
     let (completion_tx, completions) = mpsc::sync_channel(1);
@@ -1256,6 +1293,7 @@ fn spawn(plan: &environment::Plan, mode: OutputMode) -> Result<OwnedChild> {
         completions,
         completion: None,
         activity,
+        output_failure,
         output_threads,
     })
 }
@@ -1264,12 +1302,24 @@ fn forward(
     mut reader: impl Read + Send + 'static,
     stderr: bool,
     activity: Option<Activity>,
+    output_failure: Option<Arc<AtomicBool>>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut buffer = [0u8; 8192];
         loop {
             let count = match reader.read(&mut buffer) {
-                Ok(0) | Err(_) => return,
+                Ok(0) => return,
+                Err(_) => {
+                    tracing::debug!(
+                        operation = "run",
+                        stage = "forward-read-failed",
+                        "run_output"
+                    );
+                    if let Some(output_failure) = &output_failure {
+                        output_failure.store(true, Ordering::Release);
+                    }
+                    return;
+                }
                 Ok(count) => count,
             };
             // A successful read is workload activity even when a slow consumer
@@ -1281,11 +1331,21 @@ fn forward(
                 activity.observe(Instant::now());
             }
             let write = if stderr {
-                io::stderr().lock().write_all(&buffer[..count])
+                let mut output = io::stderr().lock();
+                output
+                    .write_all(&buffer[..count])
+                    .and_then(|()| output.flush())
             } else {
-                io::stdout().lock().write_all(&buffer[..count])
+                let mut output = io::stdout().lock();
+                output
+                    .write_all(&buffer[..count])
+                    .and_then(|()| output.flush())
             };
             if write.is_err() {
+                tracing::debug!(operation = "run", stage = "forward-failed", "run_output");
+                if let Some(output_failure) = &output_failure {
+                    output_failure.store(true, Ordering::Release);
+                }
                 return;
             }
         }
@@ -1330,6 +1390,12 @@ impl Activity {
 }
 
 impl OwnedChild {
+    fn output_failed(&self) -> bool {
+        self.output_failure
+            .as_ref()
+            .is_some_and(|failure| failure.load(Ordering::Acquire))
+    }
+
     fn completion(&mut self) -> Result<Option<Completion>> {
         if self.completion.is_none() {
             match self.completions.try_recv() {

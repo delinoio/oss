@@ -363,7 +363,7 @@ Every workload is prepared by the existing environment planner: assignments expa
 | `run with-lock` | Requires `--name`; `--on-locked wait` is default, `skip` exits 0 without workload, and `fail` exits 75. `--wait-timeout` is valid only for `wait`. |
 | `run with-service URL` | Waits for headers-only HTTP readiness before the workload. `--service SERVICE ... -- WORKLOAD ...` owns the service; without it the endpoint is external and is never terminated. |
 | `run with-retry` | Retries eligible nonzero numeric child exits, defaulting to three total attempts, 1 s initial delay, factor 2, 30 s cap, and full jitter. It never replays stdin, retries spawn failures, or retries Unix signal termination. |
-| `run with-timeout` | Requires a positive overall `--timeout` or `--idle-timeout`. Output bytes from either workload stream reset idle timing at the successful read and are immediately forwarded; rapid reads retain their latest activity timestamp. |
+| `run with-timeout` | Requires a positive overall `--timeout` or `--idle-timeout`. Output bytes from either workload stream reset idle timing at the successful read and are immediately forwarded; rapid reads retain their latest activity timestamp. A forwarding failure stops owned work and returns a wrapper failure. |
 
 Names are case-sensitive ASCII `[A-Za-z0-9._-]{1,128}`. `project` scope is the canonical invocation directory by default; `--project-dir` selects another existing directory for identity only and is invalid with `user` scope. Keys hash the namespace, scope, stable OS machine identity, canonical identity, and name, so state contains no raw project path, machine identity, name, command argv, environment values, or output. Lock and bucket namespaces are separate.
 

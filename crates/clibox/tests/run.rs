@@ -1,7 +1,9 @@
 #![cfg(unix)]
 
+#[cfg(unix)]
+use std::os::fd::FromRawFd;
 #[cfg(target_os = "linux")]
-use std::os::{fd::FromRawFd, unix::process::CommandExt};
+use std::os::unix::process::CommandExt;
 use std::{
     fs,
     io::{Read, Write},
@@ -296,6 +298,35 @@ fn idle_timeout_uses_the_output_read_time_before_completion() {
     .output()
     .unwrap();
     assert_eq!(output.status.code(), Some(124));
+}
+
+#[test]
+fn unwritable_wrapper_output_returns_a_runtime_failure() {
+    let home = tempfile::tempdir().unwrap();
+    let mut wrapper = command(
+        home.path(),
+        &[
+            "run",
+            "with-timeout",
+            "--idle-timeout",
+            "1s",
+            "--kill-after",
+            "0",
+            "--",
+            "sh",
+            "-c",
+            "printf output",
+        ],
+    );
+    let mut output_pipe = [0; 2];
+    assert_eq!(unsafe { libc::pipe(output_pipe.as_mut_ptr()) }, 0);
+    let reader = unsafe { fs::File::from_raw_fd(output_pipe[0]) };
+    let writer = unsafe { fs::File::from_raw_fd(output_pipe[1]) };
+    drop(reader);
+    wrapper.stdout(Stdio::from(writer));
+    let mut wrapper = wrapper.spawn().unwrap();
+
+    assert_eq!(wrapper.wait().unwrap().code(), Some(1));
 }
 
 #[test]
