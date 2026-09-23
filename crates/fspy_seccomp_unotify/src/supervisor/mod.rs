@@ -2,7 +2,6 @@ pub mod handler;
 mod listener;
 
 use std::{
-    convert::Infallible,
     io::{self},
     os::{
         fd::{FromRawFd, OwnedFd},
@@ -10,19 +9,15 @@ use std::{
     },
 };
 
-use futures_util::{
-    future::{Either, select},
-    pin_mut,
-};
 pub use handler::SeccompNotifyHandler;
 use listener::NotifyListener;
 use passfd::tokio::FdPassingExt;
 use seccompiler::{BpfProgram, SeccompAction, SeccompFilter};
 use tokio::{
     net::UnixListener,
-    sync::oneshot,
     task::{JoinHandle, JoinSet},
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{Level, span};
 
 use crate::{
@@ -32,7 +27,7 @@ use crate::{
 
 pub struct Supervisor<H> {
     payload: SeccompPayload,
-    cancel_tx: oneshot::Sender<Infallible>,
+    cancellation: CancellationToken,
     handling_loop_task: JoinHandle<io::Result<Vec<H>>>,
 }
 
@@ -42,7 +37,8 @@ impl<H> Supervisor<H> {
         &self.payload
     }
 
-    /// Stops the supervisor and returns all handler instances.
+    /// Stops accepting notifications and returns the recorded handler state
+    /// without waiting for inherited listeners in surviving descendants.
     ///
     /// # Panics
     /// Panics if the handling loop task has panicked.
@@ -51,7 +47,7 @@ impl<H> Supervisor<H> {
     /// Returns an error if any of the spawned handler tasks failed with an I/O
     /// error.
     pub async fn stop(self) -> io::Result<Vec<H>> {
-        drop(self.cancel_tx);
+        self.cancellation.cancel();
         self.handling_loop_task
             .await
             .expect("handling loop task panicked")
@@ -96,19 +92,17 @@ pub fn supervise<H: SeccompNotifyHandler + Default + Send + 'static>() -> io::Re
         filter: bpf_filter,
     };
 
-    // The oneshot channel is used to cancel the accept loop.
-    // The sender doesn't need to actually send anything. Drop is enough.
-    let (cancel_tx, mut cancel_rx) = oneshot::channel::<Infallible>();
+    let cancellation = CancellationToken::new();
+    let loop_cancellation = cancellation.clone();
 
     let handling_loop = async move {
         let mut join_set: JoinSet<io::Result<H>> = JoinSet::new();
 
         loop {
-            let accept_future = notify_listener.as_file().accept();
-            pin_mut!(accept_future);
-            let (incoming_stream, _) = match select(&mut cancel_rx, accept_future).await {
-                Either::Left((Err(_), _)) => break,
-                Either::Right((incoming, _)) => incoming?,
+            let (incoming_stream, _) = tokio::select! {
+                biased;
+                () = loop_cancellation.cancelled() => break,
+                incoming = notify_listener.as_file().accept() => incoming?,
             };
             let notify_fd = incoming_stream.recv_fd().await?;
             // SAFETY: `recv_fd` returns a valid file descriptor received via
@@ -118,10 +112,17 @@ pub fn supervise<H: SeccompNotifyHandler + Default + Send + 'static>() -> io::Re
 
             let mut handler = H::default();
             let mut resp_buf = alloc_seccomp_notif_resp();
+            let handler_cancellation = loop_cancellation.clone();
 
             join_set.spawn(async move {
                 let mut first_tracking_error = None;
-                while let Some(notify) = listener.next().await? {
+                loop {
+                    let notify = tokio::select! {
+                        biased;
+                        () = handler_cancellation.cancelled() => break,
+                        notify = listener.next() => notify?,
+                    };
+                    let Some(notify) = notify else { break };
                     let _span = span!(Level::TRACE, "notify loop tick");
                     // Errors on the supervisor side could be caused by a target process aborting.
                     // Continue the syscall even when recording fails, but preserve that
@@ -144,7 +145,7 @@ pub fn supervise<H: SeccompNotifyHandler + Default + Send + 'static>() -> io::Re
     };
     Ok(Supervisor {
         payload,
-        cancel_tx,
+        cancellation,
         handling_loop_task: tokio::spawn(handling_loop),
     })
 }

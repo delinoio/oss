@@ -3958,6 +3958,7 @@ dependencies = [
  "tempfile",
  "test-log",
  "tokio",
+ "tokio-util",
  "tracing",
  "wincode",
 ]
