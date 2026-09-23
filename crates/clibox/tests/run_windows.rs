@@ -75,10 +75,10 @@ fn rate_limit_deducts_shared_windows_state() {
 fn lock_fail_does_not_start_a_second_windows_workload() {
     let state_home = tempfile::tempdir().unwrap();
     let marker = state_home.path().join("lock-owner-ready");
-    let marker = marker.display().to_string().replace('\'', "''");
+    let marker_for_script = marker.display().to_string().replace('\'', "''");
     let owner_script = encoded_powershell(&format!(
-        "$marker = '{marker}'; [System.IO.File]::WriteAllText($marker, 'ready'); Start-Sleep \
-         -Seconds 2"
+        "$marker = '{marker_for_script}'; [System.IO.File]::WriteAllText($marker, 'ready'); \
+         Start-Sleep -Seconds 2"
     ));
     let mut owner = command(
         state_home.path(),
