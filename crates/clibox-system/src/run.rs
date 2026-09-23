@@ -3365,11 +3365,7 @@ fn ensure_private_state_ancestors(path: &Path) -> Result<()> {
         if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
             return runtime_failure("Execution state directory is not a safe directory.");
         }
-        if !state_ancestor_ownership_is_safe(
-            metadata.permissions().mode(),
-            metadata.uid(),
-            unsafe { libc::geteuid() },
-        ) {
+        if !state_ancestor_ownership_is_safe(metadata.uid(), unsafe { libc::geteuid() }) {
             return runtime_failure(
                 "Execution state directory permissions or ownership are unsafe.",
             );
@@ -3389,8 +3385,8 @@ fn ensure_private_state_ancestors(path: &Path) -> Result<()> {
 }
 
 #[cfg(unix)]
-fn state_ancestor_ownership_is_safe(mode: u32, owner: u32, effective_user: u32) -> bool {
-    owner == 0 || owner == effective_user || mode & 0o200 == 0
+fn state_ancestor_ownership_is_safe(owner: u32, effective_user: u32) -> bool {
+    owner == 0 || owner == effective_user
 }
 
 #[cfg(windows)]
@@ -4817,11 +4813,10 @@ mod state_key_tests {
 
     #[cfg(unix)]
     #[test]
-    fn state_directory_rejects_a_foreign_owner_writable_ancestor() {
-        assert!(!state_ancestor_ownership_is_safe(0o755, 501, 502));
-        assert!(state_ancestor_ownership_is_safe(0o755, 0, 502));
-        assert!(state_ancestor_ownership_is_safe(0o755, 502, 502));
-        assert!(state_ancestor_ownership_is_safe(0o555, 501, 502));
+    fn state_directory_rejects_any_foreign_owner_ancestor() {
+        assert!(!state_ancestor_ownership_is_safe(501, 502));
+        assert!(state_ancestor_ownership_is_safe(0, 502));
+        assert!(state_ancestor_ownership_is_safe(502, 502));
     }
 
     #[cfg(unix)]
