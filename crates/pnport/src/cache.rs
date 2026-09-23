@@ -168,12 +168,42 @@ impl Cache {
         Ok(file)
     }
 
+    fn lock_with_wait(&self, wait: &mut dyn FnMut() -> Result<()>) -> Result<File> {
+        let file = private_file(&self.root.join(".lock"))?;
+        let mut contended = false;
+        loop {
+            wait()?;
+            match file.try_lock_exclusive() {
+                Ok(()) => return Ok(file),
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    if !contended {
+                        tracing::debug!(
+                            action = "cache_lock_wait",
+                            "Waiting for cache publication lock"
+                        );
+                        contended = true;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(_) => return Err(cache_error()),
+            }
+        }
+    }
+
     pub fn materialize(&self, archive: &Path) -> Result<Lease> {
+        self.materialize_with_wait(archive, &mut || Ok(()))
+    }
+
+    pub fn materialize_with_wait(
+        &self,
+        archive: &Path,
+        wait: &mut dyn FnMut() -> Result<()>,
+    ) -> Result<Lease> {
         let mut file = File::open(archive).map_err(|_| archive_error())?;
         let mut hasher = Sha256::new();
         std::io::copy(&mut file, &mut hasher).map_err(|_| archive_error())?;
         let identity = format!("{:x}", hasher.finalize());
-        let _guard = self.lock()?;
+        let _guard = self.lock_with_wait(wait)?;
         let destination = self.root.join(FORMAT).join(&identity);
         if !destination.exists() {
             let stage = tempfile::Builder::new()

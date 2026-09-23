@@ -2058,6 +2058,130 @@ fn linux_doctor_rejects_an_incompatible_companion_architecture() {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_cache_lock_wait_observes_signal_and_graph_change() {
+    use std::{
+        process::{Command, Stdio},
+        thread,
+        time::{Duration, Instant},
+    };
+
+    use fs2::FileExt;
+
+    for mode in ["cancel", "graph"] {
+        let root = fixture();
+        let cache = tempfile::tempdir().unwrap();
+        let source = root.path().join("wait-for-cache.c");
+        fs::write(
+            &source,
+            r#"
+#include <fcntl.h>
+#include <stdio.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc != 3) return 40;
+    FILE *ready = fopen(argv[1], "w");
+    if (!ready) return 41;
+    fprintf(ready, "%d", getpid());
+    fclose(ready);
+    while (access(argv[2], F_OK) != 0) usleep(10000);
+    int fd = open("node_modules/dep/file.txt", O_RDONLY);
+    if (fd < 0) return 42;
+    close(fd);
+    return 0;
+}
+"#,
+        )
+        .unwrap();
+        let executable = root.path().join("wait-for-cache");
+        assert!(Command::new("cc")
+            .args(["-static", "-o"])
+            .arg(&executable)
+            .arg(&source)
+            .status()
+            .unwrap()
+            .success());
+        let ready = root.path().join("ready.pid");
+        let proceed = root.path().join("proceed");
+        let cache_root = cache.path().join("cache");
+        let mut process = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(&cache_root)
+            .args(["run", "--"])
+            .arg(&executable)
+            .arg(&ready)
+            .arg(&proceed)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let startup_deadline = Instant::now() + Duration::from_secs(5);
+        while fs::read_to_string(&ready)
+            .ok()
+            .and_then(|value| value.parse::<i32>().ok())
+            .is_none()
+            && Instant::now() < startup_deadline
+        {
+            thread::sleep(Duration::from_millis(10));
+        }
+        let child: i32 = fs::read_to_string(&ready)
+            .unwrap_or_default()
+            .parse()
+            .unwrap_or_else(|_| panic!("{mode} child did not reach the cache gate"));
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(cache_root.join(".lock"))
+            .unwrap();
+        lock.lock_exclusive().unwrap();
+        fs::write(&proceed, b"go").unwrap();
+        thread::sleep(Duration::from_millis(150));
+        assert!(
+            process.try_wait().unwrap().is_none(),
+            "{mode} did not wait for the held cache lock"
+        );
+        let started = Instant::now();
+        match mode {
+            "cancel" => assert_eq!(unsafe { libc::kill(process.id() as i32, libc::SIGINT) }, 0),
+            "graph" => fs::write(root.path().join(".pnp.cjs"), b"changed").unwrap(),
+            _ => unreachable!(),
+        }
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while process.try_wait().unwrap().is_none() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        if process.try_wait().unwrap().is_none() {
+            process.kill().unwrap();
+        }
+        let output = process.wait_with_output().unwrap();
+        drop(lock);
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "{mode} left the tracer blocked on the cache lock"
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(if mode == "cancel" { 130 } else { 125 }),
+            "{mode}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if mode == "graph" {
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("PNPORT_GRAPH_CHANGED"),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        assert_eq!(
+            unsafe { libc::kill(child, 0) },
+            -1,
+            "{mode} left its child alive"
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_graph_conflict_and_injection_failures_reap_detached_descendants() {
     use std::{
         process::{Command, Stdio},

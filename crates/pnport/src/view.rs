@@ -37,6 +37,14 @@ impl View {
     }
 
     pub fn translate(&mut self, path: &Path) -> Result<Translation> {
+        self.translate_with_wait(path, &mut || Ok(()))
+    }
+
+    pub fn translate_with_wait(
+        &mut self,
+        path: &Path,
+        wait: &mut dyn FnMut() -> Result<()>,
+    ) -> Result<Translation> {
         if !path.is_absolute() {
             return Err(Error::new(
                 Code::PnportUnsupportedOperation,
@@ -48,7 +56,7 @@ impl View {
         // package locator. Those ancestors are installation structure, not an
         // issuer's virtual dependency directory.
         if self.graph.is_location_ancestor(&path) {
-            return self.backing(path, false, false);
+            return self.backing(path, false, false, wait);
         }
 
         // Locations already in the graph (including ZIP-internal node_modules)
@@ -61,7 +69,7 @@ impl View {
                     .components()
                     .any(|p| p.as_os_str() == "node_modules")
                 {
-                    return self.backing(path, false, false);
+                    return self.backing(path, false, false, wait);
                 }
             }
         }
@@ -110,12 +118,12 @@ impl View {
             for part in &remaining[consumed..] {
                 target.push(part);
             }
-            let mut translated = self.translate(&target)?;
+            let mut translated = self.translate_with_wait(&target, wait)?;
             translated.readonly = true;
             translated.virtual_link = remaining.len() == consumed;
             return Ok(translated);
         }
-        self.backing(path, false, false)
+        self.backing(path, false, false, wait)
     }
 
     fn backing(
@@ -123,6 +131,7 @@ impl View {
         logical: PathBuf,
         readonly: bool,
         virtual_link: bool,
+        wait: &mut dyn FnMut() -> Result<()>,
     ) -> Result<Translation> {
         let (physical, managed) = match VPath::from(&logical).map_err(|_| cache_error())? {
             VPath::Native(path) => {
@@ -138,7 +147,7 @@ impl View {
             VPath::Zip(info) => {
                 let archive = normalize(&info.physical_base_path());
                 if !self.leases.contains_key(&archive) {
-                    let lease = self.cache.materialize(&archive)?;
+                    let lease = self.cache.materialize_with_wait(&archive, wait)?;
                     let active = self.session.join("active");
                     fs::create_dir_all(&active).map_err(|_| cache_error())?;
                     let bytes = serde_json::to_vec(&crate::graph::Input {

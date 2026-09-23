@@ -876,13 +876,27 @@ impl Trace<'_> {
     fn translate(&mut self, pid: i32, dirfd: i32, pointer: u64) -> Result<Translation> {
         let path = read_path(pid, pointer)?;
         let absolute = self.base(pid, dirfd, &path)?;
-        self.view.translate(&absolute).inspect_err(|error| {
+        self.translate_view(&absolute).inspect_err(|error| {
             if error.code == Code::PnportResolutionFailed {
                 tracing::debug!(action = "linux_resolution_miss", path = %absolute.display(),
                     "Owned child path was not present in the PnP view");
-            } else {
+            } else if super::supervisor::handled_signal() == 0 {
                 let _ = fs::write(self.view.session.join("failure"), error.code.as_str());
             }
+        })
+    }
+
+    fn translate_view(&mut self, path: &Path) -> Result<Translation> {
+        let session = self.view.session.clone();
+        let watch = &mut self.watch;
+        self.view.translate_with_wait(path, &mut || {
+            if super::supervisor::handled_signal() != 0 {
+                return Err(injection_failed());
+            }
+            if let Some(error) = super::supervisor::runtime_failure(&session)? {
+                return Err(error);
+            }
+            watch.poll()
         })
     }
 
@@ -953,7 +967,7 @@ impl Trace<'_> {
             return Ok(None);
         }
         let physical = fs::read_link(format!("/proc/{pid}/exe")).map_err(|_| injection_failed())?;
-        self.view.translate(&physical).map(Some)
+        self.translate_view(&physical).map(Some)
     }
 
     fn prepare_script_exec(
@@ -1332,8 +1346,9 @@ impl Trace<'_> {
         }
         let translation = match if in_root && original.is_absolute() {
             let base = self.base(pid, dirfd, Path::new("."))?;
-            self.view
-                .translate(&base.join(original.strip_prefix("/").map_err(|_| injection_failed())?))
+            self.translate_view(
+                &base.join(original.strip_prefix("/").map_err(|_| injection_failed())?),
+            )
         } else {
             self.translate(pid, dirfd, argument(&regs, path_arg))
         } {
@@ -1375,9 +1390,7 @@ impl Trace<'_> {
                     ));
                 }
                 let logical = pnport::graph::normalize(&self.base(pid, dirfd, &original)?);
-                let parent = self
-                    .view
-                    .translate(logical.parent().ok_or_else(injection_failed)?)?;
+                let parent = self.translate_view(logical.parent().ok_or_else(injection_failed)?)?;
                 let link = parent
                     .physical
                     .join(logical.file_name().ok_or_else(injection_failed)?);
@@ -2186,7 +2199,13 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
                 }
                 return Ok(code);
             }
-            if !trace.event_once()? {
+            let event = match trace.event_once() {
+                Err(_) if super::supervisor::handled_signal() != 0 => {
+                    return Ok(128 + super::supervisor::handled_signal());
+                }
+                result => result?,
+            };
+            if !event {
                 std::thread::sleep(Duration::from_millis(1));
             }
         }
