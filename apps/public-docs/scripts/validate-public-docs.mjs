@@ -17,7 +17,8 @@ const forbiddenProjectContent = [
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/iu,
   /BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY/iu,
   /(?:\/Users\/|\/home\/[a-z]|\.infisical)/iu,
-  /(?:apps|cmds|servers|protos|crates|packages)\/(?:runmoor|async-commit-hook|devhud|pnport)(?:\/|\b)/iu,
+  /(?:apps|cmds|servers|protos)\/(?:runmoor|async-commit-hook|devhud)(?:\/|\b)/iu,
+  /(?:crates|packages)\/pnport(?:\/|\b)/iu,
 ];
 const rootRoutes = [
   "/",
@@ -41,6 +42,8 @@ const publicRoutePrefixes = new Set([...selectorDestinations, ...rootRoutes]);
 for (const [slug, routes] of Object.entries(projectRoutes)) {
   for (const route of routes) publicRoutePrefixes.add(publicRoute(slug, route));
 }
+publicRoutePrefixes.add("/pnport/install.sh");
+publicRoutePrefixes.add("/pnport/install.ps1");
 const failures = [];
 
 async function exists(filePath) {
@@ -90,6 +93,9 @@ for (const [slug, routes] of Object.entries(projectRoutes)) {
     const contents = await readFile(file, "utf8");
     if (!/<main\b/iu.test(contents)) failures.push(`${publicRoute(slug, route)} is missing a main landmark`);
     if (!contents.includes("delino-docs-site-switcher")) failures.push(`${publicRoute(slug, route)} is missing the site selector`);
+    if (slug === "pnport" && !/\bpnport 0\.1\.0\b[^.]{0,80}\b(?:unreleased|not (?:been )?(?:released|published))\b/iu.test(visibleProjectText(contents))) {
+      failures.push(`${publicRoute(slug, route)} is missing its 0.1.0 unreleased notice`);
+    }
     for (const destination of selectorDestinations) {
       if (!contents.includes(`href="${destination}"`) && !contents.includes(`href='${destination}'`)) {
         failures.push(`${publicRoute(slug, route)} is missing selector destination ${destination}`);
@@ -158,7 +164,7 @@ for (const [slug, routes] of Object.entries(projectRoutes)) {
       if (/\.html(?:[?#]|$)/iu.test(link)) failures.push(`${publicRoute(slug, route)} contains an .html link: ${link}`);
       const linkPath = link.split(/[?#]/u, 1)[0];
       if (publicRoutePrefixes.has(linkPath)) continue;
-      if (linkPath.startsWith(`/${slug}/`) || linkPath === `/${slug}`) continue;
+      if (slug !== "pnport" && (linkPath.startsWith(`/${slug}/`) || linkPath === `/${slug}`)) continue;
       if (/^\/(?:assets|static)\//u.test(link)) continue;
       if (linkPath.startsWith("#")) continue;
       if (linkPath.startsWith("/")) failures.push(`${publicRoute(slug, route)} links to an unknown public route: ${link}`);
@@ -173,6 +179,8 @@ const installerChecks = [
   ["binpm", "install.ps1", "scripts/install/binpm.ps1"],
   ["async-commit-hook", "install.sh", "scripts/install/async-commit-hook.sh"],
   ["async-commit-hook", "install.ps1", "scripts/install/async-commit-hook.ps1"],
+  ["pnport", "install.sh", "scripts/install/pnport.sh"],
+  ["pnport", "install.ps1", "scripts/install/pnport.ps1"],
 ];
 for (const [slug, filename, source] of installerChecks) {
   const generated = path.join(outputDirectory, slug, filename);

@@ -84,13 +84,15 @@ const cliboxPages = [
 
 const pnportPages = [
   { text: "Overview", link: "/pnport/", activeMatch: "^/pnport/$" },
-  { text: "Installation", link: "/pnport/installation" },
+  { text: "Installation and Availability", link: "/pnport/installation" },
+  { text: "Getting Started", link: "/pnport/getting-started" },
   { text: "Commands", link: "/pnport/commands" },
-  { text: "Filesystem and limits", link: "/pnport/filesystem" },
-  { text: "Editors and long-running tools", link: "/pnport/editors" },
-  { text: "Cache", link: "/pnport/cache" },
-  { text: "Diagnostics", link: "/pnport/diagnostics" },
-  { text: "Releases and rollback", link: "/pnport/releases" },
+  { text: "Filesystem and Processes", link: "/pnport/filesystem-and-processes" },
+  { text: "Editors and Language Servers", link: "/pnport/editors" },
+  { text: "Cache Management", link: "/pnport/cache" },
+  { text: "Diagnostics and Troubleshooting", link: "/pnport/diagnostics" },
+  { text: "Benchmarks", link: "/pnport/benchmarks" },
+  { text: "Releases and Rollback", link: "/pnport/releases" },
 ];
 
 const projectPages = [

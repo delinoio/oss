@@ -122,11 +122,20 @@ describe("DocsSiteSwitcher", () => {
     (pathname) => expect(getDocumentationSiteForPathname(pathname)).toBe(DocumentationSiteId.PublicDocs),
   );
 
-  it.each(["/pnport", "/pnport/", "/pnport/diagnostics/"])(
+  it.each(["/pnport", "/pnport/", "/pnport/editors", "/pnport/diagnostics/"])(
     "selects pnport for %s",
     (pathname) => {
-      expect(getDocumentationSiteForPathname(pathname)).toBe(DocumentationSiteId.Pnport);
+      renderSwitcher(getDocumentationSiteForPathname(pathname));
+      fireEvent.click(screen.getByRole("button", { name: "pnport" }));
+      const selected = screen.getByRole("menuitem", { name: "pnport" });
+      expect(selected.getAttribute("aria-current")).toBe("page");
+      expect(document.activeElement).toBe(selected);
     },
+  );
+
+  it.each(["/pnport-extra", "/pnportish/editors"])(
+    "does not select pnport for unrelated path %s",
+    (pathname) => expect(getDocumentationSiteForPathname(pathname)).toBe(DocumentationSiteId.PublicDocs),
   );
 
   it("retains same-origin destinations on the consolidated development server", () => {

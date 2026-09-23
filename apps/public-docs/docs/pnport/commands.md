@@ -1,20 +1,30 @@
 # Commands
 
-The following interface is planned for the first published version. **There is no released binary to run yet.** Run pnport from an already installed Yarn 4 PnP project:
+**The pnport 0.1.0 CLI is not published.** These are the current command names and release-contract behaviors, not instructions to install or run an unavailable package.
 
-```text
-pnport run -- <command> [args...]
-pnport doctor [--json]
-pnport cache path
-pnport cache list
-pnport cache prune
-pnport cache clean
-pnport --help
-pnport --version
-```
+| Command | Purpose |
+| --- | --- |
+| `pnport run -- <command> [args...]` | Run a supported child in the selected PnP view. |
+| `pnport doctor [--json]` | Check project data, native capabilities, injection prerequisites, and cache access. |
+| `pnport cache path` | Print the effective per-user cache path. |
+| `pnport cache list` | List retained entries and their states. |
+| `pnport cache prune` | Remove abandoned incomplete or obsolete-format entries when safe. |
+| `pnport cache clean` | Remove inactive cache entries when safe. |
+| `pnport --help` / `pnport --version` | Show CLI help or installed version. |
 
-`run` starts one command with literal arguments and inherited working directory, environment, and standard streams. Bare commands resolve from the selected workspace's direct dependency binaries before the inherited `PATH`. pnport diagnostics use stderr; child stdout remains available for protocols. The child status is propagated. pnport's own argument errors use status 2, missing commands 127, non-executable commands 126, and initialization, runtime, or required-restart errors 125, with stable diagnostic codes distinguishing them from child exits.
+## Global options
 
-`--project` selects a PnP project explicitly. Without it, pnport searches upward from the current directory for the nearest `.pnp.cjs`. `--cache-dir` selects a private cache location, `--log-level=debug` enables detailed diagnostics, and `--color=never` or `NO_COLOR` disables human-output color. These are flags; pnport has no separate configuration file.
+| Option | Behavior |
+| --- | --- |
+| `--project <path>` | Select a project directory or `.pnp.cjs` without changing cwd. Otherwise search upward from cwd. |
+| `--cache-dir <path>` | Override the standard private per-user cache location. |
+| `--log-level <level>` | Choose `error`, `warn`, `info`, `debug`, or `trace`. Default: `error`. |
+| `--color <mode>` | Choose `auto`, `always`, or `never`. In `auto`, ANSI color requires terminal stderr and no `NO_COLOR` variable. Explicit `always` overrides `NO_COLOR`; `never` disables color. `doctor --json` is ANSI-free in every mode. |
 
-`doctor --json` returns one ANSI-free schema-version-1 object with typed checks and stable codes. Cache commands work without an active project. pnport never installs dependencies, repairs an incomplete Yarn install, or changes the lockfile.
+Global options precede the subcommand in the examples here. Cache commands do not require an active PnP project. `cache prune` and `cache clean` preserve entries whose active use or ownership cannot safely be ruled out; see [cache management](/pnport/cache).
+
+## Machine-readable doctor output
+
+`doctor --json` emits one ANSI-free JSON object on stdout. Schema version 1 has `schemaVersion`, `ready`, and `checks`; each check has `id`, `status`, `code`, and `message`. Check IDs cover `project`, `platform`, `injection`, and `cache`; status is `pass`, `fail`, or `unsupported`. A non-ready report exits 125. Do not treat a `ready` result as tool-specific compatibility evidence.
+
+See [diagnostics and troubleshooting](/pnport/diagnostics) for exit codes and privacy boundaries.

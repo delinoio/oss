@@ -60,6 +60,8 @@
 - `docs/project-cargo-mono.md`: Cargo subcommand project index.
 - `docs/project-clibox.md`: clibox Rust CLI, npm distribution, and public documentation project index.
 - `docs/apps-clibox-docs-foundation.md`: clibox public guides and route/validation contract.
+- `docs/project-pnport.md`: pnport project index and unreleased 0.1.0 boundary.
+- `docs/apps-pnport-docs-foundation.md`: pnport public guide routes and availability contract.
 - `docs/project-nodeup.md`: Node.js version manager project index.
 - `docs/project-with-watch.md`: Command rerun watcher CLI project index.
 - `docs/project-derun.md`: Derun CLI project index.

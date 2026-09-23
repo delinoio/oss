@@ -1,10 +1,28 @@
 # Installation and availability
 
-**No pnport release is available yet.** Do not install an unpublished `0.0.0` development package or assume that the presence of an installer script means that 0.1.0 has passed its platform gates. Check [pnport releases](https://github.com/delinoio/oss/releases?q=pnport) and the [npm package](https://www.npmjs.com/package/@delino/pnport) for an actual published version before using these methods.
+**pnport 0.1.0 has not been released.** The current source does not provide a published npm package, native archive, POSIX or PowerShell installer, or Homebrew formula. Do not use an unpublished package version, guessed download URL, or source-only launcher as an installation method.
 
-Once a version is published, choose an exact version for repeatable installation. npm and Yarn 4 users install `@delino/pnport` with optional dependencies enabled. It selects one matching native package at the same exact version. The launcher needs Node.js 22 or newer; a standalone native archive does not need Node.js merely to start pnport. Packages have no install script, runtime download, or compiler fallback.
+## Planned distribution
 
-After confirming a version is published, replace `<published-version>` in one of these examples:
+A complete release is planned to provide prebuilt GitHub archives with checksums and signed verification material, direct installers for POSIX and PowerShell, prebuilt Homebrew packages, and the `@delino/pnport` npm launcher. The npm launcher will require Node.js 22 or newer and the matching native optional package. The standalone native CLI will not need Node.js merely to start.
+
+The release targets are:
+
+| Host | Architectures |
+| --- | --- |
+| macOS 13 or newer | x64, arm64 |
+| Windows 10 22H2 or newer, MSVC | x64, arm64 |
+| Ubuntu 22.04-equivalent glibc Linux | x64, arm64 |
+
+Linux support includes static child executables as a release requirement. Musl hosts and mixed-architecture execution are excluded. These are **release targets, not a claim of current package availability or verified compatibility**. Every target must pass execution and installation validation before 0.1.0 is published; there is no partial preview release.
+
+## Before a future install
+
+pnport needs an already installed Yarn 4 Plug'n'Play project with `.pnp.cjs`. It does not install dependencies, generate a PnP manifest, update a lockfile, or create a physical project `node_modules` directory. Keep the selected project's Yarn installation intact.
+
+When a verified release is published, choose an explicit version and confirm the installed CLI with `pnport --version` and `pnport doctor`. The following examples are **for a future published version only**; replace `<published-version>` after checking [GitHub Releases](https://github.com/delinoio/oss/releases) or the [npm package](https://www.npmjs.com/package/@delino/pnport).
+
+For npm or Yarn 4, keep optional dependencies enabled so the launcher can select the matching native package:
 
 ```sh
 npm install --save-dev --ignore-scripts '@delino/pnport@<published-version>'
@@ -12,22 +30,18 @@ npm install --save-dev --ignore-scripts '@delino/pnport@<published-version>'
 yarn add --dev '@delino/pnport@<published-version>'
 ```
 
-For a direct macOS or GNU Linux install, inspect the hosted script and pin the version:
+For a direct install on macOS or glibc Linux, download the <a href="/pnport/install.sh">POSIX installer</a> and pin the version:
 
 ```sh
 curl -fsSLo pnport-install.sh https://oss.delino.io/pnport/install.sh
 bash pnport-install.sh --version '<published-version>'
 ```
 
-On Windows PowerShell:
+On Windows, use the <a href="/pnport/install.ps1">PowerShell installer</a>:
 
 ```powershell
 Invoke-WebRequest https://oss.delino.io/pnport/install.ps1 -OutFile pnport-install.ps1
 ./pnport-install.ps1 -Version '<published-version>'
 ```
 
-After the first release, Homebrew users can run `brew install delinoio/tap/pnport` on supported macOS and GNU Linux hosts. Run `pnport --version` after any installation and use an explicit published version for direct installer rollback.
-
-Direct <a href="/pnport/install.sh">POSIX</a> and <a href="/pnport/install.ps1">PowerShell</a> installers are provided for published GitHub archives. Each archive includes `pnport` and its matched interception library; the installer verifies the archive checksum and activates both files together. Homebrew uses prebuilt macOS or GNU Linux archives. The native library must remain next to the actual executable. Do not copy only the executable.
-
-The target matrix is macOS x64/arm64, Windows x64/arm64 MSVC, and GNU Linux x64/arm64. Linux musl and other architectures are unsupported. See [releases and rollback](/pnport/releases) for verification and explicit version changes. No automatic updates occur.
+After the first release, supported macOS and glibc Linux hosts can also use `brew install delinoio/tap/pnport`. Direct installers verify archive checksums and activate the executable with its matching adjacent interception library. Keep those two files together when using a native archive. No method performs an automatic update. Continue with the [command reference](/pnport/commands) or see [releases and rollback](/pnport/releases) for version policy and verification.
