@@ -1881,14 +1881,18 @@ fn spawn(
     };
     #[cfg(windows)]
     if let Err(error) = check_spawn_boundary(deadline) {
-        let _ = job.signal(child.id(), true);
-        let _ = child.wait();
+        // The child is still suspended. Bounded recovery avoids waiting
+        // forever if force termination fails; returning then drops this Job,
+        // whose kill-on-close policy is the final ownership boundary.
+        recover_unclaimed_child(&mut child, pid, &job);
         return Err(error);
     }
     #[cfg(windows)]
     if let Err(error) = resume_suspended_process(&child) {
-        let _ = job.signal(child.id(), true);
-        let _ = child.wait();
+        // Keep the same bounded Job recovery if resuming the primary thread
+        // fails. A synchronous wait could otherwise retain the only
+        // kill-on-close handle around a permanently suspended child.
+        recover_unclaimed_child(&mut child, pid, &job);
         return Err(error);
     }
     let activity = matches!(mode, OutputMode::WorkloadPiped).then(Activity::new);
