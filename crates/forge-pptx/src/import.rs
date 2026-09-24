@@ -256,6 +256,49 @@ fn parse_table(n: roxmltree::Node<'_, '_>) -> Result<(Vec<Column>, Vec<TableRow>
         .collect();
     Ok((columns, rows))
 }
+// Sparse caches encode missing cells, which v1's dense chart data cannot
+// retain. Reorder complete caches by their declared indices instead of XML
+// order.
+fn chart_cache(n: roxmltree::Node<'_, '_>) -> Result<Vec<String>> {
+    let counts: Vec<_> = n
+        .descendants()
+        .filter(|n| n.has_tag_name((C, "ptCount")))
+        .collect();
+    if counts.len() != 1 {
+        return Err(failure("chart cache count"));
+    }
+    let count: usize = counts[0]
+        .attribute("val")
+        .and_then(|v| v.parse().ok())
+        .ok_or_else(|| failure("chart cache count"))?;
+    if !(1..=10_000).contains(&count) {
+        return Err(failure("chart cache limit"));
+    }
+    let mut values = vec![None; count];
+    for point in counts[0]
+        .parent()
+        .unwrap()
+        .children()
+        .filter(|n| n.has_tag_name((C, "pt")))
+    {
+        let index: usize = point
+            .attribute("idx")
+            .and_then(|v| v.parse().ok())
+            .ok_or_else(|| failure("chart cache index"))?;
+        let slot = values
+            .get_mut(index)
+            .ok_or_else(|| failure("chart cache index"))?;
+        if slot.is_some() {
+            return Err(failure("duplicate chart cache index"));
+        }
+        let value = desc(point, C, "v").ok_or_else(|| failure("chart cache value"))?;
+        *slot = Some(value.text().unwrap_or("").to_owned());
+    }
+    values
+        .into_iter()
+        .map(|v| v.ok_or_else(|| failure("sparse chart cache")))
+        .collect()
+}
 fn parse_chart(
     parts: &Package,
     part: &str,
@@ -285,11 +328,7 @@ fn parse_chart(
         .enumerate()
     {
         let cat = desc(s, C, "cat").ok_or_else(|| failure("category"))?;
-        let labels: Vec<String> = cat
-            .descendants()
-            .filter(|n| n.has_tag_name((C, "pt")))
-            .map(|p| desc(p, C, "v").and_then(|v| v.text()).unwrap_or("").into())
-            .collect();
+        let labels = chart_cache(cat)?;
         if i == 0 {
             data.categories = labels;
         } else if data.categories != labels {
@@ -300,16 +339,18 @@ fn parse_chart(
             );
         }
         let val = desc(s, C, "val").ok_or_else(|| failure("values"))?;
-        let values = val
-            .descendants()
-            .filter(|n| n.has_tag_name((C, "pt")))
+        let values = chart_cache(val)?
+            .into_iter()
             .map(|p| {
-                desc(p, C, "v")
-                    .and_then(|v| v.text())
-                    .and_then(|v| v.parse().ok())
+                p.parse::<f64>()
+                    .ok()
+                    .filter(|v| v.is_finite())
                     .ok_or_else(|| failure("value"))
             })
             .collect::<Result<Vec<f64>>>()?;
+        if values.len() != data.categories.len() {
+            return Err(failure("chart cache lengths"));
+        }
         let name = desc(s, C, "tx")
             .and_then(|n| desc(n, C, "v"))
             .and_then(|n| n.text())

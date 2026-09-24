@@ -43,6 +43,69 @@ fn xml_part(parts: &std::collections::BTreeMap<String, Vec<u8>>, path: &str) -> 
     String::from_utf8(parts[path].clone()).unwrap()
 }
 #[test]
+fn imported_chart_caches_follow_indices_and_preserve_unrepresentable_data() {
+    let original = read_package(EXTERNAL).unwrap();
+    let path = "ppt/charts/chart1.xml";
+    let chart = xml_part(&original, path);
+    let ordered = "<c:pt idx=\"0\"><c:v>10</c:v></c:pt><c:pt idx=\"1\"><c:v>20</c:v></c:pt><c:pt \
+                   idx=\"2\"><c:v>30</c:v></c:pt>";
+    let reversed = "<c:pt idx=\"2\"><c:v>30</c:v></c:pt><c:pt idx=\"0\"><c:v>10</c:v></c:pt><c:pt \
+                    idx=\"1\"><c:v>20</c:v></c:pt>";
+    assert!(chart.contains(ordered));
+    let mut parts = original.clone();
+    parts.insert(path.into(), chart.replace(ordered, reversed).into_bytes());
+    let imported = import(&write_package(&parts).unwrap()).unwrap();
+    let node = imported.document.slides[0]
+        .content
+        .children
+        .iter()
+        .find(|n| n.kind == NodeKind::Chart)
+        .unwrap();
+    assert_eq!(
+        node.data.as_ref().unwrap().series[0].values,
+        vec![10., 20., 30.]
+    );
+
+    for replacement in [
+        ordered.replace("<c:pt idx=\"1\"><c:v>20</c:v></c:pt>", ""),
+        ordered.replace("idx=\"1\"", "idx=\"0\""),
+        ordered.replace("idx=\"2\"", "idx=\"3\""),
+    ] {
+        parts.insert(
+            path.into(),
+            chart.replace(ordered, &replacement).into_bytes(),
+        );
+        let source = write_package(&parts).unwrap();
+        let imported = import(&source).unwrap();
+        assert!(
+            !imported.document.slides[0]
+                .content
+                .children
+                .iter()
+                .any(|n| n.kind == NodeKind::Chart)
+        );
+        let next = patch(
+            &imported,
+            vec![Operation::SetText {
+                target: target(&imported.document, NodeKind::Text),
+                text: "Unrelated edit".into(),
+                cell: None,
+            }],
+        );
+        let output = update(
+            &source,
+            &imported.document,
+            &imported.bindings,
+            &next,
+            &imported.assets,
+            imported.document_id,
+            1,
+        )
+        .unwrap();
+        assert_eq!(read_package(&output).unwrap()[path], parts[path]);
+    }
+}
+#[test]
 fn all_nodes_are_native_and_chart_workbook_matches() {
     let mut document: Presentation = parse(include_bytes!(
         "../../forge-tree-doc/examples/all-nodes.json"
