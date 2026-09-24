@@ -1531,3 +1531,69 @@ fn chart_workbook_updates_follow_external_data_relationship_identity() {
         }
     }
 }
+
+#[test]
+fn unsupported_text_semantics_remain_opaque_and_unchanged() {
+    let path = "ppt/slides/slide1.xml";
+    let original = read_package(EXTERNAL).unwrap();
+    let slide = xml_part(&original, path);
+    let parsed = roxmltree::Document::parse(&slide).unwrap();
+    let body = parsed
+        .descendants()
+        .find(|n| n.tag_name().name() == "txBody")
+        .unwrap();
+    let body_xml = &slide[body.range()];
+    let paragraphs = [
+        "<a:p><a:fld id=\"{00000000-0000-0000-0000-000000000001}\" \
+         type=\"slidenum\"><a:t>1</a:t></a:fld></a:p>",
+        "<a:p><a:r><a:rPr><a:hlinkClick r:id=\"rId1\"/></a:rPr><a:t>Link</a:t></a:r></a:p>",
+        "<a:p><a:pPr><a:buChar char=\"•\"/></a:pPr><a:r><a:t>Bullet</a:t></a:r></a:p>",
+        "<a:p><a:r><a:rPr baseline=\"30000\"/><a:t>Raised</a:t></a:r></a:p>",
+        "<a:p><a:r><a:rPr u=\"dbl\"/><a:t>Double underline</a:t></a:r></a:p>",
+        "<a:p><a:r><a:rPr><a:solidFill><a:srgbClr val=\"FF0000\"><a:alpha \
+         val=\"50000\"/></a:srgbClr></a:solidFill></a:rPr><a:t>Alpha</a:t></a:r></a:p>",
+    ];
+    let paragraph = body
+        .children()
+        .find(|n| n.tag_name().name() == "p")
+        .unwrap();
+    for content in paragraphs {
+        let replacement = body_xml.replace(&slide[paragraph.range()], content);
+        let mut parts = original.clone();
+        parts.insert(
+            path.into(),
+            slide.replace(body_xml, &replacement).into_bytes(),
+        );
+        let source = write_package(&parts).unwrap();
+        let imported = import(&source).unwrap();
+        assert_eq!(
+            imported
+                .document
+                .find(&key("slide-1.shape-2"))
+                .unwrap()
+                .kind,
+            NodeKind::Opaque
+        );
+        let image = target(&imported.document, NodeKind::Image);
+        let mut frame = imported.document.find(&image).unwrap().frame.unwrap();
+        frame.x += 1.;
+        let next = patch(
+            &imported,
+            vec![Operation::SetFrame {
+                target: image,
+                frame,
+            }],
+        );
+        let output = update(
+            &source,
+            &imported.document,
+            &imported.bindings,
+            &next,
+            &imported.assets,
+            imported.document_id,
+            1,
+        )
+        .unwrap();
+        assert!(xml_part(&read_package(&output).unwrap(), path).contains(&replacement));
+    }
+}

@@ -111,3 +111,5 @@ Keep project index, AGENTS rules, schema/examples, CLI/MCP descriptions and CI c
 - [DrawingML preset connection sites](https://github.com/LibreOffice/core/blob/master/oox/source/drawingml/customshapes/presetShapeDefinitions.xml).
 
 React Forge may supply an operation-local `TextLayout` to the new `layout_with_measurer`, `generate_with_measurer` and `update_with_measurer` APIs. This explicit opt-in boundary preserves the existing Forge defaults and does not install a process-global font policy. `FontEmbedding::PinnedDefault` retains the existing bundled OFL embedding; React Forge selects `ReferenceOnly` for system/caller font families. Existing CLI/MCP callers continue to use their original APIs.
+
+Editable imported presentation text also requires representable paragraph/run semantics. Fields, hyperlinks, bullets, inherited list defaults, unsupported run attributes/effects and text extensions remain opaque. The same content check applies to table cells. Replacing supported text must never silently flatten those semantics; unrelated edits retain their original XML.

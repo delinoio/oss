@@ -265,3 +265,4 @@
 - DOCX text backgrounds use native run shading; paragraph defaults must be materialized on text runs with explicit run overrides retained.
 
 - React Forge must retain six native macOS/Windows/glibc Linux x64/arm64 targets. Enable all system-font tests in its prepared host matrix and validate Windows cancellation in an isolated real console, never by treating Node process.kill as a console event.
+- Presentation text editability must validate paragraph/run semantics as well as body geometry, including table-cell text. Preserve unmodeled fields, links, bullets, defaults and extensions as opaque content.
