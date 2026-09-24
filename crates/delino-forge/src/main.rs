@@ -46,10 +46,14 @@ enum Command {
     Apply {
         input: PathBuf,
     },
+    /// Export to a separate path; an opened document's source cannot be
+    /// overwritten.
     Export {
         document_id: Uuid,
         #[arg(long)]
         output: PathBuf,
+        /// Replace an existing output, except the tracked source of an opened
+        /// document.
         #[arg(long)]
         overwrite: bool,
     },

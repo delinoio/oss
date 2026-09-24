@@ -164,8 +164,8 @@ fn persist_durable(
             }
         })?;
     }
-    // File fsync alone does not persist the renamed directory entry. In
-    // particular, the export journal must survive before source publication.
+    // File fsync alone does not persist the renamed directory entry. Flush
+    // publication of state pointers and exported files before reporting success.
     File::open(parent)
         .and_then(|directory| directory.sync_all())
         .map_err(io_error)
@@ -299,7 +299,10 @@ impl Store {
         Ok((state, bytes))
     }
 
-    fn prepare_source_export(&self, state: &State, bytes: &[u8]) -> Result<()> {
+    // Earlier builds could leave this journal around a source-replacing export.
+    // Production only recovers it; tests still construct those interrupted states.
+    #[cfg(test)]
+    fn prepare_legacy_source_export(&self, state: &State, bytes: &[u8]) -> Result<()> {
         let pending = PendingExport {
             document_id: state.document_id,
             revision: state.revision,
@@ -615,24 +618,40 @@ impl Store {
 
     pub fn export(&self, id: Uuid, path: &Path, overwrite: bool) -> Result<serde_json::Value> {
         let _guard = self.lock(id)?;
-        let (mut state, bytes) = self.current(id)?;
+        let (state, bytes) = self.current(id)?;
         self.check_source(&state)?;
-        forge_pptx::import(&bytes)?;
         self.check_cancelled()?;
-        let replaces_source = state
+        // Resolve the parent independently of the leaf, so a source temporarily
+        // absent during an external save cannot bypass the source-path guard.
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        let path =
+            fs::canonicalize(parent)
+                .map_err(io_error)?
+                .join(path.file_name().ok_or_else(|| {
+                    Diagnostic::new(ErrorCode::Io, "/output", "Missing output filename")
+                })?);
+        if state
             .source
             .as_ref()
-            .is_some_and(|s| fs::canonicalize(path).is_ok_and(|p| p == s.path));
-        if replaces_source {
-            self.prepare_source_export(&state, &bytes)?;
+            .is_some_and(|s| path == s.path || fs::canonicalize(&path).is_ok_and(|p| p == s.path))
+        {
+            // A fingerprint check followed by rename can discard an external
+            // save in between. Advisory locks cannot exclude other editors.
+            // Keep this fail-closed boundary until every supported platform can
+            // condition publication on the verified source without a race.
+            return error(
+                ErrorCode::UnsupportedEdit,
+                "/output",
+                "Tracked source files cannot be overwritten safely; export to a different output \
+                 path",
+            );
         }
+        forge_pptx::import(&bytes)?;
         self.check_cancelled()?;
-        atomic_file(path, &bytes, overwrite)?;
-        if replaces_source {
-            state.source.as_mut().unwrap().digest = sha(&bytes);
-            self.commit(&state, &bytes)?;
-            fs::remove_file(self.directory(id)?.join("export.json")).map_err(io_error)?;
-        }
+        atomic_file(&path, &bytes, overwrite)?;
         Ok(
             serde_json::json!({"document_id":id,"revision":state.revision,"path":fs::canonicalize(path).map_err(io_error)?,"sha256":sha(&bytes),"mime_type":"application/vnd.openxmlformats-officedocument.presentationml.presentation"}),
         )
@@ -784,7 +803,7 @@ mod tests {
     }
 
     #[test]
-    fn source_export_recovers_every_publication_boundary() {
+    fn legacy_source_export_recovers_every_publication_boundary() {
         // Model durable disk states on either side of publication and pointer
         // commit, including cancellation and an I/O failure after publication.
         for boundary in ["before", "cancelled", "io_failure", "committed", "external"] {
@@ -822,7 +841,7 @@ mod tests {
             };
             store.apply(patch.clone()).unwrap();
             let (mut state, bytes) = store.current(id).unwrap();
-            store.prepare_source_export(&state, &bytes).unwrap();
+            store.prepare_legacy_source_export(&state, &bytes).unwrap();
             if boundary != "before" {
                 atomic_file(&path, &bytes, true).unwrap();
                 state.source.as_mut().unwrap().digest = sha(&bytes);
@@ -880,10 +899,15 @@ mod tests {
                 *text = "Edit after recovery".into();
             }
             assert_eq!(restarted.apply(next).unwrap().revision, 2);
-            restarted.export(id, &path, true).unwrap();
+            assert_eq!(
+                restarted.export(id, &path, true).unwrap_err().code,
+                ErrorCode::UnsupportedEdit
+            );
+            let output = temp.path().join("recovered.pptx");
+            restarted.export(id, &output, false).unwrap();
             assert_eq!(
                 restarted.snapshot_bytes(id).unwrap(),
-                fs::read(&path).unwrap()
+                fs::read(&output).unwrap()
             );
         }
     }

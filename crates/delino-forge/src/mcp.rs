@@ -49,7 +49,9 @@ fn depth() -> usize {
 #[serde(deny_unknown_fields)]
 pub struct ExportInput {
     pub document_id: Uuid,
+    /// Use a different path from the tracked source of an opened document.
     pub output: PathBuf,
+    /// Replace an existing output; never permits replacing the tracked source.
     #[serde(default)]
     pub overwrite: bool,
 }
@@ -207,7 +209,8 @@ impl Server {
     #[tool(
         name = "forge.export",
         description = "Export a validated PPTX to a local path. Existing outputs require \
-                       overwrite=true."
+                       overwrite=true. Replacing an opened document's tracked source returns \
+                       unsupported_edit even with overwrite=true; use a different output path."
     )]
     async fn export(
         &self,

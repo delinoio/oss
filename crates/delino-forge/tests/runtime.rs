@@ -95,6 +95,78 @@ fn state_atomicity_source_conflicts_and_restart() {
     assert_eq!(std::fs::read(&out).unwrap(), b"external replacement");
 }
 #[test]
+fn tracked_source_exports_fail_without_changing_files_or_state() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("state");
+    let store = Store::new(Some(root.clone()), CancellationToken::new()).unwrap();
+    let id = store.create(document()).unwrap().document_id;
+    let source = tmp.path().join("source.pptx");
+    store.export(id, &source, false).unwrap();
+    store.close(id).unwrap();
+    store.open(&source).unwrap();
+    let original = std::fs::read(&source).unwrap();
+    store
+        .apply(patch(id, 0, "Export as a separate file"))
+        .unwrap();
+    let edited = store.snapshot_bytes(id).unwrap();
+    assert_ne!(edited, original);
+    let directory = root.join("documents").join(id.to_string());
+    let pointer = std::fs::read(directory.join("current.json")).unwrap();
+    let generation_count = std::fs::read_dir(&directory).unwrap().count();
+    let mut aliases = vec![source.clone(), tmp.path().join(".").join("source.pptx")];
+    let case_alias = tmp.path().join("SOURCE.PPTX");
+    if case_alias.exists() {
+        aliases.push(case_alias);
+    }
+    #[cfg(unix)]
+    {
+        let link = tmp.path().join("linked-source.pptx");
+        std::os::unix::fs::symlink(&source, &link).unwrap();
+        aliases.push(link);
+        let parent_link = tmp.path().join("linked-parent");
+        std::os::unix::fs::symlink(tmp.path(), &parent_link).unwrap();
+        aliases.push(parent_link.join("source.pptx"));
+    }
+    for alias in aliases {
+        for overwrite in [false, true] {
+            let error = store.export(id, &alias, overwrite).unwrap_err();
+            assert_eq!(error.code, ErrorCode::UnsupportedEdit);
+            assert_eq!(error.path, "/output");
+            assert!(error.message.contains("different output path"));
+            assert_eq!(std::fs::read(&source).unwrap(), original);
+            assert_eq!(
+                std::fs::read(directory.join("current.json")).unwrap(),
+                pointer
+            );
+            assert_eq!(
+                std::fs::read_dir(&directory).unwrap().count(),
+                generation_count
+            );
+            assert!(!directory.join("export.json").exists());
+        }
+    }
+    let output = tmp.path().join("edited.pptx");
+    store.export(id, &output, false).unwrap();
+    assert_eq!(std::fs::read(&output).unwrap(), edited);
+    std::fs::write(&output, b"existing output").unwrap();
+    assert_eq!(
+        store.export(id, &output, false).unwrap_err().code,
+        ErrorCode::OutputExists
+    );
+    assert_eq!(std::fs::read(&output).unwrap(), b"existing output");
+    store.export(id, &output, true).unwrap();
+    assert_eq!(std::fs::read(&output).unwrap(), edited);
+    assert_eq!(std::fs::read(&source).unwrap(), original);
+    let restarted = Store::new(Some(root), CancellationToken::new()).unwrap();
+    assert_eq!(restarted.inspect(id, None, 0).unwrap()["revision"], 1);
+    assert_eq!(restarted.snapshot_bytes(id).unwrap(), edited);
+    assert_eq!(
+        std::fs::read(directory.join("current.json")).unwrap(),
+        pointer
+    );
+}
+
+#[test]
 fn cli_end_to_end_stdout_and_missing_renderer() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("state");
@@ -150,6 +222,58 @@ fn cli_end_to_end_stdout_and_missing_renderer() {
         cli(&root, &["open", output.to_str().unwrap()])
             .status
             .success()
+    );
+    let original = std::fs::read(&output).unwrap();
+    std::fs::write(
+        &patch_file,
+        serde_json::to_vec(&patch(id.parse().unwrap(), 1, "CLI separate output")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        cli(&root, &["apply", patch_file.to_str().unwrap()])
+            .status
+            .success()
+    );
+    let rejected = cli(
+        &root,
+        &[
+            "export",
+            id,
+            "--output",
+            output.to_str().unwrap(),
+            "--overwrite",
+        ],
+    );
+    assert!(!rejected.status.success());
+    let error: Value = serde_json::from_slice(&rejected.stdout).unwrap();
+    assert_eq!(error["error"]["code"], "unsupported_edit");
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("different output path")
+    );
+    assert_eq!(std::fs::read(&output).unwrap(), original);
+    let separate = tmp.path().join("edited.pptx");
+    let exported = cli(
+        &root,
+        &["export", id, "--output", separate.to_str().unwrap()],
+    );
+    assert!(exported.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&exported.stdout).unwrap()["revision"],
+        2
+    );
+    assert_ne!(std::fs::read(&separate).unwrap(), original);
+    let help = cli(&root, &["export", "--help"]);
+    assert!(help.status.success());
+    assert!(String::from_utf8_lossy(&help.stdout).contains("source cannot be overwritten"));
+    let capabilities = cli(&root, &["capabilities"]);
+    assert!(capabilities.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&capabilities.stdout).unwrap()["export"]
+            ["tracked_source_overwrite"],
+        false
     );
 }
 #[tokio::test]
@@ -264,6 +388,63 @@ async fn official_mcp_client_exercises_actual_stdio_binary() {
     assert_eq!(
         error.structured_content.unwrap()["error"]["code"],
         "revision_conflict"
+    );
+    let original = std::fs::read(&out).unwrap();
+    let edited = client
+        .call_tool(
+            CallToolRequestParams::new("forge.apply").with_arguments(
+                json!({"patch":patch(id.parse().unwrap(),1,"MCP separate output")})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        )
+        .await
+        .unwrap();
+    assert_eq!(edited.structured_content.unwrap()["revision"], 2);
+    let rejected = client
+        .call_tool(
+            CallToolRequestParams::new("forge.export").with_arguments(
+                json!({"document_id":id,"output":out,"overwrite":true})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        )
+        .await
+        .unwrap();
+    assert_eq!(rejected.is_error, Some(true));
+    let error = rejected.structured_content.unwrap();
+    assert_eq!(error["error"]["code"], "unsupported_edit");
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("different output path")
+    );
+    assert_eq!(std::fs::read(&out).unwrap(), original);
+    let separate = tmp.path().join("edited.pptx");
+    let exported = client
+        .call_tool(
+            CallToolRequestParams::new("forge.export").with_arguments(
+                json!({"document_id":id,"output":separate})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        )
+        .await
+        .unwrap();
+    assert_ne!(exported.is_error, Some(true));
+    assert_eq!(exported.structured_content.unwrap()["revision"], 2);
+    assert_ne!(std::fs::read(&separate).unwrap(), original);
+    let capabilities = client
+        .call_tool(CallToolRequestParams::new("forge.capabilities"))
+        .await
+        .unwrap();
+    assert_eq!(
+        capabilities.structured_content.unwrap()["export"]["tracked_source_overwrite"],
+        false
     );
     client.cancel().await.unwrap();
 }

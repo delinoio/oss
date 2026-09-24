@@ -22,7 +22,7 @@ delino-forge preview DOCUMENT_ID --output preview
 delino-forge close DOCUMENT_ID
 ```
 
-Use `--state-dir DIRECTORY` to isolate local state; it is a global option. The default is the platform user-data directory. `open presentation.pptx` snapshots an existing document. Neither `open` nor `apply` overwrites it. Exporting to an existing file requires `--overwrite`.
+Use `--state-dir DIRECTORY` to isolate local state; it is a global option. The default is the platform user-data directory. `open presentation.pptx` snapshots an existing document. Export edits to a different path, such as `delino-forge export DOCUMENT_ID --output edited.pptx`. Replacing the tracked source returns `unsupported_edit`, even with `--overwrite`, because Forge cannot guarantee preservation of another application's concurrent save. The original and managed revision remain unchanged by this rejection. Replacing a separate existing output requires `--overwrite`. `capabilities` reports this boundary as `export.tracked_source_overwrite: false`.
 
 Register PNG or JPEG images with `delino-forge asset add image.png`. Put its returned handle into the document's `assets` map, then reference that alias with `asset_ref`. The [all-node example](../forge-tree-doc/examples/all-nodes.json) needs its sample handle replaced with a registered handle before creation. The [schema bundle](../forge-tree-doc/schema.json) contains `presentation` and `patch` JSON Schemas.
 

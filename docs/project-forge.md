@@ -19,6 +19,7 @@ Create and edit Office documents through a typed, validated document tree withou
 - Files, assets, and revisions remain in user-owned local storage instead of R2. There is no cloud service, telemetry, internal LLM, or implicit network asset retrieval.
 - CLI and MCP use the same implementation. `stdout` is reserved for JSON results or MCP protocol; redacted structured logs use `stderr`.
 - Supported edits preserve unrelated original package parts and unsupported XML. Unsupported edits fail explicitly rather than flattening or dropping content.
+- Opened documents export to a separate path. Replacing their tracked source returns `unsupported_edit`, including with explicit overwrite, because publication cannot be conditioned atomically on the verified fingerprint across supported platforms. Separate existing outputs still require explicit overwrite.
 - The DSL is versioned independently of the executable. Persistent identifiers are UUID v7.
 - Preview is optional; generation and editing do not require LibreOffice or Poppler. Preview results identify their renderer and are not Microsoft PowerPoint validation evidence.
 
