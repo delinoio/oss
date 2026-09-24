@@ -2984,6 +2984,13 @@ impl ForegroundTerminal {
 #[cfg(unix)]
 static mut FOREGROUND_INTERRUPT_RELAY_SUPERVISOR: libc::pid_t = 0;
 
+// SIGTERM is delivered to the entire workload process group during graceful
+// cleanup, so it cannot stop the relay without losing a second Ctrl+C. The
+// supervisor sends this private, relay-only signal after terminal ownership is
+// restored; it is never forwarded to the workload group.
+#[cfg(unix)]
+const FOREGROUND_INTERRUPT_RELAY_STOP_SIGNAL: libc::c_int = libc::SIGUSR1;
+
 #[cfg(unix)]
 extern "C" fn forward_foreground_interrupt(_: libc::c_int) {
     // The relay has no shared Rust state after fork. `getppid` prevents a
@@ -3016,7 +3023,9 @@ fn spawn_foreground_interrupt_relay(child_group: libc::pid_t) -> Result<libc::pi
         // `spawn` may follow service readiness and output workers, so this
         // post-fork child can use only async-signal-safe libc functions. It
         // stays in the workload group, relays terminal Ctrl+C to its native
-        // supervisor, and otherwise waits for normal group cleanup.
+        // supervisor, and otherwise waits for lifecycle cleanup. It ignores
+        // the workload group's graceful SIGTERM so a second Ctrl+C can still
+        // reach the supervisor during that grace period.
         unsafe {
             libc::close(readiness[0]);
             FOREGROUND_INTERRUPT_RELAY_SUPERVISOR = libc::getppid();
@@ -3025,10 +3034,18 @@ fn spawn_foreground_interrupt_relay(child_group: libc::pid_t) -> Result<libc::pi
             action.sa_flags = libc::SA_RESTART;
             let mut terminate: libc::sigaction = std::mem::zeroed();
             terminate.sa_sigaction = libc::SIG_DFL;
+            let mut ignore: libc::sigaction = std::mem::zeroed();
+            ignore.sa_sigaction = libc::SIG_IGN;
             let ready = libc::setpgid(0, child_group) == 0
                 && FOREGROUND_INTERRUPT_RELAY_SUPERVISOR > 0
                 && libc::sigemptyset(&mut terminate.sa_mask) == 0
-                && libc::sigaction(libc::SIGTERM, &terminate, std::ptr::null_mut()) == 0
+                && libc::sigemptyset(&mut ignore.sa_mask) == 0
+                && libc::sigaction(libc::SIGTERM, &ignore, std::ptr::null_mut()) == 0
+                && libc::sigaction(
+                    FOREGROUND_INTERRUPT_RELAY_STOP_SIGNAL,
+                    &terminate,
+                    std::ptr::null_mut(),
+                ) == 0
                 && libc::sigaction(libc::SIGHUP, &terminate, std::ptr::null_mut()) == 0
                 && libc::sigaction(libc::SIGQUIT, &terminate, std::ptr::null_mut()) == 0
                 && libc::sigemptyset(&mut action.sa_mask) == 0
@@ -3071,7 +3088,7 @@ fn spawn_foreground_interrupt_relay(child_group: libc::pid_t) -> Result<libc::pi
 
 #[cfg(unix)]
 fn stop_foreground_interrupt_relay(relay: libc::pid_t) {
-    if unsafe { libc::kill(relay, libc::SIGTERM) } == -1
+    if unsafe { libc::kill(relay, FOREGROUND_INTERRUPT_RELAY_STOP_SIGNAL) } == -1
         && io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
     {
         tracing::debug!(
@@ -5394,6 +5411,23 @@ mod lifecycle_tests {
 
         assert!(contains_local_resource_failure(&exhausted));
         assert!(!contains_local_resource_failure(&refused));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn foreground_interrupt_relay_survives_graceful_group_termination() {
+        let group = unsafe { libc::getpgrp() };
+        assert!(group > 0);
+        let relay = spawn_foreground_interrupt_relay(group).unwrap();
+
+        assert_eq!(unsafe { libc::kill(relay, libc::SIGTERM) }, 0);
+        let mut status = 0;
+        let observed = unsafe { libc::waitpid(relay, &mut status, libc::WNOHANG) };
+        if observed == 0 {
+            stop_foreground_interrupt_relay(relay);
+        }
+
+        assert_eq!(observed, 0, "graceful cleanup terminated the relay");
     }
 
     #[cfg(any(target_os = "linux", test))]
