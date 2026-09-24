@@ -1501,6 +1501,94 @@ int main(int argc, char **argv) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_workspace_symlinks_reach_virtual_and_managed_targets() {
+    use std::{os::unix::fs::symlink, process::Command};
+    let root = fixture();
+    let cache_root = tempfile::tempdir().unwrap();
+    let cache_path = cache_root.path().join("cache");
+    let cache = Cache::open(cache_path.clone()).unwrap();
+    let lease = cache.materialize(&root.path().join("cache.zip")).unwrap();
+    symlink(
+        "node_modules/dep/file.txt",
+        root.path().join("virtual-alias"),
+    )
+    .unwrap();
+    symlink("node_modules/dep", root.path().join("virtual-dir")).unwrap();
+    symlink(
+        lease.content.join("node_modules/dep/file.txt"),
+        root.path().join("managed-alias"),
+    )
+    .unwrap();
+    fs::write(root.path().join("native.txt"), b"native bytes").unwrap();
+    symlink("native.txt", root.path().join("native-alias")).unwrap();
+    let source = root.path().join("symlink-lookup.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+static int check(const char *name, const char *expected) {
+    char value[64];
+    int fd = open(name, O_RDONLY);
+    if (fd < 0) return -1;
+    ssize_t count = read(fd, value, sizeof(value));
+    close(fd);
+    return count == (ssize_t)strlen(expected) && !memcmp(value, expected, count);
+}
+int main(void) {
+    if (check("virtual-alias", "package bytes") != 1) return 41;
+    if (check("virtual-dir/file.txt", "package bytes") != 1) return 42;
+    if (chmod("managed-alias", 0600) != -1 || errno != EROFS) return 43;
+    if (open("managed-alias", O_WRONLY) != -1 || errno != EROFS) return 44;
+    if (check("native-alias", "native bytes") != 1) return 45;
+    struct stat info;
+    if (lstat("managed-alias", &info) || !S_ISLNK(info.st_mode)) return 46;
+    if (unlink("managed-alias")) return 47;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("symlink-lookup");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(
+        Command::new(&executable)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(41)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(&cache_path)
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(!root.path().join("node_modules").exists());
+    assert!(!root.path().join("managed-alias").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_native_relative_paths_keep_kernel_lookup_semantics() {
     use std::process::Command;
     let root = fixture();

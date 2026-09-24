@@ -7,7 +7,7 @@
 //! pnport never attaches to unrelated tasks.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     ffi::{CString, OsStr, OsString},
     fs::{self, File},
     io::{self, Read, Seek, SeekFrom},
@@ -25,7 +25,7 @@ use libc::{self, c_void};
 use pnport::{
     diagnostic::{Code, Error, ExecFailureKind, Result},
     executable::Prepared,
-    graph::Input,
+    graph::{Graph, Input},
     view::{Translation, View},
 };
 
@@ -109,6 +109,134 @@ fn escapes_beneath(path: &Path) -> bool {
         }
     }
     false
+}
+
+fn resolved_caller_lookup(path: &Path, follow_last: bool, graph: &Graph) -> Option<PathBuf> {
+    let mut remaining: VecDeque<OsString> = path
+        .components()
+        .map(|part| part.as_os_str().to_os_string())
+        .collect();
+    let mut resolved = PathBuf::new();
+    let mut archive_root: Option<PathBuf> = None;
+    let mut followed = 0;
+    while let Some(part) = remaining.pop_front() {
+        match Path::new(&part).components().next()? {
+            Component::RootDir => {
+                resolved = PathBuf::from("/");
+                archive_root = None;
+            }
+            Component::CurDir => {}
+            Component::ParentDir => {
+                resolved.pop();
+                if archive_root
+                    .as_ref()
+                    .is_some_and(|archive| !resolved.starts_with(archive))
+                {
+                    archive_root = None;
+                }
+            }
+            Component::Normal(name) => {
+                let candidate = resolved.join(name);
+                match fs::symlink_metadata(&candidate) {
+                    Ok(metadata)
+                        if metadata.file_type().is_symlink()
+                            && (follow_last || !remaining.is_empty()) =>
+                    {
+                        followed += 1;
+                        if followed > 40 {
+                            return None;
+                        }
+                        let target = fs::read_link(&candidate).ok()?;
+                        let mut expanded: VecDeque<OsString> = target
+                            .components()
+                            .map(|part| part.as_os_str().to_os_string())
+                            .collect();
+                        expanded.append(&mut remaining);
+                        remaining = expanded;
+                    }
+                    Ok(metadata) => {
+                        let archive_boundary = metadata.is_file()
+                            && candidate.extension() == Some(OsStr::new("zip"))
+                            && graph.is_location_ancestor(&candidate);
+                        // Yarn's registered archive is a regular host file,
+                        // while its children belong to the PnP virtual view.
+                        // Only a graph-owned ZIP boundary may cross that
+                        // otherwise native ENOTDIR result.
+                        if !remaining.is_empty() && !metadata.is_dir() && !archive_boundary {
+                            return None;
+                        }
+                        resolved = candidate;
+                        if archive_boundary {
+                            archive_root = Some(resolved.clone());
+                        }
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                        // A virtual node_modules component has no physical
+                        // directory; the PnP view resolves it after this walk.
+                        resolved = candidate;
+                    }
+                    Err(error)
+                        if error.raw_os_error() == Some(libc::ENOTDIR)
+                            && archive_root.is_some() =>
+                    {
+                        // The host reports ENOTDIR below the ZIP file; the
+                        // view resolves these components after this walk.
+                        resolved = candidate;
+                    }
+                    Err(_) => return None,
+                }
+            }
+            Component::Prefix(_) => return None,
+        }
+    }
+    Some(resolved)
+}
+
+fn follows_final_component(
+    call: i64,
+    regs: &Registers,
+    path_arg: usize,
+    open_flags: Option<i32>,
+) -> bool {
+    if let Some(flags) = open_flags {
+        return flags & libc::O_NOFOLLOW == 0;
+    }
+    if call == libc::SYS_linkat {
+        return path_arg == 1 && argument(regs, 4) as i32 & libc::AT_SYMLINK_FOLLOW != 0;
+    }
+    if matches!(call, n if n == libc::SYS_newfstatat || n == libc::SYS_faccessat2
+        || n == libc::SYS_utimensat || n == SYS_FCHMODAT2)
+    {
+        return argument(regs, 3) as i32 & libc::AT_SYMLINK_NOFOLLOW == 0;
+    }
+    if call == libc::SYS_statx || call == libc::SYS_inotify_add_watch {
+        return argument(regs, 2) as i32
+            & (if call == libc::SYS_statx {
+                libc::AT_SYMLINK_NOFOLLOW
+            } else {
+                libc::IN_DONT_FOLLOW as i32
+            })
+            == 0;
+    }
+    if call == libc::SYS_fchownat {
+        return argument(regs, 4) as i32 & libc::AT_SYMLINK_NOFOLLOW == 0;
+    }
+    if matches!(call, n if n == libc::SYS_readlinkat || n == libc::SYS_unlinkat
+        || n == libc::SYS_mkdirat || n == libc::SYS_mknodat || n == libc::SYS_symlinkat
+        || n == libc::SYS_renameat || n == libc::SYS_renameat2 || n == SYS_LSTAT
+        || n == SYS_READLINK || n == libc::SYS_lgetxattr || n == libc::SYS_llistxattr
+        || n == libc::SYS_lsetxattr || n == libc::SYS_lremovexattr)
+    {
+        return false;
+    }
+    #[cfg(target_arch = "x86_64")]
+    if matches!(call, n if n == libc::SYS_unlink || n == libc::SYS_mkdir
+        || n == libc::SYS_mknod || n == libc::SYS_symlink || n == libc::SYS_rename
+        || n == libc::SYS_link || n == libc::SYS_rmdir || n == libc::SYS_lchown)
+    {
+        return false;
+    }
+    true
 }
 
 pub fn is_static(path: &Path) -> Result<bool> {
@@ -1310,11 +1438,10 @@ impl Trace<'_> {
         Ok(root.join(path))
     }
 
-    fn translate(&mut self, pid: i32, dirfd: i32, path: &Path) -> Result<Translation> {
-        let logical = self.source_path(pid, dirfd, &path)?;
-        self.translate_view(&logical).inspect_err(|error| {
+    fn translate(&mut self, lookup: &Path) -> Result<Translation> {
+        self.translate_view(lookup).inspect_err(|error| {
             if error.code == Code::PnportResolutionFailed {
-                tracing::debug!(action = "linux_resolution_miss", path = %logical.display(),
+                tracing::debug!(action = "linux_resolution_miss", path = %lookup.display(),
                     "Owned child path was not present in the PnP view");
             } else if super::supervisor::handled_signal() == 0 {
                 let _ = fs::write(self.view.session.join("failure"), error.code.as_str());
@@ -1878,7 +2005,12 @@ impl Trace<'_> {
                             _ => {}
                         }
                     }
-                    let translated = match self.translate(pid, target_fd, target) {
+                    let source = self.source_path(pid, target_fd, target)?;
+                    let Some(lookup) = resolved_caller_lookup(&source, false, &self.view.graph)
+                    else {
+                        return Ok(false);
+                    };
+                    let translated = match self.translate(&lookup) {
                         Ok(value) => value,
                         Err(error) if error.code == Code::PnportResolutionFailed => {
                             self.force_error(pid, &mut regs, target_arg, libc::ENOENT)?;
@@ -1890,8 +2022,7 @@ impl Trace<'_> {
                         self.force_error(pid, &mut regs, target_arg, libc::EROFS)?;
                         return Ok(true);
                     }
-                    let source = self.source_path(pid, target_fd, &target)?;
-                    if pnport::graph::normalize(&source) != translated.physical {
+                    if lookup != translated.physical {
                         self.rewrite_path(pid, &mut regs, target_arg, &translated.physical)?;
                     }
                     self.pending.insert(pid, Pending::Ordinary);
@@ -1901,6 +2032,21 @@ impl Trace<'_> {
             }
         }
         let is_open = call == libc::SYS_openat || call == libc::SYS_openat2 || call == SYS_OPEN;
+        let open_flags = if call == libc::SYS_openat2 {
+            let how = read_remote(pid, argument(&regs, 2), 8)?;
+            Some(i32::from_ne_bytes(
+                how.get(..4)
+                    .ok_or_else(injection_failed)?
+                    .try_into()
+                    .map_err(|_| injection_failed())?,
+            ))
+        } else if call == libc::SYS_openat {
+            Some(argument(&regs, 2) as i32)
+        } else if call == SYS_OPEN {
+            Some(argument(&regs, 1) as i32)
+        } else {
+            None
+        };
         let in_root = openat2_resolve & RESOLVE_IN_ROOT != 0;
         if openat2_resolve & RESOLVE_BENEATH != 0
             && (original.is_absolute() || escapes_beneath(&original))
@@ -2016,23 +2162,21 @@ impl Trace<'_> {
         } else {
             self.source_path(pid, dirfd, &original)?
         };
+        let Some(lookup) = resolved_caller_lookup(
+            &source,
+            follows_final_component(call, &regs, path_arg, open_flags),
+            &self.view.graph,
+        ) else {
+            return Ok(false);
+        };
         let mutating = writing
             && call != libc::SYS_faccessat
             && call != libc::SYS_faccessat2
             && call != SYS_ACCESS;
-        let translation = match if let Some((logical, _)) = proc_cwd {
-            self.translate_view(&logical)
-        } else if in_root && original.is_absolute() {
-            let base = self.base(pid, dirfd, Path::new("."))?;
-            self.translate_view(
-                &base.join(original.strip_prefix("/").map_err(|_| injection_failed())?),
-            )
-        } else {
-            self.translate(pid, dirfd, &original)
-        } {
+        let translation = match self.translate(&lookup) {
             Ok(value) => value,
             Err(error) if error.code == Code::PnportResolutionFailed => {
-                let errno = self.missing_path_errno(&source, mutating)?;
+                let errno = self.missing_path_errno(&lookup, mutating)?;
                 self.force_error(pid, &mut regs, path_arg, errno)?;
                 return Ok(true);
             }
@@ -2045,19 +2189,7 @@ impl Trace<'_> {
             }
         }
         if is_open && translation.virtual_link {
-            let flags = if call == libc::SYS_openat2 {
-                let how = read_remote(pid, argument(&regs, 2), 8)?;
-                u64::from_ne_bytes(
-                    how.get(..8)
-                        .ok_or_else(injection_failed)?
-                        .try_into()
-                        .map_err(|_| injection_failed())?,
-                ) as i32
-            } else if call == libc::SYS_openat {
-                argument(&regs, 2) as i32
-            } else {
-                argument(&regs, 1) as i32
-            };
+            let flags = open_flags.ok_or_else(injection_failed)?;
             if flags & libc::O_NOFOLLOW != 0 {
                 if flags & libc::O_PATH == 0 {
                     self.force_error(pid, &mut regs, path_arg, libc::ELOOP)?;
@@ -2110,10 +2242,14 @@ impl Trace<'_> {
                     }
                 }
                 let source = self.source_path(pid, other_fd, &other)?;
-                let translated = match self.translate(pid, other_fd, &other) {
+                let Some(other_lookup) = resolved_caller_lookup(&source, false, &self.view.graph)
+                else {
+                    return Ok(false);
+                };
+                let translated = match self.translate(&other_lookup) {
                     Ok(value) => value,
                     Err(error) if error.code == Code::PnportResolutionFailed => {
-                        let errno = self.missing_path_errno(&source, true)?;
+                        let errno = self.missing_path_errno(&other_lookup, true)?;
                         self.force_error(pid, &mut regs, path_arg, errno)?;
                         return Ok(true);
                     }
@@ -2123,7 +2259,7 @@ impl Trace<'_> {
                     self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
                     return Ok(true);
                 }
-                Some((other_arg, source, translated))
+                Some((other_arg, other_lookup, translated))
             } else {
                 None
             };
@@ -2143,7 +2279,9 @@ impl Trace<'_> {
             } else {
                 original.as_path()
             };
-            if pnport::graph::normalize(&base.join(relative)) != translation.physical {
+            if lookup != translation.physical
+                && pnport::graph::normalize(&base.join(relative)) != translation.physical
+            {
                 return Err(unsupported(
                     "Constrained openat2 resolution cannot preserve this virtual path.",
                 ));
@@ -2154,13 +2292,13 @@ impl Trace<'_> {
             // physical path for an unplugged dependency. Compare the caller's
             // lookup path instead, while leaving native relative spelling in
             // place for the kernel's symlink and trailing-slash semantics.
-            pnport::graph::normalize(&source) != translation.physical
+            lookup != translation.physical
         };
         if changed {
             self.rewrite_path(pid, &mut regs, path_arg, &translation.physical)?;
         }
-        if let Some((other_arg, source, translated)) = second_translation {
-            if pnport::graph::normalize(&source) != translated.physical {
+        if let Some((other_arg, other_lookup, translated)) = second_translation {
+            if other_lookup != translated.physical {
                 self.rewrite_path_slot(pid, &mut regs, other_arg, &translated.physical, 1)?;
             }
         }

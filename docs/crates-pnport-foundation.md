@@ -44,6 +44,8 @@ Relative `*at` operations validate the live descriptor as a directory before joi
 
 The Linux tracer preserves the original pathname spelling for native paths that do not require virtual translation, including relative symlink traversal, `..` after a symlink, and trailing separators. This applies to both operands of link and rename operations so ordinary kernel lookup and `ENOTDIR` behavior remain intact.
 
+For classification, the tracer resolves existing workspace symlink components before querying the PnP view. A link into a virtual dependency path is translated; a link into managed backing retains read-only ownership. Native lookups keep their original bytes, and no-follow calls operate on the link inode.
+
 Invalid child pathname pointers are left for the kernel's ordinary `EFAULT` handling, including null pointers in two-path operations.
 
 Pathname rewriting compares the caller's resolved lookup path with the selected physical backing. A virtual dependency can resolve to a native unplugged package whose PnP identity equals its physical path; that equality does not make the caller's virtual `node_modules` alias a native path.
