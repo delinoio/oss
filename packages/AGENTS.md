@@ -62,3 +62,4 @@
 - Internal docs, examples, messages and troubleshooting are English; no public publication or runtime downloads. Tests must exercise installed/workspace CLI and asynchronous React behavior, not manually invoked components.
 
 - React Forge native/system-font build, integration, rendering and benchmark tasks must remain uncached. Use package-owned scripts and record test renderer/font provenance without bundling system fonts. Retain actual packed-consumer CLI coverage. Fonts/assets participate in immutable revision snapshots; disposal owns in-flight mounts and mutations.
+- Keep the ROAM travel IR example's reusable React source, local image assets, generation prompts and provenance together. Resolve its assets relative to the task module, retain explicit fictional-metric labels and calculation consistency, and keep exported decks/previews untracked. The example must run without network access or image-generation/conversion tools.

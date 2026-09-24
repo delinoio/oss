@@ -8,6 +8,7 @@ Provide private React document sessions and a TSX task CLI for authoring and pre
 
 ## Domain Ownership Map
 - `packages/react-forge`: private TypeScript session library, React reconciler, components, CLI, examples and integration tests.
+- `packages/react-forge/examples/travel-ir.tsx` and `travel-ir-assets`: designed English ROAM investor-deck example, local concept imagery, source provenance and explicitly fictional financial model.
 - `crates/react-forge-node`: dedicated N-API adapter; JavaScript execution never moves into native workers.
 - `crates/forge-package`: shared bounded OOXML package and preservation primitives.
 - `crates/forge-document`: shared text/style validation, image validation and editable chart/data primitives.

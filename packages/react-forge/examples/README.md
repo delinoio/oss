@@ -14,6 +14,14 @@ Existing destinations fail by default. Use `--overwrite` to explicitly replace a
 
 `sample.png` is the generated non-photographic fixture from `crates/forge-pptx/tests/fixtures/generate.py` (repository MIT license). It is included locally so examples work without downloads.
 
+For a complete designed deck, run the [ROAM travel-app investor example](travel-ir-assets/README.md):
+
+```sh
+pnpm --filter react-forge cli run examples/travel-ir.tsx --output /tmp/roam-investor-deck.pptx --json
+```
+
+Its 12 English slides combine reusable React components, original local imagery, native text, an editable acquisition table and a quarterly-target chart with embedded workbook data. The fictional company, financial assumptions, researched market statistic, image provenance and font requirements are documented with the example.
+
 
 For a preservation-aware edit, pass an explicit source path and format:
 
