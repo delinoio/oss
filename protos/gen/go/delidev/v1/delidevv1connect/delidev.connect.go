@@ -27,6 +27,10 @@ const (
 	ResourceServiceName = "delidev.v1.ResourceService"
 	// ConfigurationServiceName is the fully-qualified name of the ConfigurationService service.
 	ConfigurationServiceName = "delidev.v1.ConfigurationService"
+	// DeviceServiceName is the fully-qualified name of the DeviceService service.
+	DeviceServiceName = "delidev.v1.DeviceService"
+	// WorkerServiceName is the fully-qualified name of the WorkerService service.
+	WorkerServiceName = "delidev.v1.WorkerService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -68,6 +72,26 @@ const (
 	// ConfigurationServicePreviewRoutingProcedure is the fully-qualified name of the
 	// ConfigurationService's PreviewRouting RPC.
 	ConfigurationServicePreviewRoutingProcedure = "/delidev.v1.ConfigurationService/PreviewRouting"
+	// DeviceServiceCreatePairingProcedure is the fully-qualified name of the DeviceService's
+	// CreatePairing RPC.
+	DeviceServiceCreatePairingProcedure = "/delidev.v1.DeviceService/CreatePairing"
+	// DeviceServicePairDeviceProcedure is the fully-qualified name of the DeviceService's PairDevice
+	// RPC.
+	DeviceServicePairDeviceProcedure = "/delidev.v1.DeviceService/PairDevice"
+	// DeviceServiceRevokeDeviceProcedure is the fully-qualified name of the DeviceService's
+	// RevokeDevice RPC.
+	DeviceServiceRevokeDeviceProcedure = "/delidev.v1.DeviceService/RevokeDevice"
+	// WorkerServiceAttachWorkerProcedure is the fully-qualified name of the WorkerService's
+	// AttachWorker RPC.
+	WorkerServiceAttachWorkerProcedure = "/delidev.v1.WorkerService/AttachWorker"
+	// WorkerServiceWatchWorkProcedure is the fully-qualified name of the WorkerService's WatchWork RPC.
+	WorkerServiceWatchWorkProcedure = "/delidev.v1.WorkerService/WatchWork"
+	// WorkerServiceReportWorkProcedure is the fully-qualified name of the WorkerService's ReportWork
+	// RPC.
+	WorkerServiceReportWorkProcedure = "/delidev.v1.WorkerService/ReportWork"
+	// WorkerServiceInspectRepositoryProcedure is the fully-qualified name of the WorkerService's
+	// InspectRepository RPC.
+	WorkerServiceInspectRepositoryProcedure = "/delidev.v1.WorkerService/InspectRepository"
 )
 
 // SystemServiceClient is a client for the delidev.v1.SystemService service.
@@ -486,4 +510,274 @@ func (UnimplementedConfigurationServiceHandler) DeleteConfiguration(context.Cont
 
 func (UnimplementedConfigurationServiceHandler) PreviewRouting(context.Context, *connect.Request[v1.PreviewRoutingRequest]) (*connect.Response[v1.PreviewRoutingResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.PreviewRouting is not implemented"))
+}
+
+// DeviceServiceClient is a client for the delidev.v1.DeviceService service.
+type DeviceServiceClient interface {
+	CreatePairing(context.Context, *connect.Request[v1.CreatePairingRequest]) (*connect.Response[v1.CreatePairingResponse], error)
+	PairDevice(context.Context, *connect.Request[v1.PairDeviceRequest]) (*connect.Response[v1.PairDeviceResponse], error)
+	RevokeDevice(context.Context, *connect.Request[v1.RevokeDeviceRequest]) (*connect.Response[v1.RevokeDeviceResponse], error)
+}
+
+// NewDeviceServiceClient constructs a client for the delidev.v1.DeviceService service. By default,
+// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
+// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
+// or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewDeviceServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) DeviceServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	deviceServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("DeviceService").Methods()
+	return &deviceServiceClient{
+		createPairing: connect.NewClient[v1.CreatePairingRequest, v1.CreatePairingResponse](
+			httpClient,
+			baseURL+DeviceServiceCreatePairingProcedure,
+			connect.WithSchema(deviceServiceMethods.ByName("CreatePairing")),
+			connect.WithClientOptions(opts...),
+		),
+		pairDevice: connect.NewClient[v1.PairDeviceRequest, v1.PairDeviceResponse](
+			httpClient,
+			baseURL+DeviceServicePairDeviceProcedure,
+			connect.WithSchema(deviceServiceMethods.ByName("PairDevice")),
+			connect.WithClientOptions(opts...),
+		),
+		revokeDevice: connect.NewClient[v1.RevokeDeviceRequest, v1.RevokeDeviceResponse](
+			httpClient,
+			baseURL+DeviceServiceRevokeDeviceProcedure,
+			connect.WithSchema(deviceServiceMethods.ByName("RevokeDevice")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// deviceServiceClient implements DeviceServiceClient.
+type deviceServiceClient struct {
+	createPairing *connect.Client[v1.CreatePairingRequest, v1.CreatePairingResponse]
+	pairDevice    *connect.Client[v1.PairDeviceRequest, v1.PairDeviceResponse]
+	revokeDevice  *connect.Client[v1.RevokeDeviceRequest, v1.RevokeDeviceResponse]
+}
+
+// CreatePairing calls delidev.v1.DeviceService.CreatePairing.
+func (c *deviceServiceClient) CreatePairing(ctx context.Context, req *connect.Request[v1.CreatePairingRequest]) (*connect.Response[v1.CreatePairingResponse], error) {
+	return c.createPairing.CallUnary(ctx, req)
+}
+
+// PairDevice calls delidev.v1.DeviceService.PairDevice.
+func (c *deviceServiceClient) PairDevice(ctx context.Context, req *connect.Request[v1.PairDeviceRequest]) (*connect.Response[v1.PairDeviceResponse], error) {
+	return c.pairDevice.CallUnary(ctx, req)
+}
+
+// RevokeDevice calls delidev.v1.DeviceService.RevokeDevice.
+func (c *deviceServiceClient) RevokeDevice(ctx context.Context, req *connect.Request[v1.RevokeDeviceRequest]) (*connect.Response[v1.RevokeDeviceResponse], error) {
+	return c.revokeDevice.CallUnary(ctx, req)
+}
+
+// DeviceServiceHandler is an implementation of the delidev.v1.DeviceService service.
+type DeviceServiceHandler interface {
+	CreatePairing(context.Context, *connect.Request[v1.CreatePairingRequest]) (*connect.Response[v1.CreatePairingResponse], error)
+	PairDevice(context.Context, *connect.Request[v1.PairDeviceRequest]) (*connect.Response[v1.PairDeviceResponse], error)
+	RevokeDevice(context.Context, *connect.Request[v1.RevokeDeviceRequest]) (*connect.Response[v1.RevokeDeviceResponse], error)
+}
+
+// NewDeviceServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewDeviceServiceHandler(svc DeviceServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	deviceServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("DeviceService").Methods()
+	deviceServiceCreatePairingHandler := connect.NewUnaryHandler(
+		DeviceServiceCreatePairingProcedure,
+		svc.CreatePairing,
+		connect.WithSchema(deviceServiceMethods.ByName("CreatePairing")),
+		connect.WithHandlerOptions(opts...),
+	)
+	deviceServicePairDeviceHandler := connect.NewUnaryHandler(
+		DeviceServicePairDeviceProcedure,
+		svc.PairDevice,
+		connect.WithSchema(deviceServiceMethods.ByName("PairDevice")),
+		connect.WithHandlerOptions(opts...),
+	)
+	deviceServiceRevokeDeviceHandler := connect.NewUnaryHandler(
+		DeviceServiceRevokeDeviceProcedure,
+		svc.RevokeDevice,
+		connect.WithSchema(deviceServiceMethods.ByName("RevokeDevice")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/delidev.v1.DeviceService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case DeviceServiceCreatePairingProcedure:
+			deviceServiceCreatePairingHandler.ServeHTTP(w, r)
+		case DeviceServicePairDeviceProcedure:
+			deviceServicePairDeviceHandler.ServeHTTP(w, r)
+		case DeviceServiceRevokeDeviceProcedure:
+			deviceServiceRevokeDeviceHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedDeviceServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedDeviceServiceHandler struct{}
+
+func (UnimplementedDeviceServiceHandler) CreatePairing(context.Context, *connect.Request[v1.CreatePairingRequest]) (*connect.Response[v1.CreatePairingResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.DeviceService.CreatePairing is not implemented"))
+}
+
+func (UnimplementedDeviceServiceHandler) PairDevice(context.Context, *connect.Request[v1.PairDeviceRequest]) (*connect.Response[v1.PairDeviceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.DeviceService.PairDevice is not implemented"))
+}
+
+func (UnimplementedDeviceServiceHandler) RevokeDevice(context.Context, *connect.Request[v1.RevokeDeviceRequest]) (*connect.Response[v1.RevokeDeviceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.DeviceService.RevokeDevice is not implemented"))
+}
+
+// WorkerServiceClient is a client for the delidev.v1.WorkerService service.
+type WorkerServiceClient interface {
+	AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error)
+	WatchWork(context.Context, *connect.Request[v1.WatchWorkRequest]) (*connect.ServerStreamForClient[v1.WatchWorkResponse], error)
+	ReportWork(context.Context, *connect.Request[v1.ReportWorkRequest]) (*connect.Response[v1.ReportWorkResponse], error)
+	InspectRepository(context.Context, *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error)
+}
+
+// NewWorkerServiceClient constructs a client for the delidev.v1.WorkerService service. By default,
+// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
+// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
+// or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) WorkerServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	workerServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("WorkerService").Methods()
+	return &workerServiceClient{
+		attachWorker: connect.NewClient[v1.AttachWorkerRequest, v1.AttachWorkerResponse](
+			httpClient,
+			baseURL+WorkerServiceAttachWorkerProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("AttachWorker")),
+			connect.WithClientOptions(opts...),
+		),
+		watchWork: connect.NewClient[v1.WatchWorkRequest, v1.WatchWorkResponse](
+			httpClient,
+			baseURL+WorkerServiceWatchWorkProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("WatchWork")),
+			connect.WithClientOptions(opts...),
+		),
+		reportWork: connect.NewClient[v1.ReportWorkRequest, v1.ReportWorkResponse](
+			httpClient,
+			baseURL+WorkerServiceReportWorkProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("ReportWork")),
+			connect.WithClientOptions(opts...),
+		),
+		inspectRepository: connect.NewClient[v1.InspectRepositoryRequest, v1.InspectRepositoryResponse](
+			httpClient,
+			baseURL+WorkerServiceInspectRepositoryProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("InspectRepository")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// workerServiceClient implements WorkerServiceClient.
+type workerServiceClient struct {
+	attachWorker      *connect.Client[v1.AttachWorkerRequest, v1.AttachWorkerResponse]
+	watchWork         *connect.Client[v1.WatchWorkRequest, v1.WatchWorkResponse]
+	reportWork        *connect.Client[v1.ReportWorkRequest, v1.ReportWorkResponse]
+	inspectRepository *connect.Client[v1.InspectRepositoryRequest, v1.InspectRepositoryResponse]
+}
+
+// AttachWorker calls delidev.v1.WorkerService.AttachWorker.
+func (c *workerServiceClient) AttachWorker(ctx context.Context, req *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error) {
+	return c.attachWorker.CallUnary(ctx, req)
+}
+
+// WatchWork calls delidev.v1.WorkerService.WatchWork.
+func (c *workerServiceClient) WatchWork(ctx context.Context, req *connect.Request[v1.WatchWorkRequest]) (*connect.ServerStreamForClient[v1.WatchWorkResponse], error) {
+	return c.watchWork.CallServerStream(ctx, req)
+}
+
+// ReportWork calls delidev.v1.WorkerService.ReportWork.
+func (c *workerServiceClient) ReportWork(ctx context.Context, req *connect.Request[v1.ReportWorkRequest]) (*connect.Response[v1.ReportWorkResponse], error) {
+	return c.reportWork.CallUnary(ctx, req)
+}
+
+// InspectRepository calls delidev.v1.WorkerService.InspectRepository.
+func (c *workerServiceClient) InspectRepository(ctx context.Context, req *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error) {
+	return c.inspectRepository.CallUnary(ctx, req)
+}
+
+// WorkerServiceHandler is an implementation of the delidev.v1.WorkerService service.
+type WorkerServiceHandler interface {
+	AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error)
+	WatchWork(context.Context, *connect.Request[v1.WatchWorkRequest], *connect.ServerStream[v1.WatchWorkResponse]) error
+	ReportWork(context.Context, *connect.Request[v1.ReportWorkRequest]) (*connect.Response[v1.ReportWorkResponse], error)
+	InspectRepository(context.Context, *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error)
+}
+
+// NewWorkerServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	workerServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("WorkerService").Methods()
+	workerServiceAttachWorkerHandler := connect.NewUnaryHandler(
+		WorkerServiceAttachWorkerProcedure,
+		svc.AttachWorker,
+		connect.WithSchema(workerServiceMethods.ByName("AttachWorker")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workerServiceWatchWorkHandler := connect.NewServerStreamHandler(
+		WorkerServiceWatchWorkProcedure,
+		svc.WatchWork,
+		connect.WithSchema(workerServiceMethods.ByName("WatchWork")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workerServiceReportWorkHandler := connect.NewUnaryHandler(
+		WorkerServiceReportWorkProcedure,
+		svc.ReportWork,
+		connect.WithSchema(workerServiceMethods.ByName("ReportWork")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workerServiceInspectRepositoryHandler := connect.NewUnaryHandler(
+		WorkerServiceInspectRepositoryProcedure,
+		svc.InspectRepository,
+		connect.WithSchema(workerServiceMethods.ByName("InspectRepository")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/delidev.v1.WorkerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case WorkerServiceAttachWorkerProcedure:
+			workerServiceAttachWorkerHandler.ServeHTTP(w, r)
+		case WorkerServiceWatchWorkProcedure:
+			workerServiceWatchWorkHandler.ServeHTTP(w, r)
+		case WorkerServiceReportWorkProcedure:
+			workerServiceReportWorkHandler.ServeHTTP(w, r)
+		case WorkerServiceInspectRepositoryProcedure:
+			workerServiceInspectRepositoryHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedWorkerServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedWorkerServiceHandler struct{}
+
+func (UnimplementedWorkerServiceHandler) AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.AttachWorker is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) WatchWork(context.Context, *connect.Request[v1.WatchWorkRequest], *connect.ServerStream[v1.WatchWorkResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.WatchWork is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) ReportWork(context.Context, *connect.Request[v1.ReportWorkRequest]) (*connect.Response[v1.ReportWorkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ReportWork is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) InspectRepository(context.Context, *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.InspectRepository is not implemented"))
 }

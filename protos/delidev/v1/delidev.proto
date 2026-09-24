@@ -47,6 +47,8 @@ enum EntityKind {
   ENTITY_KIND_PROBLEM = 21;
   ENTITY_KIND_INBOX = 22;
   ENTITY_KIND_USAGE = 23;
+  ENTITY_KIND_JOB = 24;
+  ENTITY_KIND_PAIRING = 25;
 }
 // Resource documents are versioned, strictly validated UTF-8 JSON. Their closed
 // schemas live in the Go domain types. Unknown fields and enum values fail.
@@ -176,4 +178,96 @@ message PreviewRoutingRequest {
 }
 message PreviewRoutingResponse {
   bytes route_json = 1;
+}
+
+service DeviceService {
+  rpc CreatePairing(CreatePairingRequest) returns (CreatePairingResponse);
+  rpc PairDevice(PairDeviceRequest) returns (PairDeviceResponse);
+  rpc RevokeDevice(RevokeDeviceRequest) returns (RevokeDeviceResponse);
+}
+service WorkerService {
+  rpc AttachWorker(AttachWorkerRequest) returns (AttachWorkerResponse);
+  rpc WatchWork(WatchWorkRequest) returns (stream WatchWorkResponse);
+  rpc ReportWork(ReportWorkRequest) returns (ReportWorkResponse);
+  rpc InspectRepository(InspectRepositoryRequest) returns (InspectRepositoryResponse);
+}
+enum DeviceType {
+  DEVICE_TYPE_UNSPECIFIED = 0;
+  DEVICE_TYPE_CLIENT = 1;
+  DEVICE_TYPE_WORKER = 2;
+}
+message CreatePairingRequest {
+  string request_id = 1;
+  string name = 2;
+  DeviceType type = 3;
+  // SHA-256 of a locally generated 256-bit one-time code. Never the code itself.
+  bytes code_digest = 4;
+}
+message CreatePairingResponse {
+  Resource pairing = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message PairDeviceRequest {
+  string request_id = 1;
+  string pairing_id = 2;
+  string code = 3;
+  string device_id = 4;
+  bytes credential_digest = 5;
+  string machine_id = 6;
+  bytes machine_json = 7;
+}
+message PairDeviceResponse {
+  Resource device = 1;
+  Resource machine = 2;
+  string server_id = 3;
+  bool replayed = 4;
+}
+message RevokeDeviceRequest {
+  Mutation mutation = 1;
+}
+message RevokeDeviceResponse {
+  Resource device = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message AttachWorkerRequest {
+  string request_id = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string version = 4;
+}
+message AttachWorkerResponse {
+  Resource machine = 1;
+  string server_id = 2;
+}
+message WatchWorkRequest {
+  string machine_id = 1;
+  string instance_id = 2;
+}
+message WatchWorkResponse {
+  Resource job = 1;
+  bool heartbeat = 2;
+}
+message ReportWorkRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  bytes output_json = 4;
+  ErrorDetail problem = 5;
+}
+message ReportWorkResponse {
+  Resource job = 1;
+  bool replayed = 2;
+}
+message InspectRepositoryRequest {
+  string request_id = 1;
+  string machine_id = 2;
+  string path = 3;
+  string preferred_remote = 4;
+}
+message InspectRepositoryResponse {
+  Resource job = 1;
+  string request_id = 2;
+  bool replayed = 3;
 }

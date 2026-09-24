@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 1
+const SchemaVersion = 2
 const applicationID = 0x444c4456
 const MaxPage = 200
 
@@ -133,12 +133,17 @@ func Open(ctx context.Context, root string) (*Store, error) {
 		if err != nil {
 			return fail(err)
 		}
-		if _, err = tx.ExecContext(ctx, schema); err == nil {
+		if _, err = tx.ExecContext(ctx, schema+workerSchema); err == nil {
 			err = tx.Commit()
 		} else {
 			tx.Rollback()
 		}
 		if err != nil {
+			return fail(err)
+		}
+	}
+	if !created {
+		if err := migrate(ctx, db, root); err != nil {
 			return fail(err)
 		}
 	}
@@ -171,7 +176,7 @@ func inspect(ctx context.Context, db *sql.DB, newlyCreated bool) error {
 	if appID != applicationID {
 		return domain.Fail(domain.RecoveryRequired, "This is not a recognized DeliDev database.", "Preserve the original and restore a validated DeliDev backup.")
 	}
-	if version != SchemaVersion {
+	if version < 1 || version > SchemaVersion {
 		return domain.Fail(domain.RecoveryRequired, "The stored schema requires a compatible DeliDev version.", "Use the matching server version; never reset or downgrade the database.")
 	}
 	var check string
@@ -238,6 +243,10 @@ func (s *Store) Mutate(ctx context.Context, id domain.ID, operation string, inpu
 		return Result{}, storageError(err)
 	}
 	defer tx.Rollback()
+	permission := &Tx{tx: tx, ctx: ctx}
+	if err := permission.Authorize(); err != nil {
+		return Result{}, err
+	}
 	var savedHash string
 	var saved []byte
 	err = tx.QueryRowContext(ctx, "SELECT digest,result FROM receipts WHERE id=?", id).Scan(&savedHash, &saved)

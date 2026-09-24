@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -48,12 +49,18 @@ type Service struct {
 	delidevv1connect.UnimplementedSystemServiceHandler
 	delidevv1connect.UnimplementedResourceServiceHandler
 	delidevv1connect.UnimplementedConfigurationServiceHandler
-	Store    *store.Store
-	Identity security.Identity
-	Endpoint Endpoint
-	logger   *slog.Logger
-	stop     context.CancelFunc
-	stopping atomic.Bool
+	delidevv1connect.UnimplementedDeviceServiceHandler
+	delidevv1connect.UnimplementedWorkerServiceHandler
+	Store         *store.Store
+	Identity      security.Identity
+	Endpoint      Endpoint
+	logger        *slog.Logger
+	stop          context.CancelFunc
+	stopping      atomic.Bool
+	connectionsMu sync.Mutex
+	connections   map[domain.ID]map[domain.ID]context.CancelFunc
+	pairAttempts  map[string]attemptWindow
+	workerStreams map[domain.ID]workerStream
 }
 
 func LoadEndpoint(root string) (Endpoint, error) {
@@ -182,6 +189,8 @@ func (s *Service) Handler(origins []string, loopback bool) http.Handler {
 	mux.Handle(delidevv1connect.NewSystemServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewResourceServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewConfigurationServiceHandler(s, options...))
+	mux.Handle(delidevv1connect.NewDeviceServiceHandler(s, options...))
+	mux.Handle(delidevv1connect.NewWorkerServiceHandler(s, options...))
 	allowed := map[string]bool{}
 	for _, origin := range origins {
 		allowed[origin] = true
@@ -234,10 +243,19 @@ func (s *Service) Handler(origins []string, loopback bool) http.Handler {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok || !security.EqualToken(token, s.Identity.Token) {
-			reject(domain.Fail(domain.Unauthenticated, "Server authentication is required.", "Load the selected server's owner credential or pair this device."))
-			return
+		if r.URL.Path == delidevv1connect.DeviceServicePairDeviceProcedure {
+			if !s.pairingAllowed(r.RemoteAddr) {
+				reject(domain.Fail(domain.ResourceExhausted, "Pairing attempts are temporarily limited.", "Wait one minute before retrying the existing grant."))
+				return
+			}
+		} else {
+			authorized, release, err := s.authorizeRequest(r)
+			if err != nil {
+				reject(err)
+				return
+			}
+			defer release()
+			r = authorized
 		}
 		started := time.Now()
 		mux.ServeHTTP(w, r)
