@@ -24,7 +24,7 @@ Linux static syscall mediation translates pathname extended-attribute and filesy
 
 On x64 GNU Linux, the legacy descriptor-relative `futimesat` timestamp mutation follows the same virtual translation and read-only rejection as `utimensat`; native output paths retain kernel behavior.
 
-Valid Linux `AT_EMPTY_PATH` operations target their file descriptor directly. Native file descriptors retain kernel behavior; tracked read-only dependency descriptors reject access-for-write, metadata mutations, and hard-link creation with `EROFS`.
+Valid Linux `AT_EMPTY_PATH` operations target their file descriptor directly. Native file descriptors retain kernel behavior; tracked read-only dependency descriptors reject access-for-write, metadata mutations, and hard-link creation with `EROFS`. Before the root tracee resumes, the supervisor classifies inherited descriptors pointing into managed package or cache storage. Readable inherited descriptors retain read-only ownership; writable inherited managed descriptors fail with `PNPORT_UNSUPPORTED_OPERATION` before child execution.
 
 Linux `recvmsg` and `recvmmsg` calls with an ancillary receive buffer fail before the kernel can install `SCM_RIGHTS` descriptors outside the thread group's tracked FD map. They report `PNPORT_UNSUPPORTED_OPERATION` and exit 125. Receives without an ancillary buffer retain native behavior.
 

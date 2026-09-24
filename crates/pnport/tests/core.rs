@@ -1164,6 +1164,80 @@ int main(int argc, char **argv) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_inherited_cache_descriptors_remain_readonly() {
+    use std::{
+        os::{
+            fd::AsRawFd,
+            unix::{fs::PermissionsExt, process::CommandExt},
+        },
+        process::Command,
+    };
+    let root = fixture();
+    let cache_path = root.path().join("owned-cache");
+    let cache = Cache::open(cache_path.clone()).unwrap();
+    let lease = cache.materialize(&root.path().join("cache.zip")).unwrap();
+    let content = lease.content.join("node_modules/dep/file.txt");
+    let original_mode = fs::metadata(&content).unwrap().permissions().mode() & 0o777;
+    let inherited = fs::File::open(&content).unwrap();
+    let source = root.path().join("inherited-fd.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int main(void) {
+    if (fcntl(9, F_GETFD) < 0) return 40;
+    errno = 0;
+    if (fchmod(9, 0600) != -1 || errno != EROFS) return 41;
+    errno = 0;
+    if (fchown(9, getuid(), getgid()) != -1 || errno != EROFS) return 42;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("inherited-fd");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let mut command = Command::new(env!("CARGO_BIN_EXE_pnport"));
+    command
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(&cache_path)
+        .args(["run", "--"])
+        .arg(&executable);
+    let source_fd = inherited.as_raw_fd();
+    unsafe {
+        command.pre_exec(move || {
+            if libc::dup2(source_fd, 9) < 0 || libc::fcntl(9, libc::F_SETFD, 0) < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let result = command.output().unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        fs::metadata(content).unwrap().permissions().mode() & 0o777,
+        original_mode
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_rejects_pidfd_descriptor_duplication_before_installation() {
     use std::process::Command;
     let root = fixture();

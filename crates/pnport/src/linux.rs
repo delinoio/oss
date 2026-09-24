@@ -921,6 +921,60 @@ struct Trace<'a> {
 }
 
 impl Trace<'_> {
+    fn seed_inherited_descriptors(&mut self) -> Result<()> {
+        let pid = self.root;
+        let cache_root = fs::canonicalize(&self.view.cache.root).map_err(|_| injection_failed())?;
+        let session_root = fs::canonicalize(&self.view.session).map_err(|_| injection_failed())?;
+        let mut inherited = HashMap::new();
+        for entry in fs::read_dir(format!("/proc/{pid}/fd")).map_err(|_| injection_failed())? {
+            let entry = entry.map_err(|_| injection_failed())?;
+            let Some(fd) = entry
+                .file_name()
+                .to_str()
+                .and_then(|name| name.parse::<i32>().ok())
+            else {
+                continue;
+            };
+            let target = fs::read_link(entry.path()).map_err(|_| injection_failed())?;
+            if !target.is_absolute()
+                || !(target.starts_with(&cache_root)
+                    || target.starts_with(session_root.join("views"))
+                    || self.view.graph.managed(&target))
+            {
+                continue;
+            }
+            let info = fs::read_to_string(format!("/proc/{pid}/fdinfo/{fd}"))
+                .map_err(|_| injection_failed())?;
+            let flags = info
+                .lines()
+                .find_map(|line| line.strip_prefix("flags:"))
+                .and_then(|value| i32::from_str_radix(value.trim(), 8).ok())
+                .ok_or_else(injection_failed)?;
+            if flags & libc::O_ACCMODE != libc::O_RDONLY {
+                return Err(unsupported(
+                    "An inherited writable dependency descriptor cannot be mediated.",
+                ));
+            }
+            tracing::debug!(
+                action = "linux_inherited_descriptor",
+                pid,
+                fd,
+                "Tracking an inherited managed descriptor"
+            );
+            inherited.insert(
+                fd,
+                Translation {
+                    logical: target.clone(),
+                    physical: target,
+                    readonly: true,
+                    virtual_link: false,
+                },
+            );
+        }
+        self.fds.insert(pid, inherited);
+        Ok(())
+    }
+
     fn scratch_base(&self, pid: i32) -> Result<u64> {
         self.scratch
             .get(&pid)
@@ -2637,6 +2691,7 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
         root_exec: false,
     };
     let outcome = (|| {
+        trace.seed_inherited_descriptors()?;
         if unsafe { libc::kill(pid, libc::SIGCONT) } != 0 {
             return Err(injection_failed());
         }
