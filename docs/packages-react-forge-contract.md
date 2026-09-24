@@ -1,7 +1,7 @@
 # React Forge Node Contract
 
 ## Scope
-`packages/react-forge` owns the private `@delino/react-forge` library and one-shot TSX CLI. The [complete requirements](packages-react-forge-requirements.md) are normative; this contract records implementation boundaries, not a reduced delivery scope.
+`packages/react-forge` owns the private `@delino/react-forge` library, one-shot TSX CLI and [session-based stdio MCP](packages-react-forge-mcp-contract.md). The [complete requirements](packages-react-forge-requirements.md) are normative; this contract records implementation boundaries, not a reduced delivery scope.
 
 The local Office/PDF behavior below is extended by the [Figma contract](packages-react-forge-figma-contract.md), which separately specifies remote creation/editing, host-owned authentication, explicit publication, partial outcomes and receipts. Its network and remote-state exceptions do not apply to the local formats.
 
@@ -9,10 +9,10 @@ The local Office/PDF behavior below is extended by the [Figma contract](packages
 Node.js 24 on macOS, Windows and glibc Linux, each with x64 and arm64, TypeScript, React 19.2.8 and react-reconciler 0.33.0. TSX executes trusted caller code with ordinary caller permissions. The reconciler must implement real React commits, refs, effects, Suspense, transitions and Activity; invoking components manually is forbidden.
 
 ## Users and Operators
-Repository developers authoring reusable document tasks. There is no public package, hosted service, GUI or MCP interface.
+Repository developers authoring reusable document tasks. The local stdio MCP interface serves trusted document tasks. There is no public package, hosted service or GUI.
 
 ## Interfaces and Contracts
-Common session APIs own creation, Office import, inspection, root rendering, target mounting/updating, revision-aware asynchronous measurement, Buffer/file export, diagnostic subscriptions and disposal. Format imports are `@delino/react-forge/pptx`, `/docx`, `/xlsx`, and `/pdf`. Separate models retain each format's semantics. Refs expose typed document-node handles; layout effects follow React commit timing, not native layout completion.
+Common session APIs own settled `snapshot({ signal })` inspection without file generation, creation, Office import, inspection, root rendering, target mounting/updating, revision-aware asynchronous measurement, Buffer/file export, diagnostic subscriptions and disposal. Format imports are `@delino/react-forge/pptx`, `/docx`, `/xlsx`, and `/pdf`. Separate models retain each format's semantics. Refs expose typed document-node handles; layout effects follow React commit timing, not native layout completion.
 
 Mutations serialize per session. Failed changes never publish partial state; invalid latest renders fail export instead of falling back to older content. Target handles are document-scoped and mounted regions cannot overlap. Export waits for relevant Suspense work and registered assets, then pins an immutable revision. Effects' independent asynchronous work remains the caller's responsibility. AbortSignal and disposal release pending work with no automatic timeout.
 
@@ -80,3 +80,6 @@ All six runners execute native/React tests, installed archive/CLI consumers, sys
 PPTX `PresentationTextStyle` exposes font family/size, bold, italic, underline and text color only. Paragraph alignment belongs to `Paragraph.align`; table-cell fills use `Cell.fill`. Unknown style fields, including shared-style background, alignment, language and direction, are rejected at runtime instead of losing caller intent. Other formats retain their own style capabilities.
 
 Each export/measurement operation retains its pinned revision for JavaScript completion diagnostics and error context, including publication failures after native processing. Concurrent later snapshots cannot relabel earlier results; failures before snapshot preparation report the operation's initial revision.
+
+## MCP Extension
+The explicit MCP follow-up supersedes the original new-MCP exclusion. `react-forge mcp [--cwd <directory>]` exposes all five formats through memory-only sessions, inline/file TSX execution and explicit local export or remote publication. Follow the [MCP contract](packages-react-forge-mcp-contract.md) for tool inputs, retained state, cancellation, protocol isolation and failure outcomes. `McpTaskContext` and `McpSessionTask` are type-only exports; the existing library and one-shot CLI remain compatible.

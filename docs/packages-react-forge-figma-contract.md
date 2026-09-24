@@ -53,3 +53,6 @@ Receipts include file URL/key, local revision, outcome, UUID/native bindings, ki
 ## Validation artifacts
 
 The ROAM generation/edit examples and compact macOS arm64 evidence are maintained in `packages/react-forge/examples/travel-figma*.tsx` and `packages/react-forge/tests/evidence/travel-figma-macos-arm64.json`. Live acceptance details and its limits are in [validation](packages-react-forge-validation.md). CI remains offline with respect to Figma and Keychain, using the actual official SDK against a synthetic HTTP MCP peer plus an executable fake canvas.
+
+## React Forge MCP integration
+The [local React Forge MCP server](packages-react-forge-mcp-contract.md) adds persistent TSX sessions, cached inspection, explicit refresh and publication. It shares this implementation and its per-authentication/per-file scheduling in one execution process. `react_forge_publish` optionally saves the existing `.figma.json` receipt; `react_forge_inspect` with `view: "receipt"` retrieves the last receipt without another write. Preserve the original error code and receipt status, including partial and unknown outcomes. This adds no Figma authentication platform, automatic retry or remote rollback guarantee.

@@ -6,6 +6,7 @@ import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import test from "node:test";
+import { connect } from "./mcp/client.js";
 const exec = promisify(execFile);
 const cases = [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"]] as const;
 
@@ -42,6 +43,23 @@ test("scoped workspace archive installs and its CLI generates local formats and 
     const figma=await exec(process.execPath,[cli,"run",join(directory,"tasks","figma.tsx"),"--output",figmaOutput,"--json"],{cwd:directory,env});
     assert.equal(JSON.parse(figma.stdout).status,"complete");
     const receipt=JSON.parse(await readFile(figmaOutput,"utf8"));assert.equal(receipt.format,"figma");assert.ok(receipt.createdNodeIds.length>=2);assert.ok(!JSON.stringify(receipt).includes("Editable"));
+    const mcp = await connect(directory, cli);
+    try {
+      assert.equal((await mcp.client.listTools()).tools.length, 9);
+      for (const [task, format] of cases) {
+        const created = await mcp.call("execute", { entry: `tasks/${task}.tsx` });
+        const snapshot = await mcp.call("inspect", { sessionId: created.sessionId });
+        assert.ok(snapshot.targets.length > 0);
+        await mcp.call("export", { sessionId: created.sessionId, output: `mcp.${format}` });
+        const bytes = await readFile(join(directory, `mcp.${format}`));
+        assert.equal(bytes.subarray(0, format === "pdf" ? 5 : 2).toString(), format === "pdf" ? "%PDF-" : "PK");
+        await mcp.call("close", { sessionId: created.sessionId });
+      }
+      const figma = await mcp.call("execute", { entry: "tasks/figma.tsx" });
+      const published = await mcp.call("publish", { sessionId: figma.sessionId, receiptPath: "mcp.figma.json" });
+      assert.equal(published.receipt.status, "complete");
+      await mcp.call("close", { sessionId: figma.sessionId });
+    } finally { await mcp.close(); }
     const shim = join(directory, "node_modules", ".bin", process.platform === "win32" ? "react-forge.cmd" : "react-forge");
     // cmd files require the Windows command processor. Only the fixture-owned
     // shim and a literal flag enter this command; document input never does.

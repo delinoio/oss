@@ -30,3 +30,6 @@ pnpm --filter @delino/react-forge cli run examples/edit-office.tsx --output /tmp
 ```
 
 The task selects the first supported text/paragraph/cell region. Use the library's `inspect()` results and `mount()` API for explicit target selection.
+
+## MCP session task
+`mcp-session.tsx` is a session-based MCP task, not a one-shot CLI entry. Run it through `react_forge_execute` with optional `{ "title": "..." }` data, retain its session ID for subsequent calls, inspect/measure the revision, export explicitly and close the session. Its render function remains in the MCP-owned state Map. See the package README for connection configuration and the complete tool sequence.

@@ -45,7 +45,7 @@ export default async function task({ data, signal }) {
 
 Import React in TSX tasks when using the classic JSX transform. The bundled `tsx` loader respects caller TypeScript configuration and supports Node 24 ESM/CommonJS default-export namespaces. Run an installed package with `react-forge run <entry.tsx> --output <file>`. Task data is inline JSON (`--data '{"title":"Example"}'`); `--json` enables structured results, and `--overwrite` permits replacement. Help and version are available. Caller TSX executes with ordinary caller permissions; this is not a sandbox.
 
-Library callers dispose sessions in `finally`. Common exports include `createSession`, `importOffice`, `DocumentSession`, `Format`, `ErrorCode`, `ForgeError`, `limits`, and `capabilities`. Session methods are `render`, `registerImage`, `registerFont`, `inspect`, `mount`, `measure`, `exportBuffer`, `exportFile`, `subscribe`, and `dispose`.
+Library callers dispose sessions in `finally`. Common exports include `createSession`, `importOffice`, `DocumentSession`, `Format`, `ErrorCode`, `ForgeError`, `limits`, and `capabilities`. Session methods are `snapshot`, `render`, `registerImage`, `registerFont`, `inspect`, `mount`, `measure`, `exportBuffer`, `exportFile`, `subscribe`, and `dispose`.
 
 ```tsx
 import React from "react";
@@ -92,7 +92,7 @@ Pass `AbortSignal` to import, asset, measurement or export options. Unresolved w
 
 Test-only rendering uses LibreOffice, Poppler and the pinned dependencies in `scripts/render-requirements.txt`. After building, run `pnpm --filter @delino/react-forge test:render --output /tmp/react-forge-render`. Optional `REACT_FORGE_SOFFICE`, `REACT_FORGE_PDFTOPPM` and `REACT_FORGE_PYTHON` select explicit test tools. Run `pnpm --filter @delino/react-forge benchmark --output /tmp/react-forge-benchmark.json` for representative, external-edit and near-limit samples. Reports record tool/font provenance and time, peak RSS and event-loop delay; there is no performance SLO. This evidence is not direct Microsoft Office validation.
 
-Canonical internal ownership, acceptance evidence and complete requirements live in `docs/project-react-forge.md` and its linked contracts. Public distribution, hosting, watch mode, a new MCP interface and a GUI are outside this project.
+Canonical internal ownership, acceptance evidence and complete requirements live in `docs/project-react-forge.md` and its linked contracts. Public distribution, hosting, watch mode and a GUI are outside this project. The local MCP interface is described below.
 
 ## Figma Design
 
@@ -149,3 +149,48 @@ pnpm --filter @delino/react-forge cli run examples/travel-figma-edit.tsx --data 
 ```
 
 The generation task creates a new screen page; use the edit task for subsequent runs. The edit task explicitly reuses the existing note when run again. Image provenance is shared with the travel investor example.
+
+
+## Local MCP sessions
+
+After building, run `react-forge mcp --cwd /absolute/path/to/tasks`. A local MCP client can launch the built executable directly; use a Node.js 24 executable and absolute paths:
+
+```json
+{
+  "mcpServers": {
+    "react-forge": {
+      "command": "/absolute/path/to/node",
+      "args": [
+        "/absolute/path/to/react-forge/bin/react-forge.mjs",
+        "mcp",
+        "--cwd",
+        "/absolute/path/to/tasks"
+      ]
+    }
+  }
+}
+```
+
+The working directory defaults to the launch directory. It controls relative tool paths and inline imports. Imports in a TSX file remain relative to that file, including module-relative images. This is local stdio with in-memory sessions; reconnecting to a new server process starts with no sessions.
+
+Use `react_forge_capabilities` to discover formats, limits and the callback contract. `react_forge_execute` accepts exactly one of a `code` string or an `entry` file, optional JSON `data`, and an optional existing `sessionId`. The default-exported task receives `{ session, state, data, signal }`. A new task returns a session. An update returns void or the same session. `state` is a retained Map for components, setters, refs and mount handles; it never appears in tool output. The package exports `McpTaskContext` and `McpSessionTask` types.
+
+The MCP-only `examples/mcp-session.tsx` task creates a PDF session on its first call and updates it on later calls. Copy it to your task directory as `report.tsx`, then use this sequence:
+
+1. Call `react_forge_execute` with `{"entry":"report.tsx","data":{"title":"First draft"}}`. Keep its returned `sessionId`.
+2. Call `react_forge_inspect` with that ID. Local inspection waits for React/Suspense and registered assets, then returns the revision and target IDs without creating a file. `react_forge_measure` accepts a target's `nodeId` and this exact revision.
+3. Call `react_forge_execute` again with `{"entry":"report.tsx","sessionId":"<returned-id>","data":{"title":"Revised draft"}}`. The same session and state Map are reused.
+4. Call `react_forge_export` with `{"sessionId":"<returned-id>","output":"report.pdf"}`. Existing output requires `overwrite: true`; imported source files can never be replaced.
+5. Call `react_forge_close` with the session ID when finished. Exported files remain available.
+
+Inline TSX uses the automatic React JSX runtime, so JSX does not require an explicit React import. File entries are reevaluated on each call; imported helper modules remain cached. Store components or render functions in `state` when their identity should survive later entry evaluations. TSX source plus JSON data is limited to 16 MiB. This limit is separate from document, image and package limits above.
+
+`react_forge_sessions` lists active sessions. `react_forge_inspect` supports `nodeId` or `kind` filters and `offset`/`limit` pagination (default 100, maximum 500); it reports `total`, `truncated` and `nextOffset`. Text previews longer than 4096 characters are marked `textTruncated`. Use native target handles obtained inside the callback through `session.inspect()` when calling `mount`; do not reconstruct a handle from its JSON representation. Persistent mounted regions can be stored in `state` and updated on subsequent calls.
+
+Figma uses the same create/open tasks and existing authentication setup. `react_forge_refresh` reads selected pages/nodes/resources, while `react_forge_inspect` reads cached targets. Call `react_forge_publish` explicitly to write remotely, optionally with `receiptPath: "result.figma.json"` and `overwrite`. Receipt-path conflicts are checked before publication. `react_forge_inspect` with `view: "receipt"` retrieves the latest receipt without another write. A partial or unknown result includes its receipt even when `isError` is true; use the receipt status and confirmed IDs before deciding how to recover. A `remote` error can carry a `partial` receipt. Do not blindly retry uncertain publication or infer that cancellation undid remote changes. Figma measurement requires a completed published revision. Live Figma authentication retains its macOS Keychain requirement.
+
+Success is returned as structured content and matching JSON text; failures carry typed errors. Task output, including console and direct stdout/stderr writes, is suppressed to protect MCP and keep document text out of logs. Operational stderr records contain operation/stage, timing and stable error codes. Use the structured results and explicit session inspection to diagnose failures.
+
+Caller code is trusted and runs with normal caller permissions. The execution process is not a sandbox. Execute does not automatically save or publish, but code can explicitly call those APIs or perform other side effects. A failed callback is not a transaction: earlier completed changes remain. Callers must dispose sessions they create but fail to return. Operations on one session stay ordered until each callback actually finishes, even after cancellation; pass `signal` to asynchronous work. A callback that ignores cancellation or blocks synchronously cannot be forcibly interrupted by an individual tool cancellation.
+
+Disconnect and process signals dispose sessions, with a five-second shutdown grace before terminating the execution process. Normal operations have no automatic timeout. Forced termination may prevent cleanup, and worker loss invalidates every in-memory session. `unknown_outcome` means to inspect any output or remote file before retrying. Server restart never automatically replays work. Closing sessions releases their owned resources; imported JavaScript modules remain cached until the process exits.

@@ -54,14 +54,17 @@
     "test": "node --import tsx --test tests/*.test.ts tests/*.test.tsx",
     "cli": "node bin/react-forge.mjs",
     "test:render": "node scripts/render-check.mjs",
-    "benchmark": "node scripts/benchmark.mjs"
+    "benchmark": "node scripts/benchmark.mjs",
+    "typecheck:examples": "tsc -p tsconfig.examples.json"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.1",
+    "esbuild": "0.28.2",
     "react": "19.2.8",
     "react-reconciler": "0.33.0",
     "tsx": "4.20.6",
-    "uuid": "11.1.1"
+    "uuid": "11.1.1",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
