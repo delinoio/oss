@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -21,20 +22,23 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
 
 // This test uses only the public CLI configuration and lifecycle path. Native
 // execution is opt-in and uses a fresh Worker environment plus a loopback
 // scripted keyless provider, never an existing login or external account.
 func TestManualNativeCLIFirstDispatch(t *testing.T) {
-	testManualNativeCLI(t, false)
+	testManualNativeCLI(t, false, false)
 }
 
 func TestManualNativeCLISteer(t *testing.T) {
-	testManualNativeCLI(t, true)
+	testManualNativeCLI(t, true, false)
 }
 
-func testManualNativeCLI(t *testing.T, steerScenario bool) {
+func TestManualNativeCLIMultipleRepositories(t *testing.T) { testManualNativeCLI(t, false, true) }
+
+func testManualNativeCLI(t *testing.T, steerScenario, multipleRepositories bool) {
 	t.Helper()
 	binary := os.Getenv("DELIDEV_NATIVE_THREAD_EXECUTABLE")
 	if binary == "" {
@@ -43,12 +47,16 @@ func testManualNativeCLI(t *testing.T, steerScenario bool) {
 	if !filepath.IsAbs(binary) {
 		t.Fatal("select an absolute native executable")
 	}
-	for _, scenario := range []struct {
-		mode      domain.SessionMode
-		workspace domain.WorkspaceType
-	}{
-		{domain.ExecuteMode, domain.GeneralChat}, {domain.PlanMode, domain.GeneralChat}, {domain.ExecuteMode, domain.Worktree},
-	} {
+	type nativeScenario struct {
+		mode         domain.SessionMode
+		workspace    domain.WorkspaceType
+		repositories int
+	}
+	scenarios := []nativeScenario{{domain.ExecuteMode, domain.GeneralChat, 0}, {domain.PlanMode, domain.GeneralChat, 0}, {domain.ExecuteMode, domain.Worktree, 1}}
+	if multipleRepositories {
+		scenarios = []nativeScenario{{domain.ExecuteMode, domain.Worktree, 2}, {domain.PlanMode, domain.Worktree, 2}}
+	}
+	for _, scenario := range scenarios {
 		mode := scenario.mode
 		t.Run(string(scenario.workspace)+"/"+string(mode), func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -219,28 +227,32 @@ func testManualNativeCLI(t *testing.T, steerScenario bool) {
 			create := []string{"session", "create", "--request-id", string(domain.NewID()), "--wait"}
 			input := domain.CreateSession{Name: "Public CLI first execution", AgentID: domain.ID(agent["id"].(string)), MachineID: domain.ID(machine), Workspace: scenario.workspace, Mode: mode, Prompt: "Public first prompt"}
 			if scenario.workspace == domain.Worktree {
-				checkout, hooks := t.TempDir(), t.TempDir()
-				git := func(args ...string) string {
-					t.Helper()
-					argv := append([]string{"-C", checkout, "-c", "user.name=DeliDev Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgSign=false", "-c", "core.hooksPath=" + hooks}, args...)
-					cmd := exec.CommandContext(ctx, "git", argv...)
-					cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
-					out, err := cmd.CombinedOutput()
-					if err != nil {
-						t.Fatalf("private fixture Git: %v %s", err, out)
+				repositories := make([]domain.ID, 0, scenario.repositories)
+				for range scenario.repositories {
+					checkout, hooks := t.TempDir(), t.TempDir()
+					git := func(args ...string) string {
+						t.Helper()
+						argv := append([]string{"-C", checkout, "-c", "user.name=DeliDev Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgSign=false", "-c", "core.hooksPath=" + hooks}, args...)
+						cmd := exec.CommandContext(ctx, "git", argv...)
+						cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
+						out, err := cmd.CombinedOutput()
+						if err != nil {
+							t.Fatalf("private fixture Git: %v %s", err, out)
+						}
+						return strings.TrimSpace(string(out))
 					}
-					return strings.TrimSpace(string(out))
+					git("init", "-b", "main")
+					if err := os.WriteFile(filepath.Join(checkout, "tracked.txt"), []byte("retained fixture"), 0600); err != nil {
+						t.Fatal(err)
+					}
+					git("add", "tracked.txt")
+					git("commit", "-m", "fixture")
+					commit := git("rev-parse", "HEAD")
+					repo := run([]string{"repository", "create", "--wait"}, domain.Repository{Name: "Private native fixture", Checkouts: []domain.Checkout{{MachineID: domain.ID(machine), Path: checkout}}, Starting: domain.Reference{Type: domain.CommitReference, Name: commit}})["resource"].(map[string]any)
+					id := domain.ID(repo["id"].(string))
+					repositories = append(repositories, id)
 				}
-				git("init", "-b", "main")
-				if err := os.WriteFile(filepath.Join(checkout, "tracked.txt"), []byte("retained fixture"), 0600); err != nil {
-					t.Fatal(err)
-				}
-				git("add", "tracked.txt")
-				git("commit", "-m", "fixture")
-				commit := git("rev-parse", "HEAD")
-				repo := run([]string{"repository", "create", "--wait"}, domain.Repository{Name: "Private native fixture", Checkouts: []domain.Checkout{{MachineID: domain.ID(machine), Path: checkout}}, Starting: domain.Reference{Type: domain.CommitReference, Name: commit}})["resource"].(map[string]any)
-				id := domain.ID(repo["id"].(string))
-				project := run([]string{"project", "create"}, domain.Project{Name: "Private native fixture", Repositories: []domain.ID{id}, PrimaryRepository: id})["resource"].(map[string]any)
+				project := run([]string{"project", "create"}, domain.Project{Name: "Private native fixture", Repositories: repositories, PrimaryRepository: repositories[len(repositories)-1]})["resource"].(map[string]any)
 				input.ProjectID = domain.ID(project["id"].(string))
 			}
 			accepted := run(create, input)
@@ -329,6 +341,29 @@ func testManualNativeCLI(t *testing.T, steerScenario bool) {
 			if err := process.ReconcileOwner(filepath.Join(workerRoot, "processes"), domain.ID(job["id"].(string))); err != nil {
 				t.Fatal("native process cleanup not proven", err)
 			}
+			checkRoots := func() {
+				t.Helper()
+				if !multipleRepositories {
+					return
+				}
+				var assignment domain.ExecutionJobInput
+				if domain.Decode(value.Input, &assignment) != nil {
+					t.Fatal("invalid original multi-repository assignment")
+				}
+				var manifest workspace.Manifest
+				if domain.Decode(assignment.Manifest, &manifest) != nil || len(manifest.Repositories) != scenario.repositories || manifest.PrimaryPath != manifest.Repositories[len(manifest.Repositories)-1].Path {
+					t.Fatal("prepared manifest changed project order/primary")
+				}
+				raw, err := os.ReadFile(filepath.Join(workerRoot, "runtimes", string(state.Execution.ExecutionID), "native-completion.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var checkpoint worker.CodexExecutionCheckpoint
+				if domain.Decode(raw, &checkpoint) != nil || !slices.Equal(checkpoint.Native.Effective.WorkspaceRoots, manifest.WorkspaceRoots()) || checkpoint.Native.Effective.Cwd != manifest.PrimaryPath {
+					t.Fatal("native continuation lost exact repository roots/primary")
+				}
+			}
+			checkRoots()
 			queue := run([]string{"queue", "list", "--session-id", id}, nil)["inputs"].([]any)
 			expectedInputs, expectedMessages, expectedCalls := 1, 2, int64(1)
 			if steerScenario {
@@ -372,6 +407,7 @@ func testManualNativeCLI(t *testing.T, steerScenario bool) {
 				if string(retained) != string(initialBytes) || state.Execution.NativeThreadID != originalThread || state.Execution.ExecutionID == previousExecution || state.Dispatch != domain.DispatchReady || state.Outcome != domain.ExecutionSucceeded || state.ActiveExecutionID != "" || state.NextExecutionIntent != domain.ContinueAutomatically {
 					t.Fatal("continuation replaced history, snapshot or ownership")
 				}
+				checkRoots()
 				previousExecution = state.Execution.ExecutionID
 				if calls.Load() != int64(count) {
 					t.Fatal("continuation replayed or skipped native input", calls.Load(), count)
@@ -454,7 +490,7 @@ func testManualNativeCLI(t *testing.T, steerScenario bool) {
 					t.Fatal("FIFO input ownership changed")
 				}
 			}
-			if scenario.workspace == domain.GeneralChat && mode == domain.ExecuteMode {
+			if mode == domain.ExecuteMode && (scenario.workspace == domain.GeneralChat || multipleRepositories) {
 				sixth := enqueue("Public interrupted prompt", domain.ExecuteMode)
 				select {
 				case <-interruptedRequest:
@@ -498,6 +534,7 @@ func testManualNativeCLI(t *testing.T, steerScenario bool) {
 				if state.Execution.Outcome != domain.ExecutionStopped || state.Dispatch != domain.DispatchPaused || state.ActiveExecutionID != "" {
 					t.Fatal("native interrupt did not remain paused")
 				}
+				checkRoots()
 				seventh := enqueue("Public resumed interrupted prompt", domain.PlanMode)
 				control("resume")
 				waitTurn(7, seventh)
@@ -525,8 +562,9 @@ func testManualNativeCLI(t *testing.T, steerScenario bool) {
 				if calls.Load() != 7 || state.Dispatch != domain.DispatchPaused || state.CurrentExecution == nil || state.CurrentExecution.InputID != domain.ID(eighth) || state.PendingInputs != 1 {
 					t.Fatal("corrupt checkpoint replayed native input or discarded its claim")
 				}
+				t.Log("native interruption/Resume and corrupt-checkpoint refusal passed")
 			}
-			t.Log("Public CLI first execution, FIFO continuation, native interruption/Resume, queued/future Resume, immutable history/settings, receipt joins and corrupt-checkpoint rejection passed without seeded readiness")
+			t.Log("Public CLI first execution, FIFO continuation, queued/future Resume, immutable history/settings and receipt joins passed without seeded readiness")
 		})
 	}
 }

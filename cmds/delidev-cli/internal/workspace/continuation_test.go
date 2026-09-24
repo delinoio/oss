@@ -318,3 +318,63 @@ func TestContinuationHistorySurvivesMissingLatestClaim(t *testing.T) {
 		t.Fatal("missing current ownership was silently replaced")
 	}
 }
+
+func TestMultipleRepositoryExecutionRetainsAllOwnershipAndDirtyFiles(t *testing.T) {
+	firstSource, err := filepath.EvalSymlinks(repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondSource, err := filepath.EvalSymlinks(repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, _ := requestFor(firstSource)
+	other := domain.NewID()
+	input.Repositories = append(input.Repositories, RepositorySpec{ID: other, Checkout: secondSource, Starting: domain.Reference{Type: domain.LocalBranch, Name: "main"}})
+	input.PrimaryRepository = other
+	m := manager(t)
+	manifest, err := m.Prepare(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := manifest.WorkspaceRoots()
+	if len(roots) != 2 || roots[0] != manifest.Repositories[0].Path || roots[1] != manifest.PrimaryPath {
+		t.Fatal("root order and primary were conflated")
+	}
+	roots[0] = "changed"
+	if manifest.Repositories[0].Path == "changed" {
+		t.Fatal("root caller changed original manifest")
+	}
+	previous := closeFirstExecution(t, m, input, manifest)
+	secondary := manifest.Repositories[0].Path
+	gitTest(t, secondary, "switch", "-c", "secondary-agent-result")
+	dirty := filepath.Join(secondary, "secondary-dirty.txt")
+	if err := os.WriteFile(dirty, []byte("preserve secondary result"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	metadata := filepath.Join(secondary, ".git")
+	if err := os.Rename(metadata, metadata+".held"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.ClaimContinuation(context.Background(), domain.NewID(), domain.NewID(), previous, input, manifest); err == nil {
+		t.Fatal("missing non-primary repository ownership allowed continuation")
+	}
+	if err := os.Rename(metadata+".held", metadata); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := m.ClaimContinuation(context.Background(), domain.NewID(), domain.NewID(), previous, input, manifest)
+	if err != nil {
+		t.Fatal("valid multi-repository continuation refused", err)
+	}
+	t.Cleanup(func() {
+		if err := lease.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	if lease.WorkingDirectory() != manifest.PrimaryPath || gitTest(t, secondary, "branch", "--show-current") != "secondary-agent-result" {
+		t.Fatal("continuation moved primary or rewrote secondary branch")
+	}
+	if raw, err := os.ReadFile(dirty); err != nil || string(raw) != "preserve secondary result" {
+		t.Fatal("continuation lost non-primary dirty result", err)
+	}
+}

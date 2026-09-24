@@ -106,6 +106,7 @@ func InspectCompletedExecution(ctx context.Context, manager *workspace.Manager, 
 	stage = inspectionCheckpoint
 	checkpointRef := ref.Checkpoint
 	checkpointRef.Completion = completion
+	checkpointRef.WorkspaceRoots = nativeWorkspaceRoots(ref.Manifest)
 	checkpoint, err := ReadCodexExecutionCheckpoint(root, checkpointRef)
 	if err != nil || filepath.Clean(checkpoint.Native.Effective.Cwd) != filepath.Clean(inspection.WorkingDirectory()) {
 		return evidence, executionCheckpointUncertain()

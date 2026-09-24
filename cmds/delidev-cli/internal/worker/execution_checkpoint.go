@@ -13,6 +13,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
 
 // CodexExecutionCheckpoint is Worker-private continuation evidence, not an RPC
@@ -49,6 +50,7 @@ type ExecutionCheckpointRef struct {
 	InputMode             domain.SessionMode
 	PromptDigest          [sha256.Size]byte
 	AcceptedInputs        []domain.ExecutionInputBinding
+	WorkspaceRoots        []string
 }
 
 const maxExecutionCheckpointBytes = 1 << 20
@@ -71,6 +73,14 @@ func (r ExecutionCheckpointRef) validate() error {
 	for _, value := range []string{r.AssignmentInputDigest, r.ConfigurationDigest} {
 		raw, err := hex.DecodeString(value)
 		if err != nil || len(raw) != sha256.Size || hex.EncodeToString(raw) != value {
+			return executionCheckpointUncertain()
+		}
+	}
+	if len(r.WorkspaceRoots) > 100 {
+		return executionCheckpointUncertain()
+	}
+	for i, root := range r.WorkspaceRoots {
+		if !filepath.IsAbs(root) || domain.Text(root, "checkpoint workspace root", 4096, true) != nil || slices.Contains(r.WorkspaceRoots[:i], root) {
 			return executionCheckpointUncertain()
 		}
 	}
@@ -104,7 +114,7 @@ func (p CodexExecutionCheckpoint) matches(ref ExecutionCheckpointRef) bool {
 	terminal := ref.Completion
 	terminal.Version, terminal.NativeCheckpointDigest = 1, ""
 	inputs, err := ref.nativeInputs()
-	if err != nil || ref.validate() != nil || p.Version != 1 || p.JobID != ref.JobID || p.SessionID != ref.SessionID || p.MachineID != ref.MachineID || p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest || p.AccountID != ref.AccountID || p.ConnectionID != ref.ConnectionID || p.Completion != terminal || p.Native.ThreadID != ref.Completion.NativeThreadID || p.Native.SessionID != p.Native.ThreadID || p.Native.TurnID != ref.Completion.NativeTurnID || p.Native.Mode != ref.InputMode || !slices.Equal(p.Native.Inputs, inputs) {
+	if err != nil || ref.validate() != nil || p.Version != 1 || p.JobID != ref.JobID || p.SessionID != ref.SessionID || p.MachineID != ref.MachineID || p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest || p.AccountID != ref.AccountID || p.ConnectionID != ref.ConnectionID || p.Completion != terminal || p.Native.ThreadID != ref.Completion.NativeThreadID || p.Native.SessionID != p.Native.ThreadID || p.Native.TurnID != ref.Completion.NativeTurnID || p.Native.Mode != ref.InputMode || !slices.Equal(p.Native.Effective.WorkspaceRoots, ref.WorkspaceRoots) || !slices.Equal(p.Native.Inputs, inputs) {
 		return false
 	}
 	status := map[domain.ExecutionOutcome]codex.TurnStatus{domain.ExecutionSucceeded: codex.TurnCompleted, domain.ExecutionFailed: codex.TurnFailed, domain.ExecutionStopped: codex.TurnInterrupted}[ref.Completion.Outcome]
@@ -195,6 +205,11 @@ func retainCodexCompletion(root string, jobID domain.ID, job domain.Job, input d
 		return "", executionCheckpointUncertain()
 	}
 	ref := ExecutionCheckpointRef{JobID: jobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: input.ExecutionID, AssignmentInputDigest: executionInputDigest(job.Input), ConfigurationDigest: input.ConfigurationDigest, AccountID: input.AccountID, ConnectionID: input.ConnectionID, Completion: completion, InputMode: input.Input.Mode, PromptDigest: sha256.Sum256([]byte(input.Input.Prompt))}
+	var manifest workspace.Manifest
+	if domain.Decode(input.Manifest, &manifest) != nil {
+		return "", executionCheckpointUncertain()
+	}
+	ref.WorkspaceRoots = nativeWorkspaceRoots(manifest)
 	ref.AcceptedInputs = acceptedInputs
 	nativeInputs, err := ref.nativeInputs()
 	if err != nil {
@@ -230,4 +245,14 @@ func retainCodexCompletion(root string, jobID domain.ID, job domain.Job, input d
 		return "", executionCheckpointUncertain()
 	}
 	return executionInputDigest(raw), nil
+}
+
+// Single-root records preserve their original omitted-field representation.
+// Additional roots must be derived from the accepted manifest, never inferred
+// from a retained native checkpoint that is itself being inspected.
+func nativeWorkspaceRoots(manifest workspace.Manifest) []string {
+	if len(manifest.Repositories) <= 1 {
+		return nil
+	}
+	return manifest.WorkspaceRoots()
 }

@@ -120,11 +120,10 @@ func decodeBoundThread(raw json.RawMessage, settings ThreadSettings, expectedID 
 	if len(response.InitialTurnsPage) != 0 && string(response.InitialTurnsPage) != "null" {
 		return &thread, nil, incompatible()
 	}
-	for _, root := range response.RuntimeWorkspaceRoots {
-		if !nativePathEqual(root, settings.Cwd) {
-			return &thread, nil, incompatible()
-		}
+	if !matchWorkspaceRoots(settings, response.RuntimeWorkspaceRoots) {
+		return &thread, nil, incompatible()
 	}
+
 	if response.Model != settings.Model || response.ModelProvider != settings.Provider || wire.ModelProvider != settings.Provider || !nativePathEqual(response.Cwd, settings.Cwd) || !nativePathEqual(wire.Cwd, settings.Cwd) || response.ApprovalsReviewer != "user" {
 		return &thread, nil, incompatible()
 	}
@@ -154,11 +153,10 @@ func decodeBoundThread(raw json.RawMessage, settings ThreadSettings, expectedID 
 			return &thread, nil, incompatible()
 		}
 	case WorkspaceWrite:
-		for _, root := range sandbox.WritableRoots {
-			if !nativePathEqual(root, settings.Cwd) {
-				return &thread, nil, incompatible()
-			}
+		if !matchWritableRoots(settings, sandbox.WritableRoots) {
+			return &thread, nil, incompatible()
 		}
+
 	default:
 		return &thread, nil, incompatible()
 	}
@@ -166,7 +164,7 @@ func decodeBoundThread(raw json.RawMessage, settings ThreadSettings, expectedID 
 	if requested != "" && requested != sandbox.Type {
 		return &thread, nil, incompatible()
 	}
-	return &thread, &EffectiveSettings{Model: response.Model, Provider: response.ModelProvider, Effort: response.ReasoningEffort, ServiceTier: response.ServiceTier, Cwd: response.Cwd, ApprovalPolicy: response.ApprovalPolicy, ApprovalsReviewer: response.ApprovalsReviewer, Sandbox: sandbox}, nil
+	return &thread, &EffectiveSettings{Model: response.Model, Provider: response.ModelProvider, Effort: response.ReasoningEffort, ServiceTier: response.ServiceTier, Cwd: response.Cwd, ApprovalPolicy: response.ApprovalPolicy, ApprovalsReviewer: response.ApprovalsReviewer, Sandbox: sandbox, WorkspaceRoots: slices.Clone(settings.WorkspaceRoots)}, nil
 }
 
 func validateThreadStatus(status ThreadStatus) error {
@@ -188,4 +186,39 @@ func validateThreadStatus(status ThreadStatus) error {
 		return incompatible()
 	}
 	return nil
+}
+
+func matchWorkspaceRoots(settings ThreadSettings, observed []string) bool {
+	if len(settings.WorkspaceRoots) == 0 {
+		return len(observed) == 0 || (len(observed) == 1 && nativePathEqual(observed[0], settings.Cwd))
+	}
+	if len(observed) != len(settings.WorkspaceRoots) {
+		return false
+	}
+	for i, root := range observed {
+		if !nativePathEqual(root, settings.WorkspaceRoots[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// Codex workspace-write always includes cwd implicitly. Its explicit native
+// roots must add every other requested repository and no unrelated directory.
+func matchWritableRoots(settings ThreadSettings, observed []string) bool {
+	expected := settings.WorkspaceRoots
+	if len(expected) == 0 {
+		expected = []string{settings.Cwd}
+	}
+	for i, root := range observed {
+		if !slices.ContainsFunc(expected, func(v string) bool { return nativePathEqual(v, root) }) || slices.ContainsFunc(observed[:i], func(v string) bool { return nativePathEqual(v, root) }) {
+			return false
+		}
+	}
+	for _, root := range expected {
+		if !nativePathEqual(root, settings.Cwd) && !slices.ContainsFunc(observed, func(v string) bool { return nativePathEqual(v, root) }) {
+			return false
+		}
+	}
+	return true
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
 
 type checkpointFixture struct {
@@ -387,5 +388,53 @@ func TestExecutionCheckpointBoundIncludesCompleteAcceptedInputSet(t *testing.T) 
 	got, err := ReadCodexExecutionCheckpoint(f.root, f.ref)
 	if err != nil || len(got.Native.Inputs) != domain.MaxAcceptedExecutionInputs {
 		t.Fatal("bounded checkpoint omitted accepted input evidence", err)
+	}
+}
+
+func TestExecutionCheckpointBindsAllOriginalWorkspaceRoots(t *testing.T) {
+	for _, scenario := range []string{"matching", "missing-native", "foreign-native", "reordered-reference", "missing-reference", "foreign-reference"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := newCheckpointFixture(t)
+			roots := []string{filepath.Join(f.root, "secondary"), f.bound.Effective.Cwd}
+			if err := os.Mkdir(roots[0], 0o700); err != nil {
+				t.Fatal(err)
+			}
+			manifest := workspace.Manifest{PrimaryPath: roots[1], Repositories: []workspace.PreparedRepository{{Path: roots[0]}, {Path: roots[1]}}}
+			f.input.Manifest, _ = json.Marshal(manifest)
+			f.job.Input, _ = json.Marshal(f.input)
+			f.ref.AssignmentInputDigest = executionInputDigest(f.job.Input)
+			f.ref.WorkspaceRoots = slices.Clone(roots)
+			f.bound.Effective.WorkspaceRoots = slices.Clone(roots)
+			if scenario == "missing-native" {
+				f.bound.Effective.WorkspaceRoots = nil
+			}
+			if scenario == "foreign-native" {
+				f.bound.Effective.WorkspaceRoots[0] = filepath.Join(f.root, "foreign")
+			}
+			err := f.retain()
+			if scenario == "missing-native" || scenario == "foreign-native" {
+				checkpointRecovery(t, err)
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch scenario {
+			case "reordered-reference":
+				f.ref.WorkspaceRoots = []string{roots[1], roots[0]}
+			case "missing-reference":
+				f.ref.WorkspaceRoots = nil
+			case "foreign-reference":
+				f.ref.WorkspaceRoots[0] = filepath.Join(f.root, "foreign")
+			}
+			value, err := ReadCodexExecutionCheckpoint(f.root, f.ref)
+			if scenario != "matching" {
+				checkpointRecovery(t, err)
+				return
+			}
+			if err != nil || !slices.Equal(value.Native.Effective.WorkspaceRoots, roots) {
+				t.Fatal("checkpoint lost original workspace roots", err)
+			}
+		})
 	}
 }

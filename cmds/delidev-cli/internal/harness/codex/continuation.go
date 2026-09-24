@@ -144,6 +144,22 @@ func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, ch
 }
 
 func sameEffectiveSettings(a, b EffectiveSettings) bool {
+	ar, br := a.WorkspaceRoots, b.WorkspaceRoots
+	if len(ar) == 0 {
+		ar = []string{a.Cwd}
+	}
+	if len(br) == 0 {
+		br = []string{b.Cwd}
+	}
+	if len(ar) != len(br) {
+		return false
+	}
+	for i, root := range ar {
+		if !nativePathEqual(root, br[i]) {
+			return false
+		}
+	}
+
 	if a.Model != b.Model || a.Provider != b.Provider || !equalOptional(a.Effort, b.Effort) || !equalOptional(a.ServiceTier, b.ServiceTier) || !nativePathEqual(a.Cwd, b.Cwd) || a.ApprovalPolicy != b.ApprovalPolicy || a.ApprovalsReviewer != b.ApprovalsReviewer || a.Sandbox.Type != b.Sandbox.Type || a.Sandbox.NetworkAccess != b.Sandbox.NetworkAccess || a.Sandbox.ExcludeSlashTmp != b.Sandbox.ExcludeSlashTmp || a.Sandbox.ExcludeTmpdirEnvVar != b.Sandbox.ExcludeTmpdirEnvVar || len(a.Sandbox.WritableRoots) != len(b.Sandbox.WritableRoots) {
 		return false
 	}

@@ -100,6 +100,12 @@ func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMe
 	}
 	result := map[string]any{"thread": f.thread, "model": params["model"], "modelProvider": params["modelProvider"], "cwd": params["cwd"], "approvalPolicy": policy, "approvalsReviewer": "user", "sandbox": map[string]any{"type": sandbox}, "reasoningEffort": effort, "serviceTier": params["serviceTier"], "instructionSources": []string{}}
 	result["runtimeWorkspaceRoots"] = []string{}
+	if roots, ok := params["runtimeWorkspaceRoots"].([]any); ok {
+		result["runtimeWorkspaceRoots"] = roots
+		if sandbox == "workspaceWrite" {
+			result["sandbox"] = map[string]any{"type": sandbox, "writableRoots": roots}
+		}
+	}
 	result["activePermissionProfile"] = nil
 	result["multiAgentMode"] = "explicitRequestOnly"
 	switch f.mode {
@@ -137,6 +143,14 @@ func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMe
 		f.thread["historyMode"] = "paginated"
 	case "thread-runtime-root":
 		result["runtimeWorkspaceRoots"] = []string{"/foreign"}
+	case "thread-missing-runtime-roots":
+		result["runtimeWorkspaceRoots"] = []string{}
+	case "thread-duplicate-runtime-roots":
+		result["runtimeWorkspaceRoots"] = []any{params["cwd"], params["cwd"]}
+	case "thread-missing-writable-root":
+		result["sandbox"] = map[string]any{"type": "workspaceWrite", "writableRoots": []any{params["cwd"]}}
+	case "thread-duplicate-writable-root":
+		result["sandbox"] = map[string]any{"type": "workspaceWrite", "writableRoots": []any{params["cwd"], params["cwd"]}}
 	case "thread-delegation":
 		result["multiAgentMode"] = "proactive"
 	case "thread-resume-active":

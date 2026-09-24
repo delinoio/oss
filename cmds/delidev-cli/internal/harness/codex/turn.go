@@ -85,6 +85,7 @@ func newExecutionState(thread Thread, settings EffectiveSettings) *executionStat
 	// The caller can retain and edit its observation, but cannot change the
 	// adapter's effective settings through pointers or slices in that result.
 	settings.Sandbox.WritableRoots = slices.Clone(settings.Sandbox.WritableRoots)
+	settings.WorkspaceRoots = slices.Clone(settings.WorkspaceRoots)
 	settings.Effort = copyString(settings.Effort)
 	settings.ServiceTier = copyString(settings.ServiceTier)
 	thread.Status.ActiveFlags = slices.Clone(thread.Status.ActiveFlags)

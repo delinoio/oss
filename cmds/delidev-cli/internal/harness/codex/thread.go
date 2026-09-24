@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -15,12 +16,13 @@ import (
 // snapshot. It contains no credential, arbitrary config, or base-instruction
 // override. Account authority and durable snapshot acceptance belong upstream.
 type ThreadSettings struct {
-	Model        string
-	Provider     string
-	Effort       string
-	Cwd          string
-	Instructions string
-	Options      domain.AgentOptions
+	Model          string
+	Provider       string
+	Effort         string
+	Cwd            string
+	WorkspaceRoots []string
+	Instructions   string
+	Options        domain.AgentOptions
 }
 
 type ApprovalPolicy string
@@ -94,6 +96,7 @@ type EffectiveSettings struct {
 	ApprovalPolicy    ApprovalPolicy
 	ApprovalsReviewer string
 	Sandbox           Sandbox
+	WorkspaceRoots    []string `json:"WorkspaceRoots,omitempty"`
 }
 
 // ThreadResult retains a proven native identity even when effective settings
@@ -118,6 +121,7 @@ type threadParams struct {
 	Model                      string            `json:"model"`
 	ModelProvider              string            `json:"modelProvider"`
 	Cwd                        string            `json:"cwd"`
+	WorkspaceRoots             []string          `json:"runtimeWorkspaceRoots,omitempty"`
 	DeveloperInstructions      string            `json:"developerInstructions,omitempty"`
 	ApprovalPolicy             ApprovalPolicy    `json:"approvalPolicy,omitempty"`
 	ApprovalsReviewer          string            `json:"approvalsReviewer"`
@@ -176,6 +180,18 @@ func (s ThreadSettings) params() (threadParams, error) {
 	if err != nil || !info.IsDir() {
 		return p, domain.Fail(domain.InvalidArgument, "The native working directory is unavailable.", "Reconcile the prepared workspace before native dispatch.")
 	}
+	for i, root := range s.WorkspaceRoots {
+		resolved, err := filepath.EvalSymlinks(root)
+		info, statErr := os.Stat(root)
+		if err != nil || statErr != nil || !filepath.IsAbs(root) || !nativePathEqual(resolved, root) || !info.IsDir() {
+			return p, domain.Fail(domain.InvalidArgument, "A native workspace root is not an existing canonical directory.", "Reconcile all prepared repository paths before execution.")
+		}
+		for _, prior := range s.WorkspaceRoots[:i] {
+			if nativePathEqual(prior, root) {
+				return p, unsupportedSettings()
+			}
+		}
+	}
 	return p, nil
 }
 func (s ThreadSettings) wireSettings() (threadParams, error) {
@@ -192,6 +208,20 @@ func (s ThreadSettings) wireSettings() (threadParams, error) {
 		if err := domain.Text(v.value, v.label, v.maximum, v.required); err != nil {
 			return p, err
 		}
+	}
+	if len(s.WorkspaceRoots) > 100 {
+		return p, unsupportedSettings()
+	}
+	if len(s.WorkspaceRoots) > 0 {
+		if !slices.Contains(s.WorkspaceRoots, s.Cwd) {
+			return p, unsupportedSettings()
+		}
+		for i, root := range s.WorkspaceRoots {
+			if domain.Text(root, "native workspace root", 4096, true) != nil || slices.Contains(s.WorkspaceRoots[:i], root) {
+				return p, unsupportedSettings()
+			}
+		}
+		p.WorkspaceRoots = slices.Clone(s.WorkspaceRoots)
 	}
 	if s.Options.SubagentModel != "" || s.Options.SubagentEffort != "" || s.Options.MaxConcurrency != 0 || s.Options.ApprovalReviewModel != "" {
 		return p, unsupportedSettings()
@@ -256,6 +286,7 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 	if err := requestID.Validate(); err != nil {
 		return result, err
 	}
+	settings.WorkspaceRoots = slices.Clone(settings.WorkspaceRoots)
 	params, err := settings.params()
 	if err != nil {
 		return result, err

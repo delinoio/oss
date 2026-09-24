@@ -151,10 +151,14 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	if domain.Decode(job.Input, &request) != nil || domain.Decode(job.Output, &manifest) != nil || request.SessionID != sr.ID || request.MachineID != session.MachineID || workspace.ValidateResult(request, manifest, machine.OS) != nil {
 		return empty, workspace.ResultUncertain()
 	}
-	if request.Type == domain.Local || len(request.Repositories) > 1 {
-		return empty, domain.Fail(domain.Unsupported, "This workspace requires an additional native execution adapter.", "Retain its prepared files; Local origin and multiple native permission roots must be validated before execution.")
+	if request.Type == domain.Local {
+		return empty, domain.Fail(domain.Unsupported, "This workspace requires an additional native execution adapter.", "Retain its prepared files; originating-machine authority must be validated before Local execution.")
 	}
-	if err := codex.ValidateSelection(codex.ThreadSettings{Model: c.NativeModel, Provider: codex.APIProvider, Cwd: manifest.PrimaryPath, Effort: c.Effort, Instructions: c.Instructions, Options: c.Options}); err != nil {
+	settings := codex.ThreadSettings{Model: c.NativeModel, Provider: codex.APIProvider, Cwd: manifest.PrimaryPath, Effort: c.Effort, Instructions: c.Instructions, Options: c.Options}
+	if len(manifest.Repositories) > 1 {
+		settings.WorkspaceRoots = manifest.WorkspaceRoots()
+	}
+	if err := codex.ValidateSelection(settings); err != nil {
 		return empty, err
 	}
 	input.Installation, input.Preparation, input.Manifest = *installation, job.Input, job.Output

@@ -431,3 +431,16 @@ func (m *Manager) RetryCleanup(ctx context.Context, session domain.ID) error {
 	}
 	return m.cleanup(ctx, filepath.Join(m.Root, "workspaces", string(session)), manifest)
 }
+
+// WorkspaceRoots preserves prepared repository order independently of the
+// designated primary cwd. Call only after validating this complete manifest.
+func (m Manifest) WorkspaceRoots() []string {
+	if len(m.Repositories) == 0 {
+		return []string{m.PrimaryPath}
+	}
+	roots := make([]string, len(m.Repositories))
+	for i, repository := range m.Repositories {
+		roots[i] = repository.Path
+	}
+	return roots
+}
