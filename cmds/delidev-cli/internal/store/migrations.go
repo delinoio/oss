@@ -42,7 +42,7 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 	if version == SchemaVersion {
 		return nil
 	}
-	if version < 1 || version > 9 {
+	if version < 1 || version > 10 {
 		return domain.Fail(domain.RecoveryRequired, "No supported migration exists for this database.", "Preserve the original and use a matching server version.")
 	}
 	// Back up even this additive migration. Destructive future migrations must
@@ -125,19 +125,31 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 			return storageError(err)
 		}
 	}
-	var legacyInbox int
-	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM entities WHERE kind='inbox'").Scan(&legacyInbox); err != nil {
+	if version < 10 {
+		var legacyInbox int
+		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM entities WHERE kind='inbox'").Scan(&legacyInbox); err != nil {
+			return storageError(err)
+		}
+		if legacyInbox != 0 {
+			return domain.Fail(domain.RecoveryRequired, "Legacy state contains unrecognized inbox ownership.", "Preserve the database and backup; do not replace or merge unvalidated inbox entries.")
+		}
+		if _, err := tx.ExecContext(ctx, inboxSchema); err != nil {
+			return storageError(err)
+		}
+		backfill := &Tx{tx: tx, ctx: ctx, now: time.Now().UTC().Truncate(time.Millisecond), touched: map[domain.ID]bool{}}
+		if err := backfill.preserveLegacyInbox(); err != nil {
+			return err
+		}
+	}
+	var legacySchedules int
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM entities WHERE kind IN ('schedule','occurrence')").Scan(&legacySchedules); err != nil {
 		return storageError(err)
 	}
-	if legacyInbox != 0 {
-		return domain.Fail(domain.RecoveryRequired, "Legacy state contains unrecognized inbox ownership.", "Preserve the database and backup; do not replace or merge unvalidated inbox entries.")
+	if legacySchedules != 0 {
+		return domain.Fail(domain.RecoveryRequired, "Legacy schedule ownership is unrecognized.", "Preserve the original database and pre-migration backup; do not infer execution authority from unvalidated records.")
 	}
-	if _, err := tx.ExecContext(ctx, inboxSchema); err != nil {
+	if _, err := tx.ExecContext(ctx, scheduleSchema); err != nil {
 		return storageError(err)
-	}
-	backfill := &Tx{tx: tx, ctx: ctx, now: time.Now().UTC().Truncate(time.Millisecond), touched: map[domain.ID]bool{}}
-	if err := backfill.preserveLegacyInbox(); err != nil {
-		return err
 	}
 	return storageError(tx.Commit())
 }

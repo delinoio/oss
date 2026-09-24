@@ -26,6 +26,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - [Native API relay](cmds-delidev-proxy-contract.md)
 - [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
 - [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)
+- [Schedules and durable occurrences](cmds-delidev-schedules-contract.md)
 - [Implementation and evidence ledger](cmds-delidev-evidence.md)
 
 ## Cross-Domain Invariants

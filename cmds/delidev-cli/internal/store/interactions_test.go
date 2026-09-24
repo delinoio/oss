@@ -26,7 +26,7 @@ func TestInteractionMigrationPreservesV8MessagesAndBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec("DROP INDEX inbox_source; DROP INDEX inbox_read; DROP INDEX inbox_session_read; DROP TABLE execution_interactions; PRAGMA user_version=8"); err != nil {
+	if _, err := s.db.Exec(dropScheduleFixtureSchema + "DROP INDEX inbox_source; DROP INDEX inbox_read; DROP INDEX inbox_session_read; DROP TABLE execution_interactions; PRAGMA user_version=8"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {

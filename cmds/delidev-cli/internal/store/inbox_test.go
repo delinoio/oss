@@ -59,7 +59,7 @@ func legacyInboxSources(t *testing.T, s *Store, count int) (domain.ID, domain.ID
 
 func downgradeInboxFixture(t *testing.T, s *Store) {
 	t.Helper()
-	if _, err := s.db.Exec("DROP INDEX inbox_source; DROP INDEX inbox_read; DROP INDEX inbox_session_read; PRAGMA user_version=9"); err != nil {
+	if _, err := s.db.Exec(dropScheduleFixtureSchema + "DROP INDEX inbox_source; DROP INDEX inbox_read; DROP INDEX inbox_session_read; PRAGMA user_version=9"); err != nil {
 		t.Fatal(err)
 	}
 }
