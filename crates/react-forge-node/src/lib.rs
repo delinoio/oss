@@ -284,3 +284,80 @@ pub fn process_document(
         cancelled: cancellation.flag.clone(),
     }))
 }
+
+/// Pure planning stays on a worker; no credentials or JS callbacks cross it.
+pub struct FigmaPlanOperation {
+    input: String,
+    cancelled: Arc<AtomicBool>,
+}
+impl Task for FigmaPlanOperation {
+    type JsValue = String;
+    type Output = String;
+
+    fn compute(&mut self) -> napi::Result<String> {
+        if self.cancelled.load(Ordering::Acquire) {
+            return Err(cancelled());
+        }
+        let result = forge_figma::plan_json(&self.input).map_err(|code| {
+            napi::Error::from_reason(serde_json::to_string(&code).unwrap_or_default())
+        })?;
+        if self.cancelled.load(Ordering::Acquire) {
+            return Err(cancelled());
+        }
+        Ok(result)
+    }
+
+    fn resolve(&mut self, _env: Env, output: String) -> napi::Result<String> {
+        Ok(output)
+    }
+}
+#[napi]
+pub fn plan_figma(
+    input: String,
+    cancellation: &Cancellation,
+) -> napi::Result<AsyncTask<FigmaPlanOperation>> {
+    if input.len() > forge_figma::MAX_MODEL_BYTES {
+        return Err(napi::Error::from_reason("resource_limit"));
+    }
+    Ok(AsyncTask::new(FigmaPlanOperation {
+        input,
+        cancelled: cancellation.flag.clone(),
+    }))
+}
+
+pub struct FigmaImageOperation {
+    bytes: Vec<u8>,
+    cancelled: Arc<AtomicBool>,
+}
+impl Task for FigmaImageOperation {
+    type JsValue = bool;
+    type Output = bool;
+
+    fn compute(&mut self) -> napi::Result<bool> {
+        if self.cancelled.load(Ordering::Acquire) {
+            return Err(cancelled());
+        }
+        forge_document::image(&self.bytes).map_err(native_error)?;
+        if self.cancelled.load(Ordering::Acquire) {
+            return Err(cancelled());
+        }
+        Ok(true)
+    }
+
+    fn resolve(&mut self, _env: Env, output: bool) -> napi::Result<bool> {
+        Ok(output)
+    }
+}
+#[napi]
+pub fn validate_figma_image(
+    bytes: Buffer,
+    cancellation: &Cancellation,
+) -> napi::Result<AsyncTask<FigmaImageOperation>> {
+    if bytes.len() > 10 * 1024 * 1024 {
+        return Err(napi::Error::from_reason("resource_limit"));
+    }
+    Ok(AsyncTask::new(FigmaImageOperation {
+        bytes: bytes.to_vec(),
+        cancelled: cancellation.flag.clone(),
+    }))
+}

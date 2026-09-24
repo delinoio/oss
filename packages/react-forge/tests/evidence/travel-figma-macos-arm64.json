@@ -1,0 +1,161 @@
+{
+  "date": "2026-09-24",
+  "platform": "darwin-arm64",
+  "node": "24.20.0",
+  "mcpSdk": "1.30.1",
+  "credentialProvider": "codex",
+  "planTier": "pro",
+  "font": {
+    "family": "DM Sans",
+    "styles": [
+      "Regular",
+      "Medium",
+      "Bold"
+    ],
+    "reason": "Available in Figma; the existing example's Avenir Next was not available."
+  },
+  "fileKey": "ccKXvoUvorNx58j9YLs5iC",
+  "url": "https://www.figma.com/design/ccKXvoUvorNx58j9YLs5iC",
+  "pageId": "7:4",
+  "screens": [
+    {
+      "name": "Explore",
+      "nodeId": "7:14",
+      "url": "https://www.figma.com/design/ccKXvoUvorNx58j9YLs5iC?node-id=7-14",
+      "screenshot": {
+        "sha256": "705ba18d1b6e21fcbd5bca468a71e48ed20ac8d27eaab47293ac2f750dff20c0",
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "name": "Search",
+      "nodeId": "7:15",
+      "url": "https://www.figma.com/design/ccKXvoUvorNx58j9YLs5iC?node-id=7-15",
+      "screenshot": {
+        "sha256": "b50f250bb9ce3979afaa163a4d70b077b3b101685c363136388c7a9e71acdb2a",
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "name": "Destination",
+      "nodeId": "7:16",
+      "url": "https://www.figma.com/design/ccKXvoUvorNx58j9YLs5iC?node-id=7-16",
+      "screenshot": {
+        "sha256": "876fe37773059bda47ca6946be4bdfc4c9a7e6d33852c0e93205e06d533496ff",
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "name": "Itinerary",
+      "nodeId": "7:17",
+      "url": "https://www.figma.com/design/ccKXvoUvorNx58j9YLs5iC?node-id=7-17",
+      "screenshot": {
+        "sha256": "710cabeef2445ccdd47f2d1d346b9ddebdfc1b7feb2226d50c88f77f49e8a550",
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "name": "Saved",
+      "nodeId": "7:18",
+      "url": "https://www.figma.com/design/ccKXvoUvorNx58j9YLs5iC?node-id=7-18",
+      "screenshot": {
+        "sha256": "f50b546dfa85c5fa8d239974e52ca140d5d299c9cf2d13d24ebf4f1571e587a6",
+        "width": 390,
+        "height": 844
+      }
+    }
+  ],
+  "structure": {
+    "sceneNodes": 207,
+    "text": 103,
+    "frames": 67,
+    "rectangles": 32,
+    "components": 3,
+    "componentSets": 1,
+    "instances": 1,
+    "imageFills": 7,
+    "variableCollections": 1,
+    "variables": 7,
+    "textStyles": 1,
+    "eveningNoteInstances": 1
+  },
+  "sessions": {
+    "blankCreation": {
+      "status": "complete",
+      "toolCalls": 2
+    },
+    "generationCompletion": {
+      "status": "complete",
+      "toolCalls": 22
+    },
+    "visualFix": {
+      "status": "complete",
+      "toolCalls": 10
+    },
+    "reopenedEdit": {
+      "status": "complete",
+      "createdNodeIds": [],
+      "mutatedNodeIds": [
+        "7:25",
+        "11:7",
+        "11:45",
+        "11:49",
+        "11:107",
+        "11:129",
+        "11:153",
+        "11:108",
+        "11:109",
+        "14:3",
+        "14:4"
+      ],
+      "existingIdsRetained": 209,
+      "preservedNodeCount": 113,
+      "unchangedScreens": [
+        "Search",
+        "Destination",
+        "Saved"
+      ],
+      "noOpWriteCalls": 0,
+      "calls": 19,
+      "retries": 0,
+      "waitMs": 93710
+    },
+    "externalFileEdit": {
+      "fileKey": "wyvfmaofzMTzG5m8UoXLX7",
+      "url": "https://www.figma.com/design/wyvfmaofzMTzG5m8UoXLX7",
+      "status": "complete",
+      "createdNodeIds": [],
+      "mutatedNodeIds": [
+        "1:2",
+        "1:3"
+      ],
+      "preservedIds": [
+        "1:4",
+        "1:5",
+        "1:6",
+        "1:7"
+      ],
+      "calls": 5,
+      "retries": 0,
+      "waitMs": 20415
+    }
+  },
+  "verification": {
+    "closedAndReopened": true,
+    "externalFileAuthoredWithoutForge": true,
+    "noPluginData": true,
+    "allFiveFinalScreensVisuallyInspected": true,
+    "photoSource": "Existing original travel-ir concept imagery; not location-authenticated photography."
+  },
+  "limitations": [
+    "Tool totals describe the named successful sessions, excluding SDK initialization/listTools, interop discovery attempts and separate agent inspection calls.",
+    "Initial live runs revealed comma-bearing style IDs, truncated large MCP text responses and the submitUrl asset field. Known scratch objects were cleaned or reconciled from recorded IDs; ambiguous creation was not automatically replayed.",
+    "ROAM generation completion includes explicit developer recovery of its recorded in-progress model after those interoperability fixes.",
+    "Screenshots and remote receipts remain untracked; hashes identify the reviewed PNGs.",
+    "Rate admission and file queues are process-local; other clients are covered by server limits and optimistic guards."
+  ]
+}

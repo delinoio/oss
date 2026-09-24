@@ -7,6 +7,7 @@ export const capabilities = Object.freeze({
     [Format.Pptx]: Object.freeze({ generate: true, import: true, coordinateSpace: "page" }),
     [Format.Docx]: Object.freeze({ generate: true, import: true, coordinateSpace: "word_flow" }),
     [Format.Xlsx]: Object.freeze({ generate: true, import: true, coordinateSpace: "worksheet" }),
+    [Format.Figma]: Object.freeze({ generate: true, import: true, coordinateSpace: "page", remote: true }),
     [Format.Pdf]: Object.freeze({ generate: true, import: false, coordinateSpace: "page" }),
   }),
   limits,

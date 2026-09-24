@@ -18,7 +18,7 @@ const view = (format: Format, text: string) => {
 };
 
 test("all formats validate system CJK/RTL/color emoji and caller-only missing-font failures", async () => {
-  for (const format of Object.values(Format)) {
+  for (const format of Object.values(Format).filter(format => format !== Format.Figma)) {
     const system = createSession(format);
     const supplied = createSession(format, { systemFonts: false });
     try {

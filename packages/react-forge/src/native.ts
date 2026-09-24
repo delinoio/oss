@@ -6,6 +6,8 @@ import { ErrorCode, Format, Stage, type Diagnostic } from "./types.js";
 interface Cancellation { cancel(): void }
 export interface NativeOutput { bytes: Buffer; model: string; geometry: string; diagnostics: string }
 interface Binding {
+  validateFigmaImage(bytes:Buffer,cancellation:Cancellation):Promise<boolean>;
+  planFigma(input: string, cancellation: Cancellation): Promise<string>;
   Cancellation: new () => Cancellation;
   processDocument(format: string, operation: string, model: string, source: Buffer, assets: { id: string; bytes: Buffer }[],
     documentId: string, revision: number, cancellation: Cancellation, fontOptions: string): Promise<NativeOutput>;
@@ -86,3 +88,19 @@ export async function processDocument(format: Format, operation: "generate" | "i
 }
 
 export const processPptx = (...args: Parameters<typeof processDocument> extends [Format, ...infer Rest] ? Rest : never) => processDocument(Format.Pptx, ...args);
+
+export async function planFigma(input: unknown, signal: AbortSignal): Promise<import("./figma/model.js").Plan> {
+  const native=load(); const cancellation=new native.Cancellation();
+  const cancel=()=>cancellation.cancel(); signal.addEventListener("abort",cancel,{once:true});if(signal.aborted)cancel();
+  try{return JSON.parse(await native.planFigma(JSON.stringify(input),cancellation));}
+  catch(error){if(signal.aborted)throw new ForgeError(ErrorCode.Cancelled,"Figma planning was cancelled.");let code:ErrorCode=ErrorCode.MalformedInput;try{const raw=JSON.parse((error as Error).message);if(Object.values(ErrorCode).includes(raw))code=raw;}catch{}throw new ForgeError(code,`Figma plan validation failed (${code}).`);}
+  finally{signal.removeEventListener("abort",cancel);}
+}
+
+export async function validateFigmaImage(bytes:Buffer,signal:AbortSignal):Promise<void>{
+  const native=load();const cancellation=new native.Cancellation();const cancel=()=>cancellation.cancel();
+  signal.addEventListener("abort",cancel,{once:true});if(signal.aborted)cancel();
+  try{await native.validateFigmaImage(bytes,cancellation);}
+  catch(error){if(signal.aborted)throw new ForgeError(ErrorCode.Cancelled,"Image validation was cancelled.");let code=ErrorCode.MalformedInput;try{const data=JSON.parse((error as Error).message);code=codes[data.code]??code;}catch{}throw new ForgeError(code,"Figma image decoding or dimensions are invalid.");}
+  finally{signal.removeEventListener("abort",cancel);}
+}

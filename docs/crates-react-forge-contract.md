@@ -3,6 +3,8 @@
 ## Scope
 Shared `forge-package` and `forge-document`, format-specific `forge-docx`, `forge-xlsx`, `forge-pdf`, and dedicated `react-forge-node` adapter. `forge-document` owns reusable text/style, image and native chart/data primitives without merging format-specific document models. Reuse `forge-tree-doc` and `forge-pptx` for presentations. Complete scope is preserved in [requirements](packages-react-forge-requirements.md).
 
+`forge-figma` adds an independent pure revision planner. It validates Figma entities and references, differences declared ownership and partitions dependency-ordered operations by page, UTF-16 code size and a bounded result count. The Node layer owns authentication, SDK transport, rate admission, guarded canvas execution and recovery. N-API also validates Figma image bytes with the existing bounded native image decoder. See the [remote contract](packages-react-forge-figma-contract.md).
+
 ## Runtime and Language
 Rust on the repository-pinned toolchain. Engines do not depend on N-API, Office, LibreOffice, Python, external converters or runtime installation. Rust is selected over repository-default Go to reuse the Forge engines and native document libraries.
 

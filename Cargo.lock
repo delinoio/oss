@@ -3943,6 +3943,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-figma"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "forge-package"
 version = "0.0.0"
 dependencies = [
@@ -9718,6 +9727,7 @@ version = "0.0.0"
 dependencies = [
  "forge-document",
  "forge-docx",
+ "forge-figma",
  "forge-package",
  "forge-pdf",
  "forge-pptx",
