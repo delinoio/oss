@@ -8,7 +8,7 @@ use parley::{
     FontContext, Layout, LayoutContext,
     layout::Alignment,
     style::{
-        FontFamily, FontStack, FontStyle, FontWeight, LineHeight, OverflowWrap, StyleProperty,
+        FontFamily, FontFamilyName, FontStyle, FontWeight, LineHeight, OverflowWrap, StyleProperty,
     },
 };
 
@@ -162,11 +162,11 @@ impl Fonts {
                 .font_family
                 .iter()
                 .chain(self.families.iter())
-                .map(|name| FontFamily::Named(Cow::Owned(name.clone())))
+                .map(|name| FontFamilyName::Named(Cow::Owned(name.clone())))
                 .collect();
-            stack.push(FontFamily::Generic(GenericFamily::SansSerif));
+            stack.push(FontFamilyName::Generic(GenericFamily::SansSerif));
             builder.push(
-                StyleProperty::FontStack(FontStack::List(Cow::Owned(stack))),
+                StyleProperty::FontFamily(FontFamily::List(Cow::Owned(stack))),
                 range.clone(),
             );
             builder.push(
@@ -190,7 +190,12 @@ impl Fonts {
                 range.clone(),
             );
             builder.push(
-                StyleProperty::Locale(style.language.as_deref()),
+                StyleProperty::Locale(
+                    style
+                        .language
+                        .as_deref()
+                        .and_then(|language| language.parse().ok()),
+                ),
                 range.clone(),
             );
             builder.push(StyleProperty::Brush(index), range);
@@ -201,7 +206,6 @@ impl Fonts {
         layout.break_all_lines(Some(width as f32));
         forge_tree_doc::cancellation::checkpoint()?;
         layout.align(
-            Some(width as f32),
             match base.align {
                 Align::Left => Alignment::Left,
                 Align::Right => Alignment::Right,
@@ -352,7 +356,7 @@ impl Fonts {
     /// glyphs alone is insufficient when an Office reader picks a different
     /// fallback from the family originally requested by the caller.
     pub fn resolved_runs(&mut self, runs: &[Run], base: &Style) -> Result<Vec<Run>> {
-        use parley::swash::{FontRef, StringId};
+        use swash::{FontRef, StringId};
         let shaped = self.shape(runs, base, 100_000.0, false)?;
         let mut spans = Vec::new();
         let mut families = std::collections::HashMap::new();

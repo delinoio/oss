@@ -198,7 +198,9 @@ impl Flow<'_> {
             forge_tree_doc::cancellation::checkpoint()?;
             let height = f64::from(line.metrics().line_height);
             self.ensure(height)?;
-            let width = f64::from(line.metrics().advance);
+            // Parley permits hanging trailing whitespace at a line break. Only
+            // the visible advance must fit the page's content width.
+            let width = f64::from(line.metrics().advance - line.metrics().trailing_whitespace);
             if width > self.width() + 0.1 {
                 return overflow();
             }

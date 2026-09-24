@@ -147,7 +147,7 @@ pub fn generate(
                             if !artifact {
                                 groups[tag].push((start * 2, marked.into()));
                             }
-                            let baseline = *y as f32 + metrics.baseline - metrics.min_coord;
+                            let baseline = *y as f32 + metrics.baseline - metrics.block_min_coord;
                             if let Some(background) = &style.background {
                                 surface.set_stroke(None);
                                 surface.set_fill(Some(fill(background)?));

@@ -37,7 +37,7 @@ fn system_fallback_shapes_mixed_scripts_and_color_emoji() {
     {
         let shaped = fonts
             .shape(&run(text), &Style::default(), 300.0, true)
-            .unwrap();
+            .unwrap_or_else(|error| panic!("System fallback fixture {text:?}: {error}"));
         assert!(shaped.layout.height() > 0.0);
     }
 }

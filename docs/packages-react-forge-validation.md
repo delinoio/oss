@@ -4,7 +4,7 @@
 Acceptance evidence and repeatable validation for `packages/react-forge`, its native engines and the shared Forge boundary. The complete requirements remain normative; this document records evidence without expanding platform, performance, Office or accessibility claims.
 
 ## Runtime and Language
-Node.js 24.20.0, React 19.2.8, react-reconciler 0.33.0, TypeScript 5.9.3 and pinned Rust nightly-2026-01-01 on macOS arm64. Test scripts use JavaScript and Python; production generation uses only JavaScript and Rust.
+Parley/Fontique 0.9.0 (CoreText enumeration and macOS 15 CJK fallback fixes), Node.js 24.20.0, React 19.2.8, react-reconciler 0.33.0, TypeScript 5.9.3 and pinned Rust nightly-2026-01-01 on macOS arm64. Test scripts use JavaScript and Python; production generation uses only JavaScript and Rust.
 
 ## Users and Operators
 Repository developers and CI maintainers reproducing document, preservation and session behavior.
