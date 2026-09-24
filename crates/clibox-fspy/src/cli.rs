@@ -11,7 +11,7 @@ use std::{
 use clap::{Args, Subcommand};
 
 use crate::{
-    assetcov, fbreak, latencylab, output,
+    assetcov, autowatch, fbreak, latencylab, output,
     trace::{self, Comparison, EncodedPath},
 };
 
@@ -64,6 +64,15 @@ pub enum Fspy {
                       quit/Ctrl+C, 143 SIGTERM."
     )]
     Fbreak(fbreak::Fbreak),
+    /// Rerun a command when its traced project inputs change.
+    #[command(
+        after_help = "Example: clibox fspy autowatch --include 'src/**' -- cargo test\nRuns \
+                      immediately, then watches observed inputs, queried directories, and missing \
+                      paths. Each run is serial; mmap and asynchronous I/O remain outside tracing \
+                      coverage.\nExit codes: 1 tracing/watch failure, 2 invalid input, 124 run \
+                      timeout, 130 Ctrl+C, 143 SIGTERM."
+    )]
+    Autowatch(autowatch::Autowatch),
 }
 
 #[derive(Args)]
@@ -164,6 +173,7 @@ pub fn execute(command: Fspy) -> i32 {
         Fspy::Assetcov(options) => assetcov::execute(options),
         Fspy::Latencylab(options) => latencylab::execute(options),
         Fspy::Fbreak(options) => fbreak::execute(options),
+        Fspy::Autowatch(options) => autowatch::execute(options),
     }
 }
 

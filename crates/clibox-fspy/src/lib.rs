@@ -4,6 +4,7 @@
 //! truncated or unsupported trace for a complete execution.
 
 mod assetcov;
+mod autowatch;
 pub mod cli;
 mod fbreak;
 mod latencylab;

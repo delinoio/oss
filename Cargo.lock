@@ -1827,6 +1827,7 @@ dependencies = [
  "globset",
  "libc",
  "linux-raw-sys 0.12.1",
+ "notify",
  "serde",
  "serde_json",
  "signal-hook",

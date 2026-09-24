@@ -88,7 +88,14 @@ fn missing_subcommands_show_command_help_on_stderr() {
         ("hash", &["compute", "verify"]),
         (
             "fspy",
-            &["record", "compare", "assetcov", "latencylab", "fbreak"],
+            &[
+                "record",
+                "compare",
+                "assetcov",
+                "latencylab",
+                "fbreak",
+                "autowatch",
+            ],
         ),
     ];
     for (group, subcommands) in groups {
@@ -190,6 +197,7 @@ fn every_command_has_help_and_examples() {
         vec!["fspy", "assetcov", "--help"],
         vec!["fspy", "latencylab", "--help"],
         vec!["fspy", "fbreak", "--help"],
+        vec!["fspy", "autowatch", "--help"],
     ] {
         for flag in ["-h", "--help"] {
             let mut args = args.clone();

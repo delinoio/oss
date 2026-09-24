@@ -26,6 +26,15 @@ mod linux {
         }
     }
 
+    struct OwnedChild(Child);
+
+    impl Drop for OwnedChild {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
     impl PtySession {
         fn launch(root: &Path, input: &Path) -> io::Result<Self> {
             let mut master = -1;
@@ -181,5 +190,75 @@ mod linux {
         assert_eq!(output.status.code(), Some(1));
         assert!(String::from_utf8_lossy(&output.stderr).contains("control_tty_unavailable"));
         assert!(!marker.exists());
+    }
+
+    #[test]
+    fn autowatch_reruns_on_input_change_and_ignores_write_only_output() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let input = root.path().join("input");
+        let output = root.path().join("output");
+        let runs = outside.path().join("runs");
+        fs::write(&input, b"first").unwrap();
+        let mut command = Command::new(env!("CARGO_BIN_EXE_clibox"));
+        command.args([
+            "fspy",
+            "autowatch",
+            "--root",
+            root.path().to_str().unwrap(),
+            "--include",
+            "input",
+            "--debounce",
+            "100ms",
+            "--",
+            "/bin/sh",
+            "-c",
+            "cat \"$1\" > \"$2\"; printf x >> \"$3\"",
+            "sh",
+            input.to_str().unwrap(),
+            output.to_str().unwrap(),
+            runs.to_str().unwrap(),
+        ]);
+        command.stdout(Stdio::null()).stderr(Stdio::null());
+        let mut child = OwnedChild(command.spawn().unwrap());
+        let wait_for_runs = |child: &mut OwnedChild, minimum: usize| {
+            let deadline = Instant::now() + Duration::from_secs(20);
+            while Instant::now() < deadline {
+                let count = fs::read(&runs).map_or(0, |bytes| bytes.len());
+                if count >= minimum {
+                    return;
+                }
+                assert!(
+                    child.0.try_wait().unwrap().is_none(),
+                    "autowatch exited early"
+                );
+                thread::sleep(Duration::from_millis(10));
+            }
+            panic!("autowatch did not reach run {minimum}");
+        };
+        wait_for_runs(&mut child, 1);
+        thread::sleep(Duration::from_millis(350));
+        assert_eq!(
+            fs::read(&runs).unwrap().len(),
+            1,
+            "self-write caused a rerun"
+        );
+        fs::write(&input, b"second").unwrap();
+        wait_for_runs(&mut child, 2);
+        assert_eq!(fs::read(&output).unwrap(), b"second");
+        // SAFETY: this signal targets only the test-owned watcher process.
+        assert_eq!(
+            unsafe { libc::kill(i32::try_from(child.0.id()).unwrap(), libc::SIGINT) },
+            0
+        );
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < deadline {
+            if let Some(status) = child.0.try_wait().unwrap() {
+                assert_eq!(status.code(), Some(130));
+                return;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        panic!("autowatch did not handle cancellation");
     }
 }
