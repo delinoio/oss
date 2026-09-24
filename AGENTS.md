@@ -97,10 +97,19 @@ enum ProjectId {
   PublicDocs = "public-docs",
   DevHud = "devhud",
   AsyncCommitHook = "async-commit-hook",
+  Forge = "forge",
+  ReactForge = "react-forge",
 }
 ```
 
+### React Forge Contract
+
+- `react-forge` is the private Node.js 24 / React 19.2.8 cross-platform document project in issue #968. Follow `docs/project-react-forge.md` and its complete requirements. Keep JavaScript reconciliation outside native workers, format models independent, sessions in memory, exports revision-pinned and atomic, and imported opaque content preserved. All required formats and evidence are required before completion.
+- React Forge owns `packages/react-forge`, `crates/react-forge-node`, `crates/forge-package`, `crates/forge-document`, `crates/forge-docx`, `crates/forge-xlsx`, and `crates/forge-pdf`; reuse existing Forge presentation engines without changing CLI/MCP defaults.
+
 ### Project Domain Ownership
+
+- `forge` -> `crates/forge-tree-doc`, `crates/forge-pptx`, `crates/delino-forge`; follow `docs/project-forge.md` and `docs/crates-forge-foundation.md`. Keep all three packages private, local-only, and preserve unsupported PPTX content during supported edits. Opened documents export to a separate path; reject replacement of their tracked source even with explicit overwrite. CLI/MCP share one core; optional preview is not a generation dependency.
 
 - `nodeup` -> `crates/nodeup`, `apps/public-docs/docs/nodeup`
 - `binpm` -> `crates/binpm`, `apps/public-docs/docs/binpm`
@@ -353,6 +362,7 @@ Coverage expectations:
 - `node-pnport-test`: checks launcher and package contracts, version synchronization, immutable artifacts, installer rollback, and fail-closed release publication on affected PRs and main pushes.
 - `pnport-native`: on affected main pushes and manual CI dispatch, runs the six native targets, installed npm/Yarn PnP consumers, TypeScript conformance, archive packaging, and direct-installer smoke. PRs skip this native matrix; the pnport tag workflow independently requires the same six targets before publication.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`.
+- `forge-test` and `forge-render`: validate the three private Forge crates on Linux/macOS/Windows, official stdio MCP interoperability, and mandatory Linux LibreOffice/Poppler rendering. Both follow central change planning and remain required in `CI Result`; optional local renderers do not make the selected render job optional.
 - `ci-contracts`: validates workflow syntax and the repository CI contract with the checked-in Go `actionlint` tool and Node fixtures.
 - `async-commit-hook`: follows the central change plan, runs Go race tests, local UI/docs/client tests, protocol freshness and release fixtures, and builds all six unsigned target archives. Shared setup actions restore caches; only successful main validation saves them.
 - `devhud-frontend`, `devhud-extension`, and `devhud-admin`: run package-local type, lint, unit, component, accessibility, and deterministic frontend/package builds.
@@ -482,3 +492,5 @@ Release automation baseline:
 - Keep dependency views read-only, graph/peer identity stable, cache ownership private, publication atomic and active leases protected. No runtime networking, telemetry, automatic eviction or self-update.
 - Native/npm versions and pnport@v<version> identity agree; skip Cargo registry credentials/publication. Complete-set execution/install verification precedes publication authority.
 - Keep unpublished pnport Cargo, lock, and npm source versions at `0.0.0` until the first minor bump to `0.1.0`; reject patch and major bumps from `0.0.0`. Release Project follows the common prepare/registry/tag/summary path without native validation or Cargo publication. The separate exact-tag workflow requires all six native execution, installed npm/Yarn PnP, TypeScript, archive, and installer gates before npm, GitHub Release, or Homebrew publication; it defaults to a credential-free dry run. A failed gate leaves the tag intact and blocks publication; recover in the pnport workflow without moving the tag. The public `/pnport` guides remain explicitly unreleased until publication.
+
+- `react-forge`: required affected Node 24 library, native and installed-CLI validation on macOS/Windows/glibc Linux x64/arm64; require real Windows console cancellation, macOS/Linux Office/PDF rendering and six-host benchmarks. Retain existing Forge regression jobs when shared package primitives change. Native/system-font work is uncached, render evidence expires after seven days, and this private workflow cannot publish packages or install production dependencies at runtime.

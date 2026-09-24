@@ -7,6 +7,22 @@
 
 ### Scope in This Domain
 
+- `crates/forge-tree-doc`, `crates/forge-pptx`, `crates/delino-forge`: private Forge DSL, preserving PPTX adapter, and local CLI/stdio MCP. Follow `docs/crates-forge-foundation.md`; keep structured logs free of document content and publish output only through explicit export to a separate path from an opened document's tracked source. Keep the committed schema synchronized with Rust types, retain font source/license/hash and external-fixture provenance, and exercise the optional-renderer test explicitly in Forge rendering CI.
+- Forge-generated content-type override paths must match the exact spelling of their ZIP members for reader interoperability. Scope compatibility normalization to new packages and preserve imported source XML.
+- Forge document lock guards must explicitly unlock on drop, including error exits, so duplicated or fork-inherited descriptors cannot extend a completed operation's lock lifetime. Preserve exclusive ownership checks and redact lock-release diagnostics.
+- Forge custom XML ownership requires both its package relationship and namespace identity. Preserve unrelated colliding part names and relationship IDs, and bind those original parts into the metadata hashes.
+- Forge metadata bindings must be unique native targets in their corresponding logical slide; validate native slide order and count before accepting the stored tree.
+- Forge packages require exactly one supported internal office-document root relationship; reject ambiguous roots before importing or editing.
+- Forge exports to an opened document's tracked source, including canonical path aliases, must fail with `unsupported_edit` even with explicit overwrite; a fingerprint check followed by unconditional replacement cannot protect external saves. Keep separate-output export and explicit replacement of those outputs available, and expose this boundary through CLI/MCP help and capabilities. Retain recovery of earlier builds' interrupted source-export journals under the document lock; unrelated external changes remain conflicts.
+- Forge atomic file publication must flush its renamed directory entry: sync the parent directory on Unix and use write-through same-volume publication on Windows. Propagate durability failures.
+- Forge chart insertion must reject collisions with preexisting chart, workbook and relationship parts, including case-equivalent package names. A supplied node identity never grants ownership of original package parts.
+- Forge image media reuse requires identical bytes, including case-equivalent part names; reject mismatched content instead of pointing a new image relationship at unrelated media.
+- Forge image import must validate full-frame stretch fill as well as crop/aspect geometry before allowing contain/cover edits; preserve other native picture fills as opaque.
+- Forge text import must validate body geometry against measurement semantics before exposing editable text; keep unrepresented insets, wrapping, columns, anchoring, rotation and autofit opaque.
+- Forge asset loading must visit only referenced image handles, deduplicate aliases, and bound aggregate bytes before reads in addition to per-file limits and checksum validation.
+- Forge nested canvases must validate unchanged children's bounds against their current allocation. Preserve native off-page bounds only for unchanged children under a slide-root canvas with unchanged page dimensions.
+- Forge containers must reject placeholder references before creation or patch commit; logical containers do not emit native placeholder shapes.
+
 - `crates/binpm`: Rust-based Node-free binary package manager for release assets.
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
 - `crates/clibox`: non-publishable Rust executable distributed through npm and native packages.
@@ -26,6 +42,8 @@
 - The real crate skeleton is an explicit root workspace member. The host is a bounded Chrome-to-desktop broker, not a plugin SDK or API/GitHub/R2 client.
 - Preserve Native Messaging origin/extension-ID/nonce/schema/timeout validation, a shared 256 KiB UTF-8 JSON body ceiling measured before length-prefix framing/parsing, user-scoped IPC, redacted `tracing` diagnostics, and the supported desktop OS/architecture matrix. Host connection establishment and authentication share one absolute five-second deadline on every platform. On Linux, create the non-secret per-user removal marker before persisting a pairing secret and remove it only after credential cleanup succeeds so Debian removal never depends on optional Chrome registration for affected-user discovery.
 - The host-to-app IPC is an app-owned, versioned v1 length-prefixed JSON protocol over the documented per-user Unix socket or Windows named pipe, authenticated with a platform-secure pairing secret and challenge/response; it is independent of Connect RPC. Keep pairing retries nonce-free after successful pairing authentication, keep revocation unavailable to Chrome-originated message types, and require the secret-bound revocation-only authentication scope to invalidate the live app generation before unregister reports success, including while first pairing is pending. Unregister must delete pairing credentials before removing its per-user registration so failed cleanup remains retryable, and Debian removal must run it through each affected active user session before package-owned files are removed.
+
+- Shared Forge native cancellation must remain operation-scoped, restore worker state after failure, and poll bounded processing loops. Existing CLI/MCP engine calls without a cancellation scope retain their behavior; JavaScript callbacks never enter workers.
 
 ### Rust Workspace Rules
 
@@ -216,7 +234,7 @@
 - pnport Linux must decide pathname rewriting by comparing the caller's resolved lookup path with physical backing. The PnP target identity may equal an unplugged package's physical path even when the caller used a virtual `node_modules` alias.
 - Linux pathname classification follows existing workspace symlink components into virtual or managed backing, while native paths retain their original bytes and no-follow operations act on the link inode itself.
 - pnport Linux arm64 syscall denial must update `NT_ARM_SYSTEM_CALL` after ordinary registers so rejected operations cannot execute during graceful cleanup.
-- A Linux seccomp admission failure must cancel the stopped syscall before graceful cleanup resumes the tracee; send final SIGKILL before the last ptrace continuation.
+- A Linux seccomp admission failure must cancel the stopped syscall and leave its consumed exit stop parked until cleanup queues the termination signal and resumes the tracee. Apply the same ordering to parked FD/cwd waiters; send final SIGKILL before the last ptrace continuation.
 - Leave invalid child pathname pointers to the Linux kernel so ordinary EFAULT behavior survives, including null pointers in both operands of path operations.
 - Linux openat2 must inspect extended open_how bytes before mediation: unknown nonzero extension bytes return E2BIG, zero bytes continue through virtual translation, and unreadable structures retain EFAULT.
 - Translated Linux script exec must return EFAULT to the caller for unreadable argv or envp vectors without terminating the owned tree.
@@ -227,3 +245,26 @@
 - pnport cache extraction must use a private snapshot verified against the destination archive digest. Rechecking only the mutable source after extraction cannot prove which bytes were published; retain rewrite-and-restore regression coverage.
 - pnport cache cancellation after read-only staging must restore directory write permission and explicitly remove the incomplete stage before returning an error.
 - pnport preload constructor entry and completed readiness are distinct acknowledgements. Supported cache lock waits after entry must not trigger the missing-injection deadline; a child result without readiness remains a failure.
+
+### React Forge Engine Rules
+
+- Follow `docs/crates-react-forge-contract.md` and the complete issue #968 requirements. `forge-package` owns shared bounded OOXML preservation; `forge-document` owns shared text/style, asset and chart primitives; `forge-docx`, `forge-xlsx`, and `forge-pdf` own independent models and engines. `react-forge-node` is only the private N-API adapter.
+- Native workers accept validated serializable data only. Never install a global logger, fetch external relationships, execute embedded content or silently discard unsupported content. Shared changes must retain Forge CLI/MCP behavior and pinned default fonts.
+- System discovery and caller fonts apply to React Forge only. Presentation inspection must not require font setup before the caller can register fonts. Check newly rendered content without rendering untouched opaque source. Keep all packages unpublished.
+- Emoji fallback must prefer supported color families on complete emoji graphemes before general text families, including with caller fonts only. Preserve ordinary digits/spacing and explicit text presentation selectors; do not globally prioritize emoji fonts for all text.
+- Keep React Forge font shaping and PDF tagging operation-owned. `TextLayout` injection and explicit `FontEmbedding` selection must preserve existing Forge API defaults. Office font references do not imply embedded caller fonts. PDF subset embedding must enforce licensing flags, and repeated visual table headers must remain pagination artifacts outside the logical reading order.
+
+- React Forge preserving PPTX updates must restore source-digest-bound node and image identities across independent native imports. External packages without Forge metadata must support no-op byte preservation and repeated mounted edits.
+
+- React Forge resource tests must cover accepted boundaries as well as over-limit rejection. Preserve iterative XML preflight and bounded-stack handling for valid deep XML until the upstream recursive parser has a proven safe stack bound.
+
+- Word drawing replacement owns only supported inline content; foreign paragraph/run attributes and surrounding bookmark/field/revision markers must stay opaque. Validate extension namespaces before exposing a chart as editable.
+
+- Spreadsheet rule editability requires modeled attributes on every rule and nested threshold/color element; unsupported precedence or rendering properties remain opaque even without extension namespaces.
+
+- DOCX text backgrounds use native run shading; paragraph defaults must be materialized on text runs with explicit run overrides retained.
+
+- React Forge must retain six native macOS/Windows/glibc Linux x64/arm64 targets. Enable all system-font tests in its prepared host matrix and validate Windows cancellation in an isolated real console, never by treating Node process.kill as a console event.
+- Presentation text editability must validate paragraph/run semantics as well as body geometry, including table-cell text. Preserve unmodeled fields, links, bullets, defaults and extensions as opaque content.
+- Imported PPTX update envelopes must contain replacements and source identity, not a serialized copy of untouched Office content. Apply the React-tree input ceiling to authored work without making successfully imported large documents unexportable.
+- Imported DOCX mounted measurements must use source section/cell flow constraints. Preserve unknown width as unavailable geometry while retaining safe edits; never substitute a default page width for ambiguous source layout.

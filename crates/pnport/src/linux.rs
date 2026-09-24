@@ -871,7 +871,16 @@ fn finish_denied_syscall(pid: i32, regs: &mut Registers) -> Result<()> {
     let mut returned = registers(pid)?;
     set_result(&mut returned, -(libc::ENOSYS as i64));
     set_registers(pid, &returned)?;
-    resume(pid, false, 0)
+    // Keep the consumed exit stop parked. Resuming here races stop_tree's
+    // signal delivery: a short-lived child can exit before its handler runs.
+    // Cleanup is the sole owner of the next continuation, after queuing the
+    // termination signal; this also applies to cancelled FD/cwd waiters.
+    tracing::debug!(
+        action = "linux_denied_syscall_parked",
+        pid,
+        "Cancelled syscall is parked for cleanup signal delivery"
+    );
+    Ok(())
 }
 #[cfg(target_arch = "x86_64")]
 fn argument(regs: &Registers, index: usize) -> u64 {
@@ -3097,6 +3106,12 @@ impl Trace<'_> {
             libc::SIGINT | libc::SIGHUP | libc::SIGTERM => super::supervisor::handled_signal(),
             _ => libc::SIGTERM,
         };
+        tracing::debug!(
+            action = "linux_cleanup_signal",
+            signal = termination_signal,
+            tasks = self.tasks.len(),
+            "Signalling owned children before resuming cleanup stops"
+        );
         for pid in &self.tasks {
             unsafe {
                 if self.early_stops.contains(pid) {
@@ -3557,10 +3572,11 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
     outcome
 }
 
-#[cfg(all(test, target_arch = "x86_64"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
+    #[cfg(target_arch = "x86_64")]
     #[test]
     fn scratch_replay_restores_x64_syscall_number() {
         let mut regs: Registers = unsafe { mem::zeroed() };
@@ -3573,5 +3589,77 @@ mod tests {
         assert_eq!(regs.rip, 0x1000);
         assert_eq!(regs.orig_rax, libc::SYS_execve as u64);
         assert_eq!(regs.rax, libc::SYS_execve as u64);
+    }
+    #[test]
+    fn denied_syscall_stays_parked_until_cleanup_owns_continuation() {
+        use std::os::fd::{FromRawFd, OwnedFd};
+        let mut pipe = [0; 2];
+        assert_eq!(
+            unsafe { libc::pipe2(pipe.as_mut_ptr(), libc::O_CLOEXEC) },
+            0
+        );
+        let reader = unsafe { OwnedFd::from_raw_fd(pipe[0]) };
+        let writer = unsafe { OwnedFd::from_raw_fd(pipe[1]) };
+        let pid = unsafe { libc::fork() };
+        assert!(pid >= 0);
+        if pid == 0 {
+            // Only async-signal-safe libc operations between fork and _exit.
+            unsafe {
+                libc::close(pipe[0]);
+                if libc::ptrace(libc::PTRACE_TRACEME, 0, 0, 0) != 0 {
+                    libc::_exit(90);
+                }
+                libc::raise(libc::SIGSTOP);
+                libc::syscall(libc::SYS_close, pipe[1]);
+                libc::write(pipe[1], b"R".as_ptr().cast(), 1);
+                libc::_exit(0);
+            }
+        }
+        struct Child(i32);
+        impl Drop for Child {
+            fn drop(&mut self) {
+                unsafe {
+                    libc::kill(self.0, libc::SIGKILL);
+                    libc::ptrace(libc::PTRACE_CONT, self.0, 0, 0);
+                    libc::waitpid(self.0, std::ptr::null_mut(), WAIT_ALL);
+                }
+            }
+        }
+        let _child = Child(pid);
+        drop(writer);
+        let mut status = 0;
+        assert_eq!(unsafe { libc::waitpid(pid, &mut status, WAIT_ALL) }, pid);
+        assert!(libc::WIFSTOPPED(status));
+        assert_eq!(
+            unsafe { libc::ptrace(libc::PTRACE_SETOPTIONS, pid, 0, libc::PTRACE_O_TRACESYSGOOD) },
+            0
+        );
+        resume(pid, true, 0).unwrap();
+        assert_eq!(unsafe { libc::waitpid(pid, &mut status, WAIT_ALL) }, pid);
+        assert_eq!(libc::WSTOPSIG(status), libc::SIGTRAP | 0x80);
+        let mut regs = registers(pid).unwrap();
+        assert_eq!(number(&regs), libc::SYS_close);
+        finish_denied_syscall(pid, &mut regs).unwrap();
+        let mut ready = libc::pollfd {
+            fd: pipe[0],
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // The old premature continuation writes immediately, regardless of
+        // whether the supervisor wins the later SIGTERM scheduling race.
+        assert_eq!(
+            unsafe { libc::poll(&mut ready, 1, 100) },
+            0,
+            "child ran before cleanup continuation"
+        );
+        resume(pid, false, 0).unwrap();
+        assert_eq!(unsafe { libc::poll(&mut ready, 1, 1000) }, 1);
+        let mut byte = 0_u8;
+        assert_eq!(
+            unsafe { libc::read(pipe[0], (&mut byte as *mut u8).cast(), 1) },
+            1
+        );
+        assert_eq!(byte, b'R', "the denied close must not execute");
+        drop(reader);
     }
 }

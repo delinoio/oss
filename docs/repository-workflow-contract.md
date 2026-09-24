@@ -22,6 +22,10 @@ The shared checksum generator keeps sorted recursive paths, GNU filename escapin
 
 CI never builds a signed private candidate and never publishes.
 
+Forge uses `forge-test` on Linux, macOS, and Windows for its three private Rust crates, DSL, preservation, state and official MCP-client tests. `forge-render` installs LibreOffice Impress and Poppler on Linux and explicitly runs the normally ignored renderer integration test, retaining PNG/PDF evidence for seven days. Both jobs participate in central path selection and `CI Result`; neither publishes packages or artifacts outside the workflow run.
+
+Both Forge jobs are selected for root `rust-toolchain` changes on pull requests and main pushes. The alternate `rust-toolchain.toml` filename remains covered for a future toolchain configuration migration.
+
 The three-OS Go matrix runs `go test -timeout=20m ./...`. Native Git/PowerShell and durable SQLite fixtures on hosted Windows outgrew Go's default 10-minute package budget. This bounded test watchdog does not introduce a timeout for ach commands or increase product concurrency limits. Bulk scheduler-only queue setup uses one durable transaction so it measures the worker scenario instead of thousands of independent disk flushes.
 
 The `async-commit-hook` CI job follows the central change plan and validates the Go runner with race detection, its local UI, documentation app/client and generated protocol, release fixtures, and all six CGO-free target archives. Its path rule includes the owned source, installers, release workflow and packaging, documentation contracts, and shared Go/Node/protocol inputs; unrelated changes skip it. It uses the shared cache policy and participates in the exact `ci-result` inventory. Its temporary archives remain unsigned and unpublished. The separate manually dispatched `release-async-commit-hook.yml` owns signing, GitHub Release and Homebrew publication; consolidated documentation publication belongs to `public-docs`, and its default dry run cannot enter publication jobs. See [the release contract](cmds-async-commit-hook-release-contract.md).
@@ -104,3 +108,8 @@ Manual dispatch defaults to dry-run and may validate a development ref. Non-dry-
 All nine packages require a Trusted Publisher permitting publication from `delinoio/oss` and `release-clibox.yml`. Setting `CLIBOX_NPM_PUBLISH_ENABLED=false` or leaving it unset disables npm publication while retaining validated artifacts; it does not disable the separately guarded GitHub Release or native package jobs. Publisher configuration and retry requirements are in [the npm distribution contract](packages-clibox-distribution-contract.md). No setup or validation command dispatches a workflow or publishes a registry version.
 
 Repository-wide Go quality/tests and ach-specific compilation must first generate the app-owned ach UI embed using `pnpm --filter async-commit-hook build:embedded`. The root Go checks also retain the existing administrator embed prerequisite. The consolidated `public-docs` build renders the async content under `/async-commit-hook`; the executable release builder regenerates the local UI before cross-compilation.
+
+
+### React Forge validation
+
+The centrally planned `react-forge` job runs on affected pull requests and main pushes and is required by `CI Result`. Its macOS arm64/Node 24 boundary follows `docs/packages-react-forge-contract.md`: package-owned uncached native build and integration, installed CLI, native/legacy Forge regressions, test-only LibreOffice/Poppler rendering and benchmarks. It retains evidence for seven days and removes generated package dist. Shared `forge-package` changes also select existing Forge validation/render jobs. No publishing or release infrastructure is introduced.

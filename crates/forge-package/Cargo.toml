@@ -1,0 +1,13 @@
+[package]
+name = "forge-package"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+forge-tree-doc = { path = "../forge-tree-doc" }
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+roxmltree = "0.21.1"
+quick-xml = "0.39.4"
+sha2 = "0.10.9"

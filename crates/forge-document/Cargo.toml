@@ -1,0 +1,22 @@
+[package]
+name = "forge-document"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+forge-tree-doc = { path = "../forge-tree-doc" }
+forge-package = { path = "../forge-package" }
+serde = { version = "1.0.228", features = ["derive"] }
+uuid = { version = "1.23.0", features = ["v7", "serde"] }
+rust_xlsxwriter = "=0.99.1"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
+url = "2.5.8"
+parley = "=0.9.0"
+parley_data = "=0.9.0"
+unicode-segmentation = "=1.13.3"
+fontique = "=0.9.0"
+# Keep legacy Macintosh font-name decoding independent of Parley's shaper.
+swash = "=0.2.10"
+ttf-parser = "=0.25.1"

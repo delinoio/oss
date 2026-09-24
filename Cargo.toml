@@ -1,6 +1,15 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/forge-tree-doc",
+    "crates/forge-pptx",
+    "crates/forge-package",
+    "crates/forge-document",
+    "crates/forge-docx",
+    "crates/forge-xlsx",
+  "crates/forge-pdf",
+    "crates/react-forge-node",
+    "crates/delino-forge",
     "apps/devhud/src-tauri",
     "crates/devhud-native-messaging-host",
     "crates/binpm",

@@ -1,0 +1,38 @@
+[package]
+name = "react-forge-node"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+test = false
+doctest = false
+
+[dependencies]
+napi = { version = "=3.13.0", default-features = false, features = ["napi8", "dyn-symbols"] }
+napi-derive = "=3.6.9"
+forge-tree-doc = { path = "../forge-tree-doc" }
+forge-pptx = { path = "../forge-pptx" }
+forge-package = { path = "../forge-package" }
+forge-docx = { path = "../forge-docx" }
+serde = { version = "1.0.228", features = ["derive"] }
+# JavaScript serializes imported floating-point geometry before a preserving
+# update. Exact parsing must retain f64 identity for no-op comparisons.
+serde_json = { version = "1.0.149", features = ["float_roundtrip"] }
+uuid = { version = "1.23.0", features = ["v7", "serde"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", default-features = false, features = ["registry", "std"] }
+
+forge-xlsx = { path = "../forge-xlsx" }
+forge-document = { path = "../forge-document" }
+
+forge-pdf = { path = "../forge-pdf" }
+
+[build-dependencies]
+napi-build = "=2.5.0"
+
+[target.'cfg(windows)'.dev-dependencies]
+tempfile = "=3.25.0"
+windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_System_Threading"] }

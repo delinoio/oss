@@ -1,0 +1,44 @@
+{
+  "extends": [
+    "//"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": [],
+      "cache": false,
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME"
+      ],
+      "outputs": [
+        "dist/**"
+      ]
+    },
+    "test": {
+      "dependsOn": [
+        "build"
+      ],
+      "cache": false,
+      "passThroughEnv": [
+        "npm_execpath"
+      ]
+    },
+    "test:render": {
+      "dependsOn": [
+        "build"
+      ],
+      "cache": false,
+      "passThroughEnv": [
+        "REACT_FORGE_SOFFICE",
+        "REACT_FORGE_PDFTOPPM",
+        "REACT_FORGE_PYTHON"
+      ]
+    },
+    "benchmark": {
+      "dependsOn": [
+        "build"
+      ],
+      "cache": false
+    }
+  }
+}

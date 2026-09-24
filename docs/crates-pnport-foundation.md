@@ -184,3 +184,5 @@ Update the project index, requirements traceability, npm/public documentation co
 - [Project](project-pnport.md)
 - [Requirements](crates-pnport-requirements.md)
 - [Repository defaults](repository-defaults.md)
+
+After cancelling a failed seccomp entry or a parked FD/cwd waiter, the Linux supervisor consumes the denied syscall's exit stop but leaves the tracee parked. Cleanup queues its termination signal before owning the next continuation. Resuming between those steps lets short-lived children exit before their signal handler runs. Structured debug events distinguish parked denial from cleanup signal delivery; the native regression proves the child cannot run until that explicit continuation.
