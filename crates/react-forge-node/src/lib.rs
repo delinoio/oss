@@ -324,3 +324,40 @@ pub fn plan_figma(
         cancelled: cancellation.flag.clone(),
     }))
 }
+
+pub struct FigmaImageOperation {
+    bytes: Vec<u8>,
+    cancelled: Arc<AtomicBool>,
+}
+impl Task for FigmaImageOperation {
+    type JsValue = bool;
+    type Output = bool;
+
+    fn compute(&mut self) -> napi::Result<bool> {
+        if self.cancelled.load(Ordering::Acquire) {
+            return Err(cancelled());
+        }
+        forge_document::image(&self.bytes).map_err(native_error)?;
+        if self.cancelled.load(Ordering::Acquire) {
+            return Err(cancelled());
+        }
+        Ok(true)
+    }
+
+    fn resolve(&mut self, _env: Env, output: bool) -> napi::Result<bool> {
+        Ok(output)
+    }
+}
+#[napi]
+pub fn validate_figma_image(
+    bytes: Buffer,
+    cancellation: &Cancellation,
+) -> napi::Result<AsyncTask<FigmaImageOperation>> {
+    if bytes.len() > 10 * 1024 * 1024 {
+        return Err(napi::Error::from_reason("resource_limit"));
+    }
+    Ok(AsyncTask::new(FigmaImageOperation {
+        bytes: bytes.to_vec(),
+        cancelled: cancellation.flag.clone(),
+    }))
+}

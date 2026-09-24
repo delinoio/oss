@@ -89,12 +89,13 @@ export const Instance = component<
   }
 >("instance");
 export const VariableCollection = component<
-  ElementProps & { name: string; nodeKey: string }
+  ElementProps & { name: string; nodeKey: string; target?: string }
 >("collection");
 export const Variable = component<
   ElementProps & {
     name: string;
     nodeKey: string;
+    target?: string;
     collection: string;
     resolvedType: "COLOR" | "FLOAT" | "STRING" | "BOOLEAN";
     value: string | number | boolean | { r: number; g: number; b: number };
@@ -103,7 +104,12 @@ export const Variable = component<
   }
 >("variable");
 export const PaintStyle = component<
-  ElementProps & { name: string; nodeKey: string; fill: string }
+  ElementProps & {
+    name: string;
+    nodeKey: string;
+    target?: string;
+    fill: string;
+  }
 >("paint-style");
 export const TextStyle = component<
   Omit<FigmaTextProps, "children"> & { name: string; nodeKey: string }

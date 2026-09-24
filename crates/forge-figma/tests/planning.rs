@@ -67,7 +67,7 @@ fn explicit_external_target_updates_in_place() {
 }
 #[test]
 fn rejects_kind_replacement_and_reparenting() {
-    let e = node(Kind::Frame, None, None);
+    let e = node(Kind::Frame, Some("@1:2".into()), Some("@0:1".into()));
     let mut changed = e.clone();
     changed.kind = Kind::Rectangle;
     let mut i = input(vec![changed]);
@@ -84,7 +84,7 @@ fn validates_paints_fonts_and_unknown_properties_before_writes() {
         ("fontSize", json!(-2)),
         ("setPluginData", json!("no")),
     ] {
-        let mut e = node(Kind::Text, None, None);
+        let mut e = node(Kind::Text, Some("@1:2".into()), Some("@0:1".into()));
         e.props.insert(key.into(), value);
         assert_eq!(plan(input(vec![e])).unwrap_err(), Error::MalformedInput);
     }
@@ -123,7 +123,7 @@ fn batches_on_actual_utf16_units_and_pages() {
 }
 #[test]
 fn rejects_an_indivisible_oversize_operation() {
-    let mut e = node(Kind::Text, None, None);
+    let mut e = node(Kind::Text, Some("@1:2".into()), Some("@0:1".into()));
     e.props
         .insert("characters".into(), json!("x".repeat(10000)));
     assert_eq!(plan(input(vec![e])).unwrap_err(), Error::ResourceLimit);

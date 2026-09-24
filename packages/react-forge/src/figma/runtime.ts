@@ -2,7 +2,7 @@
  * never interpolated into executable fragments. No workflow metadata is stored. */
 export const runtime = String.raw`
 const result={bindings:{...input.bindings},snapshots:{},createdNodeIds:[],mutatedNodeIds:[],deletedNodeIds:[],completed:0};
-const fields=['name','x','y','width','height','rotation','opacity','visible','fills','strokes','strokeWeight','cornerRadius','clipsContent','layoutMode','paddingTop','paddingRight','paddingBottom','paddingLeft','itemSpacing','primaryAxisAlignItems','counterAxisAlignItems','primaryAxisSizingMode','counterAxisSizingMode','layoutSizingHorizontal','layoutSizingVertical','characters','fontName','fontSize','textAutoResize','textAlignHorizontal','lineHeight','letterSpacing','vectorPaths','boundVariables','fillStyleId','textStyleId'];
+const fields=['name','x','y','width','height','rotation','opacity','visible','fills','strokes','strokeWeight','cornerRadius','clipsContent','layoutMode','paddingTop','paddingRight','paddingBottom','paddingLeft','itemSpacing','primaryAxisAlignItems','counterAxisAlignItems','primaryAxisSizingMode','counterAxisSizingMode','layoutSizingHorizontal','layoutSizingVertical','characters','fontName','fontSize','textAutoResize','textAlignHorizontal','lineHeight','letterSpacing','vectorPaths','boundVariables','fillStyleId','textStyleId','componentProperties'];
 const copy=v=>v===undefined||typeof v==='symbol'?null:JSON.parse(JSON.stringify(v));
 const canonical=v=>JSON.stringify(v,(_k,x)=>x&&typeof x==='object'&&!Array.isArray(x)?Object.fromEntries(Object.keys(x).sort().map(k=>[k,x[k]])):x);
 const remote=k=>k?.startsWith('@')?k.slice(1):result.bindings[k];
@@ -33,9 +33,9 @@ function snapshot(n,kind){
  else if(kind==='VARIABLE'){props.name=n.name;props.resolvedType=n.resolvedType;props.valuesByMode=copy(n.valuesByMode);props.scopes=copy(n.scopes);props.codeSyntax=copy(n.codeSyntax);}
  else if(kind==='PAINT_STYLE'){props.name=n.name;props.paints=copy(n.paints);}
  else {for(const k of fields){if(k in n){try{props[k]=copy(n[k]);}catch{}}}}
- const parent=n.parent?.id||null,children='children'in n?n.children.map(c=>c.id):[];
+ const parent='parent'in n?n.parent?.id||null:null,children='children'in n?n.children.map(c=>c.id):[];
  // Auto layout and text reflow derive these values from other guarded fields.
- if(n.parent&&'layoutMode'in n.parent&&n.parent.layoutMode!=='NONE'){delete props.x;delete props.y;}
+ if('parent'in n&&n.parent&&'layoutMode'in n.parent&&n.parent.layoutMode!=='NONE'){delete props.x;delete props.y;}
  if(['HUG','FILL'].includes(props.layoutSizingHorizontal)||props.textAutoResize==='WIDTH_AND_HEIGHT')delete props.width;
  if(['HUG','FILL'].includes(props.layoutSizingVertical)||['HEIGHT','WIDTH_AND_HEIGHT'].includes(props.textAutoResize))delete props.height;
  const stateHash=sha256(canonical({id:n.id,type:kind||n.type,parent,children,props}));
@@ -45,12 +45,12 @@ function snapshot(n,kind){
  return {id:n.id,type:kind||n.type,parent,children:[],props:compact,stateHash,bounds:'width'in n?box||{x:n.x||0,y:n.y||0,width:n.width,height:n.height}:undefined};
 }
 const loadedFonts=new Set();
-async function fonts(n,p){
+async function fonts(n,p,kind){
  const all=[];
- if(n?.type==='TEXT')for(const s of n.getStyledTextSegments(['fontName']))all.push(s.fontName);
+ if(n&&kind==='TEXT'){for(const s of n.getStyledTextSegments(['fontName']))all.push(s.fontName);if(!n.characters&&typeof n.fontName!=='symbol')all.push(n.fontName);}
  if(p.fontName)all.push(p.fontName);
  if(!n&&p.characters!==undefined&&!p.fontName)all.push({family:'Inter',style:'Regular'});
- for(const f of all){const k=JSON.stringify(f);if(!loadedFonts.has(k)){loadedFonts.add(k);await figma.loadFontAsync(f);}}
+ for(const f of all){const k=JSON.stringify(f);if(!loadedFonts.has(k)){loadedFonts.add(k);try{await figma.loadFontAsync(f);}catch{throw Error('missing_font');}}}
 }
 if(input.page){const p=await lookup(remote(input.page));if(!p||p.type!=='PAGE')throw Error('invalid_target');await figma.setCurrentPageAsync(p);}
 if(input.mode==='reconcile'){
@@ -72,24 +72,25 @@ if(input.mode==='reconcile'){
 }
 if(input.mode==='inspect'){
  const nodes=[];
- if(input.resources){const resources=[...(await figma.variables.getLocalVariableCollectionsAsync()).map(n=>({n,kind:'COLLECTION'})),...(await figma.variables.getLocalVariablesAsync()).map(n=>({n,kind:'VARIABLE'})),...(await figma.getLocalPaintStylesAsync()).map(n=>({n,kind:'PAINT_STYLE'})),...(await figma.getLocalTextStylesAsync()).map(n=>({n,kind:'TEXT_STYLE'}))];const offset=input.offset||0;for(const {n,kind}of resources.slice(offset,offset+24))nodes.push(snapshot(n,kind));return {nodes,nextOffset:offset+nodes.length<resources.length?offset+nodes.length:null};}
- else if(input.targets){for(const t of input.targets){const n=await lookup(t.id,t.kind);if(n)nodes.push(snapshot(n,t.kind));}}
+ if(input.resources){const resources=[...(await figma.variables.getLocalVariableCollectionsAsync()).map(n=>({n,kind:'COLLECTION'})),...(await figma.variables.getLocalVariablesAsync()).map(n=>({n,kind:'VARIABLE'})),...(await figma.getLocalPaintStylesAsync()).map(n=>({n,kind:'PAINT_STYLE'})),...(await figma.getLocalTextStylesAsync()).map(n=>({n,kind:'TEXT_STYLE'}))];const offset=input.offset||0;for(const {n,kind}of resources.slice(offset,offset+32))nodes.push(snapshot(n,kind));return {nodes,nextOffset:offset+nodes.length<resources.length?offset+nodes.length:null};}
+ else if(input.targets){const found=new Map();for(const t of input.targets){let n=await lookup(t.id,t.kind),depth=0;while(n){if(found.has(n.id))break;if(depth++>48)throw Error('resource_limit');found.set(n.id,snapshot(n,depth===1?t.kind:undefined));n='parent'in n&&n.parent?.type!=='DOCUMENT'?n.parent:null;}}const all=[...found.values()],offset=input.offset||0;nodes.push(...all.slice(offset,offset+32));return {nodes,nextOffset:offset+nodes.length<all.length?offset+nodes.length:null};}
  else if(input.page){
-  let index=0;const offset=input.offset||0;const walk=(n,depth)=>{if(depth>48||index>=20000)throw Error('resource_limit');if(index>=offset&&nodes.length<24)nodes.push(snapshot(n));index++;if('children'in n)for(const c of n.children)walk(c,depth+1);};walk(figma.currentPage,0);return {nodes,nextOffset:offset+nodes.length<index?offset+nodes.length:null};
- }else{const offset=input.offset||0;for(const p of figma.root.children.slice(offset,offset+24))nodes.push(snapshot(p));return {nodes,nextOffset:offset+nodes.length<figma.root.children.length?offset+nodes.length:null};}
+  let index=0;const offset=input.offset||0;const walk=(n,depth)=>{if(depth>48||index>=20000)throw Error('resource_limit');if(index>=offset&&nodes.length<32)nodes.push(snapshot(n));index++;if('children'in n)for(const c of n.children)walk(c,depth+1);};walk(figma.currentPage,0);return {nodes,nextOffset:offset+nodes.length<index?offset+nodes.length:null};
+ }else{const offset=input.offset||0;for(const p of figma.root.children.slice(offset,offset+32))nodes.push(snapshot(p));return {nodes,nextOffset:offset+nodes.length<figma.root.children.length?offset+nodes.length:null};}
  return {nodes};
 }
 if(input.mode==='screenshot'){const n=await lookup(input.nodeId);if(!n)throw Error('invalid_target');await n.screenshot({scale:input.scale||1});return {nodeId:n.id};}
 const oldIds=new Set(input.operations.filter(o=>o.action==='delete').map(o=>remote(o.entity.key)));
 try{
+ // Font readiness is checked before mutation, including current mixed fonts.
+ for(const op of input.operations){const n=await lookup(remote(op.entity.key),op.entity.kind);if(op.action==='delete'&&n&&'children'in n&&n.children.some(c=>!oldIds.has(c.id)))throw Error('unsupported_edit');if(n&&op.entity.kind==='VARIABLE'&&(n.resolvedType!==op.entity.props.resolvedType||n.variableCollectionId!==remote(op.entity.props.collection)))throw Error('unsupported_edit');if(n&&op.entity.kind==='INSTANCE'){const main=await n.getMainComponentAsync();if(main?.id!==remote(op.entity.props.component))throw Error('unsupported_edit');}await fonts(n,op.entity.props,op.entity.kind);}
  // Check the complete batch before the first write; never overwrite a foreign
  // save that changed a selected node since our baseline read.
  for(const [id,expected] of Object.entries(input.expected||{})){
   const n=await lookup(id,expected.type);
   if(!n||snapshot(n,expected.type).stateHash!==expected.stateHash){result.errorCode='conflict';return result;}
  }
- // Font readiness is checked before mutation, including current mixed fonts.
- for(const op of input.operations){const n=await lookup(remote(op.entity.key),op.entity.kind);if(op.action==='delete'&&n&&'children'in n&&n.children.some(c=>!oldIds.has(c.id)))throw Error('unsupported_edit');await fonts(n,op.entity.props);}
+
  for(const op of input.operations){
   const e=op.entity,p=e.props;let n=await lookup(remote(e.key),e.kind);const existed=!!n;
   if(op.action==='delete'){
@@ -120,7 +121,7 @@ try{
    if(e.parent&&e.kind!=='COMPONENT_SET'&&e.kind!=='VARIABLE'){
     const parent=await lookup(remote(e.parent));if(!parent||!('appendChild'in parent))throw Error('invalid_target');parent.appendChild(n);
    }
-  }else if(n.type!==e.kind&& !['COLLECTION','VARIABLE','PAINT_STYLE','TEXT_STYLE'].includes(e.kind))throw Error('unsupported_edit');
+  }else if(!['COLLECTION','VARIABLE','PAINT_STYLE','TEXT_STYLE'].includes(e.kind)&&n.type!==e.kind)throw Error('unsupported_edit');
   if(p.layoutMode!==undefined)n.layoutMode=p.layoutMode;
   if((p.width!==undefined||p.height!==undefined)&&'resize'in n)n.resize(p.width??n.width,p.height??n.height);
   if(p.fontName)n.fontName=p.fontName;
@@ -147,11 +148,13 @@ try{
   if(existed)result.mutatedNodeIds.push(n.id);
   result.completed++;
  }
-}catch(error){result.errorCode=['conflict','invalid_target','unsupported_edit','resource_limit'].includes(error?.message)?error.message:'remote';}
+}catch(error){result.errorCode=['conflict','invalid_target','unsupported_edit','resource_limit','missing_font'].includes(error?.message)?error.message:'remote';}
 // Return actual post-write state even on a property setter failure. A caller can
 // reconcile known creations without repeating them; lost responses remain unknown.
 const capture=(n,kind)=>{result.snapshots[n.id]=snapshot(n,kind);};
-for(const op of input.operations){const id=remote(op.entity.key);const n=await lookup(id,op.entity.kind);if(n){capture(n,op.entity.kind);if(n.parent?.type!=='DOCUMENT'&&n.parent)result.snapshots[n.parent.id]=snapshot(n.parent);}}
+for(const op of input.operations){const id=remote(op.entity.key);const n=await lookup(id,op.entity.kind);if(n){capture(n,op.entity.kind);if('parent'in n&&n.parent&&n.parent.type!=='DOCUMENT')result.snapshots[n.parent.id]=snapshot(n.parent);}}
+for(const [id,state]of Object.entries(result.snapshots)){if(input.expected?.[id]?.stateHash&&state.stateHash!==input.expected[id].stateHash&&!result.createdNodeIds.includes(id))result.mutatedNodeIds.push(id);}
+result.mutatedNodeIds=[...new Set(result.mutatedNodeIds)];
 result.bindings=Object.fromEntries(input.operations.map(op=>[op.entity.key,result.bindings[op.entity.key]]).filter(([,id])=>id));
 return result;
 `;

@@ -9,7 +9,7 @@ import test from "node:test";
 const exec = promisify(execFile);
 const cases = [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"]] as const;
 
-test("scoped workspace archive installs and its CLI generates all four formats", async () => {
+test("scoped workspace archive installs and its CLI generates local formats and an offline Figma receipt", async () => {
   const directory = await mkdtemp(join(tmpdir(), "react-forge installed-"));
   const packageRoot = fileURLToPath(new URL("../", import.meta.url));
   const env = { ...process.env, PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ""}` };
@@ -34,6 +34,14 @@ test("scoped workspace archive installs and its CLI generates all four formats",
       const result = JSON.parse(stdout); assert.equal(result.ok, true); assert.equal(result.format, format);
       const bytes = await readFile(output); assert.equal(bytes.subarray(0, format === "pdf" ? 5 : 2).toString(), format === "pdf" ? "%PDF-" : "PK");
     }
+    assert.ok(manifest.exports["./figma"]);
+    const fake=await readFile(join(packageRoot,"tests","figma","fake.ts"),"utf8");
+    await writeFile(join(directory,"tasks","fake-figma.ts"),fake.replace(/import[^;]+;/,"const CallSafety={Read:'read',Write:'write'};"));
+    await writeFile(join(directory,"tasks","figma.tsx"),`import React from 'react';import {FigmaSession} from '@delino/react-forge';import {Page,Text} from '@delino/react-forge/figma';import {FakeConnection} from './fake-figma.js';export default async function(){const session=new FigmaSession({fileName:'Fixture',planKey:'team::1'},new FakeConnection());await session.render(<Page name="Installed"><Text>Editable</Text></Page>);return session;}`);
+    const figmaOutput=join(directory,"result.figma.json");
+    const figma=await exec(process.execPath,[cli,"run",join(directory,"tasks","figma.tsx"),"--output",figmaOutput,"--json"],{cwd:directory,env});
+    assert.equal(JSON.parse(figma.stdout).status,"complete");
+    const receipt=JSON.parse(await readFile(figmaOutput,"utf8"));assert.equal(receipt.format,"figma");assert.ok(receipt.createdNodeIds.length>=2);assert.ok(!JSON.stringify(receipt).includes("Editable"));
     const shim = join(directory, "node_modules", ".bin", process.platform === "win32" ? "react-forge.cmd" : "react-forge");
     // cmd files require the Windows command processor. Only the fixture-owned
     // shim and a literal flag enter this command; document input never does.

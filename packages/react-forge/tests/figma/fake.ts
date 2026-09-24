@@ -78,6 +78,7 @@ export class FakeCanvas {
       value.createInstance = () => {
         const n = this.node("INSTANCE");
         n.mainComponent = value;
+        n.getMainComponentAsync = async () => value;
         n.setProperties = (p: any) => {
           n.componentProperties = { ...p };
         };
@@ -101,6 +102,65 @@ export class FakeCanvas {
     const canvas = this;
     let current = canvas.page;
     return {
+      variables: {
+        createVariableCollection: (name: string) => {
+          const n = canvas.node("COLLECTION");
+          n.name = name;
+          n.modes = [{ modeId: "m:1", name: "Mode 1" }];
+          n.defaultModeId = "m:1";
+          n.variableIds = [];
+          return n;
+        },
+        createVariable: (name: string, collection: any, type: string) => {
+          const n = canvas.node("VARIABLE");
+          n.name = name;
+          n.variableCollectionId = collection.id;
+          n.resolvedType = type;
+          n.valuesByMode = {};
+          n.scopes = [];
+          n.codeSyntax = {};
+          n.setValueForMode = (mode: string, value: unknown) => {
+            n.valuesByMode[mode] = value;
+          };
+          n.setVariableCodeSyntax = (platform: string, syntax: string) => {
+            n.codeSyntax[platform] = syntax;
+          };
+          collection.variableIds.push(n.id);
+          return n;
+        },
+        getVariableCollectionByIdAsync: async (id: string) =>
+          canvas.nodes.get(id) ?? null,
+        getVariableByIdAsync: async (id: string) =>
+          canvas.nodes.get(id) ?? null,
+        getLocalVariableCollectionsAsync: async () =>
+          [...canvas.nodes.values()].filter((n) => n.type === "COLLECTION"),
+        getLocalVariablesAsync: async () =>
+          [...canvas.nodes.values()].filter((n) => n.type === "VARIABLE"),
+        setBoundVariableForPaint: (
+          paint: any,
+          field: string,
+          variable: any,
+        ) => ({
+          ...paint,
+          boundVariables: {
+            [field]: { type: "VARIABLE_ALIAS", id: variable.id },
+          },
+        }),
+      },
+      getStyleByIdAsync: async (id: string) => canvas.nodes.get(id) ?? null,
+      getLocalPaintStylesAsync: async () =>
+        [...canvas.nodes.values()].filter((n) => n.type === "PAINT_STYLE"),
+      getLocalTextStylesAsync: async () =>
+        [...canvas.nodes.values()].filter(
+          (n) => n._resourceKind === "TEXT_STYLE",
+        ),
+      createPaintStyle: () => canvas.node("PAINT_STYLE"),
+      createTextStyle: () => {
+        const n = canvas.node("TEXT_STYLE");
+        n._resourceKind = "TEXT_STYLE";
+        n.type = "TEXT";
+        return n;
+      },
       root: canvas.root,
       get currentPage() {
         return current;
@@ -157,6 +217,13 @@ export class FakeConnection implements FigmaConnection {
       this.writes++;
       return { file_key: FILE };
     }
+    if (name === "upload_assets")
+      return {
+        uploads: args.nodeIds.map((id: string) => ({
+          submitUrl: `https://mcp.figma.com/test-upload/${id}`,
+          targetNodeId: id,
+        })),
+      };
     if (name === "use_figma") {
       if (safety === CallSafety.Write) {
         this.writes++;
@@ -168,6 +235,8 @@ export class FakeConnection implements FigmaConnection {
         this.loseResponse = false;
         throw Error("lost response");
       }
+      if (JSON.stringify(result).length > 20000)
+        throw Error("MCP result would be truncated");
       return result;
     }
     throw Error("Unexpected fixture tool");

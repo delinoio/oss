@@ -356,3 +356,282 @@ test("expired selected credentials reread once and do not fall back to another p
   await assert.rejects(reader.load(), isCode(ErrorCode.Authentication));
   assert.equal(reads, 2);
 });
+
+test("lost responses to known edits are confirmed without replay", async () => {
+  const connection = new FakeConnection();
+  const session = new FigmaSession(options, connection);
+  try {
+    await session.render(tree());
+    await session.publish();
+    await session.render(tree("After loss"));
+    const before = connection.writes;
+    connection.loseResponse = true;
+    const receipt = await session.publish();
+    assert.equal(receipt.status, PublishStatus.Complete);
+    assert.equal(connection.writes, before + 1);
+    assert.equal(
+      [...connection.canvas.nodes.values()].find((n) => n.name === "Title")
+        .characters,
+      "After loss",
+    );
+    await session.publish();
+    assert.equal(connection.writes, before + 1);
+  } finally {
+    await session.dispose();
+  }
+});
+test("deleting a managed container never deletes an inspected foreign descendant", async () => {
+  const connection = new FakeConnection();
+  const session = new FigmaSession(options, connection);
+  try {
+    await session.render(
+      <Page name="Page">
+        <Frame name="Managed" />
+      </Page>,
+    );
+    await session.publish();
+    const parent = [...connection.canvas.nodes.values()].find(
+      (n) => n.name === "Managed",
+    );
+    const child = connection.canvas.node("TEXT");
+    parent.appendChild(child);
+    await session.refresh({ pageId: parent.parent.id });
+    await session.render(<Page name="Page" />);
+    await assert.rejects(session.publish(), isCode(ErrorCode.UnsupportedEdit));
+    assert.ok(connection.canvas.nodes.has(child.id));
+    assert.ok(connection.canvas.nodes.has(parent.id));
+  } finally {
+    await session.dispose();
+  }
+});
+test("paged inspection and large batches stay below the live MCP response envelope", async () => {
+  const connection = new FakeConnection();
+  const session = new FigmaSession(options, connection);
+  try {
+    await session.render(
+      <Page name="Many">
+        {Array.from({ length: 100 }, (_, i) => (
+          <Text key={i} name={`Text ${i}`}>
+            {"Unicode 여행 ✈️".repeat(25)}
+          </Text>
+        ))}
+      </Page>,
+    );
+    await session.publish();
+    const page = [...connection.canvas.nodes.values()].find(
+      (n) => n.name === "Many",
+    );
+    const before = connection.stats.calls;
+    await session.refresh({ pageId: page.id });
+    assert.equal(connection.stats.calls - before, 4);
+    assert.equal(
+      session.inspect().targets.filter((n) => n.kind === "TEXT").length,
+      100,
+    );
+  } finally {
+    await session.dispose();
+  }
+});
+test("images use scoped submit URLs once and reuse content hashes on other nodes", async () => {
+  const connection = new FakeConnection();
+  let uploads = 0;
+  const uploadFetch: typeof fetch = async (input, init) => {
+    uploads++;
+    assert.equal(new Headers(init?.headers).has("Authorization"), false);
+    assert.equal(init?.redirect, "error");
+    const id = new URL(String(input)).pathname.split("/").at(-1)!;
+    connection.canvas.nodes.get(id).fills = [
+      { type: "IMAGE", imageHash: "fixture-image-hash", scaleMode: "FILL" },
+    ];
+    return new Response(
+      JSON.stringify({ success: true, imageHash: "fixture-image-hash" }),
+      { headers: { "Content-Type": "application/json" } },
+    );
+  };
+  const session = new FigmaSession(options, connection, uploadFetch);
+  try {
+    const { Image } = await import("../src/figma.js");
+    const bytes = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    const asset = await session.registerImage(bytes);
+    await session.render(
+      <Page name="Images">
+        <Image name="one" asset={asset} />
+        <Image name="two" asset={asset} />
+      </Page>,
+    );
+    await session.publish();
+    assert.equal(uploads, 1);
+    assert.equal(
+      [...connection.canvas.nodes.values()].filter(
+        (n) => n.fills?.[0]?.imageHash === "fixture-image-hash",
+      ).length,
+      2,
+    );
+    await session.publish();
+    assert.equal(uploads, 1);
+  } finally {
+    await session.dispose();
+  }
+});
+test("components, variants, instances, variables and styles remain native resources", async () => {
+  const { VariableCollection, Variable, PaintStyle, TextStyle, ComponentSet } =
+    await import("../src/figma.js");
+  const connection = new FakeConnection();
+  const session = new FigmaSession(options, connection);
+  try {
+    await session.render(
+      <Document>
+        <VariableCollection name="Tokens" nodeKey="tokens" />
+        <Variable
+          name="Blue"
+          nodeKey="blue"
+          collection="tokens"
+          resolvedType="COLOR"
+          value="#2563EB"
+          scopes={["ALL_FILLS"]}
+          codeSyntax={{ WEB: "var(--blue)" }}
+        />
+        <PaintStyle name="Paint" nodeKey="paint" fill="#FFFFFF" />
+        <TextStyle
+          name="Heading"
+          nodeKey="heading"
+          fontName={{ family: "Inter", style: "Bold" }}
+          fontSize={28}
+        />
+        <Page name="Components">
+          <ComponentSet name="Button">
+            <Component
+              name="State=Default"
+              nodeKey="button"
+              fill="#2563EB"
+              bindings={{ fills: "blue" }}
+            >
+              <Text textStyle="heading">Go</Text>
+            </Component>
+            <Component name="State=Disabled">
+              <Text>Go</Text>
+            </Component>
+          </ComponentSet>
+          <Instance component="button" name="Instance" />
+        </Page>
+      </Document>,
+    );
+    await session.publish();
+    const nodes = [...connection.canvas.nodes.values()];
+    assert.equal(nodes.filter((n) => n.type === "COMPONENT_SET").length, 1);
+    assert.equal(nodes.filter((n) => n.type === "INSTANCE").length, 1);
+    assert.equal(
+      nodes.find((n) => n.type === "VARIABLE").codeSyntax.WEB,
+      "var(--blue)",
+    );
+    const writes = connection.writes;
+    await session.publish();
+    assert.equal(connection.writes, writes);
+    await session.refresh({ resources: true });
+  } finally {
+    await session.dispose();
+  }
+});
+
+test("sandbox SHA-256 matches standard UTF-8 vectors and block boundaries", async () => {
+  const { createHash } = await import("node:crypto");
+  const { runtime } = await import("../src/figma/runtime.js");
+  const code = runtime.slice(
+    runtime.indexOf("function sha256"),
+    runtime.indexOf("function snapshot"),
+  );
+  const connection = new FakeConnection();
+  for (const value of [
+    "",
+    "abc",
+    "여행 ✈️",
+    "x".repeat(55),
+    "x".repeat(64),
+    "x".repeat(10000),
+  ])
+    assert.equal(
+      await connection.canvas.execute(
+        `${code}\nreturn sha256(${JSON.stringify(value)});`,
+      ),
+      createHash("sha256").update(value).digest("hex"),
+    );
+});
+test("concurrent selected reads deduplicate and include ancestry; mounted refs measure native IDs", async () => {
+  const { createRef } = await import("react");
+  const connection = new FakeConnection();
+  const parent = connection.canvas.node("FRAME");
+  const child = connection.canvas.node("TEXT");
+  parent.appendChild(child);
+  const session = await FigmaSession.open(FILE, {}, connection);
+  try {
+    const calls = connection.stats.calls;
+    const opts = { pageId: connection.canvas.page.id, nodeIds: [child.id] };
+    await Promise.all([session.refresh(opts), session.refresh(opts)]);
+    assert.equal(connection.stats.calls, calls + 1);
+    const target = session
+      .inspect()
+      .targets.find((t) => t.remoteId === child.id)!;
+    assert.equal(target.parentId, parent.id);
+    const ref = createRef<any>();
+    await session.mount(target, <Text ref={ref}>Reference</Text>);
+    await session.publish();
+    assert.equal(
+      (await session.measure(ref.current, { revision: session.revision }))
+        .coordinateSpace,
+      "page",
+    );
+  } finally {
+    await session.dispose();
+  }
+});
+test("cancellation after a confirmed batch reports partial changes without rollback", async () => {
+  const connection = new FakeConnection();
+  const session = new FigmaSession(options, connection);
+  const c = new AbortController();
+  try {
+    await session.render(tree());
+    connection.beforeWrite = () => c.abort();
+    await assert.rejects(
+      session.publish({ signal: c.signal }),
+      (e) =>
+        e instanceof FigmaPublishError &&
+        e.code === ErrorCode.Cancelled &&
+        e.receipt.status === PublishStatus.Partial &&
+        e.receipt.createdNodeIds.length > 0,
+    );
+    assert.ok(connection.canvas.nodes.size > 2);
+  } finally {
+    await session.dispose();
+  }
+});
+
+test("a failing setter on an existing node reports its confirmed partial changes", async () => {
+  const connection = new FakeConnection();
+  const session = new FigmaSession(options, connection);
+  try {
+    await session.render(tree());
+    await session.publish();
+    const id = [...connection.canvas.nodes.values()].find(
+      (n) => n.name === "Title",
+    ).id;
+    await session.render(tree("Changed before failure"));
+    connection.canvas.failProperty = "fontSize";
+    await assert.rejects(
+      session.publish(),
+      (e) =>
+        e instanceof FigmaPublishError &&
+        e.receipt.status === PublishStatus.Partial &&
+        e.receipt.mutatedNodeIds.includes(id),
+    );
+    await session.publish();
+    assert.equal(
+      connection.canvas.nodes.get(id).characters,
+      "Changed before failure",
+    );
+  } finally {
+    await session.dispose();
+  }
+});

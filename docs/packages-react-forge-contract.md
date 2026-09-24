@@ -3,6 +3,8 @@
 ## Scope
 `packages/react-forge` owns the private `@delino/react-forge` library and one-shot TSX CLI. The [complete requirements](packages-react-forge-requirements.md) are normative; this contract records implementation boundaries, not a reduced delivery scope.
 
+The local Office/PDF behavior below is extended by the [Figma contract](packages-react-forge-figma-contract.md), which separately specifies remote creation/editing, host-owned authentication, explicit publication, partial outcomes and receipts. Its network and remote-state exceptions do not apply to the local formats.
+
 ## Runtime and Language
 Node.js 24 on macOS, Windows and glibc Linux, each with x64 and arm64, TypeScript, React 19.2.8 and react-reconciler 0.33.0. TSX executes trusted caller code with ordinary caller permissions. The reconciler must implement real React commits, refs, effects, Suspense, transitions and Activity; invoking components manually is forbidden.
 

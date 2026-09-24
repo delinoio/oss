@@ -9,7 +9,7 @@ import {
   withOutputReservation,
 } from "../files.js";
 import { RenderRoot } from "../renderer.js";
-import { planFigma } from "../native.js";
+import { planFigma, validateFigmaImage } from "../native.js";
 import {
   Format,
   Stage,
@@ -57,6 +57,7 @@ export interface FigmaReceipt {
   bindings: Record<string, string>;
   kinds: Record<string, FigmaKind>;
   fingerprints: Record<string, string>;
+  imageHashes?: Record<string, string>;
   createdNodeIds: string[];
   mutatedNodeIds: string[];
   deletedNodeIds: string[];
@@ -76,6 +77,7 @@ export interface FigmaTarget extends NodeHandle {
   readonly name: string;
   readonly editable: boolean;
   readonly pageId?: string;
+  readonly parentId?: string;
 }
 interface Mount {
   target: FigmaTarget;
@@ -100,7 +102,14 @@ export class FigmaPublishError extends ForgeError {
       {
         format: Format.Figma,
         revision: receipt.revision,
-        published: receipt.status !== PublishStatus.Unknown,
+        published:
+          receipt.status !== PublishStatus.Unknown ||
+          receipt.createdNodeIds.length +
+            receipt.mutatedNodeIds.length +
+            receipt.deletedNodeIds.length >
+            0
+            ? true
+            : undefined,
       },
     );
   }
@@ -159,12 +168,19 @@ export class FigmaSession {
   private readonly targets = new Map<string, FigmaTarget>();
   private readonly snapshots = new Map<string, Snapshot>();
   private readonly pages = new Map<string, string>();
+  private readonly reads = new Map<
+    string,
+    Promise<ReturnType<FigmaSession["inspect"]>>
+  >();
   private readonly kinds: Record<string, FigmaKind> = {};
   private bindings: Record<string, string> = {};
+  private readonly handleKeys = new Map<string, string>();
   private previous: Entity[] = [];
   private queue: Promise<unknown> = Promise.resolve();
   private publication: Promise<unknown> = Promise.resolve();
   private currentRevision = 0;
+  private batchCount = 0;
+  private changeCount = 0;
   private signature = "";
   private key?: string;
   private unknown = false;
@@ -174,6 +190,7 @@ export class FigmaSession {
   constructor(
     private readonly options: FigmaOptions = {},
     connection?: FigmaConnection,
+    private readonly uploadFetch: typeof fetch = fetch,
   ) {
     this.connection =
       connection ??
@@ -222,6 +239,11 @@ export class FigmaSession {
       revision: this.revision,
       durationMs: performance.now() - start,
       code,
+      calls: this.connection.stats.calls,
+      retries: this.connection.stats.retries,
+      waitMs: this.connection.stats.waitMs,
+      batches: this.batchCount,
+      changes: this.changeCount,
     });
     for (const listener of this.listeners)
       try {
@@ -258,6 +280,7 @@ export class FigmaSession {
           ErrorCode.MalformedInput,
           "Figma images must be PNG or JPEG.",
         );
+      if (!this.assets.has(id)) await validateFigmaImage(bytes, signal);
       this.assets.set(id, bytes);
       return Object.freeze({ assetId: id, documentId: this.documentId });
     })();
@@ -299,6 +322,7 @@ export class FigmaSession {
             name: String(n.props.name ?? ""),
             editable: supported,
             pageId: this.pages.get(n.id),
+            parentId: n.parent ?? undefined,
           }),
         );
     }
@@ -310,21 +334,67 @@ export class FigmaSession {
       targets: Object.freeze([...this.targets.values()]),
     });
   }
-  async refresh(options: { pageId?: string; resources?:boolean; signal?: AbortSignal } = {}) {
+  refresh(
+    options: {
+      pageId?: string;
+      resources?: boolean;
+      nodeIds?: string[];
+      signal?: AbortSignal;
+    } = {},
+  ) {
+    const signal = this.signal(options.signal);
+    const { signal: _signal, ...selection } = options;
+    const key = canonical(selection);
+    let pending = this.reads.get(key);
+    if (!pending) {
+      pending = this.readRemote({ ...selection, signal: this.disposal.signal });
+      this.reads.set(key, pending);
+      void pending.finally(() => this.reads.delete(key)).catch(() => {});
+    }
+    return abortable(pending, signal);
+  }
+  private async readRemote(
+    options: {
+      pageId?: string;
+      resources?: boolean;
+      nodeIds?: string[];
+      signal?: AbortSignal;
+    } = {},
+  ) {
     const signal = this.signal(options.signal);
     if (!this.key)
       throw new ForgeError(
         ErrorCode.InvalidTarget,
         "Publish the new file before remote inspection.",
       );
-    const input = options.pageId ? { page: `@${options.pageId}` } : {};
+    if (
+      options.nodeIds &&
+      (options.nodeIds.length > 24 ||
+        options.nodeIds.some((id) => !validRemote(id)))
+    )
+      throw new ForgeError(
+        ErrorCode.InvalidTarget,
+        "Select at most 24 valid Figma node IDs per inspection.",
+      );
+    const input = {
+      ...(options.pageId ? { page: `@${options.pageId}` } : {}),
+      ...(options.nodeIds
+        ? { targets: options.nodeIds.map((id) => ({ id })) }
+        : {}),
+    };
     let offset: number | null = 0;
     do {
       const value = await this.connection.call(
         "use_figma",
         {
           fileKey: this.key,
-          code: script({ mode: "inspect", bindings: {}, offset, resources:options.resources, ...input }),
+          code: script({
+            mode: "inspect",
+            bindings: {},
+            offset,
+            resources: options.resources,
+            ...input,
+          }),
           description: "Inspect selected Figma page",
           skillNames: "figma-use",
         },
@@ -362,6 +432,14 @@ export class FigmaSession {
             "Invalid Figma publication receipt.",
           );
         session.key = fileKey(source.fileKey);
+        for (const [hash, image] of Object.entries(source.imageHashes ?? {})) {
+          if (!/^sha256:[0-9a-f]{64}$/.test(hash) || !validRemote(image))
+            throw new ForgeError(
+              ErrorCode.MalformedInput,
+              "Invalid Figma image mapping.",
+            );
+          session.imageHashes[hash] = image;
+        }
         for (const [key, id] of Object.entries(source.bindings)) {
           if (!/^[0-9a-f-]{36}$/.test(key) || !validRemote(id))
             throw new ForgeError(
@@ -468,6 +546,7 @@ export class FigmaSession {
           ErrorCode.UnsupportedEdit,
           "A Figma mount must render one node matching the selected kind.",
         );
+      this.handleKeys.set(nodes[0]!.id, m.target.nodeId);
       const base = this.snapshots.get(m.target.remoteId)!;
       const entities = model(
         nodes,
@@ -487,6 +566,11 @@ export class FigmaSession {
     }
     const explicit = new Set<string>();
     for (const e of desired) {
+      if (e.props.image && !this.assets.has(e.props.image))
+        throw new ForgeError(
+          ErrorCode.InvalidTarget,
+          "Register the image asset in this session before publication.",
+        );
       const remote = bindings[e.key];
       if (remote) {
         if (explicit.has(remote))
@@ -498,6 +582,26 @@ export class FigmaSession {
             ErrorCode.InvalidTarget,
             "Inspect the target page before binding an existing node.",
           );
+        if (e.kind !== FigmaKind.Page && !resourceKinds.has(e.kind)) {
+          const parent = e.parent?.startsWith("@")
+            ? e.parent.slice(1)
+            : e.parent
+              ? bindings[e.parent]
+              : undefined;
+          const variantOwner = desired.find(
+            (set) =>
+              set.kind === FigmaKind.ComponentSet &&
+              set.props.variants?.includes(e.key),
+          );
+          if (
+            snapshot.parent !== parent &&
+            (!variantOwner || snapshot.parent !== bindings[variantOwner.key])
+          )
+            throw new ForgeError(
+              ErrorCode.UnsupportedEdit,
+              "Existing targets cannot move between parents.",
+            );
+        }
         if (snapshot.type !== e.kind)
           throw new ForgeError(
             ErrorCode.UnsupportedEdit,
@@ -537,6 +641,7 @@ export class FigmaSession {
       status,
       bindings: { ...this.bindings },
       kinds: { ...this.kinds },
+      imageHashes: { ...this.imageHashes },
       fingerprints: Object.fromEntries(
         [...this.snapshots].map(([id, s]) => [id, fingerprint(s)]),
       ),
@@ -566,6 +671,8 @@ export class FigmaSession {
       deletedNodeIds: [] as string[],
     };
     let wrote = false;
+    this.batchCount = 0;
+    this.changeCount = 0;
     try {
       if (this.unknown)
         throw new ForgeError(
@@ -647,6 +754,48 @@ export class FigmaSession {
         },
         signal,
       );
+      this.changeCount = plan.operationCount;
+      // Check every already-known region before the first mutation. Batch
+      // guards repeat the check because remote publication is not atomic.
+      const checks = new Map<
+        string,
+        Record<string, Pick<Snapshot, "id" | "type" | "stateHash">>
+      >();
+      for (const batch of plan.batches) {
+        const page = batch.page ?? "";
+        const expected = this.input(batch).expected;
+        if (Object.keys(expected).length)
+          checks.set(page, { ...checks.get(page), ...expected });
+      }
+      for (const [page, expected] of checks) {
+        const entries = Object.entries(expected);
+        for (let offset = 0; offset < entries.length; offset += 24) {
+          const guard = await this.connection.call(
+            "use_figma",
+            {
+              fileKey: this.key,
+              code: script({
+                mode: "verify",
+                page: page || null,
+                bindings: this.bindings,
+                expected: Object.fromEntries(
+                  entries.slice(offset, offset + 24),
+                ),
+                operations: [],
+              }),
+              description: "Verify Figma revision guards before publication",
+              skillNames: "figma-use",
+            },
+            CallSafety.Read,
+            signal,
+          );
+          if (guard.errorCode)
+            throw new ForgeError(
+              ErrorCode.Conflict,
+              "The Figma baseline changed before publication.",
+            );
+        }
+      }
       for (const batch of plan.batches) {
         checkSignal(signal);
         const pending = [batch];
@@ -694,7 +843,10 @@ export class FigmaSession {
     }
   }
   private input(batch: Batch) {
-    const expected: Record<string, Snapshot> = {};
+    const expected: Record<
+      string,
+      Pick<Snapshot, "id" | "type" | "stateHash">
+    > = {};
     for (const op of batch.operations) {
       for (const key of [op.entity.key, op.entity.parent]) {
         const id = key?.startsWith("@")
@@ -703,7 +855,12 @@ export class FigmaSession {
             ? this.bindings[key]
             : undefined;
         const snap = id ? this.snapshots.get(id) : undefined;
-        if (snap) expected[id!] = snap;
+        if (snap)
+          expected[id!] = {
+            id: snap.id,
+            type: snap.type,
+            stateHash: snap.stateHash,
+          };
       }
     }
     const relevant = new Set<string>();
@@ -717,6 +874,16 @@ export class FigmaSession {
       for (const v of op.entity.props.variants ?? []) relevant.add(v);
       for (const v of Object.values(op.entity.props.bindings ?? {}))
         relevant.add(String(v));
+    }
+    for (const key of relevant) {
+      const id = key.startsWith("@") ? key.slice(1) : this.bindings[key];
+      const snapshot = id ? this.snapshots.get(id) : undefined;
+      if (snapshot)
+        expected[id!] = {
+          id: snapshot.id,
+          type: snapshot.type,
+          stateHash: snapshot.stateHash,
+        };
     }
     return {
       mode: "apply",
@@ -753,9 +920,10 @@ export class FigmaSession {
       deletedNodeIds: string[];
     },
     signal: AbortSignal,
-    reconcile=true,
+    reconcile = true,
   ) {
     let value: any;
+    this.batchCount++;
     try {
       value = await this.connection.call(
         "use_figma",
@@ -773,27 +941,65 @@ export class FigmaSession {
       // A lost response is not evidence that a write failed. Only reconcile
       // known identities; names must never be used to infer a created node ID.
       try {
-        if(reconcile&&batch.operations.every(op=>this.bindings[op.entity.key])) {
-          const read=await this.connection.call("use_figma",{fileKey:this.key,
-            code:script({...this.input(batch),mode:"reconcile"}),
-            description:"Reconcile uncertain Figma publication",skillNames:"figma-use"},CallSafety.Read,this.disposal.signal);
-          if(Array.isArray(read.nodes)&&Array.isArray(read.outcomes)&&read.outcomes.length===batch.operations.length&&read.outcomes.every((state:unknown)=>state==="applied"||state==="pending")) {
+        if (
+          reconcile &&
+          batch.operations.every((op) => this.bindings[op.entity.key])
+        ) {
+          const read = await this.connection.call(
+            "use_figma",
+            {
+              fileKey: this.key,
+              code: script({ ...this.input(batch), mode: "reconcile" }),
+              description: "Reconcile uncertain Figma publication",
+              skillNames: "figma-use",
+            },
+            CallSafety.Read,
+            this.disposal.signal,
+          );
+          if (
+            Array.isArray(read.nodes) &&
+            Array.isArray(read.outcomes) &&
+            read.outcomes.length === batch.operations.length &&
+            read.outcomes.every(
+              (state: unknown) => state === "applied" || state === "pending",
+            )
+          ) {
             this.accept(read.nodes);
-            const remaining:Operation[]=[];
-            const prior=new Map(this.previous.map(e=>[e.key,e]));
-            for(let i=0;i<batch.operations.length;i++){
-              const op=batch.operations[i]!;const id=this.bindings[op.entity.key]!;
-              if(read.outcomes[i]==="pending"){remaining.push(op);continue;}
-              if(op.action==="delete"){prior.delete(op.entity.key);changes.deletedNodeIds.push(id);this.snapshots.delete(id);delete this.bindings[op.entity.key];this.targets.delete(op.entity.key);}
-              else{prior.set(op.entity.key,op.entity);changes.mutatedNodeIds.push(id);}
+            const remaining: Operation[] = [];
+            const prior = new Map(this.previous.map((e) => [e.key, e]));
+            for (let i = 0; i < batch.operations.length; i++) {
+              const op = batch.operations[i]!;
+              const id = this.bindings[op.entity.key]!;
+              if (read.outcomes[i] === "pending") {
+                remaining.push(op);
+                continue;
+              }
+              if (op.action === "delete") {
+                prior.delete(op.entity.key);
+                changes.deletedNodeIds.push(id);
+                this.snapshots.delete(id);
+                delete this.bindings[op.entity.key];
+                this.targets.delete(op.entity.key);
+              } else {
+                prior.set(op.entity.key, op.entity);
+                changes.mutatedNodeIds.push(id);
+              }
             }
-            this.previous=[...prior.values()];
-            if(remaining.length){checkSignal(signal);await this.execute({...batch,operations:remaining},changes,signal,false);}
+            this.previous = [...prior.values()];
+            if (remaining.length) {
+              checkSignal(signal);
+              await this.execute(
+                { ...batch, operations: remaining },
+                changes,
+                signal,
+                false,
+              );
+            }
             return;
           }
         }
-      } catch(recoveryError) {
-        if(recoveryError instanceof FigmaPublishError)throw recoveryError;
+      } catch (recoveryError) {
+        if (recoveryError instanceof FigmaPublishError) throw recoveryError;
         // Preserve uncertainty if a remote read cannot establish the outcome.
       }
       this.unknown = true;
@@ -939,7 +1145,7 @@ export class FigmaSession {
         "Figma returned an unsupported asset upload authority.",
       );
     // Upload URLs carry their own scoped authority. Never attach the OAuth token.
-    const res = await fetch(url, {
+    const res = await this.uploadFetch(url, {
       method: "POST",
       body: new Uint8Array(bytes),
       headers: {
@@ -1043,7 +1249,7 @@ export class FigmaSession {
         "Measure requires a confirmed published Figma revision.",
       );
     const bounds = this.snapshots.get(
-      this.bindings[handle.nodeId] ?? "",
+      this.bindings[this.handleKeys.get(handle.nodeId) ?? handle.nodeId] ?? "",
     )?.bounds;
     if (!bounds)
       throw new ForgeError(
@@ -1064,6 +1270,7 @@ export class FigmaSession {
         this.queue,
         this.publication,
         ...this.pendingAssets,
+        ...this.reads.values(),
       ]);
       await this.connection.close();
       this.assets.clear();

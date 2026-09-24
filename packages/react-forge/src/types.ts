@@ -49,6 +49,11 @@ export interface Diagnostic {
   readonly durationMs: number;
   readonly code?: ErrorCode;
   readonly location?: string;
+  readonly calls?:number;
+  readonly retries?:number;
+  readonly waitMs?:number;
+  readonly batches?:number;
+  readonly changes?:number;
 }
 
 export interface NodeHandle {

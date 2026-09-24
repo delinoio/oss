@@ -164,35 +164,52 @@ fn paints(value: &Value) -> bool {
     })
 }
 fn validate_props(e: &Entity) -> Result<()> {
+    let scene = !e.kind.resource() && e.kind != Kind::Page;
+    let layout = matches!(
+        e.kind,
+        Kind::Frame | Kind::Component | Kind::ComponentSet | Kind::Instance
+    );
+    let text = matches!(e.kind, Kind::Text | Kind::TextStyle);
     for (key, value) in &e.props {
         let valid = match key.as_str() {
             "name" => string(value, 1024),
             "characters" => e.kind == Kind::Text && string(value, 65536),
-            "x" | "y" => !e.kind.resource() && number(value, -1_000_000., 1_000_000.),
-            "width" | "height" => !e.kind.resource() && number(value, 0.01, 100_000.),
+            "x" | "y" => scene && number(value, -1_000_000., 1_000_000.),
+            "width" | "height" => scene && number(value, 0.01, 100_000.),
             "fontSize" => {
                 matches!(e.kind, Kind::Text | Kind::TextStyle) && number(value, 1., 1000.)
             }
-            "cornerRadius" | "strokeWeight" | "paddingTop" | "paddingBottom" | "paddingLeft"
-            | "paddingRight" | "itemSpacing" => number(value, 0., 10000.),
-            "opacity" => number(value, 0., 1.),
-            "rotation" => number(value, -360., 360.),
-            "visible" | "clipsContent" => value.is_boolean(),
-            "fills" | "strokes" => paints(value),
-            "layoutMode" => {
-                e.kind.container() && one_of(value, &["NONE", "HORIZONTAL", "VERTICAL"])
+            "cornerRadius" => (layout || e.kind == Kind::Rectangle) && number(value, 0., 10000.),
+            "strokeWeight" => scene && number(value, 0., 10000.),
+            "paddingTop" | "paddingBottom" | "paddingLeft" | "paddingRight" | "itemSpacing" => {
+                layout && number(value, 0., 10000.)
             }
-            "primaryAxisAlignItems" => one_of(value, &["MIN", "CENTER", "MAX", "SPACE_BETWEEN"]),
-            "counterAxisAlignItems" => one_of(value, &["MIN", "CENTER", "MAX", "BASELINE"]),
-            "primaryAxisSizingMode" | "counterAxisSizingMode" => one_of(value, &["AUTO", "FIXED"]),
+            "opacity" => scene && number(value, 0., 1.),
+            "rotation" => scene && number(value, -360., 360.),
+            "visible" => scene && value.is_boolean(),
+            "clipsContent" => layout && value.is_boolean(),
+            "fills" => (scene || e.kind == Kind::PaintStyle) && paints(value),
+            "strokes" => scene && paints(value),
+            "layoutMode" => layout && one_of(value, &["NONE", "HORIZONTAL", "VERTICAL"]),
+            "primaryAxisAlignItems" => {
+                layout && one_of(value, &["MIN", "CENTER", "MAX", "SPACE_BETWEEN"])
+            }
+            "counterAxisAlignItems" => {
+                layout && one_of(value, &["MIN", "CENTER", "MAX", "BASELINE"])
+            }
+            "primaryAxisSizingMode" | "counterAxisSizingMode" => {
+                layout && one_of(value, &["AUTO", "FIXED"])
+            }
             "layoutSizingHorizontal" | "layoutSizingVertical" => {
-                one_of(value, &["FIXED", "HUG", "FILL"])
+                scene && one_of(value, &["FIXED", "HUG", "FILL"])
             }
             "textAutoResize" => {
                 e.kind == Kind::Text
                     && one_of(value, &["NONE", "HEIGHT", "WIDTH_AND_HEIGHT", "TRUNCATE"])
             }
-            "textAlignHorizontal" => one_of(value, &["LEFT", "CENTER", "RIGHT", "JUSTIFIED"]),
+            "textAlignHorizontal" => {
+                text && one_of(value, &["LEFT", "CENTER", "RIGHT", "JUSTIFIED"])
+            }
             "fontName" => {
                 matches!(e.kind, Kind::Text | Kind::TextStyle)
                     && value.as_object().is_some_and(|o| {
@@ -202,7 +219,7 @@ fn validate_props(e: &Entity) -> Result<()> {
                     })
             }
             "lineHeight" | "letterSpacing" => {
-                one_of(&value["unit"], &["PIXELS", "PERCENT", "AUTO"])
+                text && one_of(&value["unit"], &["PIXELS", "PERCENT", "AUTO"])
                     && (value["unit"] == "AUTO" || number(&value["value"], -1000., 10000.))
             }
             "vectorPaths" => {
@@ -286,28 +303,32 @@ fn validate_props(e: &Entity) -> Result<()> {
                             })
                     })
             }
-            "bindings" => value.as_object().is_some_and(|v| {
-                v.len() <= 32
-                    && v.iter().all(|(k, v)| {
-                        [
-                            "fills",
-                            "cornerRadius",
-                            "itemSpacing",
-                            "paddingTop",
-                            "paddingBottom",
-                            "paddingLeft",
-                            "paddingRight",
-                            "width",
-                            "height",
-                            "visible",
-                            "opacity",
-                            "fontSize",
-                        ]
-                        .contains(&k.as_str())
-                            && v.as_str().is_some_and(reference)
+            "bindings" => {
+                scene
+                    && value.as_object().is_some_and(|v| {
+                        v.len() <= 32
+                            && v.iter().all(|(k, v)| {
+                                [
+                                    "fills",
+                                    "cornerRadius",
+                                    "itemSpacing",
+                                    "paddingTop",
+                                    "paddingBottom",
+                                    "paddingLeft",
+                                    "paddingRight",
+                                    "width",
+                                    "height",
+                                    "visible",
+                                    "opacity",
+                                    "fontSize",
+                                ]
+                                .contains(&k.as_str())
+                                    && v.as_str().is_some_and(reference)
+                            })
                     })
-            }),
-            "fillStyle" | "textStyle" => value.as_str().is_some_and(reference),
+            }
+            "fillStyle" => scene && value.as_str().is_some_and(reference),
+            "textStyle" => e.kind == Kind::Text && value.as_str().is_some_and(reference),
             // Asset IDs are local content hashes, never locators or arbitrary URLs.
             "image" => {
                 e.kind == Kind::Rectangle
@@ -317,7 +338,9 @@ fn validate_props(e: &Entity) -> Result<()> {
                             && s[7..].bytes().all(|b| b.is_ascii_hexdigit())
                     })
             }
-            "imageScaleMode" => one_of(value, &["FILL", "FIT", "TILE"]),
+            "imageScaleMode" => {
+                e.kind == Kind::Rectangle && one_of(value, &["FILL", "FIT", "TILE"])
+            }
             _ => false,
         };
         if !valid {
@@ -366,6 +389,24 @@ fn validate(entities: &[Entity], complete: bool) -> Result<BTreeMap<&str, &Entit
         }
     }
     for e in entities {
+        for (property, expected) in [
+            ("component", Kind::Component),
+            ("collection", Kind::Collection),
+            ("fillStyle", Kind::PaintStyle),
+            ("textStyle", Kind::TextStyle),
+        ] {
+            if let Some(reference) = e.props.get(property).and_then(Value::as_str)
+                && !reference.starts_with('@')
+                && found
+                    .get(reference)
+                    .is_some_and(|target| target.kind != expected)
+            {
+                return Err(Error::InvalidTarget);
+            }
+        }
+        if e.kind != Kind::Page && !e.kind.resource() && e.parent.is_none() {
+            return Err(Error::InvalidTarget);
+        }
         let mut cursor = e;
         let mut visited = BTreeSet::new();
         while let Some(parent) = &cursor.parent {
@@ -446,9 +487,16 @@ pub fn plan(input: Input) -> Result<Plan> {
     let mut pending = BTreeMap::new();
     for e in &input.desired {
         let old = previous.get(e.key.as_str()).copied();
+        if let Some(old) = old
+            && (old.kind != e.kind || old.parent != e.parent)
+        {
+            return Err(Error::UnsupportedEdit);
+        }
         if let Some(old) = old {
-            if old.kind != e.kind || old.parent != e.parent {
-                return Err(Error::UnsupportedEdit);
+            for field in ["component", "variants", "collection", "resolvedType"] {
+                if old.props.get(field) != e.props.get(field) {
+                    return Err(Error::UnsupportedEdit);
+                }
             }
         }
         if old == Some(e) {
@@ -521,7 +569,11 @@ pub fn plan(input: Input) -> Result<Plan> {
     let operation_count = operations.len();
     let mut batches: Vec<Batch> = Vec::new();
     for op in operations {
-        let page = op.entity.page.clone();
+        let page = if op.entity.kind == Kind::Page && op.action == Action::Update {
+            Some(op.entity.key.clone())
+        } else {
+            op.entity.page.clone()
+        };
         let units = serde_json::to_string(&op)
             .map_err(|_| Error::MalformedInput)?
             .encode_utf16()
@@ -533,7 +585,7 @@ pub fn plan(input: Input) -> Result<Plan> {
             b.page == page
                 && b.operations.len() < 24
                 && serde_json::to_string(&b.operations)
-                    .map(|s| s.encode_utf16().count() + units + 1 <= input.payload_limit)
+                    .map(|s| s.encode_utf16().count() + units < input.payload_limit)
                     .unwrap_or(false)
         });
         if append {

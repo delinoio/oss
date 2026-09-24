@@ -442,9 +442,9 @@ jobs:
       - name: Verify supported host and native contracts
         run: |
           node -e 'if (process.platform !== "${{ matrix.platform }}" || process.arch !== "${{ matrix.architecture }}" || process.versions.node.split(".")[0] !== "24") process.exit(1)'
-          cargo test --target ${{ matrix.target }} -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-tree-doc -p forge-pptx -p delino-forge
+          cargo test --target ${{ matrix.target }} -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-figma -p forge-tree-doc -p forge-pptx -p delino-forge
           cargo test --target ${{ matrix.target }} -p forge-document -p forge-pdf -- --include-ignored
-          cargo clippy --target ${{ matrix.target }} -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf --all-targets -- -D warnings
+          cargo clippy --target ${{ matrix.target }} -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-figma --all-targets -- -D warnings
       - name: Build and test library and installed CLI
         run: pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge
       - name: Verify Windows console cancellation
