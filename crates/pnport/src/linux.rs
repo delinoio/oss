@@ -1201,9 +1201,10 @@ impl Trace<'_> {
     fn translate(&mut self, pid: i32, dirfd: i32, pointer: u64) -> Result<Translation> {
         let path = read_path(pid, pointer)?;
         let absolute = self.base(pid, dirfd, &path)?;
-        self.translate_view(&absolute).inspect_err(|error| {
+        let logical = self.proc_root(pid, &absolute)?.unwrap_or(absolute);
+        self.translate_view(&logical).inspect_err(|error| {
             if error.code == Code::PnportResolutionFailed {
-                tracing::debug!(action = "linux_resolution_miss", path = %absolute.display(),
+                tracing::debug!(action = "linux_resolution_miss", path = %logical.display(),
                     "Owned child path was not present in the PnP view");
             } else if super::supervisor::handled_signal() == 0 {
                 let _ = fs::write(self.view.session.join("failure"), error.code.as_str());
@@ -1223,6 +1224,47 @@ impl Trace<'_> {
             }
             watch.poll()
         })
+    }
+
+    fn proc_root(&self, pid: i32, path: &Path) -> Result<Option<PathBuf>> {
+        let Some(text) = path.to_str() else {
+            return Ok(None);
+        };
+        let Some((owner, remainder)) = text.strip_prefix("/proc/").and_then(|p| p.split_once('/'))
+        else {
+            return Ok(None);
+        };
+        let group = Self::group(pid);
+        let owner_group = match owner {
+            "self" | "thread-self" => group,
+            _ => match owner.parse::<i32>() {
+                Ok(owner) => Self::group(owner),
+                Err(_) => return Ok(None),
+            },
+        };
+        if owner_group != group {
+            return Ok(None);
+        }
+        let suffix = if let Some(suffix) = remainder.strip_prefix("root/") {
+            suffix
+        } else if let Some((task, suffix)) = remainder
+            .strip_prefix("task/")
+            .and_then(|value| value.split_once("/root/"))
+        {
+            if task
+                .parse::<i32>()
+                .ok()
+                .map(Self::group)
+                .is_none_or(|task_group| task_group != group)
+            {
+                return Ok(None);
+            }
+            suffix
+        } else {
+            return Ok(None);
+        };
+        let root = fs::read_link(format!("/proc/{pid}/root")).map_err(|_| injection_failed())?;
+        Ok(Some(root.join(suffix.trim_start_matches('/'))))
     }
 
     fn proc_descriptor(&self, pid: i32, path: &Path) -> Option<(Translation, bool)> {
@@ -1638,7 +1680,10 @@ impl Trace<'_> {
                         self.force_error(pid, &mut regs, target_arg, libc::EROFS)?;
                         return Ok(true);
                     }
-                    if target != translated.physical {
+                    if target != translated.physical
+                        && !(self.proc_root(pid, &target)?.is_some()
+                            && translated.logical == translated.physical)
+                    {
                         self.rewrite_path(pid, &mut regs, target_arg, &translated.physical)?;
                     }
                     self.pending.insert(pid, Pending::Ordinary);
@@ -1736,6 +1781,7 @@ impl Trace<'_> {
             }
             return Ok(false);
         }
+        let root_alias = !in_root && self.proc_root(pid, &original)?.is_some();
         let proc_cwd = (!in_root).then(|| self.proc_cwd(pid, &original)).flatten();
         if let Some((logical, true)) = &proc_cwd {
             if call == libc::SYS_readlinkat || call == SYS_READLINK {
@@ -1852,6 +1898,7 @@ impl Trace<'_> {
         };
         let second_translation = if let Some((other_arg, other_fd)) = second {
             let other = read_path(pid, argument(&regs, other_arg))?;
+            let other_root_alias = self.proc_root(pid, &other)?.is_some();
             if !other.is_absolute() && other_fd != libc::AT_FDCWD {
                 let descriptor = format!("/proc/{pid}/fd/{other_fd}");
                 let error = match fs::metadata(descriptor) {
@@ -1876,7 +1923,7 @@ impl Trace<'_> {
                 self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
                 return Ok(true);
             }
-            Some((other_arg, other, translated))
+            Some((other_arg, other, translated, other_root_alias))
         } else {
             None
         };
@@ -1904,12 +1951,15 @@ impl Trace<'_> {
             false
         } else {
             original != translation.physical
+                && !(root_alias && translation.logical == translation.physical)
         };
         if changed {
             self.rewrite_path(pid, &mut regs, path_arg, &translation.physical)?;
         }
-        if let Some((other_arg, other, translated)) = second_translation {
-            if other != translated.physical {
+        if let Some((other_arg, other, translated, other_root_alias)) = second_translation {
+            if other != translated.physical
+                && !(other_root_alias && translated.logical == translated.physical)
+            {
                 self.rewrite_path_slot(pid, &mut regs, other_arg, &translated.physical, 1)?;
             }
         }

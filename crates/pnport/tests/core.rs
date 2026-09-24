@@ -1238,6 +1238,80 @@ int main(void) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_proc_root_aliases_retain_managed_ownership() {
+    use std::{os::unix::fs::PermissionsExt, process::Command};
+    let root = fixture();
+    let cache_path = root.path().join("owned-cache");
+    let cache = Cache::open(cache_path.clone()).unwrap();
+    let lease = cache.materialize(&root.path().join("cache.zip")).unwrap();
+    let content = lease.content.join("node_modules/dep/file.txt");
+    let original_mode = fs::metadata(&content).unwrap().permissions().mode() & 0o777;
+    let output = root.path().join("output.txt");
+    let source = root.path().join("proc-root.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc != 3) return 40;
+    char alias[8192];
+    snprintf(alias, sizeof(alias), "/proc/self/root%s", argv[1]);
+    errno = 0;
+    if (chmod(alias, 0600) != -1 || errno != EROFS) return 41;
+    errno = 0;
+    if (open(alias, O_WRONLY) != -1 || errno != EROFS) return 42;
+    snprintf(alias, sizeof(alias), "/proc/%d/task/%ld/root%s", getpid(), syscall(SYS_gettid), argv[1]);
+    errno = 0;
+    if (chmod(alias, 0600) != -1 || errno != EROFS) return 43;
+    snprintf(alias, sizeof(alias), "/proc/self/root%s", argv[2]);
+    int fd = open(alias, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0 || write(fd, "ok", 2) != 2) return 44;
+    close(fd);
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("proc-root");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(&cache_path)
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(&content)
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(fs::read(output).unwrap(), b"ok");
+    assert_eq!(
+        fs::metadata(content).unwrap().permissions().mode() & 0o777,
+        original_mode
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_rejects_pidfd_descriptor_duplication_before_installation() {
     use std::process::Command;
     let root = fixture();

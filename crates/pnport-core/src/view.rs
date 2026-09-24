@@ -52,6 +52,12 @@ impl View {
             ));
         }
         let path = normalize(path);
+        // Physical cache and session views can contain their own node_modules
+        // trees. They are backing storage, never a second virtual dependency
+        // lookup, even when the cache lives below the project directory.
+        if path.starts_with(&self.cache.root) || path.starts_with(self.session.join("views")) {
+            return self.backing(path, false, false, wait);
+        }
         // Yarn's unplugged containers include a real node_modules before the
         // package locator. Those ancestors are installation structure, not an
         // issuer's virtual dependency directory.
