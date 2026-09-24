@@ -32,6 +32,72 @@ fn document(blocks: Vec<Block>) -> Document {
 }
 
 #[test]
+fn paragraph_backgrounds_inherit_into_runs_and_local_backgrounds_override_them() {
+    let shaded = Block::Paragraph {
+        id: Uuid::now_v7(),
+        style: Style {
+            background: Some("#CCEEFF".into()),
+            ..Default::default()
+        },
+        heading: None,
+        list: None,
+        runs: vec![
+            Run {
+                text: "Inherited background".into(),
+                ..Default::default()
+            },
+            Run {
+                text: "Local background".into(),
+                style: Style {
+                    background: Some("#FFCCAA".into()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        ],
+    };
+    let generated = generate(
+        &document(vec![shaded.clone(), paragraph("Plain")]),
+        &Assets::new(),
+    )
+    .unwrap();
+    let imported = import(include_bytes!("fixtures/external.docx")).unwrap();
+    let target = imported
+        .targets
+        .iter()
+        .find(|t| t.text == "External paragraph")
+        .unwrap();
+    let edited = replace(
+        &imported,
+        &[(target.id, vec![shaded, paragraph("Plain")])],
+        &Assets::new(),
+    )
+    .unwrap();
+    for bytes in [generated, edited] {
+        let parts = read(&bytes).unwrap();
+        let main = xml(&parts["word/document.xml"]).unwrap();
+        for (text, color) in [
+            ("Inherited background", Some("CCEEFF")),
+            ("Local background", Some("FFCCAA")),
+            ("Plain", None),
+        ] {
+            let run = main
+                .descendants()
+                .find(|n| n.has_tag_name((W, "t")) && n.text() == Some(text))
+                .unwrap()
+                .parent()
+                .unwrap();
+            let shading = run.descendants().find(|n| n.has_tag_name((W, "shd")));
+            assert_eq!(shading.and_then(|n| n.attribute((W, "fill"))), color);
+            if let Some(shading) = shading {
+                assert_eq!(shading.attribute((W, "val")), Some("clear"));
+                assert_eq!(shading.attribute((W, "color")), Some("auto"));
+            }
+        }
+    }
+}
+
+#[test]
 fn native_document_contains_sections_rich_text_lists_images_merges_and_editable_charts() {
     let mut blocks = vec![
         Block::Paragraph {

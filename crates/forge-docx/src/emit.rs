@@ -62,6 +62,12 @@ pub(crate) fn rpr(style: &Style) -> String {
     if let Some(color) = &style.color {
         out.push_str(&format!("<w:color w:val=\"{}\"/>", &color[1..]));
     }
+    if let Some(color) = &style.background {
+        out.push_str(&format!(
+            "<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{}\"/>",
+            &color[1..]
+        ));
+    }
     if let Some(language) = &style.language {
         let l = escape(language);
         out.push_str(&format!(
