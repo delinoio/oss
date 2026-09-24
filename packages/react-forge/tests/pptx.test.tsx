@@ -18,3 +18,15 @@ test("presentation leaves reject children without exporting an older valid rende
     assert.ok((await session.exportBuffer()).length > 0);
   } finally { await session.dispose(); }
 });
+
+test("presentation styles reject unsupported semantics and retain supported styling", async () => {
+  const session = createSession(Format.Pptx);
+  try {
+    for (const style of [{ background: "#ffffff" }, { align: "right" }, { language: "en" }, { direction: "rtl" }, { typo: true }]) {
+      await session.render(<Presentation><Slide><Column>{React.createElement("pptx:text", { style }, "Cannot drop style")}</Column></Slide></Presentation>);
+      await assert.rejects(session.exportBuffer(), { code: ErrorCode.MalformedInput });
+    }
+    await session.render(<Presentation><Slide><Column><Text style={{ fontSize: 20, bold: true, italic: false, underline: true, color: "#123456" }}>Supported style</Text></Column></Slide></Presentation>);
+    assert.ok((await session.exportBuffer()).length > 0);
+  } finally { await session.dispose(); }
+});
