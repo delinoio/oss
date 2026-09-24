@@ -181,6 +181,7 @@ type ExecutionInteraction struct {
 	Closure         InteractionClosure   `json:"closure"`
 	FirstSequence   uint64               `json:"first_sequence"`
 	LastSequence    uint64               `json:"last_sequence"`
+	Response        *QuestionResponse    `json:"response,omitempty"`
 }
 
 // Waiting flags are observed native state, not answer/approval authority and

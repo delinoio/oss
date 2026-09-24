@@ -40,6 +40,15 @@ func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, s
 }
 
 func closePublishedInteraction(tx *store.Tx, r store.Record, value domain.ExecutionInteraction, closure domain.InteractionClosure, sequence uint64) error {
+	if value.Response != nil {
+		// No Worker response claim exists at this boundary yet. A response that
+		// never left the durable queue becomes canceled, never transmitted or
+		// accepted. Future delivery states require their own reconciliation.
+		if value.Response.State != domain.QuestionResponseQueued && value.Response.State != domain.QuestionResponseCanceled {
+			return executionEventConflict()
+		}
+		value.Response.State = domain.QuestionResponseCanceled
+	}
 	if err := tx.CloseExecutionInteraction(r.SessionID, value.ExecutionID, r.ID, value.NativeThreadID, value.NativeRequestID, closure); err != nil {
 		return err
 	}

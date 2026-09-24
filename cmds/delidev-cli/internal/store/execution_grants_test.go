@@ -114,6 +114,13 @@ func TestExecutionGrantAndNativeReferenceIsolationSurviveRestart(t *testing.T) {
 		if stored.JobID != grant.JobID || stored.ExecutionID != grant.ExecutionID || stored.ServerEpoch != grant.ServerEpoch {
 			t.Fatal("execution binding changed across restart")
 		}
+		byJob, err := tx.ExecutionGrantForJob(grant.JobID)
+		if err != nil || byJob.JobID != stored.JobID || byJob.ExecutionID != stored.ExecutionID || byJob.MachineID != stored.MachineID || byJob.InstanceID != stored.InstanceID || byJob.DeviceID != stored.DeviceID || byJob.ServerEpoch != stored.ServerEpoch || byJob.Digest != nil {
+			t.Fatal("owner control lookup lost grant scope or disclosed its digest")
+		}
+		if _, err := tx.ExecutionGrantForJob(domain.NewID()); domain.SafeError(err).Code != domain.PermissionDenied {
+			t.Fatal("missing native authority was accepted")
+		}
 		for _, field := range []string{"same", "session", "account", "connection", "model", "kind", "native"} {
 			candidate := ref
 			switch field {

@@ -73,6 +73,20 @@ func (t *Tx) ExecutionGrant(digest []byte) (ExecutionGrant, error) {
 	return result, storageError(err)
 }
 
+// Owner-side native controls resolve the existing grant by its immutable job.
+// The token digest is unnecessary for scope validation and is not returned.
+func (t *Tx) ExecutionGrantForJob(job domain.ID) (ExecutionGrant, error) {
+	result := ExecutionGrant{JobID: job}
+	if err := job.Validate(); err != nil {
+		return result, err
+	}
+	err := t.tx.QueryRowContext(t.ctx, "SELECT execution_id,machine_id,instance_id,device_id,server_epoch FROM execution_grants WHERE job_id=?", job).Scan(&result.ExecutionID, &result.MachineID, &result.InstanceID, &result.DeviceID, &result.ServerEpoch)
+	if errors.Is(err, sql.ErrNoRows) {
+		return result, domain.Fail(domain.PermissionDenied, "The execution has no current native authority.", "Wait for validated execution readiness or reconcile the original job.")
+	}
+	return result, storageError(err)
+}
+
 type ExecutionReference struct {
 	SessionID, AccountID, ConnectionID, ModelID domain.ID
 	Kind                                        domain.NativeReferenceKind
